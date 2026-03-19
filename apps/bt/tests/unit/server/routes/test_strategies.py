@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from ruamel.yaml.comments import CommentedMap
 
 import src.entrypoints.http.routes.strategies as strategies_mod
 from src.entrypoints.http.routes.strategies import router
@@ -49,6 +50,129 @@ class TestGetStrategyDetail:
         mock_config_loader.load_strategy_config.side_effect = FileNotFoundError("not found")
         resp = client.get("/api/strategies/missing")
         assert resp.status_code == 404
+
+
+class TestStrategyEditorReference:
+    def test_success(self, client):
+        resp = client.get("/api/strategies/editor/reference")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["capabilities"]["visual_editor"] is True
+        assert any(field["path"] == "dataset" for field in data["shared_config_fields"])
+        assert any(group["key"] == "data" for group in data["shared_config_groups"])
+
+    def test_error_returns_500(self, client):
+        with patch.object(
+            strategies_mod,
+            "build_strategy_editor_reference",
+            side_effect=RuntimeError("boom"),
+        ):
+            resp = client.get("/api/strategies/editor/reference")
+
+        assert resp.status_code == 500
+        assert "boom" in resp.json()["detail"]
+
+
+class TestStrategyEditorContext:
+    def test_success(self, client, mock_config_loader):
+        mock_config_loader.load_strategy_config.return_value = {
+            "shared_config": {"dataset": "custom-dataset"},
+            "execution": {"template_notebook": "custom.py"},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            "extra_block": {"keep": True},
+        }
+        mock_config_loader.resolve_strategy_category.return_value = "experimental"
+        mock_config_loader.default_config = {
+            "execution": {"template_notebook": "default.py"},
+            "parameters": {
+                "shared_config": {
+                    "dataset": "default-dataset",
+                    "benchmark_table": "topix",
+                    "execution_policy": {"mode": "standard"},
+                    "stock_codes": ["all"],
+                }
+            },
+        }
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "custom-dataset",
+            "benchmark_table": "topix",
+            "execution_policy": {"mode": "standard"},
+            "stock_codes": ["all"],
+        }
+        mock_config_loader.get_execution_config.return_value = {
+            "template_notebook": "custom.py",
+            "output_directory": None,
+            "create_output_dir": True,
+        }
+
+        resp = client.get("/api/strategies/experimental/sample/editor-context")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["strategy_name"] == "experimental/sample"
+        assert data["default_shared_config"]["dataset"] == "default-dataset"
+        assert data["effective_shared_config"]["dataset"] == "custom-dataset"
+        assert data["unknown_top_level_keys"] == ["extra_block"]
+        dataset_provenance = next(
+            item for item in data["shared_config_provenance"] if item["path"] == "dataset"
+        )
+        assert dataset_provenance == {
+            "path": "dataset",
+            "source": "strategy",
+            "overridden": True,
+        }
+
+    def test_not_found_returns_404(self, client, mock_config_loader):
+        mock_config_loader.load_strategy_config.side_effect = FileNotFoundError("missing")
+
+        resp = client.get("/api/strategies/experimental/missing/editor-context")
+
+        assert resp.status_code == 404
+
+
+class TestDefaultStructuredHelpers:
+    def test_ensure_commented_map_reuses_existing_and_creates_missing(self):
+        parent = CommentedMap({"existing": CommentedMap({"value": 1})})
+
+        existing = strategies_mod._ensure_commented_map(parent, "existing")
+        created = strategies_mod._ensure_commented_map(parent, "created")
+
+        assert existing is parent["existing"]
+        assert isinstance(created, CommentedMap)
+        assert parent["created"] == created
+
+    def test_patch_mapping_updates_nested_and_prunes_removed_keys(self):
+        target = CommentedMap(
+            {
+                "template_notebook": "old.py",
+                "output_directory": "/tmp/out",
+                "nested": CommentedMap({"keep": 1, "drop": 2}),
+            }
+        )
+
+        strategies_mod._patch_mapping(
+            target,
+            {
+                "template_notebook": "new.py",
+                "nested": {"keep": 3, "added": 4},
+            },
+        )
+
+        assert "output_directory" not in target
+        assert target["template_notebook"] == "new.py"
+        assert target["nested"] == {"keep": 3, "added": 4}
+
+    def test_validate_default_structured_request_rejects_invalid_shared_config(self):
+        request = strategies_mod.DefaultConfigStructuredUpdateRequest(
+            execution={"template_notebook": "custom.py"},
+            shared_config={"initial_cash": "not-a-number"},
+        )
+
+        with pytest.raises(strategies_mod.HTTPException) as exc_info:
+            strategies_mod._validate_default_structured_request(request)
+
+        assert exc_info.value.status_code == 400
 
 
 class TestValidateStrategy:
@@ -643,6 +767,31 @@ class TestDefaultConfig:
         resp = client.get("/api/config/default")
         assert resp.status_code == 500
 
+    def test_editor_context_success(self, client, mock_config_loader, tmp_path):
+        default_path = tmp_path / "default.yaml"
+        default_path.write_text(
+            (
+                "default:\n"
+                "  extra_note: keep me\n"
+                "  execution:\n"
+                "    template_notebook: notebooks/templates/strategy_analysis.py\n"
+                "  parameters:\n"
+                "    shared_config:\n"
+                "      dataset: prime_20260316\n"
+                "      benchmark_table: topix\n"
+            ),
+            encoding="utf-8",
+        )
+        mock_config_loader.get_default_config_path.return_value = default_path
+
+        resp = client.get("/api/config/default/editor-context")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["raw_execution"]["template_notebook"] == "notebooks/templates/strategy_analysis.py"
+        assert data["raw_shared_config"]["dataset"] == "prime_20260316"
+        assert data["advanced_only_paths"] == ["default.extra_note"]
+
     def test_update_success(self, client, mock_config_loader, tmp_path):
         mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
@@ -703,3 +852,64 @@ class TestDefaultConfig:
             json={"content": "default:\n  dataset: test\n"},
         )
         assert resp.status_code == 500
+
+    def test_structured_update_preserves_comments(self, client, mock_config_loader, tmp_path):
+        default_path = tmp_path / "default.yaml"
+        default_path.write_text(
+            (
+                "# top comment\n"
+                "default:\n"
+                "  # keep note\n"
+                "  extra_note: keep me\n"
+                "  execution:\n"
+                "    template_notebook: old.py  # exec comment\n"
+                "  parameters:\n"
+                "    shared_config:\n"
+                "      dataset: old-dataset  # dataset comment\n"
+                "      benchmark_table: topix\n"
+            ),
+            encoding="utf-8",
+        )
+        mock_config_loader.get_default_config_path.return_value = default_path
+
+        resp = client.put(
+            "/api/config/default/structured",
+            json={
+                "execution": {"template_notebook": "new.py"},
+                "shared_config": {
+                    "dataset": "new-dataset",
+                    "benchmark_table": "topix",
+                },
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        saved = default_path.read_text(encoding="utf-8")
+        assert "# top comment" in saved
+        assert "# keep note" in saved
+        assert "extra_note: keep me" in saved
+        assert "template_notebook: new.py" in saved
+        assert "dataset: new-dataset" in saved
+        mock_config_loader.reload_default_config.assert_called_once()
+
+    def test_structured_update_rejects_unknown_execution_field(
+        self,
+        client,
+        mock_config_loader,
+        tmp_path,
+    ):
+        default_path = tmp_path / "default.yaml"
+        default_path.write_text("default:\n  execution: {}\n", encoding="utf-8")
+        mock_config_loader.get_default_config_path.return_value = default_path
+
+        resp = client.put(
+            "/api/config/default/structured",
+            json={
+                "execution": {"unknown_field": "value"},
+                "shared_config": {},
+            },
+        )
+
+        assert resp.status_code == 400
+        assert "Unknown execution field" in resp.json()["detail"]

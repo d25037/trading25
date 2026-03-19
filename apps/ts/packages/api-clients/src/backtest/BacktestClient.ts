@@ -11,12 +11,17 @@ import type {
   BacktestJobResponse,
   BacktestRequest,
   BacktestResultResponse,
+  DefaultConfigEditorContextResponse,
+  DefaultConfigResponse,
+  DefaultConfigStructuredUpdateRequest,
+  DefaultConfigUpdateRequest,
+  DefaultConfigUpdateResponse,
   FundamentalsComputeRequest,
   FundamentalsComputeResponse,
   HealthResponse,
   HtmlFileContentResponse,
-  HtmlFileListResponse,
   HtmlFileDeleteResponse,
+  HtmlFileListResponse,
   HtmlFileRenameRequest,
   HtmlFileRenameResponse,
   OHLCVResampleRequest,
@@ -37,6 +42,8 @@ import type {
   StrategyDetailResponse,
   StrategyDuplicateRequest,
   StrategyDuplicateResponse,
+  StrategyEditorContextResponse,
+  StrategyEditorReferenceResponse,
   StrategyListResponse,
   StrategyMoveRequest,
   StrategyMoveResponse,
@@ -46,9 +53,6 @@ import type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
-  DefaultConfigResponse,
-  DefaultConfigUpdateRequest,
-  DefaultConfigUpdateResponse,
 } from './types.js';
 
 export class BacktestApiError extends Error {
@@ -141,6 +145,16 @@ export class BacktestClient {
     return this.request<StrategyDetailResponse>(`/api/strategies/${encodeURIComponent(strategyName)}`);
   }
 
+  async getStrategyEditorReference(): Promise<StrategyEditorReferenceResponse> {
+    return this.request<StrategyEditorReferenceResponse>('/api/strategies/editor/reference');
+  }
+
+  async getStrategyEditorContext(strategyName: string): Promise<StrategyEditorContextResponse> {
+    return this.request<StrategyEditorContextResponse>(
+      `/api/strategies/${encodeURIComponent(strategyName)}/editor-context`
+    );
+  }
+
   async validateStrategy(
     strategyName: string,
     config?: StrategyValidationRequest
@@ -171,10 +185,7 @@ export class BacktestClient {
     });
   }
 
-  async duplicateStrategy(
-    strategyName: string,
-    request: StrategyDuplicateRequest
-  ): Promise<StrategyDuplicateResponse> {
+  async duplicateStrategy(strategyName: string, request: StrategyDuplicateRequest): Promise<StrategyDuplicateResponse> {
     return this.request<StrategyDuplicateResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/duplicate`, {
       method: 'POST',
       body: JSON.stringify(request),
@@ -234,7 +245,9 @@ export class BacktestClient {
   }
 
   async getSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
-    return this.request<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
+    return this.request<SignalAttributionResultResponse>(
+      `/api/backtest/attribution/result/${encodeURIComponent(jobId)}`
+    );
   }
 
   async listAttributionArtifactFiles(params?: {
@@ -248,21 +261,17 @@ export class BacktestClient {
     return this.request<AttributionArtifactListResponse>(`/api/backtest/attribution-files?${query.toString()}`);
   }
 
-  async getAttributionArtifactContent(
-    strategy: string,
-    filename: string
-  ): Promise<AttributionArtifactContentResponse> {
+  async getAttributionArtifactContent(strategy: string, filename: string): Promise<AttributionArtifactContentResponse> {
     const query = new URLSearchParams({
       strategy,
       filename,
     });
-    return this.request<AttributionArtifactContentResponse>(`/api/backtest/attribution-files/content?${query.toString()}`);
+    return this.request<AttributionArtifactContentResponse>(
+      `/api/backtest/attribution-files/content?${query.toString()}`
+    );
   }
 
-  async listHtmlFiles(params?: {
-    strategy?: string;
-    limit?: number;
-  }): Promise<HtmlFileListResponse> {
+  async listHtmlFiles(params?: { strategy?: string; limit?: number }): Promise<HtmlFileListResponse> {
     const query = new URLSearchParams();
     if (params?.strategy) query.set('strategy', params.strategy);
     query.set('limit', String(params?.limit ?? 100));
@@ -302,8 +311,21 @@ export class BacktestClient {
     return this.request<DefaultConfigResponse>('/api/config/default');
   }
 
+  async getDefaultConfigEditorContext(): Promise<DefaultConfigEditorContextResponse> {
+    return this.request<DefaultConfigEditorContextResponse>('/api/config/default/editor-context');
+  }
+
   async updateDefaultConfig(request: DefaultConfigUpdateRequest): Promise<DefaultConfigUpdateResponse> {
     return this.request<DefaultConfigUpdateResponse>('/api/config/default', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async updateDefaultConfigStructured(
+    request: DefaultConfigStructuredUpdateRequest
+  ): Promise<DefaultConfigUpdateResponse> {
+    return this.request<DefaultConfigUpdateResponse>('/api/config/default/structured', {
       method: 'PUT',
       body: JSON.stringify(request),
     });

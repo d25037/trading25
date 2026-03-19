@@ -64,6 +64,31 @@ class TestBuildSignalReference:
         first = signal["availability_profiles"][0]
         assert set(first.keys()) == {"scope", "execution_semantics", "availability"}
 
+    def test_signal_reference_includes_authoring_copy(self):
+        result = build_signal_reference()
+        signal = next(
+            item
+            for item in result["signals"]
+            if item["key"] == "fundamental_forward_eps_growth"
+        )
+
+        assert signal["summary"]
+        assert len(signal["when_to_use"]) > 0
+        assert len(signal["pitfalls"]) > 0
+        assert len(signal["examples"]) > 0
+
+    def test_signal_reference_fields_include_ui_metadata(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "volume_ratio_above"
+        )
+        field = next(
+            item for item in signal["fields"] if item["name"] == "ratio_threshold"
+        )
+
+        assert field["label"] == "Ratio Threshold"
+        assert field["placeholder"] == "1.5"
+
     def test_signal_reference_omits_round_trip_exit_profiles(self):
         result = build_signal_reference()
         signal = next(

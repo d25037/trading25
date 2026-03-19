@@ -9,7 +9,9 @@ import type {
   BacktestJobResponse,
   BacktestRequest,
   BacktestResultResponse,
+  DefaultConfigEditorContextResponse,
   DefaultConfigResponse,
+  DefaultConfigStructuredUpdateRequest,
   DefaultConfigUpdateRequest,
   DefaultConfigUpdateResponse,
   HealthResponse,
@@ -26,6 +28,8 @@ import type {
   StrategyDetailResponse,
   StrategyDuplicateRequest,
   StrategyDuplicateResponse,
+  StrategyEditorContextResponse,
+  StrategyEditorReferenceResponse,
   StrategyListResponse,
   StrategyMoveRequest,
   StrategyMoveResponse,
@@ -44,6 +48,9 @@ export const backtestKeys = {
   health: () => [...backtestKeys.all, 'health'] as const,
   strategies: () => [...backtestKeys.all, 'strategies'] as const,
   strategy: (name: string) => [...backtestKeys.all, 'strategies', name] as const,
+  strategyEditorReference: () => [...backtestKeys.all, 'strategy-editor-reference'] as const,
+  strategyEditorContexts: () => [...backtestKeys.all, 'strategy-editor-context'] as const,
+  strategyEditorContext: (name: string) => [...backtestKeys.all, 'strategy-editor-context', name] as const,
   jobs: (limit?: number) => [...backtestKeys.all, 'jobs', limit] as const,
   job: (jobId: string) => [...backtestKeys.all, 'job', jobId] as const,
   result: (jobId: string, includeHtml?: boolean) => [...backtestKeys.all, 'result', jobId, includeHtml] as const,
@@ -57,6 +64,7 @@ export const backtestKeys = {
   htmlFileContent: (strategy: string, filename: string) =>
     [...backtestKeys.all, 'html-file-content', strategy, filename] as const,
   defaultConfig: () => [...backtestKeys.all, 'default-config'] as const,
+  defaultConfigEditorContext: () => [...backtestKeys.all, 'default-config-editor-context'] as const,
   signalReference: () => [...backtestKeys.all, 'signal-reference'] as const,
 };
 
@@ -71,6 +79,14 @@ function fetchStrategies(): Promise<StrategyListResponse> {
 
 function fetchStrategy(name: string): Promise<StrategyDetailResponse> {
   return backtestClient.getStrategy(name);
+}
+
+function fetchStrategyEditorReference(): Promise<StrategyEditorReferenceResponse> {
+  return backtestClient.getStrategyEditorReference();
+}
+
+function fetchStrategyEditorContext(name: string): Promise<StrategyEditorContextResponse> {
+  return backtestClient.getStrategyEditorContext(name);
 }
 
 function fetchJobs(limit = 50): Promise<BacktestJobResponse[]> {
@@ -173,6 +189,31 @@ export function useStrategy(name: string | null) {
     },
     enabled: !!name,
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+export function useStrategyEditorReference(enabled = true) {
+  return useQuery({
+    queryKey: backtestKeys.strategyEditorReference(),
+    queryFn: () => {
+      logger.debug('Fetching strategy editor reference');
+      return fetchStrategyEditorReference();
+    },
+    enabled,
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
+export function useStrategyEditorContext(name: string | null) {
+  return useQuery({
+    queryKey: backtestKeys.strategyEditorContext(name ?? ''),
+    queryFn: () => {
+      if (!name) throw new Error('Strategy name required');
+      logger.debug('Fetching strategy editor context', { name });
+      return fetchStrategyEditorContext(name);
+    },
+    enabled: !!name,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -429,6 +470,7 @@ export function useUpdateStrategy() {
       logger.debug('Strategy updated', { name });
       queryClient.invalidateQueries({ queryKey: backtestKeys.strategies() });
       queryClient.invalidateQueries({ queryKey: backtestKeys.strategy(name) });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.strategyEditorContext(name) });
     },
     onError: (error) => {
       logger.error('Failed to update strategy', { error: error.message });
@@ -624,8 +666,18 @@ function fetchDefaultConfig(): Promise<DefaultConfigResponse> {
   return backtestClient.getDefaultConfig();
 }
 
+function fetchDefaultConfigEditorContext(): Promise<DefaultConfigEditorContextResponse> {
+  return backtestClient.getDefaultConfigEditorContext();
+}
+
 function updateDefaultConfig(request: DefaultConfigUpdateRequest): Promise<DefaultConfigUpdateResponse> {
   return backtestClient.updateDefaultConfig(request);
+}
+
+function updateDefaultConfigStructured(
+  request: DefaultConfigStructuredUpdateRequest
+): Promise<DefaultConfigUpdateResponse> {
+  return backtestClient.updateDefaultConfigStructured(request);
 }
 
 /**
@@ -643,6 +695,18 @@ export function useDefaultConfig(enabled = true) {
   });
 }
 
+export function useDefaultConfigEditorContext(enabled = true) {
+  return useQuery({
+    queryKey: backtestKeys.defaultConfigEditorContext(),
+    queryFn: () => {
+      logger.debug('Fetching default config editor context');
+      return fetchDefaultConfigEditorContext();
+    },
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 /**
  * Update default config mutation
  */
@@ -654,9 +718,28 @@ export function useUpdateDefaultConfig() {
     onSuccess: () => {
       logger.debug('Default config updated');
       queryClient.invalidateQueries({ queryKey: backtestKeys.defaultConfig() });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.defaultConfigEditorContext() });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.strategyEditorContexts() });
     },
     onError: (error) => {
       logger.error('Failed to update default config', { error: error.message });
+    },
+  });
+}
+
+export function useUpdateDefaultConfigStructured() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateDefaultConfigStructured,
+    onSuccess: () => {
+      logger.debug('Default config structured update completed');
+      queryClient.invalidateQueries({ queryKey: backtestKeys.defaultConfig() });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.defaultConfigEditorContext() });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.strategyEditorContexts() });
+    },
+    onError: (error) => {
+      logger.error('Failed to update default config (structured)', { error: error.message });
     },
   });
 }

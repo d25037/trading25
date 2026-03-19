@@ -1,32 +1,17 @@
 import { Zap } from 'lucide-react';
 import { useCallback, useId, useMemo } from 'react';
+import { buildDefaultSignalParams, SignalFieldInputs } from '@/components/Backtest/SignalFieldInputs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useSignalReference } from '@/hooks/useBacktest';
-import { useChartStore, type SignalConfig } from '@/stores/chartStore';
-import type { SignalDefinition, SignalFieldDefinition } from '@/types/backtest';
-import { IndicatorToggle, NumberInput } from './IndicatorToggle';
+import { type SignalConfig, useChartStore } from '@/stores/chartStore';
+import type { SignalDefinition } from '@/types/backtest';
+import { IndicatorToggle } from './IndicatorToggle';
 
 interface SignalOverlayControlsProps {
   disabled?: boolean;
-}
-
-function getDefaultParams(definition: SignalDefinition): Record<string, number | string | boolean> {
-  const result: Record<string, number | string | boolean> = {};
-  for (const field of definition.fields) {
-    if (field.name === 'enabled') continue;
-    if (typeof field.default === 'number' || typeof field.default === 'string' || typeof field.default === 'boolean') {
-      result[field.name] = field.default;
-    }
-  }
-  return result;
-}
-
-function isFloatDefault(field: SignalFieldDefinition): boolean {
-  return typeof field.default === 'number' && !Number.isInteger(field.default);
 }
 
 export function SignalOverlayControls({ disabled }: SignalOverlayControlsProps) {
@@ -59,7 +44,7 @@ export function SignalOverlayControls({ disabled }: SignalOverlayControlsProps) 
       if (!definition) return;
       addSignal({
         type: signalType,
-        params: getDefaultParams(definition),
+        params: buildDefaultSignalParams(definition, { excludeFields: ['enabled'] }),
         mode: definition.chart?.supported_modes?.includes('entry') ? 'entry' : 'exit',
         enabled: true,
       });
@@ -79,7 +64,12 @@ export function SignalOverlayControls({ disabled }: SignalOverlayControlsProps) 
             Signal Overlay
           </Label>
         </div>
-        <Switch id={signalOverlayId} checked={signalOverlay.enabled} onCheckedChange={toggleSignalOverlay} disabled={disabled} />
+        <Switch
+          id={signalOverlayId}
+          checked={signalOverlay.enabled}
+          onCheckedChange={toggleSignalOverlay}
+          disabled={disabled}
+        />
       </div>
 
       {signalOverlay.enabled && (
@@ -162,7 +152,11 @@ function SignalConfigPanel({ signal, definition, disabled, onToggle, onUpdate, o
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Label className="text-xs w-12">Mode</Label>
-          <Select value={signal.mode} onValueChange={(value: 'entry' | 'exit') => onUpdate({ mode: value })} disabled={disabled}>
+          <Select
+            value={signal.mode}
+            onValueChange={(value: 'entry' | 'exit') => onUpdate({ mode: value })}
+            disabled={disabled}
+          >
             <SelectTrigger className="h-7 text-xs flex-1">
               <SelectValue />
             </SelectTrigger>
@@ -204,143 +198,32 @@ interface SignalParamsEditorProps {
   disabled?: boolean;
 }
 
-interface SignalFieldEditorProps {
-  field: SignalFieldDefinition;
-  currentValue: number | string | boolean | undefined;
-  disabled?: boolean;
-  onUpdate: (value: number | string | boolean) => void;
-}
-
-function toEditableFieldValue(value: unknown): number | string | boolean | undefined {
-  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || value === undefined) {
-    return value;
-  }
-  return undefined;
-}
-
-function renderNumberField({
-  field,
-  currentValue,
-  disabled,
-  onUpdate,
-}: SignalFieldEditorProps) {
-  return (
-    <NumberInput
-      key={field.name}
-      label={field.name}
-      value={typeof currentValue === 'number' ? currentValue : Number(field.default ?? 0)}
-      onChange={onUpdate}
-      step={isFloatDefault(field) ? '0.1' : undefined}
-      defaultValue={typeof field.default === 'number' ? field.default : 0}
-      disabled={disabled}
-    />
-  );
-}
-
-function renderBooleanField({
-  field,
-  currentValue,
-  disabled,
-  onUpdate,
-}: SignalFieldEditorProps) {
-  return (
-    <div key={field.name} className="col-span-2 flex items-center justify-between rounded border border-border/40 px-2 py-1.5">
-      <Label className="text-xs">{field.name}</Label>
-      <Switch checked={Boolean(currentValue)} onCheckedChange={onUpdate} disabled={disabled} />
-    </div>
-  );
-}
-
-function renderSelectField({
-  field,
-  currentValue,
-  disabled,
-  onUpdate,
-}: SignalFieldEditorProps) {
-  if (!field.options) {
-    return null;
-  }
-
-  return (
-    <div key={field.name} className="space-y-1">
-      <Label className="text-[10px] text-muted-foreground">{field.name}</Label>
-      <Select
-        value={typeof currentValue === 'string' ? currentValue : String(field.default ?? field.options[0] ?? '')}
-        onValueChange={onUpdate}
-        disabled={disabled}
-      >
-        <SelectTrigger className="h-7 text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {field.options.map((option) => (
-            <SelectItem key={option} value={option} className="text-xs">
-              {option}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function renderTextField({
-  field,
-  currentValue,
-  disabled,
-  onUpdate,
-}: SignalFieldEditorProps) {
-  return (
-    <div key={field.name} className="space-y-1">
-      <Label className="text-[10px] text-muted-foreground">{field.name}</Label>
-      <Input
-        value={typeof currentValue === 'string' ? currentValue : String(currentValue ?? '')}
-        onChange={(event) => onUpdate(event.target.value)}
-        className="h-7 text-xs"
-        disabled={disabled}
-      />
-    </div>
-  );
-}
-
-function SignalFieldEditor({ field, currentValue, disabled, onUpdate }: SignalFieldEditorProps) {
-  switch (field.type) {
-    case 'number':
-      return renderNumberField({ field, currentValue, disabled, onUpdate });
-    case 'boolean':
-      return renderBooleanField({ field, currentValue, disabled, onUpdate });
-    case 'select':
-      return renderSelectField({ field, currentValue, disabled, onUpdate }) ?? renderTextField({ field, currentValue, disabled, onUpdate });
-    default:
-      return renderTextField({ field, currentValue, disabled, onUpdate });
-  }
-}
-
 function SignalParamsEditor({ definition, params, onUpdate, disabled }: SignalParamsEditorProps) {
   if (!definition) {
     return <div className="text-xs text-muted-foreground">Signal metadata unavailable.</div>;
   }
 
-  const updateParam = (key: string, value: number | string | boolean) => {
-    onUpdate({ ...params, [key]: value });
-  };
-
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      {definition.fields
-        .filter((field) => field.name !== 'enabled')
-        .map((field) => {
-          const currentValue = toEditableFieldValue(params[field.name] ?? field.default);
-          return (
-            <SignalFieldEditor
-              key={field.name}
-              field={field}
-              currentValue={currentValue}
-              disabled={disabled}
-              onUpdate={(value) => updateParam(field.name, value)}
-            />
-          );
-        })}
-    </div>
+    <SignalFieldInputs
+      fields={definition.fields}
+      values={params}
+      excludeFields={['enabled']}
+      disabled={disabled}
+      compact
+      showDescriptions={false}
+      onFieldChange={(field, value) => {
+        if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+          onUpdate({ ...params, [field.name]: value });
+          return;
+        }
+        if (
+          typeof field.default === 'number' ||
+          typeof field.default === 'string' ||
+          typeof field.default === 'boolean'
+        ) {
+          onUpdate({ ...params, [field.name]: field.default });
+        }
+      }}
+    />
   );
 }

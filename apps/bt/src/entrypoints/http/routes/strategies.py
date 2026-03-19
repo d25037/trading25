@@ -2,9 +2,18 @@
 Strategy Management Endpoints
 """
 
+from io import StringIO
+
 from fastapi import APIRouter, HTTPException
 from loguru import logger
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
 
+from src.application.services.strategy_authoring_service import (
+    build_default_config_editor_context,
+    build_strategy_editor_context,
+    build_strategy_editor_reference,
+)
 from src.domains.strategy.runtime.compiler import compile_strategy_config
 from src.domains.strategy.runtime.production_requirements import (
     validate_production_strategy_dataset_requirement,
@@ -29,13 +38,24 @@ from src.entrypoints.http.schemas.strategy import (
     StrategyValidationRequest,
     StrategyValidationResponse,
 )
+from src.entrypoints.http.schemas.strategy_authoring import (
+    DefaultConfigEditorContextResponse,
+    DefaultConfigStructuredUpdateRequest,
+    StrategyEditorContextResponse,
+    StrategyEditorReferenceResponse,
+)
 from src.entrypoints.http.schemas.screening import EntryDecidability, ScreeningSupport
 from src.application.services.strategy_dataset_metadata import (
     StrategyDatasetMetadata,
     resolve_strategy_dataset_metadata,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
-from src.domains.strategy.runtime.models import try_validate_strategy_config_dict_strict
+from src.domains.strategy.runtime.models import (
+    ExecutionConfig,
+    try_validate_strategy_config_dict_strict,
+)
+from src.domains.strategy.runtime.file_operations import load_yaml_file
+from src.shared.models.config import SharedConfig
 
 router = APIRouter(tags=["Strategies"])
 
@@ -98,6 +118,101 @@ def _resolve_strategy_category(strategy_name: str) -> str | None:
     if isinstance(resolved_category, str):
         return resolved_category
     return None
+
+
+def _ensure_commented_map(parent: CommentedMap, key: str) -> CommentedMap:
+    existing = parent.get(key)
+    if isinstance(existing, CommentedMap):
+        return existing
+    created = CommentedMap()
+    parent[key] = created
+    return created
+
+
+def _patch_mapping(target: CommentedMap, payload: dict[str, object]) -> None:
+    for key in list(target.keys()):
+        if key not in payload:
+            del target[key]
+
+    for key, value in payload.items():
+        if isinstance(value, dict):
+            child = target.get(key)
+            if not isinstance(child, CommentedMap):
+                child = CommentedMap()
+                target[key] = child
+            _patch_mapping(child, value)
+            continue
+        target[key] = value
+
+
+def _validate_default_structured_request(
+    request: DefaultConfigStructuredUpdateRequest,
+) -> None:
+    invalid_execution_keys = [
+        key for key in request.execution.keys() if key not in ExecutionConfig.model_fields
+    ]
+    if invalid_execution_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unknown execution field(s): "
+                + ", ".join(sorted(invalid_execution_keys))
+            ),
+        )
+
+    try:
+        SharedConfig.model_validate(
+            request.shared_config,
+            context={"resolve_stock_codes": False},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        ExecutionConfig.model_validate(request.execution)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/strategies/editor/reference",
+    response_model=StrategyEditorReferenceResponse,
+)
+async def get_strategy_editor_reference() -> StrategyEditorReferenceResponse:
+    """Metadata for the strategy visual authoring UI."""
+    try:
+        return build_strategy_editor_reference()
+    except Exception as e:
+        logger.exception("strategy editor reference error")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/strategies/{strategy_name:path}/editor-context",
+    response_model=StrategyEditorContextResponse,
+)
+async def get_strategy_editor_context(strategy_name: str) -> StrategyEditorContextResponse:
+    """Structured editor context for one strategy."""
+    try:
+        config = _config_loader.load_strategy_config(strategy_name)
+        category = _resolve_strategy_category(strategy_name) or "unknown"
+        merged_shared_config = _config_loader.merge_shared_config(config)
+        merged_execution = _config_loader.get_execution_config(config)
+        return build_strategy_editor_context(
+            strategy_name=strategy_name,
+            category=category,
+            raw_config=config,
+            default_config=_config_loader.default_config,
+            merged_shared_config=merged_shared_config,
+            merged_execution_config=merged_execution,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"戦略が見つかりません: {strategy_name}") from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"strategy editor context error: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/api/strategies", response_model=StrategyListResponse)
@@ -554,6 +669,33 @@ async def get_default_config() -> DefaultConfigResponse:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get(
+    "/api/config/default/editor-context",
+    response_model=DefaultConfigEditorContextResponse,
+)
+async def get_default_config_editor_context() -> DefaultConfigEditorContextResponse:
+    """Structured context for default.yaml visual editing."""
+    try:
+        default_path = _config_loader.get_default_config_path()
+        if not default_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="default.yamlが見つかりません",
+            )
+
+        raw_yaml = default_path.read_text(encoding="utf-8")
+        raw_document = load_yaml_file(default_path)
+        return build_default_config_editor_context(
+            raw_yaml=raw_yaml,
+            raw_document=raw_document,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("default config editor context error")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.put("/api/config/default", response_model=DefaultConfigUpdateResponse)
 async def update_default_config(
     request: DefaultConfigUpdateRequest,
@@ -626,4 +768,48 @@ async def update_default_config(
         raise
     except Exception as e:
         logger.exception("デフォルト設定更新エラー")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.put(
+    "/api/config/default/structured",
+    response_model=DefaultConfigUpdateResponse,
+)
+async def update_default_config_structured(
+    request: DefaultConfigStructuredUpdateRequest,
+) -> DefaultConfigUpdateResponse:
+    """Patch default.yaml using structured execution/shared_config payloads."""
+    try:
+        _validate_default_structured_request(request)
+
+        default_path = _config_loader.get_default_config_path()
+        if not default_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="default.yamlが見つかりません",
+            )
+
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        document = yaml.load(StringIO(default_path.read_text(encoding="utf-8")))
+        if not isinstance(document, CommentedMap):
+            raise HTTPException(status_code=400, detail="default.yaml root must be a mapping")
+
+        default_section = _ensure_commented_map(document, "default")
+        parameters = _ensure_commented_map(default_section, "parameters")
+        execution = _ensure_commented_map(default_section, "execution")
+        shared_config = _ensure_commented_map(parameters, "shared_config")
+
+        _patch_mapping(execution, request.execution)
+        _patch_mapping(shared_config, request.shared_config)
+
+        with default_path.open("w", encoding="utf-8") as handle:
+            yaml.dump(document, handle)
+
+        _config_loader.reload_default_config()
+        return DefaultConfigUpdateResponse(success=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("default structured update error")
         raise HTTPException(status_code=500, detail=str(e)) from e

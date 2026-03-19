@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **126**
+Total paths: **130**
 
 ## /api/analytics
 
@@ -60,6 +60,8 @@ Total paths: **126**
 | Path | Methods |
 |---|---|
 | `/api/config/default` | `GET, PUT` |
+| `/api/config/default/editor-context` | `GET` |
+| `/api/config/default/structured` | `PUT` |
 
 ## /api/dataset
 
@@ -208,8 +210,10 @@ Total paths: **126**
 | Path | Methods |
 |---|---|
 | `/api/strategies` | `GET` |
+| `/api/strategies/editor/reference` | `GET` |
 | `/api/strategies/{strategy_name}` | `GET, PUT, DELETE` |
 | `/api/strategies/{strategy_name}/duplicate` | `POST` |
+| `/api/strategies/{strategy_name}/editor-context` | `GET` |
 | `/api/strategies/{strategy_name}/move` | `POST` |
 | `/api/strategies/{strategy_name}/rename` | `POST` |
 | `/api/strategies/{strategy_name}/validate` | `POST` |

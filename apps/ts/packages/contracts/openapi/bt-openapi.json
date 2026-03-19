@@ -534,6 +534,228 @@
         "title": "AttributionArtifactListResponse",
         "type": "object"
       },
+      "AuthoringFieldGroupSchema": {
+        "description": "Field group metadata.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "AuthoringFieldGroupSchema",
+        "type": "object"
+      },
+      "AuthoringFieldProvenance": {
+        "description": "Source-of-truth provenance for a field.",
+        "properties": {
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "default",
+              "strategy"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "source",
+          "overridden"
+        ],
+        "title": "AuthoringFieldProvenance",
+        "type": "object"
+      },
+      "AuthoringFieldSchema": {
+        "description": "Metadata for one editor field.",
+        "properties": {
+          "advanced_only": {
+            "default": false,
+            "description": "Field is only editable through the advanced YAML fallback",
+            "title": "Advanced Only",
+            "type": "boolean"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldConstraints"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Numeric constraints"
+          },
+          "default": {
+            "description": "Model default value when available",
+            "title": "Default"
+          },
+          "description": {
+            "description": "Detailed help text",
+            "title": "Description",
+            "type": "string"
+          },
+          "examples": {
+            "description": "Example values",
+            "items": {
+              "type": "string"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Visual group key",
+            "title": "Group"
+          },
+          "label": {
+            "description": "Field label",
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowed options",
+            "title": "Options"
+          },
+          "path": {
+            "description": "Dot-separated field path",
+            "title": "Path",
+            "type": "string"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested placeholder",
+            "title": "Placeholder"
+          },
+          "required": {
+            "default": false,
+            "description": "Whether the field is required",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "section": {
+            "description": "Owning config section",
+            "enum": [
+              "strategy",
+              "shared_config",
+              "execution"
+            ],
+            "title": "Section",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Short helper summary",
+            "title": "Summary"
+          },
+          "type": {
+            "description": "Value type",
+            "enum": [
+              "boolean",
+              "number",
+              "string",
+              "select",
+              "string_list"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display unit",
+            "title": "Unit"
+          },
+          "widget": {
+            "description": "Suggested UI widget",
+            "enum": [
+              "switch",
+              "number",
+              "text",
+              "textarea",
+              "select",
+              "combobox",
+              "string_list"
+            ],
+            "title": "Widget",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "section",
+          "label",
+          "type",
+          "widget",
+          "description"
+        ],
+        "title": "AuthoringFieldSchema",
+        "type": "object"
+      },
       "AuthStatusResponse": {
         "description": "JQuants API v2 認証ステータス",
         "properties": {
@@ -2703,6 +2925,57 @@
         "title": "DateRange",
         "type": "object"
       },
+      "DefaultConfigEditorContextResponse": {
+        "description": "Default config editor context payload.",
+        "properties": {
+          "advanced_only_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Advanced Only Paths",
+            "type": "array"
+          },
+          "effective_execution": {
+            "additionalProperties": true,
+            "title": "Effective Execution",
+            "type": "object"
+          },
+          "effective_shared_config": {
+            "additionalProperties": true,
+            "title": "Effective Shared Config",
+            "type": "object"
+          },
+          "raw_document": {
+            "additionalProperties": true,
+            "title": "Raw Document",
+            "type": "object"
+          },
+          "raw_execution": {
+            "additionalProperties": true,
+            "title": "Raw Execution",
+            "type": "object"
+          },
+          "raw_shared_config": {
+            "additionalProperties": true,
+            "title": "Raw Shared Config",
+            "type": "object"
+          },
+          "raw_yaml": {
+            "title": "Raw Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_yaml",
+          "raw_document",
+          "raw_execution",
+          "raw_shared_config",
+          "effective_execution",
+          "effective_shared_config"
+        ],
+        "title": "DefaultConfigEditorContextResponse",
+        "type": "object"
+      },
       "DefaultConfigResponse": {
         "description": "デフォルト設定レスポンス（raw YAML文字列）",
         "properties": {
@@ -2716,6 +2989,23 @@
           "content"
         ],
         "title": "DefaultConfigResponse",
+        "type": "object"
+      },
+      "DefaultConfigStructuredUpdateRequest": {
+        "description": "Structured default-config update request.",
+        "properties": {
+          "execution": {
+            "additionalProperties": true,
+            "title": "Execution",
+            "type": "object"
+          },
+          "shared_config": {
+            "additionalProperties": true,
+            "title": "Shared Config",
+            "type": "object"
+          }
+        },
+        "title": "DefaultConfigStructuredUpdateRequest",
         "type": "object"
       },
       "DefaultConfigUpdateRequest": {
@@ -11875,6 +12165,18 @@
             "title": "Description",
             "type": "string"
           },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display label",
+            "title": "Label"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11893,6 +12195,18 @@
             ],
             "title": "Options"
           },
+          "placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested placeholder",
+            "title": "Placeholder"
+          },
           "type": {
             "enum": [
               "boolean",
@@ -11902,6 +12216,18 @@
             ],
             "title": "Type",
             "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display unit",
+            "title": "Unit"
           }
         },
         "required": [
@@ -11970,6 +12296,13 @@
             "title": "Description",
             "type": "string"
           },
+          "examples": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Examples",
+            "type": "array"
+          },
           "exit_disabled": {
             "default": false,
             "title": "Exit Disabled",
@@ -11991,15 +12324,41 @@
             "title": "Name",
             "type": "string"
           },
+          "pitfalls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pitfalls",
+            "type": "array"
+          },
           "signal_type": {
             "description": "chart/signal API で使用する signal type",
             "title": "Signal Type",
             "type": "string"
           },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Short authoring summary",
+            "title": "Summary"
+          },
           "usage_hint": {
             "description": "entry_purpose + exit_purposeから自動合成",
             "title": "Usage Hint",
             "type": "string"
+          },
+          "when_to_use": {
+            "items": {
+              "type": "string"
+            },
+            "title": "When To Use",
+            "type": "array"
           },
           "yaml_snippet": {
             "title": "Yaml Snippet",
@@ -13402,6 +13761,170 @@
           "path"
         ],
         "title": "StrategyDuplicateResponse",
+        "type": "object"
+      },
+      "StrategyEditorCapabilities": {
+        "description": "Server-reported editor capabilities.",
+        "properties": {
+          "preserves_unknown_fields": {
+            "default": true,
+            "title": "Preserves Unknown Fields",
+            "type": "boolean"
+          },
+          "preview": {
+            "default": true,
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "structured_default_edit": {
+            "default": true,
+            "title": "Structured Default Edit",
+            "type": "boolean"
+          },
+          "visual_editor": {
+            "default": true,
+            "title": "Visual Editor",
+            "type": "boolean"
+          },
+          "yaml_fallback": {
+            "default": true,
+            "title": "Yaml Fallback",
+            "type": "boolean"
+          }
+        },
+        "title": "StrategyEditorCapabilities",
+        "type": "object"
+      },
+      "StrategyEditorContextResponse": {
+        "description": "Strategy editor context payload.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "default_execution": {
+            "additionalProperties": true,
+            "title": "Default Execution",
+            "type": "object"
+          },
+          "default_shared_config": {
+            "additionalProperties": true,
+            "title": "Default Shared Config",
+            "type": "object"
+          },
+          "effective_execution": {
+            "additionalProperties": true,
+            "title": "Effective Execution",
+            "type": "object"
+          },
+          "effective_shared_config": {
+            "additionalProperties": true,
+            "title": "Effective Shared Config",
+            "type": "object"
+          },
+          "execution_provenance": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldProvenance"
+            },
+            "title": "Execution Provenance",
+            "type": "array"
+          },
+          "raw_config": {
+            "additionalProperties": true,
+            "title": "Raw Config",
+            "type": "object"
+          },
+          "shared_config_provenance": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldProvenance"
+            },
+            "title": "Shared Config Provenance",
+            "type": "array"
+          },
+          "strategy_name": {
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "unknown_top_level_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown Top Level Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "strategy_name",
+          "category",
+          "raw_config",
+          "default_shared_config",
+          "default_execution",
+          "effective_shared_config",
+          "effective_execution",
+          "shared_config_provenance",
+          "execution_provenance"
+        ],
+        "title": "StrategyEditorContextResponse",
+        "type": "object"
+      },
+      "StrategyEditorReferenceResponse": {
+        "description": "Editor reference payload for metadata-driven authoring.",
+        "properties": {
+          "basics": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldSchema"
+            },
+            "title": "Basics",
+            "type": "array"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/StrategyEditorCapabilities"
+          },
+          "execution_fields": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldSchema"
+            },
+            "title": "Execution Fields",
+            "type": "array"
+          },
+          "execution_groups": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldGroupSchema"
+            },
+            "title": "Execution Groups",
+            "type": "array"
+          },
+          "shared_config_fields": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldSchema"
+            },
+            "title": "Shared Config Fields",
+            "type": "array"
+          },
+          "shared_config_groups": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringFieldGroupSchema"
+            },
+            "title": "Shared Config Groups",
+            "type": "array"
+          },
+          "signal_categories": {
+            "items": {
+              "$ref": "#/components/schemas/SignalCategorySchema"
+            },
+            "title": "Signal Categories",
+            "type": "array"
+          }
+        },
+        "required": [
+          "basics",
+          "shared_config_fields",
+          "execution_fields",
+          "shared_config_groups",
+          "execution_groups",
+          "signal_categories"
+        ],
+        "title": "StrategyEditorReferenceResponse",
         "type": "object"
       },
       "StrategyListResponse": {
@@ -18367,6 +18890,130 @@
           }
         },
         "summary": "Update Default Config",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
+    "/api/config/default/editor-context": {
+      "get": {
+        "description": "Structured context for default.yaml visual editing.",
+        "operationId": "get_default_config_editor_context_api_config_default_editor_context_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultConfigEditorContextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Default Config Editor Context",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
+    "/api/config/default/structured": {
+      "put": {
+        "description": "Patch default.yaml using structured execution/shared_config payloads.",
+        "operationId": "update_default_config_structured_api_config_default_structured_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultConfigStructuredUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultConfigUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Update Default Config Structured",
         "tags": [
           "Strategies"
         ]
@@ -25976,6 +26623,79 @@
         ]
       }
     },
+    "/api/strategies/{strategy_name}/editor-context": {
+      "get": {
+        "description": "Structured editor context for one strategy.",
+        "operationId": "get_strategy_editor_context_api_strategies__strategy_name__editor_context_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyEditorContextResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Strategy Editor Context",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
     "/api/strategies/{strategy_name}/move": {
       "post": {
         "description": "戦略のカテゴリを移動\n\nArgs:\n    strategy_name: 移動元の戦略名\n    request: 移動先カテゴリ\n\nNote:\n    production / experimental / legacy 間の移動のみサポート",
@@ -26227,6 +26947,58 @@
           }
         },
         "summary": "Validate Strategy",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
+    "/api/strategies/editor/reference": {
+      "get": {
+        "description": "Metadata for the strategy visual authoring UI.",
+        "operationId": "get_strategy_editor_reference_api_strategies_editor_reference_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyEditorReferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Strategy Editor Reference",
         "tags": [
           "Strategies"
         ]

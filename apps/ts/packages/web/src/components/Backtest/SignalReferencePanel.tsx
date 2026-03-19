@@ -99,12 +99,39 @@ function SignalItem({ signal, onCopy }: SignalItemProps) {
 
       {isExpanded && (
         <div className="px-4 pb-3 space-y-3">
-          <p className="text-sm text-muted-foreground">{signal.description}</p>
+          <div className="space-y-1">
+            <p className="text-sm text-foreground">{signal.summary ?? signal.description}</p>
+            {signal.summary && signal.summary !== signal.description ? (
+              <p className="text-xs text-muted-foreground">{signal.description}</p>
+            ) : null}
+          </div>
 
           <div className="bg-muted/30 rounded p-2">
             <p className="text-xs font-medium text-muted-foreground mb-1">Usage Hint</p>
             <p className="text-xs">{signal.usage_hint}</p>
           </div>
+
+          {signal.when_to_use && signal.when_to_use.length > 0 ? (
+            <div className="bg-emerald-500/5 rounded p-2">
+              <p className="text-xs font-medium text-emerald-700 mb-1">When To Use</p>
+              <ul className="list-disc list-inside text-xs space-y-1">
+                {signal.when_to_use.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {signal.pitfalls && signal.pitfalls.length > 0 ? (
+            <div className="bg-amber-500/5 rounded p-2">
+              <p className="text-xs font-medium text-amber-700 mb-1">Pitfalls</p>
+              <ul className="list-disc list-inside text-xs space-y-1">
+                {signal.pitfalls.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-1">Parameters</p>
@@ -113,10 +140,12 @@ function SignalItem({ signal, onCopy }: SignalItemProps) {
                 const constraintParts = formatConstraints(field.constraints);
                 return (
                   <li key={field.name} className="flex items-start gap-2">
-                    <code className="text-primary">{field.name}</code>
+                    <code className="text-primary">{field.label ?? field.name}</code>
                     <span className="text-muted-foreground">-</span>
                     <span className="text-muted-foreground">{field.description}</span>
                     {field.options && <span className="text-muted-foreground">({field.options.join(' | ')})</span>}
+                    {field.unit && <span className="text-muted-foreground">[{field.unit}]</span>}
+                    {field.placeholder && <span className="text-muted-foreground">e.g. {field.placeholder}</span>}
                     {constraintParts.length > 0 && (
                       <span className="text-xs text-amber-600">[{constraintParts.join(', ')}]</span>
                     )}
@@ -152,6 +181,17 @@ function SignalItem({ signal, onCopy }: SignalItemProps) {
               </div>
             </div>
           )}
+
+          {signal.examples && signal.examples.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Examples</p>
+              <ul className="list-disc list-inside text-xs space-y-1 text-muted-foreground">
+                {signal.examples.map((example) => (
+                  <li key={example}>{example}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div>
             <div className="flex items-center justify-between mb-1">

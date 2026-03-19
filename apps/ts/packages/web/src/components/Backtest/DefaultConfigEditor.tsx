@@ -1,8 +1,9 @@
-import yaml from 'js-yaml';
-import { AlertCircle, Loader2, Settings } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { FileCode2, Loader2, PencilLine, Settings } from 'lucide-react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -11,117 +12,432 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useDefaultConfig, useUpdateDefaultConfig } from '@/hooks/useBacktest';
+import {
+  useDefaultConfigEditorContext,
+  useStrategyEditorReference,
+  useUpdateDefaultConfig,
+  useUpdateDefaultConfigStructured,
+} from '@/hooks/useBacktest';
+import { useDatasets } from '@/hooks/useDataset';
+import { useIndicesList } from '@/hooks/useIndices';
+import { cn } from '@/lib/utils';
+import type { AuthoringFieldSchema } from '@/types/backtest';
+import {
+  dumpYamlObject,
+  getValueAtPath,
+  hasValueAtPath,
+  isPlainObject,
+  parseYamlObject,
+  removeValueAtPath,
+  setValueAtPath,
+} from './authoringUtils';
 
 interface DefaultConfigEditorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+type DefaultEditorTab = 'visual' | 'advanced';
+
+function safeDumpYaml(value: Record<string, unknown>): string {
+  try {
+    return dumpYamlObject(value);
+  } catch {
+    return JSON.stringify(value, null, 2);
+  }
+}
+
+function canVisualizeDefaultDocument(document: Record<string, unknown>): string | null {
+  const defaultSection = isPlainObject(document.default) ? document.default : null;
+  if (!defaultSection) {
+    return "default.yaml must contain a 'default' object to use Visual mode.";
+  }
+
+  if ('execution' in defaultSection && !isPlainObject(defaultSection.execution)) {
+    return 'default.execution must be an object to use Visual mode.';
+  }
+
+  if ('parameters' in defaultSection && !isPlainObject(defaultSection.parameters)) {
+    return 'default.parameters must be an object to use Visual mode.';
+  }
+
+  const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : null;
+  if (parameters && 'shared_config' in parameters && !isPlainObject(parameters.shared_config)) {
+    return 'default.parameters.shared_config must be an object to use Visual mode.';
+  }
+
+  return null;
+}
+
+function buildAdvancedOnlyPaths(document: Record<string, unknown>): string[] {
+  const paths = new Set<string>();
+  for (const key of Object.keys(document)) {
+    if (key !== 'default') {
+      paths.add(key);
+    }
+  }
+
+  const defaultSection = isPlainObject(document.default) ? document.default : {};
+  for (const key of Object.keys(defaultSection)) {
+    if (key !== 'execution' && key !== 'parameters') {
+      paths.add(`default.${key}`);
+    }
+  }
+
+  const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : {};
+  for (const key of Object.keys(parameters)) {
+    if (key !== 'shared_config') {
+      paths.add(`default.parameters.${key}`);
+    }
+  }
+
+  return Array.from(paths).sort();
+}
+
+function EditorTabButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the dialog coordinates raw YAML and structured default-config editing against two save paths.
 export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorProps) {
+  const [activeTab, setActiveTab] = useState<DefaultEditorTab>('visual');
+  const [draftDocument, setDraftDocument] = useState<Record<string, unknown>>({});
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
-  const { data: configData, isLoading } = useDefaultConfig(open);
-  const updateConfig = useUpdateDefaultConfig();
+
+  const contextQuery = useDefaultConfigEditorContext(open);
+  const referenceQuery = useStrategyEditorReference(open);
+  const { data: datasets } = useDatasets();
+  const { data: indices } = useIndicesList();
+  const updateDefaultConfig = useUpdateDefaultConfig();
+  const updateDefaultConfigStructured = useUpdateDefaultConfigStructured();
+
+  const applyDraftDocument = useCallback((nextDocument: Record<string, unknown>) => {
+    setDraftDocument(nextDocument);
+    setYamlContent(safeDumpYaml(nextDocument));
+    setParseError(null);
+  }, []);
 
   useEffect(() => {
-    if (configData?.content) {
-      setYamlContent(configData.content);
-      setParseError(null);
-    }
-  }, [configData]);
+    if (!open || !contextQuery.data) return;
+    setActiveTab('visual');
+    setParseError(null);
+    setDraftDocument(contextQuery.data.raw_document);
+    setYamlContent(contextQuery.data.raw_yaml);
+  }, [contextQuery.data, open]);
 
-  const validateYaml = useCallback((): boolean => {
-    try {
-      const parsed = yaml.load(yamlContent);
-      if (typeof parsed !== 'object' || parsed === null) {
-        setParseError('Invalid YAML: Must be an object');
-        return false;
-      }
-      setParseError(null);
-      return true;
-    } catch (e) {
-      setParseError(`YAML parse error: ${e instanceof Error ? e.message : 'Unknown error'}`);
-      return false;
+  const reference = referenceQuery.data;
+  const defaultSection = isPlainObject(draftDocument.default) ? draftDocument.default : {};
+  const execution = isPlainObject(defaultSection.execution) ? defaultSection.execution : {};
+  const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : {};
+  const sharedConfig = isPlainObject(parameters.shared_config) ? parameters.shared_config : {};
+
+  const advancedOnlyPaths = useMemo(() => buildAdvancedOnlyPaths(draftDocument), [draftDocument]);
+
+  const datasetOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    const currentValue = getValueAtPath(sharedConfig, 'dataset');
+    if (typeof currentValue === 'string' && currentValue.length > 0) {
+      values.add(currentValue);
     }
-  }, [yamlContent]);
+    for (const dataset of datasets ?? []) {
+      values.add(dataset.name);
+    }
+    return Array.from(values);
+  }, [datasets, sharedConfig]);
+
+  const benchmarkOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    const currentValue = getValueAtPath(sharedConfig, 'benchmark_table');
+    if (typeof currentValue === 'string' && currentValue.length > 0) {
+      values.add(currentValue);
+    }
+    for (const item of indices?.indices ?? []) {
+      values.add(item.code);
+    }
+    return Array.from(values);
+  }, [indices?.indices, sharedConfig]);
+
+  const updateDraftAtPath = useCallback(
+    (path: string, value: unknown) => {
+      applyDraftDocument(setValueAtPath(draftDocument, path, value));
+    },
+    [applyDraftDocument, draftDocument]
+  );
+
+  const removeDraftPath = useCallback(
+    (path: string) => {
+      applyDraftDocument(removeValueAtPath(draftDocument, path));
+    },
+    [applyDraftDocument, draftDocument]
+  );
+
+  const handleYamlChange = useCallback((value: string) => {
+    setYamlContent(value);
+    const parsed = parseYamlObject(value);
+    setParseError(parsed.error);
+    if (parsed.value) {
+      setDraftDocument(parsed.value);
+    }
+  }, []);
+
+  const handleTabChange = useCallback(
+    (tab: DefaultEditorTab) => {
+      if (tab === 'visual') {
+        const parsed = parseYamlObject(yamlContent);
+        if (!parsed.value) {
+          setParseError(parsed.error);
+          return;
+        }
+        const compatibilityError = canVisualizeDefaultDocument(parsed.value);
+        if (compatibilityError) {
+          setParseError(compatibilityError);
+          return;
+        }
+        setParseError(null);
+        setDraftDocument(parsed.value);
+      }
+
+      setActiveTab(tab);
+    },
+    [yamlContent]
+  );
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        updateDefaultConfig.reset();
+        updateDefaultConfigStructured.reset();
+        setParseError(null);
+        setActiveTab('visual');
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange, updateDefaultConfig, updateDefaultConfigStructured]
+  );
+
+  const renderField = useCallback(
+    (field: AuthoringFieldSchema, pathPrefix: 'default.execution' | 'default.parameters.shared_config') => {
+      const scopedValue = getValueAtPath(draftDocument, `${pathPrefix}.${field.path}`);
+      const optionValues =
+        field.path === 'dataset'
+          ? datasetOptionValues
+          : field.path === 'benchmark_table'
+            ? benchmarkOptionValues
+            : undefined;
+
+      return (
+        <MetadataFieldControl
+          key={`${pathPrefix}.${field.path}`}
+          field={field}
+          value={scopedValue ?? field.default}
+          effectiveValue={field.default}
+          overridden={hasValueAtPath(draftDocument, `${pathPrefix}.${field.path}`)}
+          optionValues={optionValues}
+          onChange={(value) => updateDraftAtPath(`${pathPrefix}.${field.path}`, value)}
+          onReset={() => removeDraftPath(`${pathPrefix}.${field.path}`)}
+        />
+      );
+    },
+    [benchmarkOptionValues, datasetOptionValues, draftDocument, removeDraftPath, updateDraftAtPath]
+  );
 
   const handleSave = useCallback(() => {
-    if (!validateYaml()) return;
+    if (activeTab === 'advanced') {
+      const parsed = parseYamlObject(yamlContent);
+      if (!parsed.value) {
+        setParseError(parsed.error);
+        return;
+      }
 
-    updateConfig.mutate(
-      { content: yamlContent },
+      updateDefaultConfig.mutate(
+        { content: yamlContent },
+        {
+          onSuccess: () => {
+            onOpenChange(false);
+          },
+        }
+      );
+      return;
+    }
+
+    updateDefaultConfigStructured.mutate(
+      {
+        execution,
+        shared_config: sharedConfig,
+      },
       {
         onSuccess: () => {
           onOpenChange(false);
         },
       }
     );
-  }, [validateYaml, yamlContent, updateConfig, onOpenChange]);
+  }, [
+    activeTab,
+    execution,
+    onOpenChange,
+    sharedConfig,
+    updateDefaultConfig,
+    updateDefaultConfigStructured,
+    yamlContent,
+  ]);
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (!nextOpen) {
-        updateConfig.reset();
-        setParseError(null);
-      }
-      onOpenChange(nextOpen);
-    },
-    [onOpenChange, updateConfig]
-  );
-
-  const handleYamlChange = useCallback((value: string) => {
-    setYamlContent(value);
-    setParseError(null);
-  }, []);
+  const isLoading = contextQuery.isLoading || referenceQuery.isLoading;
+  const saveError = updateDefaultConfig.isError
+    ? updateDefaultConfig.error.message
+    : updateDefaultConfigStructured.isError
+      ? updateDefaultConfigStructured.error.message
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-6xl max-h-[92vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
             Default Config
           </DialogTitle>
-          <DialogDescription>Edit default.yaml — shared parameters applied to all strategies.</DialogDescription>
+          <DialogDescription>
+            Visual mode edits <code>default.execution</code> and <code>default.parameters.shared_config</code>. Advanced
+            YAML remains available for everything else.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 py-4 overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-[500px]">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        {isLoading ? (
+          <div className="flex h-[560px] items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-4 py-2">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Default config editor tabs">
+              <EditorTabButton
+                active={activeTab === 'visual'}
+                icon={<PencilLine className="h-4 w-4" />}
+                label="Visual"
+                onClick={() => handleTabChange('visual')}
+              />
+              <EditorTabButton
+                active={activeTab === 'advanced'}
+                icon={<FileCode2 className="h-4 w-4" />}
+                label="Advanced YAML"
+                onClick={() => handleTabChange('advanced')}
+              />
             </div>
-          ) : (
-            <div className="flex flex-col h-[500px]">
-              <div className="flex-1 min-h-0">
-                <MonacoYamlEditor value={yamlContent} onChange={handleYamlChange} height="450px" />
-              </div>
 
-              <div className="mt-3 space-y-2">
-                {parseError && (
-                  <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
-                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span className="text-sm">{parseError}</span>
-                  </div>
-                )}
+            {activeTab === 'visual' ? (
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="space-y-6">
+                  <Card className="border-border/60">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Execution Defaults</CardTitle>
+                      <CardDescription>Applies to report generation and artifact output behavior.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 lg:grid-cols-2">
+                      {(reference?.execution_fields ?? []).map((field) => renderField(field, 'default.execution'))}
+                    </CardContent>
+                  </Card>
 
-                {updateConfig.isError && (
-                  <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
-                    <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span className="text-sm">Error: {updateConfig.error.message}</span>
-                  </div>
-                )}
+                  <Card className="border-border/60">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Shared Config Defaults</CardTitle>
+                      <CardDescription>These defaults feed inherited strategy shared_config values.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {(reference?.shared_config_groups ?? []).map((group) => {
+                        const fields = (reference?.shared_config_fields ?? []).filter(
+                          (field) => field.group === group.key
+                        );
+                        if (fields.length === 0) return null;
+                        return (
+                          <div key={group.key} className="space-y-3">
+                            <div>
+                              <h3 className="text-sm font-semibold">{group.label}</h3>
+                              {group.description ? (
+                                <p className="text-sm text-muted-foreground">{group.description}</p>
+                              ) : null}
+                            </div>
+                            <div className="grid gap-3 lg:grid-cols-2">
+                              {fields.map((field) => renderField(field, 'default.parameters.shared_config'))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+
+                  {advancedOnlyPaths.length > 0 ? (
+                    <Card className="border-dashed border-border/60">
+                      <CardHeader>
+                        <CardTitle className="text-base">Advanced-only Content</CardTitle>
+                        <CardDescription>
+                          These paths remain intact on structured save but are only editable in Advanced YAML mode.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                          {advancedOnlyPaths.map((path) => (
+                            <li key={path}>{path}</li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            ) : null}
+
+            {activeTab === 'advanced' ? (
+              <div className="min-h-0 flex-1">
+                <MonacoYamlEditor value={yamlContent} onChange={handleYamlChange} height="620px" />
+                {parseError ? (
+                  <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                    {parseError}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {saveError ? (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                Error: {saveError}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={updateConfig.isPending || isLoading || !!parseError}>
-            {updateConfig.isPending ? (
+          <Button
+            onClick={handleSave}
+            disabled={isLoading || updateDefaultConfig.isPending || updateDefaultConfigStructured.isPending}
+          >
+            {updateDefaultConfig.isPending || updateDefaultConfigStructured.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Saving...

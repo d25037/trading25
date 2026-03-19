@@ -769,6 +769,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/default/editor-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Default Config Editor Context
+         * @description Structured context for default.yaml visual editing.
+         */
+        get: operations["get_default_config_editor_context_api_config_default_editor_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/default/structured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Default Config Structured
+         * @description Patch default.yaml using structured execution/shared_config payloads.
+         */
+        put: operations["update_default_config_structured_api_config_default_structured_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dataset": {
         parameters: {
             query?: never;
@@ -2356,6 +2396,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/strategies/{strategy_name}/editor-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Strategy Editor Context
+         * @description Structured editor context for one strategy.
+         */
+        get: operations["get_strategy_editor_context_api_strategies__strategy_name__editor_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/strategies/{strategy_name}/move": {
         parameters: {
             query?: never;
@@ -2428,6 +2488,26 @@ export interface paths {
          *         request: 検証する設定（省略時は既存の設定を検証）
          */
         post: operations["validate_strategy_api_strategies__strategy_name__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/editor/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Strategy Editor Reference
+         * @description Metadata for the strategy visual authoring UI.
+         */
+        get: operations["get_strategy_editor_reference_api_strategies_editor_reference_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2804,6 +2884,121 @@ export interface components {
              * @description 総ファイル数
              */
             total: number;
+        };
+        /**
+         * AuthoringFieldGroupSchema
+         * @description Field group metadata.
+         */
+        AuthoringFieldGroupSchema: {
+            /** Description */
+            description?: string | null;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * AuthoringFieldProvenance
+         * @description Source-of-truth provenance for a field.
+         */
+        AuthoringFieldProvenance: {
+            /** Overridden */
+            overridden: boolean;
+            /** Path */
+            path: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "default" | "strategy";
+        };
+        /**
+         * AuthoringFieldSchema
+         * @description Metadata for one editor field.
+         */
+        AuthoringFieldSchema: {
+            /**
+             * Advanced Only
+             * @description Field is only editable through the advanced YAML fallback
+             * @default false
+             */
+            advanced_only: boolean;
+            /** @description Numeric constraints */
+            constraints?: components["schemas"]["FieldConstraints"] | null;
+            /**
+             * Default
+             * @description Model default value when available
+             */
+            default?: unknown;
+            /**
+             * Description
+             * @description Detailed help text
+             */
+            description: string;
+            /**
+             * Examples
+             * @description Example values
+             */
+            examples?: string[];
+            /**
+             * Group
+             * @description Visual group key
+             */
+            group?: string | null;
+            /**
+             * Label
+             * @description Field label
+             */
+            label: string;
+            /**
+             * Options
+             * @description Allowed options
+             */
+            options?: string[] | null;
+            /**
+             * Path
+             * @description Dot-separated field path
+             */
+            path: string;
+            /**
+             * Placeholder
+             * @description Suggested placeholder
+             */
+            placeholder?: string | null;
+            /**
+             * Required
+             * @description Whether the field is required
+             * @default false
+             */
+            required: boolean;
+            /**
+             * Section
+             * @description Owning config section
+             * @enum {string}
+             */
+            section: "strategy" | "shared_config" | "execution";
+            /**
+             * Summary
+             * @description Short helper summary
+             */
+            summary?: string | null;
+            /**
+             * Type
+             * @description Value type
+             * @enum {string}
+             */
+            type: "boolean" | "number" | "string" | "select" | "string_list";
+            /**
+             * Unit
+             * @description Display unit
+             */
+            unit?: string | null;
+            /**
+             * Widget
+             * @description Suggested UI widget
+             * @enum {string}
+             */
+            widget: "switch" | "number" | "text" | "textarea" | "select" | "combobox" | "string_list";
         };
         /**
          * AuthStatusResponse
@@ -3862,6 +4057,36 @@ export interface components {
             to: string;
         };
         /**
+         * DefaultConfigEditorContextResponse
+         * @description Default config editor context payload.
+         */
+        DefaultConfigEditorContextResponse: {
+            /** Advanced Only Paths */
+            advanced_only_paths?: string[];
+            /** Effective Execution */
+            effective_execution: {
+                [key: string]: unknown;
+            };
+            /** Effective Shared Config */
+            effective_shared_config: {
+                [key: string]: unknown;
+            };
+            /** Raw Document */
+            raw_document: {
+                [key: string]: unknown;
+            };
+            /** Raw Execution */
+            raw_execution: {
+                [key: string]: unknown;
+            };
+            /** Raw Shared Config */
+            raw_shared_config: {
+                [key: string]: unknown;
+            };
+            /** Raw Yaml */
+            raw_yaml: string;
+        };
+        /**
          * DefaultConfigResponse
          * @description デフォルト設定レスポンス（raw YAML文字列）
          */
@@ -3871,6 +4096,20 @@ export interface components {
              * @description default.yamlの内容（YAML文字列）
              */
             content: string;
+        };
+        /**
+         * DefaultConfigStructuredUpdateRequest
+         * @description Structured default-config update request.
+         */
+        DefaultConfigStructuredUpdateRequest: {
+            /** Execution */
+            execution?: {
+                [key: string]: unknown;
+            };
+            /** Shared Config */
+            shared_config?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * DefaultConfigUpdateRequest
@@ -8129,15 +8368,30 @@ export interface components {
             default?: boolean | number | string | null;
             /** Description */
             description: string;
+            /**
+             * Label
+             * @description Display label
+             */
+            label?: string | null;
             /** Name */
             name: string;
             /** Options */
             options?: string[] | null;
             /**
+             * Placeholder
+             * @description Suggested placeholder
+             */
+            placeholder?: string | null;
+            /**
              * Type
              * @enum {string}
              */
             type: "boolean" | "number" | "string" | "select";
+            /**
+             * Unit
+             * @description Display unit
+             */
+            unit?: string | null;
         };
         /**
          * SignalReferenceResponse
@@ -8165,6 +8419,8 @@ export interface components {
             data_requirements?: string[];
             /** Description */
             description: string;
+            /** Examples */
+            examples?: string[];
             /**
              * Exit Disabled
              * @default false
@@ -8179,16 +8435,25 @@ export interface components {
             key: string;
             /** Name */
             name: string;
+            /** Pitfalls */
+            pitfalls?: string[];
             /**
              * Signal Type
              * @description chart/signal API で使用する signal type
              */
             signal_type: string;
             /**
+             * Summary
+             * @description Short authoring summary
+             */
+            summary?: string | null;
+            /**
              * Usage Hint
              * @description entry_purpose + exit_purposeから自動合成
              */
             usage_hint: string;
+            /** When To Use */
+            when_to_use?: string[];
             /** Yaml Snippet */
             yaml_snippet: string;
         };
@@ -8833,6 +9098,92 @@ export interface components {
              * @description 複製成功フラグ
              */
             success: boolean;
+        };
+        /**
+         * StrategyEditorCapabilities
+         * @description Server-reported editor capabilities.
+         */
+        StrategyEditorCapabilities: {
+            /**
+             * Preserves Unknown Fields
+             * @default true
+             */
+            preserves_unknown_fields: boolean;
+            /**
+             * Preview
+             * @default true
+             */
+            preview: boolean;
+            /**
+             * Structured Default Edit
+             * @default true
+             */
+            structured_default_edit: boolean;
+            /**
+             * Visual Editor
+             * @default true
+             */
+            visual_editor: boolean;
+            /**
+             * Yaml Fallback
+             * @default true
+             */
+            yaml_fallback: boolean;
+        };
+        /**
+         * StrategyEditorContextResponse
+         * @description Strategy editor context payload.
+         */
+        StrategyEditorContextResponse: {
+            /** Category */
+            category: string;
+            /** Default Execution */
+            default_execution: {
+                [key: string]: unknown;
+            };
+            /** Default Shared Config */
+            default_shared_config: {
+                [key: string]: unknown;
+            };
+            /** Effective Execution */
+            effective_execution: {
+                [key: string]: unknown;
+            };
+            /** Effective Shared Config */
+            effective_shared_config: {
+                [key: string]: unknown;
+            };
+            /** Execution Provenance */
+            execution_provenance: components["schemas"]["AuthoringFieldProvenance"][];
+            /** Raw Config */
+            raw_config: {
+                [key: string]: unknown;
+            };
+            /** Shared Config Provenance */
+            shared_config_provenance: components["schemas"]["AuthoringFieldProvenance"][];
+            /** Strategy Name */
+            strategy_name: string;
+            /** Unknown Top Level Keys */
+            unknown_top_level_keys?: string[];
+        };
+        /**
+         * StrategyEditorReferenceResponse
+         * @description Editor reference payload for metadata-driven authoring.
+         */
+        StrategyEditorReferenceResponse: {
+            /** Basics */
+            basics: components["schemas"]["AuthoringFieldSchema"][];
+            capabilities?: components["schemas"]["StrategyEditorCapabilities"];
+            /** Execution Fields */
+            execution_fields: components["schemas"]["AuthoringFieldSchema"][];
+            /** Execution Groups */
+            execution_groups: components["schemas"]["AuthoringFieldGroupSchema"][];
+            /** Shared Config Fields */
+            shared_config_fields: components["schemas"]["AuthoringFieldSchema"][];
+            /** Shared Config Groups */
+            shared_config_groups: components["schemas"]["AuthoringFieldGroupSchema"][];
+            /** Signal Categories */
+            signal_categories: components["schemas"]["SignalCategorySchema"][];
         };
         /**
          * StrategyListResponse
@@ -11826,6 +12177,113 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DefaultConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultConfigUpdateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_default_config_editor_context_api_config_default_editor_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultConfigEditorContextResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_default_config_structured_api_config_default_structured_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefaultConfigStructuredUpdateRequest"];
             };
         };
         responses: {
@@ -17331,6 +17789,64 @@ export interface operations {
             };
         };
     };
+    get_strategy_editor_context_api_strategies__strategy_name__editor_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyEditorContextResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     move_strategy_api_strategies__strategy_name__move_post: {
         parameters: {
             query?: never;
@@ -17504,6 +18020,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_strategy_editor_reference_api_strategies_editor_reference_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyEditorReferenceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */

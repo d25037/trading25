@@ -37,6 +37,110 @@ CATEGORY_LABELS: dict[str, str] = {
     "sector": "セクター",
 }
 
+_SIGNAL_COPY_OVERRIDES: dict[str, dict[str, list[str] | str]] = {
+    "fundamental.forward_eps_growth": {
+        "summary": "Forecast-vs-actual EPS growth filter for pre-open fundamental selection.",
+        "when_to_use": [
+            "Use when the strategy prefers firms with clearly improving next-FY EPS guidance.",
+            "Works well with liquidity or trend filters that avoid thinly traded forecast surprises.",
+        ],
+        "pitfalls": [
+            "Forecast metrics require local statements coverage and can go stale if statements sync is behind.",
+            "Thresholds are ratios (0.2 means 20%), not percent strings.",
+        ],
+    },
+    "fundamental.forecast_eps_above_recent_fy_actuals": {
+        "summary": "Checks whether the latest forecast EPS exceeds the strongest recent FY actual EPS.",
+        "when_to_use": [
+            "Use when you want breakout-style fundamental improvement rather than simple year-over-year growth.",
+        ],
+        "pitfalls": [
+            "Large lookback windows reduce the eligible universe quickly.",
+        ],
+    },
+    "index_open_gap_regime": {
+        "summary": "Same-session open-gap regime filter for market-level timing strategies.",
+        "when_to_use": [
+            "Use for intraday/current-session strategies that act on the benchmark opening gap.",
+        ],
+        "pitfalls": [
+            "This signal is only actionable under availability rules that support same-session observation.",
+        ],
+    },
+    "margin": {
+        "summary": "Uses local margin-interest data as a positioning / crowding proxy.",
+        "when_to_use": [
+            "Use when the strategy needs crowding or balance-sheet style sentiment input.",
+        ],
+        "pitfalls": [
+            "The market DB must include local margin snapshots; otherwise validation may succeed but execution can lack data.",
+        ],
+    },
+}
+
+_SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
+    "enabled": {
+        "label": "Enabled",
+    },
+    "period": {
+        "label": "Period",
+        "unit": "bars",
+    },
+    "lookback_period": {
+        "label": "Lookback Period",
+        "unit": "bars",
+    },
+    "lookback_days": {
+        "label": "Lookback Days",
+        "unit": "days",
+    },
+    "short_period": {
+        "label": "Short Period",
+        "unit": "bars",
+    },
+    "long_period": {
+        "label": "Long Period",
+        "unit": "bars",
+    },
+    "window": {
+        "label": "Window",
+        "unit": "bars",
+    },
+    "baseline_period": {
+        "label": "Baseline Period",
+        "unit": "bars",
+    },
+    "threshold": {
+        "label": "Threshold",
+        "placeholder": "0.2",
+    },
+    "ratio_threshold": {
+        "label": "Ratio Threshold",
+        "placeholder": "1.5",
+    },
+    "min_threshold": {
+        "label": "Min Threshold",
+    },
+    "max_threshold": {
+        "label": "Max Threshold",
+    },
+    "threshold_value": {
+        "label": "Threshold Value",
+    },
+    "period_type": {
+        "label": "Period Type",
+    },
+    "use_adjusted": {
+        "label": "Use Adjusted Values",
+    },
+    "condition": {
+        "label": "Condition",
+    },
+    "ma_type": {
+        "label": "MA Type",
+    },
+}
+
 _RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES = {
     "volume_ratio_above",
     "volume_ratio_below",
@@ -193,6 +297,10 @@ def _resolve_default_value(field_info: FieldInfo) -> Any:
     return None
 
 
+def _humanize_field_name(name: str) -> str:
+    return name.replace("_", " ").strip().title()
+
+
 def _build_field_data(
     name: str,
     field_info: FieldInfo,
@@ -213,11 +321,16 @@ def _build_field_data(
     if options and field_type == "string":
         field_type = "select"
 
+    override = _SIGNAL_FIELD_OVERRIDES.get(name, {})
+
     field_data: dict[str, Any] = {
         "name": name,
+        "label": override.get("label", _humanize_field_name(name)),
         "type": field_type,
         "description": field_info.description or "",
         "default": _resolve_default_value(field_info),
+        "unit": override.get("unit"),
+        "placeholder": override.get("placeholder"),
     }
 
     if options:
@@ -312,6 +425,38 @@ def _generate_yaml_snippet(param_key: str, model_class: type[BaseModel]) -> str:
 def _build_usage_hint(entry_purpose: str, exit_purpose: str) -> str:
     """entry_purposeとexit_purposeからusage_hintを自動合成"""
     return f"Entry: {entry_purpose} / Exit: {exit_purpose}"
+
+
+def _build_signal_authoring_copy(
+    signal_def: Any,
+    yaml_snippet: str,
+) -> dict[str, Any]:
+    override = _SIGNAL_COPY_OVERRIDES.get(signal_def.param_key, {})
+    summary = str(override.get("summary", signal_def.description))
+    when_to_use = list(
+        override.get(
+            "when_to_use",
+            [
+                signal_def.entry_purpose,
+                f"Exit-side behavior: {signal_def.exit_purpose}",
+            ],
+        )
+    )
+    pitfalls = list(
+        override.get(
+            "pitfalls",
+            [
+                "Confirm the required local data domains are synced before relying on this signal.",
+            ],
+        )
+    )
+    examples = list(override.get("examples", [yaml_snippet]))
+    return {
+        "summary": summary,
+        "when_to_use": when_to_use,
+        "pitfalls": pitfalls,
+        "examples": examples,
+    }
 
 
 _REFERENCE_EXECUTION_SEMANTICS = (
@@ -417,6 +562,7 @@ def build_signal_reference() -> dict[str, Any]:
             "name": signal_def.name,
             "category": signal_def.category,
             "description": signal_def.description,
+            **_build_signal_authoring_copy(signal_def, yaml_snippet),
             "usage_hint": _build_usage_hint(signal_def.entry_purpose, signal_def.exit_purpose),
             "fields": fields,
             "yaml_snippet": yaml_snippet,

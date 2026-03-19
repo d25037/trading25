@@ -4,28 +4,169 @@ import type { ChangeEvent, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 
-const mockMutate = vi.fn();
-const mockReset = vi.fn();
+const mockRawMutate = vi.fn();
+const mockRawReset = vi.fn();
+const mockStructuredMutate = vi.fn();
+const mockStructuredReset = vi.fn();
 
 const mockState = {
-  configData: null as { content: string } | null,
-  isLoading: false,
-  isPending: false,
-  isError: false,
-  error: null as Error | null,
+  context: {
+    raw_yaml: `default:
+  execution:
+    template_notebook: notebooks/templates/strategy_analysis.py
+  parameters:
+    shared_config:
+      dataset: prime_20260316
+      benchmark_table: topix
+`,
+    raw_document: {
+      default: {
+        extra_note: 'keep me',
+        execution: {
+          template_notebook: 'notebooks/templates/strategy_analysis.py',
+        },
+        parameters: {
+          shared_config: {
+            dataset: 'prime_20260316',
+            benchmark_table: 'topix',
+          },
+        },
+      },
+    },
+    raw_execution: {
+      template_notebook: 'notebooks/templates/strategy_analysis.py',
+    },
+    raw_shared_config: {
+      dataset: 'prime_20260316',
+      benchmark_table: 'topix',
+    },
+    effective_execution: {
+      template_notebook: 'notebooks/templates/strategy_analysis.py',
+    },
+    effective_shared_config: {
+      dataset: 'prime_20260316',
+      benchmark_table: 'topix',
+    },
+    advanced_only_paths: ['default.extra_note'],
+  },
+  reference: {
+    basics: [],
+    shared_config_fields: [
+      {
+        path: 'dataset',
+        section: 'shared_config',
+        group: 'data',
+        label: 'Dataset',
+        type: 'string',
+        widget: 'combobox',
+        description: 'Dataset name',
+        summary: 'Dataset snapshot',
+        default: 'default-dataset',
+        options: null,
+        constraints: null,
+        placeholder: 'prime_20260316',
+        unit: null,
+        examples: [],
+        required: false,
+        advanced_only: false,
+      },
+      {
+        path: 'benchmark_table',
+        section: 'shared_config',
+        group: 'execution',
+        label: 'Benchmark',
+        type: 'string',
+        widget: 'combobox',
+        description: 'Benchmark',
+        summary: 'Benchmark code',
+        default: 'topix',
+        options: null,
+        constraints: null,
+        placeholder: 'topix',
+        unit: null,
+        examples: [],
+        required: false,
+        advanced_only: false,
+      },
+    ],
+    execution_fields: [
+      {
+        path: 'template_notebook',
+        section: 'execution',
+        group: 'execution',
+        label: 'Template Notebook',
+        type: 'string',
+        widget: 'text',
+        description: 'Template path',
+        summary: 'Notebook template',
+        default: 'notebooks/templates/strategy_analysis.py',
+        options: null,
+        constraints: null,
+        placeholder: null,
+        unit: null,
+        examples: [],
+        required: false,
+        advanced_only: false,
+      },
+    ],
+    shared_config_groups: [
+      { key: 'data', label: 'Data', description: 'Data settings' },
+      { key: 'execution', label: 'Execution', description: 'Execution settings' },
+    ],
+    execution_groups: [{ key: 'execution', label: 'Execution', description: 'Execution defaults' }],
+    signal_categories: [],
+    capabilities: {
+      visual_editor: true,
+      yaml_fallback: true,
+      preview: true,
+      preserves_unknown_fields: true,
+      structured_default_edit: true,
+    },
+  },
+  datasets: [{ name: 'prime_20260316' }, { name: 'default-dataset' }],
+  indices: { indices: [{ code: 'topix', name: 'TOPIX' }] },
+  contextLoading: false,
+  referenceLoading: false,
+  rawPending: false,
+  structuredPending: false,
+  rawError: null as Error | null,
+  structuredError: null as Error | null,
 };
 
 vi.mock('@/hooks/useBacktest', () => ({
-  useDefaultConfig: () => ({
-    data: mockState.configData,
-    isLoading: mockState.isLoading,
+  useDefaultConfigEditorContext: () => ({
+    data: mockState.context,
+    isLoading: mockState.contextLoading,
+  }),
+  useStrategyEditorReference: () => ({
+    data: mockState.reference,
+    isLoading: mockState.referenceLoading,
   }),
   useUpdateDefaultConfig: () => ({
-    mutate: mockMutate,
-    reset: mockReset,
-    isPending: mockState.isPending,
-    isError: mockState.isError,
-    error: mockState.error,
+    mutate: mockRawMutate,
+    reset: mockRawReset,
+    isPending: mockState.rawPending,
+    isError: !!mockState.rawError,
+    error: mockState.rawError,
+  }),
+  useUpdateDefaultConfigStructured: () => ({
+    mutate: mockStructuredMutate,
+    reset: mockStructuredReset,
+    isPending: mockState.structuredPending,
+    isError: !!mockState.structuredError,
+    error: mockState.structuredError,
+  }),
+}));
+
+vi.mock('@/hooks/useDataset', () => ({
+  useDatasets: () => ({
+    data: mockState.datasets,
+  }),
+}));
+
+vi.mock('@/hooks/useIndices', () => ({
+  useIndicesList: () => ({
+    data: mockState.indices,
   }),
 }));
 
@@ -39,15 +180,7 @@ vi.mock('@/components/ui/dialog', () => ({
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({
-    children,
-    onClick,
-    disabled,
-  }: {
-    children: ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-  }) => (
+  Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
@@ -55,13 +188,7 @@ vi.mock('@/components/ui/button', () => ({
 }));
 
 vi.mock('@/components/Editor/MonacoYamlEditor', () => ({
-  MonacoYamlEditor: ({
-    value,
-    onChange,
-  }: {
-    value: string;
-    onChange: (value: string) => void;
-  }) => (
+  MonacoYamlEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
     <textarea
       aria-label="yaml-editor"
       value={value}
@@ -73,69 +200,124 @@ vi.mock('@/components/Editor/MonacoYamlEditor', () => ({
 describe('DefaultConfigEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockState.configData = { content: 'filters:\n  min_price: 1000' };
-    mockState.isLoading = false;
-    mockState.isPending = false;
-    mockState.isError = false;
-    mockState.error = null;
+    mockState.contextLoading = false;
+    mockState.referenceLoading = false;
+    mockState.rawPending = false;
+    mockState.structuredPending = false;
+    mockState.rawError = null;
+    mockState.structuredError = null;
   });
 
   it('renders loading state', () => {
-    mockState.isLoading = true;
+    mockState.contextLoading = true;
 
     render(<DefaultConfigEditor open={true} onOpenChange={vi.fn()} />);
 
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
   });
 
-  it('saves valid yaml and closes dialog on success', async () => {
+  it('saves structured visual draft and closes dialog on success', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
-    mockMutate.mockImplementation((_payload, options) => {
+    mockStructuredMutate.mockImplementation((_payload, options) => {
       options?.onSuccess?.();
     });
 
     render(<DefaultConfigEditor open={true} onOpenChange={onOpenChange} />);
 
-    const editor = screen.getByLabelText('yaml-editor') as HTMLTextAreaElement;
-    expect(editor.value).toContain('min_price: 1000');
+    expect(screen.getByText('Execution Defaults')).toBeInTheDocument();
+    expect(screen.getByText('Advanced-only Content')).toBeInTheDocument();
 
-    await user.clear(editor);
-    await user.type(editor, 'filters:\n  min_price: 1200');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(mockMutate).toHaveBeenCalledWith({ content: 'filters:\n  min_price: 1200' }, expect.any(Object));
+    expect(mockStructuredMutate).toHaveBeenCalledWith(
+      {
+        execution: {
+          template_notebook: 'notebooks/templates/strategy_analysis.py',
+        },
+        shared_config: {
+          dataset: 'prime_20260316',
+          benchmark_table: 'topix',
+        },
+      },
+      expect.any(Object)
+    );
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('shows parse error and prevents save for invalid yaml', async () => {
+  it('blocks advanced save for invalid yaml', async () => {
     const user = userEvent.setup();
+
     render(<DefaultConfigEditor open={true} onOpenChange={vi.fn()} />);
 
-    const editor = screen.getByLabelText('yaml-editor');
-    fireEvent.change(editor, { target: { value: 'filters: [' } });
+    await user.click(screen.getByRole('tab', { name: 'Advanced YAML' }));
+    fireEvent.change(screen.getByLabelText('yaml-editor'), { target: { value: 'default: [' } });
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
+    expect(mockRawMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/YAML parse error:/)).toBeInTheDocument();
-    expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('resets mutation state when cancel closes dialog', async () => {
+  it('returns to visual mode when advanced yaml remains compatible', async () => {
+    const user = userEvent.setup();
+
+    render(<DefaultConfigEditor open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('tab', { name: 'Advanced YAML' }));
+    fireEvent.change(screen.getByLabelText('yaml-editor'), {
+      target: {
+        value: `default:
+  execution:
+    template_notebook: custom_template.py
+  parameters:
+    shared_config:
+      dataset: switched_dataset`,
+      },
+    });
+    await user.click(screen.getByRole('tab', { name: 'Visual' }));
+
+    expect(await screen.findByDisplayValue('switched_dataset')).toBeInTheDocument();
+  });
+
+  it('blocks returning to visual mode for incompatible yaml', async () => {
+    const user = userEvent.setup();
+
+    render(<DefaultConfigEditor open={true} onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('tab', { name: 'Advanced YAML' }));
+    fireEvent.change(screen.getByLabelText('yaml-editor'), {
+      target: { value: 'default: []' },
+    });
+    await user.click(screen.getByRole('tab', { name: 'Visual' }));
+
+    expect(screen.getByText("default.yaml must contain a 'default' object to use Visual mode.")).toBeInTheDocument();
+  });
+
+  it('uses raw yaml save in advanced mode', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
+    mockRawMutate.mockImplementation((_payload, options) => {
+      options?.onSuccess?.();
+    });
+
     render(<DefaultConfigEditor open={true} onOpenChange={onOpenChange} />);
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('tab', { name: 'Advanced YAML' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(mockReset).toHaveBeenCalledTimes(1);
+    expect(mockRawMutate).toHaveBeenCalledWith(
+      {
+        content: expect.stringContaining('template_notebook'),
+      },
+      expect.any(Object)
+    );
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('shows mutation error banner', () => {
-    mockState.isError = true;
-    mockState.error = new Error('update failed');
+    mockState.structuredError = new Error('update failed');
 
     render(<DefaultConfigEditor open={true} onOpenChange={vi.fn()} />);
 

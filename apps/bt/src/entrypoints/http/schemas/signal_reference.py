@@ -35,11 +35,14 @@ class SignalFieldSchema(BaseModel):
     """シグナルフィールド定義"""
 
     name: str
+    label: str | None = Field(default=None, description="Display label")
     type: SignalFieldTypeValue
     description: str
     default: bool | int | float | str | None = None
     options: list[str] | None = None
     constraints: FieldConstraints | None = None
+    unit: str | None = Field(default=None, description="Display unit")
+    placeholder: str | None = Field(default=None, description="Suggested placeholder")
 
 
 class SignalChartCapability(BaseModel):
@@ -62,6 +65,10 @@ class SignalReferenceSchema(BaseModel):
     name: str
     category: str
     description: str
+    summary: str | None = Field(default=None, description="Short authoring summary")
+    when_to_use: list[str] = Field(default_factory=list)
+    pitfalls: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
     usage_hint: str = Field(description="entry_purpose + exit_purposeから自動合成")
     fields: list[SignalFieldSchema]
     yaml_snippet: str

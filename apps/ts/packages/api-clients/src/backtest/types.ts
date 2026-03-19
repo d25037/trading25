@@ -608,11 +608,14 @@ export interface FieldConstraints {
 
 export interface SignalFieldDefinition {
   name: string;
+  label?: string | null;
   type: 'boolean' | 'number' | 'string' | 'select';
   description: string;
   default?: unknown;
   options?: string[] | null;
   constraints?: FieldConstraints;
+  unit?: string | null;
+  placeholder?: string | null;
 }
 
 export interface SignalChartCapability {
@@ -643,6 +646,10 @@ export interface SignalDefinition {
   name: string;
   category: string;
   description: string;
+  summary?: string | null;
+  when_to_use?: string[];
+  pitfalls?: string[];
+  examples?: string[];
   usage_hint: string;
   fields: SignalFieldDefinition[];
   yaml_snippet: string;
@@ -663,6 +670,83 @@ export interface SignalReferenceResponse {
   total: number;
 }
 
+export type AuthoringFieldType = 'boolean' | 'number' | 'string' | 'select' | 'string_list';
+export type AuthoringWidgetType = 'switch' | 'number' | 'text' | 'textarea' | 'select' | 'combobox' | 'string_list';
+export type AuthoringFieldSection = 'strategy' | 'shared_config' | 'execution';
+export type AuthoringFieldSource = 'default' | 'strategy';
+
+export interface AuthoringFieldSchema {
+  path: string;
+  section: AuthoringFieldSection;
+  group?: string | null;
+  label: string;
+  type: AuthoringFieldType;
+  widget: AuthoringWidgetType;
+  description: string;
+  summary?: string | null;
+  default?: unknown;
+  options?: string[] | null;
+  constraints?: FieldConstraints;
+  placeholder?: string | null;
+  unit?: string | null;
+  examples?: string[];
+  required: boolean;
+  advanced_only: boolean;
+}
+
+export interface AuthoringFieldGroupSchema {
+  key: string;
+  label: string;
+  description?: string | null;
+}
+
+export interface StrategyEditorCapabilities {
+  visual_editor: boolean;
+  yaml_fallback: boolean;
+  preview: boolean;
+  preserves_unknown_fields: boolean;
+  structured_default_edit: boolean;
+}
+
+export interface StrategyEditorReferenceResponse {
+  basics: AuthoringFieldSchema[];
+  shared_config_fields: AuthoringFieldSchema[];
+  execution_fields: AuthoringFieldSchema[];
+  shared_config_groups: AuthoringFieldGroupSchema[];
+  execution_groups: AuthoringFieldGroupSchema[];
+  signal_categories: SignalCategory[];
+  capabilities: StrategyEditorCapabilities;
+}
+
+export interface AuthoringFieldProvenance {
+  path: string;
+  source: AuthoringFieldSource;
+  overridden: boolean;
+}
+
+export interface StrategyEditorContextResponse {
+  strategy_name: string;
+  category: string;
+  raw_config: Record<string, unknown>;
+  default_shared_config: Record<string, unknown>;
+  default_execution: Record<string, unknown>;
+  effective_shared_config: Record<string, unknown>;
+  effective_execution: Record<string, unknown>;
+  shared_config_provenance: AuthoringFieldProvenance[];
+  execution_provenance: AuthoringFieldProvenance[];
+  unknown_top_level_keys: string[];
+}
+
+export interface DefaultConfigEditorContextResponse {
+  raw_yaml: string;
+  raw_document: Record<string, unknown>;
+  raw_execution: Record<string, unknown>;
+  raw_shared_config: Record<string, unknown>;
+  effective_execution: Record<string, unknown>;
+  effective_shared_config: Record<string, unknown>;
+  advanced_only_paths: string[];
+}
+
 // ============================================
 // Default Config Types
 // ============================================
@@ -677,6 +761,11 @@ export interface DefaultConfigUpdateRequest {
 
 export interface DefaultConfigUpdateResponse {
   success: boolean;
+}
+
+export interface DefaultConfigStructuredUpdateRequest {
+  execution: Record<string, unknown>;
+  shared_config: Record<string, unknown>;
 }
 
 // ============================================
