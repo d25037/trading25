@@ -373,7 +373,12 @@ def _normalize_index_code(value: Any) -> str:
     return text.upper()
 
 
-def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection:
+def _inspection_from_market_db(
+    market_db: DummyMarketDb,
+    *,
+    missing_stock_dates_limit: int = 0,
+    missing_options_225_dates_limit: int = 0,
+) -> TimeSeriesInspection:
     topix_dates = sorted(
         {
             str(row.get("date"))
@@ -444,6 +449,10 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         },
         key=_date_sort_key,
     )
+    stock_date_set = set(stock_dates)
+    options_225_date_set = set(options_225_dates)
+    missing_stock_dates_all = [date for date in reversed(topix_dates) if date not in stock_date_set]
+    missing_options_225_dates_all = [date for date in reversed(topix_dates) if date not in options_225_date_set]
     margin_codes = {
         str(row.get("code"))
         for row in market_db.margin_rows
@@ -459,6 +468,8 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         stock_min=stock_dates[0] if stock_dates else market_db.latest_stock_data_date,
         stock_max=stock_dates[-1] if stock_dates else market_db.latest_stock_data_date,
         stock_date_count=len(stock_dates),
+        missing_stock_dates=missing_stock_dates_all[:missing_stock_dates_limit],
+        missing_stock_dates_count=len(missing_stock_dates_all),
         indices_count=len(market_db.indices_rows),
         indices_min=indices_dates[0] if indices_dates else _latest_date(list(latest_indices_dates.values())),
         indices_max=indices_dates[-1] if indices_dates else _latest_date(list(latest_indices_dates.values())),
@@ -469,6 +480,8 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         options_225_max=options_225_dates[-1] if options_225_dates else None,
         options_225_date_count=len(options_225_dates),
         latest_options_225_date=options_225_dates[-1] if options_225_dates else None,
+        missing_options_225_dates=missing_options_225_dates_all[:missing_options_225_dates_limit],
+        missing_options_225_dates_count=len(missing_options_225_dates_all),
         margin_count=len(market_db.margin_rows),
         margin_min=margin_dates[0] if margin_dates else market_db.get_latest_margin_date(),
         margin_max=margin_dates[-1] if margin_dates else market_db.get_latest_margin_date(),
@@ -532,10 +545,14 @@ class DummyTimeSeriesStore:
         missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
-        del missing_stock_dates_limit, missing_options_225_dates_limit, statement_non_null_columns
+        del statement_non_null_columns
         if self._inspection is not None:
             return self._inspection
-        return _inspection_from_market_db(self._market_db)
+        return _inspection_from_market_db(
+            self._market_db,
+            missing_stock_dates_limit=missing_stock_dates_limit,
+            missing_options_225_dates_limit=missing_options_225_dates_limit,
+        )
 
     def close(self) -> None:
         return None
@@ -2325,7 +2342,171 @@ async def test_incremental_sync_backfills_options_225_from_full_topix_dates_when
         params.get("date")
         for path, params in client.calls
         if path == "/derivatives/bars/daily/options/225" and params is not None
-    ] == ["2026-02-05", "2026-02-06", "2026-02-10"]
+    ] == ["20260205", "20260206", "20260210"]
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_backfills_partial_options_225_history_when_anchor_exists() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260210")
+    market_db.topix_rows = [
+        {
+            "date": "2026-02-05",
+            "open": 99.0,
+            "high": 100.0,
+            "low": 98.0,
+            "close": 99.5,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        },
+        {
+            "date": "2026-02-06",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.0,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        },
+        {
+            "date": "2026-02-10",
+            "open": 102.0,
+            "high": 103.0,
+            "low": 101.0,
+            "close": 102.0,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        },
+    ]
+    market_db.options_225_rows = [
+        {
+            "code": "131040020",
+            "date": "2026-02-10",
+            "contract_month": "2026-04",
+            "strike_price": 32000.0,
+            "put_call_division": "1",
+            "underlying_price": 39000.0,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        }
+    ]
+    client = DummyClient(
+        options_quotes=[
+            {
+                "Date": "2026-02-05",
+                "Code": "131040015",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 38800.0,
+            },
+            {
+                "Date": "2026-02-06",
+                "Code": "131040016",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 38900.0,
+            },
+        ]
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert sorted({str(row["date"]) for row in market_db.options_225_rows}, key=_date_sort_key) == [
+        "2026-02-05",
+        "2026-02-06",
+        "2026-02-10",
+    ]
+    assert [
+        params.get("date")
+        for path, params in client.calls
+        if path == "/derivatives/bars/daily/options/225" and params is not None
+    ] == ["20260205", "20260206"]
+
+
+@pytest.mark.asyncio
+async def test_indices_only_sync_options_225_falls_back_to_rest_when_bulk_plan_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.topix_rows = [
+        {
+            "date": "2026-02-05",
+            "open": 99.0,
+            "high": 100.0,
+            "low": 98.0,
+            "close": 99.5,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        }
+    ]
+    client = DummyClient(
+        options_quotes=[
+            {
+                "Date": "2026-02-05",
+                "Code": "131040015",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 38800.0,
+            }
+        ]
+    )
+    bulk_plan = BulkFetchPlan(
+        endpoint="/derivatives/bars/daily/options/225",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=0,
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "options_225_indices_only":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=1,
+                plan=bulk_plan,
+                reason="bulk_estimate_lower",
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+
+    bulk_service = _FakeBulkService()
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,
+    )
+
+    result = await IndicesOnlySyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.errors == []
+    assert sorted({str(row["date"]) for row in market_db.options_225_rows}, key=_date_sort_key) == [
+        "2026-02-05"
+    ]
+    assert [
+        params.get("date")
+        for path, params in client.calls
+        if path == "/derivatives/bars/daily/options/225" and params is not None
+    ] == ["20260205"]
+    assert bulk_service.fetch_calls == []
 
 
 @pytest.mark.asyncio

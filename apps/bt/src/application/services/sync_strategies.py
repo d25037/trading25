@@ -2018,25 +2018,13 @@ class IncrementalSyncStrategy:
 
             await _index_indices_rows(ctx)
 
-            # Step 5: N225 options（増分）
-            last_options_225_date = inspection.latest_options_225_date
-            if last_options_225_date:
-                options_new_dates = sorted(
-                    {
-                        r["date"]
-                        for r in topix_rows
-                        if r.get("date") and _is_date_after(r["date"], last_options_225_date)
-                    },
-                    key=_date_sort_key,
-                )
-            else:
-                options_new_dates = await asyncio.to_thread(ctx.market_db.get_topix_dates)
-                if not options_new_dates:
-                    options_new_dates = sorted(
-                        {r["date"] for r in topix_rows if r.get("date")},
-                        key=_date_sort_key,
-                    )
-            ctx.on_progress("options_225", 4, 7, f"Fetching N225 options for {len(options_new_dates)} new dates...")
+            # Step 5: N225 options（増分 + 欠損履歴補完）
+            options_new_dates = await _resolve_incremental_options_date_targets(
+                ctx,
+                inspection=inspection,
+                topix_rows=topix_rows,
+            )
+            ctx.on_progress("options_225", 4, 7, f"Fetching N225 options for {len(options_new_dates)} dates...")
             options_sync = await _sync_options_225_dates(
                 ctx,
                 date_targets=options_new_dates,
@@ -2265,57 +2253,68 @@ async def _sync_options_225_dates(
 
     target_date_set = _build_target_date_set(target_dates)
     used_rest_fallback = False
+    bulk_fallback_reason: str | None = None
     stage_api_calls = 0
     bulk_result: BulkFetchResult | None = None
-    if decision.method == "bulk" and decision.plan is not None:
-        try:
-            _emit_fetch_execution_progress(
-                ctx,
-                progress_stage=progress_stage,
-                current=progress_current,
-                total=progress_total,
-                endpoint="/derivatives/bars/daily/options/225",
-                method="bulk",
-                target_label=f"{len(target_dates)} dates",
-            )
-
-            async def _consume_options_bulk_rows(
-                batch_rows: list[dict[str, Any]],
-                _file_info: BulkFileInfo,
-            ) -> None:
-                normalized_rows = _convert_options_225_rows(_normalize_bulk_options_225_rows(batch_rows))
-                if target_date_set is not None:
-                    normalized_rows[:] = [row for row in normalized_rows if row.get("date") in target_date_set]
-                rows = validate_rows_required_fields(
-                    normalized_rows,
-                    required_fields=("code", "date"),
-                    dedupe_keys=("code", "date"),
-                    stage="options_225",
-                )
-                if not rows:
-                    return
-                await _publish_options_225_rows(ctx, rows)
-                await _publish_synthetic_nikkei_rows(ctx, rows)
-
-            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                decision.plan,
-                on_rows_batch=_consume_options_bulk_rows,
-                accumulate_rows=False,
-            )
-            api_calls += bulk_result.api_calls
-            stage_api_calls += bulk_result.api_calls
-            _log_sync_fetch_execution(
-                stage=stage_name,
-                endpoint="/derivatives/bars/daily/options/225",
-                decision=decision,
-                executed="bulk",
-                actual_api_calls=stage_api_calls,
-                fallback=False,
-                bulk_result=bulk_result,
-            )
-        except Exception as e:
+    if decision.method == "bulk":
+        if decision.plan is None or len(decision.plan.files) == 0:
             used_rest_fallback = True
-            logger.warning("options_225 bulk fetch failed, falling back to REST: {}", e)
+            bulk_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+            logger.warning(
+                "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
+                stage_name,
+                bulk_fallback_reason,
+            )
+        else:
+            try:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage=progress_stage,
+                    current=progress_current,
+                    total=progress_total,
+                    endpoint="/derivatives/bars/daily/options/225",
+                    method="bulk",
+                    target_label=f"{len(target_dates)} dates",
+                )
+
+                async def _consume_options_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    normalized_rows = _convert_options_225_rows(_normalize_bulk_options_225_rows(batch_rows))
+                    if target_date_set is not None:
+                        normalized_rows[:] = [row for row in normalized_rows if row.get("date") in target_date_set]
+                    rows = validate_rows_required_fields(
+                        normalized_rows,
+                        required_fields=("code", "date"),
+                        dedupe_keys=("code", "date"),
+                        stage="options_225",
+                    )
+                    if not rows:
+                        return
+                    await _publish_options_225_rows(ctx, rows)
+                    await _publish_synthetic_nikkei_rows(ctx, rows)
+
+                bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    decision.plan,
+                    on_rows_batch=_consume_options_bulk_rows,
+                    accumulate_rows=False,
+                )
+                api_calls += bulk_result.api_calls
+                stage_api_calls += bulk_result.api_calls
+                _log_sync_fetch_execution(
+                    stage=stage_name,
+                    endpoint="/derivatives/bars/daily/options/225",
+                    decision=decision,
+                    executed="bulk",
+                    actual_api_calls=stage_api_calls,
+                    fallback=False,
+                    bulk_result=bulk_result,
+                )
+            except Exception as e:
+                used_rest_fallback = True
+                bulk_fallback_reason = _summarize_exception(e)
+                logger.warning("options_225 bulk fetch failed, falling back to REST: {}", e)
 
     if decision.method == "rest" or used_rest_fallback:
         _emit_fetch_execution_progress(
@@ -2327,6 +2326,7 @@ async def _sync_options_225_dates(
             method="rest",
             target_label=f"{len(target_dates)} dates",
             fallback=used_rest_fallback,
+            fallback_reason=bulk_fallback_reason,
         )
         for index, target_date in enumerate(target_dates, start=1):
             if ctx.cancelled.is_set():
@@ -2342,7 +2342,7 @@ async def _sync_options_225_dates(
                 payload, page_calls = await _get_paginated_rows_with_call_count(
                     ctx.client,
                     "/derivatives/bars/daily/options/225",
-                    params={"date": target_date},
+                    params={"date": _to_jquants_date_param(target_date)},
                 )
                 api_calls += page_calls
                 stage_api_calls += page_calls
@@ -3419,10 +3419,20 @@ def _require_time_series_store(ctx: SyncContext) -> SyncTimeSeriesStoreLike:
     return ctx.time_series_store
 
 
-def _inspect_time_series(ctx: SyncContext) -> TimeSeriesInspection:
+def _inspect_time_series(
+    ctx: SyncContext,
+    *,
+    missing_stock_dates_limit: int = 0,
+    missing_options_225_dates_limit: int = 0,
+    statement_non_null_columns: list[str] | None = None,
+) -> TimeSeriesInspection:
     store = _require_time_series_store(ctx)
     try:
-        inspection = store.inspect()
+        inspection = store.inspect(
+            missing_stock_dates_limit=missing_stock_dates_limit,
+            missing_options_225_dates_limit=missing_options_225_dates_limit,
+            statement_non_null_columns=statement_non_null_columns,
+        )
     except Exception as e:  # noqa: BLE001 - include backend error in sync failure
         raise RuntimeError(f"DuckDB inspection failed during sync: {e}") from e
     if inspection.source != "duckdb-parquet":
@@ -3430,6 +3440,39 @@ def _inspect_time_series(ctx: SyncContext) -> TimeSeriesInspection:
             f"Unexpected time-series source during sync: {inspection.source}"
         )
     return inspection
+
+
+async def _resolve_incremental_options_date_targets(
+    ctx: SyncContext,
+    *,
+    inspection: TimeSeriesInspection,
+    topix_rows: list[dict[str, Any]],
+) -> list[str]:
+    last_options_225_date = inspection.latest_options_225_date
+    if not last_options_225_date:
+        options_dates = await asyncio.to_thread(ctx.market_db.get_topix_dates)
+        if options_dates:
+            return options_dates
+        return sorted(
+            {str(r["date"]) for r in topix_rows if r.get("date")},
+            key=_date_sort_key,
+        )
+
+    options_dates = _normalize_date_list(
+        [
+            str(r["date"])
+            for r in topix_rows
+            if r.get("date") and _is_date_after(str(r["date"]), last_options_225_date)
+        ]
+    )
+    if inspection.missing_options_225_dates_count <= 0:
+        return options_dates
+
+    missing_coverage = _inspect_time_series(
+        ctx,
+        missing_options_225_dates_limit=inspection.missing_options_225_dates_count,
+    )
+    return _normalize_date_list(options_dates + list(missing_coverage.missing_options_225_dates))
 
 
 def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:

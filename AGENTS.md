@@ -33,6 +33,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - `stock_data` の bulk ingest は bulk file 単位で publish し、大量期間同期時のメモリピークによる bulk 失敗→REST fallback を抑制する。fallback 時の progress message は reason を含める
 - `/api/db/sync` と `POST /api/db/stocks/refresh` の時系列アンカー判定・publish/index は DuckDB inspection + time-series store を必須 SoT とし、旧 SQLite 時系列テーブルへの fallback を禁止する（inspection 失敗時はエラーで停止）
 - DuckDB time-series store は `publish/index/inspect/close` をプロセス内ロックで直列化し、sync 実行と `/api/db/stats` `/api/db/validate` 参照の同時実行による 500 を防止する
+- DuckDB time-series store の large-batch publish（`stock_data` / `indices_data` / `margin_data` / `options_225_data`）は relation-based upsert を使い、`executemany` ボトルネックによる sync timeout を避ける
 - DuckDB time-series store の Parquet export は `stock_data` / `indices_data` で全件 `ORDER BY` を行わず、同期スループットを優先する（row order 非依存を前提とする）
 - DuckDB `topix_data` は `open=high=low=close` かつ `open=前日close` の異常日足を除外する（取込時 + 起動時クリーンアップ）
 - `market.duckdb` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する

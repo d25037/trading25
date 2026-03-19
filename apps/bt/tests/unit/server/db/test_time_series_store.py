@@ -41,6 +41,31 @@ def _topix_rows() -> list[dict[str, object]]:
     ]
 
 
+def _indices_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "0000",
+            "date": "2026-02-10",
+            "open": 1.0,
+            "high": 2.0,
+            "low": 1.0,
+            "close": 2.0,
+            "sector_name": "TOPIX",
+            "created_at": "2026-02-10T00:00:00+00:00",
+        },
+        {
+            "code": "0000",
+            "date": "2026-02-11",
+            "open": 2.0,
+            "high": 3.0,
+            "low": 2.0,
+            "close": 3.0,
+            "sector_name": "TOPIX",
+            "created_at": "2026-02-11T00:00:00+00:00",
+        },
+    ]
+
+
 def _options_225_rows() -> list[dict[str, object]]:
     return [
         {
@@ -64,7 +89,26 @@ def _options_225_rows() -> list[dict[str, object]]:
     ]
 
 
-def test_create_time_series_store_returns_none_for_unsupported_backend(tmp_path: Path) -> None:
+def _margin_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "7203",
+            "date": "2026-02-07",
+            "long_margin_volume": 900.0,
+            "short_margin_volume": 120.0,
+        },
+        {
+            "code": "7203",
+            "date": "2026-02-10",
+            "long_margin_volume": 1000.0,
+            "short_margin_volume": 150.0,
+        },
+    ]
+
+
+def test_create_time_series_store_returns_none_for_unsupported_backend(
+    tmp_path: Path,
+) -> None:
     store = create_time_series_store(
         backend="sqlite",
         duckdb_path=str(tmp_path / "market.duckdb"),
@@ -212,7 +256,160 @@ def test_index_options_225_data_exports_parquet(tmp_path: Path) -> None:
     store.close()
 
 
-def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(tmp_path: Path) -> None:
+def test_publish_stock_data_large_batch_uses_relation_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    called = {"relation": False}
+    original = DuckDbParquetTimeSeriesStore._publish_stock_data_via_relation
+
+    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
+        called["relation"] = True
+        return original(self, rows)
+
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_STOCK_DATA_RELATION_INSERT_THRESHOLD", 1
+    )
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_publish_stock_data_via_relation", _spy
+    )
+
+    store.publish_stock_data(
+        [_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")]
+    )
+
+    inspection = store.inspect()
+
+    assert called["relation"] is True
+    assert inspection.stock_count == 2
+    assert inspection.stock_min == "2026-02-10"
+    assert inspection.stock_max == "2026-02-11"
+
+    store.close()
+
+
+def test_publish_indices_data_large_batch_uses_relation_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    called = {"relation": False}
+    original = DuckDbParquetTimeSeriesStore._publish_indices_data_via_relation
+
+    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
+        called["relation"] = True
+        return original(self, rows)
+
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_INDICES_DATA_RELATION_INSERT_THRESHOLD", 1
+    )
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_publish_indices_data_via_relation", _spy
+    )
+
+    store.publish_indices_data(_indices_rows())
+
+    inspection = store.inspect()
+
+    assert called["relation"] is True
+    assert inspection.indices_count == 2
+    assert inspection.indices_min == "2026-02-10"
+    assert inspection.indices_max == "2026-02-11"
+
+    store.close()
+
+
+def test_publish_options_225_data_large_batch_uses_relation_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    called = {"relation": False}
+    original = DuckDbParquetTimeSeriesStore._publish_options_225_data_via_relation
+
+    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
+        called["relation"] = True
+        return original(self, rows)
+
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_OPTIONS_225_RELATION_INSERT_THRESHOLD", 1
+    )
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_publish_options_225_data_via_relation", _spy
+    )
+
+    store.publish_options_225_data(_options_225_rows())
+
+    inspection = store.inspect()
+
+    assert called["relation"] is True
+    assert inspection.options_225_count == 2
+    assert inspection.options_225_min == "2026-02-10"
+    assert inspection.options_225_max == "2026-02-11"
+
+    store.close()
+
+
+def test_publish_margin_data_large_batch_uses_relation_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    called = {"relation": False}
+    original = DuckDbParquetTimeSeriesStore._publish_margin_data_via_relation
+
+    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
+        called["relation"] = True
+        return original(self, rows)
+
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_MARGIN_DATA_RELATION_INSERT_THRESHOLD", 1
+    )
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_publish_margin_data_via_relation", _spy
+    )
+
+    store.publish_margin_data(_margin_rows())
+
+    inspection = store.inspect()
+
+    assert called["relation"] is True
+    assert inspection.margin_count == 2
+    assert inspection.margin_min == "2026-02-07"
+    assert inspection.margin_max == "2026-02-10"
+    assert inspection.margin_codes == {"7203"}
+
+    store.close()
+
+
+def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(
+    tmp_path: Path,
+) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
@@ -284,9 +481,30 @@ def test_store_startup_cleans_existing_invalid_topix_rows(tmp_path: Path) -> Non
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         [
-            ("2020-09-30", 1650.32, 1654.18, 1625.49, 1625.49, "2026-03-05T00:00:00+00:00"),
-            ("2020-10-01", 1625.49, 1625.49, 1625.49, 1625.49, "2026-03-05T00:00:00+00:00"),
-            ("2020-10-02", 1633.02, 1638.80, 1603.32, 1609.22, "2026-03-05T00:00:00+00:00"),
+            (
+                "2020-09-30",
+                1650.32,
+                1654.18,
+                1625.49,
+                1625.49,
+                "2026-03-05T00:00:00+00:00",
+            ),
+            (
+                "2020-10-01",
+                1625.49,
+                1625.49,
+                1625.49,
+                1625.49,
+                "2026-03-05T00:00:00+00:00",
+            ),
+            (
+                "2020-10-02",
+                1633.02,
+                1638.80,
+                1603.32,
+                1609.22,
+                "2026-03-05T00:00:00+00:00",
+            ),
         ],
     )
     first.close()

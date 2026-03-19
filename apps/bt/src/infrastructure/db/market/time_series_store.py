@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Any, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 
+import pandas as pd
 from loguru import logger
 
 
@@ -44,6 +45,15 @@ class _TableSpec:
     table_name: str
     parquet_name: str
     order_by: str | None = None
+
+
+@dataclass(frozen=True)
+class _RelationUpsertSpec:
+    table_name: str
+    relation_name: str
+    columns: tuple[str, ...]
+    conflict_columns: tuple[str, ...]
+    update_columns: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -97,6 +107,91 @@ class TimeSeriesStorageStats:
 class DuckDbParquetTimeSeriesStore:
     """DuckDB へ upsert し、Parquet を再生成する Data Plane store。"""
 
+    _STOCK_DATA_RELATION_INSERT_THRESHOLD = 1000
+    _INDICES_DATA_RELATION_INSERT_THRESHOLD = 1000
+    _OPTIONS_225_RELATION_INSERT_THRESHOLD = 1000
+    _MARGIN_DATA_RELATION_INSERT_THRESHOLD = 1000
+
+    _STOCK_DATA_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="stock_data",
+        relation_name="__tmp_stock_data_publish",
+        columns=(
+            "code",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "adjustment_factor",
+            "created_at",
+        ),
+        conflict_columns=("code", "date"),
+    )
+    _INDICES_DATA_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="indices_data",
+        relation_name="__tmp_indices_data_publish",
+        columns=(
+            "code",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "sector_name",
+            "created_at",
+        ),
+        conflict_columns=("code", "date"),
+    )
+    _OPTIONS_225_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="options_225_data",
+        relation_name="__tmp_options_225_publish",
+        columns=(
+            "code",
+            "date",
+            "whole_day_open",
+            "whole_day_high",
+            "whole_day_low",
+            "whole_day_close",
+            "night_session_open",
+            "night_session_high",
+            "night_session_low",
+            "night_session_close",
+            "day_session_open",
+            "day_session_high",
+            "day_session_low",
+            "day_session_close",
+            "volume",
+            "open_interest",
+            "turnover_value",
+            "contract_month",
+            "strike_price",
+            "only_auction_volume",
+            "emergency_margin_trigger_division",
+            "put_call_division",
+            "last_trading_day",
+            "special_quotation_day",
+            "settlement_price",
+            "theoretical_price",
+            "base_volatility",
+            "underlying_price",
+            "implied_volatility",
+            "interest_rate",
+            "created_at",
+        ),
+        conflict_columns=("code", "date"),
+    )
+    _MARGIN_DATA_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="margin_data",
+        relation_name="__tmp_margin_data_publish",
+        columns=(
+            "code",
+            "date",
+            "long_margin_volume",
+            "short_margin_volume",
+        ),
+        conflict_columns=("code", "date"),
+    )
     _TABLE_SPECS = {
         "topix_data": _TableSpec("topix_data", "topix_data.parquet", "date"),
         # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
@@ -104,7 +199,9 @@ class DuckDbParquetTimeSeriesStore:
         "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
         "options_225_data": _TableSpec("options_225_data", "options_225_data.parquet"),
         "margin_data": _TableSpec("margin_data", "margin_data.parquet"),
-        "statements": _TableSpec("statements", "statements.parquet", "disclosed_date, code"),
+        "statements": _TableSpec(
+            "statements", "statements.parquet", "disclosed_date, code"
+        ),
     }
 
     _STATEMENT_UPDATABLE_COLUMNS = (
@@ -380,191 +477,50 @@ class DuckDbParquetTimeSeriesStore:
         return invalid_count
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        values = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("volume"),
-                row.get("adjustment_factor"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO stock_data
-                    (code, date, open, high, low, close, volume, adjustment_factor, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (code, date) DO UPDATE
-                SET open = excluded.open,
-                    high = excluded.high,
-                    low = excluded.low,
-                    close = excluded.close,
-                    volume = excluded.volume,
-                    adjustment_factor = excluded.adjustment_factor,
-                    created_at = excluded.created_at
-                """,
-                values,
-            )
-            self._dirty_tables.add("stock_data")
-        return len(rows)
+        return self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._STOCK_DATA_UPSERT_SPEC,
+            relation_insert_threshold=self._STOCK_DATA_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_stock_data_via_relation,
+        )
+
+    def _publish_stock_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
+        return self._publish_rows_via_relation(rows, spec=self._STOCK_DATA_UPSERT_SPEC)
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        values = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("sector_name"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO indices_data
-                    (code, date, open, high, low, close, sector_name, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (code, date) DO UPDATE
-                SET open = excluded.open,
-                    high = excluded.high,
-                    low = excluded.low,
-                    close = excluded.close,
-                    sector_name = excluded.sector_name,
-                    created_at = excluded.created_at
-                """,
-                values,
-            )
-            self._dirty_tables.add("indices_data")
-        return len(rows)
+        return self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._INDICES_DATA_UPSERT_SPEC,
+            relation_insert_threshold=self._INDICES_DATA_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_indices_data_via_relation,
+        )
+
+    def _publish_indices_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
+        return self._publish_rows_via_relation(
+            rows, spec=self._INDICES_DATA_UPSERT_SPEC
+        )
 
     def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        values = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("whole_day_open"),
-                row.get("whole_day_high"),
-                row.get("whole_day_low"),
-                row.get("whole_day_close"),
-                row.get("night_session_open"),
-                row.get("night_session_high"),
-                row.get("night_session_low"),
-                row.get("night_session_close"),
-                row.get("day_session_open"),
-                row.get("day_session_high"),
-                row.get("day_session_low"),
-                row.get("day_session_close"),
-                row.get("volume"),
-                row.get("open_interest"),
-                row.get("turnover_value"),
-                row.get("contract_month"),
-                row.get("strike_price"),
-                row.get("only_auction_volume"),
-                row.get("emergency_margin_trigger_division"),
-                row.get("put_call_division"),
-                row.get("last_trading_day"),
-                row.get("special_quotation_day"),
-                row.get("settlement_price"),
-                row.get("theoretical_price"),
-                row.get("base_volatility"),
-                row.get("underlying_price"),
-                row.get("implied_volatility"),
-                row.get("interest_rate"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO options_225_data (
-                    code, date, whole_day_open, whole_day_high, whole_day_low, whole_day_close,
-                    night_session_open, night_session_high, night_session_low, night_session_close,
-                    day_session_open, day_session_high, day_session_low, day_session_close,
-                    volume, open_interest, turnover_value, contract_month, strike_price,
-                    only_auction_volume, emergency_margin_trigger_division, put_call_division,
-                    last_trading_day, special_quotation_day, settlement_price, theoretical_price,
-                    base_volatility, underlying_price, implied_volatility, interest_rate, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (code, date) DO UPDATE
-                SET whole_day_open = excluded.whole_day_open,
-                    whole_day_high = excluded.whole_day_high,
-                    whole_day_low = excluded.whole_day_low,
-                    whole_day_close = excluded.whole_day_close,
-                    night_session_open = excluded.night_session_open,
-                    night_session_high = excluded.night_session_high,
-                    night_session_low = excluded.night_session_low,
-                    night_session_close = excluded.night_session_close,
-                    day_session_open = excluded.day_session_open,
-                    day_session_high = excluded.day_session_high,
-                    day_session_low = excluded.day_session_low,
-                    day_session_close = excluded.day_session_close,
-                    volume = excluded.volume,
-                    open_interest = excluded.open_interest,
-                    turnover_value = excluded.turnover_value,
-                    contract_month = excluded.contract_month,
-                    strike_price = excluded.strike_price,
-                    only_auction_volume = excluded.only_auction_volume,
-                    emergency_margin_trigger_division = excluded.emergency_margin_trigger_division,
-                    put_call_division = excluded.put_call_division,
-                    last_trading_day = excluded.last_trading_day,
-                    special_quotation_day = excluded.special_quotation_day,
-                    settlement_price = excluded.settlement_price,
-                    theoretical_price = excluded.theoretical_price,
-                    base_volatility = excluded.base_volatility,
-                    underlying_price = excluded.underlying_price,
-                    implied_volatility = excluded.implied_volatility,
-                    interest_rate = excluded.interest_rate,
-                    created_at = excluded.created_at
-                """,
-                values,
-            )
-            self._dirty_tables.add("options_225_data")
-        return len(rows)
+        return self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._OPTIONS_225_UPSERT_SPEC,
+            relation_insert_threshold=self._OPTIONS_225_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_options_225_data_via_relation,
+        )
+
+    def _publish_options_225_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
+        return self._publish_rows_via_relation(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
 
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        values = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("long_margin_volume"),
-                row.get("short_margin_volume"),
-            )
-            for row in rows
-        ]
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO margin_data
-                    (code, date, long_margin_volume, short_margin_volume)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (code, date) DO UPDATE
-                SET long_margin_volume = excluded.long_margin_volume,
-                    short_margin_volume = excluded.short_margin_volume
-                """,
-                values,
-            )
-            self._dirty_tables.add("margin_data")
-        return len(rows)
+        return self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._MARGIN_DATA_UPSERT_SPEC,
+            relation_insert_threshold=self._MARGIN_DATA_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_margin_data_via_relation,
+        )
+
+    def _publish_margin_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
+        return self._publish_rows_via_relation(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
 
     def publish_statements(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
@@ -588,10 +544,7 @@ class DuckDbParquetTimeSeriesStore:
             f"SET {update_clause}"
         )
 
-        values = [
-            tuple(row.get(column) for column in insert_columns)
-            for row in rows
-        ]
+        values = [tuple(row.get(column) for column in insert_columns) for row in rows]
         with self._lock:
             self._conn.executemany(sql, values)
             self._dirty_tables.add("statements")
@@ -704,24 +657,32 @@ class DuckDbParquetTimeSeriesStore:
                 "SELECT DISTINCT code FROM statements WHERE code IS NOT NULL"
             ).fetchall()
             topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
-            stock_row = stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
-            indices_row = indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
-            options_225_row = (
-                options_225_row_raw if options_225_row_raw is not None else (0, None, None, 0)
+            stock_row = (
+                stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
             )
-            margin_row = margin_row_raw if margin_row_raw is not None else (0, None, None, 0)
-            statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
-            missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
+            indices_row = (
+                indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
+            )
+            options_225_row = (
+                options_225_row_raw
+                if options_225_row_raw is not None
+                else (0, None, None, 0)
+            )
+            margin_row = (
+                margin_row_raw if margin_row_raw is not None else (0, None, None, 0)
+            )
+            statements_row = (
+                statements_row_raw if statements_row_raw is not None else (0, None)
+            )
+            missing_stock_dates_count = (
+                int(missing_count_row[0] or 0) if missing_count_row else 0
+            )
             missing_options_225_dates_count = (
                 int(missing_options_225_count_row[0] or 0)
                 if missing_options_225_count_row
                 else 0
             )
-            margin_codes = {
-                str(row[0])
-                for row in margin_codes_rows
-                if row and row[0]
-            }
+            margin_codes = {str(row[0]) for row in margin_codes_rows if row and row[0]}
             margin_orphan_count = 0
             if self._table_exists("stocks"):
                 margin_orphan_row = self._conn.execute(
@@ -733,7 +694,9 @@ class DuckDbParquetTimeSeriesStore:
                       AND s.code IS NULL
                     """
                 ).fetchone()
-                margin_orphan_count = int(margin_orphan_row[0] or 0) if margin_orphan_row else 0
+                margin_orphan_count = (
+                    int(margin_orphan_row[0] or 0) if margin_orphan_row else 0
+                )
 
             missing_stock_dates: list[str] = []
             if missing_stock_dates_limit > 0:
@@ -748,7 +711,9 @@ class DuckDbParquetTimeSeriesStore:
                     """,
                     [missing_stock_dates_limit],
                 ).fetchall()
-                missing_stock_dates = [str(row[0]) for row in missing_rows if row and row[0]]
+                missing_stock_dates = [
+                    str(row[0]) for row in missing_rows if row and row[0]
+                ]
 
             missing_options_225_dates: list[str] = []
             if missing_options_225_dates_limit > 0:
@@ -777,9 +742,7 @@ class DuckDbParquetTimeSeriesStore:
                 if row and row[0] and row[1]
             }
             statement_codes = {
-                str(row[0])
-                for row in statement_codes_rows
-                if row and row[0]
+                str(row[0]) for row in statement_codes_rows if row and row[0]
             }
 
             return TimeSeriesInspection(
@@ -868,11 +831,96 @@ class DuckDbParquetTimeSeriesStore:
 
             escaped = str(output_path).replace("'", "''")
             if spec.order_by:
-                source_sql = f"(SELECT * FROM {spec.table_name} ORDER BY {spec.order_by})"
+                source_sql = (
+                    f"(SELECT * FROM {spec.table_name} ORDER BY {spec.order_by})"
+                )
             else:
                 source_sql = spec.table_name
             self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
             self._dirty_tables.discard(table_name)
+
+    @staticmethod
+    def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:
+        if spec.update_columns is not None:
+            return spec.update_columns
+        return tuple(
+            column for column in spec.columns if column not in spec.conflict_columns
+        )
+
+    @classmethod
+    def _build_upsert_update_clause(cls, spec: _RelationUpsertSpec) -> str:
+        return ", ".join(
+            f"{column} = excluded.{column}"
+            for column in cls._resolve_upsert_update_columns(spec)
+        )
+
+    @classmethod
+    def _build_executemany_upsert_sql(cls, spec: _RelationUpsertSpec) -> str:
+        columns_sql = ", ".join(spec.columns)
+        placeholders = ", ".join("?" for _ in spec.columns)
+        conflict_sql = ", ".join(spec.conflict_columns)
+        update_clause = cls._build_upsert_update_clause(spec)
+        return (
+            f"INSERT INTO {spec.table_name} ({columns_sql}) "
+            f"VALUES ({placeholders}) "
+            f"ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}"
+        )
+
+    @classmethod
+    def _build_relation_upsert_sql(cls, spec: _RelationUpsertSpec) -> str:
+        columns_sql = ", ".join(spec.columns)
+        conflict_sql = ", ".join(spec.conflict_columns)
+        update_clause = cls._build_upsert_update_clause(spec)
+        return (
+            f"INSERT INTO {spec.table_name} ({columns_sql}) "
+            f"SELECT {columns_sql} FROM {spec.relation_name} "
+            f"ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}"
+        )
+
+    @staticmethod
+    def _build_upsert_values(
+        rows: list[dict[str, Any]],
+        *,
+        columns: tuple[str, ...],
+    ) -> list[tuple[Any, ...]]:
+        return [tuple(row.get(column) for column in columns) for row in rows]
+
+    def _publish_rows_with_upsert_spec(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        spec: _RelationUpsertSpec,
+        relation_insert_threshold: int,
+        relation_publisher: Callable[[list[dict[str, Any]]], int],
+    ) -> int:
+        if not rows:
+            return 0
+        if len(rows) >= relation_insert_threshold:
+            return relation_publisher(rows)
+        values = self._build_upsert_values(rows, columns=spec.columns)
+        with self._lock:
+            self._conn.executemany(self._build_executemany_upsert_sql(spec), values)
+            self._dirty_tables.add(spec.table_name)
+        return len(rows)
+
+    def _publish_rows_via_relation(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        spec: _RelationUpsertSpec,
+    ) -> int:
+        dataframe = pd.DataFrame.from_records(
+            [{column: row.get(column) for column in spec.columns} for row in rows],
+            columns=spec.columns,
+        )
+        with self._lock:
+            self._conn.register(spec.relation_name, dataframe)
+            try:
+                self._conn.execute(self._build_relation_upsert_sql(spec))
+            finally:
+                self._conn.unregister(spec.relation_name)
+            self._dirty_tables.add(spec.table_name)
+        return len(rows)
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
         with self._lock:
