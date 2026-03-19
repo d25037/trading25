@@ -10380,9 +10380,15 @@
             "title": "Limit"
           },
           "markets": {
-            "default": "prime",
-            "title": "Markets",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Markets"
           },
           "order": {
             "default": "desc",
@@ -13430,6 +13436,30 @@
             "title": "Category",
             "type": "string"
           },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "resolved dataset snapshot name",
+            "title": "Dataset Name"
+          },
+          "dataset_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dataset preset recorded in manifest",
+            "title": "Dataset Preset"
+          },
           "description": {
             "anyOf": [
               {
@@ -13487,6 +13517,21 @@
             "description": "戦略名（カテゴリ/名前）",
             "title": "Name",
             "type": "string"
+          },
+          "screening_default_markets": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "default screening markets inferred from strategy dataset preset",
+            "title": "Screening Default Markets"
           },
           "screening_error": {
             "anyOf": [

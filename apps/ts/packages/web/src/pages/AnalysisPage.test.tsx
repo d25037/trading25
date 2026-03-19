@@ -63,6 +63,7 @@ let mockStrategiesQueryResult: {
       category: string;
       screening_support: 'supported' | 'unsupported';
       entry_decidability?: 'pre_open_decidable' | 'requires_same_session_observation' | null;
+      screening_default_markets?: string[] | null;
     }>;
   } | null;
   isLoading: boolean;
@@ -223,18 +224,21 @@ describe('AnalysisPage', () => {
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'pre_open_decidable',
+            screening_default_markets: ['prime'],
           },
           {
             name: 'production/forward_eps_driven',
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'pre_open_decidable',
+            screening_default_markets: ['prime', 'standard'],
           },
           {
             name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'requires_same_session_observation',
+            screening_default_markets: ['growth'],
           },
         ],
       },
@@ -281,6 +285,7 @@ describe('AnalysisPage', () => {
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
         entryDecidability: 'pre_open_decidable',
+        autoMarkets: ['prime', 'standard'],
         strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
       })
     );
@@ -296,7 +301,26 @@ describe('AnalysisPage', () => {
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
         entryDecidability: 'requires_same_session_observation',
+        autoMarkets: ['growth'],
         strategyOptions: ['production/topix_gap_down_intraday_same_day'],
+      })
+    );
+  });
+
+  it('narrows auto markets to explicitly selected strategies while markets stay undefined', () => {
+    mockRouteState.preOpenScreeningParams = {
+      ...mockRouteState.preOpenScreeningParams,
+      strategies: 'production/range_break_v15',
+    };
+
+    render(<AnalysisPage />);
+
+    expect(mockScreeningFilters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        autoMarkets: ['prime'],
+        params: expect.objectContaining({
+          strategies: 'production/range_break_v15',
+        }),
       })
     );
   });

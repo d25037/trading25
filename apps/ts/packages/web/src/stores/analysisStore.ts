@@ -8,7 +8,6 @@ export type AnalysisSubTab = 'preOpenScreening' | 'inSessionScreening' | 'rankin
 
 export const DEFAULT_PRE_OPEN_SCREENING_PARAMS: ScreeningParams = {
   entry_decidability: 'pre_open_decidable',
-  markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
   order: 'desc',
@@ -17,7 +16,6 @@ export const DEFAULT_PRE_OPEN_SCREENING_PARAMS: ScreeningParams = {
 
 export const DEFAULT_IN_SESSION_SCREENING_PARAMS: ScreeningParams = {
   entry_decidability: 'requires_same_session_observation',
-  markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
   order: 'desc',

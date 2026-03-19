@@ -297,6 +297,7 @@ def test_save_strategy_config_production_allowed(tmp_path):
     loader = ConfigLoader(config_dir=str(config_dir))
 
     config = {
+        "shared_config": {"dataset": "primeExTopix500"},
         "entry_filter_params": {
             "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
         },
@@ -313,6 +314,30 @@ def test_save_strategy_config_production_allowed(tmp_path):
     assert path.exists()
     assert path.name == "my_strategy.yaml"
     assert "production" in str(path)
+
+
+def test_save_strategy_config_production_requires_explicit_dataset(tmp_path):
+    """production 保存は raw YAML の shared_config.dataset を必須とする"""
+    config_dir = tmp_path / "config"
+    production_dir = config_dir / "strategies" / "production"
+    production_dir.mkdir(parents=True)
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    loader.default_config = {"dataset": "primeExTopix500"}
+
+    config = {
+        "entry_filter_params": {
+            "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+        }
+    }
+
+    with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+        loader.save_strategy_config(
+            "production/my_strategy",
+            config,
+            force=True,
+            allow_production=True,
+        )
 
 
 def test_save_strategy_config_reference_raises():
@@ -588,7 +613,10 @@ def test_move_strategy_success(tmp_path):
     source_dir = config_dir / "strategies" / "experimental" / "auto"
     source_dir.mkdir(parents=True)
     source_file = source_dir / "sample.yaml"
-    source_file.write_text("entry_filter_params: {}", encoding="utf-8")
+    source_file.write_text(
+        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        encoding="utf-8",
+    )
 
     loader = ConfigLoader(config_dir=str(config_dir))
     new_name, new_path = loader.move_strategy("experimental/auto/sample", "production")
@@ -623,7 +651,10 @@ def test_move_strategy_conflict_raises(tmp_path):
     experimental_dir.mkdir(parents=True)
     production_dir.mkdir(parents=True)
 
-    (experimental_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+    (experimental_dir / "sample.yaml").write_text(
+        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        encoding="utf-8",
+    )
     (production_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
 
     loader = ConfigLoader(config_dir=str(config_dir))
@@ -667,7 +698,10 @@ def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
     production_dir.mkdir(parents=True)
 
     source_path = experimental_dir / "sample.yaml"
-    source_path.write_text("entry_filter_params: {}", encoding="utf-8")
+    source_path.write_text(
+        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        encoding="utf-8",
+    )
 
     loader = ConfigLoader(config_dir=str(config_dir))
 
@@ -681,6 +715,20 @@ def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "rename", _raise_oserror)
 
     with pytest.raises(OSError, match="disk full"):
+        loader.move_strategy("experimental/sample", "production")
+
+
+def test_move_strategy_to_production_requires_explicit_dataset(tmp_path):
+    """production への移動は raw YAML の shared_config.dataset を必須とする"""
+    config_dir = tmp_path / "config"
+    experimental_dir = config_dir / "strategies" / "experimental"
+    experimental_dir.mkdir(parents=True)
+    (experimental_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    loader.default_config = {"dataset": "primeExTopix500"}
+
+    with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
         loader.move_strategy("experimental/sample", "production")
 
 

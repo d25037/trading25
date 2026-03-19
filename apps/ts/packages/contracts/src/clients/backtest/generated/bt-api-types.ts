@@ -7406,11 +7406,8 @@ export interface components {
             entry_decidability: "pre_open_decidable" | "requires_same_session_observation";
             /** Limit */
             limit?: number | null;
-            /**
-             * Markets
-             * @default prime
-             */
-            markets: string;
+            /** Markets */
+            markets?: string | null;
             /**
              * Order
              * @default desc
@@ -8864,6 +8861,16 @@ export interface components {
              */
             category: string;
             /**
+             * Dataset Name
+             * @description resolved dataset snapshot name
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Preset
+             * @description dataset preset recorded in manifest
+             */
+            dataset_preset?: string | null;
+            /**
              * Description
              * @description 説明
              */
@@ -8888,6 +8895,11 @@ export interface components {
              * @description 戦略名（カテゴリ/名前）
              */
             name: string;
+            /**
+             * Screening Default Markets
+             * @description default screening markets inferred from strategy dataset preset
+             */
+            screening_default_markets?: string[] | null;
             /**
              * Screening Error
              * @description validation error when screening availability cannot be resolved

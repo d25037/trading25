@@ -25,6 +25,7 @@ import {
   useScreeningResult,
 } from '@/hooks/useScreening';
 import { ApiError } from '@/lib/api-client';
+import { unionMarkets } from '@/lib/marketUtils';
 import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
@@ -90,6 +91,16 @@ function areScreeningParamsEqual(left: ScreeningParams, right: ScreeningParams):
   );
 }
 
+function parseCsvTokens(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
 function isPreOpenScreeningStrategy(strategy: StrategyMetadata): boolean {
   return (
     strategy.category === 'production' &&
@@ -106,6 +117,15 @@ function isInSessionScreeningStrategy(strategy: StrategyMetadata): boolean {
   );
 }
 
+function isEligibleScreeningStrategy(
+  strategy: StrategyMetadata,
+  entryDecidability: EntryDecidability
+): boolean {
+  return entryDecidability === 'requires_same_session_observation'
+    ? isInSessionScreeningStrategy(strategy)
+    : isPreOpenScreeningStrategy(strategy);
+}
+
 function selectStrategyNames(
   strategies: StrategyMetadata[] | undefined,
   predicate: (strategy: StrategyMetadata) => boolean
@@ -118,6 +138,25 @@ function selectStrategyNames(
     .filter(predicate)
     .map((strategy) => strategy.name)
     .sort((left, right) => left.localeCompare(right));
+}
+
+function resolveAutoScreeningMarkets(
+  strategies: StrategyMetadata[] | undefined,
+  params: ScreeningParams,
+  entryDecidability: EntryDecidability
+): string[] {
+  if (!strategies) {
+    return [];
+  }
+
+  const eligibleStrategies = strategies.filter((strategy) => isEligibleScreeningStrategy(strategy, entryDecidability));
+  const eligibleByName = new Map(eligibleStrategies.map((strategy) => [strategy.name, strategy]));
+  const selectedStrategies = parseCsvTokens(params.strategies)
+    .map((name) => eligibleByName.get(name))
+    .filter((strategy): strategy is StrategyMetadata => strategy !== undefined);
+  const targetStrategies = selectedStrategies.length > 0 ? selectedStrategies : eligibleStrategies;
+
+  return unionMarkets(targetStrategies.map((strategy) => strategy.screening_default_markets));
 }
 
 function useSanitizedScreeningParams(
@@ -142,6 +181,7 @@ interface AnalysisSidebarProps {
   activeSubTab: AnalysisSubTab;
   entryDecidability: EntryDecidability;
   screeningParams: ScreeningParams;
+  screeningAutoMarkets: string[];
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
   setScreeningParams: (params: ScreeningParams) => void;
@@ -155,6 +195,7 @@ function AnalysisSidebar({
   activeSubTab,
   entryDecidability,
   screeningParams,
+  screeningAutoMarkets,
   rankingParams,
   fundamentalRankingParams,
   setScreeningParams,
@@ -170,6 +211,7 @@ function AnalysisSidebar({
         params={screeningParams}
         onChange={setScreeningParams}
         strategyOptions={productionStrategies}
+        autoMarkets={screeningAutoMarkets}
         strategiesLoading={isLoadingStrategies}
       />
     );
@@ -516,6 +558,16 @@ export function AnalysisPage() {
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
   const preOpenProductionStrategies = selectStrategyNames(productionStrategies, isPreOpenScreeningStrategy);
   const inSessionProductionStrategies = selectStrategyNames(productionStrategies, isInSessionScreeningStrategy);
+  const preOpenAutoMarkets = resolveAutoScreeningMarkets(
+    productionStrategies,
+    preOpenScreeningParams,
+    'pre_open_decidable'
+  );
+  const inSessionAutoMarkets = resolveAutoScreeningMarkets(
+    productionStrategies,
+    inSessionScreeningParams,
+    'requires_same_session_observation'
+  );
   const activeEntryDecidability: EntryDecidability =
     activeSubTab === 'inSessionScreening'
       ? 'requires_same_session_observation'
@@ -548,6 +600,10 @@ export function AnalysisPage() {
     activeEntryDecidability === 'requires_same_session_observation'
       ? inSessionScreening
       : preOpenScreening;
+  const activeScreeningAutoMarkets =
+    activeEntryDecidability === 'requires_same_session_observation'
+      ? inSessionAutoMarkets
+      : preOpenAutoMarkets;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeEntryDecidability];
 
   const handleStockClick = useCallback(
@@ -603,6 +659,7 @@ export function AnalysisPage() {
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
             screeningParams={activeScreening.params}
+            screeningAutoMarkets={activeScreeningAutoMarkets}
             rankingParams={rankingParams}
             fundamentalRankingParams={fundamentalRankingParams}
             setScreeningParams={activeScreening.setParams}

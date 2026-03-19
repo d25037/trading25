@@ -245,6 +245,30 @@ class TestValidateStrategy:
         assert data["errors"] == []
         mock_runner.get_execution_info.assert_not_called()
 
+    def test_production_requires_explicit_dataset_in_raw_yaml(self, client, mock_config_loader):
+        mock_config_loader.resolve_strategy_category.return_value = "production"
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+        }
+
+        resp = client.post(
+            "/api/strategies/production/range_break_v16/validate",
+            json={
+                "config": {
+                    "entry_filter_params": {
+                        "volume_ratio_above": {"enabled": True},
+                    }
+                }
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+        assert any("shared_config.dataset explicitly" in error for error in data["errors"])
+
 
 class TestUpdateStrategy:
     def test_success(self, client, mock_config_loader):
@@ -474,8 +498,23 @@ class TestListStrategies:
             {"dataset": "primeExTopix500"},
             {"execution_policy": {"mode": "current_session_round_trip"}},
         ]
-
-        resp = client.get("/api/strategies")
+        with patch.object(
+            strategies_mod,
+            "resolve_strategy_dataset_metadata",
+            side_effect=[
+                strategies_mod.StrategyDatasetMetadata(
+                    dataset_name="primeExTopix500_20260316",
+                    dataset_preset="primeExTopix500",
+                    screening_default_markets=["prime", "standard"],
+                ),
+                strategies_mod.StrategyDatasetMetadata(
+                    dataset_name=None,
+                    dataset_preset=None,
+                    screening_default_markets=None,
+                ),
+            ],
+        ):
+            resp = client.get("/api/strategies")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2
@@ -483,6 +522,9 @@ class TestListStrategies:
         assert data["strategies"][0]["screening_support"] == "supported"
         assert data["strategies"][0]["entry_decidability"] == "pre_open_decidable"
         assert data["strategies"][0]["screening_error"] is None
+        assert data["strategies"][0]["dataset_name"] == "primeExTopix500_20260316"
+        assert data["strategies"][0]["dataset_preset"] == "primeExTopix500"
+        assert data["strategies"][0]["screening_default_markets"] == ["prime", "standard"]
         assert data["strategies"][1]["screening_support"] == "supported"
         assert data["strategies"][1]["entry_decidability"] == "requires_same_session_observation"
         assert data["strategies"][1]["screening_error"] is None
@@ -502,8 +544,16 @@ class TestListStrategies:
             },
         }
         mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}
-
-        resp = client.get("/api/strategies")
+        with patch.object(
+            strategies_mod,
+            "resolve_strategy_dataset_metadata",
+            return_value=strategies_mod.StrategyDatasetMetadata(
+                dataset_name="primeExTopix500_20260316",
+                dataset_preset="primeExTopix500",
+                screening_default_markets=["prime"],
+            ),
+        ):
+            resp = client.get("/api/strategies")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -528,6 +578,41 @@ class TestListStrategies:
         assert data["strategies"][0]["screening_support"] == "unsupported"
         assert data["strategies"][0]["entry_decidability"] is None
         assert data["strategies"][0]["screening_error"] == "bad yaml"
+
+    def test_dataset_metadata_failure_does_not_drop_screening_support(
+        self,
+        client,
+        mock_config_loader,
+    ):
+        mock_config_loader.get_strategy_metadata.return_value = [
+            SimpleNamespace(
+                name="production/range_break_v16",
+                category="production",
+                mtime=datetime(2026, 2, 17),
+            ),
+        ]
+        mock_config_loader.load_strategy_config.return_value = {
+            "shared_config": {"dataset": "primeExTopix500"},
+            "entry_filter_params": {},
+            "exit_trigger_params": {},
+        }
+        mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}
+
+        with patch.object(
+            strategies_mod,
+            "resolve_strategy_dataset_metadata",
+            side_effect=FileNotFoundError("manifest missing"),
+        ):
+            resp = client.get("/api/strategies")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["strategies"][0]["screening_support"] == "supported"
+        assert data["strategies"][0]["entry_decidability"] == "pre_open_decidable"
+        assert data["strategies"][0]["screening_error"] == "manifest missing"
+        assert data["strategies"][0]["dataset_name"] is None
+        assert data["strategies"][0]["dataset_preset"] is None
+        assert data["strategies"][0]["screening_default_markets"] is None
 
     def test_error_500(self, client, mock_config_loader):
         mock_config_loader.get_strategy_metadata.side_effect = RuntimeError("boom")

@@ -18,6 +18,9 @@ from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobPayload, ScreeningJobRequest
 from src.application.services.job_manager import JobManager
 from src.application.services.run_contracts import build_parameterized_run_spec
+from src.application.services.screening_default_markets import (
+    resolve_default_screening_markets,
+)
 from src.application.services.screening_service import ScreeningService
 from src.shared.observability.correlation import get_correlation_id
 from src.shared.observability.metrics import metrics_recorder
@@ -49,13 +52,33 @@ class ScreeningJobService:
         """ジョブIDに紐づくリクエストを取得"""
         return self._job_requests.get(job_id)
 
+    def _normalize_request(self, request: ScreeningJobRequest) -> ScreeningJobRequest:
+        normalized = request.model_copy(deep=True)
+        if normalized.markets is not None and normalized.markets.strip():
+            normalized.markets = normalized.markets.strip()
+            return normalized
+
+        resolved = resolve_default_screening_markets(
+            entry_decidability=normalized.entry_decidability,
+            strategies=normalized.strategies,
+        )
+        normalized.markets = resolved.markets_param
+        return normalized
+
+    @staticmethod
+    def _require_effective_markets(request: ScreeningJobRequest) -> str:
+        markets = request.markets
+        if markets is None or not markets.strip():
+            raise ValueError("Screening request must include effective markets")
+        return markets
+
     async def submit_screening(
         self,
         reader: MarketDbReader,
         request: ScreeningJobRequest,
     ) -> str:
         """Screening ジョブをサブミット"""
-        request_copy = request.model_copy(deep=True)
+        request_copy = self._normalize_request(request)
         run_spec = build_parameterized_run_spec(
             "screening",
             "analytics/screening",
@@ -112,11 +135,12 @@ class ScreeningJobService:
             )
 
             service = ScreeningService(reader)
+            effective_markets = self._require_effective_markets(request)
             response = await loop.run_in_executor(
                 self._executor,
                 lambda: service.run_screening(
                     entry_decidability=request.entry_decidability,
-                    markets=request.markets,
+                    markets=effective_markets,
                     strategies=request.strategies,
                     recent_days=request.recentDays,
                     reference_date=request.date,

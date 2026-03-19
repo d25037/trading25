@@ -47,7 +47,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks` / `margin_data`）とし、dataset へのフォールバックを禁止する
 - `Charts`/`Analysis` の `stock_data` 読み取りは 4桁/5桁コード混在を正規化し、同日重複行は 4桁コード優先で 1 行化する。`stocks` 欠落時でも `stock_data` からの OHLCV 取得を継続する
 - Screening / Charts / Backtest / Signal semantics の SoT matrix は [`docs/architecture-sot-matrix.md`](docs/architecture-sot-matrix.md) を参照する
-- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
+- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）。`production/*` は raw YAML で `shared_config.dataset` の明示宣言を必須とし、`default.yaml` 継承のみでは不十分とする
 - Backtest family（`backtest` / `attribution` / `optimize` / `lab`）は `shared_config.execution_policy.mode` として `next_session_round_trip` / `current_session_round_trip` / `overnight_round_trip` をサポートする。`next_session_round_trip` は entry signal の翌営業日 `Open` で建てて同日 `Close` で閉じ、`current_session_round_trip` は当日 `Open` で建てて当日 `Close` で閉じ、`overnight_round_trip` は当日 `Close` で建てて翌営業日 `Open` で閉じる。`screening` は `next_session_round_trip` を unsupported error で拒否し、production strategy を `screening_support` (`supported` / `unsupported`) と `entry_decidability` (`pre_open_decidable` / `requires_same_session_observation`) で分類する
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - Strategy `rename` / `delete` の権限判定はトップレベルカテゴリ基準で行い、`experimental/**`（例: `experimental/optuna/foo`）は許可する
@@ -181,7 +181,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラー時のみとする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する
-- `analysis screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
+- `analysis screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止。`markets` 未指定時は selected strategies（未選択なら eligible production strategies 全体）の dataset manifest preset markets の union を Auto 既定値とし、explicit な request/URL/UI 指定が常に優先する
 - Analysis `Screening / Daily Ranking / Fundamental Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - Analysis 画面は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
 - `/charts` `symbol`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/options-225` `date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`、`/analysis` `tab + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する

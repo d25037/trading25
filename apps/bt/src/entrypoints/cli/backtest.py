@@ -19,6 +19,9 @@ from loguru import logger
 from src.shared.constants import THREAD_TIMEOUT_SECONDS
 from src.infrastructure.data_access.mode import DATA_ACCESS_MODE_ENV
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 
 console = Console()
 
@@ -40,6 +43,14 @@ def run_backtest(strategy: str) -> None:
         except ValueError as e:
             console.print(f"[bold red]Strategy Name Error:[/bold red] {e}")
             raise SystemExit(1)
+
+        category_resolver = getattr(config_loader, "resolve_strategy_category", None)
+        resolved_category = category_resolver(strategy) if callable(category_resolver) else None
+        validate_production_strategy_dataset_requirement(
+            category=resolved_category if isinstance(resolved_category, str) else None,
+            config=strategy_config,
+            strategy_name=strategy,
+        )
 
         # Use parameters directly (complete with YAML config)
         # Base on default.yaml parameters, add entry_filter_params, exit_trigger_params

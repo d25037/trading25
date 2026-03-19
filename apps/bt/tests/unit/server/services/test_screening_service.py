@@ -239,7 +239,8 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {
-                    "execution_policy": {"mode": "next_session_round_trip"}
+                    "dataset": "primeExTopix500",
+                    "execution_policy": {"mode": "next_session_round_trip"},
                 },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
@@ -280,7 +281,8 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {
-                    "execution_policy": {"mode": "current_session_round_trip"}
+                    "dataset": "primeExTopix500",
+                    "execution_policy": {"mode": "current_session_round_trip"},
                 },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
@@ -321,6 +323,7 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
+                "shared_config": {"dataset": "primeExTopix500"},
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {
                     "index_open_gap_regime": {"enabled": True},
@@ -404,6 +407,7 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
+                "shared_config": {"dataset": "primeExTopix500"},
                 "entry_filter_params": {},
                 "exit_trigger_params": {},
             },
@@ -467,6 +471,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda name: {
                 "shared_config": {
+                    "dataset": "primeExTopix500",
                     "execution_policy": {
                         "mode": (
                             "current_session_round_trip"

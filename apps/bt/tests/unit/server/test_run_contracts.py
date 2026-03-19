@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.application.services.job_manager import JobInfo
 from src.application.services.run_contracts import (
     build_config_override_run_spec,
@@ -168,12 +170,33 @@ class TestRunSpecBuilders:
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
                 return {"dataset": "primeExTopix500", "direction": "longonly"}
 
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return None
+
         dataset_name = resolve_strategy_dataset_name(
             "demo-strategy",
             config_loader=_StubConfigLoader(),
         )
 
         assert dataset_name == "primeExTopix500"
+
+    def test_resolve_strategy_dataset_name_rejects_production_default_yaml_inheritance(self) -> None:
+        class _StubConfigLoader:
+            def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
+                assert strategy_name == "production/demo-strategy"
+                return {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
+
+            def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
+                return {"dataset": "primeExTopix500", "direction": "longonly"}
+
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return "production"
+
+        with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+            resolve_strategy_dataset_name(
+                "production/demo-strategy",
+                config_loader=_StubConfigLoader(),
+            )
 
     def test_build_strategy_run_spec_uses_base_strategy_dataset_when_override_missing(self) -> None:
         class _StubConfigLoader:
@@ -183,6 +206,9 @@ class TestRunSpecBuilders:
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
                 return {"dataset": "primeExTopix500"}
+
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return None
 
         run_spec = build_strategy_run_spec(
             "optimization",
@@ -209,6 +235,9 @@ class TestRunSpecBuilders:
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
                 return {"dataset": "primeExTopix500", "direction": "longonly"}
 
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return None
+
         run_spec = build_strategy_run_spec(
             "backtest",
             "demo-strategy",
@@ -222,6 +251,28 @@ class TestRunSpecBuilders:
         assert run_spec.parameters["config_override"] == {
             "shared_config": {"direction": "shortonly"},
         }
+
+    def test_build_strategy_run_spec_rejects_invalid_production_yaml_even_with_override_dataset(
+        self,
+    ) -> None:
+        class _StubConfigLoader:
+            def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
+                assert strategy_name == "production/demo-strategy"
+                return {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
+
+            def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
+                return {"dataset": "primeExTopix500", "direction": "longonly"}
+
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return "production"
+
+        with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+            build_strategy_run_spec(
+                "backtest",
+                "production/demo-strategy",
+                config_override={"shared_config": {"dataset": "runtime-override"}},
+                config_loader=_StubConfigLoader(),
+            )
 
     def test_build_strategy_run_spec_attaches_compiled_strategy_requirements(self) -> None:
         class _StubConfigLoader:
@@ -242,6 +293,9 @@ class TestRunSpecBuilders:
                 if isinstance(shared_config, dict):
                     merged.update(shared_config)
                 return merged
+
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return None
 
         run_spec = build_strategy_run_spec(
             "backtest",
@@ -278,6 +332,9 @@ class TestRunSpecBuilders:
                 if isinstance(shared_config, dict):
                     merged.update(shared_config)
                 return merged
+
+            def resolve_strategy_category(self, _strategy_name: str) -> str | None:
+                return None
 
         run_spec = build_strategy_run_spec(
             "backtest",

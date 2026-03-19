@@ -11,6 +11,9 @@ from src.domains.strategy.runtime.compiler import (
     compile_runtime_strategy,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 
@@ -83,6 +86,13 @@ def load_strategy_screening_config(
     strategy_name: str,
 ) -> LoadedStrategyScreeningConfig:
     config = config_loader.load_strategy_config(strategy_name)
+    category_resolver = getattr(config_loader, "resolve_strategy_category", None)
+    resolved_category = category_resolver(strategy_name) if callable(category_resolver) else None
+    validate_production_strategy_dataset_requirement(
+        category=resolved_category if isinstance(resolved_category, str) else None,
+        config=config,
+        strategy_name=strategy_name,
+    )
     shared_config_dict = config_loader.merge_shared_config(config)
     shared_config = SharedConfig.model_validate(
         shared_config_dict,

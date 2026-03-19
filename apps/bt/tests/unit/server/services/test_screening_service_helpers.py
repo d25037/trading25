@@ -354,7 +354,11 @@ class TestStrategyResolutionHelpers:
         monkeypatch.setattr(
             service._config_loader,
             "load_strategy_config",
-            lambda _name: {"entry_filter_params": {}, "exit_trigger_params": {}},
+            lambda _name: {
+                "shared_config": {"dataset": "primeExTopix500"},
+                "entry_filter_params": {},
+                "exit_trigger_params": {},
+            },
         )
         monkeypatch.setattr(
             service._config_loader,

@@ -34,6 +34,18 @@ class StrategyMetadataResponse(BaseModel):
         default=None,
         description="validation error when screening availability cannot be resolved",
     )
+    dataset_name: str | None = Field(
+        default=None,
+        description="resolved dataset snapshot name",
+    )
+    dataset_preset: str | None = Field(
+        default=None,
+        description="dataset preset recorded in manifest",
+    )
+    screening_default_markets: list[str] | None = Field(
+        default=None,
+        description="default screening markets inferred from strategy dataset preset",
+    )
 
 
 class StrategyListResponse(BaseModel):

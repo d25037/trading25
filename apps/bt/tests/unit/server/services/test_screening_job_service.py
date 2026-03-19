@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.domains.backtest.contracts import RunType
+from src.application.services.screening_default_markets import ScreeningMarketResolution
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.screening_job_service import ScreeningJobService, _read_positive_int_env
@@ -55,7 +56,7 @@ async def test_run_job_does_not_release_slot_when_acquire_is_cancelled() -> None
     manager.release_slot = MagicMock()
 
     service = ScreeningJobService(manager=manager, max_workers=1)
-    request = ScreeningJobRequest()
+    request = ScreeningJobRequest(markets="prime")
 
     try:
         with pytest.raises(asyncio.CancelledError):
@@ -114,7 +115,7 @@ async def test_run_job_releases_slot_after_success(monkeypatch: pytest.MonkeyPat
     )
 
     service = ScreeningJobService(manager=manager, max_workers=1)
-    request = ScreeningJobRequest()
+    request = ScreeningJobRequest(markets="prime")
 
     try:
         await service._run_job("job-2", reader=MagicMock(), request=request)  # noqa: SLF001
@@ -175,6 +176,72 @@ async def test_get_job_request_returns_submitted_request(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
+async def test_submit_screening_infers_default_markets_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MagicMock()
+    manager.create_job.return_value = "job-auto"
+    manager.set_job_task = AsyncMock()
+    service = ScreeningJobService(manager=manager, max_workers=1)
+
+    fake_task = object()
+
+    def _fake_create_task(coro: object) -> object:
+        coro.close()
+        return fake_task
+
+    monkeypatch.setattr(asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.resolve_default_screening_markets",
+        lambda **_kwargs: ScreeningMarketResolution(
+            strategy_names=["production/range_break_v15", "production/forward_eps_driven"],
+            markets=["prime", "standard"],
+            markets_param="prime,standard",
+        ),
+    )
+
+    job_id = await service.submit_screening(
+        reader=MagicMock(),
+        request=ScreeningJobRequest(strategies="production/range_break_v15"),
+    )
+
+    assert job_id == "job-auto"
+    _, kwargs = manager.create_job.call_args
+    run_spec = kwargs["run_spec"]
+    assert run_spec.parameters["markets"] == "prime,standard"
+    assert service.get_job_request("job-auto") == ScreeningJobRequest(
+        markets="prime,standard",
+        strategies="production/range_break_v15",
+    )
+    manager.set_job_task.assert_awaited_once_with("job-auto", fake_task)
+
+    service._executor.shutdown(wait=True)  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_submit_screening_propagates_default_market_resolution_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MagicMock()
+    manager.create_job.return_value = "job-error"
+    manager.set_job_task = AsyncMock()
+    service = ScreeningJobService(manager=manager, max_workers=1)
+
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.resolve_default_screening_markets",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            ValueError("Failed to resolve default markets for production/broken")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="production/broken"):
+        await service.submit_screening(reader=MagicMock(), request=ScreeningJobRequest())
+
+    manager.create_job.assert_not_called()
+    service._executor.shutdown(wait=True)  # noqa: SLF001
+
+
+@pytest.mark.asyncio
 async def test_run_job_failure_marks_failed_and_releases_slot(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = MagicMock()
     manager.acquire_slot = AsyncMock(return_value=None)
@@ -196,7 +263,7 @@ async def test_run_job_failure_marks_failed_and_releases_slot(monkeypatch: pytes
     )
 
     service = ScreeningJobService(manager=manager, max_workers=1)
-    request = ScreeningJobRequest()
+    request = ScreeningJobRequest(markets="prime")
 
     try:
         await service._run_job("job-3", reader=MagicMock(), request=request)  # noqa: SLF001

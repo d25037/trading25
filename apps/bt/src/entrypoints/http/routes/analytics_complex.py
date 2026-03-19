@@ -241,7 +241,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         run_metadata=build_run_metadata(job),
         execution_control=build_job_execution_control(job),
         entry_decidability=params.entry_decidability,
-        markets=params.markets,
+        markets=params.markets or "",
         strategies=params.strategies,
         recentDays=params.recentDays,
         referenceDate=params.date,

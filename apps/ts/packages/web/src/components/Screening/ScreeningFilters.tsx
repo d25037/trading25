@@ -1,7 +1,8 @@
-import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
+import { DateInput, type MarketOption, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { canonicalizeMarkets, formatMarketsLabel } from '@/lib/marketUtils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type {
   EntryDecidability,
@@ -25,11 +26,21 @@ const LIMIT_OPTIONS = [
   { value: 200, label: '200' },
 ];
 
+const AUTO_MARKETS_VALUE = '__auto__';
+const BASE_MARKET_OPTIONS: MarketOption[] = [
+  { value: 'prime', label: 'Prime' },
+  { value: 'standard', label: 'Standard' },
+  { value: 'growth', label: 'Growth' },
+  { value: 'prime,standard', label: 'Prime + Standard' },
+  { value: 'prime,standard,growth', label: 'All Markets' },
+];
+
 interface ScreeningFiltersProps {
   entryDecidability: EntryDecidability;
   params: ScreeningParams;
   onChange: (params: ScreeningParams) => void;
   strategyOptions: string[];
+  autoMarkets: string[];
   strategiesLoading?: boolean;
 }
 
@@ -50,11 +61,45 @@ function stringifyStrategies(strategies: string[]): string | undefined {
   return strategies.join(',');
 }
 
+function normalizeMarketsValue(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = canonicalizeMarkets(value.split(','));
+  return normalized.length > 0 ? normalized.join(',') : undefined;
+}
+
+function buildMarketsOptions(autoMarkets: string[], explicitMarkets: string | undefined): MarketOption[] {
+  const options: MarketOption[] = [
+    {
+      value: AUTO_MARKETS_VALUE,
+      label: autoMarkets.length > 0 ? `Auto (${formatMarketsLabel(autoMarkets)})` : 'Auto',
+    },
+    ...BASE_MARKET_OPTIONS,
+  ];
+  const seen = new Set(options.map((option) => option.value));
+
+  for (const candidate of [normalizeMarketsValue(autoMarkets.join(',')), normalizeMarketsValue(explicitMarkets)]) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+    options.push({
+      value: candidate,
+      label: formatMarketsLabel(candidate.split(',')),
+    });
+    seen.add(candidate);
+  }
+
+  return options;
+}
+
 export function ScreeningFilters({
   entryDecidability,
   params,
   onChange,
   strategyOptions,
+  autoMarkets,
   strategiesLoading = false,
 }: ScreeningFiltersProps) {
   const updateParam = <K extends keyof ScreeningParams>(key: K, value: ScreeningParams[K]) => {
@@ -66,6 +111,8 @@ export function ScreeningFilters({
     entryDecidability === 'requires_same_session_observation'
       ? 'in-session production'
       : 'pre-open production';
+  const selectedMarketsValue = normalizeMarketsValue(params.markets);
+  const marketOptions = buildMarketsOptions(autoMarkets, selectedMarketsValue);
 
   const toggleStrategy = (strategyName: string) => {
     const selected = new Set(selectedStrategies);
@@ -84,8 +131,9 @@ export function ScreeningFilters({
       </CardHeader>
       <CardContent className="space-y-4">
         <MarketsSelect
-          value={params.markets || 'prime'}
-          onChange={(v) => updateParam('markets', v)}
+          value={selectedMarketsValue ?? AUTO_MARKETS_VALUE}
+          onChange={(value) => updateParam('markets', value === AUTO_MARKETS_VALUE ? undefined : value)}
+          options={marketOptions}
           id="screening-markets"
         />
 

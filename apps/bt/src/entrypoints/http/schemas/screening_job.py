@@ -22,7 +22,7 @@ class ScreeningJobRequest(BaseModel):
     """Screening ジョブ作成リクエスト"""
 
     entry_decidability: EntryDecidability = Field(default="pre_open_decidable")
-    markets: str = Field(default="prime")
+    markets: str | None = Field(default=None)
     strategies: str | None = Field(default=None)
     recentDays: int = Field(default=10, ge=1, le=90)
     date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")

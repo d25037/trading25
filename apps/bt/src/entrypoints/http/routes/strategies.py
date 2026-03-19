@@ -6,6 +6,9 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from src.domains.strategy.runtime.compiler import compile_strategy_config
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
 from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
@@ -27,6 +30,10 @@ from src.entrypoints.http.schemas.strategy import (
     StrategyValidationResponse,
 )
 from src.entrypoints.http.schemas.screening import EntryDecidability, ScreeningSupport
+from src.application.services.strategy_dataset_metadata import (
+    StrategyDatasetMetadata,
+    resolve_strategy_dataset_metadata,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.models import try_validate_strategy_config_dict_strict
 
@@ -38,13 +45,59 @@ _config_loader = ConfigLoader()
 
 def _resolve_screening_metadata(
     strategy_name: str,
-) -> tuple[ScreeningSupport, EntryDecidability | None, str | None]:
+) -> tuple[
+    ScreeningSupport,
+    EntryDecidability | None,
+    str | None,
+    StrategyDatasetMetadata,
+]:
     try:
         loaded = load_strategy_screening_config(_config_loader, strategy_name)
-        return loaded.screening_support, loaded.entry_decidability, None
     except Exception as exc:
         logger.warning(f"failed to resolve screening mode for {strategy_name}: {exc}")
-        return "unsupported", None, str(exc)
+        return (
+            "unsupported",
+            None,
+            str(exc),
+            StrategyDatasetMetadata(
+                dataset_name=None,
+                dataset_preset=None,
+                screening_default_markets=None,
+            ),
+        )
+
+    try:
+        dataset_metadata = resolve_strategy_dataset_metadata(
+            strategy_name,
+            config_loader=_config_loader,
+            strategy_config=loaded.config,
+        )
+        screening_error = None
+    except Exception as exc:
+        logger.warning(f"failed to resolve strategy dataset metadata for {strategy_name}: {exc}")
+        dataset_metadata = StrategyDatasetMetadata(
+            dataset_name=None,
+            dataset_preset=None,
+            screening_default_markets=None,
+        )
+        screening_error = str(exc)
+
+    return (
+        loaded.screening_support,
+        loaded.entry_decidability,
+        screening_error,
+        dataset_metadata,
+    )
+
+
+def _resolve_strategy_category(strategy_name: str) -> str | None:
+    if strategy_name.startswith("production/"):
+        return "production"
+
+    resolved_category = _config_loader.resolve_strategy_category(strategy_name)
+    if isinstance(resolved_category, str):
+        return resolved_category
+    return None
 
 
 @router.get("/api/strategies", response_model=StrategyListResponse)
@@ -59,7 +112,9 @@ async def list_strategies() -> StrategyListResponse:
 
         strategies = []
         for m in metadata_list:
-            screening_support, entry_decidability, screening_error = _resolve_screening_metadata(m.name)
+            screening_support, entry_decidability, screening_error, dataset_metadata = _resolve_screening_metadata(
+                m.name
+            )
             strategies.append(
                 StrategyMetadataResponse(
                     name=m.name,
@@ -70,6 +125,9 @@ async def list_strategies() -> StrategyListResponse:
                     screening_support=screening_support,
                     entry_decidability=entry_decidability,
                     screening_error=screening_error,
+                    dataset_name=dataset_metadata.dataset_name,
+                    dataset_preset=dataset_metadata.dataset_preset,
+                    screening_default_markets=dataset_metadata.screening_default_markets,
                 )
             )
 
@@ -159,6 +217,16 @@ async def validate_strategy(
         if not strict_valid:
             errors.extend(strict_errors)
         else:
+            try:
+                validate_production_strategy_dataset_requirement(
+                    category=_resolve_strategy_category(strategy_name),
+                    config=config,
+                    strategy_name=strategy_name,
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+
+        if not errors:
             try:
                 compiled_strategy = compile_strategy_config(
                     strategy_name,

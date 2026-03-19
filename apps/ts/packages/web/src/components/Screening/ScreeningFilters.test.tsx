@@ -10,17 +10,22 @@ vi.mock('@/components/shared/filters', () => ({
   MarketsSelect: ({
     value,
     onChange,
+    options,
     id,
   }: {
     value: string;
     onChange: (value: string) => void;
+    options?: Array<{ value: string; label: string }>;
     id: string;
   }) => (
     <label htmlFor={id}>
       Markets
       <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="prime">prime</option>
-        <option value="growth">growth</option>
+        {(options ?? []).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
       </select>
     </label>
   ),
@@ -101,7 +106,6 @@ vi.mock('@/components/ui/select', () => {
 describe('ScreeningFilters', () => {
   const defaultParams: ScreeningParams = {
     entry_decidability: 'pre_open_decidable',
-    markets: 'prime',
     recentDays: 10,
     sortBy: 'matchedDate',
     order: 'desc',
@@ -117,16 +121,49 @@ describe('ScreeningFilters', () => {
         params={defaultParams}
         onChange={vi.fn()}
         strategyOptions={strategyOptions}
+        autoMarkets={['prime', 'standard']}
         strategiesLoading={false}
       />
     );
 
     expect(screen.getByText('Filters')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Auto (Prime + Standard)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'production/range_break_v15' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'All pre-open production' })).toBeInTheDocument();
     expect(
       screen.getByText('No explicit selection: all pre-open production strategies are evaluated.')
     ).toBeInTheDocument();
+  });
+
+  it('renders Auto fallback and dynamic market options for non-standard combinations', () => {
+    render(
+      <ScreeningFilters
+        entryDecidability="pre_open_decidable"
+        params={{ ...defaultParams, markets: 'custom,growth' }}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        autoMarkets={[]}
+        strategiesLoading={false}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: 'Auto' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Growth + custom' })).toBeInTheDocument();
+  });
+
+  it('shows all-markets label when auto markets cover every built-in market', () => {
+    render(
+      <ScreeningFilters
+        entryDecidability="pre_open_decidable"
+        params={defaultParams}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        autoMarkets={['growth', 'prime', 'standard']}
+        strategiesLoading={false}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: 'Auto (All Markets)' })).toBeInTheDocument();
   });
 
   it('toggles strategies on and off and clears explicit selections', async () => {
@@ -139,6 +176,7 @@ describe('ScreeningFilters', () => {
         params={defaultParams}
         onChange={onChange}
         strategyOptions={strategyOptions}
+        autoMarkets={['prime']}
         strategiesLoading={false}
       />
     );
@@ -155,6 +193,7 @@ describe('ScreeningFilters', () => {
         params={{ ...defaultParams, strategies: 'production/range_break_v15,production/forward_eps_driven' }}
         onChange={onChange}
         strategyOptions={strategyOptions}
+        autoMarkets={['prime']}
         strategiesLoading={false}
       />
     );
@@ -173,6 +212,7 @@ describe('ScreeningFilters', () => {
         params={{ ...defaultParams, strategies: 'production/range_break_v15' }}
         onChange={onChange}
         strategyOptions={strategyOptions}
+        autoMarkets={['prime']}
         strategiesLoading={false}
       />
     );
@@ -197,6 +237,7 @@ describe('ScreeningFilters', () => {
         params={defaultParams}
         onChange={vi.fn()}
         strategyOptions={[]}
+        autoMarkets={['prime']}
         strategiesLoading
       />
     );
@@ -209,6 +250,7 @@ describe('ScreeningFilters', () => {
         params={{ ...defaultParams, entry_decidability: 'requires_same_session_observation' }}
         onChange={vi.fn()}
         strategyOptions={[]}
+        autoMarkets={['growth']}
         strategiesLoading={false}
       />
     );
@@ -230,6 +272,7 @@ describe('ScreeningFilters', () => {
         params={defaultParams}
         onChange={onChange}
         strategyOptions={strategyOptions}
+        autoMarkets={['prime', 'standard']}
         strategiesLoading={false}
       />
     );
@@ -238,6 +281,12 @@ describe('ScreeningFilters', () => {
     expect(onChange).toHaveBeenCalledWith({
       ...defaultParams,
       markets: 'growth',
+    });
+
+    await user.selectOptions(screen.getByLabelText('Markets'), '__auto__');
+    expect(onChange).toHaveBeenCalledWith({
+      ...defaultParams,
+      markets: undefined,
     });
 
     await user.selectOptions(screen.getByLabelText('Recent Days'), '20');

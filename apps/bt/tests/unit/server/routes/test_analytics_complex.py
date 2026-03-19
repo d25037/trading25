@@ -474,6 +474,18 @@ class TestScreening:
         assert data["sortBy"] == "matchedDate"
         assert data["order"] == "desc"
 
+    def test_create_job_maps_default_market_resolution_error_to_422(self, analytics_client):
+        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service:
+            mock_service.submit_screening = AsyncMock(
+                side_effect=ValueError("Failed to resolve default markets for production/broken")
+            )
+
+            resp = analytics_client.post("/api/analytics/screening/jobs", json={})
+
+        assert resp.status_code == 422
+        payload = resp.json()
+        assert "production/broken" in str(payload)
+
     def test_rejects_removed_backtest_metric_query(self, analytics_client):
         resp = analytics_client.post(
             "/api/analytics/screening/jobs",

@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
+import pytest
 
 from src.infrastructure.external_api.client import BaseAPIClient
 from src.domains.backtest.core.runner import BacktestRunner
@@ -756,7 +757,7 @@ def test_get_execution_info_success_and_error(monkeypatch):
     monkeypatch.setattr(
         runner,
         "_build_parameters",
-        lambda _config: {
+        lambda _config, config_override=None, strategy_name=None: {
             "shared_config": {"dataset": "sample", "initial_cash": 1000, "fees": 0.1, "kelly_fraction": 0.8}
         },
     )
@@ -770,6 +771,27 @@ def test_get_execution_info_success_and_error(monkeypatch):
     monkeypatch.setattr(runner.config_loader, "load_strategy_config", _raise)
     error_info = runner.get_execution_info("prod/s")
     assert error_info == {"error": "boom"}
+
+
+def test_build_parameters_rejects_production_default_dataset_inheritance(monkeypatch):
+    runner = BacktestRunner()
+    monkeypatch.setattr(runner.config_loader, "default_config", {"parameters": {"shared_config": {"dataset": "default_ds"}}})
+    monkeypatch.setattr(
+        runner.config_loader,
+        "merge_shared_config",
+        lambda _strategy_config: {"dataset": "default_ds", "initial_cash": 1000000},
+    )
+    monkeypatch.setattr(
+        runner.config_loader,
+        "resolve_strategy_category",
+        lambda strategy_name: "production" if strategy_name == "production/demo" else None,
+    )
+
+    with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+        runner._build_parameters(
+            {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}},
+            strategy_name="production/demo",
+        )
 
 
 class TestBuildParametersConfigOverride:

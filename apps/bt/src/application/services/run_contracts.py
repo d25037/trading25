@@ -31,6 +31,9 @@ from src.domains.strategy.runtime.compiler import (
     compile_strategy_requirements,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 from src.entrypoints.http.schemas.backtest import JobStatus
 
 if TYPE_CHECKING:
@@ -197,17 +200,28 @@ def resolve_strategy_dataset_name(
     config_loader: ConfigLoader | None = None,
 ) -> str | None:
     override_dataset_name = extract_dataset_name_from_config_override(config_override)
-    if override_dataset_name is not None:
-        return override_dataset_name
 
     loader = config_loader or ConfigLoader()
     try:
         strategy_config = loader.load_strategy_config(strategy_name)
     except FileNotFoundError:
+        if override_dataset_name is not None:
+            return override_dataset_name
         return None
     except Exception as e:
         logger.debug(f"run_spec dataset 解決で戦略読み込みに失敗: {strategy_name}: {e}")
         return None
+
+    category_resolver = getattr(loader, "resolve_strategy_category", None)
+    resolved_category = category_resolver(strategy_name) if callable(category_resolver) else None
+    validate_production_strategy_dataset_requirement(
+        category=resolved_category if isinstance(resolved_category, str) else None,
+        config=strategy_config,
+        strategy_name=strategy_name,
+    )
+
+    if override_dataset_name is not None:
+        return override_dataset_name
 
     try:
         shared_config = loader.merge_shared_config(strategy_config)

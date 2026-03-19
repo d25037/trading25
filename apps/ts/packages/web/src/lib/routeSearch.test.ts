@@ -88,6 +88,7 @@ describe('routeSearch', () => {
 
     expect(state.activeSubTab).toBe('inSessionScreening');
     expect(state.preOpenScreeningParams.entry_decidability).toBe('pre_open_decidable');
+    expect(state.preOpenScreeningParams.markets).toBeUndefined();
     expect(state.inSessionScreeningParams.entry_decidability).toBe('requires_same_session_observation');
     expect(state.inSessionScreeningParams.sortBy).toBe('matchStrategyCount');
 
@@ -119,6 +120,14 @@ describe('routeSearch', () => {
       rankingLookbackDays: 5,
       forecastLookbackFyCount: 5,
     });
+  });
+
+  it('omits auto screening markets from serialized analysis search', () => {
+    const state = getAnalysisStateFromSearch(validateAnalysisSearch({}));
+
+    expect(state.preOpenScreeningParams.markets).toBeUndefined();
+    expect(state.inSessionScreeningParams.markets).toBeUndefined();
+    expect(serializeAnalysisSearch(state)).toEqual({});
   });
 
   it('serializes non-default ranking and fundamental filters', () => {

@@ -35,6 +35,9 @@ from src.domains.backtest.core.simulation import (
     BacktestSimulationResult,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 
 
 class BacktestResult(BaseModel):
@@ -119,7 +122,11 @@ class BacktestRunner:
 
             strategy_config = self.config_loader.load_strategy_config(strategy)
 
-            parameters = self._build_parameters(strategy_config, config_override)
+            parameters = self._build_parameters(
+                strategy_config,
+                config_override,
+                strategy_name=strategy,
+            )
 
             shared_config = parameters.get("shared_config", {})
             dataset_name = shared_config.get("dataset", "unknown")
@@ -256,7 +263,11 @@ class BacktestRunner:
             実行パラメータ辞書
         """
         strategy_config = self.config_loader.load_strategy_config(strategy)
-        return self._build_parameters(strategy_config, config_override)
+        return self._build_parameters(
+            strategy_config,
+            config_override,
+            strategy_name=strategy,
+        )
 
     def _execute_simulation(
         self, parameters: dict[str, Any]
@@ -658,6 +669,7 @@ class BacktestRunner:
         self,
         strategy_config: dict[str, Any],
         config_override: dict[str, Any] | None = None,
+        strategy_name: str | None = None,
     ) -> dict[str, Any]:
         """
         戦略設定からパラメータを構築
@@ -672,6 +684,18 @@ class BacktestRunner:
         from src.domains.strategy.runtime.parameter_extractor import _deep_merge_dict
 
         parameters = self.config_loader.default_config.get("parameters", {}).copy()
+        category_resolver = getattr(self.config_loader, "resolve_strategy_category", None)
+        resolved_category = (
+            category_resolver(strategy_name)
+            if strategy_name is not None and callable(category_resolver)
+            else None
+        )
+
+        validate_production_strategy_dataset_requirement(
+            category=resolved_category if isinstance(resolved_category, str) else None,
+            config=strategy_config,
+            strategy_name=strategy_name,
+        )
 
         merged_shared_config = self.config_loader.merge_shared_config(strategy_config)
         parameters["shared_config"] = merged_shared_config
@@ -753,7 +777,10 @@ class BacktestRunner:
         """
         try:
             strategy_config = self.config_loader.load_strategy_config(strategy)
-            parameters = self._build_parameters(strategy_config)
+            parameters = self._build_parameters(
+                strategy_config,
+                strategy_name=strategy,
+            )
             shared_config = parameters.get("shared_config", {})
 
             return {

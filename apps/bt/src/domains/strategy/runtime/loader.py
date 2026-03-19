@@ -18,6 +18,9 @@ from src.domains.strategy.runtime.models import (
     StrategyConfigStrictValidationError,
     validate_strategy_config_dict_strict,
 )
+from src.domains.strategy.runtime.production_requirements import (
+    validate_production_strategy_dataset_requirement,
+)
 from src.domains.strategy.runtime.parameter_extractor import (
     extract_entry_filter_params,
     extract_exit_trigger_params,
@@ -272,6 +275,10 @@ class ConfigLoader:
             return True
         return is_updatable_category(category)
 
+    def resolve_strategy_category(self, strategy_name: str) -> str | None:
+        """戦略カテゴリを解決する。未存在なら None を返す。"""
+        return self._resolve_strategy_category_for_permissions(strategy_name)
+
     def save_strategy_config(
         self,
         strategy_name: str,
@@ -332,6 +339,11 @@ class ConfigLoader:
         strategy_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
+            validate_production_strategy_dataset_requirement(
+                category=category,
+                config=config,
+                strategy_name=strategy_name,
+            )
             validate_strategy_config_dict_strict(config)
         except StrategyConfigStrictValidationError as e:
             raise ValueError(
@@ -518,6 +530,14 @@ class ConfigLoader:
             return (
                 f"{target_category}/{relative_strategy_name}",
                 current_path,
+            )
+
+        if target_category == "production":
+            config = self.load_strategy_config(strategy_name)
+            validate_production_strategy_dataset_requirement(
+                category=target_category,
+                config=config,
+                strategy_name=f"{target_category}/{relative_strategy_name}",
             )
 
         target_root = self._get_category_roots(target_category)[0]

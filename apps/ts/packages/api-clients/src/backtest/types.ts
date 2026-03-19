@@ -335,6 +335,9 @@ export interface StrategyMetadata {
   screening_support?: ScreeningSupport;
   entry_decidability?: EntryDecidability | null;
   screening_error?: string | null;
+  dataset_name?: string | null;
+  dataset_preset?: string | null;
+  screening_default_markets?: string[] | null;
 }
 
 export interface StrategyListResponse {

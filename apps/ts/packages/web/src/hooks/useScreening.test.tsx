@@ -166,6 +166,39 @@ describe('useRunScreeningJob', () => {
       })
     );
   });
+
+  it('keeps markets undefined when screening uses auto defaults', async () => {
+    vi.mocked(analyticsClient.createScreeningJob).mockResolvedValueOnce({
+      job_id: 'job-auto',
+      status: 'pending',
+      created_at: '2026-02-01T00:00:00Z',
+      markets: 'prime,standard',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useRunScreeningJob(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        strategies: 'production/range_break_v15',
+        recentDays: 10,
+      });
+    });
+
+    expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith({
+      entry_decidability: undefined,
+      markets: undefined,
+      strategies: 'production/range_break_v15',
+      recentDays: 10,
+      date: undefined,
+      sortBy: undefined,
+      order: undefined,
+      limit: undefined,
+    });
+  });
 });
 
 describe('useScreeningJobStatus', () => {
