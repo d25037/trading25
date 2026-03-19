@@ -698,6 +698,8 @@ export interface MarketValidationResponse {
     count: number;
     dateCount: number;
     dateRange: { min: string; max: string } | null;
+    missingTopixCoverageDatesCount: number;
+    missingTopixCoverageDates: string[];
     missingUnderlyingPriceDatesCount: number;
     missingUnderlyingPriceDates: string[];
     conflictingUnderlyingPriceDatesCount: number;
@@ -737,6 +739,7 @@ export interface MarketValidationResponse {
     failedDates: ValidationSampleWindow;
     adjustmentEvents: ValidationSampleWindow;
     stocksNeedingRefresh: ValidationSampleWindow;
+    options225MissingTopixCoverageDates: ValidationSampleWindow;
     options225MissingUnderlyingPriceDates: ValidationSampleWindow;
     options225ConflictingUnderlyingPriceDates: ValidationSampleWindow;
     missingListedMarketStocks: ValidationSampleWindow;

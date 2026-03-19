@@ -46,6 +46,8 @@ const EMPTY_OPTIONS_225_VALIDATION = {
   count: 0,
   dateCount: 0,
   dateRange: null,
+  missingTopixCoverageDatesCount: 0,
+  missingTopixCoverageDates: [],
   missingUnderlyingPriceDatesCount: 0,
   missingUnderlyingPriceDates: [],
   conflictingUnderlyingPriceDatesCount: 0,
@@ -232,6 +234,8 @@ interface Options225CoverageDisplay {
   status: string;
 }
 
+type Options225CoverageKind = 'missing' | 'stale' | 'partial' | 'in_sync';
+
 interface ValidationDiagnosticListProps {
   diagnostics: ValidationDiagnostic[];
   emptyMessage: string;
@@ -311,31 +315,64 @@ function isDateBefore(lhs: string | null | undefined, rhs: string | null | undef
   return lhs < rhs;
 }
 
+function resolveOptions225CoverageKind(params: {
+  initialized?: boolean;
+  topixCount: number;
+  optionsCount: number;
+  topixLatest: string | null;
+  optionsLatest: string | null;
+  missingCoverageCount: number;
+}): Options225CoverageKind {
+  if (params.optionsCount <= 0 && params.topixCount > 0 && params.initialized !== false) {
+    return 'missing';
+  }
+  if (isDateBefore(params.optionsLatest, params.topixLatest)) {
+    return 'stale';
+  }
+  if (params.missingCoverageCount > 0) {
+    return 'partial';
+  }
+  return 'in_sync';
+}
+
 function buildOptions225CoverageDisplay(
   stats: MarketStatsResponse['options225'],
-  topix: MarketStatsResponse['topix']
+  topix: MarketStatsResponse['topix'],
+  validation?: MarketValidationResponse['options225']
 ): Options225CoverageDisplay {
   const topixLatest = topix.dateRange?.max ?? null;
   const optionsLatest = stats.dateRange?.max ?? null;
+  const missingCoverageCount = validation?.missingTopixCoverageDatesCount ?? 0;
+  const coverageKind = resolveOptions225CoverageKind({
+    topixCount: topix.count,
+    optionsCount: stats.count,
+    topixLatest,
+    optionsLatest,
+    missingCoverageCount,
+  });
 
-  if (stats.count <= 0 && topix.count > 0) {
-    return {
-      value: 'Not ingested',
-      status: `Status: No local options chain yet (TOPIX latest ${topixLatest ?? 'n/a'})`,
-    };
+  switch (coverageKind) {
+    case 'missing':
+      return {
+        value: 'Not ingested',
+        status: `Status: No local options chain yet (TOPIX latest ${topixLatest ?? 'n/a'})`,
+      };
+    case 'stale':
+      return {
+        value: `${optionsLatest ?? 'n/a'} (stale)`,
+        status: `Status: Behind TOPIX latest ${topixLatest ?? 'n/a'}`,
+      };
+    case 'partial':
+      return {
+        value: `${optionsLatest ?? 'n/a'} (partial)`,
+        status: `Status: Missing local coverage for ${formatCount(missingCoverageCount)} TOPIX dates`,
+      };
+    default:
+      return {
+        value: optionsLatest ?? 'n/a',
+        status: 'Status: In sync with local TOPIX coverage',
+      };
   }
-
-  if (isDateBefore(optionsLatest, topixLatest)) {
-    return {
-      value: `${optionsLatest ?? 'n/a'} (stale)`,
-      status: `Status: Behind TOPIX latest ${topixLatest ?? 'n/a'}`,
-    };
-  }
-
-  return {
-    value: optionsLatest ?? 'n/a',
-    status: 'Status: In sync with local TOPIX coverage',
-  };
 }
 
 function formatCategoryBreakdown(byCategory: Record<string, number>): string {
@@ -408,10 +445,17 @@ function buildSnapshotSummaryItems(
   return items;
 }
 
-function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[] {
+function buildCoverageItems(
+  dbStats: MarketStatsResponse,
+  dbValidation?: MarketValidationResponse
+): SnapshotCoverageItem[] {
   const fundamentalsCoverage = dbStats.fundamentals.listedMarketCoverage;
   const options225 = dbStats.options225 ?? EMPTY_OPTIONS_225_STATS;
-  const optionsDisplay = buildOptions225CoverageDisplay(options225, dbStats.topix);
+  const optionsDisplay = buildOptions225CoverageDisplay(
+    options225,
+    dbStats.topix,
+    dbValidation?.options225
+  );
   return [
     {
       label: 'Stock Data',
@@ -535,29 +579,48 @@ function buildOptions225CoverageWarning(
   dbValidation: MarketValidationResponse
 ): ValidationDiagnostic | null {
   const options225 = dbValidation.options225 ?? EMPTY_OPTIONS_225_VALIDATION;
+  const sampleWindows = dbValidation.sampleWindows;
   const topixCount = dbValidation.topix?.count ?? 0;
   const topixLatest = dbValidation.topix?.dateRange?.max;
   const optionsLatest = options225.dateRange?.max;
+  const missingCoverageCount = options225.missingTopixCoverageDatesCount ?? 0;
+  const coverageKind = resolveOptions225CoverageKind({
+    initialized: dbValidation.initialized,
+    topixCount,
+    optionsCount: options225.count ?? 0,
+    topixLatest: topixLatest ?? null,
+    optionsLatest: optionsLatest ?? null,
+    missingCoverageCount,
+  });
 
-  if (dbValidation.initialized === true && topixCount > 0 && (options225.count ?? 0) <= 0) {
-    return {
-      label: 'N225 Options Missing Locally',
-      value: 1,
-      helpText:
-        `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
-    };
+  switch (coverageKind) {
+    case 'missing':
+      return {
+        label: 'N225 Options Missing Locally',
+        value: 1,
+        helpText:
+          `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
+      };
+    case 'stale':
+      return {
+        label: 'N225 Options Stale',
+        value: 1,
+        helpText:
+          `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
+      };
+    case 'partial':
+      return {
+        label: 'N225 Options Partial Coverage',
+        value: missingCoverageCount,
+        helpText:
+          'Local N225 options latest date matches TOPIX, but historical TOPIX dates are still missing from `options_225_data`. Run Database Sync with `indices-only` to backfill local history.',
+        sampleItems: options225.missingTopixCoverageDates,
+        sampleLabel: 'Sample dates',
+        sampleHint: buildSampleHint(sampleWindows?.options225MissingTopixCoverageDates),
+      };
+    default:
+      return null;
   }
-
-  if (topixCount > 0 && isDateBefore(optionsLatest, topixLatest)) {
-    return {
-      label: 'N225 Options Stale',
-      value: 1,
-      helpText:
-        `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
-    };
-  }
-
-  return null;
 }
 
 function buildValidationDiagnosticSections(
@@ -716,7 +779,7 @@ function SnapshotDetails({
 }) {
   const recommendations = dbValidation?.recommendations ?? [];
   const summaryItems = buildSnapshotSummaryItems(dbStats, dbValidation);
-  const coverageItems = dbStats ? buildCoverageItems(dbStats) : [];
+  const coverageItems = dbStats ? buildCoverageItems(dbStats, dbValidation) : [];
   const validationDiagnostics = dbValidation
     ? buildValidationDiagnosticSections(dbValidation)
     : {

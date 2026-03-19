@@ -65,7 +65,7 @@ from src.application.services import stock_refresh_service
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
-class SyncClientLike(Protocol):
+class SyncClientLike(Protocol):  # pragma: no cover
     async def get(
         self,
         path: str,
@@ -79,7 +79,7 @@ class SyncClientLike(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
-class SyncMarketDbLike(Protocol):
+class SyncMarketDbLike(Protocol):  # pragma: no cover
     def get_sync_metadata(self, key: str) -> str | None: ...
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
@@ -92,7 +92,7 @@ class SyncMarketDbLike(Protocol):
     def get_index_master_codes(self) -> set[str]: ...
 
 
-class BulkServiceLike(Protocol):
+class BulkServiceLike(Protocol):  # pragma: no cover
     async def build_plan(
         self,
         *,
@@ -111,7 +111,7 @@ class BulkServiceLike(Protocol):
     ) -> BulkFetchResult: ...
 
 
-class SyncTimeSeriesStoreLike(Protocol):
+class SyncTimeSeriesStoreLike(Protocol):  # pragma: no cover
     def inspect(
         self,
         *,
@@ -147,7 +147,7 @@ class SyncContext:
     enforce_bulk_for_stock_data: bool = False
 
 
-class SyncStrategy(Protocol):
+class SyncStrategy(Protocol):  # pragma: no cover
     async def execute(self, ctx: SyncContext) -> SyncResult: ...
     def estimate_api_calls(self) -> int: ...
 
@@ -2020,8 +2020,8 @@ class IncrementalSyncStrategy:
 
             # Step 5: N225 options（増分）
             last_options_225_date = inspection.latest_options_225_date
-            options_new_dates = (
-                sorted(
+            if last_options_225_date:
+                options_new_dates = sorted(
                     {
                         r["date"]
                         for r in topix_rows
@@ -2029,9 +2029,13 @@ class IncrementalSyncStrategy:
                     },
                     key=_date_sort_key,
                 )
-                if last_options_225_date
-                else sorted({r["date"] for r in topix_rows if r.get("date")}, key=_date_sort_key)
-            )
+            else:
+                options_new_dates = await asyncio.to_thread(ctx.market_db.get_topix_dates)
+                if not options_new_dates:
+                    options_new_dates = sorted(
+                        {r["date"] for r in topix_rows if r.get("date")},
+                        key=_date_sort_key,
+                    )
             ctx.on_progress("options_225", 4, 7, f"Fetching N225 options for {len(options_new_dates)} new dates...")
             options_sync = await _sync_options_225_dates(
                 ctx,

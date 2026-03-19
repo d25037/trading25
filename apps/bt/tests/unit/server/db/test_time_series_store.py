@@ -160,6 +160,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
 
     inspection = store.inspect(
         missing_stock_dates_limit=10,
+        missing_options_225_dates_limit=10,
         statement_non_null_columns=["earnings_per_share", "profit", "unknown_column"],
     )
 
@@ -176,6 +177,8 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.options_225_max == "2026-02-11"
     assert inspection.options_225_date_count == 2
     assert inspection.latest_options_225_date == "2026-02-11"
+    assert inspection.missing_options_225_dates == []
+    assert inspection.missing_options_225_dates_count == 0
     assert inspection.margin_count == 2
     assert inspection.margin_min == "2026-02-07"
     assert inspection.margin_max == "2026-02-10"

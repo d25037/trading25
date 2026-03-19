@@ -77,8 +77,13 @@ def _build_time_series_store(inspection: TimeSeriesInspection):
             *,
             missing_stock_dates_limit: int = 0,
             statement_non_null_columns: list[str] | None = None,
+            missing_options_225_dates_limit: int = 0,
         ) -> TimeSeriesInspection:
-            del missing_stock_dates_limit, statement_non_null_columns
+            del (
+                missing_stock_dates_limit,
+                statement_non_null_columns,
+                missing_options_225_dates_limit,
+            )
             return inspection
 
         def close(self) -> None:

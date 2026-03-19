@@ -6741,6 +6741,13 @@ export interface components {
              */
             dateCount: number;
             dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Missingtopixcoveragedates */
+            missingTopixCoverageDates?: string[];
+            /**
+             * Missingtopixcoveragedatescount
+             * @default 0
+             */
+            missingTopixCoverageDatesCount: number;
             /** Missingunderlyingpricedates */
             missingUnderlyingPriceDates?: string[];
             /**
@@ -9304,6 +9311,7 @@ export interface components {
             marginEmptySkippedCodes: components["schemas"]["ValidationSampleWindow"];
             missingListedMarketStocks: components["schemas"]["ValidationSampleWindow"];
             options225ConflictingUnderlyingPriceDates: components["schemas"]["ValidationSampleWindow"];
+            options225MissingTopixCoverageDates: components["schemas"]["ValidationSampleWindow"];
             options225MissingUnderlyingPriceDates: components["schemas"]["ValidationSampleWindow"];
             stockDataMissingDates: components["schemas"]["ValidationSampleWindow"];
             stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];

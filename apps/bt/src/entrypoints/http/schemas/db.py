@@ -135,6 +135,8 @@ class Options225Validation(BaseModel):
     count: int = 0
     dateCount: int = 0
     dateRange: DateRange | None = None
+    missingTopixCoverageDatesCount: int = 0
+    missingTopixCoverageDates: list[str] = Field(default_factory=list)
     missingUnderlyingPriceDatesCount: int = 0
     missingUnderlyingPriceDates: list[str] = Field(default_factory=list)
     conflictingUnderlyingPriceDatesCount: int = 0
@@ -166,6 +168,7 @@ class ValidationSampleWindows(BaseModel):
     failedDates: ValidationSampleWindow
     adjustmentEvents: ValidationSampleWindow
     stocksNeedingRefresh: ValidationSampleWindow
+    options225MissingTopixCoverageDates: ValidationSampleWindow
     options225MissingUnderlyingPriceDates: ValidationSampleWindow
     options225ConflictingUnderlyingPriceDates: ValidationSampleWindow
     missingListedMarketStocks: ValidationSampleWindow

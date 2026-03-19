@@ -174,6 +174,8 @@ beforeEach(() => {
         count: 0,
         dateCount: 0,
         dateRange: null,
+        missingTopixCoverageDatesCount: 0,
+        missingTopixCoverageDates: [],
         missingUnderlyingPriceDatesCount: 0,
         missingUnderlyingPriceDates: [],
         conflictingUnderlyingPriceDatesCount: 0,
@@ -215,6 +217,7 @@ beforeEach(() => {
         failedDates: { returnedCount: 2, totalCount: 3, limit: 10, truncated: false },
         adjustmentEvents: { returnedCount: 1, totalCount: 8, limit: 20, truncated: false },
         stocksNeedingRefresh: { returnedCount: 2, totalCount: 100, limit: 20, truncated: true },
+        options225MissingTopixCoverageDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
         missingListedMarketStocks: { returnedCount: 2, totalCount: 7, limit: 20, truncated: false },
         fundamentalsEmptySkippedCodes: { returnedCount: 2, totalCount: 4, limit: 20, truncated: false },
         marginEmptySkippedCodes: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
@@ -537,6 +540,8 @@ describe('SettingsPage', () => {
           count: 12,
           dateCount: 2,
           dateRange: { min: '2026-02-20', max: '2026-02-20' },
+          missingTopixCoverageDatesCount: 0,
+          missingTopixCoverageDates: [],
           missingUnderlyingPriceDatesCount: 0,
           missingUnderlyingPriceDates: [],
           conflictingUnderlyingPriceDatesCount: 0,
@@ -576,6 +581,7 @@ describe('SettingsPage', () => {
           failedDates: { returnedCount: 0, totalCount: 0, limit: 10, truncated: false },
           adjustmentEvents: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
           stocksNeedingRefresh: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225MissingTopixCoverageDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
           options225MissingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
           options225ConflictingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
           missingListedMarketStocks: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
@@ -615,6 +621,8 @@ describe('SettingsPage', () => {
           count: 0,
           dateCount: 0,
           dateRange: null,
+          missingTopixCoverageDatesCount: 0,
+          missingTopixCoverageDates: [],
           missingUnderlyingPriceDatesCount: 0,
           missingUnderlyingPriceDates: [],
           conflictingUnderlyingPriceDatesCount: 0,
@@ -653,6 +661,160 @@ describe('SettingsPage', () => {
     expect(screen.getByText('N225 Options Missing Locally')).toBeInTheDocument();
     expect(screen.getByText('Repair signals')).toBeInTheDocument();
     expect(screen.getByText('No Repairs Needed')).toBeInTheDocument();
+  });
+
+  it('renders partial N225 options coverage as a warning instead of in-sync status', () => {
+    mockUseDbStats.mockReturnValue({
+      data: {
+        initialized: true,
+        lastSync: '2026-03-18T02:29:45.768793+00:00',
+        timeSeriesSource: 'duckdb-parquet',
+        databaseSize: 4096,
+        storage: {
+          duckdbBytes: 4096,
+          parquetBytes: 8192,
+          totalBytes: 12288,
+        },
+        topix: {
+          count: 2455,
+          dateRange: { min: '2016-02-29', max: '2026-03-18' },
+        },
+        stocks: {
+          total: 3800,
+          byMarket: { Prime: 1800, Standard: 1200, Growth: 800 },
+        },
+        stockData: {
+          count: 1200000,
+          dateCount: 521,
+          dateRange: { min: '2024-01-01', max: '2026-03-18' },
+          averageStocksPerDay: 2303.26,
+        },
+        indices: {
+          masterCount: 75,
+          dataCount: 56000,
+          dateCount: 521,
+          dateRange: { min: '2016-02-29', max: '2026-03-18' },
+          byCategory: { sector33: 33, sector17: 17, style: 5 },
+        },
+        options225: {
+          count: 8354,
+          dateCount: 1,
+          dateRange: { min: '2026-03-18', max: '2026-03-18' },
+        },
+        margin: {
+          count: 2400,
+          uniqueStockCount: 1200,
+          dateCount: 120,
+          dateRange: { min: '2024-01-05', max: '2026-03-18' },
+        },
+        fundamentals: {
+          count: 9800,
+          uniqueStockCount: 2500,
+          latestDisclosedDate: '2026-03-18',
+          listedMarketCoverage: {
+            listedMarketStocks: 2500,
+            coveredStocks: 2499,
+            missingStocks: 1,
+            coverageRatio: 0.9996,
+            issuerAliasCoveredCount: 0,
+            emptySkippedCount: 0,
+          },
+        },
+        lastUpdated: '2026-03-19T12:00:00Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        initialized: true,
+        lastSync: '2026-03-18T02:29:45.768793+00:00',
+        lastStocksRefresh: '2026-03-19T03:00:00Z',
+        timeSeriesSource: 'duckdb-parquet',
+        topix: { count: 2455, dateRange: { min: '2016-02-29', max: '2026-03-18' } },
+        stocks: { total: 3800, byMarket: { Prime: 1800 } },
+        stockData: {
+          count: 1200000,
+          dateRange: { min: '2024-01-01', max: '2026-03-18' },
+          missingDatesCount: 0,
+          missingDates: [],
+        },
+        options225: {
+          count: 8354,
+          dateCount: 1,
+          dateRange: { min: '2026-03-18', max: '2026-03-18' },
+          missingTopixCoverageDatesCount: 2454,
+          missingTopixCoverageDates: ['2026-03-17', '2026-03-14'],
+          missingUnderlyingPriceDatesCount: 0,
+          missingUnderlyingPriceDates: [],
+          conflictingUnderlyingPriceDatesCount: 0,
+          conflictingUnderlyingPriceDates: [],
+        },
+        margin: {
+          count: 2400,
+          uniqueStockCount: 1200,
+          dateCount: 120,
+          dateRange: { min: '2024-01-05', max: '2026-03-18' },
+          orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+        },
+        fundamentals: {
+          count: 9800,
+          uniqueStockCount: 2500,
+          latestDisclosedDate: '2026-03-18',
+          missingListedMarketStocksCount: 1,
+          missingListedMarketStocks: ['1301'],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
+        },
+        failedDates: [],
+        failedDatesCount: 0,
+        adjustmentEvents: [],
+        adjustmentEventsCount: 0,
+        stocksNeedingRefresh: [],
+        stocksNeedingRefreshCount: 0,
+        integrityIssues: [],
+        integrityIssuesCount: 0,
+        sampleWindows: {
+          stockDataMissingDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          failedDates: { returnedCount: 0, totalCount: 0, limit: 10, truncated: false },
+          adjustmentEvents: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          stocksNeedingRefresh: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225MissingTopixCoverageDates: { returnedCount: 2, totalCount: 2454, limit: 20, truncated: true },
+          options225MissingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225ConflictingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          missingListedMarketStocks: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
+          fundamentalsEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          marginEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+        },
+        recommendations: [
+          'Run indices-only sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data',
+        ],
+        lastUpdated: '2026-03-19T12:00:01Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('N225 Options Partial Coverage')).toBeInTheDocument();
+    expect(screen.getByText('2026-03-18 (partial)')).toBeInTheDocument();
+    expect(screen.getByText('Status: Missing local coverage for 2,454 TOPIX dates')).toBeInTheDocument();
+    expect(screen.getByText('Sample dates: 2026-03-17, 2026-03-14')).toBeInTheDocument();
+    expect(screen.getByText('Showing 2 of 2,454.')).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        'Run indices-only sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data'
+      ).length
+    ).toBeGreaterThan(0);
   });
 
   it('renders manual stock refresh controls alongside snapshot info', () => {

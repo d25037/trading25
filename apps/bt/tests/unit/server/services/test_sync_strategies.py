@@ -48,6 +48,8 @@ from src.application.services.sync_strategies import (
     _publish_statement_rows,
     _publish_stock_data_rows,
     _publish_topix_rows,
+    _resolve_bulk_fallback_reason,
+    _enforce_stock_bulk_plan_available,
     _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
@@ -527,9 +529,10 @@ class DummyTimeSeriesStore:
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
-        del missing_stock_dates_limit, statement_non_null_columns
+        del missing_stock_dates_limit, missing_options_225_dates_limit, statement_non_null_columns
         if self._inspection is not None:
             return self._inspection
         return _inspection_from_market_db(self._market_db)
@@ -543,9 +546,10 @@ class FailingInspectionStore(DummyTimeSeriesStore):
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
-        del missing_stock_dates_limit, statement_non_null_columns
+        del missing_stock_dates_limit, missing_options_225_dates_limit, statement_non_null_columns
         raise RuntimeError("inspect failed")
 
 
@@ -790,6 +794,123 @@ class DummyClient:
             rows.append(row)
 
         return rows
+
+
+def test_resolve_bulk_fallback_reason_handles_missing_empty_and_unavailable_plan() -> None:
+    assert _resolve_bulk_fallback_reason(None) == "bulk_plan_missing"
+    assert (
+        _resolve_bulk_fallback_reason(
+            BulkFetchPlan(
+                endpoint="/equities/bars/daily",
+                files=[],
+                list_api_calls=1,
+                estimated_api_calls=1,
+                estimated_cache_hits=0,
+                estimated_cache_misses=0,
+            )
+        )
+        == "bulk_plan_empty"
+    )
+    assert (
+        _resolve_bulk_fallback_reason(
+            BulkFetchPlan(
+                endpoint="/equities/bars/daily",
+                files=[
+                    BulkFileInfo(
+                        key="test.csv.gz",
+                        last_modified="2026-03-19T00:00:00Z",
+                        size=123,
+                        range_start=None,
+                        range_end=None,
+                    )
+                ],
+                list_api_calls=1,
+                estimated_api_calls=2,
+                estimated_cache_hits=0,
+                estimated_cache_misses=1,
+            )
+        )
+        == "bulk_plan_unavailable"
+    )
+
+
+def test_enforce_stock_bulk_plan_available_raises_for_empty_bulk_plan_files() -> None:
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
+        enforce_bulk_for_stock_data=True,
+    )
+
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=10,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint="/equities/bars/daily",
+            files=[],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=0,
+        ),
+        reason="unspecified",
+    )
+
+    with pytest.raises(BulkFetchRequiredError, match="bulk/list returned no matching files"):
+        _enforce_stock_bulk_plan_available(
+            ctx,
+            decision=decision,
+            endpoint="/equities/bars/daily",
+            progress_stage="stock_data",
+            current=2,
+            total=5,
+            target_count=3,
+        )
+
+    assert any("REST fallback is disabled for stock_data sync." in message for message in progress_messages)
+
+
+def test_enforce_stock_bulk_plan_available_accepts_non_empty_bulk_plan_files() -> None:
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        enforce_bulk_for_stock_data=True,
+    )
+
+    _enforce_stock_bulk_plan_available(
+        ctx,
+        decision=_StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=10,
+            estimated_bulk_calls=1,
+            plan=BulkFetchPlan(
+                endpoint="/equities/bars/daily",
+                files=[
+                    BulkFileInfo(
+                        key="test.csv.gz",
+                        last_modified="2026-03-19T00:00:00Z",
+                        size=123,
+                        range_start=None,
+                        range_end=None,
+                    )
+                ],
+                list_api_calls=1,
+                estimated_api_calls=2,
+                estimated_cache_hits=0,
+                estimated_cache_misses=1,
+            ),
+            reason="unspecified",
+        ),
+        endpoint="/equities/bars/daily",
+        progress_stage="stock_data",
+        current=2,
+        total=5,
+        target_count=3,
+    )
 
 
 class InitialSyncClient:
@@ -2141,6 +2262,70 @@ async def test_incremental_sync_publishes_options_225_and_synthetic_nikkei() -> 
     synthetic_rows = [row for row in market_db.indices_rows if row.get("code") == "N225_UNDERPX"]
     assert len(synthetic_rows) == 1
     assert synthetic_rows[0]["close"] == 39000.0
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_backfills_options_225_from_full_topix_dates_when_anchor_missing() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.topix_rows = [
+        {
+            "date": "2026-02-05",
+            "open": 99.0,
+            "high": 100.0,
+            "low": 98.0,
+            "close": 99.5,
+            "created_at": "2026-03-19T00:00:00+00:00",
+        }
+    ]
+    client = DummyClient(
+        options_quotes=[
+            {
+                "Date": "2026-02-05",
+                "Code": "131040015",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 38800.0,
+            },
+            {
+                "Date": "2026-02-06",
+                "Code": "131040016",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 38900.0,
+            },
+            {
+                "Date": "2026-02-10",
+                "Code": "131040020",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 39000.0,
+            },
+        ]
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert sorted({str(row["date"]) for row in market_db.options_225_rows}, key=_date_sort_key) == [
+        "2026-02-05",
+        "2026-02-06",
+        "2026-02-10",
+    ]
+    assert [
+        params.get("date")
+        for path, params in client.calls
+        if path == "/derivatives/bars/daily/options/225" and params is not None
+    ] == ["2026-02-05", "2026-02-06", "2026-02-10"]
 
 
 @pytest.mark.asyncio

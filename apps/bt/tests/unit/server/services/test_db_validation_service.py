@@ -23,9 +23,10 @@ class DummyTimeSeriesStore:
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
-        del missing_stock_dates_limit, statement_non_null_columns
+        del missing_stock_dates_limit, missing_options_225_dates_limit, statement_non_null_columns
         return self._inspection
 
 
@@ -413,6 +414,47 @@ def test_validate_market_db_warns_when_options_225_local_data_is_stale() -> None
         for rec in result.recommendations
     )
     assert any("latest local options date: 2026-03-04" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_warns_when_options_225_local_history_is_partial() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_min="2026-03-01",
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            options_225_count=4,
+            options_225_min="2026-03-06",
+            options_225_max="2026-03-06",
+            options_225_date_count=1,
+            missing_options_225_dates_count=25,
+            missing_options_225_dates=["2026-03-05", "2026-03-04", "2026-03-03"],
+            statements_count=10,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.options225.missingTopixCoverageDatesCount == 25
+    assert result.options225.missingTopixCoverageDates == [
+        "2026-03-05",
+        "2026-03-04",
+        "2026-03-03",
+    ]
+    assert result.sampleWindows.options225MissingTopixCoverageDates.truncated is True
+    assert any(
+        "Run indices-only sync to backfill N225 options history for 25 TOPIX dates missing from options_225_data"
+        in rec
+        for rec in result.recommendations
+    )
 
 
 def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:

@@ -10,7 +10,7 @@ from typing import Any, Protocol, cast
 from loguru import logger
 
 
-class MarketTimeSeriesStore(Protocol):
+class MarketTimeSeriesStore(Protocol):  # pragma: no cover
     """時系列 publish/index インターフェース。"""
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
@@ -31,6 +31,7 @@ class MarketTimeSeriesStore(Protocol):
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> "TimeSeriesInspection": ...
 
@@ -69,6 +70,8 @@ class TimeSeriesInspection:
     options_225_max: str | None = None
     options_225_date_count: int = 0
     latest_options_225_date: str | None = None
+    missing_options_225_dates: list[str] = field(default_factory=list)
+    missing_options_225_dates_count: int = 0
     margin_count: int = 0
     margin_min: str | None = None
     margin_max: str | None = None
@@ -616,6 +619,7 @@ class DuckDbParquetTimeSeriesStore:
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
         with self._lock:
@@ -688,6 +692,14 @@ class DuckDbParquetTimeSeriesStore:
                 WHERE s.date IS NULL
                 """
             ).fetchone()
+            missing_options_225_count_row = self._conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM topix_data t
+                LEFT JOIN (SELECT DISTINCT date FROM options_225_data) o ON t.date = o.date
+                WHERE o.date IS NULL
+                """
+            ).fetchone()
             statement_codes_rows = self._conn.execute(
                 "SELECT DISTINCT code FROM statements WHERE code IS NOT NULL"
             ).fetchall()
@@ -700,6 +712,11 @@ class DuckDbParquetTimeSeriesStore:
             margin_row = margin_row_raw if margin_row_raw is not None else (0, None, None, 0)
             statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
             missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
+            missing_options_225_dates_count = (
+                int(missing_options_225_count_row[0] or 0)
+                if missing_options_225_count_row
+                else 0
+            )
             margin_codes = {
                 str(row[0])
                 for row in margin_codes_rows
@@ -732,6 +749,23 @@ class DuckDbParquetTimeSeriesStore:
                     [missing_stock_dates_limit],
                 ).fetchall()
                 missing_stock_dates = [str(row[0]) for row in missing_rows if row and row[0]]
+
+            missing_options_225_dates: list[str] = []
+            if missing_options_225_dates_limit > 0:
+                missing_options_rows = self._conn.execute(
+                    """
+                    SELECT t.date
+                    FROM topix_data t
+                    LEFT JOIN (SELECT DISTINCT date FROM options_225_data) o ON t.date = o.date
+                    WHERE o.date IS NULL
+                    ORDER BY t.date DESC
+                    LIMIT ?
+                    """,
+                    [missing_options_225_dates_limit],
+                ).fetchall()
+                missing_options_225_dates = [
+                    str(row[0]) for row in missing_options_rows if row and row[0]
+                ]
 
             statement_non_null_counts = self._duckdb_statement_non_null_counts(
                 statement_non_null_columns or []
@@ -769,6 +803,8 @@ class DuckDbParquetTimeSeriesStore:
                 options_225_max=cast(str | None, options_225_row[2]),
                 options_225_date_count=int(options_225_row[3] or 0),
                 latest_options_225_date=cast(str | None, options_225_row[2]),
+                missing_options_225_dates=missing_options_225_dates,
+                missing_options_225_dates_count=missing_options_225_dates_count,
                 margin_count=int(margin_row[0] or 0),
                 margin_min=cast(str | None, margin_row[1]),
                 margin_max=cast(str | None, margin_row[2]),

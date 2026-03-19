@@ -8408,6 +8408,18 @@
               }
             ]
           },
+          "missingTopixCoverageDates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missingtopixcoveragedates",
+            "type": "array"
+          },
+          "missingTopixCoverageDatesCount": {
+            "default": 0,
+            "title": "Missingtopixcoveragedatescount",
+            "type": "integer"
+          },
           "missingUnderlyingPriceDates": {
             "items": {
               "type": "string"
@@ -14358,6 +14370,9 @@
           "options225ConflictingUnderlyingPriceDates": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           },
+          "options225MissingTopixCoverageDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
           "options225MissingUnderlyingPriceDates": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           },
@@ -14373,6 +14388,7 @@
           "failedDates",
           "adjustmentEvents",
           "stocksNeedingRefresh",
+          "options225MissingTopixCoverageDates",
           "options225MissingUnderlyingPriceDates",
           "options225ConflictingUnderlyingPriceDates",
           "missingListedMarketStocks",

@@ -113,6 +113,7 @@ class ValidationTimeSeriesStoreLike(Protocol):
         self,
         *,
         missing_stock_dates_limit: int = 0,
+        missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection: ...
 
@@ -189,6 +190,13 @@ def validate_market_db(
         inspection=inspection,
     )
     options_225_stale_local_data = _is_options_225_local_data_stale(inspection)
+    options_225_missing_topix_coverage_dates_count = (
+        _resolve_options_225_missing_topix_coverage_dates_count(inspection)
+    )
+    options_225_missing_topix_coverage_dates = (
+        _resolve_options_225_missing_topix_coverage_dates(inspection)
+    )
+    options_225_partial_local_data = options_225_missing_topix_coverage_dates_count > 0
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
@@ -243,6 +251,12 @@ def validate_market_db(
             f"through {inspection.topix_max or 'the latest TOPIX date'} "
             f"(latest local options date: {inspection.options_225_max or 'n/a'})"
         )
+    elif options_225_partial_local_data:
+        recommendations.append(
+            "Run indices-only sync to backfill N225 options history for "
+            f"{options_225_missing_topix_coverage_dates_count} TOPIX dates missing from "
+            "options_225_data"
+        )
     if options_225_missing_underlying_dates_count > 0:
         recommendations.append(
             f"Run sync again or inspect raw options data for {options_225_missing_underlying_dates_count} dates with missing UnderPx"
@@ -272,6 +286,7 @@ def validate_market_db(
         or missing_fundamentals_count > 0
         or options_225_missing_local_data
         or options_225_stale_local_data
+        or options_225_partial_local_data
         or options_225_missing_underlying_dates_count > 0
         or options_225_conflicting_underlying_dates_count > 0
         or fundamentals_failed_dates
@@ -316,6 +331,8 @@ def validate_market_db(
         )
         if inspection.options_225_min and inspection.options_225_max
         else None,
+        missingTopixCoverageDatesCount=options_225_missing_topix_coverage_dates_count,
+        missingTopixCoverageDates=options_225_missing_topix_coverage_dates,
         missingUnderlyingPriceDatesCount=options_225_missing_underlying_dates_count,
         missingUnderlyingPriceDates=options_225_missing_underlying_dates,
         conflictingUnderlyingPriceDatesCount=options_225_conflicting_underlying_dates_count,
@@ -393,6 +410,11 @@ def validate_market_db(
                 returned_count=len(sample_needing),
                 limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT,
             ),
+            options225MissingTopixCoverageDates=_build_sample_window(
+                total_count=options_225_missing_topix_coverage_dates_count,
+                returned_count=len(options_225_val.missingTopixCoverageDates),
+                limit=_OPTIONS_225_SAMPLE_LIMIT,
+            ),
             options225MissingUnderlyingPriceDates=_build_sample_window(
                 total_count=options_225_missing_underlying_dates_count,
                 returned_count=len(options_225_val.missingUnderlyingPriceDates),
@@ -429,6 +451,7 @@ def _resolve_time_series_inspection(
 ) -> TimeSeriesInspection:
     return time_series_store.inspect(
         missing_stock_dates_limit=_INSPECT_MISSING_DATES_LIMIT,
+        missing_options_225_dates_limit=_OPTIONS_225_SAMPLE_LIMIT,
         statement_non_null_columns=_SIGNAL_STATEMENT_COLUMNS,
     )
 
@@ -489,6 +512,22 @@ def _is_options_225_local_data_stale(inspection: TimeSeriesInspection) -> bool:
     ):
         return False
     return options_max < topix_max
+
+
+def _resolve_options_225_missing_topix_coverage_dates_count(
+    inspection: TimeSeriesInspection,
+) -> int:
+    if inspection.topix_count <= 0 or inspection.options_225_count <= 0:
+        return 0
+    return max(int(inspection.missing_options_225_dates_count or 0), 0)
+
+
+def _resolve_options_225_missing_topix_coverage_dates(
+    inspection: TimeSeriesInspection,
+) -> list[str]:
+    if inspection.topix_count <= 0 or inspection.options_225_count <= 0:
+        return []
+    return list(inspection.missing_options_225_dates[:_OPTIONS_225_SAMPLE_LIMIT])
 
 
 def _build_readiness_issues(
