@@ -24,12 +24,12 @@ import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
 import type { AuthoringFieldSchema } from '@/types/backtest';
 import {
-  dumpYamlObject,
   getValueAtPath,
   hasValueAtPath,
   isPlainObject,
   parseYamlObject,
   removeValueAtPath,
+  safeDumpYaml,
   setValueAtPath,
 } from './authoringUtils';
 
@@ -48,14 +48,6 @@ function getReferenceSelectCopy(path: string) {
   return path === 'dataset'
     ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
     : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
-}
-
-function safeDumpYaml(value: Record<string, unknown>): string {
-  try {
-    return dumpYamlObject(value);
-  } catch {
-    return JSON.stringify(value, null, 2);
-  }
 }
 
 function canVisualizeDefaultDocument(document: Record<string, unknown>): string | null {

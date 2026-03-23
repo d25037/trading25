@@ -1,5 +1,5 @@
-import yaml from 'js-yaml';
 import type { SignalDefinition, SignalFieldDefinition } from '@/types/backtest';
+import { isPlainObject, parseYamlValue } from './yamlUtils';
 
 export interface StrategyValidationResult {
   valid: boolean;
@@ -42,10 +42,6 @@ const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'execution_policy',
 ]);
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isNumericConstraint(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -62,19 +58,11 @@ function intersectFieldNames(left: Set<string>, right: Set<string>): Set<string>
 }
 
 function deriveFundamentalParentFields(signal: SignalDefinition): Set<string> {
-  try {
-    const parsed = yaml.load(signal.yaml_snippet);
-    const parsedRecord = isPlainObject(parsed) ? parsed : null;
-    const snippetRoot =
-      parsedRecord && isPlainObject(parsedRecord.fundamental)
-        ? parsedRecord.fundamental
-        : null;
-    const childKey = signal.key.replace(/^fundamental_/, '');
-    return new Set(snippetRoot ? Object.keys(snippetRoot).filter((key) => key !== childKey) : []);
-  } catch {
-    // Ignore snippet parse failures and fall back to known parent fields.
-    return new Set<string>();
-  }
+  const parsed = parseYamlValue(signal.yaml_snippet);
+  const parsedRecord = isPlainObject(parsed.value) ? parsed.value : null;
+  const snippetRoot = parsedRecord && isPlainObject(parsedRecord.fundamental) ? parsedRecord.fundamental : null;
+  const childKey = signal.key.replace(/^fundamental_/, '');
+  return new Set(snippetRoot ? Object.keys(snippetRoot).filter((key) => key !== childKey) : []);
 }
 
 function resolveFallbackFundamentalParentFields(fundamentalDefs: SignalDefinition[]): string[] {
@@ -360,7 +348,7 @@ function resolveExecutionPolicyMode(
     mode !== 'overnight_round_trip'
   ) {
     errors.push(
-      "shared_config.execution_policy.mode must be one of: standard, next_session_round_trip, current_session_round_trip, overnight_round_trip"
+      'shared_config.execution_policy.mode must be one of: standard, next_session_round_trip, current_session_round_trip, overnight_round_trip'
     );
     return null;
   }
@@ -378,10 +366,7 @@ function hasConfiguredExitTriggerParams(exitTrigger: unknown): boolean {
   return Object.keys(exitTrigger).length > 0;
 }
 
-function validateRoundTripRules(
-  config: Record<string, unknown>,
-  errors: string[]
-): void {
+function validateRoundTripRules(config: Record<string, unknown>, errors: string[]): void {
   const sharedConfig = config.shared_config;
   if (!isPlainObject(sharedConfig)) {
     return;

@@ -1,38 +1,9 @@
-import yaml from 'js-yaml';
 import type { SignalCategory, SignalDefinition, SignalFieldDefinition } from '@/types/backtest';
+import { isPlainObject, parseYamlObject } from './yamlUtils';
+
+export { dumpYamlObject, isPlainObject, parseYamlObject, safeDumpYaml } from './yamlUtils';
 
 const DEFAULT_FUNDAMENTAL_PARENT_FIELDS = ['enabled', 'period_type', 'use_adjusted'];
-
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function parseYamlObject(content: string): { value: Record<string, unknown> | null; error: string | null } {
-  try {
-    const parsed = yaml.load(content);
-    if (!isPlainObject(parsed)) {
-      return { value: null, error: 'Invalid YAML: Must be an object' };
-    }
-    return { value: parsed, error: null };
-  } catch (error) {
-    return {
-      value: null,
-      error: `YAML parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    };
-  }
-}
-
-export function dumpYamlObject(value: Record<string, unknown>): string {
-  return yaml.dump(value, { indent: 2, lineWidth: 120 });
-}
-
-export function safeDumpYaml(value: Record<string, unknown>): string {
-  try {
-    return dumpYamlObject(value);
-  } catch {
-    return JSON.stringify(value, null, 2);
-  }
-}
 
 export function getValueAtPath(source: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.');

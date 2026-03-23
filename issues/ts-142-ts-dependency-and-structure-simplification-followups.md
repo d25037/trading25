@@ -6,7 +6,7 @@ priority: medium
 labels: [planning, dependencies, refactor, tooling]
 project: ts
 created: 2026-03-20
-updated: 2026-03-20
+updated: 2026-03-23
 depends_on: [ts-138]
 blocks: []
 parent: null
@@ -52,7 +52,7 @@ parent: null
 - [ ] 置換しない場合は、保持理由（深いネスト可視化・開閉体験など）を記録する
 
 ### D. YAML utility の共通化
-- [ ] `authoringUtils.ts` / `strategyValidation.ts` / `optimizationGridParams.ts` の YAML 処理を共通 API に寄せる
+- [x] `authoringUtils.ts` / `strategyValidation.ts` / `optimizationGridParams.ts` の YAML 処理を共通 API に寄せる
 - [ ] parse / stringify / validation payload normalization の責務を分割する
 - [ ] Monaco editor から直接 `js-yaml` を触る箇所を減らせるか確認する
 
@@ -68,7 +68,8 @@ parent: null
 4. 再発防止は `ts-141` の audit guardrail と README policy に寄せる
 
 ## 結果
-- 未着手
+- 2026-03-23: `yamlUtils.ts` を追加し、Backtest authoring 周辺の YAML parse/dump を共通化した
+- 2026-03-23: `DefaultConfigEditor` の dump fallback も共通 util へ寄せ、重複実装を削除した
 
 ## 補足
 - `@tanstack/react-query` / `@tanstack/react-router` / `lightweight-charts` / `@monaco-editor/react` + `monaco-editor` は現時点では責務が明確で、優先的な削除対象ではない

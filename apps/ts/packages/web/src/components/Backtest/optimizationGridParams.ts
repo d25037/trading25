@@ -1,4 +1,4 @@
-import yaml from 'js-yaml';
+import { parseYamlValue } from './yamlUtils';
 
 export interface GridParameterEntry {
   path: string;
@@ -44,12 +44,10 @@ function extractEntriesFromRanges(parameterRanges: RecordLike): GridParameterEnt
 }
 
 export function analyzeGridParameters(content: string): GridParameterAnalysis {
-  let parsed: unknown;
-  try {
-    parsed = yaml.load(content);
-  } catch (error) {
+  const parsed = parseYamlValue(content);
+  if (parsed.error) {
     return {
-      parseError: `YAML parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      parseError: parsed.error,
       hasParameterRanges: false,
       entries: [],
       paramCount: 0,
@@ -57,7 +55,7 @@ export function analyzeGridParameters(content: string): GridParameterAnalysis {
     };
   }
 
-  if (!isRecordLike(parsed)) {
+  if (!isRecordLike(parsed.value)) {
     return {
       parseError: null,
       hasParameterRanges: false,
@@ -67,7 +65,7 @@ export function analyzeGridParameters(content: string): GridParameterAnalysis {
     };
   }
 
-  const parameterRanges = parsed.parameter_ranges;
+  const parameterRanges = parsed.value.parameter_ranges;
   if (!isRecordLike(parameterRanges)) {
     return {
       parseError: null,
