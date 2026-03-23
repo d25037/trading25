@@ -206,7 +206,7 @@ class RankingService:
 
         period_high = self._ranking_by_period_high(target_date, period_days, limit, query_market_codes)
         period_low = self._ranking_by_period_low(target_date, period_days, limit, query_market_codes)
-        index_performance = self._load_index_performance(target_date, lookback_days=5)
+        index_performance = self._load_index_performance(target_date, lookback_days=lookback_days)
 
         return MarketRankingResponse(
             date=target_date,

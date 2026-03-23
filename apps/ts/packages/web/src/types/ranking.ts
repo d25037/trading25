@@ -12,6 +12,7 @@ export type {
 } from '@trading25/contracts/types/api-response-types';
 
 export type RankingPageTab = 'ranking' | 'fundamentalRanking';
+export type RankingDailyView = 'stocks' | 'indices';
 
 // Frontend-specific types
 export interface RankingParams {

@@ -13,7 +13,7 @@ import {
 } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingPageTab, RankingParams } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
@@ -73,6 +73,7 @@ export interface ScreeningRouteSearch {
 
 export interface RankingRouteSearch {
   tab?: RankingPageTab;
+  dailyView?: RankingDailyView;
   rankingDate?: string;
   rankingLimit?: number;
   rankingMarkets?: string;
@@ -99,6 +100,7 @@ interface PersistedContainer {
 
 const SCREENING_SUB_TABS: ScreeningSubTab[] = ['preOpenScreening', 'inSessionScreening', 'ranking', 'fundamentalRanking'];
 const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
+const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
@@ -171,6 +173,10 @@ function normalizeScreeningSubTab(value: unknown): ScreeningSubTab | undefined {
 
 function normalizeRankingPageTab(value: unknown): RankingPageTab | undefined {
   return normalizeEnum(normalizeString(value), RANKING_PAGE_TABS);
+}
+
+function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_DAILY_VIEWS);
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {
@@ -440,11 +446,13 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
 
 export function getRankingStateFromSearch(search: RankingRouteSearch): {
   activeSubTab: RankingPageTab;
+  activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
   return {
     activeSubTab: search.tab ?? 'ranking',
+    activeDailyView: search.dailyView ?? 'stocks',
     rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
       ['date', search.rankingDate],
       ['limit', search.rankingLimit],
@@ -463,12 +471,14 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
 
 export function getRankingStateFromScreeningSearch(search: ScreeningRouteSearch): {
   activeSubTab: RankingPageTab;
+  activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
   const state = getScreeningStateFromSearch(search);
   return {
     activeSubTab: state.activeSubTab === 'fundamentalRanking' ? 'fundamentalRanking' : 'ranking',
+    activeDailyView: 'stocks',
     rankingParams: state.rankingParams,
     fundamentalRankingParams: state.fundamentalRankingParams,
   };
@@ -612,6 +622,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   const next: RankingRouteSearch = {};
 
   assignIfDefined(next, 'tab', normalizeRankingPageTab(search.tab));
+  assignIfDefined(next, 'dailyView', normalizeRankingDailyView(search.dailyView));
   assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
   assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
@@ -627,12 +638,14 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
 
 export function serializeRankingSearch(state: {
   activeSubTab: RankingPageTab;
+  activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 }): RankingRouteSearch {
   const next: RankingRouteSearch = {};
 
   assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'ranking');
+  assignIfDefinedAndNotDefault(next, 'dailyView', state.activeDailyView, 'stocks');
   assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
   assignIfDefinedAndNotDefault(
     next,

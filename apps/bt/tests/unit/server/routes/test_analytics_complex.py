@@ -294,10 +294,12 @@ class TestRanking:
             assert "changePercentage" in index_item
 
     def test_with_lookback_days(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/ranking?lookbackDays=5")
+        resp = analytics_client.get("/api/analytics/ranking?lookbackDays=3")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["lookbackDays"] == 5
+        assert data["lookbackDays"] == 3
+        if data["indexPerformance"]:
+            assert all(item["lookbackDays"] == 3 for item in data["indexPerformance"])
 
     def test_with_limit(self, analytics_client):
         resp = analytics_client.get("/api/analytics/ranking?limit=1")

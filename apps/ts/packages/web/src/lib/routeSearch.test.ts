@@ -159,6 +159,7 @@ describe('routeSearch', () => {
   it('roundtrips ranking route state and maps screening ranking tabs', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'fundamentalRanking',
+      dailyView: 'indices',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       fundamentalMarkets: '0112',
@@ -167,8 +168,10 @@ describe('routeSearch', () => {
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
     expect(rankingState.activeSubTab).toBe('fundamentalRanking');
+    expect(rankingState.activeDailyView).toBe('indices');
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'fundamentalRanking',
+      dailyView: 'indices',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       fundamentalMarkets: '0112',
@@ -183,6 +186,7 @@ describe('routeSearch', () => {
 
     expect(getRankingStateFromScreeningSearch(screeningSearch)).toEqual({
       activeSubTab: 'fundamentalRanking',
+      activeDailyView: 'stocks',
       rankingParams: expect.objectContaining({
         markets: 'growth',
       }),
@@ -313,6 +317,15 @@ describe('routeSearch', () => {
         forecastLookbackFyCount: '-1',
       })
     ).toEqual({});
+
+    expect(
+      validateRankingSearch({
+        tab: 'ranking',
+        dailyView: 'invalid',
+      })
+    ).toEqual({
+      tab: 'ranking',
+    });
 
     expect(
       validateBacktestSearch({

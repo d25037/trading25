@@ -5,12 +5,15 @@ import {
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   DEFAULT_RANKING_PARAMS,
 } from '@/stores/screeningStore';
-import type { RankingPageTab } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
 const mockNavigate = vi.fn();
 const mockSetActiveSubTab = vi.fn((tab: RankingPageTab) => {
   mockRouteState.activeSubTab = tab;
+});
+const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
+  mockRouteState.activeDailyView = view;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
@@ -20,7 +23,9 @@ const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTA
 });
 const mockRouteState = {
   activeSubTab: 'ranking' as 'ranking' | 'fundamentalRanking',
+  activeDailyView: 'stocks' as RankingDailyView,
   setActiveSubTab: mockSetActiveSubTab,
+  setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
   fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
@@ -61,6 +66,10 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
 }));
 
 vi.mock('@/components/Ranking', () => ({
+  RANKING_LOOKBACK_OPTIONS: [
+    { value: 1, label: '1 day' },
+    { value: 5, label: '5 days' },
+  ],
   IndexPerformanceTable: ({ onIndexClick }: { onIndexClick: (code: string) => void }) => (
     <button type="button" onClick={() => onIndexClick('TOPIX')}>
       Index Performance
@@ -88,10 +97,12 @@ vi.mock('@/components/FundamentalRanking', () => ({
 describe('RankingPage', () => {
   beforeEach(() => {
     mockRouteState.activeSubTab = 'ranking';
+    mockRouteState.activeDailyView = 'stocks';
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
     mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
     mockNavigate.mockReset();
     mockSetActiveSubTab.mockClear();
+    mockSetActiveDailyView.mockClear();
     mockSetRankingParams.mockClear();
     mockSetFundamentalRankingParams.mockClear();
   });
@@ -100,8 +111,10 @@ describe('RankingPage', () => {
     render(<RankingPage />);
 
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
-    expect(screen.getByText('Index Performance')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.getByText('Ranking Summary')).toBeInTheDocument();
+    expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
   });
 
   it('switches to fundamental ranking tab', async () => {
@@ -123,8 +136,24 @@ describe('RankingPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '6758' } });
   });
 
+  it('switches daily ranking to indices view', async () => {
+    const user = userEvent.setup();
+    const view = render(<RankingPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Indices' }));
+    view.rerender(<RankingPage />);
+
+    expect(screen.getByText('Indices Filters')).toBeInTheDocument();
+    expect(screen.getAllByText('Lookback Days')).toHaveLength(1);
+    expect(screen.getByText('Index performance compares each latest close with the selected trading sessions earlier.')).toBeInTheDocument();
+    expect(screen.getByText('Index Performance')).toBeInTheDocument();
+    expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
+  });
+
   it('navigates to indices when an index row is selected', async () => {
     const user = userEvent.setup();
+    mockRouteState.activeDailyView = 'indices';
     render(<RankingPage />);
 
     await user.click(screen.getByText('Index Performance'));

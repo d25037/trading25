@@ -8,7 +8,7 @@ const RANKING_MARKET_OPTIONS = [
   { value: 'prime,standard', label: 'Prime + Standard' },
 ];
 
-const LOOKBACK_OPTIONS = [
+export const RANKING_LOOKBACK_OPTIONS = [
   { value: 1, label: '1 day' },
   { value: 5, label: '5 days' },
   { value: 10, label: '10 days' },
@@ -53,7 +53,7 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
         <NumberSelect
           value={params.lookbackDays || 1}
           onChange={(v) => updateParam('lookbackDays', v)}
-          options={LOOKBACK_OPTIONS}
+          options={RANKING_LOOKBACK_OPTIONS}
           id="ranking-lookbackDays"
           label="Lookback Days"
         />

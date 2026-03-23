@@ -12,6 +12,7 @@ interface IndexPerformanceTableProps {
   isLoading: boolean;
   error: Error | null;
   onIndexClick: (code: string) => void;
+  lookbackDays?: number;
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
@@ -60,7 +61,13 @@ function IndexPerformanceRow({
   );
 }
 
-export function IndexPerformanceTable({ items, isLoading, error, onIndexClick }: IndexPerformanceTableProps) {
+export function IndexPerformanceTable({
+  items,
+  isLoading,
+  error,
+  onIndexClick,
+  lookbackDays: selectedLookbackDays,
+}: IndexPerformanceTableProps) {
   const rows = (items ?? []).slice().sort((left, right) => {
     const byChange = right.changePercentage - left.changePercentage;
     if (byChange !== 0) {
@@ -80,7 +87,7 @@ export function IndexPerformanceTable({ items, isLoading, error, onIndexClick }:
     rowHeight: INDEX_ROW_HEIGHT,
     viewportHeight: INDEX_VIEWPORT_HEIGHT,
   });
-  const lookbackDays = rows[0]?.lookbackDays ?? 5;
+  const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;
 
   return (
     <Card className="glass-panel overflow-hidden">

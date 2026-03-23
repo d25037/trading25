@@ -405,18 +405,18 @@ class TestGetRankings:
         assert len(result.rankings.tradingValue) <= 1
         assert len(result.rankings.gainers) <= 1
 
-    def test_includes_5_session_index_performance(self, service):
-        result = service.get_rankings(date="2024-01-19")
+    def test_includes_variable_lookback_index_performance(self, service):
+        result = service.get_rankings(date="2024-01-19", lookback_days=3)
 
         topix = next((item for item in result.indexPerformance if item.code == "TOPIX"), None)
         assert topix is not None
         assert topix.currentDate == "2024-01-19"
-        assert topix.baseDate == "2024-01-12"
+        assert topix.baseDate == "2024-01-16"
         assert topix.currentClose == pytest.approx(1060.0)
-        assert topix.baseClose == pytest.approx(1000.0)
-        assert topix.changeAmount == pytest.approx(60.0)
-        assert topix.changePercentage == pytest.approx(6.0)
-        assert topix.lookbackDays == 5
+        assert topix.baseClose == pytest.approx(1020.0)
+        assert topix.changeAmount == pytest.approx(40.0)
+        assert topix.changePercentage == pytest.approx(40.0 / 1020.0 * 100.0)
+        assert topix.lookbackDays == 3
 
     def test_no_data_raises(self, tmp_path):
         """データなしDBの場合"""

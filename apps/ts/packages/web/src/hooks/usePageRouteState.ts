@@ -34,7 +34,7 @@ import { backtestRoute, chartsRoute, indicesRoute, portfolioRoute, rankingRoute,
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingPageTab, RankingParams } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 function useLegacySearchMigration<TSearch extends object>(params: {
@@ -281,6 +281,8 @@ export function useScreeningRouteState(): {
 export function useRankingRouteState(): {
   activeSubTab: RankingPageTab;
   setActiveSubTab: (tab: RankingPageTab) => void;
+  activeDailyView: RankingDailyView;
+  setActiveDailyView: (view: RankingDailyView) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
   fundamentalRankingParams: FundamentalRankingParams;
@@ -294,10 +296,12 @@ export function useRankingRouteState(): {
     (
       updater: (currentState: {
         activeSubTab: RankingPageTab;
+        activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }) => {
         activeSubTab: RankingPageTab;
+        activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }
@@ -316,6 +320,7 @@ export function useRankingRouteState(): {
   return {
     ...state,
     setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
+    setActiveDailyView: (view) => updateSearch((currentState) => ({ ...currentState, activeDailyView: view })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
     setFundamentalRankingParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),

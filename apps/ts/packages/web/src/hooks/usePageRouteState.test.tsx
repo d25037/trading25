@@ -187,9 +187,11 @@ describe('usePageRouteState', () => {
     const { result } = renderHook(() => useRankingRouteState());
 
     expect(result.current.activeSubTab).toBe('ranking');
+    expect(result.current.activeDailyView).toBe('stocks');
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
 
     act(() => {
+      result.current.setActiveDailyView('indices');
       result.current.setActiveSubTab('fundamentalRanking');
       result.current.setRankingParams({
         ...DEFAULT_RANKING_PARAMS,
@@ -200,6 +202,7 @@ describe('usePageRouteState', () => {
 
     expect(routeSearchState.ranking).toEqual({
       tab: 'fundamentalRanking',
+      dailyView: 'indices',
       rankingLimit: 25,
       rankingMarkets: 'growth',
     });
