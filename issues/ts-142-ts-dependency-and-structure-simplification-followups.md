@@ -47,8 +47,8 @@ parent: null
 - [ ] 完全統一できない場合も、「なぜ二重運用なのか」をテスト基盤ドキュメントへ残す
 
 ### C. 単発利用 dependency の見直し
-- [ ] `react-json-view-lite` の実利用機能を整理する
-- [ ] read-only tree view で十分なら内部 `JsonTreeView` コンポーネントへの置換案を作る
+- [x] `react-json-view-lite` の実利用機能を整理する
+- [x] read-only tree view で十分なら内部 `JsonTreeView` コンポーネントへの置換案を作る
 - [ ] 置換しない場合は、保持理由（深いネスト可視化・開閉体験など）を記録する
 
 ### D. YAML utility の共通化
@@ -72,6 +72,7 @@ parent: null
 - 2026-03-23: `DefaultConfigEditor` の dump fallback も共通 util へ寄せ、重複実装を削除した
 - 2026-03-23: persisted storage key を `persistedState.ts` に集約し、`backtestStore` / route migration / sync job 復元の localStorage 参照を共通 helper へ寄せ始めた
 - 2026-03-23: `analysisStore` の screening result persist を外し、active job id + React Query の result 再解決へ寄せた。screening history は list API 不在のため session-local persist を当面維持する
+- 2026-03-23: `AttributionArtifactBrowser` の read-only JSON 表示を内部 `JsonTreeView` に置換し、`react-json-view-lite` 依存を削除した
 
 ## 補足
 - `@tanstack/react-query` / `@tanstack/react-router` / `lightweight-charts` / `@monaco-editor/react` + `monaco-editor` は現時点では責務が明確で、優先的な削除対象ではない

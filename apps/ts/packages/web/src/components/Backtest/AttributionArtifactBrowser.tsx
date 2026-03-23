@@ -1,9 +1,8 @@
 import { FileJson, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { JsonView, allExpanded, defaultStyles } from 'react-json-view-lite';
-import 'react-json-view-lite/dist/index.css';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { JsonTreeView } from '@/components/ui/json-tree-view';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAttributionArtifactContent, useAttributionArtifactFiles } from '@/hooks/useBacktest';
 import type { AttributionArtifactInfo } from '@/types/backtest';
@@ -49,20 +48,7 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function toJsonViewData(value: unknown): Record<string, unknown> | unknown[] {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (value && typeof value === 'object') {
-    return value as Record<string, unknown>;
-  }
-  return { value };
-}
-
-function resolveParameterPath(
-  root: unknown,
-  pathParts: string[]
-): { traversed: string[]; value: unknown } | null {
+function resolveParameterPath(root: unknown, pathParts: string[]): { traversed: string[]; value: unknown } | null {
   let current: unknown = root;
   const traversed: string[] = [];
 
@@ -93,6 +79,10 @@ function resolveParameterPath(
 function shouldExpandArtifactNode(level: number, _value: unknown, field?: string): boolean {
   if (level < 2) return true;
   return level === 2 && field === 'effective_parameters';
+}
+
+function shouldExpandAllJsonNodes(): boolean {
+  return true;
 }
 
 type BestScore = {
@@ -240,11 +230,7 @@ type FileListItemProps = {
   onSelect: () => void;
 };
 
-function FileListItem({
-  file,
-  isSelected,
-  onSelect,
-}: FileListItemProps) {
+function FileListItem({ file, isSelected, onSelect }: FileListItemProps) {
   return (
     <button
       type="button"
@@ -398,7 +384,7 @@ function ArtifactDetailsPanel({
             <h5 className="mb-2 text-xs font-medium text-muted-foreground">Effective Parameter JSON</h5>
             <div className="max-h-[260px] overflow-auto rounded-md border bg-background p-3 text-xs">
               {bestSignalParameter.parameterPath ? (
-                <JsonView data={toJsonViewData(bestSignalParameter.parameterValue)} shouldExpandNode={allExpanded} style={defaultStyles} />
+                <JsonTreeView data={bestSignalParameter.parameterValue} shouldExpandNode={shouldExpandAllJsonNodes} />
               ) : (
                 <p className="text-muted-foreground">
                   Parameter value could not be resolved from strategy.effective_parameters.
@@ -413,7 +399,7 @@ function ArtifactDetailsPanel({
         <div>
           <h4 className="text-sm font-medium mb-2">Effective Parameters</h4>
           <div className="max-h-[320px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-            <JsonView data={toJsonViewData(effectiveParameters)} shouldExpandNode={allExpanded} style={defaultStyles} />
+            <JsonTreeView data={effectiveParameters} shouldExpandNode={shouldExpandAllJsonNodes} />
           </div>
         </div>
       )}
@@ -421,7 +407,7 @@ function ArtifactDetailsPanel({
       <div>
         <h4 className="text-sm font-medium mb-2">JSON</h4>
         <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-          <JsonView data={toJsonViewData(artifactData?.artifact ?? {})} shouldExpandNode={shouldExpandArtifactNode} style={defaultStyles} />
+          <JsonTreeView data={artifactData?.artifact ?? {}} shouldExpandNode={shouldExpandArtifactNode} />
         </div>
       </div>
     </div>
@@ -443,7 +429,10 @@ export function AttributionArtifactBrowser() {
 
   const strategies = useMemo(() => buildStrategies(filesData?.files), [filesData?.files]);
 
-  const filteredFiles = useMemo(() => buildFilteredFiles(filesData?.files, searchQuery), [filesData?.files, searchQuery]);
+  const filteredFiles = useMemo(
+    () => buildFilteredFiles(filesData?.files, searchQuery),
+    [filesData?.files, searchQuery]
+  );
 
   const sortedFiles = useMemo(
     () => [...filteredFiles].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
