@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { ANALYSIS_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
-import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
+import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
 export type AnalysisSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
 
@@ -40,33 +40,33 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 interface AnalysisState {
   activePreOpenScreeningJobId: string | null;
   activeInSessionScreeningJobId: string | null;
-  preOpenScreeningResult: MarketScreeningResponse | null;
-  inSessionScreeningResult: MarketScreeningResponse | null;
   preOpenScreeningJobHistory: ScreeningJobResponse[];
   inSessionScreeningJobHistory: ScreeningJobResponse[];
   setActivePreOpenScreeningJobId: (jobId: string | null) => void;
   setActiveInSessionScreeningJobId: (jobId: string | null) => void;
-  setPreOpenScreeningResult: (result: MarketScreeningResponse | null) => void;
-  setInSessionScreeningResult: (result: MarketScreeningResponse | null) => void;
   upsertPreOpenScreeningJobHistory: (job: ScreeningJobResponse) => void;
   upsertInSessionScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
-export type AnalysisPersistedState = Pick<
+export type AnalysisStoreState = Pick<
   AnalysisState,
   | 'activePreOpenScreeningJobId'
   | 'activeInSessionScreeningJobId'
-  | 'preOpenScreeningResult'
-  | 'inSessionScreeningResult'
   | 'preOpenScreeningJobHistory'
   | 'inSessionScreeningJobHistory'
 >;
 
-export const createInitialAnalysisState = (): AnalysisPersistedState => ({
+export type AnalysisPersistedState = Pick<
+  AnalysisStoreState,
+  | 'activePreOpenScreeningJobId'
+  | 'activeInSessionScreeningJobId'
+  | 'preOpenScreeningJobHistory'
+  | 'inSessionScreeningJobHistory'
+>;
+
+export const createInitialAnalysisState = (): AnalysisStoreState => ({
   activePreOpenScreeningJobId: null,
   activeInSessionScreeningJobId: null,
-  preOpenScreeningResult: null,
-  inSessionScreeningResult: null,
   preOpenScreeningJobHistory: [],
   inSessionScreeningJobHistory: [],
 });
@@ -83,8 +83,6 @@ export const useAnalysisStore = create<AnalysisState>()(
       ...createInitialAnalysisState(),
       setActivePreOpenScreeningJobId: (jobId) => set({ activePreOpenScreeningJobId: jobId }),
       setActiveInSessionScreeningJobId: (jobId) => set({ activeInSessionScreeningJobId: jobId }),
-      setPreOpenScreeningResult: (result) => set({ preOpenScreeningResult: result }),
-      setInSessionScreeningResult: (result) => set({ inSessionScreeningResult: result }),
       upsertPreOpenScreeningJobHistory: (job) =>
         set((state) => {
           const withoutCurrent = state.preOpenScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
@@ -108,8 +106,6 @@ export const useAnalysisStore = create<AnalysisState>()(
       partialize: (state) => ({
         activePreOpenScreeningJobId: state.activePreOpenScreeningJobId,
         activeInSessionScreeningJobId: state.activeInSessionScreeningJobId,
-        preOpenScreeningResult: state.preOpenScreeningResult,
-        inSessionScreeningResult: state.inSessionScreeningResult,
         preOpenScreeningJobHistory: state.preOpenScreeningJobHistory,
         inSessionScreeningJobHistory: state.inSessionScreeningJobHistory,
       }),

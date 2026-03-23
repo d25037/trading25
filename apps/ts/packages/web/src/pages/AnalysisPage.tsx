@@ -14,8 +14,8 @@ import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
 import { useStrategies } from '@/hooks/useBacktest';
-import { useAnalysisRouteState, useMigrateAnalysisRouteState } from '@/hooks/usePageRouteState';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
+import { useAnalysisRouteState, useMigrateAnalysisRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import {
   useCancelScreeningJob,
@@ -117,10 +117,7 @@ function isInSessionScreeningStrategy(strategy: StrategyMetadata): boolean {
   );
 }
 
-function isEligibleScreeningStrategy(
-  strategy: StrategyMetadata,
-  entryDecidability: EntryDecidability
-): boolean {
+function isEligibleScreeningStrategy(strategy: StrategyMetadata, entryDecidability: EntryDecidability): boolean {
   return entryDecidability === 'requires_same_session_observation'
     ? isInSessionScreeningStrategy(strategy)
     : isPreOpenScreeningStrategy(strategy);
@@ -284,9 +281,7 @@ function AnalysisMainContent({
   if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
     const runButtonLabel =
-      entryDecidability === 'requires_same_session_observation'
-        ? 'Run In-Session Screening'
-        : 'Run Pre-Open Screening';
+      entryDecidability === 'requires_same_session_observation' ? 'Run In-Session Screening' : 'Run Pre-Open Screening';
 
     return (
       <>
@@ -369,8 +364,6 @@ interface ScreeningControllerArgs {
   allowedStrategies: string[] | undefined;
   activeJobId: string | null;
   setActiveJobId: (jobId: string | null) => void;
-  result: MarketScreeningResponse | null;
-  setResult: (result: MarketScreeningResponse) => void;
   history: ScreeningJobResponse[];
   upsertHistory: (job: ScreeningJobResponse) => void;
 }
@@ -401,18 +394,6 @@ function resolveScreeningError(
   resultError: Error | null
 ): Error | null {
   return (runError ?? (staleJob ? null : statusError) ?? resultError) as Error | null;
-}
-
-function useScreeningResultSync(
-  result: MarketScreeningResponse | undefined,
-  setResult: (result: MarketScreeningResponse) => void
-): void {
-  useEffect(() => {
-    if (!result) {
-      return;
-    }
-    setResult(result);
-  }, [result, setResult]);
 }
 
 function useScreeningHistorySync(
@@ -446,8 +427,6 @@ function useScreeningController({
   allowedStrategies,
   activeJobId,
   setActiveJobId,
-  result,
-  setResult,
   history,
   upsertHistory,
 }: ScreeningControllerArgs): ScreeningController {
@@ -461,7 +440,6 @@ function useScreeningController({
   const staleJob = isStaleScreeningJobError(statusError);
 
   useSanitizedScreeningParams(params, setParams, allowedStrategies, entryDecidability);
-  useScreeningResultSync(screeningResultQuery.data, setResult);
   useScreeningHistorySync([runScreeningJob.data, screeningJobStatus.data, cancelScreeningJob.data], upsertHistory);
   useStaleScreeningJobReset(Boolean(activeJobId) && staleJob, setActiveJobId);
 
@@ -501,7 +479,7 @@ function useScreeningController({
     allowedStrategies: allowedStrategies ?? [],
     params,
     setParams,
-    result,
+    result: screeningResultQuery.data ?? null,
     history,
     job,
     isRunning,
@@ -529,14 +507,10 @@ export function AnalysisPage() {
   } = useAnalysisRouteState();
   const activePreOpenScreeningJobId = useAnalysisStore((state) => state.activePreOpenScreeningJobId);
   const activeInSessionScreeningJobId = useAnalysisStore((state) => state.activeInSessionScreeningJobId);
-  const preOpenScreeningResult = useAnalysisStore((state) => state.preOpenScreeningResult);
-  const inSessionScreeningResult = useAnalysisStore((state) => state.inSessionScreeningResult);
   const preOpenScreeningJobHistory = useAnalysisStore((state) => state.preOpenScreeningJobHistory);
   const inSessionScreeningJobHistory = useAnalysisStore((state) => state.inSessionScreeningJobHistory);
   const setActivePreOpenScreeningJobId = useAnalysisStore((state) => state.setActivePreOpenScreeningJobId);
   const setActiveInSessionScreeningJobId = useAnalysisStore((state) => state.setActiveInSessionScreeningJobId);
-  const setPreOpenScreeningResult = useAnalysisStore((state) => state.setPreOpenScreeningResult);
-  const setInSessionScreeningResult = useAnalysisStore((state) => state.setInSessionScreeningResult);
   const upsertPreOpenScreeningJobHistory = useAnalysisStore((state) => state.upsertPreOpenScreeningJobHistory);
   const upsertInSessionScreeningJobHistory = useAnalysisStore((state) => state.upsertInSessionScreeningJobHistory);
 
@@ -569,9 +543,7 @@ export function AnalysisPage() {
     'requires_same_session_observation'
   );
   const activeEntryDecidability: EntryDecidability =
-    activeSubTab === 'inSessionScreening'
-      ? 'requires_same_session_observation'
-      : 'pre_open_decidable';
+    activeSubTab === 'inSessionScreening' ? 'requires_same_session_observation' : 'pre_open_decidable';
   const preOpenScreening = useScreeningController({
     entryDecidability: 'pre_open_decidable',
     params: preOpenScreeningParams,
@@ -579,8 +551,6 @@ export function AnalysisPage() {
     allowedStrategies: preOpenProductionStrategies,
     activeJobId: activePreOpenScreeningJobId,
     setActiveJobId: setActivePreOpenScreeningJobId,
-    result: preOpenScreeningResult,
-    setResult: setPreOpenScreeningResult,
     history: preOpenScreeningJobHistory,
     upsertHistory: upsertPreOpenScreeningJobHistory,
   });
@@ -591,19 +561,13 @@ export function AnalysisPage() {
     allowedStrategies: inSessionProductionStrategies,
     activeJobId: activeInSessionScreeningJobId,
     setActiveJobId: setActiveInSessionScreeningJobId,
-    result: inSessionScreeningResult,
-    setResult: setInSessionScreeningResult,
     history: inSessionScreeningJobHistory,
     upsertHistory: upsertInSessionScreeningJobHistory,
   });
   const activeScreening =
-    activeEntryDecidability === 'requires_same_session_observation'
-      ? inSessionScreening
-      : preOpenScreening;
+    activeEntryDecidability === 'requires_same_session_observation' ? inSessionScreening : preOpenScreening;
   const activeScreeningAutoMarkets =
-    activeEntryDecidability === 'requires_same_session_observation'
-      ? inSessionAutoMarkets
-      : preOpenAutoMarkets;
+    activeEntryDecidability === 'requires_same_session_observation' ? inSessionAutoMarkets : preOpenAutoMarkets;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeEntryDecidability];
 
   const handleStockClick = useCallback(

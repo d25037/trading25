@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
   createInitialAnalysisState,
-  DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
+  DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
   useAnalysisStore,
@@ -342,7 +342,9 @@ describe('AnalysisPage', () => {
 
     const { rerender } = render(<AnalysisPage />);
 
-    expect(mockRouteState.preOpenScreeningParams.strategies).toBe('production/range_break_v15,production/missing_standard');
+    expect(mockRouteState.preOpenScreeningParams.strategies).toBe(
+      'production/range_break_v15,production/missing_standard'
+    );
     expect(mockRouteState.inSessionScreeningParams.strategies).toBe(
       'production/topix_gap_down_intraday_same_day,production/missing_same_day'
     );
@@ -442,9 +444,17 @@ describe('AnalysisPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 
-  it('restores cached screening result after remount', () => {
+  it('re-resolves completed screening result from the active job id', () => {
     useAnalysisStore.setState({
-      preOpenScreeningResult: createCachedScreeningResult(),
+      activePreOpenScreeningJobId: 'completed-job',
+    });
+    mockUseScreeningJobStatus.mockReturnValue({
+      data: createScreeningJob({ job_id: 'completed-job', status: 'completed' }),
+      error: null,
+    });
+    mockUseScreeningResult.mockReturnValue({
+      data: createCachedScreeningResult(),
+      error: null,
     });
 
     render(<AnalysisPage />);
@@ -463,11 +473,14 @@ describe('AnalysisPage', () => {
   it('clears stale screening job id and keeps cached result visible on 404', async () => {
     useAnalysisStore.setState({
       activePreOpenScreeningJobId: 'stale-job',
-      preOpenScreeningResult: createCachedScreeningResult(),
     });
     mockUseScreeningJobStatus.mockReturnValue({
       data: null,
       error: new ApiError('ジョブが見つかりません: stale-job', 404),
+    });
+    mockUseScreeningResult.mockReturnValue({
+      data: createCachedScreeningResult(),
+      error: null,
     });
 
     render(<AnalysisPage />);

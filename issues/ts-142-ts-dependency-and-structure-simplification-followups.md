@@ -38,8 +38,8 @@ parent: null
 
 ### A. state boundary の整理
 - [ ] `ts-140` を基準に、URL で表現できる state と session-local state を再分類する
-- [ ] `analysisStore` の job result / history persist を query cache + API 再解決へ寄せられるか評価する
-- [ ] `backtestStore` は active job tracking 中心に限定し、localStorage 直アクセス箇所を共通化できるか確認する
+- [x] `analysisStore` の job result / history persist を query cache + API 再解決へ寄せられるか評価する
+- [x] `backtestStore` は active job tracking 中心に限定し、localStorage 直アクセス箇所を共通化できるか確認する
 
 ### B. テスト基盤の依存整理
 - [ ] `happy-dom` を標準に据えたまま `jsdom` 依存を削減できるか調査する
@@ -71,6 +71,7 @@ parent: null
 - 2026-03-23: `yamlUtils.ts` を追加し、Backtest authoring 周辺の YAML parse/dump を共通化した
 - 2026-03-23: `DefaultConfigEditor` の dump fallback も共通 util へ寄せ、重複実装を削除した
 - 2026-03-23: persisted storage key を `persistedState.ts` に集約し、`backtestStore` / route migration / sync job 復元の localStorage 参照を共通 helper へ寄せ始めた
+- 2026-03-23: `analysisStore` の screening result persist を外し、active job id + React Query の result 再解決へ寄せた。screening history は list API 不在のため session-local persist を当面維持する
 
 ## 補足
 - `@tanstack/react-query` / `@tanstack/react-router` / `lightweight-charts` / `@monaco-editor/react` + `monaco-editor` は現時点では責務が明確で、優先的な削除対象ではない
