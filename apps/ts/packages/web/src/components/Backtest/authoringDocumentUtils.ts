@@ -2,11 +2,14 @@ import type { SignalDefinition } from '@/types/backtest';
 import { isPlainObject, parseYamlObject } from './yamlUtils';
 
 const DEFAULT_FUNDAMENTAL_PARENT_FIELDS = ['enabled', 'period_type', 'use_adjusted'];
+const STRATEGY_SECTION_KEYS = ['entry_filter_params', 'exit_trigger_params'] as const;
 
 type SectionObjectRequirement = {
   key: string;
   error: string;
 };
+
+type StrategySectionKey = (typeof STRATEGY_SECTION_KEYS)[number];
 
 function validateObjectRequirements(
   source: Record<string, unknown>,
@@ -27,9 +30,24 @@ function intersectStringSets(left: Set<string> | null, right: Set<string>): Set<
   return new Set(Array.from(right).filter((value) => left.has(value)));
 }
 
+function resolveFundamentalRoot(source: Record<string, unknown>): Record<string, unknown> | null {
+  if (isPlainObject(source.fundamental)) {
+    return source.fundamental;
+  }
+
+  for (const sectionKey of STRATEGY_SECTION_KEYS) {
+    const section = source[sectionKey];
+    if (isPlainObject(section) && isPlainObject(section.fundamental)) {
+      return section.fundamental;
+    }
+  }
+
+  return null;
+}
+
 function getFundamentalParentKeys(definition: SignalDefinition): Set<string> {
   const parsed = parseYamlObject(definition.yaml_snippet);
-  const fundamentalRoot = parsed.value && isPlainObject(parsed.value.fundamental) ? parsed.value.fundamental : null;
+  const fundamentalRoot = parsed.value ? resolveFundamentalRoot(parsed.value) : null;
   if (!fundamentalRoot) {
     return new Set();
   }
@@ -40,11 +58,11 @@ function getFundamentalParentKeys(definition: SignalDefinition): Set<string> {
 
 function collectFundamentalAdvancedOnlyPaths(
   paths: Set<string>,
-  sectionKey: 'entry_filter_params' | 'exit_trigger_params',
+  sectionKey: StrategySectionKey,
   signalValue: unknown,
   fundamentalDefinitionsByType: Map<string, SignalDefinition>,
   parentFieldNames: string[]
-) {
+): void {
   if (!isPlainObject(signalValue)) {
     paths.add(`${sectionKey}.fundamental`);
     return;
@@ -62,12 +80,12 @@ function collectFundamentalAdvancedOnlyPaths(
 
 function collectStrategySectionAdvancedOnlyPaths(
   paths: Set<string>,
-  sectionKey: 'entry_filter_params' | 'exit_trigger_params',
+  sectionKey: StrategySectionKey,
   config: Record<string, unknown>,
   definitionsByType: Map<string, SignalDefinition>,
   fundamentalDefinitionsByType: Map<string, SignalDefinition>,
   parentFieldNames: string[]
-) {
+): void {
   const section = isPlainObject(config[sectionKey]) ? config[sectionKey] : {};
   for (const [signalKey, signalValue] of Object.entries(section)) {
     if (signalKey === 'fundamental') {
@@ -142,22 +160,16 @@ export function buildVisualAdvancedOnlyPaths(
     }
   }
 
-  collectStrategySectionAdvancedOnlyPaths(
-    paths,
-    'entry_filter_params',
-    config,
-    definitionsByType,
-    fundamentalDefinitionsByType,
-    parentFieldNames
-  );
-  collectStrategySectionAdvancedOnlyPaths(
-    paths,
-    'exit_trigger_params',
-    config,
-    definitionsByType,
-    fundamentalDefinitionsByType,
-    parentFieldNames
-  );
+  for (const sectionKey of STRATEGY_SECTION_KEYS) {
+    collectStrategySectionAdvancedOnlyPaths(
+      paths,
+      sectionKey,
+      config,
+      definitionsByType,
+      fundamentalDefinitionsByType,
+      parentFieldNames
+    );
+  }
   return Array.from(paths).sort();
 }
 

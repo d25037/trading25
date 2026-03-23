@@ -17,7 +17,7 @@ describe('authoringDocumentUtils', () => {
   });
 
   it('derives fundamental parent fields and strategy advanced-only paths', () => {
-    const fundamentalDefinition = {
+    const wrappedFundamentalDefinition = {
       key: 'fundamental_forward_eps_growth',
       yaml_snippet: `entry_filter_params:
   fundamental:
@@ -30,19 +30,42 @@ describe('authoringDocumentUtils', () => {
       fields: [{ name: 'enabled' }, { name: 'period_type' }, { name: 'use_adjusted' }, { name: 'threshold' }],
     } as unknown as SignalDefinition;
 
-    expect(deriveFundamentalParentFieldNames([fundamentalDefinition])).toEqual([
+    const rootFundamentalDefinition = {
+      ...wrappedFundamentalDefinition,
+      yaml_snippet: `fundamental:
+  enabled: true
+  period_type: FY
+  use_adjusted: true
+  forward_eps_growth:
+    enabled: true
+    threshold: 0.2`,
+    } as SignalDefinition;
+
+    expect(deriveFundamentalParentFieldNames([wrappedFundamentalDefinition])).toEqual([
+      'enabled',
+      'period_type',
+      'use_adjusted',
+    ]);
+    expect(deriveFundamentalParentFieldNames([rootFundamentalDefinition])).toEqual([
       'enabled',
       'period_type',
       'use_adjusted',
     ]);
     expect(
-      deriveFundamentalParentFieldNames([{ ...fundamentalDefinition, yaml_snippet: 'entry_filter_params: {}' }])
+      deriveFundamentalParentFieldNames([
+        wrappedFundamentalDefinition,
+        rootFundamentalDefinition,
+        { ...wrappedFundamentalDefinition, yaml_snippet: 'entry_filter_params: {}' },
+      ])
+    ).toEqual(['enabled', 'period_type', 'use_adjusted']);
+    expect(
+      deriveFundamentalParentFieldNames([{ ...wrappedFundamentalDefinition, yaml_snippet: 'entry_filter_params: {}' }])
     ).toEqual(['enabled', 'period_type', 'use_adjusted']);
 
     const regularDefinitions = new Map([
       ['volume_ratio_above', { signal_type: 'volume_ratio_above' } as unknown as SignalDefinition],
     ]);
-    const fundamentalDefinitions = new Map([['forward_eps_growth', fundamentalDefinition]]);
+    const fundamentalDefinitions = new Map([['forward_eps_growth', wrappedFundamentalDefinition]]);
 
     expect(
       buildVisualAdvancedOnlyPaths(

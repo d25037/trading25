@@ -1,7 +1,7 @@
 ---
 id: ts-142
 title: "TS 依存整理と構造簡素化のフォローアップ計画"
-status: open
+status: done
 priority: medium
 labels: [planning, dependencies, refactor, tooling]
 project: ts
@@ -76,6 +76,7 @@ parent: null
 - 2026-03-23: `AttributionArtifactBrowser` の read-only JSON 表示を内部 `JsonTreeView` に置換し、`react-json-view-lite` 依存を削除した
 - 2026-03-23: `@vitest-environment jsdom` を使っていた 5 テストを `happy-dom` 標準へ戻し、`jsdom` 依存と audit 例外を削除した。DOM 例外方針は `TESTING.md` に明記した
 - 2026-03-23: `authoringDocumentUtils.ts` を追加し、YAML parse/stringify (`yamlUtils.ts`) と strategy/default document の visual 互換判定・advanced-only path 判定を分離した。`MonacoYamlEditor` 導線からの `js-yaml` 直参照は残っていない
+- 2026-03-23: `aicheck` で `authoringDocumentUtils.ts` の fundamental snippet root 解決を見直し、backend の `fundamental` root 形式と frontend 側の section-wrapped 形式の両方から parent field を推論できるようにした。対応テストも追加し、targeted coverage は `authoringDocumentUtils.ts` lines 97.43% / branches 95.16% を確認した
 - 2026-03-23: root script の単純委譲を `package.json` 直呼びへ戻し、`scripts/tasks.ts` は `web:dev` の `.env` 注入、`workspace:dev:sync` の optional sync、`workspace:clean` の cleanup に限定した。README の command 説明も同じ境界へ更新した
 
 ## 補足
