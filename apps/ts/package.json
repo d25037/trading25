@@ -45,7 +45,7 @@
     "flatted": "3.4.2",
     "@redocly/openapi-core": "1.34.5",
     "minimatch": "5.1.8",
-    "monaco-editor": "0.53.0",
+    "monaco-editor": "0.55.1",
     "rollup": "4.59.0"
   }
 }
