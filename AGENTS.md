@@ -177,8 +177,8 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 
 - `apps/ts` の依存は `bun run quality:deps:audit` を SoT に棚卸しし、未使用依存、script/import と manifest の不整合、root override と package version drift を検出する。`zustand` は完全撤去ではなく縮小方針とし、URL と相性の良い page selection state は TanStack Router search params を SoT にする
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
-- Backtest `Strategies` 画面の Strategy Editor は `production` / `experimental` の編集を許可し、`Visual / Advanced YAML / Preview` の hybrid editor と backend metadata-driven な `shared_config` / signal guidance を提供する。`Rename` / `Delete` は `experimental` のみ許可
-- Backtest `Default Config` editor は `default.execution` と `default.parameters.shared_config` を visual 編集でき、raw YAML は advanced fallback として維持する
+- Backtest `Strategies` 画面の Strategy Editor は `production` / `experimental` の編集を許可し、`Visual / Advanced YAML / Preview` の hybrid editor、section sidebar、backend metadata-driven な `shared_config` / signal guidance、`dataset` / `benchmark_table` の reference select UI を提供する。`Rename` / `Delete` は `experimental` のみ許可
+- Backtest `Default Config` editor は `default.execution` と `default.parameters.shared_config` を visual 編集でき、`dataset` / `benchmark_table` は Strategy Editor と同じ reference select card を使い、raw YAML は advanced fallback として維持する
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラー時のみとする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する

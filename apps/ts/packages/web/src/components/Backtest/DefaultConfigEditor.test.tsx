@@ -124,7 +124,12 @@ const mockState = {
     },
   },
   datasets: [{ name: 'prime_20260316' }, { name: 'default-dataset' }],
-  indices: { indices: [{ code: 'topix', name: 'TOPIX' }] },
+  indices: {
+    indices: [
+      { code: 'topix', name: 'TOPIX' },
+      { code: 'N225_UNDERPX', name: 'Nikkei 225 UnderPx' },
+    ],
+  },
   contextLoading: false,
   referenceLoading: false,
   rawPending: false,
@@ -239,6 +244,43 @@ describe('DefaultConfigEditor', () => {
         shared_config: {
           dataset: 'prime_20260316',
           benchmark_table: 'topix',
+        },
+      },
+      expect.any(Object)
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('uses available dataset and benchmark options for default shared config selection', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+
+    mockStructuredMutate.mockImplementation((_payload, options) => {
+      options?.onSuccess?.();
+    });
+
+    render(<DefaultConfigEditor open={true} onOpenChange={onOpenChange} />);
+
+    const datasetSelect = (await screen.findByLabelText('Dataset')) as HTMLSelectElement;
+    expect(datasetSelect.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'prime_20260316' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'default-dataset' })).toBeInTheDocument();
+
+    fireEvent.change(datasetSelect, { target: { value: 'default-dataset' } });
+    const benchmarkSelect = screen.getByLabelText('Benchmark') as HTMLSelectElement;
+    expect(benchmarkSelect.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'topix' })).toBeInTheDocument();
+    fireEvent.change(benchmarkSelect, { target: { value: 'N225_UNDERPX' } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(mockStructuredMutate).toHaveBeenCalledWith(
+      {
+        execution: {
+          template_notebook: 'notebooks/templates/strategy_analysis.py',
+        },
+        shared_config: {
+          dataset: 'default-dataset',
+          benchmark_table: 'N225_UNDERPX',
         },
       },
       expect.any(Object)
