@@ -358,7 +358,12 @@ const mockState: MockState = {
     ],
   },
   datasets: [{ name: 'custom-dataset' }, { name: 'default-dataset' }],
-  indices: { indices: [{ code: 'topix', name: 'TOPIX' }] },
+  indices: {
+    indices: [
+      { code: 'topix', name: 'TOPIX' },
+      { code: 'N225_UNDERPX', name: 'Nikkei 225 UnderPx' },
+    ],
+  },
   datasetInfo: null as { name: string; storage: { backend: string } } | null,
   contextLoading: false,
   referenceLoading: false,
@@ -581,6 +586,22 @@ describe('StrategyEditor', () => {
     expect(screen.getByDisplayValue('custom-dataset')).toBeInTheDocument();
     expect(screen.getByText('Advanced-only Content')).toBeInTheDocument();
     expect(screen.getByText('execution')).toBeInTheDocument();
+  });
+
+  it('renders section sidebar and updates the active section state', async () => {
+    const user = userEvent.setup();
+
+    render(<StrategyEditor open onOpenChange={vi.fn()} strategyName="experimental/sample" />);
+
+    const basicsButton = await screen.findByRole('button', { name: 'Basics Display name and strategy summary.' });
+    const entryButton = screen.getByRole('button', { name: 'Entry Filters Signals that gate entries.' });
+
+    expect(basicsButton).toHaveAttribute('aria-current', 'page');
+
+    await user.click(entryButton);
+
+    expect(entryButton).toHaveAttribute('aria-current', 'page');
+    expect(basicsButton).not.toHaveAttribute('aria-current');
   });
 
   it('renders loading state while editor queries are pending', () => {
@@ -869,6 +890,43 @@ describe('StrategyEditor', () => {
           config: expect.objectContaining({
             shared_config: expect.objectContaining({
               stock_codes: ['7203', '6758'],
+            }),
+          }),
+        }),
+      },
+      expect.any(Object)
+    );
+  });
+
+  it('selects dataset and benchmark values from the available option lists', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    mockUpdateMutate.mockImplementation((_payload, options) => {
+      options?.onSuccess?.();
+    });
+
+    render(<StrategyEditor open onOpenChange={onOpenChange} strategyName="experimental/sample" />);
+
+    const datasetSelect = (await screen.findByLabelText('Dataset')) as HTMLSelectElement;
+    expect(datasetSelect.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'custom-dataset' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'default-dataset' })).toBeInTheDocument();
+
+    fireEvent.change(datasetSelect, { target: { value: 'default-dataset' } });
+    const benchmarkSelect = screen.getByLabelText('Benchmark') as HTMLSelectElement;
+    expect(benchmarkSelect.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'topix' })).toBeInTheDocument();
+    fireEvent.change(benchmarkSelect, { target: { value: 'N225_UNDERPX' } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(mockUpdateMutate).toHaveBeenCalledWith(
+      {
+        name: 'experimental/sample',
+        request: expect.objectContaining({
+          config: expect.objectContaining({
+            shared_config: expect.objectContaining({
+              dataset: 'default-dataset',
+              benchmark_table: 'N225_UNDERPX',
             }),
           }),
         }),
