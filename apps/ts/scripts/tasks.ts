@@ -31,116 +31,17 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Show backend startup hint',
     steps: [{ shell: "echo 'Use: uv run bt server --port 3002'" }],
   },
-  'apps:test': {
-    description: 'Run app tests (web)',
-    steps: [{ command: ['run', '--filter', '@trading25/web', 'test'] }],
-  },
-  'api-clients:build': {
-    description: 'Build api-clients package',
-    steps: [{ command: ['run', '--filter', '@trading25/api-clients', 'build'] }],
-  },
-  'contracts:build': {
-    description: 'Build contracts package',
-    steps: [{ command: ['run', '--filter', '@trading25/contracts', 'build'] }],
-  },
-  'contracts:build:local': {
-    description: 'Build contracts package without dependency bootstrap',
-    steps: [{ command: ['run', '--filter', '@trading25/contracts', 'build:local'] }],
-  },
   'contracts:sync:bt': {
     description: 'Sync bt OpenAPI schema and generated contract types',
     steps: [{ command: ['run', '--filter', '@trading25/contracts', 'bt:sync'] }],
-  },
-  'coverage:check': {
-    description: 'Check coverage thresholds',
-    steps: [{ command: ['scripts/check-coverage.ts'] }],
-  },
-  'packages:test': {
-    description: 'Run package tests (contracts + utils + api-clients)',
-    steps: [
-      { command: ['run', '--filter', '@trading25/contracts', 'test'] },
-      { command: ['run', '--filter', '@trading25/utils', 'test'] },
-      { command: ['run', '--filter', '@trading25/api-clients', 'test'] },
-    ],
-  },
-  'quality:deps:audit': {
-    description: 'Audit declared TS dependencies against imports, scripts, and root overrides',
-    steps: [{ command: ['scripts/dependency-audit.ts'] }],
-  },
-  'quality:check:fix': {
-    description: 'Run biome check with auto-fix',
-    steps: [{ command: ['x', 'biome', 'check', '.', '--write'] }],
-  },
-  'quality:format': {
-    description: 'Run biome format',
-    steps: [{ command: ['x', 'biome', 'format'] }],
-  },
-  'quality:lint': {
-    description: 'Run biome lint',
-    steps: [{ command: ['x', 'biome', 'lint'] }],
-  },
-  'quality:lint:fix': {
-    description: 'Run biome lint with auto-fix',
-    steps: [{ command: ['x', 'biome', 'lint', '.', '--write'] }],
-  },
-  'quality:typecheck': {
-    description: 'Run full typecheck (root + api-clients + web)',
-    steps: [
-      { command: ['run', '--filter', '@trading25/contracts', 'bt:generate-types'] },
-      { task: 'quality:typecheck:root' },
-      { command: ['run', '--filter', '@trading25/api-clients', 'typecheck'] },
-      { task: 'quality:typecheck:web' },
-      { task: 'quality:deps:audit' },
-    ],
-  },
-  'quality:typecheck:root': {
-    description: 'Run root TypeScript typecheck',
-    steps: [{ command: ['x', 'tsc', '--noEmit'] }],
-  },
-  'quality:typecheck:web': {
-    description: 'Run web TypeScript typecheck',
-    steps: [{ command: ['run', '--filter', '@trading25/web', 'typecheck'] }],
-  },
-  'root:test': {
-    description: 'Run root script tests',
-    steps: [{ command: ['test', 'scripts/dependency-audit.test.ts', 'scripts/dependency-audit.coverage.test.ts'] }],
-  },
-  'utils:build': {
-    description: 'Build utils package',
-    steps: [{ command: ['run', '--filter', '@trading25/utils', 'build'] }],
-  },
-  'utils:build:local': {
-    description: 'Build utils package without dependency bootstrap',
-    steps: [{ command: ['run', '--filter', '@trading25/utils', 'build:local'] }],
-  },
-  'web:build': {
-    description: 'Build web package',
-    steps: [{ command: ['run', '--filter', '@trading25/web', 'build'] }],
   },
   'web:dev': {
     description: 'Run web dev server',
     steps: [{ command: ['x', '--bun', 'vite', '--configLoader', 'native'], withEnvFile: true, cwd: WEB_ROOT }],
   },
-  'web:test': {
-    description: 'Run web tests',
-    steps: [{ command: ['run', '--filter', '@trading25/web', 'test'] }],
-  },
-  'workspace:build': {
-    description: 'Build all workspace packages',
-    steps: [
-      { task: 'api-clients:build' },
-      { task: 'contracts:build:local' },
-      { task: 'utils:build:local' },
-      { task: 'web:build' },
-    ],
-  },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',
     steps: [{ shell: 'workspace-clean' }],
-  },
-  'workspace:dev': {
-    description: 'Run default development target (web)',
-    steps: [{ task: 'web:dev' }],
   },
   'workspace:dev:sync': {
     description: 'Run bt sync then web dev (continue on sync failure)',
@@ -151,19 +52,6 @@ const TASKS: Record<string, TaskDefinition> = {
         warning: '[WARNING] bt:sync failed - continuing with existing types',
       },
       { task: 'web:dev' },
-    ],
-  },
-  'workspace:test': {
-    description: 'Run all workspace tests',
-    steps: [{ task: 'root:test' }, { task: 'packages:test' }, { task: 'apps:test' }],
-  },
-  'workspace:test:coverage': {
-    description: 'Run all workspace coverage tests',
-    steps: [
-      { command: ['run', '--filter', '@trading25/contracts', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/utils', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/api-clients', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/web', 'test:coverage'] },
     ],
   },
 };

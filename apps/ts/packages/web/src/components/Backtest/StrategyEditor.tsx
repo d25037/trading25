@@ -33,13 +33,15 @@ import type {
   StrategyValidationResponse,
 } from '@/types/backtest';
 import {
+  buildVisualAdvancedOnlyPaths,
+  canVisualizeStrategyConfig,
+  deriveFundamentalParentFieldNames,
+} from './authoringDocumentUtils';
+import {
   addFundamentalSignalConfig,
   asStringArray,
   buildDefaultFundamentalConfig as buildDefaultFundamentalConfigFromFields,
   buildSignalOptions,
-  buildVisualAdvancedOnlyPaths,
-  canVisualizeStrategyConfig,
-  deriveFundamentalParentFieldNames,
   getValueAtPath,
   hasValueAtPath,
   isPlainObject,

@@ -23,6 +23,7 @@ import { useDatasets } from '@/hooks/useDataset';
 import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
 import type { AuthoringFieldSchema } from '@/types/backtest';
+import { buildDefaultDocumentAdvancedOnlyPaths, canVisualizeDefaultDocument } from './authoringDocumentUtils';
 import {
   getValueAtPath,
   hasValueAtPath,
@@ -48,53 +49,6 @@ function getReferenceSelectCopy(path: string) {
   return path === 'dataset'
     ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
     : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
-}
-
-function canVisualizeDefaultDocument(document: Record<string, unknown>): string | null {
-  const defaultSection = isPlainObject(document.default) ? document.default : null;
-  if (!defaultSection) {
-    return "default.yaml must contain a 'default' object to use Visual mode.";
-  }
-
-  if ('execution' in defaultSection && !isPlainObject(defaultSection.execution)) {
-    return 'default.execution must be an object to use Visual mode.';
-  }
-
-  if ('parameters' in defaultSection && !isPlainObject(defaultSection.parameters)) {
-    return 'default.parameters must be an object to use Visual mode.';
-  }
-
-  const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : null;
-  if (parameters && 'shared_config' in parameters && !isPlainObject(parameters.shared_config)) {
-    return 'default.parameters.shared_config must be an object to use Visual mode.';
-  }
-
-  return null;
-}
-
-function buildAdvancedOnlyPaths(document: Record<string, unknown>): string[] {
-  const paths = new Set<string>();
-  for (const key of Object.keys(document)) {
-    if (key !== 'default') {
-      paths.add(key);
-    }
-  }
-
-  const defaultSection = isPlainObject(document.default) ? document.default : {};
-  for (const key of Object.keys(defaultSection)) {
-    if (key !== 'execution' && key !== 'parameters') {
-      paths.add(`default.${key}`);
-    }
-  }
-
-  const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : {};
-  for (const key of Object.keys(parameters)) {
-    if (key !== 'shared_config') {
-      paths.add(`default.parameters.${key}`);
-    }
-  }
-
-  return Array.from(paths).sort();
 }
 
 function EditorTabButton({
@@ -159,7 +113,7 @@ export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorP
   const parameters = isPlainObject(defaultSection.parameters) ? defaultSection.parameters : {};
   const sharedConfig = isPlainObject(parameters.shared_config) ? parameters.shared_config : {};
 
-  const advancedOnlyPaths = useMemo(() => buildAdvancedOnlyPaths(draftDocument), [draftDocument]);
+  const advancedOnlyPaths = useMemo(() => buildDefaultDocumentAdvancedOnlyPaths(draftDocument), [draftDocument]);
 
   const datasetOptionValues = useMemo(() => {
     const values = new Set<string>();

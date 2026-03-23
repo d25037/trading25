@@ -37,7 +37,7 @@ parent: null
 ## 実施内容
 
 ### A. state boundary の整理
-- [ ] `ts-140` を基準に、URL で表現できる state と session-local state を再分類する
+- [x] `ts-140` を基準に、URL で表現できる state と session-local state を再分類する
 - [x] `analysisStore` の job result / history persist を query cache + API 再解決へ寄せられるか評価する
 - [x] `backtestStore` は active job tracking 中心に限定し、localStorage 直アクセス箇所を共通化できるか確認する
 
@@ -49,17 +49,17 @@ parent: null
 ### C. 単発利用 dependency の見直し
 - [x] `react-json-view-lite` の実利用機能を整理する
 - [x] read-only tree view で十分なら内部 `JsonTreeView` コンポーネントへの置換案を作る
-- [ ] 置換しない場合は、保持理由（深いネスト可視化・開閉体験など）を記録する
+- [x] 置換判断と削除内容を issue に記録する
 
 ### D. YAML utility の共通化
 - [x] `authoringUtils.ts` / `strategyValidation.ts` / `optimizationGridParams.ts` の YAML 処理を共通 API に寄せる
-- [ ] parse / stringify / validation payload normalization の責務を分割する
-- [ ] Monaco editor から直接 `js-yaml` を触る箇所を減らせるか確認する
+- [x] parse / stringify / validation payload normalization の責務を分割する
+- [x] Monaco editor から直接 `js-yaml` を触る箇所を減らせるか確認する
 
 ### E. task runner の簡素化
-- [ ] `scripts/tasks.ts` の task を「単純委譲」と「独自 orchestration」に分類する
-- [ ] env file 注入や optional sync のような付加価値がない task は package script 直呼びへ戻せるか評価する
-- [ ] README のコマンド説明と task 実装のズレを解消する
+- [x] `scripts/tasks.ts` の task を「単純委譲」と「独自 orchestration」に分類する
+- [x] env file 注入や optional sync のような付加価値がない task は package script 直呼びへ戻せるか評価する
+- [x] README のコマンド説明と task 実装のズレを解消する
 
 ## 実装順の提案
 1. `ts-139` で manifest 上の明確な不要物と pin drift を先に解消する
@@ -72,8 +72,11 @@ parent: null
 - 2026-03-23: `DefaultConfigEditor` の dump fallback も共通 util へ寄せ、重複実装を削除した
 - 2026-03-23: persisted storage key を `persistedState.ts` に集約し、`backtestStore` / route migration / sync job 復元の localStorage 参照を共通 helper へ寄せ始めた
 - 2026-03-23: `analysisStore` の screening result persist を外し、active job id + React Query の result 再解決へ寄せた。screening history は list API 不在のため session-local persist を当面維持する
+- 2026-03-23: URL で共有すべき画面選択 state は Router search params、active job tracking / recent history は session-local persist という境界を `analysis` / `backtest` / route migration 実装に反映した
 - 2026-03-23: `AttributionArtifactBrowser` の read-only JSON 表示を内部 `JsonTreeView` に置換し、`react-json-view-lite` 依存を削除した
 - 2026-03-23: `@vitest-environment jsdom` を使っていた 5 テストを `happy-dom` 標準へ戻し、`jsdom` 依存と audit 例外を削除した。DOM 例外方針は `TESTING.md` に明記した
+- 2026-03-23: `authoringDocumentUtils.ts` を追加し、YAML parse/stringify (`yamlUtils.ts`) と strategy/default document の visual 互換判定・advanced-only path 判定を分離した。`MonacoYamlEditor` 導線からの `js-yaml` 直参照は残っていない
+- 2026-03-23: root script の単純委譲を `package.json` 直呼びへ戻し、`scripts/tasks.ts` は `web:dev` の `.env` 注入、`workspace:dev:sync` の optional sync、`workspace:clean` の cleanup に限定した。README の command 説明も同じ境界へ更新した
 
 ## 補足
 - `@tanstack/react-query` / `@tanstack/react-router` / `lightweight-charts` / `@monaco-editor/react` + `monaco-editor` は現時点では責務が明確で、優先的な削除対象ではない

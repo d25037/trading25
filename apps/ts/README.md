@@ -34,6 +34,9 @@ bun run workspace:dev
 `bun run workspace:dev:sync` は起動前に `bt:sync` を実行し、まず `apps/bt` ソースから OpenAPI を直接生成して型を再生成します（失敗時は warning を出して `web:dev` を継続実行）。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
+通常の build/test/lint/typecheck script は `package.json` から各 workspace command を直接呼びます。
+`scripts/tasks.ts` は `.env` 注入が必要な `web:dev`、optional sync を含む `workspace:dev:sync`、および `workspace:clean` のような独自 orchestration に限定しています。
+
 ## Common Commands
 
 ```bash

@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { SignalDefinition } from '@/types/backtest';
 import {
   addFundamentalSignalConfig,
   asStringArray,
   buildDefaultFundamentalConfig,
   buildSignalOptions,
-  buildVisualAdvancedOnlyPaths,
-  canVisualizeStrategyConfig,
   coerceNumber,
-  deriveFundamentalParentFieldNames,
   dumpYamlObject,
-  getValueAtPath,
   getSignalFieldDefaultValue,
+  getValueAtPath,
   hasValueAtPath,
   normalizeSignalSection,
   parseYamlObject,
@@ -66,10 +62,6 @@ describe('authoringUtils', () => {
 
   it('normalizes non-object signal sections and visual compatibility checks', () => {
     expect(normalizeSignalSection(null)).toEqual({});
-    expect(canVisualizeStrategyConfig({ shared_config: [] })).toContain('shared_config');
-    expect(canVisualizeStrategyConfig({ entry_filter_params: [] })).toContain('entry_filter_params');
-    expect(canVisualizeStrategyConfig({ exit_trigger_params: [] })).toContain('exit_trigger_params');
-    expect(canVisualizeStrategyConfig({ shared_config: {} })).toBeNull();
   });
 
   it('sets nested values without mutating the source', () => {
@@ -115,69 +107,6 @@ describe('authoringUtils', () => {
     expect(coerceNumber(' 1.5 ')).toBe(1.5);
     expect(coerceNumber('')).toBeNull();
     expect(coerceNumber('abc')).toBeNull();
-  });
-
-  it('derives fundamental parent fields and advanced-only paths', () => {
-    const fundamentalDefinition = {
-      key: 'fundamental_forward_eps_growth',
-      yaml_snippet: `entry_filter_params:
-  fundamental:
-    enabled: true
-    period_type: FY
-    use_adjusted: true
-    forward_eps_growth:
-      enabled: true
-      threshold: 0.2`,
-      fields: [
-        { name: 'enabled' },
-        { name: 'period_type' },
-        { name: 'use_adjusted' },
-        { name: 'threshold' },
-      ],
-    } as unknown as SignalDefinition;
-
-    expect(deriveFundamentalParentFieldNames([fundamentalDefinition])).toEqual([
-      'enabled',
-      'period_type',
-      'use_adjusted',
-    ]);
-    expect(deriveFundamentalParentFieldNames([{ ...fundamentalDefinition, yaml_snippet: 'entry_filter_params: {}' }])).toEqual([
-      'enabled',
-      'period_type',
-      'use_adjusted',
-    ]);
-
-    const regularDefinitions = new Map([
-      ['volume_ratio_above', { signal_type: 'volume_ratio_above' } as unknown as SignalDefinition],
-    ]);
-    const fundamentalDefinitions = new Map([['forward_eps_growth', fundamentalDefinition]]);
-
-    expect(
-      buildVisualAdvancedOnlyPaths(
-        {
-          custom_block: true,
-          entry_filter_params: {
-            unsupported_signal: {},
-            fundamental: {
-              enabled: true,
-              rogue: false,
-            },
-          },
-          exit_trigger_params: {
-            volume_ratio_above: [],
-          },
-        },
-        regularDefinitions,
-        fundamentalDefinitions,
-        ['enabled', 'period_type', 'use_adjusted'],
-        new Set(['entry_filter_params', 'exit_trigger_params'])
-      )
-    ).toEqual([
-      'custom_block',
-      'entry_filter_params.fundamental.rogue',
-      'entry_filter_params.unsupported_signal',
-      'exit_trigger_params.volume_ratio_above',
-    ]);
   });
 
   it('resolves default signal field values', () => {
@@ -235,19 +164,18 @@ describe('authoringUtils', () => {
     } as never;
 
     expect(defaultFundamental).toEqual({ enabled: true, period_type: 'FY' });
-    expect(addFundamentalSignalConfig({}, 'forward_eps_growth', definition, ['enabled', 'period_type'], defaultFundamental))
-      .toEqual({
-        enabled: true,
-        period_type: 'FY',
-        forward_eps_growth: {
-          enabled: true,
-          threshold: 0.2,
-        },
-      });
-
     expect(
-      updateFundamentalParentConfig({}, { name: 'period_type' } as never, 'Q', defaultFundamental)
+      addFundamentalSignalConfig({}, 'forward_eps_growth', definition, ['enabled', 'period_type'], defaultFundamental)
     ).toEqual({
+      enabled: true,
+      period_type: 'FY',
+      forward_eps_growth: {
+        enabled: true,
+        threshold: 0.2,
+      },
+    });
+
+    expect(updateFundamentalParentConfig({}, { name: 'period_type' } as never, 'Q', defaultFundamental)).toEqual({
       enabled: true,
       period_type: 'Q',
     });
