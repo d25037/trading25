@@ -1,6 +1,7 @@
 import { FileCode2, Loader2, PencilLine, Settings } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
+import { ReferenceSelectFieldCard } from '@/components/Backtest/ReferenceSelectFieldCard';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,16 @@ interface DefaultConfigEditorProps {
 }
 
 type DefaultEditorTab = 'visual' | 'advanced';
+
+function isReferenceSelectField(path: string) {
+  return path === 'dataset' || path === 'benchmark_table';
+}
+
+function getReferenceSelectCopy(path: string) {
+  return path === 'dataset'
+    ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
+    : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
+}
 
 function safeDumpYaml(value: Record<string, unknown>): string {
   try {
@@ -240,30 +251,66 @@ export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorP
     [onOpenChange, updateDefaultConfig, updateDefaultConfigStructured]
   );
 
-  const renderField = useCallback(
+  const getFieldOptionValues = useCallback(
+    (path: string) => {
+      if (path === 'dataset') {
+        return datasetOptionValues;
+      }
+      if (path === 'benchmark_table') {
+        return benchmarkOptionValues;
+      }
+      return undefined;
+    },
+    [benchmarkOptionValues, datasetOptionValues]
+  );
+
+  const renderReferenceField = useCallback(
     (field: AuthoringFieldSchema, pathPrefix: 'default.execution' | 'default.parameters.shared_config') => {
-      const scopedValue = getValueAtPath(draftDocument, `${pathPrefix}.${field.path}`);
-      const optionValues =
-        field.path === 'dataset'
-          ? datasetOptionValues
-          : field.path === 'benchmark_table'
-            ? benchmarkOptionValues
-            : undefined;
+      const scopedPath = `${pathPrefix}.${field.path}`;
+      const copy = getReferenceSelectCopy(field.path);
 
       return (
-        <MetadataFieldControl
-          key={`${pathPrefix}.${field.path}`}
+        <ReferenceSelectFieldCard
+          key={scopedPath}
           field={field}
-          value={scopedValue ?? field.default}
+          value={getValueAtPath(draftDocument, scopedPath) ?? field.default}
           effectiveValue={field.default}
-          overridden={hasValueAtPath(draftDocument, `${pathPrefix}.${field.path}`)}
-          optionValues={optionValues}
-          onChange={(value) => updateDraftAtPath(`${pathPrefix}.${field.path}`, value)}
-          onReset={() => removeDraftPath(`${pathPrefix}.${field.path}`)}
+          overridden={hasValueAtPath(draftDocument, scopedPath)}
+          optionValues={getFieldOptionValues(field.path) ?? []}
+          chooserLabel={copy.chooserLabel}
+          placeholderLabel={copy.placeholderLabel}
+          onChange={(value) => updateDraftAtPath(scopedPath, value)}
+          onReset={() => removeDraftPath(scopedPath)}
         />
       );
     },
-    [benchmarkOptionValues, datasetOptionValues, draftDocument, removeDraftPath, updateDraftAtPath]
+    [draftDocument, getFieldOptionValues, removeDraftPath, updateDraftAtPath]
+  );
+
+  const renderField = useCallback(
+    (field: AuthoringFieldSchema, pathPrefix: 'default.execution' | 'default.parameters.shared_config') => {
+      const scopedPath = `${pathPrefix}.${field.path}`;
+      const scopedValue = getValueAtPath(draftDocument, scopedPath);
+      const optionValues = getFieldOptionValues(field.path);
+
+      if (isReferenceSelectField(field.path)) {
+        return renderReferenceField(field, pathPrefix);
+      }
+
+      return (
+        <MetadataFieldControl
+          key={scopedPath}
+          field={field}
+          value={scopedValue ?? field.default}
+          effectiveValue={field.default}
+          overridden={hasValueAtPath(draftDocument, scopedPath)}
+          optionValues={optionValues}
+          onChange={(value) => updateDraftAtPath(scopedPath, value)}
+          onReset={() => removeDraftPath(scopedPath)}
+        />
+      );
+    },
+    [draftDocument, getFieldOptionValues, removeDraftPath, renderReferenceField, updateDraftAtPath]
   );
 
   const handleSave = useCallback(() => {

@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, Eye, FileCode2, Loader2, PencilLine, Sparkles } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
+import { ReferenceSelectFieldCard } from '@/components/Backtest/ReferenceSelectFieldCard';
 import { buildDefaultSignalParams, SignalFieldInputs } from '@/components/Backtest/SignalFieldInputs';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ interface StrategyEditorProps {
 
 type EditorTab = 'visual' | 'advanced' | 'preview';
 type SignalSectionKey = 'entry_filter_params' | 'exit_trigger_params';
+type VisualSectionKey = 'basics' | 'shared_config' | 'entry_filter' | 'exit_trigger' | 'advanced_only';
 
 const VISUAL_TOP_LEVEL_KEYS = new Set([
   'display_name',
@@ -89,6 +91,16 @@ const timingLabels: Record<string, string> = {
   current_session: 'Current Session',
   next_session: 'Next Session',
 };
+
+function isReferenceSelectField(path: string) {
+  return path === 'dataset' || path === 'benchmark_table';
+}
+
+function getReferenceSelectCopy(path: string) {
+  return path === 'dataset'
+    ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
+    : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
+}
 
 function formatTimingLabel(value: string) {
   return timingLabels[value] ?? value;
@@ -146,6 +158,35 @@ function EditorTabButton({
     >
       {icon}
       <span>{label}</span>
+    </button>
+  );
+}
+
+function VisualSectionButton({
+  active,
+  label,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+      className={cn(
+        'w-full rounded-lg border px-3 py-3 text-left transition-colors',
+        active
+          ? 'border-primary bg-primary/10 text-foreground'
+          : 'border-border/60 bg-background/70 text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground'
+      )}
+    >
+      <div className="text-sm font-medium">{label}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{description}</div>
     </button>
   );
 }
@@ -627,6 +668,7 @@ function FundamentalParentSettingsGrid({
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this dialog coordinates YAML round-trip, backend validation, and visual editor state in one place.
 export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const [activeTab, setActiveTab] = useState<EditorTab>('visual');
+  const [activeVisualSection, setActiveVisualSection] = useState<VisualSectionKey>('basics');
   const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
@@ -640,6 +682,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   const { data: indices } = useIndicesList();
   const updateStrategy = useUpdateStrategy();
   const validateStrategy = useValidateStrategy();
+  const visualSectionIdPrefix = useId();
 
   const applyDraftConfig = useCallback((nextConfig: Record<string, unknown>) => {
     setDraftConfig(nextConfig);
@@ -653,6 +696,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
       return;
     }
     setActiveTab('visual');
+    setActiveVisualSection('basics');
     setValidationResult(null);
     setPreviewDirty(true);
     applyDraftConfig(strategyContextQuery.data.raw_config);
@@ -745,6 +789,52 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     }
     return Array.from(values);
   }, [defaultSharedConfig, indices?.indices, rawSharedConfig]);
+
+  const visualSections = useMemo(() => {
+    const sections: Array<{ key: VisualSectionKey; label: string; description: string }> = [
+      {
+        key: 'basics',
+        label: 'Basics',
+        description: 'Display name and strategy summary.',
+      },
+      {
+        key: 'shared_config',
+        label: 'Shared Settings',
+        description: 'Dataset, execution, portfolio, and optimization defaults.',
+      },
+      {
+        key: 'entry_filter',
+        label: 'Entry Filters',
+        description: 'Signals that gate entries.',
+      },
+      {
+        key: 'exit_trigger',
+        label: 'Exit Triggers',
+        description: 'Signals used only in standard execution mode.',
+      },
+    ];
+
+    if (visualAdvancedOnlyPaths.length > 0) {
+      sections.push({
+        key: 'advanced_only',
+        label: 'Advanced Fields',
+        description: 'Paths preserved on save but edited only in YAML.',
+      });
+    }
+
+    return sections;
+  }, [visualAdvancedOnlyPaths.length]);
+
+  const scrollToVisualSection = useCallback(
+    (sectionKey: VisualSectionKey) => {
+      setActiveVisualSection(sectionKey);
+      document.getElementById(`${visualSectionIdPrefix}-${sectionKey}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    },
+    [visualSectionIdPrefix]
+  );
 
   const updateDraftAtPath = useCallback(
     (path: string, value: unknown) => {
@@ -1042,6 +1132,61 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         : null;
   const datasetInfo = useDatasetInfo(open ? datasetName : null);
 
+  const getSharedFieldOptionValues = useCallback(
+    (path: string) => {
+      if (path === 'dataset') {
+        return datasetOptionValues;
+      }
+      if (path === 'benchmark_table') {
+        return benchmarkOptionValues;
+      }
+      return undefined;
+    },
+    [benchmarkOptionValues, datasetOptionValues]
+  );
+
+  const renderStockCodesField = useCallback(
+    (field: AuthoringFieldSchema, value: unknown, overridden: boolean) => (
+      <StockCodesFieldCard
+        field={field}
+        value={value}
+        overridden={overridden}
+        onModeChange={handleStockCodesModeChange}
+        onChange={(nextValue) =>
+          updateDraftAtPath(
+            'shared_config.stock_codes',
+            nextValue
+              .split(/[\n,]/)
+              .map((item) => item.trim())
+              .filter((item) => item.length > 0)
+          )
+        }
+        onReset={() => removeDraftPath('shared_config.stock_codes')}
+      />
+    ),
+    [handleStockCodesModeChange, removeDraftPath, updateDraftAtPath]
+  );
+
+  const renderReferenceSharedField = useCallback(
+    (field: AuthoringFieldSchema, value: unknown, overridden: boolean, optionValues: string[]) => {
+      const copy = getReferenceSelectCopy(field.path);
+      return (
+        <ReferenceSelectFieldCard
+          field={field}
+          value={value}
+          effectiveValue={value}
+          overridden={overridden}
+          optionValues={optionValues}
+          chooserLabel={copy.chooserLabel}
+          placeholderLabel={copy.placeholderLabel}
+          onChange={(nextValue) => updateSharedConfigField(field, nextValue)}
+          onReset={() => removeDraftPath(`shared_config.${field.path}`)}
+        />
+      );
+    },
+    [removeDraftPath, updateSharedConfigField]
+  );
+
   const renderSharedField = (field: AuthoringFieldSchema) => {
     if (!context) return null;
 
@@ -1050,32 +1195,14 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
       ? getValueAtPath(rawSharedConfig, field.path)
       : getValueAtPath(defaultSharedConfig, field.path);
 
-    const optionValues =
-      field.path === 'dataset'
-        ? datasetOptionValues
-        : field.path === 'benchmark_table'
-          ? benchmarkOptionValues
-          : undefined;
+    const optionValues = getSharedFieldOptionValues(field.path);
 
     if (field.path === 'stock_codes') {
-      return (
-        <StockCodesFieldCard
-          field={field}
-          value={value}
-          overridden={overridden}
-          onModeChange={handleStockCodesModeChange}
-          onChange={(nextValue) =>
-            updateDraftAtPath(
-              'shared_config.stock_codes',
-              nextValue
-                .split(/[\n,]/)
-                .map((item) => item.trim())
-                .filter((item) => item.length > 0)
-            )
-          }
-          onReset={() => removeDraftPath('shared_config.stock_codes')}
-        />
-      );
+      return renderStockCodesField(field, value, overridden);
+    }
+
+    if (isReferenceSelectField(field.path)) {
+      return renderReferenceSharedField(field, value, overridden, optionValues ?? []);
     }
 
     return (
@@ -1294,83 +1421,118 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
             </div>
 
             {activeTab === 'visual' ? (
-              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="space-y-4">
-                  <Card className="border-border/60">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Basics</CardTitle>
-                      <CardDescription>Strategy metadata shown in the catalog and detail views.</CardDescription>
+              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <aside className="lg:min-h-0">
+                  <Card className="border-border/60 lg:sticky lg:top-0">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Sections</CardTitle>
+                      <CardDescription>
+                        Jump between strategy metadata, shared config, and signal blocks.
+                      </CardDescription>
                     </CardHeader>
-                    <CardContent className="grid gap-3 lg:grid-cols-2">
-                      {(reference?.basics ?? []).map((field) => (
-                        <MetadataFieldControl
-                          key={field.path}
-                          field={field}
-                          value={getValueAtPath(draftConfig, field.path)}
-                          overridden={hasValueAtPath(draftConfig, field.path) ? true : undefined}
-                          onChange={(value) => updateDraftAtPath(field.path, value)}
-                          onReset={() => removeDraftPath(field.path)}
+                    <CardContent className="grid gap-2">
+                      {visualSections.map((section) => (
+                        <VisualSectionButton
+                          key={section.key}
+                          active={activeVisualSection === section.key}
+                          label={section.label}
+                          description={section.description}
+                          onClick={() => scrollToVisualSection(section.key)}
                         />
                       ))}
                     </CardContent>
                   </Card>
+                </aside>
 
-                  <Card className="border-border/60">
-                    <CardHeader>
-                      <CardTitle className="text-lg">Shared Config</CardTitle>
-                      <CardDescription>
-                        Visual controls are driven by backend metadata. Reset removes the local override rather than
-                        copying the default.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      {datasetInfo.data ? (
-                        <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-                          Dataset <strong>{datasetInfo.data.name}</strong> loaded from{' '}
-                          {datasetInfo.data.storage.backend}.
-                        </div>
-                      ) : null}
-
-                      {(reference?.shared_config_groups ?? []).map((group) => {
-                        const groupFields = (reference?.shared_config_fields ?? []).filter(
-                          (field) => field.group === group.key
-                        );
-                        if (groupFields.length === 0) return null;
-                        return (
-                          <div key={group.key} className="space-y-3">
-                            <div>
-                              <h3 className="text-sm font-semibold">{group.label}</h3>
-                              {group.description ? (
-                                <p className="text-sm text-muted-foreground">{group.description}</p>
-                              ) : null}
-                            </div>
-                            <div className="grid gap-3 lg:grid-cols-2">{groupFields.map(renderSharedField)}</div>
-                          </div>
-                        );
-                      })}
-                    </CardContent>
-                  </Card>
-
-                  {renderSignalSection('entry_filter_params', 'Entry Signals')}
-                  {renderSignalSection('exit_trigger_params', 'Exit Signals')}
-
-                  {visualAdvancedOnlyPaths.length > 0 ? (
-                    <Card className="border-dashed border-border/60">
-                      <CardHeader>
-                        <CardTitle className="text-base">Advanced-only Content</CardTitle>
-                        <CardDescription>
-                          These paths are preserved on save but can only be edited in the Advanced YAML tab in v1.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                          {visualAdvancedOnlyPaths.map((path) => (
-                            <li key={path}>{path}</li>
+                <div className="min-h-0 overflow-y-auto pr-1">
+                  <div className="space-y-4">
+                    <section id={`${visualSectionIdPrefix}-basics`} className="scroll-mt-4">
+                      <Card className="border-border/60">
+                        <CardHeader>
+                          <CardTitle className="text-lg">Basics</CardTitle>
+                          <CardDescription>Strategy metadata shown in the catalog and detail views.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 lg:grid-cols-2">
+                          {(reference?.basics ?? []).map((field) => (
+                            <MetadataFieldControl
+                              key={field.path}
+                              field={field}
+                              value={getValueAtPath(draftConfig, field.path)}
+                              overridden={hasValueAtPath(draftConfig, field.path) ? true : undefined}
+                              onChange={(value) => updateDraftAtPath(field.path, value)}
+                              onReset={() => removeDraftPath(field.path)}
+                            />
                           ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  ) : null}
+                        </CardContent>
+                      </Card>
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-shared_config`} className="scroll-mt-4">
+                      <Card className="border-border/60">
+                        <CardHeader>
+                          <CardTitle className="text-lg">Shared Config</CardTitle>
+                          <CardDescription>
+                            Visual controls are driven by backend metadata. Reset removes the local override rather than
+                            copying the default.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          {datasetInfo.data ? (
+                            <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+                              Dataset <strong>{datasetInfo.data.name}</strong> loaded from{' '}
+                              {datasetInfo.data.storage.backend}.
+                            </div>
+                          ) : null}
+
+                          {(reference?.shared_config_groups ?? []).map((group) => {
+                            const groupFields = (reference?.shared_config_fields ?? []).filter(
+                              (field) => field.group === group.key
+                            );
+                            if (groupFields.length === 0) return null;
+                            return (
+                              <div key={group.key} className="space-y-3">
+                                <div>
+                                  <h3 className="text-sm font-semibold">{group.label}</h3>
+                                  {group.description ? (
+                                    <p className="text-sm text-muted-foreground">{group.description}</p>
+                                  ) : null}
+                                </div>
+                                <div className="grid gap-3 lg:grid-cols-2">{groupFields.map(renderSharedField)}</div>
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-entry_filter`} className="scroll-mt-4">
+                      {renderSignalSection('entry_filter_params', 'Entry Signals')}
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-exit_trigger`} className="scroll-mt-4">
+                      {renderSignalSection('exit_trigger_params', 'Exit Signals')}
+                    </section>
+
+                    {visualAdvancedOnlyPaths.length > 0 ? (
+                      <section id={`${visualSectionIdPrefix}-advanced_only`} className="scroll-mt-4">
+                        <Card className="border-dashed border-border/60">
+                          <CardHeader>
+                            <CardTitle className="text-base">Advanced-only Content</CardTitle>
+                            <CardDescription>
+                              These paths are preserved on save but can only be edited in the Advanced YAML tab in v1.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                              {visualAdvancedOnlyPaths.map((path) => (
+                                <li key={path}>{path}</li>
+                              ))}
+                            </ul>
+                          </CardContent>
+                        </Card>
+                      </section>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : null}
