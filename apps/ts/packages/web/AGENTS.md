@@ -33,8 +33,8 @@ src/
 ├── components/Lab/         # Lab: generate, evolve, optimize, improve (SSE progress)
 ├── components/Editor/      # Monaco YAML editor
 ├── components/ui/          # shadcn/ui components
-├── pages/                  # ChartsPage, AnalysisPage, BacktestPage
-├── stores/                 # Zustand state (chartStore, backtestStore)
+├── pages/                  # ChartsPage, ScreeningPage, RankingPage, BacktestPage
+├── stores/                 # Zustand state (chartStore, screeningStore, backtestStore)
 ├── hooks/                  # useStockData, useBtIndicators, useBtMarginIndicators, useBtSignals, useFundamentals, useBacktest, useLab
 ├── constants/              # Signal reference data
 └── types/                  # API contract + frontend-local request/response types

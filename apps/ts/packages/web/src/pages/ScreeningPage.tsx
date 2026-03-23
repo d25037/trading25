@@ -1,12 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
-import { BarChart3, Filter } from 'lucide-react';
+import { Filter } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  FundamentalRankingFilters,
-  FundamentalRankingSummary,
-  FundamentalRankingTable,
-} from '@/components/FundamentalRanking';
-import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningJobHistoryTable } from '@/components/Screening/ScreeningJobHistoryTable';
 import { ScreeningJobProgress, ScreeningJobStatusInline } from '@/components/Screening/ScreeningJobProgress';
@@ -14,9 +8,7 @@ import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
 import { useStrategies } from '@/hooks/useBacktest';
-import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
-import { useAnalysisRouteState, useMigrateAnalysisRouteState } from '@/hooks/usePageRouteState';
-import { useRanking } from '@/hooks/useRanking';
+import { useMigrateScreeningRouteState, useScreeningRouteState } from '@/hooks/usePageRouteState';
 import {
   useCancelScreeningJob,
   useRunScreeningJob,
@@ -27,11 +19,9 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { unionMarkets } from '@/lib/marketUtils';
 import { cn } from '@/lib/utils';
-import type { AnalysisSubTab } from '@/stores/analysisStore';
-import { useAnalysisStore } from '@/stores/analysisStore';
+import type { ScreeningSubTab } from '@/stores/screeningStore';
+import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
-import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
-import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
 import type {
   EntryDecidability,
   MarketScreeningResponse,
@@ -40,14 +30,12 @@ import type {
   ScreeningResultItem,
 } from '@/types/screening';
 
-const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
+const subTabs: { id: ScreeningSubTab; label: string; icon: typeof Filter }[] = [
   { id: 'preOpenScreening', label: 'Pre-Open Decidable', icon: Filter },
   { id: 'inSessionScreening', label: 'Requires In-Session Observation', icon: Filter },
-  { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
-  { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: BarChart3 },
 ];
 
-function isScreeningSubTab(tab: AnalysisSubTab): tab is 'preOpenScreening' | 'inSessionScreening' {
+function isScreeningSubTab(tab: ScreeningSubTab): tab is 'preOpenScreening' | 'inSessionScreening' {
   return tab === 'preOpenScreening' || tab === 'inSessionScreening';
 }
 
@@ -174,33 +162,25 @@ function useSanitizedScreeningParams(
   }, [allowedStrategies, entryDecidability, params, setParams]);
 }
 
-interface AnalysisSidebarProps {
-  activeSubTab: AnalysisSubTab;
+interface ScreeningSidebarProps {
+  activeSubTab: ScreeningSubTab;
   entryDecidability: EntryDecidability;
   screeningParams: ScreeningParams;
   screeningAutoMarkets: string[];
-  rankingParams: RankingParams;
-  fundamentalRankingParams: FundamentalRankingParams;
   setScreeningParams: (params: ScreeningParams) => void;
-  setRankingParams: (params: RankingParams) => void;
-  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
   productionStrategies: string[];
   isLoadingStrategies: boolean;
 }
 
-function AnalysisSidebar({
+function ScreeningSidebar({
   activeSubTab,
   entryDecidability,
   screeningParams,
   screeningAutoMarkets,
-  rankingParams,
-  fundamentalRankingParams,
   setScreeningParams,
-  setRankingParams,
-  setFundamentalRankingParams,
   productionStrategies,
   isLoadingStrategies,
-}: AnalysisSidebarProps) {
+}: ScreeningSidebarProps) {
   if (isScreeningSubTab(activeSubTab)) {
     return (
       <ScreeningFilters
@@ -213,16 +193,11 @@ function AnalysisSidebar({
       />
     );
   }
-
-  if (activeSubTab === 'ranking') {
-    return <RankingFilters params={rankingParams} onChange={setRankingParams} />;
-  }
-
-  return <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />;
+  return null;
 }
 
-interface AnalysisMainContentProps {
-  activeSubTab: AnalysisSubTab;
+interface ScreeningMainContentProps {
+  activeSubTab: ScreeningSubTab;
   entryDecidability: EntryDecidability;
   handleRunScreening: () => Promise<void>;
   screeningIsRunning: boolean;
@@ -241,16 +216,9 @@ interface AnalysisMainContentProps {
   screeningTableLoading: boolean;
   screeningError: Error | null;
   onStockClick: (code: string) => void;
-  rankingData: MarketRankingResponse | undefined;
-  rankingLoading: boolean;
-  rankingError: Error | null;
-  rankingPeriodDays: number | undefined;
-  fundamentalData: MarketFundamentalRankingResponse | undefined;
-  fundamentalLoading: boolean;
-  fundamentalError: Error | null;
 }
 
-function AnalysisMainContent({
+function ScreeningMainContent({
   activeSubTab,
   entryDecidability,
   handleRunScreening,
@@ -270,14 +238,7 @@ function AnalysisMainContent({
   screeningTableLoading,
   screeningError,
   onStockClick,
-  rankingData,
-  rankingLoading,
-  rankingError,
-  rankingPeriodDays,
-  fundamentalData,
-  fundamentalLoading,
-  fundamentalError,
-}: AnalysisMainContentProps) {
+}: ScreeningMainContentProps) {
   if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
     const runButtonLabel =
@@ -328,33 +289,7 @@ function AnalysisMainContent({
       </>
     );
   }
-
-  if (activeSubTab === 'ranking') {
-    return (
-      <>
-        <RankingSummary data={rankingData} />
-        <RankingTable
-          rankings={rankingData?.rankings}
-          isLoading={rankingLoading}
-          error={rankingError}
-          onStockClick={onStockClick}
-          periodDays={rankingPeriodDays}
-        />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <FundamentalRankingSummary data={fundamentalData} />
-      <FundamentalRankingTable
-        rankings={fundamentalData?.rankings}
-        isLoading={fundamentalLoading}
-        error={fundamentalError}
-        onStockClick={onStockClick}
-      />
-    </>
-  );
+  return null;
 }
 
 interface ScreeningControllerArgs {
@@ -491,28 +426,24 @@ function useScreeningController({
   };
 }
 
-export function AnalysisPage() {
-  useMigrateAnalysisRouteState();
+export function ScreeningPage() {
+  useMigrateScreeningRouteState();
   const {
     activeSubTab,
     preOpenScreeningParams,
     inSessionScreeningParams,
-    rankingParams,
-    fundamentalRankingParams,
     setActiveSubTab,
     setPreOpenScreeningParams,
     setInSessionScreeningParams,
-    setRankingParams,
-    setFundamentalRankingParams,
-  } = useAnalysisRouteState();
-  const activePreOpenScreeningJobId = useAnalysisStore((state) => state.activePreOpenScreeningJobId);
-  const activeInSessionScreeningJobId = useAnalysisStore((state) => state.activeInSessionScreeningJobId);
-  const preOpenScreeningJobHistory = useAnalysisStore((state) => state.preOpenScreeningJobHistory);
-  const inSessionScreeningJobHistory = useAnalysisStore((state) => state.inSessionScreeningJobHistory);
-  const setActivePreOpenScreeningJobId = useAnalysisStore((state) => state.setActivePreOpenScreeningJobId);
-  const setActiveInSessionScreeningJobId = useAnalysisStore((state) => state.setActiveInSessionScreeningJobId);
-  const upsertPreOpenScreeningJobHistory = useAnalysisStore((state) => state.upsertPreOpenScreeningJobHistory);
-  const upsertInSessionScreeningJobHistory = useAnalysisStore((state) => state.upsertInSessionScreeningJobHistory);
+  } = useScreeningRouteState();
+  const activePreOpenScreeningJobId = useScreeningStore((state) => state.activePreOpenScreeningJobId);
+  const activeInSessionScreeningJobId = useScreeningStore((state) => state.activeInSessionScreeningJobId);
+  const preOpenScreeningJobHistory = useScreeningStore((state) => state.preOpenScreeningJobHistory);
+  const inSessionScreeningJobHistory = useScreeningStore((state) => state.inSessionScreeningJobHistory);
+  const setActivePreOpenScreeningJobId = useScreeningStore((state) => state.setActivePreOpenScreeningJobId);
+  const setActiveInSessionScreeningJobId = useScreeningStore((state) => state.setActiveInSessionScreeningJobId);
+  const upsertPreOpenScreeningJobHistory = useScreeningStore((state) => state.upsertPreOpenScreeningJobHistory);
+  const upsertInSessionScreeningJobHistory = useScreeningStore((state) => state.upsertInSessionScreeningJobHistory);
 
   const navigate = useNavigate();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
@@ -522,12 +453,6 @@ export function AnalysisPage() {
     pre_open_decidable: true,
     requires_same_session_observation: true,
   });
-
-  const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
-  const fundamentalRankingQuery = useFundamentalRanking(
-    fundamentalRankingParams,
-    activeSubTab === 'fundamentalRanking'
-  );
 
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
   const preOpenProductionStrategies = selectStrategyNames(productionStrategies, isPreOpenScreeningStrategy);
@@ -619,16 +544,12 @@ export function AnalysisPage() {
       <div className="flex flex-1 gap-4 min-h-0">
         {/* Sidebar */}
         <div className="w-64 flex-shrink-0">
-          <AnalysisSidebar
+          <ScreeningSidebar
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
             screeningParams={activeScreening.params}
             screeningAutoMarkets={activeScreeningAutoMarkets}
-            rankingParams={rankingParams}
-            fundamentalRankingParams={fundamentalRankingParams}
             setScreeningParams={activeScreening.setParams}
-            setRankingParams={setRankingParams}
-            setFundamentalRankingParams={setFundamentalRankingParams}
             productionStrategies={activeScreening.allowedStrategies}
             isLoadingStrategies={isLoadingStrategies}
           />
@@ -636,7 +557,7 @@ export function AnalysisPage() {
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <AnalysisMainContent
+          <ScreeningMainContent
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
             handleRunScreening={activeScreening.handleRun}
@@ -656,13 +577,6 @@ export function AnalysisPage() {
             screeningTableLoading={!activeScreening.result && activeScreening.isRunning}
             screeningError={activeScreening.error}
             onStockClick={handleStockClick}
-            rankingData={rankingQuery.data}
-            rankingLoading={rankingQuery.isLoading}
-            rankingError={rankingQuery.error}
-            rankingPeriodDays={rankingParams.periodDays}
-            fundamentalData={fundamentalRankingQuery.data}
-            fundamentalLoading={fundamentalRankingQuery.isLoading}
-            fundamentalError={fundamentalRankingQuery.error}
           />
         </div>
       </div>

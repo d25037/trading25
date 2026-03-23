@@ -1,6 +1,6 @@
 export const CHART_STORE_STORAGE_KEY = 'trading25-chart-store';
 export const UI_STORE_STORAGE_KEY = 'trading25-ui-store';
-export const ANALYSIS_STORE_STORAGE_KEY = 'trading25-analysis-store';
+export const SCREENING_STORE_STORAGE_KEY = 'trading25-screening-store';
 export const BACKTEST_STORE_STORAGE_KEY = 'trading25-backtest-store';
 export const ACTIVE_SYNC_JOB_STORAGE_KEY = 'trading25.settings.sync.activeJobId';
 

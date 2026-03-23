@@ -16,6 +16,7 @@ const mockData: MarketRankingResponse = {
   markets: ['prime', 'standard'],
   lookbackDays: 1,
   periodDays: 250,
+  indexPerformance: [],
   lastUpdated: '2025-01-30T12:00:00Z',
   rankings: {
     tradingValue: [

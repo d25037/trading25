@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { ANALYSIS_STORE_STORAGE_KEY } from '@/lib/persistedState';
+import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
-export type AnalysisSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
+export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
 
 export const DEFAULT_PRE_OPEN_SCREENING_PARAMS: ScreeningParams = {
   entry_decidability: 'pre_open_decidable',
@@ -37,7 +37,7 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
   forecastLookbackFyCount: 3,
 };
 
-interface AnalysisState {
+interface ScreeningState {
   activePreOpenScreeningJobId: string | null;
   activeInSessionScreeningJobId: string | null;
   preOpenScreeningJobHistory: ScreeningJobResponse[];
@@ -48,23 +48,23 @@ interface AnalysisState {
   upsertInSessionScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
-export type AnalysisStoreState = Pick<
-  AnalysisState,
+export type ScreeningStoreState = Pick<
+  ScreeningState,
   | 'activePreOpenScreeningJobId'
   | 'activeInSessionScreeningJobId'
   | 'preOpenScreeningJobHistory'
   | 'inSessionScreeningJobHistory'
 >;
 
-export type AnalysisPersistedState = Pick<
-  AnalysisStoreState,
+export type ScreeningPersistedState = Pick<
+  ScreeningStoreState,
   | 'activePreOpenScreeningJobId'
   | 'activeInSessionScreeningJobId'
   | 'preOpenScreeningJobHistory'
   | 'inSessionScreeningJobHistory'
 >;
 
-export const createInitialAnalysisState = (): AnalysisStoreState => ({
+export const createInitialScreeningState = (): ScreeningStoreState => ({
   activePreOpenScreeningJobId: null,
   activeInSessionScreeningJobId: null,
   preOpenScreeningJobHistory: [],
@@ -77,10 +77,10 @@ function sortByCreatedAtDesc(a: ScreeningJobResponse, b: ScreeningJobResponse): 
   return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 }
 
-export const useAnalysisStore = create<AnalysisState>()(
+export const useScreeningStore = create<ScreeningState>()(
   persist(
     (set) => ({
-      ...createInitialAnalysisState(),
+      ...createInitialScreeningState(),
       setActivePreOpenScreeningJobId: (jobId) => set({ activePreOpenScreeningJobId: jobId }),
       setActiveInSessionScreeningJobId: (jobId) => set({ activeInSessionScreeningJobId: jobId }),
       upsertPreOpenScreeningJobHistory: (job) =>
@@ -101,7 +101,7 @@ export const useAnalysisStore = create<AnalysisState>()(
         }),
     }),
     {
-      name: ANALYSIS_STORE_STORAGE_KEY,
+      name: SCREENING_STORE_STORAGE_KEY,
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         activePreOpenScreeningJobId: state.activePreOpenScreeningJobId,

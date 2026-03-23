@@ -263,6 +263,7 @@ class TestRanking:
         assert "date" in data
         assert "markets" in data
         assert "rankings" in data
+        assert "indexPerformance" in data
         assert "lastUpdated" in data
         rankings = data["rankings"]
         assert "tradingValue" in rankings
@@ -285,6 +286,12 @@ class TestRanking:
             assert "code" in item
             assert "companyName" in item
             assert "currentPrice" in item
+        if data["indexPerformance"]:
+            index_item = data["indexPerformance"][0]
+            assert "code" in index_item
+            assert "currentDate" in index_item
+            assert "baseDate" in index_item
+            assert "changePercentage" in index_item
 
     def test_with_lookback_days(self, analytics_client):
         resp = analytics_client.get("/api/analytics/ranking?lookbackDays=5")

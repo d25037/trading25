@@ -1,37 +1,40 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import {
-  ANALYSIS_STORE_STORAGE_KEY,
   BACKTEST_STORE_STORAGE_KEY,
   CHART_STORE_STORAGE_KEY,
+  SCREENING_STORE_STORAGE_KEY,
   UI_STORE_STORAGE_KEY,
 } from '@/lib/persistedState';
 import {
-  type AnalysisRouteSearch,
-  extractLegacyAnalysisSearch,
+  type ScreeningRouteSearch,
+  extractLegacyScreeningSearch,
   extractLegacyBacktestSearch,
   extractLegacyChartsSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
-  getAnalysisStateFromSearch,
+  getScreeningStateFromSearch,
+  getRankingStateFromSearch,
   type PortfolioSubTab,
   prunePersistedStoreFields,
   readPersistedStoreState,
-  serializeAnalysisSearch,
+  serializeScreeningSearch,
   serializeBacktestSearch,
   serializeChartsSearch,
   serializeIndicesSearch,
+  validateRankingSearch,
+  serializeRankingSearch,
   serializePortfolioSearch,
-  validateAnalysisSearch,
+  validateScreeningSearch,
   validateBacktestSearch,
   validateChartsSearch,
   validatePortfolioSearch,
 } from '@/lib/routeSearch';
-import { analysisRoute, backtestRoute, chartsRoute, indicesRoute, portfolioRoute } from '@/router';
-import type { AnalysisSubTab } from '@/stores/analysisStore';
+import { backtestRoute, chartsRoute, indicesRoute, portfolioRoute, rankingRoute, screeningRoute } from '@/router';
+import type { ScreeningSubTab } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingParams } from '@/types/ranking';
+import type { RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 function useLegacySearchMigration<TSearch extends object>(params: {
@@ -219,9 +222,9 @@ export function useMigrateIndicesRouteState(): void {
   });
 }
 
-export function useAnalysisRouteState(): {
-  activeSubTab: AnalysisSubTab;
-  setActiveSubTab: (tab: AnalysisSubTab) => void;
+export function useScreeningRouteState(): {
+  activeSubTab: ScreeningSubTab;
+  setActiveSubTab: (tab: ScreeningSubTab) => void;
   preOpenScreeningParams: ScreeningParams;
   setPreOpenScreeningParams: (params: ScreeningParams) => void;
   inSessionScreeningParams: ScreeningParams;
@@ -232,19 +235,19 @@ export function useAnalysisRouteState(): {
   setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
 } {
   const navigate = useNavigate();
-  const search = analysisRoute.useSearch();
-  const state = getAnalysisStateFromSearch(search);
+  const search = screeningRoute.useSearch();
+  const state = getScreeningStateFromSearch(search);
 
   const updateSearch = useCallback(
     (
       updater: (currentState: {
-        activeSubTab: AnalysisSubTab;
+        activeSubTab: ScreeningSubTab;
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }) => {
-        activeSubTab: AnalysisSubTab;
+        activeSubTab: ScreeningSubTab;
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
@@ -252,10 +255,10 @@ export function useAnalysisRouteState(): {
       }
     ) => {
       void navigate({
-        to: '/analysis',
+        to: '/screening',
         search: (current: Record<string, unknown>) => {
-          const currentState = getAnalysisStateFromSearch(validateAnalysisSearch(current));
-          return serializeAnalysisSearch(updater(currentState));
+          const currentState = getScreeningStateFromSearch(validateScreeningSearch(current));
+          return serializeScreeningSearch(updater(currentState));
         },
       });
     },
@@ -275,13 +278,57 @@ export function useAnalysisRouteState(): {
   };
 }
 
-export function useMigrateAnalysisRouteState(): void {
-  const search = analysisRoute.useSearch();
-  const hasManagedSearchValues = Object.keys(search as AnalysisRouteSearch).length > 0;
+export function useRankingRouteState(): {
+  activeSubTab: RankingPageTab;
+  setActiveSubTab: (tab: RankingPageTab) => void;
+  rankingParams: RankingParams;
+  setRankingParams: (params: RankingParams) => void;
+  fundamentalRankingParams: FundamentalRankingParams;
+  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
+} {
+  const navigate = useNavigate();
+  const search = rankingRoute.useSearch();
+  const state = getRankingStateFromSearch(search);
+
+  const updateSearch = useCallback(
+    (
+      updater: (currentState: {
+        activeSubTab: RankingPageTab;
+        rankingParams: RankingParams;
+        fundamentalRankingParams: FundamentalRankingParams;
+      }) => {
+        activeSubTab: RankingPageTab;
+        rankingParams: RankingParams;
+        fundamentalRankingParams: FundamentalRankingParams;
+      }
+    ) => {
+      void navigate({
+        to: '/ranking',
+        search: (current: Record<string, unknown>) => {
+          const currentState = getRankingStateFromSearch(validateRankingSearch(current));
+          return serializeRankingSearch(updater(currentState));
+        },
+      });
+    },
+    [navigate]
+  );
+
+  return {
+    ...state,
+    setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
+    setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
+    setFundamentalRankingParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
+  };
+}
+
+export function useMigrateScreeningRouteState(): void {
+  const search = screeningRoute.useSearch();
+  const hasManagedSearchValues = Object.keys(search as ScreeningRouteSearch).length > 0;
 
   useLegacySearchMigration({
     storageType: 'session',
-    storageKey: ANALYSIS_STORE_STORAGE_KEY,
+    storageKey: SCREENING_STORE_STORAGE_KEY,
     pruneFields: [
       'activeSubTab',
       'screeningParams',
@@ -292,8 +339,8 @@ export function useMigrateAnalysisRouteState(): void {
       'fundamentalRankingParams',
     ],
     hasManagedSearchValues,
-    extractLegacySearch: extractLegacyAnalysisSearch,
-    to: '/analysis',
+    extractLegacySearch: extractLegacyScreeningSearch,
+    to: '/screening',
   });
 }
 

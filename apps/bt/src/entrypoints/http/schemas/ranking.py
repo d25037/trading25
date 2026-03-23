@@ -40,6 +40,21 @@ class Rankings(BaseModel):
     periodLow: list[RankingItem] = Field(default_factory=list)
 
 
+class IndexPerformanceItem(BaseModel):
+    """指数パフォーマンス項目"""
+
+    code: str
+    name: str
+    category: str
+    currentDate: str
+    baseDate: str
+    currentClose: float
+    baseClose: float
+    changeAmount: float
+    changePercentage: float
+    lookbackDays: int
+
+
 class MarketRankingResponse(BaseModel):
     """マーケットランキングレスポンス"""
 
@@ -48,6 +63,7 @@ class MarketRankingResponse(BaseModel):
     lookbackDays: int
     periodDays: int
     rankings: Rankings
+    indexPerformance: list[IndexPerformanceItem] = Field(default_factory=list)
     lastUpdated: str
 
 

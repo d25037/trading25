@@ -24,6 +24,7 @@ from src.domains.analytics.fundamental_ranking import (
     to_nullable_float as _to_nullable_float,
 )
 from src.entrypoints.http.schemas.ranking import (
+    IndexPerformanceItem,
     FundamentalRankingItem,
     FundamentalRankings,
     MarketFundamentalRankingResponse,
@@ -152,6 +153,18 @@ class RankingService:
         self._reader = reader
         self._fundamental_calculator = FundamentalRankingCalculator()
 
+    def _table_exists(self, table_name: str) -> bool:
+        row = self._reader.query_one(
+            """
+            SELECT 1 AS exists
+            FROM information_schema.tables
+            WHERE lower(table_name) = lower(?)
+            LIMIT 1
+            """,
+            (table_name,),
+        )
+        return row is not None
+
     def get_rankings(
         self,
         date: str | None = None,
@@ -193,6 +206,7 @@ class RankingService:
 
         period_high = self._ranking_by_period_high(target_date, period_days, limit, query_market_codes)
         period_low = self._ranking_by_period_low(target_date, period_days, limit, query_market_codes)
+        index_performance = self._load_index_performance(target_date, lookback_days=5)
 
         return MarketRankingResponse(
             date=target_date,
@@ -206,6 +220,7 @@ class RankingService:
                 periodHigh=period_high,
                 periodLow=period_low,
             ),
+            indexPerformance=index_performance,
             lastUpdated=_now_iso(),
         )
 
@@ -501,6 +516,101 @@ class RankingService:
             (date,),
         )
         return row["date"] if row else None
+
+    def _load_index_performance(
+        self,
+        date: str,
+        *,
+        lookback_days: int,
+    ) -> list[IndexPerformanceItem]:
+        if lookback_days < 1:
+            return []
+        if not self._table_exists("index_master") or not self._table_exists("indices_data"):
+            return []
+
+        rows = self._reader.query(
+            """
+            WITH ranked_index_history AS (
+                SELECT
+                    m.code,
+                    m.name,
+                    m.category,
+                    d.date,
+                    d.close,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY m.code
+                        ORDER BY d.date DESC
+                    ) AS rn
+                FROM index_master m
+                JOIN indices_data d
+                    ON d.code = m.code
+                WHERE d.date <= ?
+                    AND d.close IS NOT NULL
+                    AND d.close > 0
+            ),
+            current_rows AS (
+                SELECT
+                    code,
+                    name,
+                    category,
+                    date AS current_date,
+                    close AS current_close
+                FROM ranked_index_history
+                WHERE rn = 1
+            ),
+            base_rows AS (
+                SELECT
+                    code,
+                    date AS base_date,
+                    close AS base_close
+                FROM ranked_index_history
+                WHERE rn = ?
+            )
+            SELECT
+                c.code,
+                c.name,
+                c.category,
+                c.current_date,
+                b.base_date,
+                c.current_close,
+                b.base_close,
+                (c.current_close - b.base_close) AS change_amount,
+                ((c.current_close - b.base_close) / b.base_close * 100) AS change_percentage
+            FROM current_rows c
+            JOIN base_rows b
+                ON b.code = c.code
+            WHERE b.base_close > 0
+            ORDER BY
+                CASE c.category
+                    WHEN 'synthetic' THEN 0
+                    WHEN 'topix' THEN 1
+                    WHEN 'sector17' THEN 2
+                    WHEN 'sector33' THEN 3
+                    WHEN 'market' THEN 4
+                    WHEN 'style' THEN 5
+                    WHEN 'growth' THEN 6
+                    WHEN 'reit' THEN 7
+                    ELSE 99
+                END,
+                c.code
+            """,
+            (date, lookback_days + 1),
+        )
+        return [
+            IndexPerformanceItem(
+                code=row["code"],
+                name=row["name"],
+                category=row["category"],
+                currentDate=row["current_date"],
+                baseDate=row["base_date"],
+                currentClose=row["current_close"],
+                baseClose=row["base_close"],
+                changeAmount=row["change_amount"],
+                changePercentage=row["change_percentage"],
+                lookbackDays=lookback_days,
+            )
+            for row in rows
+        ]
 
     def _ranking_by_trading_value(
         self, date: str, limit: int, market_codes: list[str]

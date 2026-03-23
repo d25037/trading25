@@ -30,7 +30,8 @@ describe('Header', () => {
     expect(screen.getByText('Portfolio')).toBeInTheDocument();
     expect(screen.getByText('Indices')).toBeInTheDocument();
     expect(screen.getByText('N225 Options')).toBeInTheDocument();
-    expect(screen.getByText('Analysis')).toBeInTheDocument();
+    expect(screen.getByText('Screening')).toBeInTheDocument();
+    expect(screen.getByText('Ranking')).toBeInTheDocument();
     expect(screen.getByText('Backtest')).toBeInTheDocument();
     expect(screen.getByText('Market DB')).toBeInTheDocument();
   });
@@ -46,10 +47,10 @@ describe('Header', () => {
   });
 
   it('highlights current route', () => {
-    pathname = '/analysis';
+    pathname = '/screening';
     render(<Header />);
 
-    expect(screen.getByRole('button', { name: 'Analysis' })).toHaveClass('gradient-primary');
+    expect(screen.getByRole('button', { name: 'Screening' })).toHaveClass('gradient-primary');
   });
 
   it('renders theme toggle', () => {

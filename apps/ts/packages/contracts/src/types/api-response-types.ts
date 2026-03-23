@@ -33,12 +33,26 @@ export interface Rankings {
   periodLow: RankingItem[];
 }
 
+export interface IndexPerformanceItem {
+  code: string;
+  name: string;
+  category: string;
+  currentDate: string;
+  baseDate: string;
+  currentClose: number;
+  baseClose: number;
+  changeAmount: number;
+  changePercentage: number;
+  lookbackDays: number;
+}
+
 export interface MarketRankingResponse {
   date: string;
   markets: string[];
   lookbackDays: number;
   periodDays: number;
   rankings: Rankings;
+  indexPerformance: IndexPerformanceItem[];
   lastUpdated: string;
 }
 

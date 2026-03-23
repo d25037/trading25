@@ -8,25 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
 import { type SectorStockItem, useSectorStocks } from '@/hooks/useSectorStocks';
+import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
 import type { IndexItem } from '@/types/indices';
 
 type SortField = 'tradingValue' | 'changePercentage' | 'code';
 type SortOrder = 'asc' | 'desc';
-
-const CATEGORY_ORDER = ['synthetic', 'topix', 'sector17', 'sector33', 'market', 'style', 'growth', 'reit'];
-
-// Category display names
-const CATEGORY_LABELS: Record<string, string> = {
-  synthetic: 'Benchmarks',
-  topix: 'TOPIX',
-  sector33: '33 Sectors',
-  sector17: 'TOPIX-17 Sectors',
-  market: 'Market',
-  growth: 'Growth',
-  reit: 'REIT',
-  style: 'Style',
-};
 
 function formatNumber(value: number | undefined): string {
   if (value === undefined || value === null) return '-';
@@ -96,7 +83,7 @@ function getFlatIndicesList(indices: IndexItem[]): IndexItem[] {
   }
 
   const result: IndexItem[] = [];
-  for (const category of CATEGORY_ORDER) {
+  for (const category of INDEX_CATEGORY_ORDER) {
     const categoryGroup = groups[category];
     if (categoryGroup) {
       result.push(...categoryGroup);
@@ -147,13 +134,13 @@ function IndicesList({ indices, selectedCode, onSelect, isLoading, containerRef 
 
   return (
     <div className="space-y-3" ref={containerRef}>
-      {CATEGORY_ORDER.filter((cat) => groupedIndices[cat]).map((category) => {
+      {INDEX_CATEGORY_ORDER.filter((cat) => groupedIndices[cat]).map((category) => {
         const categoryIndices = groupedIndices[category];
         if (!categoryIndices) return null;
         return (
           <div key={category}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 px-1">
-              {CATEGORY_LABELS[category] || category}
+              {INDEX_CATEGORY_LABELS[category] || category}
             </h3>
             <div className="space-y-1">
               {categoryIndices.map((index) => (

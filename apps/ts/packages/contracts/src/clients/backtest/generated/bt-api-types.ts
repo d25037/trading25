@@ -5185,6 +5185,32 @@ export interface components {
             open: number;
         };
         /**
+         * IndexPerformanceItem
+         * @description 指数パフォーマンス項目
+         */
+        IndexPerformanceItem: {
+            /** Baseclose */
+            baseClose: number;
+            /** Basedate */
+            baseDate: string;
+            /** Category */
+            category: string;
+            /** Changeamount */
+            changeAmount: number;
+            /** Changepercentage */
+            changePercentage: number;
+            /** Code */
+            code: string;
+            /** Currentclose */
+            currentClose: number;
+            /** Currentdate */
+            currentDate: string;
+            /** Lookbackdays */
+            lookbackDays: number;
+            /** Name */
+            name: string;
+        };
+        /**
          * IndicatorComputeRequest
          * @description インジケーター計算リクエスト
          */
@@ -6257,6 +6283,8 @@ export interface components {
         MarketRankingResponse: {
             /** Date */
             date: string;
+            /** Indexperformance */
+            indexPerformance?: components["schemas"]["IndexPerformanceItem"][];
             /** Lastupdated */
             lastUpdated: string;
             /** Lookbackdays */

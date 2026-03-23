@@ -1,35 +1,38 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_RANKING_PARAMS } from '@/stores/analysisStore';
+import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import {
-  useAnalysisRouteState,
   useBacktestRouteState,
   useChartsRouteState,
   useIndicesRouteState,
-  useMigrateAnalysisRouteState,
+  useMigrateScreeningRouteState,
+  useRankingRouteState,
   useMigrateBacktestRouteState,
   useMigrateChartsRouteState,
   useMigrateIndicesRouteState,
   useMigratePortfolioRouteState,
   usePortfolioRouteState,
+  useScreeningRouteState,
 } from './usePageRouteState';
 
-type RouteSearchState = Record<'charts' | 'portfolio' | 'indices' | 'analysis' | 'backtest', Record<string, unknown>>;
+type RouteSearchState = Record<'charts' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest', Record<string, unknown>>;
 
 const routeSearchState: RouteSearchState = {
   charts: {},
   portfolio: {},
   indices: {},
-  analysis: {},
+  screening: {},
+  ranking: {},
   backtest: {},
 };
 
 const routeKeyByPath = {
-  '/analysis': 'analysis',
   '/backtest': 'backtest',
   '/charts': 'charts',
   '/indices': 'indices',
   '/portfolio': 'portfolio',
+  '/ranking': 'ranking',
+  '/screening': 'screening',
 } as const;
 
 const mockNavigate = vi.fn(
@@ -51,18 +54,20 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/router', () => ({
-  analysisRoute: { useSearch: () => routeSearchState.analysis },
   backtestRoute: { useSearch: () => routeSearchState.backtest },
   chartsRoute: { useSearch: () => routeSearchState.charts },
   indicesRoute: { useSearch: () => routeSearchState.indices },
   portfolioRoute: { useSearch: () => routeSearchState.portfolio },
+  rankingRoute: { useSearch: () => routeSearchState.ranking },
+  screeningRoute: { useSearch: () => routeSearchState.screening },
 }));
 
 function resetRouteSearchState(): void {
   routeSearchState.charts = {};
   routeSearchState.portfolio = {};
   routeSearchState.indices = {};
-  routeSearchState.analysis = {};
+  routeSearchState.screening = {};
+  routeSearchState.ranking = {};
   routeSearchState.backtest = {};
 }
 
@@ -156,14 +161,36 @@ describe('usePageRouteState', () => {
     });
   });
 
-  it('preserves analysis params across sequential updates', () => {
-    const { result } = renderHook(() => useAnalysisRouteState());
+  it('preserves screening params across sequential updates', () => {
+    const { result } = renderHook(() => useScreeningRouteState());
 
     expect(result.current.activeSubTab).toBe('preOpenScreening');
+    expect(result.current.preOpenScreeningParams.entry_decidability).toBe('pre_open_decidable');
+
+    act(() => {
+      result.current.setActiveSubTab('inSessionScreening');
+      result.current.setInSessionScreeningParams({
+        ...result.current.inSessionScreeningParams,
+        limit: 25,
+        markets: 'growth',
+      });
+    });
+
+    expect(routeSearchState.screening).toEqual({
+      tab: 'inSessionScreening',
+      inSessionLimit: 25,
+      inSessionMarkets: 'growth',
+    });
+  });
+
+  it('preserves ranking params across sequential updates', () => {
+    const { result } = renderHook(() => useRankingRouteState());
+
+    expect(result.current.activeSubTab).toBe('ranking');
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
 
     act(() => {
-      result.current.setActiveSubTab('ranking');
+      result.current.setActiveSubTab('fundamentalRanking');
       result.current.setRankingParams({
         ...DEFAULT_RANKING_PARAMS,
         limit: 25,
@@ -171,8 +198,8 @@ describe('usePageRouteState', () => {
       });
     });
 
-    expect(routeSearchState.analysis).toEqual({
-      tab: 'ranking',
+    expect(routeSearchState.ranking).toEqual({
+      tab: 'fundamentalRanking',
       rankingLimit: 25,
       rankingMarkets: 'growth',
     });
@@ -237,9 +264,9 @@ describe('usePageRouteState', () => {
     expect(window.localStorage.getItem('trading25-ui-store')).toBeNull();
   });
 
-  it('migrates analysis and backtest persisted state when route search is empty', async () => {
+  it('migrates screening and backtest persisted state when route search is empty', async () => {
     window.sessionStorage.setItem(
-      'trading25-analysis-store',
+      'trading25-screening-store',
       JSON.stringify({
         state: {
           activeSubTab: 'fundamentalRanking',
@@ -264,11 +291,11 @@ describe('usePageRouteState', () => {
       })
     );
 
-    renderHook(() => useMigrateAnalysisRouteState());
+    renderHook(() => useMigrateScreeningRouteState());
     renderHook(() => useMigrateBacktestRouteState());
 
     await waitFor(() => {
-      expect(routeSearchState.analysis).toEqual({
+      expect(routeSearchState.screening).toEqual({
         tab: 'fundamentalRanking',
         preOpenStrategies: 'production/a',
         rankingLimit: 15,
@@ -283,7 +310,7 @@ describe('usePageRouteState', () => {
       });
     });
 
-    expect(window.sessionStorage.getItem('trading25-analysis-store')).toBeNull();
+    expect(window.sessionStorage.getItem('trading25-screening-store')).toBeNull();
     expect(window.localStorage.getItem('trading25-backtest-store')).toBeNull();
   });
 

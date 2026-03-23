@@ -5058,6 +5058,65 @@
         "title": "IndexOHLCRecord",
         "type": "object"
       },
+      "IndexPerformanceItem": {
+        "description": "指数パフォーマンス項目",
+        "properties": {
+          "baseClose": {
+            "title": "Baseclose",
+            "type": "number"
+          },
+          "baseDate": {
+            "title": "Basedate",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "changeAmount": {
+            "title": "Changeamount",
+            "type": "number"
+          },
+          "changePercentage": {
+            "title": "Changepercentage",
+            "type": "number"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "currentClose": {
+            "title": "Currentclose",
+            "type": "number"
+          },
+          "currentDate": {
+            "title": "Currentdate",
+            "type": "string"
+          },
+          "lookbackDays": {
+            "title": "Lookbackdays",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "category",
+          "currentDate",
+          "baseDate",
+          "currentClose",
+          "baseClose",
+          "changeAmount",
+          "changePercentage",
+          "lookbackDays"
+        ],
+        "title": "IndexPerformanceItem",
+        "type": "object"
+      },
       "IndicatorComputeRequest": {
         "description": "インジケーター計算リクエスト",
         "properties": {
@@ -7080,6 +7139,13 @@
           "date": {
             "title": "Date",
             "type": "string"
+          },
+          "indexPerformance": {
+            "items": {
+              "$ref": "#/components/schemas/IndexPerformanceItem"
+            },
+            "title": "Indexperformance",
+            "type": "array"
           },
           "lastUpdated": {
             "title": "Lastupdated",

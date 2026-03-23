@@ -24,8 +24,12 @@ vi.mock('@/pages/N225OptionsPage', () => ({
   N225OptionsPage: () => <h1>N225 Options Page</h1>,
 }));
 
-vi.mock('@/pages/AnalysisPage', () => ({
-  AnalysisPage: () => <h1>Analysis Page</h1>,
+vi.mock('@/pages/ScreeningPage', () => ({
+  ScreeningPage: () => <h1>Screening Page</h1>,
+}));
+
+vi.mock('@/pages/RankingPage', () => ({
+  RankingPage: () => <h1>Ranking Page</h1>,
 }));
 
 vi.mock('@/pages/BacktestPage', () => ({
@@ -71,6 +75,20 @@ describe('router', () => {
     expect(screen.getByRole('link', { name: 'Open suggested route (/history)' })).toHaveAttribute('href', '/history');
   });
 
+  it('shows screening route guidance for renamed legacy query links', async () => {
+    renderRouterAt('/?tab=screening');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
+    });
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?tab=screening');
+    expect(screen.getByRole('link', { name: 'Open suggested route (/screening)' })).toHaveAttribute(
+      'href',
+      '/screening'
+    );
+  });
+
   it('omits the suggested route link for unknown legacy tabs', async () => {
     renderRouterAt('/?tab=unknown');
 
@@ -78,18 +96,6 @@ describe('router', () => {
       expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
     });
 
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?tab=unknown');
-    expect(screen.getByText('Requested URL:')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
-  });
-
-  it('omits suggested route for unknown legacy tabs', async () => {
-    renderRouterAt('/?tab=unknown');
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
-    });
     expect(window.location.pathname).toBe('/');
     expect(window.location.search).toBe('?tab=unknown');
     expect(screen.getByText('Requested URL:')).toBeInTheDocument();
@@ -112,6 +118,25 @@ describe('router', () => {
       expect(screen.getByRole('heading', { name: 'N225 Options Page' })).toBeInTheDocument();
     });
     expect(window.location.pathname).toBe('/options-225');
+  });
+
+  it('renders screening page when path is /screening', async () => {
+    renderRouterAt('/screening');
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/screening');
+    });
+    expect(screen.getByRole('heading', { name: 'Screening Page' })).toBeInTheDocument();
+  });
+
+  it('redirects screening ranking tabs to /ranking', async () => {
+    renderRouterAt('/screening?tab=ranking&rankingMarkets=growth');
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/ranking');
+    });
+    expect(window.location.search).toBe('?rankingMarkets=growth');
+    expect(screen.getByRole('heading', { name: 'Ranking Page' })).toBeInTheDocument();
   });
 
   it('redirects legacy /settings path to /market-db', async () => {

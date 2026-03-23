@@ -9,11 +9,11 @@ import {
   DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
-  type AnalysisSubTab,
-} from '@/stores/analysisStore';
+  type ScreeningSubTab,
+} from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingParams } from '@/types/ranking';
+import type { RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
@@ -44,8 +44,8 @@ export interface Options225RouteSearch {
   order?: SortOrder;
 }
 
-export interface AnalysisRouteSearch {
-  tab?: AnalysisSubTab;
+export interface ScreeningRouteSearch {
+  tab?: ScreeningSubTab;
   preOpenMarkets?: string;
   preOpenStrategies?: string;
   preOpenRecentDays?: number;
@@ -71,6 +71,19 @@ export interface AnalysisRouteSearch {
   forecastLookbackFyCount?: number;
 }
 
+export interface RankingRouteSearch {
+  tab?: RankingPageTab;
+  rankingDate?: string;
+  rankingLimit?: number;
+  rankingMarkets?: string;
+  rankingLookbackDays?: number;
+  rankingPeriodDays?: number;
+  fundamentalLimit?: number;
+  fundamentalMarkets?: string;
+  forecastAboveRecentFyActuals?: boolean;
+  forecastLookbackFyCount?: number;
+}
+
 export interface BacktestRouteSearch {
   tab?: BacktestSubTab;
   strategy?: string;
@@ -84,7 +97,8 @@ interface PersistedContainer {
   version?: number;
 }
 
-const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['preOpenScreening', 'inSessionScreening', 'ranking', 'fundamentalRanking'];
+const SCREENING_SUB_TABS: ScreeningSubTab[] = ['preOpenScreening', 'inSessionScreening', 'ranking', 'fundamentalRanking'];
+const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
@@ -144,7 +158,7 @@ function normalizeEnum<T extends string>(value: unknown, values: readonly T[]): 
   return typeof value === 'string' && values.includes(value as T) ? (value as T) : undefined;
 }
 
-function normalizeAnalysisSubTab(value: unknown): AnalysisSubTab | undefined {
+function normalizeScreeningSubTab(value: unknown): ScreeningSubTab | undefined {
   const tab = normalizeString(value);
   if (tab === 'screening') {
     return 'preOpenScreening';
@@ -152,7 +166,11 @@ function normalizeAnalysisSubTab(value: unknown): AnalysisSubTab | undefined {
   if (tab === 'sameDayScreening') {
     return 'inSessionScreening';
   }
-  return normalizeEnum(tab, ANALYSIS_SUB_TABS);
+  return normalizeEnum(tab, SCREENING_SUB_TABS);
+}
+
+function normalizeRankingPageTab(value: unknown): RankingPageTab | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_PAGE_TABS);
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {
@@ -176,7 +194,7 @@ function assignIfDefinedAndNotDefault<T extends object, K extends keyof T>(
   }
 }
 
-function assignAnalysisSearchParams<T extends object>(
+function assignSearchParams<T extends object>(
   base: T,
   entries: Array<[keyof T, T[keyof T] | undefined]>
 ): T {
@@ -295,9 +313,9 @@ export function serializeOptions225Search(state: {
   return next;
 }
 
-export function validateAnalysisSearch(search: Record<string, unknown>): AnalysisRouteSearch {
-  const next: AnalysisRouteSearch = {};
-  const normalizedTab = normalizeAnalysisSubTab(search.tab);
+export function validateScreeningSearch(search: Record<string, unknown>): ScreeningRouteSearch {
+  const next: ScreeningRouteSearch = {};
+  const normalizedTab = normalizeScreeningSubTab(search.tab);
 
   assignIfDefined(next, 'tab', normalizedTab);
   assignIfDefined(next, 'preOpenMarkets', normalizeString(search.preOpenMarkets) ?? normalizeString(search.screeningMarkets));
@@ -371,8 +389,8 @@ export function validateAnalysisSearch(search: Record<string, unknown>): Analysi
   return next;
 }
 
-export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
-  activeSubTab: AnalysisSubTab;
+export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
+  activeSubTab: ScreeningSubTab;
   preOpenScreeningParams: ScreeningParams;
   inSessionScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
@@ -380,7 +398,7 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
 } {
   return {
     activeSubTab: search.tab ?? 'preOpenScreening',
-    preOpenScreeningParams: assignAnalysisSearchParams(
+    preOpenScreeningParams: assignSearchParams(
       { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS },
       [
         ['markets', search.preOpenMarkets],
@@ -392,7 +410,7 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
         ['limit', search.preOpenLimit],
       ]
     ),
-    inSessionScreeningParams: assignAnalysisSearchParams(
+    inSessionScreeningParams: assignSearchParams(
       { ...DEFAULT_IN_SESSION_SCREENING_PARAMS },
       [
         ['markets', search.inSessionMarkets],
@@ -404,14 +422,14 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
         ['limit', search.inSessionLimit],
       ]
     ),
-    rankingParams: assignAnalysisSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
+    rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
       ['date', search.rankingDate],
       ['limit', search.rankingLimit],
       ['markets', search.rankingMarkets],
       ['lookbackDays', search.rankingLookbackDays],
       ['periodDays', search.rankingPeriodDays],
     ]),
-    fundamentalRankingParams: assignAnalysisSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
+    fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
       ['limit', search.fundamentalLimit],
       ['markets', search.fundamentalMarkets],
       ['forecastAboveRecentFyActuals', search.forecastAboveRecentFyActuals],
@@ -420,14 +438,50 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
   };
 }
 
-export function serializeAnalysisSearch(state: {
-  activeSubTab: AnalysisSubTab;
+export function getRankingStateFromSearch(search: RankingRouteSearch): {
+  activeSubTab: RankingPageTab;
+  rankingParams: RankingParams;
+  fundamentalRankingParams: FundamentalRankingParams;
+} {
+  return {
+    activeSubTab: search.tab ?? 'ranking',
+    rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
+      ['date', search.rankingDate],
+      ['limit', search.rankingLimit],
+      ['markets', search.rankingMarkets],
+      ['lookbackDays', search.rankingLookbackDays],
+      ['periodDays', search.rankingPeriodDays],
+    ]),
+    fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
+      ['limit', search.fundamentalLimit],
+      ['markets', search.fundamentalMarkets],
+      ['forecastAboveRecentFyActuals', search.forecastAboveRecentFyActuals],
+      ['forecastLookbackFyCount', search.forecastLookbackFyCount],
+    ]),
+  };
+}
+
+export function getRankingStateFromScreeningSearch(search: ScreeningRouteSearch): {
+  activeSubTab: RankingPageTab;
+  rankingParams: RankingParams;
+  fundamentalRankingParams: FundamentalRankingParams;
+} {
+  const state = getScreeningStateFromSearch(search);
+  return {
+    activeSubTab: state.activeSubTab === 'fundamentalRanking' ? 'fundamentalRanking' : 'ranking',
+    rankingParams: state.rankingParams,
+    fundamentalRankingParams: state.fundamentalRankingParams,
+  };
+}
+
+export function serializeScreeningSearch(state: {
+  activeSubTab: ScreeningSubTab;
   preOpenScreeningParams: ScreeningParams;
   inSessionScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
-}): AnalysisRouteSearch {
-  const next: AnalysisRouteSearch = {};
+}): ScreeningRouteSearch {
+  const next: ScreeningRouteSearch = {};
 
   assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'preOpenScreening');
   assignIfDefinedAndNotDefault(
@@ -498,6 +552,87 @@ export function serializeAnalysisSearch(state: {
     DEFAULT_IN_SESSION_SCREENING_PARAMS.limit
   );
 
+  assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingLimit',
+    typeof state.rankingParams.limit === 'number' ? state.rankingParams.limit : undefined,
+    DEFAULT_RANKING_PARAMS.limit
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingMarkets',
+    normalizeString(state.rankingParams.markets),
+    DEFAULT_RANKING_PARAMS.markets
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingLookbackDays',
+    typeof state.rankingParams.lookbackDays === 'number' ? state.rankingParams.lookbackDays : undefined,
+    DEFAULT_RANKING_PARAMS.lookbackDays
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingPeriodDays',
+    typeof state.rankingParams.periodDays === 'number' ? state.rankingParams.periodDays : undefined,
+    DEFAULT_RANKING_PARAMS.periodDays
+  );
+
+  assignIfDefinedAndNotDefault(
+    next,
+    'fundamentalLimit',
+    typeof state.fundamentalRankingParams.limit === 'number' ? state.fundamentalRankingParams.limit : undefined,
+    DEFAULT_FUNDAMENTAL_RANKING_PARAMS.limit
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'fundamentalMarkets',
+    normalizeString(state.fundamentalRankingParams.markets),
+    DEFAULT_FUNDAMENTAL_RANKING_PARAMS.markets
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'forecastAboveRecentFyActuals',
+    state.fundamentalRankingParams.forecastAboveRecentFyActuals,
+    DEFAULT_FUNDAMENTAL_RANKING_PARAMS.forecastAboveRecentFyActuals
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'forecastLookbackFyCount',
+    typeof state.fundamentalRankingParams.forecastLookbackFyCount === 'number'
+      ? state.fundamentalRankingParams.forecastLookbackFyCount
+      : undefined,
+    DEFAULT_FUNDAMENTAL_RANKING_PARAMS.forecastLookbackFyCount
+  );
+
+  return next;
+}
+
+export function validateRankingSearch(search: Record<string, unknown>): RankingRouteSearch {
+  const next: RankingRouteSearch = {};
+
+  assignIfDefined(next, 'tab', normalizeRankingPageTab(search.tab));
+  assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
+  assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
+  assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
+  assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
+  assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
+  assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
+  assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
+  assignIfDefined(next, 'forecastLookbackFyCount', normalizePositiveInt(search.forecastLookbackFyCount));
+
+  return next;
+}
+
+export function serializeRankingSearch(state: {
+  activeSubTab: RankingPageTab;
+  rankingParams: RankingParams;
+  fundamentalRankingParams: FundamentalRankingParams;
+}): RankingRouteSearch {
+  const next: RankingRouteSearch = {};
+
+  assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'ranking');
   assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
   assignIfDefinedAndNotDefault(
     next,
@@ -648,7 +783,7 @@ export function extractLegacyIndicesSearch(state: Record<string, unknown>): Indi
   return serializeIndicesSearch(typeof state.selectedIndexCode === 'string' ? state.selectedIndexCode : null);
 }
 
-export function extractLegacyAnalysisSearch(state: Record<string, unknown>): AnalysisRouteSearch {
+export function extractLegacyScreeningSearch(state: Record<string, unknown>): ScreeningRouteSearch {
   const screeningParams = isRecord(state.screeningParams)
     ? (state.screeningParams as ScreeningParams)
     : DEFAULT_PRE_OPEN_SCREENING_PARAMS;
@@ -660,8 +795,8 @@ export function extractLegacyAnalysisSearch(state: Record<string, unknown>): Ana
     ? (state.fundamentalRankingParams as FundamentalRankingParams)
     : DEFAULT_FUNDAMENTAL_RANKING_PARAMS;
 
-  return serializeAnalysisSearch({
-    activeSubTab: normalizeAnalysisSubTab(state.activeSubTab) ?? 'preOpenScreening',
+  return serializeScreeningSearch({
+    activeSubTab: normalizeScreeningSubTab(state.activeSubTab) ?? 'preOpenScreening',
     preOpenScreeningParams: { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS, ...screeningParams, entry_decidability: 'pre_open_decidable' },
     inSessionScreeningParams: {
       ...DEFAULT_IN_SESSION_SCREENING_PARAMS,

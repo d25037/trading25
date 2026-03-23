@@ -9,7 +9,8 @@ const navigationItems = [
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/indices', label: 'Indices', icon: TrendingUp },
   { path: '/options-225', label: 'N225 Options', icon: LineChart },
-  { path: '/analysis', label: 'Analysis', icon: BarChart3 },
+  { path: '/screening', label: 'Screening', icon: BarChart3 },
+  { path: '/ranking', label: 'Ranking', icon: BarChart3 },
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/market-db', label: 'Market DB', icon: Database },
 ];

@@ -77,6 +77,28 @@ def ranking_db(tmp_path):
             PRIMARY KEY (code, disclosed_date)
         )
     """)
+    conn.execute("""
+        CREATE TABLE index_master (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            name_english TEXT,
+            category TEXT NOT NULL,
+            data_start_date TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE indices_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            sector_name TEXT,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
 
     # 3 銘柄
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -120,6 +142,27 @@ def ranking_db(tmp_path):
             conn.execute(
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                 (code, d, price, price + 20, price - 10, price, vol, 1.0, None),
+            )
+
+    conn.execute(
+        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        ("TOPIX", "TOPIX", None, "topix", "2024-01-12"),
+    )
+    conn.execute(
+        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        ("N225", "Nikkei 225", None, "market", "2024-01-12"),
+    )
+
+    index_rows = {
+        "TOPIX": [1000.0, 1012.0, 1020.0, 1032.0, 1045.0, 1060.0],
+        "N225": [33000.0, 33200.0, 33120.0, 33480.0, 33720.0, 33990.0],
+    }
+    index_dates = ["2024-01-12", "2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
+    for code, closes in index_rows.items():
+        for date, close in zip(index_dates, closes, strict=True):
+            conn.execute(
+                "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
+                (code, date, close, close, close, close, None, None),
             )
 
     # statements (FY + quarter revisions)
@@ -282,6 +325,7 @@ class TestGetRankings:
         assert result.markets == ["prime"]
         assert result.lookbackDays == 1
         assert result.periodDays == 250
+        assert len(result.indexPerformance) == 2
 
     def test_trading_value_ranking(self, service):
         result = service.get_rankings(markets="prime", limit=10)
@@ -361,6 +405,19 @@ class TestGetRankings:
         assert len(result.rankings.tradingValue) <= 1
         assert len(result.rankings.gainers) <= 1
 
+    def test_includes_5_session_index_performance(self, service):
+        result = service.get_rankings(date="2024-01-19")
+
+        topix = next((item for item in result.indexPerformance if item.code == "TOPIX"), None)
+        assert topix is not None
+        assert topix.currentDate == "2024-01-19"
+        assert topix.baseDate == "2024-01-12"
+        assert topix.currentClose == pytest.approx(1060.0)
+        assert topix.baseClose == pytest.approx(1000.0)
+        assert topix.changeAmount == pytest.approx(60.0)
+        assert topix.changePercentage == pytest.approx(6.0)
+        assert topix.lookbackDays == 5
+
     def test_no_data_raises(self, tmp_path):
         """データなしDBの場合"""
         db_path = str(tmp_path / "empty.db")
@@ -373,6 +430,11 @@ class TestGetRankings:
         conn.execute("""CREATE TABLE stock_data (
             code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
             volume INTEGER, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date))""")
+        conn.execute("""CREATE TABLE index_master (
+            code TEXT PRIMARY KEY, name TEXT, name_english TEXT, category TEXT, data_start_date TEXT)""")
+        conn.execute("""CREATE TABLE indices_data (
+            code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
+            sector_name TEXT, created_at TEXT, PRIMARY KEY (code, date))""")
         conn.commit()
         conn.close()
 

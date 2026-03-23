@@ -1,30 +1,30 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ANALYSIS_STORE_STORAGE_KEY } from '@/lib/persistedState';
-import { createInitialAnalysisState, useAnalysisStore } from './analysisStore';
+import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
+import { createInitialScreeningState, useScreeningStore } from './screeningStore';
 
-const resetAnalysisStore = () => {
-  useAnalysisStore.setState(createInitialAnalysisState());
+const resetScreeningStore = () => {
+  useScreeningStore.setState(createInitialScreeningState());
 };
 
-describe('analysisStore', () => {
+describe('screeningStore', () => {
   beforeEach(() => {
-    useAnalysisStore.persist?.clearStorage?.();
-    resetAnalysisStore();
+    useScreeningStore.persist?.clearStorage?.();
+    resetScreeningStore();
   });
 
   it('updates active screening job ids independently', () => {
-    const { setActivePreOpenScreeningJobId, setActiveInSessionScreeningJobId } = useAnalysisStore.getState();
+    const { setActivePreOpenScreeningJobId, setActiveInSessionScreeningJobId } = useScreeningStore.getState();
 
     setActivePreOpenScreeningJobId('job-1');
     setActiveInSessionScreeningJobId('same-day-job-1');
 
-    const state = useAnalysisStore.getState();
+    const state = useScreeningStore.getState();
     expect(state.activePreOpenScreeningJobId).toBe('job-1');
     expect(state.activeInSessionScreeningJobId).toBe('same-day-job-1');
   });
 
   it('upserts screening job history and keeps latest first', () => {
-    const { upsertPreOpenScreeningJobHistory } = useAnalysisStore.getState();
+    const { upsertPreOpenScreeningJobHistory } = useScreeningStore.getState();
     upsertPreOpenScreeningJobHistory({
       job_id: 'job-1',
       status: 'pending',
@@ -53,7 +53,7 @@ describe('analysisStore', () => {
       order: 'desc',
     });
 
-    const state = useAnalysisStore.getState();
+    const state = useScreeningStore.getState();
     expect(state.preOpenScreeningJobHistory).toHaveLength(2);
     expect(state.preOpenScreeningJobHistory[0]?.job_id).toBe('job-2');
     expect(state.preOpenScreeningJobHistory[1]?.job_id).toBe('job-1');
@@ -61,7 +61,7 @@ describe('analysisStore', () => {
   });
 
   it('persists active job ids and history without screening results', () => {
-    const { setActivePreOpenScreeningJobId, upsertPreOpenScreeningJobHistory } = useAnalysisStore.getState();
+    const { setActivePreOpenScreeningJobId, upsertPreOpenScreeningJobHistory } = useScreeningStore.getState();
 
     setActivePreOpenScreeningJobId('job-1');
     upsertPreOpenScreeningJobHistory({
@@ -75,7 +75,7 @@ describe('analysisStore', () => {
       order: 'desc',
     });
 
-    const raw = sessionStorage.getItem(ANALYSIS_STORE_STORAGE_KEY);
+    const raw = sessionStorage.getItem(SCREENING_STORE_STORAGE_KEY);
     expect(raw).not.toBeNull();
 
     const persisted = JSON.parse(raw ?? '{}') as {

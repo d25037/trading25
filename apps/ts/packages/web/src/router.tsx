@@ -1,27 +1,31 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet, redirect } from '@tanstack/react-router';
 import {
-  validateAnalysisSearch,
+  getRankingStateFromScreeningSearch,
   validateBacktestSearch,
   validateChartsSearch,
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
+  validateRankingSearch,
+  validateScreeningSearch,
+  serializeRankingSearch,
 } from '@/lib/routeSearch';
 import { MainLayout } from '@/components/Layout/MainLayout';
-import { AnalysisPage } from '@/pages/AnalysisPage';
 import { BacktestPage } from '@/pages/BacktestPage';
 import { ChartsPage } from '@/pages/ChartsPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { IndicesPage } from '@/pages/IndicesPage';
 import { N225OptionsPage } from '@/pages/N225OptionsPage';
 import { PortfolioPage } from '@/pages/PortfolioPage';
+import { RankingPage } from '@/pages/RankingPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { ScreeningPage } from '@/pages/ScreeningPage';
 
 const LEGACY_TAB_ROUTE_MAP = {
   charts: '/charts',
   portfolio: '/portfolio',
   indices: '/indices',
-  analysis: '/analysis',
+  screening: '/screening',
   backtest: '/backtest',
   history: '/history',
   settings: '/market-db',
@@ -92,11 +96,26 @@ export const options225Route = createRoute({
   component: N225OptionsPage,
 });
 
-export const analysisRoute = createRoute({
+export const screeningRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/analysis',
-  validateSearch: validateAnalysisSearch,
-  component: AnalysisPage,
+  path: '/screening',
+  validateSearch: validateScreeningSearch,
+  beforeLoad: ({ search }) => {
+    if (search.tab === 'ranking' || search.tab === 'fundamentalRanking') {
+      throw redirect({
+        to: '/ranking',
+        search: serializeRankingSearch(getRankingStateFromScreeningSearch(search)),
+      });
+    }
+  },
+  component: ScreeningPage,
+});
+
+export const rankingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/ranking',
+  validateSearch: validateRankingSearch,
+  component: RankingPage,
 });
 
 export const backtestRoute = createRoute({
@@ -132,7 +151,8 @@ const routeTree = rootRoute.addChildren([
   portfolioRoute,
   indicesRoute,
   options225Route,
-  analysisRoute,
+  screeningRoute,
+  rankingRoute,
   backtestRoute,
   historyRoute,
   marketDbRoute,

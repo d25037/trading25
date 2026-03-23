@@ -1,24 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
-  extractLegacyAnalysisSearch,
   extractLegacyBacktestSearch,
   extractLegacyChartsSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
-  getAnalysisStateFromSearch,
+  getRankingStateFromSearch,
+  getRankingStateFromScreeningSearch,
+  getScreeningStateFromSearch,
   prunePersistedStoreFields,
   readPersistedStoreState,
-  serializeAnalysisSearch,
   serializeBacktestSearch,
   serializeIndicesSearch,
   serializeOptions225Search,
   serializePortfolioSearch,
-  validateAnalysisSearch,
+  serializeRankingSearch,
+  serializeScreeningSearch,
   validateBacktestSearch,
   validateChartsSearch,
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
+  validateRankingSearch,
+  validateScreeningSearch,
+  extractLegacyScreeningSearch,
 } from './routeSearch';
 
 function createMemoryStorage(initial: Record<string, string> = {}): Storage {
@@ -70,8 +74,8 @@ describe('routeSearch', () => {
     expect(extractLegacyIndicesSearch({ selectedIndexCode: 'jasdaq' })).toEqual({ code: 'jasdaq' });
   });
 
-  it('roundtrips analysis search state with defaults', () => {
-    const search = validateAnalysisSearch({
+  it('roundtrips screening search state with defaults', () => {
+    const search = validateScreeningSearch({
       tab: 'sameDayScreening',
       sameDayMarkets: '0113',
       sameDayStrategies: 'production/in_session_strategy',
@@ -84,7 +88,7 @@ describe('routeSearch', () => {
       forecastAboveRecentFyActuals: 'true',
     });
 
-    const state = getAnalysisStateFromSearch(search);
+    const state = getScreeningStateFromSearch(search);
 
     expect(state.activeSubTab).toBe('inSessionScreening');
     expect(state.preOpenScreeningParams.entry_decidability).toBe('pre_open_decidable');
@@ -92,7 +96,7 @@ describe('routeSearch', () => {
     expect(state.inSessionScreeningParams.entry_decidability).toBe('requires_same_session_observation');
     expect(state.inSessionScreeningParams.sortBy).toBe('matchStrategyCount');
 
-    expect(serializeAnalysisSearch(state)).toEqual({
+    expect(serializeScreeningSearch(state)).toEqual({
       tab: 'inSessionScreening',
       inSessionMarkets: '0113',
       inSessionStrategies: 'production/in_session_strategy',
@@ -106,7 +110,7 @@ describe('routeSearch', () => {
     });
 
     expect(
-      extractLegacyAnalysisSearch({
+      extractLegacyScreeningSearch({
         activeSubTab: 'fundamentalRanking',
         screeningParams: { strategies: 'production/a' },
         sameDayScreeningParams: { strategies: 'production/b' },
@@ -122,16 +126,16 @@ describe('routeSearch', () => {
     });
   });
 
-  it('omits auto screening markets from serialized analysis search', () => {
-    const state = getAnalysisStateFromSearch(validateAnalysisSearch({}));
+  it('omits auto screening markets from serialized screening search', () => {
+    const state = getScreeningStateFromSearch(validateScreeningSearch({}));
 
     expect(state.preOpenScreeningParams.markets).toBeUndefined();
     expect(state.inSessionScreeningParams.markets).toBeUndefined();
-    expect(serializeAnalysisSearch(state)).toEqual({});
+    expect(serializeScreeningSearch(state)).toEqual({});
   });
 
   it('serializes non-default ranking and fundamental filters', () => {
-    const search = validateAnalysisSearch({
+    const search = validateScreeningSearch({
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       rankingPeriodDays: '60',
@@ -140,15 +144,51 @@ describe('routeSearch', () => {
       forecastLookbackFyCount: '7',
     });
 
-    const state = getAnalysisStateFromSearch(search);
+    const state = getScreeningStateFromSearch(search);
 
-    expect(serializeAnalysisSearch(state)).toEqual({
+    expect(serializeScreeningSearch(state)).toEqual({
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 60,
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
+    });
+  });
+
+  it('roundtrips ranking route state and maps screening ranking tabs', () => {
+    const rankingSearch = validateRankingSearch({
+      tab: 'fundamentalRanking',
+      rankingMarkets: '0111',
+      rankingLookbackDays: '15',
+      fundamentalMarkets: '0112',
+      forecastAboveRecentFyActuals: true,
+    });
+
+    const rankingState = getRankingStateFromSearch(rankingSearch);
+    expect(rankingState.activeSubTab).toBe('fundamentalRanking');
+    expect(serializeRankingSearch(rankingState)).toEqual({
+      tab: 'fundamentalRanking',
+      rankingMarkets: '0111',
+      rankingLookbackDays: 15,
+      fundamentalMarkets: '0112',
+      forecastAboveRecentFyActuals: true,
+    });
+
+    const screeningSearch = validateScreeningSearch({
+      tab: 'fundamentalRanking',
+      rankingMarkets: 'growth',
+      fundamentalLimit: '30',
+    });
+
+    expect(getRankingStateFromScreeningSearch(screeningSearch)).toEqual({
+      activeSubTab: 'fundamentalRanking',
+      rankingParams: expect.objectContaining({
+        markets: 'growth',
+      }),
+      fundamentalRankingParams: expect.objectContaining({
+        limit: 30,
+      }),
     });
   });
 
@@ -263,9 +303,9 @@ describe('routeSearch', () => {
     expect(storage.getItem('rawRecord')).toBeNull();
   });
 
-  it('drops invalid analysis and backtest search values', () => {
+  it('drops invalid screening and backtest search values', () => {
     expect(
-      validateAnalysisSearch({
+      validateScreeningSearch({
         tab: 'unknown',
         screeningRecentDays: '0',
         screeningOrder: 'invalid',
@@ -289,7 +329,7 @@ describe('routeSearch', () => {
 
   it('extracts legacy searches with safe defaults when persisted payloads are malformed', () => {
     expect(
-      extractLegacyAnalysisSearch({
+      extractLegacyScreeningSearch({
         activeSubTab: 'not-a-tab',
         screeningParams: 'bad',
         sameDayScreeningParams: null,

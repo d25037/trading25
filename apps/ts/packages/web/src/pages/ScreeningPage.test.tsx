@@ -3,15 +3,15 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
-  createInitialAnalysisState,
+  createInitialScreeningState,
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
-  useAnalysisStore,
-} from '@/stores/analysisStore';
+  useScreeningStore,
+} from '@/stores/screeningStore';
 import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
-import { AnalysisPage } from './AnalysisPage';
+import { ScreeningPage } from './ScreeningPage';
 
 const mockNavigate = vi.fn();
 const mockSetActiveSubTab = vi.fn((tab: string) => {
@@ -137,8 +137,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/hooks/usePageRouteState', () => ({
-  useAnalysisRouteState: () => mockRouteState,
-  useMigrateAnalysisRouteState: () => {},
+  useScreeningRouteState: () => mockRouteState,
+  useMigrateScreeningRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useScreening', () => ({
@@ -214,7 +214,7 @@ vi.mock('@/components/FundamentalRanking', () => ({
   ),
 }));
 
-describe('AnalysisPage', () => {
+describe('ScreeningPage', () => {
   beforeEach(() => {
     mockStrategiesQueryResult = {
       data: {
@@ -245,8 +245,8 @@ describe('AnalysisPage', () => {
       isLoading: false,
       error: null,
     };
-    useAnalysisStore.persist?.clearStorage?.();
-    useAnalysisStore.setState(createInitialAnalysisState());
+    useScreeningStore.persist?.clearStorage?.();
+    useScreeningStore.setState(createInitialScreeningState());
     mockRouteState.activeSubTab = 'preOpenScreening';
     mockRouteState.preOpenScreeningParams = { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS };
     mockRouteState.inSessionScreeningParams = { ...DEFAULT_IN_SESSION_SCREENING_PARAMS };
@@ -280,7 +280,7 @@ describe('AnalysisPage', () => {
   });
 
   it('passes only standard production strategy names to screening filters', () => {
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -293,10 +293,10 @@ describe('AnalysisPage', () => {
 
   it('shows in-session-only strategies in the in-session bucket', async () => {
     const user = userEvent.setup();
-    const view = render(<AnalysisPage />);
+    const view = render(<ScreeningPage />);
 
     await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
-    view.rerender(<AnalysisPage />);
+    view.rerender(<ScreeningPage />);
 
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -313,7 +313,7 @@ describe('AnalysisPage', () => {
       strategies: 'production/range_break_v15',
     };
 
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -340,7 +340,7 @@ describe('AnalysisPage', () => {
       error: null,
     };
 
-    const { rerender } = render(<AnalysisPage />);
+    const { rerender } = render(<ScreeningPage />);
 
     expect(mockRouteState.preOpenScreeningParams.strategies).toBe(
       'production/range_break_v15,production/missing_standard'
@@ -369,7 +369,7 @@ describe('AnalysisPage', () => {
       isLoading: false,
       error: null,
     };
-    rerender(<AnalysisPage />);
+    rerender(<ScreeningPage />);
 
     await waitFor(() => {
       expect(mockRouteState.preOpenScreeningParams.strategies).toBe('production/range_break_v15');
@@ -379,7 +379,7 @@ describe('AnalysisPage', () => {
 
   it('uses matchedDate descending as default pre-open screening sort when running', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     await user.click(screen.getByRole('button', { name: 'Run Pre-Open Screening' }));
 
@@ -394,10 +394,10 @@ describe('AnalysisPage', () => {
 
   it('runs in-session screening with in-session decidability', async () => {
     const user = userEvent.setup();
-    const view = render(<AnalysisPage />);
+    const view = render(<ScreeningPage />);
 
     await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
-    view.rerender(<AnalysisPage />);
+    view.rerender(<ScreeningPage />);
     await user.click(screen.getByRole('button', { name: 'Run In-Session Screening' }));
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
@@ -407,45 +407,34 @@ describe('AnalysisPage', () => {
     );
   });
 
-  it('renders screening view by default and switches to daily ranking', async () => {
-    const user = userEvent.setup();
-    const view = render(<AnalysisPage />);
+  it('renders only screening tabs', () => {
+    render(<ScreeningPage />);
 
-    expect(screen.getByText('Screening Filters')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Daily Ranking' }));
-    view.rerender(<AnalysisPage />);
-    expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
-  });
-
-  it('switches to fundamental ranking tab', async () => {
-    const user = userEvent.setup();
-    const view = render(<AnalysisPage />);
-
-    await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
-    view.rerender(<AnalysisPage />);
-    expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pre-Open Decidable' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Requires In-Session Observation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Daily Ranking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
   });
 
   it('switches to in-session screening tab', async () => {
     const user = userEvent.setup();
-    const view = render(<AnalysisPage />);
+    const view = render(<ScreeningPage />);
 
     await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
-    view.rerender(<AnalysisPage />);
+    view.rerender(<ScreeningPage />);
     expect(screen.getByRole('button', { name: 'Run In-Session Screening' })).toBeInTheDocument();
   });
 
   it('navigates to chart when a stock is selected', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     await user.click(screen.getByText('Screening Row'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 
   it('re-resolves completed screening result from the active job id', () => {
-    useAnalysisStore.setState({
+    useScreeningStore.setState({
       activePreOpenScreeningJobId: 'completed-job',
     });
     mockUseScreeningJobStatus.mockReturnValue({
@@ -457,7 +446,7 @@ describe('AnalysisPage', () => {
       error: null,
     });
 
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     expect(mockScreeningTable).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -471,7 +460,7 @@ describe('AnalysisPage', () => {
   });
 
   it('clears stale screening job id and keeps cached result visible on 404', async () => {
-    useAnalysisStore.setState({
+    useScreeningStore.setState({
       activePreOpenScreeningJobId: 'stale-job',
     });
     mockUseScreeningJobStatus.mockReturnValue({
@@ -483,10 +472,10 @@ describe('AnalysisPage', () => {
       error: null,
     });
 
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     await waitFor(() => {
-      expect(useAnalysisStore.getState().activePreOpenScreeningJobId).toBeNull();
+      expect(useScreeningStore.getState().activePreOpenScreeningJobId).toBeNull();
     });
 
     expect(mockScreeningTable).toHaveBeenCalledWith(
@@ -507,7 +496,7 @@ describe('AnalysisPage', () => {
       error: null,
     });
 
-    render(<AnalysisPage />);
+    render(<ScreeningPage />);
 
     expect(screen.getByText('Screening Job: completed')).toBeInTheDocument();
     expect(screen.queryByText('Screening Job Progress')).not.toBeInTheDocument();
@@ -515,7 +504,7 @@ describe('AnalysisPage', () => {
 
   it('keeps screening history visibility separate for pre-open and in-session tabs', async () => {
     const user = userEvent.setup();
-    useAnalysisStore.setState({
+    useScreeningStore.setState({
       preOpenScreeningJobHistory: [createScreeningJob({ job_id: 'standard-job' })],
       inSessionScreeningJobHistory: [
         createScreeningJob({
@@ -525,7 +514,7 @@ describe('AnalysisPage', () => {
       ],
     });
 
-    const view = render(<AnalysisPage />);
+    const view = render(<ScreeningPage />);
 
     const standardToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(standardToggle).toBeChecked();
@@ -533,14 +522,14 @@ describe('AnalysisPage', () => {
     expect(standardToggle).not.toBeChecked();
 
     await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
-    view.rerender(<AnalysisPage />);
+    view.rerender(<ScreeningPage />);
 
     const sameDayToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(sameDayToggle).toBeChecked();
     expect(screen.getByText('same-day...')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Pre-Open Decidable' }));
-    view.rerender(<AnalysisPage />);
+    view.rerender(<ScreeningPage />);
 
     const restoredStandardToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(restoredStandardToggle).not.toBeChecked();
