@@ -19,6 +19,7 @@ import {
   useSyncSSE,
 } from '@/hooks/useDbSync';
 import { ApiError } from '@/lib/api-client';
+import { ACTIVE_SYNC_JOB_STORAGE_KEY, readStoredString, writeStoredString } from '@/lib/persistedState';
 import { cn } from '@/lib/utils';
 import type {
   MarketRefreshResponse,
@@ -36,7 +37,6 @@ function formatTimestamp(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
-const ACTIVE_SYNC_JOB_STORAGE_KEY = 'trading25.settings.sync.activeJobId';
 const EMPTY_OPTIONS_225_STATS = {
   count: 0,
   dateCount: 0,
@@ -58,31 +58,14 @@ function readPersistedActiveSyncJobId(): string | null {
   if (typeof window === 'undefined') {
     return null;
   }
-  try {
-    const value = window.localStorage.getItem(ACTIVE_SYNC_JOB_STORAGE_KEY);
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  } catch {
-    return null;
-  }
+  return readStoredString(window.localStorage, ACTIVE_SYNC_JOB_STORAGE_KEY);
 }
 
 function persistActiveSyncJobId(jobId: string | null): void {
   if (typeof window === 'undefined') {
     return;
   }
-  try {
-    if (jobId) {
-      window.localStorage.setItem(ACTIVE_SYNC_JOB_STORAGE_KEY, jobId);
-      return;
-    }
-    window.localStorage.removeItem(ACTIVE_SYNC_JOB_STORAGE_KEY);
-  } catch {
-    // localStorage can fail in restricted environments.
-  }
+  writeStoredString(window.localStorage, ACTIVE_SYNC_JOB_STORAGE_KEY, jobId);
 }
 
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
@@ -451,11 +434,7 @@ function buildCoverageItems(
 ): SnapshotCoverageItem[] {
   const fundamentalsCoverage = dbStats.fundamentals.listedMarketCoverage;
   const options225 = dbStats.options225 ?? EMPTY_OPTIONS_225_STATS;
-  const optionsDisplay = buildOptions225CoverageDisplay(
-    options225,
-    dbStats.topix,
-    dbValidation?.options225
-  );
+  const optionsDisplay = buildOptions225CoverageDisplay(options225, dbStats.topix, dbValidation?.options225);
   return [
     {
       label: 'Stock Data',
@@ -470,10 +449,7 @@ function buildCoverageItems(
     {
       label: 'TOPIX',
       value: dbStats.topix.dateRange?.max ?? 'n/a',
-      meta: [
-        `Range: ${formatDateRange(dbStats.topix.dateRange)}`,
-        `Rows: ${formatCount(dbStats.topix.count)}`,
-      ],
+      meta: [`Range: ${formatDateRange(dbStats.topix.dateRange)}`, `Rows: ${formatCount(dbStats.topix.count)}`],
     },
     {
       label: 'Indices',
@@ -518,11 +494,16 @@ function buildCoverageItems(
   ];
 }
 
-function buildSampleHint(sampleWindow: {
-  returnedCount: number;
-  totalCount: number;
-  truncated: boolean;
-} | null | undefined): string | undefined {
+function buildSampleHint(
+  sampleWindow:
+    | {
+        returnedCount: number;
+        totalCount: number;
+        truncated: boolean;
+      }
+    | null
+    | undefined
+): string | undefined {
   if (!sampleWindow || sampleWindow.returnedCount <= 0) {
     return undefined;
   }
@@ -566,18 +547,14 @@ function ValidationDiagnosticList({ diagnostics, emptyMessage }: ValidationDiagn
               {diagnostic.sampleLabel ?? 'Sample'}: {diagnostic.sampleItems.join(', ')}
             </p>
           ) : null}
-          {diagnostic.sampleHint ? (
-            <p className="mt-2 text-xs text-muted-foreground">{diagnostic.sampleHint}</p>
-          ) : null}
+          {diagnostic.sampleHint ? <p className="mt-2 text-xs text-muted-foreground">{diagnostic.sampleHint}</p> : null}
         </div>
       ))}
     </div>
   );
 }
 
-function buildOptions225CoverageWarning(
-  dbValidation: MarketValidationResponse
-): ValidationDiagnostic | null {
+function buildOptions225CoverageWarning(dbValidation: MarketValidationResponse): ValidationDiagnostic | null {
   const options225 = dbValidation.options225 ?? EMPTY_OPTIONS_225_VALIDATION;
   const sampleWindows = dbValidation.sampleWindows;
   const topixCount = dbValidation.topix?.count ?? 0;
@@ -598,15 +575,13 @@ function buildOptions225CoverageWarning(
       return {
         label: 'N225 Options Missing Locally',
         value: 1,
-        helpText:
-          `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
+        helpText: `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
       };
     case 'stale':
       return {
         label: 'N225 Options Stale',
         value: 1,
-        helpText:
-          `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
+        helpText: `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
       };
     case 'partial':
       return {
@@ -623,9 +598,7 @@ function buildOptions225CoverageWarning(
   }
 }
 
-function buildValidationDiagnosticSections(
-  dbValidation: MarketValidationResponse
-): ValidationDiagnosticSections {
+function buildValidationDiagnosticSections(dbValidation: MarketValidationResponse): ValidationDiagnosticSections {
   const warningDiagnostics: ValidationDiagnostic[] = [];
   const informationalDiagnostics: ValidationDiagnostic[] = [];
   const fundamentals = dbValidation.fundamentals;
@@ -696,9 +669,7 @@ function buildValidationDiagnosticSections(
   appendValidationDiagnostic(warningDiagnostics, dbValidation.integrityIssuesCount, {
     label: 'Readiness Issues',
     helpText: 'Chart or backtest readiness checks are currently failing.',
-    sampleItems: (dbValidation.integrityIssues ?? []).map(
-      (issue) => `${issue.code} (${formatCount(issue.count)})`
-    ),
+    sampleItems: (dbValidation.integrityIssues ?? []).map((issue) => `${issue.code} (${formatCount(issue.count)})`),
     sampleLabel: 'Issue codes',
   });
 
@@ -799,7 +770,10 @@ function SnapshotDetails({
             {summaryItems.map((item) => (
               <div
                 key={item.label}
-                className={cn('rounded-xl border p-3', item.tone ? getToneClasses(item.tone) : 'border-border/70 bg-card/80')}
+                className={cn(
+                  'rounded-xl border p-3',
+                  item.tone ? getToneClasses(item.tone) : 'border-border/70 bg-card/80'
+                )}
               >
                 <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">{item.label}</p>
                 <p className="mt-2 text-sm font-semibold">{item.value}</p>
@@ -834,9 +808,7 @@ function SnapshotDetails({
           <p className="font-medium">Validation Diagnostics</p>
           <div className="mt-3 space-y-4">
             <div className="space-y-3">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700">
-                Actionable Warnings
-              </p>
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700">Actionable Warnings</p>
               <ValidationDiagnosticList
                 diagnostics={validationDiagnostics.warningDiagnostics}
                 emptyMessage="No actionable validation diagnostics."
@@ -1398,10 +1370,11 @@ export function SettingsPage() {
   const startSync = useStartSync();
   const { data: activeSyncJob } = useActiveSyncJob(activeJobId === null);
   const syncSse = useSyncSSE(activeJobId);
-  const { data: jobStatus, isLoading: isPolling, error: syncJobError } = useSyncJobStatus(
-    activeJobId,
-    syncSse.isConnected
-  );
+  const {
+    data: jobStatus,
+    isLoading: isPolling,
+    error: syncJobError,
+  } = useSyncJobStatus(activeJobId, syncSse.isConnected);
   const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId, syncSse.isConnected);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();

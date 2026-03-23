@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { BACKTEST_STORE_STORAGE_KEY } from '@/lib/persistedState';
 
 interface BacktestState {
   activeJobId: string | null;
@@ -32,7 +33,8 @@ export const useBacktestStore = create<BacktestState>()(
       setActiveLabJobId: (jobId) => set({ activeLabJobId: jobId }),
     }),
     {
-      name: 'trading25-backtest-store',
+      name: BACKTEST_STORE_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         activeJobId: state.activeJobId,
         activeAttributionJobId: state.activeAttributionJobId,

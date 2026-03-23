@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { ANALYSIS_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
@@ -102,7 +103,7 @@ export const useAnalysisStore = create<AnalysisState>()(
         }),
     }),
     {
-      name: 'trading25-analysis-store',
+      name: ANALYSIS_STORE_STORAGE_KEY,
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         activePreOpenScreeningJobId: state.activePreOpenScreeningJobId,

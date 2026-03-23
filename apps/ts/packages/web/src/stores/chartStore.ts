@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
@@ -14,6 +14,7 @@ import {
   normalizeFundamentalsHistoryMetricOrder,
   normalizeFundamentalsHistoryMetricVisibility,
 } from '@/constants/fundamentalsHistoryMetrics';
+import { CHART_STORE_STORAGE_KEY } from '@/lib/persistedState';
 
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
@@ -681,7 +682,8 @@ export const useChartStore = create<ChartState>()(
       },
     }),
     {
-      name: 'trading25-chart-store',
+      name: CHART_STORE_STORAGE_KEY,
+      storage: createJSONStorage(() => localStorage),
       merge: mergePersistedChartStoreState,
       partialize: (state) => ({
         settings: state.settings,

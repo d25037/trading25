@@ -1,18 +1,20 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
-import type { AnalysisSubTab } from '@/stores/analysisStore';
-import { analysisRoute, backtestRoute, chartsRoute, indicesRoute, portfolioRoute } from '@/router';
-import type { BacktestSubTab, LabType } from '@/types/backtest';
-import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingParams } from '@/types/ranking';
-import type { ScreeningParams } from '@/types/screening';
 import {
+  ANALYSIS_STORE_STORAGE_KEY,
+  BACKTEST_STORE_STORAGE_KEY,
+  CHART_STORE_STORAGE_KEY,
+  UI_STORE_STORAGE_KEY,
+} from '@/lib/persistedState';
+import {
+  type AnalysisRouteSearch,
   extractLegacyAnalysisSearch,
   extractLegacyBacktestSearch,
   extractLegacyChartsSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
   getAnalysisStateFromSearch,
+  type PortfolioSubTab,
   prunePersistedStoreFields,
   readPersistedStoreState,
   serializeAnalysisSearch,
@@ -24,9 +26,13 @@ import {
   validateBacktestSearch,
   validateChartsSearch,
   validatePortfolioSearch,
-  type AnalysisRouteSearch,
-  type PortfolioSubTab,
 } from '@/lib/routeSearch';
+import { analysisRoute, backtestRoute, chartsRoute, indicesRoute, portfolioRoute } from '@/router';
+import type { AnalysisSubTab } from '@/stores/analysisStore';
+import type { BacktestSubTab, LabType } from '@/types/backtest';
+import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
+import type { RankingParams } from '@/types/ranking';
+import type { ScreeningParams } from '@/types/screening';
 
 function useLegacySearchMigration<TSearch extends object>(params: {
   storageType: 'local' | 'session';
@@ -88,7 +94,7 @@ export function useChartsRouteState(): {
             return serializeChartsSearch({ symbol: null, strategy: null, matchedDate: null });
           }
 
-          const preserveMatchedDate = currentSearch.symbol === nextSymbol ? currentSearch.matchedDate ?? null : null;
+          const preserveMatchedDate = currentSearch.symbol === nextSymbol ? (currentSearch.matchedDate ?? null) : null;
 
           return serializeChartsSearch({
             symbol: nextSymbol,
@@ -108,7 +114,7 @@ export function useMigrateChartsRouteState(): void {
   const search = chartsRoute.useSearch();
   useLegacySearchMigration({
     storageType: 'local',
-    storageKey: 'trading25-chart-store',
+    storageKey: CHART_STORE_STORAGE_KEY,
     pruneFields: ['selectedSymbol'],
     hasManagedSearchValues: Boolean(search.symbol) || Boolean(search.strategy) || Boolean(search.matchedDate),
     extractLegacySearch: extractLegacyChartsSearch,
@@ -133,11 +139,7 @@ export function usePortfolioRouteState(): {
 
   const updateSearch = useCallback(
     (
-      updater: (currentState: {
-        tab: PortfolioSubTab;
-        portfolioId: number | null;
-        watchlistId: number | null;
-      }) => {
+      updater: (currentState: { tab: PortfolioSubTab; portfolioId: number | null; watchlistId: number | null }) => {
         tab: PortfolioSubTab;
         portfolioId: number | null;
         watchlistId: number | null;
@@ -174,7 +176,7 @@ export function useMigratePortfolioRouteState(): void {
   const search = portfolioRoute.useSearch();
   useLegacySearchMigration({
     storageType: 'local',
-    storageKey: 'trading25-ui-store',
+    storageKey: UI_STORE_STORAGE_KEY,
     pruneFields: ['selectedPortfolioId', 'selectedWatchlistId', 'portfolioSubTab'],
     hasManagedSearchValues:
       Boolean(search.tab) || typeof search.portfolioId === 'number' || typeof search.watchlistId === 'number',
@@ -209,7 +211,7 @@ export function useMigrateIndicesRouteState(): void {
   const search = indicesRoute.useSearch();
   useLegacySearchMigration({
     storageType: 'local',
-    storageKey: 'trading25-ui-store',
+    storageKey: UI_STORE_STORAGE_KEY,
     pruneFields: ['selectedIndexCode'],
     hasManagedSearchValues: Boolean(search.code),
     extractLegacySearch: extractLegacyIndicesSearch,
@@ -279,7 +281,7 @@ export function useMigrateAnalysisRouteState(): void {
 
   useLegacySearchMigration({
     storageType: 'session',
-    storageKey: 'trading25-analysis-store',
+    storageKey: ANALYSIS_STORE_STORAGE_KEY,
     pruneFields: [
       'activeSubTab',
       'screeningParams',
@@ -354,7 +356,8 @@ export function useBacktestRouteState(): {
     activeSubTab,
     setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
     selectedStrategy,
-    setSelectedStrategy: (strategy) => updateSearch((currentState) => ({ ...currentState, selectedStrategy: strategy })),
+    setSelectedStrategy: (strategy) =>
+      updateSearch((currentState) => ({ ...currentState, selectedStrategy: strategy })),
     selectedResultJobId,
     setSelectedResultJobId: (jobId) =>
       updateSearch((currentState) => ({ ...currentState, selectedResultJobId: jobId })),
@@ -372,7 +375,7 @@ export function useMigrateBacktestRouteState(): void {
 
   useLegacySearchMigration({
     storageType: 'local',
-    storageKey: 'trading25-backtest-store',
+    storageKey: BACKTEST_STORE_STORAGE_KEY,
     pruneFields: ['activeSubTab', 'selectedStrategy', 'selectedResultJobId', 'selectedDatasetName', 'activeLabType'],
     hasManagedSearchValues,
     extractLegacySearch: extractLegacyBacktestSearch,
