@@ -152,6 +152,13 @@ Each package has its own `vitest.config.ts`:
 - **contracts/domain/utils**: Node environment, TypeScript support
 - **web**: happy-dom environment, React testing, path aliases
 
+### DOM Environment Policy
+
+- `packages/web` uses `happy-dom` as the standard Vitest environment.
+- Shared DOM gaps should be patched in `packages/web/src/test-setup.ts` before introducing a second DOM implementation.
+- As of 2026-03-23, the web test suite no longer needs per-file `jsdom` overrides.
+- If a future test truly requires `jsdom`, document the missing API or browser behavior inline in the test file and mirror that reason here.
+
 ### Test Setup
 
 Web package includes `test-setup.ts` for jest-dom matchers:

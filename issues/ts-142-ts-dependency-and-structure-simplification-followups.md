@@ -42,9 +42,9 @@ parent: null
 - [x] `backtestStore` は active job tracking 中心に限定し、localStorage 直アクセス箇所を共通化できるか確認する
 
 ### B. テスト基盤の依存整理
-- [ ] `happy-dom` を標準に据えたまま `jsdom` 依存を削減できるか調査する
-- [ ] `@vitest-environment jsdom` を使うテストごとに必要 DOM API を棚卸しする
-- [ ] 完全統一できない場合も、「なぜ二重運用なのか」をテスト基盤ドキュメントへ残す
+- [x] `happy-dom` を標準に据えたまま `jsdom` 依存を削減できるか調査する
+- [x] `@vitest-environment jsdom` を使うテストごとに必要 DOM API を棚卸しする
+- [x] 完全統一できない場合も、「なぜ二重運用なのか」をテスト基盤ドキュメントへ残す
 
 ### C. 単発利用 dependency の見直し
 - [x] `react-json-view-lite` の実利用機能を整理する
@@ -73,6 +73,7 @@ parent: null
 - 2026-03-23: persisted storage key を `persistedState.ts` に集約し、`backtestStore` / route migration / sync job 復元の localStorage 参照を共通 helper へ寄せ始めた
 - 2026-03-23: `analysisStore` の screening result persist を外し、active job id + React Query の result 再解決へ寄せた。screening history は list API 不在のため session-local persist を当面維持する
 - 2026-03-23: `AttributionArtifactBrowser` の read-only JSON 表示を内部 `JsonTreeView` に置換し、`react-json-view-lite` 依存を削除した
+- 2026-03-23: `@vitest-environment jsdom` を使っていた 5 テストを `happy-dom` 標準へ戻し、`jsdom` 依存と audit 例外を削除した。DOM 例外方針は `TESTING.md` に明記した
 
 ## 補足
 - `@tanstack/react-query` / `@tanstack/react-router` / `lightweight-charts` / `@monaco-editor/react` + `monaco-editor` は現時点では責務が明確で、優先的な削除対象ではない

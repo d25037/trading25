@@ -58,7 +58,6 @@ const AUDIT_CONFIGS: ManifestAuditConfig[] = [
     ],
     allowUnused: {
       'happy-dom': 'Vitest environment string configuration',
-      'jsdom': 'Per-test environment directive support',
       'monaco-editor': '@monaco-editor/react peer/runtime dependency',
       'tailwindcss': 'Tailwind v4 runtime package consumed by Vite plugin',
     },

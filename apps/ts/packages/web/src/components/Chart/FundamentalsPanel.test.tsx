@@ -1,5 +1,3 @@
-/* @vitest-environment jsdom */
-
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FundamentalsPanel } from './FundamentalsPanel';

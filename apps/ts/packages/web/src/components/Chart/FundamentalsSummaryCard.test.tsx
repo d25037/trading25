@@ -1,5 +1,3 @@
-/* @vitest-environment jsdom */
-
 import { render, screen } from '@testing-library/react';
 import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { describe, expect, it } from 'vitest';
