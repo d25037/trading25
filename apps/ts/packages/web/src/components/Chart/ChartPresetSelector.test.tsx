@@ -44,7 +44,7 @@ vi.mock('@/components/ui/select', async () => {
 
   function SelectTrigger({ children }: { children: React.ReactNode }) {
     return (
-      <button type="button" role="combobox" aria-expanded="false" aria-label="Chart preset">
+      <button type="button" role="combobox" aria-expanded="true" aria-label="Chart preset">
         {children}
       </button>
     );

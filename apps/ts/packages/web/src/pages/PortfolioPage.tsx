@@ -1,11 +1,11 @@
 import { Briefcase, Eye } from 'lucide-react';
 import { useCallback } from 'react';
-import { useMigratePortfolioRouteState, usePortfolioRouteState } from '@/hooks/usePageRouteState';
+import { SegmentedTabs, SplitLayout, SplitMain, SplitSidebar } from '@/components/Layout/Workspace';
 import { PortfolioDetail, PortfolioList } from '@/components/Portfolio';
 import { WatchlistDetail, WatchlistList } from '@/components/Watchlist';
+import { useMigratePortfolioRouteState, usePortfolioRouteState } from '@/hooks/usePageRouteState';
 import { usePortfolios, usePortfolioWithItems } from '@/hooks/usePortfolio';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
-import { cn } from '@/lib/utils';
 
 function PortfolioContent() {
   const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolioRouteState();
@@ -22,8 +22,8 @@ function PortfolioContent() {
   }, [setSelectedPortfolioId]);
 
   return (
-    <div className="flex">
-      <div className="w-80 border-r border-border/30 p-4 glass-panel shrink-0">
+    <SplitLayout className="gap-0 overflow-hidden">
+      <SplitSidebar className="w-80 border-r border-border/30 p-4 glass-panel">
         <PortfolioList
           portfolios={portfoliosData?.portfolios || []}
           selectedId={selectedPortfolioId}
@@ -35,16 +35,16 @@ function PortfolioContent() {
             Failed to load portfolios: {portfoliosError.message}
           </div>
         )}
-      </div>
-      <div className="flex-1 p-6">
+      </SplitSidebar>
+      <SplitMain className="overflow-auto p-6">
         <PortfolioDetail
           portfolio={selectedPortfolio}
           isLoading={detailLoading}
           error={detailError}
           onPortfolioDeleted={handlePortfolioDeleted}
         />
-      </div>
-    </div>
+      </SplitMain>
+    </SplitLayout>
   );
 }
 
@@ -63,8 +63,8 @@ function WatchlistContent() {
   }, [setSelectedWatchlistId]);
 
   return (
-    <div className="flex">
-      <div className="w-80 border-r border-border/30 p-4 glass-panel shrink-0">
+    <SplitLayout className="gap-0 overflow-hidden">
+      <SplitSidebar className="w-80 border-r border-border/30 p-4 glass-panel">
         <WatchlistList
           watchlists={watchlistsData?.watchlists || []}
           selectedId={selectedWatchlistId}
@@ -76,16 +76,16 @@ function WatchlistContent() {
             Failed to load watchlists: {watchlistsError.message}
           </div>
         )}
-      </div>
-      <div className="flex-1 p-6">
+      </SplitSidebar>
+      <SplitMain className="overflow-auto p-6">
         <WatchlistDetail
           watchlist={selectedWatchlist}
           isLoading={detailLoading}
           error={detailError}
           onWatchlistDeleted={handleWatchlistDeleted}
         />
-      </div>
-    </div>
+      </SplitMain>
+    </SplitLayout>
   );
 }
 
@@ -94,35 +94,16 @@ export function PortfolioPage() {
   const { portfolioSubTab, setPortfolioSubTab } = usePortfolioRouteState();
 
   const tabs = [
-    { key: 'portfolios' as const, label: 'Portfolios', icon: Briefcase },
-    { key: 'watchlists' as const, label: 'Watchlists', icon: Eye },
+    { value: 'portfolios' as const, label: 'Portfolios', icon: Briefcase },
+    { value: 'watchlists' as const, label: 'Watchlists', icon: Eye },
   ];
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Sub-tab navigation */}
-      <div className="border-b border-border/30 px-4">
-        <div className="flex gap-1">
-          {tabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setPortfolioSubTab(key)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2',
-                portfolioSubTab === key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-border/30 px-4 py-3">
+        <SegmentedTabs items={tabs} value={portfolioSubTab} onChange={setPortfolioSubTab} />
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-auto">
         {portfolioSubTab === 'portfolios' ? <PortfolioContent /> : <WatchlistContent />}
       </div>

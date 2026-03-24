@@ -94,6 +94,22 @@ class TopixGapIntradayDistributionResult:
 
 
 @dataclass(frozen=True)
+class TopixGapReturnStats:
+    sample_count: int
+    mean_return: float
+    std_return: float
+    sigma_threshold_1: float
+    sigma_threshold_2: float
+    threshold_1: float
+    threshold_2: float
+    min_return: float | None
+    q25_return: float | None
+    median_return: float | None
+    q75_return: float | None
+    max_return: float | None
+
+
+@dataclass(frozen=True)
 class _ConnectionContext:
     connection: Any
     source_mode: SourceMode
@@ -177,6 +193,79 @@ def _format_threshold(value: float) -> str:
 
 def _gap_return_sql() -> str:
     return "(open - prev_close) / prev_close"
+
+
+def _query_topix_gap_return_stats(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    sigma_threshold_1: float,
+    sigma_threshold_2: float,
+) -> tuple[TopixGapReturnStats | None, str | None, str | None]:
+    gap_where_sql, gap_params = _date_where_clause("date", start_date, end_date)
+    gap_return_sql = _gap_return_sql()
+    row = conn.execute(
+        f"""
+        WITH topix_gap_days AS (
+            SELECT
+                date,
+                CASE
+                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
+                    ELSE {gap_return_sql}
+                END AS gap_return
+            FROM (
+                SELECT
+                    date,
+                    open,
+                    close,
+                    LAG(close) OVER (ORDER BY date) AS prev_close
+                FROM topix_data
+            ) ordered_topix
+            {gap_where_sql}
+        )
+        SELECT
+            COUNT(*) AS sample_count,
+            MIN(date) AS min_date,
+            MAX(date) AS max_date,
+            AVG(gap_return) AS mean_return,
+            STDDEV_SAMP(gap_return) AS std_return,
+            MIN(gap_return) AS min_return,
+            quantile_cont(gap_return, 0.25) AS q25_return,
+            median(gap_return) AS median_return,
+            quantile_cont(gap_return, 0.75) AS q75_return,
+            MAX(gap_return) AS max_return
+        FROM topix_gap_days
+        WHERE gap_return IS NOT NULL
+        """,
+        gap_params,
+    ).fetchone()
+    sample_count = int(row[0] or 0) if row else 0
+    analysis_start = str(row[1]) if row and row[1] else None
+    analysis_end = str(row[2]) if row and row[2] else None
+    if sample_count == 0:
+        return None, analysis_start, analysis_end
+
+    mean_return = float(row[3])
+    std_return = float(row[4]) if row[4] is not None else 0.0
+    if std_return <= 0:
+        raise ValueError("topix_gap_return standard deviation must be positive")
+
+    stats = TopixGapReturnStats(
+        sample_count=sample_count,
+        mean_return=mean_return,
+        std_return=std_return,
+        sigma_threshold_1=sigma_threshold_1,
+        sigma_threshold_2=sigma_threshold_2,
+        threshold_1=sigma_threshold_1 * std_return,
+        threshold_2=sigma_threshold_2 * std_return,
+        min_return=float(row[5]) if row[5] is not None else None,
+        q25_return=float(row[6]) if row[6] is not None else None,
+        median_return=float(row[7]) if row[7] is not None else None,
+        q75_return=float(row[8]) if row[8] is not None else None,
+        max_return=float(row[9]) if row[9] is not None else None,
+    )
+    return stats, analysis_start, analysis_end
 
 
 def _gap_bucket_case_sql() -> str:
@@ -1019,6 +1108,30 @@ def get_topix_available_date_range(db_path: str) -> tuple[str | None, str | None
     """Return the available TOPIX date range from market.duckdb."""
     with _open_analysis_connection(db_path) as ctx:
         return _fetch_date_range(ctx.connection, table_name="topix_data")
+
+
+def get_topix_gap_return_stats(
+    db_path: str,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    sigma_threshold_1: float = 1.0,
+    sigma_threshold_2: float = 2.0,
+) -> TopixGapReturnStats | None:
+    """Return TOPIX gap-return distribution stats for sigma-derived bucketing."""
+    if sigma_threshold_1 <= 0:
+        raise ValueError("sigma_threshold_1 must be positive")
+    if sigma_threshold_2 <= sigma_threshold_1:
+        raise ValueError("sigma_threshold_2 must be greater than sigma_threshold_1")
+    with _open_analysis_connection(db_path) as ctx:
+        stats, _, _ = _query_topix_gap_return_stats(
+            ctx.connection,
+            start_date=start_date,
+            end_date=end_date,
+            sigma_threshold_1=sigma_threshold_1,
+            sigma_threshold_2=sigma_threshold_2,
+        )
+        return stats
 
 
 def run_topix_gap_intraday_distribution(

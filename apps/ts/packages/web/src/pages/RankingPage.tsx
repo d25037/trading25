@@ -7,6 +7,15 @@ import {
   FundamentalRankingTable,
 } from '@/components/FundamentalRanking';
 import {
+  ModeSwitcherPanel,
+  SectionEyebrow,
+  SegmentedTabs,
+  SplitLayout,
+  SplitMain,
+  SplitSidebar,
+  Surface,
+} from '@/components/Layout/Workspace';
+import {
   IndexPerformanceTable,
   RANKING_LOOKBACK_OPTIONS,
   RankingFilters,
@@ -14,23 +23,20 @@ import {
   RankingTable,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
-import { cn } from '@/lib/utils';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
 
-const subTabs: { id: RankingPageTab; label: string; icon: typeof BarChart3 }[] = [
-  { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
-  { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: TrendingUp },
+const subTabs = [
+  { value: 'ranking' as RankingPageTab, label: 'Daily Ranking', icon: BarChart3 },
+  { value: 'fundamentalRanking' as RankingPageTab, label: 'Fundamental Ranking', icon: TrendingUp },
 ];
 
-const dailyViewTabs: { id: RankingDailyView; label: string }[] = [
-  { id: 'stocks', label: 'Individual Stocks' },
-  { id: 'indices', label: 'Indices' },
+const dailyViewTabs = [
+  { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
+  { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
 
 interface RankingSidebarProps {
@@ -53,11 +59,12 @@ function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerfo
   };
 
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Indices Filters</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Surface className="glass-panel p-5">
+      <div className="space-y-1 pb-4">
+        <SectionEyebrow>Indices Filters</SectionEyebrow>
+        <h2 className="text-base font-semibold text-foreground">Lookback and reference session</h2>
+      </div>
+      <div className="space-y-4">
         <NumberSelect
           value={rankingParams.lookbackDays || 1}
           onChange={(lookbackDays) => updateParam('lookbackDays', lookbackDays)}
@@ -73,8 +80,8 @@ function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerfo
         <p className="text-xs text-muted-foreground">
           Index performance compares each latest close with the selected trading sessions earlier.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }
 
@@ -135,31 +142,11 @@ export function RankingPage() {
   );
 
   return (
-    <div className="flex h-full flex-col p-4">
-      <div className="mb-4 rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Ranking Mode</p>
-        <div className="flex flex-wrap gap-2">
-          {subTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSubTab === tab.id;
-            return (
-              <Button
-                key={tab.id}
-                variant={isActive ? 'default' : 'outline'}
-                size="sm"
-                className={cn('gap-2', isActive && 'shadow-md')}
-                onClick={() => setActiveSubTab(tab.id)}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col p-4">
+      <ModeSwitcherPanel label="Ranking Mode" items={subTabs} value={activeSubTab} onChange={setActiveSubTab} />
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        <div className="w-64 flex-shrink-0">
+      <SplitLayout className="mt-4 gap-4">
+        <SplitSidebar className="w-64">
           <RankingSidebar
             activeSubTab={activeSubTab}
             activeDailyView={activeDailyView}
@@ -168,27 +155,12 @@ export function RankingPage() {
             setRankingParams={setRankingParams}
             setFundamentalRankingParams={setFundamentalRankingParams}
           />
-        </div>
+        </SplitSidebar>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        <SplitMain className="gap-4">
           {activeSubTab === 'ranking' ? (
             <>
-              <div className="flex gap-2">
-                {dailyViewTabs.map((tab) => {
-                  const isActive = activeDailyView === tab.id;
-                  return (
-                    <Button
-                      key={tab.id}
-                      variant={isActive ? 'default' : 'outline'}
-                      size="sm"
-                      className={cn('gap-2', isActive && 'shadow-md')}
-                      onClick={() => setActiveDailyView(tab.id)}
-                    >
-                      {tab.label}
-                    </Button>
-                  );
-                })}
-              </div>
+              <SegmentedTabs items={dailyViewTabs} value={activeDailyView} onChange={setActiveDailyView} />
 
               {activeDailyView === 'indices' ? (
                 <IndexPerformanceTable
@@ -222,8 +194,8 @@ export function RankingPage() {
               />
             </>
           )}
-        </div>
-      </div>
+        </SplitMain>
+      </SplitLayout>
     </div>
   );
 }

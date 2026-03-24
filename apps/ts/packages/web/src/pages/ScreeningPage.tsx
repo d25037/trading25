@@ -1,6 +1,14 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Filter } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  ModeSwitcherPanel,
+  SectionEyebrow,
+  SplitLayout,
+  SplitMain,
+  SplitSidebar,
+  Surface,
+} from '@/components/Layout/Workspace';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningJobHistoryTable } from '@/components/Screening/ScreeningJobHistoryTable';
 import { ScreeningJobProgress, ScreeningJobStatusInline } from '@/components/Screening/ScreeningJobProgress';
@@ -18,7 +26,6 @@ import {
 } from '@/hooks/useScreening';
 import { ApiError } from '@/lib/api-client';
 import { unionMarkets } from '@/lib/marketUtils';
-import { cn } from '@/lib/utils';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
@@ -30,9 +37,9 @@ import type {
   ScreeningResultItem,
 } from '@/types/screening';
 
-const subTabs: { id: ScreeningSubTab; label: string; icon: typeof Filter }[] = [
-  { id: 'preOpenScreening', label: 'Pre-Open Decidable', icon: Filter },
-  { id: 'inSessionScreening', label: 'Requires In-Session Observation', icon: Filter },
+const subTabs = [
+  { value: 'preOpenScreening' as ScreeningSubTab, label: 'Pre-Open Decidable', icon: Filter },
+  { value: 'inSessionScreening' as ScreeningSubTab, label: 'Requires In-Session Observation', icon: Filter },
 ];
 
 function isScreeningSubTab(tab: ScreeningSubTab): tab is 'preOpenScreening' | 'inSessionScreening' {
@@ -250,15 +257,15 @@ function ScreeningMainContent({
 
     return (
       <>
-        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card/84 px-4 py-3 shadow-sm shadow-black/5">
+        <Surface className="mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{modeLabel}</p>
+            <SectionEyebrow>{modeLabel}</SectionEyebrow>
             {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
           </div>
           <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
             {runButtonLabel}
           </Button>
-        </div>
+        </Surface>
 
         {completedScreeningJob ? null : (
           <ScreeningJobProgress
@@ -524,33 +531,11 @@ export function ScreeningPage() {
   );
 
   return (
-    <div className="flex h-full flex-col p-4">
-      <div className="mb-4 rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Screening Mode
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {subTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSubTab === tab.id;
-            return (
-              <Button
-                key={tab.id}
-                variant={isActive ? 'default' : 'outline'}
-                size="sm"
-                className={cn('gap-2', isActive && 'shadow-md')}
-                onClick={() => setActiveSubTab(tab.id)}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 flex-col p-4">
+      <ModeSwitcherPanel label="Screening Mode" items={subTabs} value={activeSubTab} onChange={setActiveSubTab} />
 
-      <div className="flex flex-1 gap-4 min-h-0">
-        <div className="w-64 flex-shrink-0">
+      <SplitLayout className="mt-4 gap-4">
+        <SplitSidebar className="w-64">
           <ScreeningSidebar
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
@@ -560,9 +545,9 @@ export function ScreeningPage() {
             productionStrategies={activeScreening.allowedStrategies}
             isLoadingStrategies={isLoadingStrategies}
           />
-        </div>
+        </SplitSidebar>
 
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <SplitMain>
           <ScreeningMainContent
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
@@ -584,8 +569,8 @@ export function ScreeningPage() {
             screeningError={activeScreening.error}
             onStockClick={handleStockClick}
           />
-        </div>
-      </div>
+        </SplitMain>
+      </SplitLayout>
     </div>
   );
 }

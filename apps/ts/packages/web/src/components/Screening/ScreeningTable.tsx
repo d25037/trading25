@@ -69,7 +69,7 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
               )}
               {virtual.visibleItems.map((result) => (
                 <tr
-                  key={`${result.stockCode}-${result.matchedDate}`}
+                  key={`${result.stockCode}-${result.matchedDate}-${result.bestStrategyName}`}
                   className="border-b border-border/30 hover:bg-accent/30 cursor-pointer transition-colors"
                   onClick={() =>
                     onStockClick(

@@ -8,18 +8,18 @@ import {
   DatasetManager,
 } from '@/components/Backtest';
 import { LabPanel } from '@/components/Lab';
+import { NavRail, SplitLayout, SplitMain, SplitSidebar } from '@/components/Layout/Workspace';
 import { useBacktestRouteState, useMigrateBacktestRouteState } from '@/hooks/usePageRouteState';
-import { cn } from '@/lib/utils';
 import type { BacktestSubTab } from '@/types/backtest';
 
-const subTabs: { id: BacktestSubTab; label: string; icon: typeof Play }[] = [
-  { id: 'runner', label: 'Runner', icon: Play },
-  { id: 'results', label: 'Results', icon: BarChart3 },
-  { id: 'attribution', label: 'Attribution', icon: GitBranch },
-  { id: 'strategies', label: 'Strategies', icon: Code },
-  { id: 'status', label: 'Status', icon: Activity },
-  { id: 'dataset', label: 'Dataset', icon: Database },
-  { id: 'lab', label: 'Lab', icon: FlaskConical },
+const subTabs = [
+  { value: 'runner' as BacktestSubTab, label: 'Runner', icon: Play },
+  { value: 'results' as BacktestSubTab, label: 'Results', icon: BarChart3 },
+  { value: 'attribution' as BacktestSubTab, label: 'Attribution', icon: GitBranch },
+  { value: 'strategies' as BacktestSubTab, label: 'Strategies', icon: Code },
+  { value: 'status' as BacktestSubTab, label: 'Status', icon: Activity },
+  { value: 'dataset' as BacktestSubTab, label: 'Dataset', icon: Database },
+  { value: 'lab' as BacktestSubTab, label: 'Lab', icon: FlaskConical },
 ];
 
 export function BacktestPage() {
@@ -35,35 +35,12 @@ export function BacktestPage() {
   } = useBacktestRouteState();
 
   return (
-    <div className="flex">
-      {/* Sidebar */}
-      <div className={cn('w-48 shrink-0 border-r border-border/30', 'glass-panel')}>
-        <nav className="flex flex-col gap-1 p-3">
-          {subTabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSubTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                className={cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                  isActive
-                    ? 'bg-primary/10 text-primary font-medium'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                )}
-                onClick={() => setActiveSubTab(tab.id)}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+    <SplitLayout className="h-full gap-0">
+      <SplitSidebar className="w-48 border-r border-border/30 glass-panel">
+        <NavRail items={subTabs} value={activeSubTab} onChange={setActiveSubTab} className="p-3" />
+      </SplitSidebar>
 
-      {/* Main Content */}
-      <div className="flex-1 p-6">
+      <SplitMain className="overflow-auto p-6">
         {activeSubTab === 'runner' && (
           <div className="max-w-xl">
             <BacktestRunner selectedStrategy={selectedStrategy} onSelectedStrategyChange={setSelectedStrategy} />
@@ -91,7 +68,7 @@ export function BacktestPage() {
             onOperationChange={setActiveLabType}
           />
         )}
-      </div>
-    </div>
+      </SplitMain>
+    </SplitLayout>
   );
 }

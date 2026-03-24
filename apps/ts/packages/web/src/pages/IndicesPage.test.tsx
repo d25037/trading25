@@ -62,6 +62,7 @@ vi.mock('@/components/Chart/LinePriceChart', () => ({
 const makeIndicesList = () => ({
   indices: [
     { code: 'N225_UNDERPX', name: '日経平均', category: 'synthetic' },
+    { code: 'NT_RATIO', name: 'NT倍率', category: 'synthetic' },
     { code: '1321', name: 'TOPIX', category: 'topix' },
     { code: '1305', name: 'TOPIX-33 Energy', category: 'sector33' },
   ] satisfies IndexItem[],
@@ -108,6 +109,20 @@ const makeSyntheticIndexData = () => ({
   ],
   code: 'N225_UNDERPX',
   name: '日経平均',
+});
+
+const makeNtRatioIndexData = () => ({
+  data: [
+    {
+      date: '2026-02-13',
+      open: 14.12,
+      high: 14.12,
+      low: 14.12,
+      close: 14.12,
+    },
+  ],
+  code: 'NT_RATIO',
+  name: 'NT倍率',
 });
 
 beforeEach(() => {
@@ -243,7 +258,7 @@ describe('IndicesPage', () => {
     render(<IndicesPage />);
 
     fireEvent.keyDown(window, { key: 'ArrowUp' });
-    expect(mockSetSelectedIndexCode).toHaveBeenCalledWith('N225_UNDERPX');
+    expect(mockSetSelectedIndexCode).toHaveBeenCalledWith('NT_RATIO');
     expect(scrollIntoViewMock).toHaveBeenCalled();
 
     fireEvent.keyDown(window, { key: 'Enter' });
@@ -279,6 +294,38 @@ describe('IndicesPage', () => {
     expect(screen.getByText('UnderPx derived daily reference series')).toBeInTheDocument();
     expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
     expect(screen.queryByText('StockChart')).not.toBeInTheDocument();
+  });
+
+  it('renders NT ratio under Nikkei in benchmarks section with line chart', () => {
+    selectedIndexCode = 'NT_RATIO';
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockImplementation((code: string | null) => {
+      if (code === 'NT_RATIO') {
+        return {
+          data: makeNtRatioIndexData(),
+          isLoading: false,
+          error: null,
+        };
+      }
+      return {
+        data: null,
+        isLoading: false,
+        error: null,
+      };
+    });
+
+    render(<IndicesPage />);
+
+    const indexButtons = screen.getAllByRole('button', { name: /^Select / });
+    expect(indexButtons[0]).toHaveAttribute('aria-label', 'Select 日経平均');
+    expect(indexButtons[1]).toHaveAttribute('aria-label', 'Select NT倍率');
+    expect(screen.getByText('Nikkei 225 close / TOPIX close from local market snapshot')).toBeInTheDocument();
+    expect(screen.getByText('14.12')).toBeInTheDocument();
+    expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
   });
 
   it('renders indices loading and sidebar error states', () => {

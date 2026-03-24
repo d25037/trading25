@@ -15,6 +15,7 @@ import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
 import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SplitLayout, SplitMain, SplitSidebar } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
@@ -981,16 +982,14 @@ export function ChartsPage() {
   }, [queryClient, refreshStocks, selectedSymbol]);
 
   return (
-    <div className="flex">
-      {/* Chart Controls Sidebar */}
-      <div className={cn('w-72 shrink-0 border-r border-border/30', 'glass-panel')}>
+    <SplitLayout className="gap-0">
+      <SplitSidebar className={cn('w-72 border-r border-border/30', 'glass-panel')}>
         <ErrorBoundary>
           <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
         </ErrorBoundary>
-      </div>
+      </SplitSidebar>
 
-      {/* Main Chart Area */}
-      <div className="flex-1 space-y-4 p-6">
+      <SplitMain className="space-y-4 overflow-auto p-6">
         {selectedSymbol && (
           <ChartHeader
             settings={settings}
@@ -1028,7 +1027,7 @@ export function ChartsPage() {
             marginPressureError={marginPressureError}
           />
         )}
-      </div>
-    </div>
+      </SplitMain>
+    </SplitLayout>
   );
 }

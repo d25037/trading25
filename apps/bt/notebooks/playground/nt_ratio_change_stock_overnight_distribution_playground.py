@@ -9,18 +9,18 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.21.1"
 app = marimo.App(
     width="full",
-    app_title="TOPIX Gap / Intraday Distribution Playground",
+    app_title="NT Ratio Change / Stock Overnight Distribution Playground",
 )
 
 
 @app.cell
 def _():
     import marimo as mo
-    import pandas as pd
     import matplotlib.pyplot as plt
+    import pandas as pd
     import sys
     from pathlib import Path
 
@@ -39,27 +39,25 @@ def _(Path, sys):
         sys.path.insert(0, str(_project_root))
 
     from src.shared.config.settings import get_settings
-    from src.domains.analytics.topix_gap_intraday_distribution import (
+    from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
         STOCK_GROUP_ORDER,
-        get_topix_available_date_range,
-        get_topix_gap_return_stats,
-        run_topix_gap_intraday_distribution,
+        get_nt_ratio_available_date_range,
+        run_nt_ratio_change_stock_overnight_distribution,
     )
 
     default_db_path = get_settings().market_db_path
     return (
         STOCK_GROUP_ORDER,
         default_db_path,
-        get_topix_available_date_range,
-        get_topix_gap_return_stats,
-        run_topix_gap_intraday_distribution,
+        get_nt_ratio_available_date_range,
+        run_nt_ratio_change_stock_overnight_distribution,
     )
 
 
 @app.cell
-def _(default_db_path, get_topix_available_date_range):
+def _(default_db_path, get_nt_ratio_available_date_range):
     try:
-        initial_range = get_topix_available_date_range(default_db_path)
+        initial_range = get_nt_ratio_available_date_range(default_db_path)
     except Exception:
         initial_range = (None, None)
     return (initial_range,)
@@ -72,11 +70,11 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
         value=_available_start_date or "",
-        label="Start Date (YYYY-MM-DD)",
+        label="Event Start Date (YYYY-MM-DD)",
     )
     end_date = mo.ui.text(
         value=_available_end_date or "",
-        label="End Date (YYYY-MM-DD)",
+        label="Event End Date (YYYY-MM-DD)",
     )
     selected_groups = mo.ui.text(
         value=", ".join(STOCK_GROUP_ORDER),
@@ -87,14 +85,14 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         start=0.1,
         stop=10.0,
         step=0.1,
-        label="TOPIX Gap Sigma Threshold 1",
+        label="Sigma Threshold 1",
     )
     sigma_threshold_2 = mo.ui.number(
         value=2.0,
         start=0.2,
         stop=20.0,
         step=0.1,
-        label="TOPIX Gap Sigma Threshold 2",
+        label="Sigma Threshold 2",
     )
     sample_size = mo.ui.number(
         value=1500,
@@ -176,41 +174,15 @@ def _(
 
 
 @app.cell
-def _(get_topix_gap_return_stats, parsed_inputs):
+def _(parsed_inputs, run_nt_ratio_change_stock_overnight_distribution):
     try:
         _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        gap_return_stats = get_topix_gap_return_stats(
+        result = run_nt_ratio_change_stock_overnight_distribution(
             parsed_inputs["selected_db_path"],
             start_date=parsed_inputs["selected_start"],
             end_date=parsed_inputs["selected_end"],
             sigma_threshold_1=_sigma_threshold_1,
             sigma_threshold_2=_sigma_threshold_2,
-        )
-        stats_error_message = None
-    except Exception as exc:
-        gap_return_stats = None
-        stats_error_message = str(exc)
-    return gap_return_stats, stats_error_message
-
-
-@app.cell
-def _(
-    gap_return_stats,
-    parsed_inputs,
-    run_topix_gap_intraday_distribution,
-    stats_error_message,
-):
-    try:
-        if stats_error_message:
-            raise ValueError(stats_error_message)
-        if gap_return_stats is None:
-            raise ValueError("No analyzable TOPIX gap rows in selected range.")
-        result = run_topix_gap_intraday_distribution(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            gap_threshold_1=gap_return_stats.threshold_1,
-            gap_threshold_2=gap_return_stats.threshold_2,
             selected_groups=parsed_inputs["requested_groups"],
             sample_size=parsed_inputs["selected_sample_size"],
             clip_percentiles=parsed_inputs["selected_clip"],
@@ -232,40 +204,41 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(error_message, gap_return_stats, mo, parsed_inputs, result):
+def _(error_message, mo, parsed_inputs, result):
     _summary_view = mo.md("")
     if not error_message and result is not None:
         _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
         _selected_clip = parsed_inputs["selected_clip"]
-        _stats = gap_return_stats
+        _stats = result.nt_ratio_stats
         _stats_lines = [
-            "- TOPIX gap return stats: **no analyzable rows in range**",
+            "- NT ratio return stats: **no analyzable rows in range**",
         ]
         if _stats is not None:
             _stats_lines = [
-                f"- TOPIX gap return sample count: **{_stats.sample_count}**",
+                f"- NT ratio return sample count: **{_stats.sample_count}**",
                 f"- Mean / Std: **{_stats.mean_return * 100:.4f}% / {_stats.std_return * 100:.4f}%**",
-                f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
-                f"- Derived gap thresholds: **{_stats.threshold_1 * 100:.4f}% / {_stats.threshold_2 * 100:.4f}%**",
+                f"- Bucket boundaries: **μ-{_sigma_threshold_2:g}σ = {_stats.lower_threshold_2 * 100:.4f}%**, **μ-{_sigma_threshold_1:g}σ = {_stats.lower_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_1:g}σ = {_stats.upper_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_2:g}σ = {_stats.upper_threshold_2 * 100:.4f}%**",
                 f"- Min / Q25 / Median / Q75 / Max: **{_stats.min_return * 100:.4f}% / {_stats.q25_return * 100:.4f}% / {_stats.median_return * 100:.4f}% / {_stats.q75_return * 100:.4f}% / {_stats.max_return * 100:.4f}%**",
-                f"- Rotation signal thresholds: **weak <= -{_stats.threshold_1 * 100:.4f}% / neutral between / strong >= {_stats.threshold_1 * 100:.4f}%**",
             ]
+
         _summary_view = mo.md(
             "\n".join(
                 [
-                    "## TOPIX Gap / Intraday Distribution Playground",
+                    "## NT Ratio Change / Stock Overnight Distribution Playground",
                     "",
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
                     f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
                     f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
+                    f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
                     f"- Sample size per group/bucket: **{parsed_inputs['selected_sample_size']}**",
                     f"- Plot clip: **{_selected_clip[0]:.1f}% -> {_selected_clip[1]:.1f}%**",
-                    f"- Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**",
-                    "- Fixed rotation rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**",
-                    "- Event definition: **topix_gap_return = (open - prev_close) / prev_close**",
-                    "- Trade definition: **stock_intraday_return = (close - open) / open**",
+                    f"- Excluded NT ratio days without previous ratio: **{result.excluded_nt_ratio_days_without_prev_ratio}**",
+                    f"- Excluded NT ratio days without next session: **{result.excluded_nt_ratio_days_without_next_session}**",
+                    "- Event definition: **nt_ratio = N225_UNDERPX close / TOPIX close**",
+                    "- Event definition: **nt_ratio_return = (nt_ratio - prev_nt_ratio) / prev_nt_ratio**",
+                    "- Trade definition: **stock overnight_return = (next_open - event_close) / event_close**",
                     "",
                     *_stats_lines,
                 ]
@@ -276,28 +249,31 @@ def _(error_message, gap_return_stats, mo, parsed_inputs, result):
 
 
 @app.cell
-def _(error_message, gap_return_stats, mo, pd):
+def _(error_message, mo, pd, result):
     _stats_table = mo.md("")
-    if not error_message and gap_return_stats is not None:
+    if not error_message and result is not None and result.nt_ratio_stats is not None:
+        _stats = result.nt_ratio_stats
         _stats_df = pd.DataFrame(
             [
                 {
-                    "sample_count": gap_return_stats.sample_count,
-                    "mean_return": gap_return_stats.mean_return,
-                    "std_return": gap_return_stats.std_return,
-                    "threshold_1": gap_return_stats.threshold_1,
-                    "threshold_2": gap_return_stats.threshold_2,
-                    "min_return": gap_return_stats.min_return,
-                    "q25_return": gap_return_stats.q25_return,
-                    "median_return": gap_return_stats.median_return,
-                    "q75_return": gap_return_stats.q75_return,
-                    "max_return": gap_return_stats.max_return,
+                    "sample_count": _stats.sample_count,
+                    "mean_return": _stats.mean_return,
+                    "std_return": _stats.std_return,
+                    "lower_threshold_2": _stats.lower_threshold_2,
+                    "lower_threshold_1": _stats.lower_threshold_1,
+                    "upper_threshold_1": _stats.upper_threshold_1,
+                    "upper_threshold_2": _stats.upper_threshold_2,
+                    "min_return": _stats.min_return,
+                    "q25_return": _stats.q25_return,
+                    "median_return": _stats.median_return,
+                    "q75_return": _stats.q75_return,
+                    "max_return": _stats.max_return,
                 }
             ]
         )
         _stats_table = mo.vstack(
             [
-                mo.md("### TOPIX Gap Return Stats"),
+                mo.md("### NT Ratio Return Stats"),
                 mo.Html(
                     _stats_df.to_html(
                         index=False,
@@ -317,21 +293,21 @@ def _(error_message, mo, plt, result):
         _fig, _ax = plt.subplots(figsize=(9, 4))
         _day_counts = result.day_counts_df
         _bar_colors = {
-            "gap_le_negative_threshold_2": "#bc4b51",
-            "gap_negative_threshold_2_to_1": "#e07a5f",
-            "gap_negative_threshold_1_to_threshold_1": "#9aa5b1",
-            "gap_threshold_1_to_2": "#81b29a",
-            "gap_ge_threshold_2": "#2a9d8f",
+            "return_le_mean_minus_2sd": "#bc4b51",
+            "return_mean_minus_2sd_to_minus_1sd": "#e07a5f",
+            "return_mean_minus_1sd_to_plus_1sd": "#9aa5b1",
+            "return_mean_plus_1sd_to_plus_2sd": "#81b29a",
+            "return_ge_mean_plus_2sd": "#2a9d8f",
         }
         _ax.bar(
-            _day_counts["gap_bucket_label"],
+            _day_counts["nt_ratio_bucket_label"],
             _day_counts["day_count"],
             color=[
                 _bar_colors.get(bucket_key, "#7a7a7a")
-                for bucket_key in _day_counts["gap_bucket_key"]
+                for bucket_key in _day_counts["nt_ratio_bucket_key"]
             ],
         )
-        _ax.set_title("TOPIX Gap Day Counts")
+        _ax.set_title("NT Ratio Return Event Day Counts")
         _ax.set_ylabel("Days")
         _ax.grid(axis="y", alpha=0.2)
         plt.xticks(rotation=15, ha="right")
@@ -347,7 +323,7 @@ def _(error_message, mo, plt, result):
     if not error_message and result is not None:
         _summary_df = result.summary_df.copy()
         _summary_df["label"] = (
-            _summary_df["stock_group"] + "\n" + _summary_df["gap_bucket_label"]
+            _summary_df["stock_group"] + "\n" + _summary_df["nt_ratio_bucket_label"]
         )
 
         _fig, _ax = plt.subplots(figsize=(14, 7))
@@ -361,7 +337,7 @@ def _(error_message, mo, plt, result):
         _ax.bar(_x, _flat, bottom=_up + _down, label="Flat", color="#7a7a7a")
         _ax.set_ylim(0.0, 1.0)
         _ax.set_ylabel("Ratio")
-        _ax.set_title("Up / Down / Flat Ratios by Group and Gap Bucket")
+        _ax.set_title("Stock Overnight Up / Down / Flat Ratios by Group and NT Ratio Bucket")
         _ax.set_xticks(list(_x))
         _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
         _ax.legend()
@@ -381,25 +357,25 @@ def _(error_message, mo, plt, result):
             _expected_return_chart = mo.md("No sampled rows for expected-return chart.")
         else:
             _summary_df["label"] = (
-                _summary_df["stock_group"] + "\n" + _summary_df["gap_bucket_label"]
+                _summary_df["stock_group"] + "\n" + _summary_df["nt_ratio_bucket_label"]
             )
-            _summary_df["mean_intraday_return_pct"] = (
-                _summary_df["mean_intraday_return"] * 100.0
+            _summary_df["mean_overnight_return_pct"] = (
+                _summary_df["mean_overnight_return"] * 100.0
             )
 
             _fig, _ax = plt.subplots(figsize=(14, 5))
             _x = range(len(_summary_df))
-            _values = _summary_df["mean_intraday_return_pct"].fillna(0.0)
+            _values = _summary_df["mean_overnight_return_pct"].fillna(0.0)
             _colors = [
                 "#7a7a7a"
                 if raw_value != raw_value
                 else ("#2a9d8f" if raw_value >= 0 else "#e76f51")
-                for raw_value in _summary_df["mean_intraday_return"]
+                for raw_value in _summary_df["mean_overnight_return"]
             ]
             _ax.bar(_x, _values, color=_colors)
             _ax.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.7)
-            _ax.set_ylabel("Mean return (%)")
-            _ax.set_title("Expected Intraday Return by Group and Gap Bucket")
+            _ax.set_ylabel("Mean overnight return (%)")
+            _ax.set_title("Expected Stock Overnight Return by Group and NT Ratio Bucket")
             _ax.set_xticks(list(_x))
             _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
             _ax.grid(axis="y", alpha=0.2)
@@ -414,9 +390,9 @@ def _(error_message, mo, plt, result):
     _distribution_chart = mo.md("")
     if not error_message and result is not None:
         _plot_df = result.clipped_samples_df
-        _bucket_order = list(result.day_counts_df["gap_bucket_key"])
+        _bucket_order = list(result.day_counts_df["nt_ratio_bucket_key"])
         _bucket_labels = {
-            row["gap_bucket_key"]: row["gap_bucket_label"]
+            row["nt_ratio_bucket_key"]: row["nt_ratio_bucket_label"]
             for _, row in result.day_counts_df.iterrows()
         }
 
@@ -430,7 +406,7 @@ def _(error_message, mo, plt, result):
             _axes = [_axes]
 
         for _ax, _bucket_key in zip(_axes, _bucket_order, strict=True):
-            _bucket_df = _plot_df[_plot_df["gap_bucket_key"] == _bucket_key]
+            _bucket_df = _plot_df[_plot_df["nt_ratio_bucket_key"] == _bucket_key]
             _group_order = [
                 group
                 for group in result.selected_groups
@@ -438,7 +414,7 @@ def _(error_message, mo, plt, result):
             ]
             _boxplot_data = [
                 _bucket_df.loc[
-                    _bucket_df["stock_group"] == group, "intraday_diff"
+                    _bucket_df["stock_group"] == group, "overnight_diff"
                 ].tolist()
                 for group in _group_order
             ]
@@ -456,11 +432,11 @@ def _(error_message, mo, plt, result):
                 _ax.set_xticks([])
 
             _ax.set_title(_bucket_labels[_bucket_key])
-            _ax.set_ylabel("close - open")
+            _ax.set_ylabel("next_open - close")
             _ax.grid(axis="y", alpha=0.2)
 
         _fig.suptitle(
-            "Sampled Distribution of close - open (Clipped for Plotting)",
+            "Sampled Distribution of Stock Overnight Diff (Clipped for Plotting)",
             y=1.02,
         )
         _fig.tight_layout()
@@ -471,162 +447,11 @@ def _(error_message, mo, plt, result):
 
 @app.cell
 def _(error_message, mo, result):
-    _rotation_summary_view = mo.md("")
-    if not error_message and result is not None:
-        _overall_df = result.rotation_overall_summary_df
-        if _overall_df.empty:
-            _rotation_summary_view = mo.md(
-                "## Simple Rotation Strategy\n\nNo analyzable TOPIX gap days in range."
-            )
-        else:
-            _row = _overall_df.iloc[0]
-            _rotation_summary_view = mo.md(
-                f"""
-    ## Simple Rotation Strategy
-
-    - Rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**
-    - Total days: **{int(_row["total_days"])}**
-    - Trade days: **{int(_row["trade_days"])}** (weak: **{int(_row["weak_trade_days"])}**, strong: **{int(_row["strong_trade_days"])}**)
-    - Flat days: **{int(_row["flat_days"])}**
-    - Mean trade return: **{_row["mean_trade_return"] * 100:.3f}%**
-    - Mean daily return: **{_row["mean_daily_return"] * 100:.3f}%**
-    - Cumulative return: **{_row["cumulative_return"] * 100:.2f}%**
-    - Max drawdown: **{_row["max_drawdown"] * 100:.2f}%**
-    """
-            )
-    _rotation_summary_view
-    return
-
-
-@app.cell
-def _(error_message, mo, pd, plt, result):
-    _rotation_curve_chart = mo.md("")
-    if not error_message and result is not None:
-        _daily_df = result.rotation_daily_df.copy()
-        if _daily_df.empty:
-            _rotation_curve_chart = mo.md("No strategy daily rows to plot.")
-        else:
-            _dates = pd.to_datetime(_daily_df["date"])
-            _signal_colors = _daily_df["signal_label"].map(
-                {
-                    "weak": "#e07a5f",
-                    "strong": "#2a9d8f",
-                    "neutral": "#9aa5b1",
-                }
-            )
-
-            _fig, (_ax1, _ax2) = plt.subplots(
-                2,
-                1,
-                figsize=(14, 8),
-                sharex=True,
-                gridspec_kw={"height_ratios": [2, 1]},
-            )
-            _ax1.plot(_dates, _daily_df["equity_curve"], color="#1d3557", linewidth=2.0)
-            _ax1.set_title("Simple Rotation Strategy Equity Curve")
-            _ax1.set_ylabel("Equity")
-            _ax1.grid(axis="y", alpha=0.2)
-
-            _ax2.bar(
-                _dates,
-                _daily_df["strategy_return"] * 100.0,
-                color=_signal_colors,
-                width=1.2,
-            )
-            _ax2.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.7)
-            _ax2.set_title("Daily Strategy Return")
-            _ax2.set_ylabel("Return (%)")
-            _ax2.grid(axis="y", alpha=0.2)
-
-            _fig.tight_layout()
-            _rotation_curve_chart = _fig
-    _rotation_curve_chart
-    return
-
-
-@app.cell
-def _(error_message, mo, result):
-    _rotation_table_view = mo.md("")
-    if not error_message and result is not None:
-        if result.rotation_daily_df.empty:
-            _rotation_table_view = mo.md("No strategy summary rows to display.")
-        else:
-            _overall_columns = [
-                "strategy_name",
-                "total_days",
-                "trade_days",
-                "flat_days",
-                "weak_trade_days",
-                "strong_trade_days",
-                "missing_trade_days",
-                "mean_trade_return",
-                "median_trade_return",
-                "mean_daily_return",
-                "win_trade_ratio",
-                "loss_trade_ratio",
-                "cumulative_return",
-                "final_equity",
-                "max_drawdown",
-            ]
-            _signal_columns = [
-                "signal_label",
-                "selected_group",
-                "position",
-                "day_count",
-                "mean_strategy_return",
-                "median_strategy_return",
-                "win_ratio",
-                "loss_ratio",
-                "cumulative_return",
-            ]
-            _daily_columns = [
-                "date",
-                "gap_bucket_label",
-                "gap_return",
-                "signal_label",
-                "selected_group",
-                "position",
-                "selected_group_constituent_count",
-                "selected_group_return",
-                "strategy_return",
-                "cumulative_return",
-            ]
-            _rotation_table_view = mo.vstack(
-                [
-                    mo.md("### Rotation Strategy Summary"),
-                    mo.Html(
-                        result.rotation_overall_summary_df[_overall_columns].to_html(
-                            index=False,
-                            float_format=lambda value: f"{value:.4f}",
-                        )
-                    ),
-                    mo.md("### Rotation Strategy by Signal"),
-                    mo.Html(
-                        result.rotation_signal_summary_df[_signal_columns].to_html(
-                            index=False,
-                            float_format=lambda value: f"{value:.4f}",
-                        )
-                    ),
-                    mo.md("### Rotation Strategy Daily Rows (latest 120)"),
-                    mo.Html(
-                        result.rotation_daily_df[_daily_columns].tail(120).to_html(
-                            index=False,
-                            float_format=lambda value: f"{value:.4f}",
-                        )
-                    ),
-                ]
-            )
-    _rotation_table_view
-    return
-
-
-@app.cell
-def _(error_message, mo, result):
     _table_view = mo.md("")
     if not error_message and result is not None:
         _summary_columns = [
             "stock_group",
-            "gap_bucket_label",
+            "nt_ratio_bucket_label",
             "sample_count",
             "up_count",
             "down_count",
@@ -634,24 +459,38 @@ def _(error_message, mo, result):
             "up_ratio",
             "down_ratio",
             "flat_ratio",
-            "mean_intraday_return",
-            "mean_intraday_diff",
-            "median_intraday_diff",
-            "p05_intraday_diff",
-            "p25_intraday_diff",
-            "p50_intraday_diff",
-            "p75_intraday_diff",
-            "p95_intraday_diff",
+            "mean_nt_ratio_return",
+            "mean_overnight_return",
+            "mean_overnight_diff",
+            "median_overnight_diff",
+            "p05_overnight_diff",
+            "p25_overnight_diff",
+            "p50_overnight_diff",
+            "p75_overnight_diff",
+            "p95_overnight_diff",
         ]
         _sample_columns = [
             "stock_group",
-            "gap_bucket_label",
+            "nt_ratio_bucket_label",
             "date",
+            "next_date",
             "code",
-            "intraday_diff",
-            "intraday_return",
+            "nt_ratio_return",
+            "overnight_diff",
+            "overnight_return",
             "direction",
             "sample_rank",
+        ]
+        _daily_columns = [
+            "stock_group",
+            "date",
+            "next_date",
+            "nt_ratio_bucket_label",
+            "nt_ratio_return",
+            "day_mean_overnight_return",
+            "day_up_ratio",
+            "day_down_ratio",
+            "constituent_count",
         ]
         _table_view = mo.vstack(
             [
@@ -659,7 +498,7 @@ def _(error_message, mo, result):
                 mo.Html(result.day_counts_df.to_html(index=False)),
                 mo.md(
                     "### Exact Summary\n\n"
-                    "`mean_intraday_return = average((close-open)/open)`"
+                    "`mean_overnight_return = average((next_open-event_close)/event_close)`"
                 ),
                 mo.Html(
                     result.summary_df[_summary_columns].to_html(
@@ -674,9 +513,18 @@ def _(error_message, mo, result):
                         float_format=lambda value: f"{value:.4f}",
                     )
                 ),
+                mo.md("### Daily Group Returns (latest 120)"),
+                mo.Html(
+                    result.daily_group_returns_df[_daily_columns].tail(120).to_html(
+                        index=False,
+                        float_format=lambda value: f"{value:.4f}",
+                    )
+                ),
             ]
         )
     _table_view
     return
+
+
 if __name__ == "__main__":
     app.run()
