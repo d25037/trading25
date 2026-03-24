@@ -1,5 +1,7 @@
-import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import { registerDomMatchers } from './test-dom-matchers';
+
+registerDomMatchers();
 
 // Mock window.open for tests (only in browser environment)
 if (typeof window !== 'undefined') {

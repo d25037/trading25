@@ -1,7 +1,7 @@
 ---
 id: ts-144
 title: "web テスト基盤から jest-dom 依存を段階除去する"
-status: open
+status: done
 priority: medium
 labels: [testing, dependencies, cleanup, vitest]
 project: ts
@@ -26,14 +26,19 @@ parent: null
 - `bun run --filter @trading25/web test` と `bun run --filter @trading25/web typecheck` が通る。
 
 ## 実施内容
-- [ ] `jest-dom` matcher の実使用を分類し、置換方針を `direct DOM check` と `local helper/matcher` に分ける。
-- [ ] 使用頻度の高い matcher (`toBeInTheDocument`, `toBeDisabled`, `toHaveAttribute`, `toHaveClass`, `toHaveTextContent`) の置換ガイドを決める。
-- [ ] 可読性維持のため、必要なら `src/test-utils` 配下に薄い assert helper または Vitest matcher extension を追加する。
-- [ ] test file を段階置換し、`jest-dom` import を外しても green になる状態まで進める。
-- [ ] `package.json` と `test-setup.ts` から依存を除去し、lockfile と test policy を更新する。
+- [x] `jest-dom` matcher の実使用を分類し、置換方針を `direct DOM check` と `local helper/matcher` に分ける。
+- [x] 使用頻度の高い matcher (`toBeInTheDocument`, `toBeDisabled`, `toHaveAttribute`, `toHaveClass`, `toHaveTextContent`) の置換ガイドを決める。
+- [x] 可読性維持のため、必要なら `src/test-utils` 配下に薄い assert helper または Vitest matcher extension を追加する。
+- [x] test file を段階置換し、`jest-dom` import を外しても green になる状態まで進める。
+- [x] `package.json` と `test-setup.ts` から依存を除去し、lockfile と test policy を更新する。
 
 ## 結果
-- 未着手
+- `apps/ts/packages/web/src/test-dom-matchers.ts` に web test suite 向けの薄い local matcher 群を追加し、`toBeInTheDocument` / `toBeDisabled` / `toBeEnabled` / `toHaveAttribute` / `toHaveClass` / `toHaveTextContent` / `toBeChecked` / `toHaveValue` / `toHaveStyle` / `toBeEmptyDOMElement` を Vitest `expect.extend` で提供するようにした。
+- `apps/ts/packages/web/src/types/vitest-dom-matchers.d.ts` で matcher 型を追加し、`apps/ts/packages/web/src/test-setup.ts` から local matcher を登録する形に切り替えた。
+- `apps/ts/packages/web/package.json` から `@testing-library/jest-dom` を削除し、`apps/ts/bun.lock` と `apps/ts/TESTING.md` を更新した。
+- 検証:
+  - `bun run --filter @trading25/web typecheck`
+  - `bun run --filter @trading25/web test`
 
 ## 補足
 - 2026-03-24 時点では `jest-dom` はまだ使用中。

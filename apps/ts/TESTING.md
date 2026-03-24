@@ -161,10 +161,8 @@ Each package has its own `vitest.config.ts`:
 
 ### Test Setup
 
-Web package includes `test-setup.ts` for jest-dom matchers:
-```typescript
-import '@testing-library/jest-dom';
-```
+Web package loads local DOM matchers from `packages/web/src/test-dom-matchers.ts` via `packages/web/src/test-setup.ts`.
+Keep matcher additions minimal and scoped to APIs that are already used across the suite.
 
 ## Running Tests in CI
 
