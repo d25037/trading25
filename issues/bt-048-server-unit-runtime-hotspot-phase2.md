@@ -46,6 +46,8 @@ parent: null
 - 2026-03-24: `tests/unit/server/test_routes_db_sync.py` の実行時間は `25 passed in 3.09s` から `25 passed in 2.62s` へ短縮した。`test_jquants_proxy.py + test_routes_dataset_data.py + test_routes_db_sync.py` の subset では `69 passed in 3.13s` を確認した。
 - 2026-03-24: `tests/unit/server/routes/test_market_data.py` は read-only な market DuckDB と env/app 初期化を module 共有 fixture に置き換えた。共通 fixture への依存をやめ、必要最小限の test data をファイル内 helper で閉じた。
 - 2026-03-24: `tests/unit/server/routes/test_market_data.py` の実行時間は `22 passed in 5.82s` から `22 passed in 0.23s` へ短縮した。`test_market_data.py + test_jquants_proxy.py + test_routes_dataset_data.py + test_routes_db_sync.py` の subset では `91 passed in 1.97s` を確認した。
+- 2026-03-24: pure route テストで app state を持たない `[test_backtest.py](/Users/shinjiroaso/.codex/worktrees/3e53/trading25/apps/bt/tests/unit/server/routes/test_backtest.py)`、`[test_optimize.py](/Users/shinjiroaso/.codex/worktrees/3e53/trading25/apps/bt/tests/unit/server/routes/test_optimize.py)`、`[test_routes_analytics_fundamentals.py](/Users/shinjiroaso/.codex/worktrees/3e53/trading25/apps/bt/tests/unit/server/test_routes_analytics_fundamentals.py)` を module 共有 `TestClient` に寄せた。
+- 2026-03-24: それぞれの実行時間は `test_backtest.py: 37 passed in 1.96s -> 0.27s`、`test_optimize.py: 25 passed in 1.20s -> 0.72s`、`test_routes_analytics_fundamentals.py: 14 passed in 0.59s -> 0.20s` まで短縮した。3 ファイル combined subset では `76 passed in 0.80s` を確認した。
 
 ## 補足
 - `pytest-xdist` 導入可否の再検討は、この issue の主目的ではない。

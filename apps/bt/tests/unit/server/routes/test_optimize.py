@@ -81,12 +81,13 @@ def _make_job(job_id: str, status: JobStatus, job_type: str = "optimization") ->
 
 
 class TestOptimizationJobEndpoints:
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def client(self):
         from src.entrypoints.http.app import create_app
 
         app = create_app()
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_cancel_job_success(self, client):
         cancelled = _make_job("opt-1", JobStatus.CANCELLED)
@@ -157,11 +158,12 @@ class TestOptimizationJobEndpoints:
 
 
 class TestGridConfigEndpoints:
-    @pytest.fixture
+    @pytest.fixture(scope="module")
     def client(self):
         from src.entrypoints.http.app import create_app
         app = create_app()
-        return TestClient(app)
+        with TestClient(app) as test_client:
+            yield test_client
 
     def test_get_grid_config_not_found(self, client):
         with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=None):

@@ -29,10 +29,11 @@ from src.entrypoints.http.schemas.fundamentals import (
 from src.entrypoints.http.routes import analytics_market
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def client() -> TestClient:
     app = create_app()
-    return TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        yield test_client
 
 
 def _make_response(symbol: str = "7203", data_count: int = 1) -> FundamentalsComputeResponse:

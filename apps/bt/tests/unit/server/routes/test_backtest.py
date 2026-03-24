@@ -60,11 +60,12 @@ def _make_job(
     return job
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client():
     from src.entrypoints.http.app import create_app
     app = create_app()
-    return TestClient(app)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class TestRunBacktest:
