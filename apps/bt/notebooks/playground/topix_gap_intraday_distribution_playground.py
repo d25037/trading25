@@ -42,6 +42,7 @@ def _(Path, sys):
     from src.domains.analytics.topix_gap_intraday_distribution import (
         STOCK_GROUP_ORDER,
         get_topix_available_date_range,
+        get_topix_gap_return_stats,
         run_topix_gap_intraday_distribution,
     )
 
@@ -50,6 +51,7 @@ def _(Path, sys):
         STOCK_GROUP_ORDER,
         default_db_path,
         get_topix_available_date_range,
+        get_topix_gap_return_stats,
         run_topix_gap_intraday_distribution,
     )
 
@@ -80,19 +82,19 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         value=", ".join(STOCK_GROUP_ORDER),
         label="Groups (comma separated)",
     )
-    gap_threshold_1 = mo.ui.number(
+    sigma_threshold_1 = mo.ui.number(
         value=1.0,
         start=0.1,
         stop=10.0,
         step=0.1,
-        label="Gap Threshold 1 (%)",
+        label="TOPIX Gap Sigma Threshold 1",
     )
-    gap_threshold_2 = mo.ui.number(
+    sigma_threshold_2 = mo.ui.number(
         value=2.0,
         start=0.2,
         stop=20.0,
         step=0.1,
-        label="Gap Threshold 2 (%)",
+        label="TOPIX Gap Sigma Threshold 2",
     )
     sample_size = mo.ui.number(
         value=1500,
@@ -120,7 +122,7 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
             db_path,
             mo.hstack([start_date, end_date]),
             selected_groups,
-            mo.hstack([gap_threshold_1, gap_threshold_2]),
+            mo.hstack([sigma_threshold_1, sigma_threshold_2]),
             mo.hstack([sample_size, clip_lower, clip_upper]),
         ]
     )
@@ -129,10 +131,10 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         clip_upper,
         db_path,
         end_date,
-        gap_threshold_1,
-        gap_threshold_2,
         sample_size,
         selected_groups,
+        sigma_threshold_1,
+        sigma_threshold_2,
         start_date,
     )
 
@@ -144,10 +146,10 @@ def _(
     clip_upper,
     db_path,
     end_date,
-    gap_threshold_1,
-    gap_threshold_2,
     sample_size,
     selected_groups,
+    sigma_threshold_1,
+    sigma_threshold_2,
     start_date,
 ):
     _requested_groups = [
@@ -165,24 +167,50 @@ def _(
         "selected_end": end_date.value.strip() or None,
         "selected_sample_size": int(sample_size.value),
         "selected_start": start_date.value.strip() or None,
-        "thresholds": (
-            float(gap_threshold_1.value) / 100.0,
-            float(gap_threshold_2.value) / 100.0,
+        "sigma_thresholds": (
+            float(sigma_threshold_1.value),
+            float(sigma_threshold_2.value),
         ),
     }
     return (parsed_inputs,)
 
 
 @app.cell
-def _(parsed_inputs, run_topix_gap_intraday_distribution):
+def _(get_topix_gap_return_stats, parsed_inputs):
     try:
-        _threshold_1, _threshold_2 = parsed_inputs["thresholds"]
+        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
+        gap_return_stats = get_topix_gap_return_stats(
+            parsed_inputs["selected_db_path"],
+            start_date=parsed_inputs["selected_start"],
+            end_date=parsed_inputs["selected_end"],
+            sigma_threshold_1=_sigma_threshold_1,
+            sigma_threshold_2=_sigma_threshold_2,
+        )
+        stats_error_message = None
+    except Exception as exc:
+        gap_return_stats = None
+        stats_error_message = str(exc)
+    return gap_return_stats, stats_error_message
+
+
+@app.cell
+def _(
+    gap_return_stats,
+    parsed_inputs,
+    run_topix_gap_intraday_distribution,
+    stats_error_message,
+):
+    try:
+        if stats_error_message:
+            raise ValueError(stats_error_message)
+        if gap_return_stats is None:
+            raise ValueError("No analyzable TOPIX gap rows in selected range.")
         result = run_topix_gap_intraday_distribution(
             parsed_inputs["selected_db_path"],
             start_date=parsed_inputs["selected_start"],
             end_date=parsed_inputs["selected_end"],
-            gap_threshold_1=_threshold_1,
-            gap_threshold_2=_threshold_2,
+            gap_threshold_1=gap_return_stats.threshold_1,
+            gap_threshold_2=gap_return_stats.threshold_2,
             selected_groups=parsed_inputs["requested_groups"],
             sample_size=parsed_inputs["selected_sample_size"],
             clip_percentiles=parsed_inputs["selected_clip"],
@@ -204,28 +232,81 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(error_message, gap_return_stats, mo, parsed_inputs, result):
     _summary_view = mo.md("")
     if not error_message and result is not None:
-        _threshold_1, _threshold_2 = parsed_inputs["thresholds"]
+        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
         _selected_clip = parsed_inputs["selected_clip"]
+        _stats = gap_return_stats
+        _stats_lines = [
+            "- TOPIX gap return stats: **no analyzable rows in range**",
+        ]
+        if _stats is not None:
+            _stats_lines = [
+                f"- TOPIX gap return sample count: **{_stats.sample_count}**",
+                f"- Mean / Std: **{_stats.mean_return * 100:.4f}% / {_stats.std_return * 100:.4f}%**",
+                f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
+                f"- Derived gap thresholds: **{_stats.threshold_1 * 100:.4f}% / {_stats.threshold_2 * 100:.4f}%**",
+                f"- Min / Q25 / Median / Q75 / Max: **{_stats.min_return * 100:.4f}% / {_stats.q25_return * 100:.4f}% / {_stats.median_return * 100:.4f}% / {_stats.q75_return * 100:.4f}% / {_stats.max_return * 100:.4f}%**",
+                f"- Rotation signal thresholds: **weak <= -{_stats.threshold_1 * 100:.4f}% / neutral between / strong >= {_stats.threshold_1 * 100:.4f}%**",
+            ]
         _summary_view = mo.md(
-            f"""
-    ## TOPIX Gap / Intraday Distribution Playground
-
-    - Source mode: **{result.source_mode}**
-    - Source detail: **{result.source_detail}**
-    - Available range: **{result.available_start_date} → {result.available_end_date}**
-    - Analysis range: **{result.analysis_start_date} → {result.analysis_end_date}**
-    - Selected groups: **{", ".join(parsed_inputs["requested_groups"])}**
-    - Thresholds: **{_threshold_1 * 100:.1f}% / {_threshold_2 * 100:.1f}%**
-    - Sample size per group/bucket: **{parsed_inputs["selected_sample_size"]}**
-    - Plot clip: **{_selected_clip[0]:.1f}% → {_selected_clip[1]:.1f}%**
-    - Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**
-    - Fixed rotation rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**
-    """
+            "\n".join(
+                [
+                    "## TOPIX Gap / Intraday Distribution Playground",
+                    "",
+                    f"- Source mode: **{result.source_mode}**",
+                    f"- Source detail: **{result.source_detail}**",
+                    f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
+                    f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
+                    f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
+                    f"- Sample size per group/bucket: **{parsed_inputs['selected_sample_size']}**",
+                    f"- Plot clip: **{_selected_clip[0]:.1f}% -> {_selected_clip[1]:.1f}%**",
+                    f"- Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**",
+                    "- Fixed rotation rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**",
+                    "- Event definition: **topix_gap_return = (open - prev_close) / prev_close**",
+                    "- Trade definition: **stock_intraday_return = (close - open) / open**",
+                    "",
+                    *_stats_lines,
+                ]
+            )
         )
     _summary_view
+    return
+
+
+@app.cell
+def _(error_message, gap_return_stats, mo, pd):
+    _stats_table = mo.md("")
+    if not error_message and gap_return_stats is not None:
+        _stats_df = pd.DataFrame(
+            [
+                {
+                    "sample_count": gap_return_stats.sample_count,
+                    "mean_return": gap_return_stats.mean_return,
+                    "std_return": gap_return_stats.std_return,
+                    "threshold_1": gap_return_stats.threshold_1,
+                    "threshold_2": gap_return_stats.threshold_2,
+                    "min_return": gap_return_stats.min_return,
+                    "q25_return": gap_return_stats.q25_return,
+                    "median_return": gap_return_stats.median_return,
+                    "q75_return": gap_return_stats.q75_return,
+                    "max_return": gap_return_stats.max_return,
+                }
+            ]
+        )
+        _stats_table = mo.vstack(
+            [
+                mo.md("### TOPIX Gap Return Stats"),
+                mo.Html(
+                    _stats_df.to_html(
+                        index=False,
+                        float_format=lambda value: f"{value:.6f}",
+                    )
+                ),
+            ]
+        )
+    _stats_table
     return
 
 
@@ -597,17 +678,5 @@ def _(error_message, mo, result):
         )
     _table_view
     return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    return
-
-
 if __name__ == "__main__":
     app.run()

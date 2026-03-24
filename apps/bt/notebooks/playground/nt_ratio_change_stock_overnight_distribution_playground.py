@@ -12,7 +12,7 @@ import marimo
 __generated_with = "0.21.1"
 app = marimo.App(
     width="full",
-    app_title="TOPIX Close / Stock Overnight Distribution Playground",
+    app_title="NT Ratio Change / Stock Overnight Distribution Playground",
 )
 
 
@@ -39,27 +39,25 @@ def _(Path, sys):
         sys.path.insert(0, str(_project_root))
 
     from src.shared.config.settings import get_settings
-    from src.domains.analytics.topix_close_stock_overnight_distribution import (
+    from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
         STOCK_GROUP_ORDER,
-        get_topix_available_date_range,
-        get_topix_close_return_stats,
-        run_topix_close_stock_overnight_distribution,
+        get_nt_ratio_available_date_range,
+        run_nt_ratio_change_stock_overnight_distribution,
     )
 
     default_db_path = get_settings().market_db_path
     return (
         STOCK_GROUP_ORDER,
         default_db_path,
-        get_topix_available_date_range,
-        get_topix_close_return_stats,
-        run_topix_close_stock_overnight_distribution,
+        get_nt_ratio_available_date_range,
+        run_nt_ratio_change_stock_overnight_distribution,
     )
 
 
 @app.cell
-def _(default_db_path, get_topix_available_date_range):
+def _(default_db_path, get_nt_ratio_available_date_range):
     try:
-        initial_range = get_topix_available_date_range(default_db_path)
+        initial_range = get_nt_ratio_available_date_range(default_db_path)
     except Exception:
         initial_range = (None, None)
     return (initial_range,)
@@ -87,14 +85,14 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         start=0.1,
         stop=10.0,
         step=0.1,
-        label="TOPIX Close Sigma Threshold 1",
+        label="Sigma Threshold 1",
     )
     sigma_threshold_2 = mo.ui.number(
         value=2.0,
         start=0.2,
         stop=20.0,
         step=0.1,
-        label="TOPIX Close Sigma Threshold 2",
+        label="Sigma Threshold 2",
     )
     sample_size = mo.ui.number(
         value=1500,
@@ -176,41 +174,15 @@ def _(
 
 
 @app.cell
-def _(get_topix_close_return_stats, parsed_inputs):
+def _(parsed_inputs, run_nt_ratio_change_stock_overnight_distribution):
     try:
         _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        close_return_stats = get_topix_close_return_stats(
+        result = run_nt_ratio_change_stock_overnight_distribution(
             parsed_inputs["selected_db_path"],
             start_date=parsed_inputs["selected_start"],
             end_date=parsed_inputs["selected_end"],
             sigma_threshold_1=_sigma_threshold_1,
             sigma_threshold_2=_sigma_threshold_2,
-        )
-        stats_error_message = None
-    except Exception as exc:
-        close_return_stats = None
-        stats_error_message = str(exc)
-    return close_return_stats, stats_error_message
-
-
-@app.cell
-def _(
-    close_return_stats,
-    parsed_inputs,
-    run_topix_close_stock_overnight_distribution,
-    stats_error_message,
-):
-    try:
-        if stats_error_message:
-            raise ValueError(stats_error_message)
-        if close_return_stats is None:
-            raise ValueError("No analyzable TOPIX close rows in selected range.")
-        result = run_topix_close_stock_overnight_distribution(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            close_threshold_1=close_return_stats.threshold_1,
-            close_threshold_2=close_return_stats.threshold_2,
             selected_groups=parsed_inputs["requested_groups"],
             sample_size=parsed_inputs["selected_sample_size"],
             clip_percentiles=parsed_inputs["selected_clip"],
@@ -232,38 +204,40 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(close_return_stats, error_message, mo, parsed_inputs, result):
+def _(error_message, mo, parsed_inputs, result):
     _summary_view = mo.md("")
     if not error_message and result is not None:
         _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
         _selected_clip = parsed_inputs["selected_clip"]
-        _stats = close_return_stats
+        _stats = result.nt_ratio_stats
         _stats_lines = [
-            "- TOPIX close return stats: **no analyzable rows in range**",
+            "- NT ratio return stats: **no analyzable rows in range**",
         ]
         if _stats is not None:
             _stats_lines = [
-                f"- TOPIX close return sample count: **{_stats.sample_count}**",
+                f"- NT ratio return sample count: **{_stats.sample_count}**",
                 f"- Mean / Std: **{_stats.mean_return * 100:.4f}% / {_stats.std_return * 100:.4f}%**",
-                f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
-                f"- Derived close thresholds: **{_stats.threshold_1 * 100:.4f}% / {_stats.threshold_2 * 100:.4f}%**",
+                f"- Bucket boundaries: **μ-{_sigma_threshold_2:g}σ = {_stats.lower_threshold_2 * 100:.4f}%**, **μ-{_sigma_threshold_1:g}σ = {_stats.lower_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_1:g}σ = {_stats.upper_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_2:g}σ = {_stats.upper_threshold_2 * 100:.4f}%**",
                 f"- Min / Q25 / Median / Q75 / Max: **{_stats.min_return * 100:.4f}% / {_stats.q25_return * 100:.4f}% / {_stats.median_return * 100:.4f}% / {_stats.q75_return * 100:.4f}% / {_stats.max_return * 100:.4f}%**",
             ]
+
         _summary_view = mo.md(
             "\n".join(
                 [
-                    "## TOPIX Close / Stock Overnight Distribution Playground",
+                    "## NT Ratio Change / Stock Overnight Distribution Playground",
                     "",
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
                     f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
                     f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
+                    f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
                     f"- Sample size per group/bucket: **{parsed_inputs['selected_sample_size']}**",
                     f"- Plot clip: **{_selected_clip[0]:.1f}% -> {_selected_clip[1]:.1f}%**",
-                    f"- Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**",
-                    f"- Excluded TOPIX days without next session: **{result.excluded_topix_days_without_next_session}**",
-                    "- Event definition: **TOPIX close_return = (close - prev_close) / prev_close**",
+                    f"- Excluded NT ratio days without previous ratio: **{result.excluded_nt_ratio_days_without_prev_ratio}**",
+                    f"- Excluded NT ratio days without next session: **{result.excluded_nt_ratio_days_without_next_session}**",
+                    "- Event definition: **nt_ratio = N225_UNDERPX close / TOPIX close**",
+                    "- Event definition: **nt_ratio_return = (nt_ratio - prev_nt_ratio) / prev_nt_ratio**",
                     "- Trade definition: **stock overnight_return = (next_open - event_close) / event_close**",
                     "",
                     *_stats_lines,
@@ -275,28 +249,31 @@ def _(close_return_stats, error_message, mo, parsed_inputs, result):
 
 
 @app.cell
-def _(close_return_stats, error_message, mo, pd):
+def _(error_message, mo, pd, result):
     _stats_table = mo.md("")
-    if not error_message and close_return_stats is not None:
+    if not error_message and result is not None and result.nt_ratio_stats is not None:
+        _stats = result.nt_ratio_stats
         _stats_df = pd.DataFrame(
             [
                 {
-                    "sample_count": close_return_stats.sample_count,
-                    "mean_return": close_return_stats.mean_return,
-                    "std_return": close_return_stats.std_return,
-                    "threshold_1": close_return_stats.threshold_1,
-                    "threshold_2": close_return_stats.threshold_2,
-                    "min_return": close_return_stats.min_return,
-                    "q25_return": close_return_stats.q25_return,
-                    "median_return": close_return_stats.median_return,
-                    "q75_return": close_return_stats.q75_return,
-                    "max_return": close_return_stats.max_return,
+                    "sample_count": _stats.sample_count,
+                    "mean_return": _stats.mean_return,
+                    "std_return": _stats.std_return,
+                    "lower_threshold_2": _stats.lower_threshold_2,
+                    "lower_threshold_1": _stats.lower_threshold_1,
+                    "upper_threshold_1": _stats.upper_threshold_1,
+                    "upper_threshold_2": _stats.upper_threshold_2,
+                    "min_return": _stats.min_return,
+                    "q25_return": _stats.q25_return,
+                    "median_return": _stats.median_return,
+                    "q75_return": _stats.q75_return,
+                    "max_return": _stats.max_return,
                 }
             ]
         )
         _stats_table = mo.vstack(
             [
-                mo.md("### TOPIX Close Return Stats"),
+                mo.md("### NT Ratio Return Stats"),
                 mo.Html(
                     _stats_df.to_html(
                         index=False,
@@ -316,21 +293,21 @@ def _(error_message, mo, plt, result):
         _fig, _ax = plt.subplots(figsize=(9, 4))
         _day_counts = result.day_counts_df
         _bar_colors = {
-            "close_le_negative_threshold_2": "#bc4b51",
-            "close_negative_threshold_2_to_1": "#e07a5f",
-            "close_negative_threshold_1_to_threshold_1": "#9aa5b1",
-            "close_threshold_1_to_2": "#81b29a",
-            "close_ge_threshold_2": "#2a9d8f",
+            "return_le_mean_minus_2sd": "#bc4b51",
+            "return_mean_minus_2sd_to_minus_1sd": "#e07a5f",
+            "return_mean_minus_1sd_to_plus_1sd": "#9aa5b1",
+            "return_mean_plus_1sd_to_plus_2sd": "#81b29a",
+            "return_ge_mean_plus_2sd": "#2a9d8f",
         }
         _ax.bar(
-            _day_counts["close_bucket_label"],
+            _day_counts["nt_ratio_bucket_label"],
             _day_counts["day_count"],
             color=[
                 _bar_colors.get(bucket_key, "#7a7a7a")
-                for bucket_key in _day_counts["close_bucket_key"]
+                for bucket_key in _day_counts["nt_ratio_bucket_key"]
             ],
         )
-        _ax.set_title("TOPIX Close Event Day Counts")
+        _ax.set_title("NT Ratio Return Event Day Counts")
         _ax.set_ylabel("Days")
         _ax.grid(axis="y", alpha=0.2)
         plt.xticks(rotation=15, ha="right")
@@ -346,7 +323,7 @@ def _(error_message, mo, plt, result):
     if not error_message and result is not None:
         _summary_df = result.summary_df.copy()
         _summary_df["label"] = (
-            _summary_df["stock_group"] + "\n" + _summary_df["close_bucket_label"]
+            _summary_df["stock_group"] + "\n" + _summary_df["nt_ratio_bucket_label"]
         )
 
         _fig, _ax = plt.subplots(figsize=(14, 7))
@@ -360,7 +337,7 @@ def _(error_message, mo, plt, result):
         _ax.bar(_x, _flat, bottom=_up + _down, label="Flat", color="#7a7a7a")
         _ax.set_ylim(0.0, 1.0)
         _ax.set_ylabel("Ratio")
-        _ax.set_title("Stock Overnight Up / Down / Flat Ratios by Group and TOPIX Close Bucket")
+        _ax.set_title("Stock Overnight Up / Down / Flat Ratios by Group and NT Ratio Bucket")
         _ax.set_xticks(list(_x))
         _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
         _ax.legend()
@@ -380,7 +357,7 @@ def _(error_message, mo, plt, result):
             _expected_return_chart = mo.md("No sampled rows for expected-return chart.")
         else:
             _summary_df["label"] = (
-                _summary_df["stock_group"] + "\n" + _summary_df["close_bucket_label"]
+                _summary_df["stock_group"] + "\n" + _summary_df["nt_ratio_bucket_label"]
             )
             _summary_df["mean_overnight_return_pct"] = (
                 _summary_df["mean_overnight_return"] * 100.0
@@ -398,7 +375,7 @@ def _(error_message, mo, plt, result):
             _ax.bar(_x, _values, color=_colors)
             _ax.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.7)
             _ax.set_ylabel("Mean overnight return (%)")
-            _ax.set_title("Expected Stock Overnight Return by Group and TOPIX Close Bucket")
+            _ax.set_title("Expected Stock Overnight Return by Group and NT Ratio Bucket")
             _ax.set_xticks(list(_x))
             _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
             _ax.grid(axis="y", alpha=0.2)
@@ -413,9 +390,9 @@ def _(error_message, mo, plt, result):
     _distribution_chart = mo.md("")
     if not error_message and result is not None:
         _plot_df = result.clipped_samples_df
-        _bucket_order = list(result.day_counts_df["close_bucket_key"])
+        _bucket_order = list(result.day_counts_df["nt_ratio_bucket_key"])
         _bucket_labels = {
-            row["close_bucket_key"]: row["close_bucket_label"]
+            row["nt_ratio_bucket_key"]: row["nt_ratio_bucket_label"]
             for _, row in result.day_counts_df.iterrows()
         }
 
@@ -429,7 +406,7 @@ def _(error_message, mo, plt, result):
             _axes = [_axes]
 
         for _ax, _bucket_key in zip(_axes, _bucket_order, strict=True):
-            _bucket_df = _plot_df[_plot_df["close_bucket_key"] == _bucket_key]
+            _bucket_df = _plot_df[_plot_df["nt_ratio_bucket_key"] == _bucket_key]
             _group_order = [
                 group
                 for group in result.selected_groups
@@ -474,7 +451,7 @@ def _(error_message, mo, result):
     if not error_message and result is not None:
         _summary_columns = [
             "stock_group",
-            "close_bucket_label",
+            "nt_ratio_bucket_label",
             "sample_count",
             "up_count",
             "down_count",
@@ -482,6 +459,7 @@ def _(error_message, mo, result):
             "up_ratio",
             "down_ratio",
             "flat_ratio",
+            "mean_nt_ratio_return",
             "mean_overnight_return",
             "mean_overnight_diff",
             "median_overnight_diff",
@@ -493,10 +471,11 @@ def _(error_message, mo, result):
         ]
         _sample_columns = [
             "stock_group",
-            "close_bucket_label",
+            "nt_ratio_bucket_label",
             "date",
             "next_date",
             "code",
+            "nt_ratio_return",
             "overnight_diff",
             "overnight_return",
             "direction",
@@ -506,8 +485,8 @@ def _(error_message, mo, result):
             "stock_group",
             "date",
             "next_date",
-            "close_bucket_label",
-            "topix_close_return",
+            "nt_ratio_bucket_label",
+            "nt_ratio_return",
             "day_mean_overnight_return",
             "day_up_ratio",
             "day_down_ratio",
@@ -545,5 +524,7 @@ def _(error_message, mo, result):
         )
     _table_view
     return
+
+
 if __name__ == "__main__":
     app.run()

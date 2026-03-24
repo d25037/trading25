@@ -12,6 +12,7 @@ from src.domains.analytics import topix_close_stock_overnight_distribution as an
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     format_close_bucket_label,
     get_topix_available_date_range,
+    get_topix_close_return_stats,
     run_topix_close_stock_overnight_distribution,
 )
 
@@ -329,6 +330,38 @@ def test_get_topix_available_date_range_reads_metadata(analytics_db_path: str) -
     )
 
 
+def test_get_topix_close_return_stats_returns_sigma_thresholds(
+    analytics_db_path: str,
+) -> None:
+    stats = get_topix_close_return_stats(
+        analytics_db_path,
+        sigma_threshold_1=1.0,
+        sigma_threshold_2=2.0,
+    )
+
+    assert stats is not None
+    assert stats.sample_count == 5
+    assert stats.mean_return == pytest.approx(-0.0026563740555811052)
+    assert stats.std_return == pytest.approx(0.029862593175283923)
+    assert stats.threshold_1 == pytest.approx(0.029862593175283923)
+    assert stats.threshold_2 == pytest.approx(0.059725186350567845)
+    assert stats.min_return == pytest.approx(-0.04854368932038835)
+    assert stats.median_return == pytest.approx(0.004132231404958678)
+    assert stats.max_return == pytest.approx(0.03)
+
+
+def test_get_topix_close_return_stats_returns_none_when_no_rows(
+    analytics_db_path: str,
+) -> None:
+    stats = get_topix_close_return_stats(
+        analytics_db_path,
+        start_date="2024-01-01",
+        end_date="2024-01-01",
+    )
+
+    assert stats is None
+
+
 def test_lock_contention_falls_back_to_snapshot(
     analytics_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -443,6 +476,11 @@ def test_selected_groups_are_deduplicated(analytics_db_path: str) -> None:
             {"clip_percentiles": (99.0, 99.0)},
             "clip_percentiles must satisfy 0 <= lower < upper <= 100",
         ),
+        ({"sigma_threshold_1": 0.0}, "sigma_threshold_1 must be positive"),
+        (
+            {"sigma_threshold_1": 2.0, "sigma_threshold_2": 2.0},
+            "sigma_threshold_2 must be greater than sigma_threshold_1",
+        ),
     ],
 )
 def test_invalid_inputs_raise(
@@ -450,8 +488,12 @@ def test_invalid_inputs_raise(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
+    target = run_topix_close_stock_overnight_distribution
+    if "sigma_threshold_1" in kwargs or "sigma_threshold_2" in kwargs:
+        target = get_topix_close_return_stats
+
     with pytest.raises(ValueError, match=message):
-        run_topix_close_stock_overnight_distribution(
+        target(
             analytics_db_path,
             **cast(dict[str, Any], kwargs),
         )

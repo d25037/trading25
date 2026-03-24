@@ -15,3 +15,7 @@
   - TOPIX の寄り付き gap を条件に、個別銘柄群の当日 intraday と簡易 rotation ルールを観察する実験。
 - [market-behavior/topix-close-stock-overnight/](./market-behavior/topix-close-stock-overnight/README.md)
   - TOPIX の当日引け変動を条件に、個別銘柄群の `close -> next open` を観察する実験。
+- [market-behavior/nt-ratio-change-stock-overnight/](./market-behavior/nt-ratio-change-stock-overnight/README.md)
+  - NT 倍率の前日比を条件に、個別銘柄群の `close -> next open` を観察する実験。
+- [market-behavior/nt-ratio-change-topix-close-stock-overnight/](./market-behavior/nt-ratio-change-topix-close-stock-overnight/README.md)
+  - NT 倍率前日比と TOPIX 引け変動の joint regime ごとに、個別銘柄群の `close -> next open` を観察する実験。
