@@ -382,8 +382,11 @@ describe('ChartControls', () => {
     fireEvent.click(upButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
+    const [firstFundamentalMetric] = DEFAULT_FUNDAMENTAL_METRIC_ORDER;
+    expect(firstFundamentalMetric).toBeDefined();
+    if (!firstFundamentalMetric) return;
     mockChartStore.settings.fundamentalsMetricOrder = [
-      DEFAULT_FUNDAMENTAL_METRIC_ORDER[0]!,
+      firstFundamentalMetric,
       undefined as unknown as (typeof DEFAULT_FUNDAMENTAL_METRIC_ORDER)[number],
       ...DEFAULT_FUNDAMENTAL_METRIC_ORDER.slice(2),
     ];
@@ -447,8 +450,11 @@ describe('ChartControls', () => {
     fireEvent.click(upButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
+    const [firstHistoryMetric] = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER;
+    expect(firstHistoryMetric).toBeDefined();
+    if (!firstHistoryMetric) return;
     mockChartStore.settings.fundamentalsHistoryMetricOrder = [
-      DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER[0]!,
+      firstHistoryMetric,
       undefined as unknown as (typeof DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER)[number],
       ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2),
     ];
