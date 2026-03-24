@@ -2,14 +2,9 @@ import { DateInput, type MarketOption, MarketsSelect, NumberSelect } from '@/com
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { canonicalizeMarkets, formatMarketsLabel } from '@/lib/marketUtils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type {
-  EntryDecidability,
-  ScreeningParams,
-  ScreeningSortBy,
-  SortOrder,
-} from '@/types/screening';
+import { canonicalizeMarkets, formatMarketsLabel } from '@/lib/marketUtils';
+import type { EntryDecidability, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },
@@ -108,9 +103,7 @@ export function ScreeningFilters({
 
   const selectedStrategies = parseSelectedStrategies(params.strategies);
   const strategyGroupLabel =
-    entryDecidability === 'requires_same_session_observation'
-      ? 'in-session production'
-      : 'pre-open production';
+    entryDecidability === 'requires_same_session_observation' ? 'in-session production' : 'pre-open production';
   const selectedMarketsValue = normalizeMarketsValue(params.markets);
   const marketOptions = buildMarketsOptions(autoMarkets, selectedMarketsValue);
 

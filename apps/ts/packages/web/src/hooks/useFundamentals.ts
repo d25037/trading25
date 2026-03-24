@@ -35,9 +35,7 @@ const FUNDAMENTALS_QUERY_KEY_VERSION = 'v2';
 export function useFundamentals(symbol: string | null, options: UseFundamentalsOptions = {}) {
   const { enabled = true, tradingValuePeriod = 15, forecastEpsLookbackFyCount = 3 } = options;
   const normalizedTradingValuePeriod = normalizeTradingValuePeriod(tradingValuePeriod);
-  const normalizedForecastEpsLookbackFyCount = normalizeForecastEpsLookbackFyCount(
-    forecastEpsLookbackFyCount
-  );
+  const normalizedForecastEpsLookbackFyCount = normalizeForecastEpsLookbackFyCount(forecastEpsLookbackFyCount);
 
   return useQuery({
     queryKey: [
@@ -49,11 +47,7 @@ export function useFundamentals(symbol: string | null, options: UseFundamentalsO
     ],
     queryFn: () => {
       if (!symbol) throw new Error('Symbol is required');
-      return fetchFundamentals(
-        symbol,
-        normalizedTradingValuePeriod,
-        normalizedForecastEpsLookbackFyCount
-      );
+      return fetchFundamentals(symbol, normalizedTradingValuePeriod, normalizedForecastEpsLookbackFyCount);
     },
     enabled: !!symbol && enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes (financial data changes infrequently)

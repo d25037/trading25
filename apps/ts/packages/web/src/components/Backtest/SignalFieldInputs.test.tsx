@@ -16,14 +16,21 @@ vi.mock('@/components/ui/select', () => ({
     onValueChange: (value: string) => void;
     disabled?: boolean;
   }) => (
-    <select aria-label="mock-select" value={value} onChange={(event) => onValueChange(event.target.value)} disabled={disabled}>
+    <select
+      aria-label="mock-select"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+      disabled={disabled}
+    >
       {children}
     </select>
   ),
   SelectTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   SelectValue: () => null,
   SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => <option value={value}>{children}</option>,
+  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
 }));
 
 vi.mock('@/components/ui/switch', () => ({

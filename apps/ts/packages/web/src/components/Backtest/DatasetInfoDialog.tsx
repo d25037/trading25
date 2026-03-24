@@ -193,7 +193,9 @@ function StorageSection({ info }: { info: DatasetInfoResponse }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded px-2 py-0.5 text-xs font-medium ${storageClass(info)}`}>{storageLabel(info)}</span>
           {info.storage.hasCompatibilityArtifact && (
-            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">legacy dataset.db compatibility</span>
+            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              legacy dataset.db compatibility
+            </span>
           )}
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">

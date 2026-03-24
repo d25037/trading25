@@ -2,8 +2,8 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
-import { createTestWrapper } from '@/test-utils';
 import type { SignalOverlaySettings } from '@/stores/chartStore';
+import { createTestWrapper } from '@/test-utils';
 import { btSignalKeys, buildSignalSpecs, useBtSignals } from './useBtSignals';
 
 vi.mock('@/lib/api-client', () => ({
@@ -63,9 +63,7 @@ describe('btSignalKeys', () => {
       '{"specs":[],"relativeMode":false}',
       'manual',
     ]);
-    expect(
-      btSignalKeys.compute('7203', 'weekly', '{"specs":[],"relativeMode":true}', 'production/demo')
-    ).toEqual([
+    expect(btSignalKeys.compute('7203', 'weekly', '{"specs":[],"relativeMode":true}', 'production/demo')).toEqual([
       'bt-signals',
       'compute',
       '7203',
@@ -266,10 +264,7 @@ describe('useBtSignals', () => {
     });
 
     expect(mockApiPost.mock.calls[0]?.[1]).toMatchObject({
-      signals: [
-        { type: 'buy_and_hold' },
-        { type: 'trading_value' },
-      ],
+      signals: [{ type: 'buy_and_hold' }, { type: 'trading_value' }],
     });
     expect(mockApiPost.mock.calls[1]?.[1]).toMatchObject({
       signals: [{ type: 'buy_and_hold' }],

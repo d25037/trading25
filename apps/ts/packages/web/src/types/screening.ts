@@ -3,18 +3,14 @@
  * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
-import type {
-  EntryDecidability,
-  ScreeningSortBy,
-  SortOrder,
-} from '@trading25/contracts/types/api-response-types';
+import type { EntryDecidability, ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 
 export type {
-  MatchedStrategyItem,
+  EntryDecidability,
   MarketScreeningResponse,
+  MatchedStrategyItem,
   ScreeningJobRequest,
   ScreeningJobResponse,
-  EntryDecidability,
   ScreeningResultItem,
   ScreeningSortBy,
   ScreeningSummary,

@@ -17,14 +17,21 @@ vi.mock('@/components/ui/select', () => ({
     onValueChange: (value: string) => void;
     disabled?: boolean;
   }) => (
-    <select aria-label="mock-select" value={value} onChange={(event) => onValueChange(event.target.value)} disabled={disabled}>
+    <select
+      aria-label="mock-select"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+      disabled={disabled}
+    >
       {children}
     </select>
   ),
   SelectTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   SelectValue: ({ placeholder }: { placeholder?: string }) => <option value="">{placeholder ?? 'Select value'}</option>,
   SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => <option value={value}>{children}</option>,
+  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
 }));
 
 vi.mock('@/components/ui/switch', () => ({
@@ -124,7 +131,13 @@ describe('MetadataFieldControl', () => {
 
     const { rerender } = render(
       <MetadataFieldControl
-        field={{ ...baseField, path: 'include_margin_data', label: 'Include Margin Data', type: 'boolean', widget: 'switch' }}
+        field={{
+          ...baseField,
+          path: 'include_margin_data',
+          label: 'Include Margin Data',
+          type: 'boolean',
+          widget: 'switch',
+        }}
         value={false}
         overridden={true}
         onChange={onSwitchChange}
@@ -166,7 +179,13 @@ describe('MetadataFieldControl', () => {
 
     rerender(
       <MetadataFieldControl
-        field={{ ...baseField, widget: 'select', type: 'select', label: 'Execution Policy', options: ['standard', 'next_session_round_trip'] }}
+        field={{
+          ...baseField,
+          widget: 'select',
+          type: 'select',
+          label: 'Execution Policy',
+          options: ['standard', 'next_session_round_trip'],
+        }}
         value="standard"
         overridden={true}
         onChange={onChange}

@@ -90,7 +90,9 @@ describe('validateStrategyConfigLocally', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('entry_filter_params.volume_ratio_above.unknown_param is not a valid parameter name');
+    expect(result.errors).toContain(
+      'entry_filter_params.volume_ratio_above.unknown_param is not a valid parameter name'
+    );
   });
 
   it('validates kelly_fraction max as 2', () => {
@@ -383,7 +385,9 @@ describe('validateStrategyConfigLocally', () => {
 
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
-    expect(result.warnings).toContain('Signal reference is unavailable, so parameter-name validation may be incomplete');
+    expect(result.warnings).toContain(
+      'Signal reference is unavailable, so parameter-name validation may be incomplete'
+    );
   });
 
   it('returns error when both entry and exit sections are missing', () => {

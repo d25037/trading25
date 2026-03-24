@@ -120,7 +120,11 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }} onScroll={virtual.onScroll}>
+      <CardContent
+        className="p-0 overflow-auto"
+        style={{ maxHeight: 'calc(100vh - 280px)' }}
+        onScroll={virtual.onScroll}
+      >
         <DataStateWrapper
           isLoading={isLoading}
           error={error}

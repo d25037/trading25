@@ -33,14 +33,7 @@ describe('SyncStatusCard', () => {
   it('shows running progress with BULK fetch info and triggers cancel', async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
-    render(
-      <SyncStatusCard
-        job={createJob()}
-        isLoading={false}
-        onCancel={onCancel}
-        isCancelling={false}
-      />
-    );
+    render(<SyncStatusCard job={createJob()} isLoading={false} onCancel={onCancel} isCancelling={false} />);
 
     expect(screen.getByText('Running')).toBeInTheDocument();
     expect(screen.getByText('stock_data')).toBeInTheDocument();
@@ -344,14 +337,7 @@ describe('SyncStatusCard', () => {
 
   it('handles unexpected status value without crashing', () => {
     const unknownStatusJob = { ...createJob({ progress: undefined }), status: 'unknown' } as unknown as SyncJobResponse;
-    render(
-      <SyncStatusCard
-        job={unknownStatusJob}
-        isLoading={false}
-        onCancel={vi.fn()}
-        isCancelling={false}
-      />
-    );
+    render(<SyncStatusCard job={unknownStatusJob} isLoading={false} onCancel={vi.fn()} isCancelling={false} />);
 
     expect(screen.getByText('Mode: incremental')).toBeInTheDocument();
   });

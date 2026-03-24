@@ -4,8 +4,9 @@ import {
   extractLegacyChartsSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
-  getRankingStateFromSearch,
+  extractLegacyScreeningSearch,
   getRankingStateFromScreeningSearch,
+  getRankingStateFromSearch,
   getScreeningStateFromSearch,
   prunePersistedStoreFields,
   readPersistedStoreState,
@@ -22,7 +23,6 @@ import {
   validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
-  extractLegacyScreeningSearch,
 } from './routeSearch';
 
 function createMemoryStorage(initial: Record<string, string> = {}): Storage {

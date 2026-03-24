@@ -6,8 +6,8 @@ import type {
   DatasetCreateRequest,
   DatasetDeleteResponse,
   DatasetInfoResponse,
-  DatasetListItem,
   DatasetJobResponse,
+  DatasetListItem,
   DatasetListResponse,
 } from '@/types/dataset';
 import { logger } from '@/utils/logger';
@@ -94,11 +94,13 @@ function normalizeStorage(path: string, storage: DatasetStorage | null | undefin
 }
 
 function normalizeLegacyValidation(snapshot: LegacySnapshot): LegacyValidation {
-  return snapshot.validation ?? {
-    isValid: true,
-    errors: [],
-    warnings: [],
-  };
+  return (
+    snapshot.validation ?? {
+      isValid: true,
+      errors: [],
+      warnings: [],
+    }
+  );
 }
 
 function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): DatasetInfoResponse {

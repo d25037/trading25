@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { createChart } from 'lightweight-charts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CHART_DIMENSIONS } from '@/lib/constants';
 import type { LinePricePoint } from './LinePriceChart';
 import { LinePriceChart } from './LinePriceChart';
-import { CHART_DIMENSIONS } from '@/lib/constants';
 
 const mockSetData = vi.fn();
 const mockSetVisibleLogicalRange = vi.fn();

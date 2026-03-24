@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { N225OptionItem } from '@/types/options225';
 import {
   buildOptionsComparator,
   filterOptionsItems,
@@ -9,7 +10,6 @@ import {
   resolveSelectedOptionRowKey,
   summarizeFilteredOptions,
 } from './options225';
-import type { N225OptionItem } from '@/types/options225';
 
 function createItem(overrides: Partial<N225OptionItem>): N225OptionItem {
   return {
@@ -99,7 +99,13 @@ describe('options225 helpers', () => {
     expect(buildOptionsComparator('impliedVolatility', 'asc')(baseLeft, baseRight)).toBeLessThan(0);
     expect(buildOptionsComparator('wholeDayClose', 'asc')(baseLeft, baseRight)).toBeLessThan(0);
 
-    const nullLeft = createItem({ code: 'C', openInterest: null, volume: null, strikePrice: null, contractMonth: null });
+    const nullLeft = createItem({
+      code: 'C',
+      openInterest: null,
+      volume: null,
+      strikePrice: null,
+      contractMonth: null,
+    });
     const nullRight = createItem({ code: 'D', openInterest: 1, volume: 1, strikePrice: 1, contractMonth: '2026-04' });
     expect(buildOptionsComparator('openInterest', 'asc')(nullLeft, nullRight)).toBeGreaterThan(0);
     expect(buildOptionsComparator('volume', 'asc')(nullLeft, nullRight)).toBeGreaterThan(0);

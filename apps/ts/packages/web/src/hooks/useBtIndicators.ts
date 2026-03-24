@@ -220,7 +220,10 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
 }> = [
   { prefix: 'sma_', transform: (r) => ({ target: 'indicator', name: 'sma', data: transformSingleValueRecords(r) }) },
   { prefix: 'ema_', transform: (r) => ({ target: 'indicator', name: 'ema', data: transformSingleValueRecords(r) }) },
-  { prefix: 'vwema_', transform: (r) => ({ target: 'indicator', name: 'vwema', data: transformSingleValueRecords(r) }) },
+  {
+    prefix: 'vwema_',
+    transform: (r) => ({ target: 'indicator', name: 'vwema', data: transformSingleValueRecords(r) }),
+  },
   { prefix: 'macd_', transform: (r) => ({ target: 'indicator', name: 'macd', data: transformMACDRecords(r) }) },
   { prefix: 'ppo_', transform: (r) => ({ target: 'indicator', name: 'ppo', data: transformPPORecords(r) }) },
   { prefix: 'bollinger_', transform: (r) => ({ target: 'bollinger', data: transformBollingerRecords(r) }) },
@@ -295,10 +298,10 @@ export function useBtIndicators(
 ) {
   const specs = useMemo(() => buildIndicatorSpecs(settings), [settings]);
 
-  const specsKey = useMemo(() => JSON.stringify({ specs, relativeMode: settings.relativeMode }), [
-    specs,
-    settings.relativeMode,
-  ]);
+  const specsKey = useMemo(
+    () => JSON.stringify({ specs, relativeMode: settings.relativeMode }),
+    [specs, settings.relativeMode]
+  );
 
   const query = useQuery({
     queryKey: btIndicatorKeys.compute(stockCode ?? '', timeframe, specsKey),

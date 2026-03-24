@@ -79,10 +79,7 @@ interface UseBtMarginIndicatorsOptions {
   enabled?: boolean;
 }
 
-export function useBtMarginIndicators(
-  symbol: string | null,
-  options: number | UseBtMarginIndicatorsOptions = 15
-) {
+export function useBtMarginIndicators(symbol: string | null, options: number | UseBtMarginIndicatorsOptions = 15) {
   const { period, enabled } =
     typeof options === 'number'
       ? { period: options, enabled: true }

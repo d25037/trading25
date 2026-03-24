@@ -22,13 +22,7 @@ function createItem(overrides: Partial<IndexPerformanceItem>): IndexPerformanceI
 describe('IndexPerformanceTable', () => {
   it('renders empty state with selected lookback days', () => {
     render(
-      <IndexPerformanceTable
-        items={[]}
-        isLoading={false}
-        error={null}
-        onIndexClick={vi.fn()}
-        lookbackDays={10}
-      />
+      <IndexPerformanceTable items={[]} isLoading={false} error={null} onIndexClick={vi.fn()} lookbackDays={10} />
     );
 
     expect(screen.getByText('Baseline: 10 trading sessions before each index close')).toBeInTheDocument();

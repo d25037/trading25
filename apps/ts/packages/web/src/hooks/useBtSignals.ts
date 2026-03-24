@@ -95,10 +95,7 @@ export function buildSignalSpecs(settings: SignalOverlaySettings | undefined): B
     }));
 }
 
-function createMarkersForResult(
-  result: BtSignalResult,
-  fallbackLabel: string
-): SignalMarker[] {
+function createMarkersForResult(result: BtSignalResult, fallbackLabel: string): SignalMarker[] {
   const isEntry = result.mode !== 'exit';
   const color = isEntry ? '#26a69a' : '#ef5350';
   const shape = isEntry ? 'arrowUp' : 'arrowDown';
@@ -150,10 +147,7 @@ function mapBtResponseToMarkers(
 
 const EMPTY_MARKERS: SignalMarker[] = [];
 
-function supportsRelativeMode(
-  signalType: string,
-  definitionsByType: Map<string, SignalDefinition>
-): boolean {
+function supportsRelativeMode(signalType: string, definitionsByType: Map<string, SignalDefinition>): boolean {
   const definition = definitionsByType.get(signalType);
   if (definition) {
     return definition.chart?.supports_relative_mode !== false;

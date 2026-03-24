@@ -1,14 +1,10 @@
-import {
-  BarChart3,
-  Calendar,
-  Filter,
-  Loader2,
-  RefreshCcw,
-  Sigma,
-  type LucideIcon,
-} from 'lucide-react';
+import type {
+  Options225PutCallFilter,
+  Options225SortBy,
+  SortOrder,
+} from '@trading25/contracts/types/api-response-types';
+import { BarChart3, Calendar, Filter, Loader2, type LucideIcon, RefreshCcw, Sigma } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { Options225PutCallFilter, Options225SortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 import { DateInput } from '@/components/shared/filters';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,8 +16,8 @@ import {
   formatOptionsNumber,
   formatOptionsRange,
   getOptionRowKey,
-  parseOptionsNumericInput,
   type Options225FilteredSummary,
+  parseOptionsNumericInput,
 } from '@/lib/options225';
 import { cn } from '@/lib/utils';
 import type { N225OptionItem, N225OptionsExplorerResponse } from '@/types/options225';
@@ -99,13 +95,21 @@ export function N225OptionsSummaryGrid({
       />
       <SummaryCard
         title="Strike Range"
-        value={formatOptionsRange(data?.summary.strikePriceRange.min ?? null, data?.summary.strikePriceRange.max ?? null, 0)}
+        value={formatOptionsRange(
+          data?.summary.strikePriceRange.min ?? null,
+          data?.summary.strikePriceRange.max ?? null,
+          0
+        )}
         detail={`Months: ${(data?.availableContractMonths ?? []).length}`}
         icon={Sigma}
       />
       <SummaryCard
         title="Underlying Range"
-        value={formatOptionsRange(data?.summary.underlyingPriceRange.min ?? null, data?.summary.underlyingPriceRange.max ?? null, 2)}
+        value={formatOptionsRange(
+          data?.summary.underlyingPriceRange.min ?? null,
+          data?.summary.underlyingPriceRange.max ?? null,
+          2
+        )}
         detail={`Last updated: ${data?.lastUpdated ?? '-'}`}
         icon={Calendar}
       />
@@ -162,7 +166,12 @@ export function N225OptionsFiltersCard(props: {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <DateInput value={date ?? undefined} onChange={(value) => setDate(value ?? null)} id="options-225-date" label="Trade Date" />
+        <DateInput
+          value={date ?? undefined}
+          onChange={(value) => setDate(value ?? null)}
+          id="options-225-date"
+          label="Trade Date"
+        />
 
         <div className="space-y-2">
           <Label htmlFor="put-call" className="text-xs">
@@ -186,7 +195,10 @@ export function N225OptionsFiltersCard(props: {
           <Label htmlFor="contract-month" className="text-xs">
             Contract Month
           </Label>
-          <Select value={contractMonth ?? 'all'} onValueChange={(value) => setContractMonth(value === 'all' ? null : value)}>
+          <Select
+            value={contractMonth ?? 'all'}
+            onValueChange={(value) => setContractMonth(value === 'all' ? null : value)}
+          >
             <SelectTrigger id="contract-month" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -280,7 +292,8 @@ export function N225OptionsChainCard(props: {
   setSelectedRowKey: (rowKey: string) => void;
   onRefresh: () => void;
 }) {
-  const { filteredItems, totalCount, isLoading, error, isFetching, selectedRowKey, setSelectedRowKey, onRefresh } = props;
+  const { filteredItems, totalCount, isLoading, error, isFetching, selectedRowKey, setSelectedRowKey, onRefresh } =
+    props;
   const shouldVirtualize = filteredItems.length >= VIRTUALIZATION_THRESHOLD;
   const virtual = useVirtualizedRows(filteredItems, {
     enabled: shouldVirtualize,
@@ -344,10 +357,14 @@ export function N225OptionsChainCard(props: {
                   <TableCell>{item.contractMonth ?? '-'}</TableCell>
                   <TableCell className="uppercase">{item.putCallLabel ?? '-'}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatOptionsNumber(item.strikePrice, 0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatOptionsNumber(item.wholeDayClose, 2)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatOptionsNumber(item.wholeDayClose, 2)}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{formatOptionsNumber(item.volume, 0)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatOptionsNumber(item.openInterest, 0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatOptionsNumber(item.impliedVolatility, 2)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatOptionsNumber(item.impliedVolatility, 2)}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -369,7 +386,9 @@ export function N225OptionsChainCard(props: {
           <div>
             <CardTitle className="text-base">Options Chain</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
-              {isLoading ? 'Resolving date and loading contracts...' : `${filteredItems.length} filtered contracts from ${totalCount} total`}
+              {isLoading
+                ? 'Resolving date and loading contracts...'
+                : `${filteredItems.length} filtered contracts from ${totalCount} total`}
             </p>
           </div>
           <button

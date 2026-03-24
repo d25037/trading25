@@ -47,12 +47,12 @@ export function DatasetCreateForm() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          新規 dataset は snapshot として保存されます。出力は <code>dataset.duckdb</code>、
-          <code>parquet/</code>、<code>manifest.v2.json</code> です。
+          新規 dataset は snapshot として保存されます。出力は <code>dataset.duckdb</code>、<code>parquet/</code>、
+          <code>manifest.v2.json</code> です。
         </p>
         <p className="text-xs text-amber-700">
-          <code>作成</code> は <code>market.duckdb</code> を source of truth とした batch copy で dataset
-          snapshot を作成します。J-Quants へは fetch しません。
+          <code>作成</code> は <code>market.duckdb</code> を source of truth とした batch copy で dataset snapshot
+          を作成します。J-Quants へは fetch しません。
         </p>
 
         <div className="space-y-2">

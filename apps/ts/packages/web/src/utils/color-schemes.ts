@@ -70,11 +70,7 @@ export function getReturnColor(value: number | null | undefined): string {
   return 'text-muted-foreground';
 }
 
-function getTieredHigherIsBetterColor(
-  value: number,
-  excellentThreshold: number,
-  acceptableThreshold: number
-): string {
+function getTieredHigherIsBetterColor(value: number, excellentThreshold: number, acceptableThreshold: number): string {
   if (value >= excellentThreshold) return 'text-green-500';
   if (value >= acceptableThreshold) return 'text-yellow-500';
   return 'text-red-500';

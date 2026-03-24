@@ -159,7 +159,14 @@ function buildCrosshairOHLC(
   };
 }
 
-export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands, vwema, signalMarkers = [] }: StockChartProps) {
+export function StockChart({
+  data = [],
+  atrSupport,
+  nBarSupport,
+  bollingerBands,
+  vwema,
+  signalMarkers = [],
+}: StockChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);

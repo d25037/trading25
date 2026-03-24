@@ -1,5 +1,5 @@
-import type { UIEvent } from 'react';
 import { act, renderHook } from '@testing-library/react';
+import type { UIEvent } from 'react';
 import { describe, expect, it } from 'vitest';
 import { useVirtualizedRows } from './useVirtualizedRows';
 

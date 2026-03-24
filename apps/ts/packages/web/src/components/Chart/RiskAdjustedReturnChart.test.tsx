@@ -13,8 +13,8 @@ vi.mock('@/stores/chartStore', () => ({
   useChartStore: () => mockChartStore,
 }));
 
-const { mockCreateChart, mockChart, mockRatioSeries, mockThresholdSeries, mockTimeScale, mockLineSeries } =
-  vi.hoisted(() => {
+const { mockCreateChart, mockChart, mockRatioSeries, mockThresholdSeries, mockTimeScale, mockLineSeries } = vi.hoisted(
+  () => {
     const mockRatioSeries = {
       setData: vi.fn(),
       applyOptions: vi.fn(),
@@ -43,7 +43,8 @@ const { mockCreateChart, mockChart, mockRatioSeries, mockThresholdSeries, mockTi
       mockTimeScale,
       mockLineSeries,
     };
-  });
+  }
+);
 
 vi.mock('lightweight-charts', () => ({
   createChart: mockCreateChart,
@@ -119,13 +120,7 @@ describe('RiskAdjustedReturnChart', () => {
 
   it('clears chart data when data is empty', () => {
     render(
-      <RiskAdjustedReturnChart
-        data={[]}
-        lookbackPeriod={30}
-        ratioType="sharpe"
-        threshold={0.5}
-        condition="above"
-      />
+      <RiskAdjustedReturnChart data={[]} lookbackPeriod={30} ratioType="sharpe" threshold={0.5} condition="above" />
     );
 
     expect(mockRatioSeries.setData).toHaveBeenCalledWith([]);

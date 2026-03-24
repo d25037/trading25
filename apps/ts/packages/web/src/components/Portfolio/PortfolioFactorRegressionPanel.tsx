@@ -96,7 +96,9 @@ function IndexMatchList({ matches }: { matches: ApiIndexMatch[] }) {
             </span>
             <div className="flex items-center gap-2 ml-2 shrink-0">
               <span
-                className={normalized.rSquared === null ? 'text-muted-foreground' : getRSquaredColor(normalized.rSquared)}
+                className={
+                  normalized.rSquared === null ? 'text-muted-foreground' : getRSquaredColor(normalized.rSquared)
+                }
               >
                 R²={formatPercentFromRatio(normalized.rSquared, 1)}
               </span>
@@ -143,7 +145,9 @@ function WeightSummary({ weights, totalValue }: { weights: ApiPortfolioWeight[];
       <div className="border-t border-border/50 pt-1 mt-1">
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground">Total Value</span>
-          <span className="font-medium">{isFiniteNumber(totalValue) ? `${totalValue.toLocaleString()} 円` : 'N/A'}</span>
+          <span className="font-medium">
+            {isFiniteNumber(totalValue) ? `${totalValue.toLocaleString()} 円` : 'N/A'}
+          </span>
         </div>
       </div>
     </div>
@@ -235,7 +239,9 @@ function PortfolioFactorRegressionContent({ data }: PortfolioFactorRegressionCon
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">Market R²</span>
-              <span className={`text-sm font-mono ${marketRSquared === null ? 'text-muted-foreground' : getRSquaredColor(marketRSquared)}`}>
+              <span
+                className={`text-sm font-mono ${marketRSquared === null ? 'text-muted-foreground' : getRSquaredColor(marketRSquared)}`}
+              >
                 {formatPercentFromRatio(marketRSquared, 1)}
               </span>
             </div>

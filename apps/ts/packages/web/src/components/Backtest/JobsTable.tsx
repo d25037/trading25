@@ -1,4 +1,4 @@
-import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
+import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
@@ -45,9 +45,7 @@ export function JobsTable({ jobs, isLoading, onSelectJob, selectedJobId }: JobsT
     {
       key: 'totalReturn',
       header: 'Return',
-      render: (job) => (
-        <span className={`text-sm ${returnColorClass(job.result)}`}>{formatReturn(job.result)}</span>
-      ),
+      render: (job) => <span className={`text-sm ${returnColorClass(job.result)}`}>{formatReturn(job.result)}</span>,
     },
   ];
 

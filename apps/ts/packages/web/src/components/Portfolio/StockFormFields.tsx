@@ -1,6 +1,6 @@
+import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 
 export interface StockFormData {

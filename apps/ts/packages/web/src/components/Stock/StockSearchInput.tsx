@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { type StockSearchResultItem, useStockSearch } from '@/hooks/useStockSearch';
 import { cn } from '@/lib/utils';

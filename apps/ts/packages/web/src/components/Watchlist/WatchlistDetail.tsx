@@ -1,5 +1,5 @@
-import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
+import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
@@ -17,13 +17,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import {
   useAddWatchlistItem,
   useDeleteWatchlist,
   useRemoveWatchlistItem,
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
-import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import type { WatchlistItem, WatchlistStockPrice, WatchlistWithItems } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 

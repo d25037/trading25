@@ -336,9 +336,7 @@ describe('ChartsPage', () => {
     renderChartsPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open Market DB/i })).not.toBeInTheDocument();
   });
 
@@ -359,9 +357,7 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
 
-    expect(
-      screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)).toBeInTheDocument();
     expect(screen.queryByText(/Relative mode requires local TOPIX data/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open Market DB/i })).not.toBeInTheDocument();
   });
@@ -384,9 +380,7 @@ describe('ChartsPage', () => {
     renderChartsPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/Relative mode requires local TOPIX data/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Relative mode requires local TOPIX data/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Open Market DB/i })).toHaveAttribute('href', '/market-db');
   });
 
@@ -877,9 +871,7 @@ describe('ChartsPage', () => {
     });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
-        data: options?.enabled
-          ? { dailyValuation: [{ marketCap: 1000000000, freeFloatMarketCap: 800000000 }] }
-          : null,
+        data: options?.enabled ? { dailyValuation: [{ marketCap: 1000000000, freeFloatMarketCap: 800000000 }] } : null,
       })
     );
 

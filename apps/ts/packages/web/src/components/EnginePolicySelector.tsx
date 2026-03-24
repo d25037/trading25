@@ -1,7 +1,7 @@
-import type { EnginePolicy, EnginePolicyMode } from '@/types/backtest';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { EnginePolicy, EnginePolicyMode } from '@/types/backtest';
 
 interface EnginePolicySelectorProps {
   mode: EnginePolicyMode;
@@ -55,9 +55,7 @@ export function buildEnginePolicy(mode: EnginePolicyMode, verificationTopK: stri
   const policy: EnginePolicy = { mode };
   if (mode === 'fast_then_verify') {
     const parsedTopK = Number.parseInt(verificationTopK, 10);
-    policy.verification_top_k = Number.isFinite(parsedTopK)
-      ? Math.min(10, Math.max(1, parsedTopK))
-      : 5;
+    policy.verification_top_k = Number.isFinite(parsedTopK) ? Math.min(10, Math.max(1, parsedTopK)) : 5;
   }
   return policy;
 }

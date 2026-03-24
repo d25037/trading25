@@ -17,34 +17,16 @@ vi.mock('@/components/shared/filters', () => ({
       Date Input
     </button>
   ),
-  MarketsSelect: ({
-    onChange,
-    id,
-  }: {
-    onChange: (value: string) => void;
-    id?: string;
-  }) => (
+  MarketsSelect: ({ onChange, id }: { onChange: (value: string) => void; id?: string }) => (
     <button type="button" data-testid={id} onClick={() => onChange('prime,standard')}>
       Markets Select
     </button>
   ),
-  NumberSelect: ({
-    label,
-    onChange,
-    id,
-  }: {
-    label: string;
-    onChange: (value: number) => void;
-    id: string;
-  }) => (
+  NumberSelect: ({ label, onChange, id }: { label: string; onChange: (value: number) => void; id: string }) => (
     <button
       type="button"
       data-testid={id}
-      onClick={() =>
-        onChange(
-          label === 'Lookback Days' ? 5 : label === 'Results per ranking' ? 50 : 120
-        )
-      }
+      onClick={() => onChange(label === 'Lookback Days' ? 5 : label === 'Results per ranking' ? 50 : 120)}
     >
       {label}
     </button>

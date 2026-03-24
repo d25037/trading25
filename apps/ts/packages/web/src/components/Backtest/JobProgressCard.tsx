@@ -78,7 +78,9 @@ function CompletedSummary({ result }: { result: BacktestJobResponse['result'] })
         </div>
         <div>
           <span className="text-muted-foreground">Max DD:</span>
-          <span className="ml-2 font-medium text-red-500">{formatPercentage(result.max_drawdown, { showSign: false })}</span>
+          <span className="ml-2 font-medium text-red-500">
+            {formatPercentage(result.max_drawdown, { showSign: false })}
+          </span>
         </div>
         <div>
           <span className="text-muted-foreground">Trades:</span>
@@ -94,7 +96,11 @@ function StatusAlert({ job }: { job: BacktestJobResponse }) {
     return <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{job.error}</div>;
   }
   if (job.status === 'cancelled') {
-    return <div className="rounded-md bg-orange-500/10 p-3 text-sm text-orange-500">{job.message ?? 'Backtest was cancelled'}</div>;
+    return (
+      <div className="rounded-md bg-orange-500/10 p-3 text-sm text-orange-500">
+        {job.message ?? 'Backtest was cancelled'}
+      </div>
+    );
   }
   return null;
 }

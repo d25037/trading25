@@ -7,8 +7,8 @@ import type {
   LabJobResponse,
   LabOptimizeRequest,
   LabOptimizeTrialRecommendationResponse,
-  LabTargetScope,
   LabSignalCategory,
+  LabTargetScope,
 } from '@/types/backtest';
 import { logger } from '@/utils/logger';
 
@@ -17,11 +17,8 @@ export const labKeys = {
   jobsAll: () => [...labKeys.all, 'jobs'] as const,
   jobs: (limit?: number) => [...labKeys.jobsAll(), limit] as const,
   job: (jobId: string) => [...labKeys.all, 'job', jobId] as const,
-  optimizeRecommendation: (
-    strategyName: string,
-    targetScope: LabTargetScope,
-    allowedCategories: LabSignalCategory[]
-  ) => [...labKeys.all, 'optimize-recommendation', strategyName, targetScope, allowedCategories] as const,
+  optimizeRecommendation: (strategyName: string, targetScope: LabTargetScope, allowedCategories: LabSignalCategory[]) =>
+    [...labKeys.all, 'optimize-recommendation', strategyName, targetScope, allowedCategories] as const,
 };
 
 function fetchLabJobs(limit = 50): Promise<LabJobResponse[]> {

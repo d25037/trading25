@@ -105,10 +105,7 @@ describe('DatasetJobProgress', () => {
     fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
     expect(mockCancelMutate).toHaveBeenCalledWith('job-running', expect.any(Object));
 
-    const [, options] = mockCancelMutate.mock.calls[0] as [
-      string,
-      { onSuccess?: () => void } | undefined,
-    ];
+    const [, options] = mockCancelMutate.mock.calls[0] as [string, { onSuccess?: () => void } | undefined];
     options?.onSuccess?.();
     expect(mockSetActiveDatasetJobId).toHaveBeenCalledWith(null);
   });

@@ -71,13 +71,7 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
                 <tr
                   key={`${result.stockCode}-${result.matchedDate}-${result.bestStrategyName}`}
                   className="border-b border-border/30 hover:bg-accent/30 cursor-pointer transition-colors"
-                  onClick={() =>
-                    onStockClick(
-                      result.stockCode,
-                      result.bestStrategyName,
-                      result.matchedDate
-                    )
-                  }
+                  onClick={() => onStockClick(result.stockCode, result.bestStrategyName, result.matchedDate)}
                 >
                   <td className="p-2 text-muted-foreground tabular-nums">{formatDateShort(result.matchedDate)}</td>
                   <td className="p-2 font-medium">{result.stockCode}</td>

@@ -5,8 +5,8 @@ import { useAddPortfolioItem } from '@/hooks/usePortfolio';
 import { AddStockDialog } from './AddStockDialog';
 
 const mockMutate = vi.fn();
-const mockValidateStockForm = vi.fn((data: { code?: string; purchasePrice: string }) =>
-  Boolean((data.code || '').trim()) && data.purchasePrice.length > 0
+const mockValidateStockForm = vi.fn(
+  (data: { code?: string; purchasePrice: string }) => Boolean((data.code || '').trim()) && data.purchasePrice.length > 0
 );
 
 vi.mock('@/hooks/usePortfolio', () => ({

@@ -59,7 +59,15 @@ export function NumberInput({ label, value, onChange, step, defaultValue = 0, di
       <Label htmlFor={inputId} className="text-xs text-muted-foreground">
         {label}
       </Label>
-      <Input id={inputId} type="number" step={step} value={value} onChange={handleChange} className="h-7 text-xs" disabled={disabled} />
+      <Input
+        id={inputId}
+        type="number"
+        step={step}
+        value={value}
+        onChange={handleChange}
+        className="h-7 text-xs"
+        disabled={disabled}
+      />
     </div>
   );
 }

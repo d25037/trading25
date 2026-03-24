@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getCashFlowColor,
   getCfoMarginColor,
   getCfoYieldColor,
-  getCashFlowColor,
   getFcfMarginColor,
   getFcfYieldColor,
   getFundamentalColor,

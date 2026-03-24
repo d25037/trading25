@@ -6,9 +6,7 @@ const MARKET_LABELS: Record<string, string> = {
 };
 
 export function canonicalizeMarkets(markets: readonly string[] | null | undefined): string[] {
-  const normalized = (markets ?? [])
-    .map((market) => market.trim().toLowerCase())
-    .filter(Boolean);
+  const normalized = (markets ?? []).map((market) => market.trim().toLowerCase()).filter(Boolean);
   const seen = new Set<string>();
   const canonical: string[] = [];
 

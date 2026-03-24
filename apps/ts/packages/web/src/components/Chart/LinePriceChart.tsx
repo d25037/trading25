@@ -1,4 +1,4 @@
-import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';

@@ -10,10 +10,10 @@ import {
   useDbStats,
   useDbValidation,
   useRefreshStocks,
-  useSyncFetchDetails,
-  useSyncSSE,
   useStartSync,
+  useSyncFetchDetails,
   useSyncJobStatus,
+  useSyncSSE,
 } from './useDbSync';
 
 vi.mock('@/lib/api-client', () => ({

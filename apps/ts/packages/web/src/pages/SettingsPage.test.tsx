@@ -452,8 +452,12 @@ describe('SettingsPage', () => {
     expect(
       screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length).toBeGreaterThan(0);
-    expect(screen.getByText('Run indices-only sync to ingest N225 options data into options_225_data')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText('Run indices-only sync to ingest N225 options data into options_225_data')
+    ).toBeInTheDocument();
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
   });

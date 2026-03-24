@@ -1,5 +1,5 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Briefcase, TrendingUp } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
+import { ArrowDown, ArrowUp, ArrowUpDown, Briefcase, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

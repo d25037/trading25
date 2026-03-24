@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  N225OptionsChainCard,
+  N225OptionsDetailCard,
+  N225OptionsFiltersCard,
+  N225OptionsSummaryGrid,
+} from '@/components/N225Options/N225OptionsSections';
 import { useN225Options } from '@/hooks/useN225Options';
 import { useMigrateOptions225RouteState, useOptions225RouteState } from '@/hooks/useOptions225RouteState';
 import { ApiError } from '@/lib/api-client';
@@ -8,12 +14,6 @@ import {
   resolveSelectedOptionRowKey,
   summarizeFilteredOptions,
 } from '@/lib/options225';
-import {
-  N225OptionsChainCard,
-  N225OptionsDetailCard,
-  N225OptionsFiltersCard,
-  N225OptionsSummaryGrid,
-} from '@/components/N225Options/N225OptionsSections';
 
 export function N225OptionsPage() {
   useMigrateOptions225RouteState();
@@ -89,8 +89,7 @@ export function N225OptionsPage() {
 
       {error instanceof ApiError && error.status === 404 ? (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
-          Local N225 options data is not available yet. Run Market DB sync to ingest `options_225_data`.
-          {' '}
+          Local N225 options data is not available yet. Run Market DB sync to ingest `options_225_data`.{' '}
           <a href="/market-db" className="font-medium underline underline-offset-4">
             Open Market DB
           </a>

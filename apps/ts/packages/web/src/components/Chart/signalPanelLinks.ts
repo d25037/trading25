@@ -64,15 +64,9 @@ function isSignalDefinitionMatch(signalType: string, definitionKey: string): boo
   return definitionKey === signalType || definitionKey.endsWith(`_${signalType}`);
 }
 
-function findSignalDefinition(
-  signalType: string,
-  definitions: SignalDefinition[]
-): SignalDefinition | null {
+function findSignalDefinition(signalType: string, definitions: SignalDefinition[]): SignalDefinition | null {
   for (const definition of definitions) {
-    if (
-      definition.signal_type === signalType ||
-      isSignalDefinitionMatch(signalType, definition.key)
-    ) {
+    if (definition.signal_type === signalType || isSignalDefinitionMatch(signalType, definition.key)) {
       return definition;
     }
   }

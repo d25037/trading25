@@ -1,6 +1,8 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet, redirect } from '@tanstack/react-router';
+import { MainLayout } from '@/components/Layout/MainLayout';
 import {
   getRankingStateFromScreeningSearch,
+  serializeRankingSearch,
   validateBacktestSearch,
   validateChartsSearch,
   validateIndicesSearch,
@@ -8,9 +10,7 @@ import {
   validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
-  serializeRankingSearch,
 } from '@/lib/routeSearch';
-import { MainLayout } from '@/components/Layout/MainLayout';
 import { BacktestPage } from '@/pages/BacktestPage';
 import { ChartsPage } from '@/pages/ChartsPage';
 import { HistoryPage } from '@/pages/HistoryPage';
@@ -18,8 +18,8 @@ import { IndicesPage } from '@/pages/IndicesPage';
 import { N225OptionsPage } from '@/pages/N225OptionsPage';
 import { PortfolioPage } from '@/pages/PortfolioPage';
 import { RankingPage } from '@/pages/RankingPage';
-import { SettingsPage } from '@/pages/SettingsPage';
 import { ScreeningPage } from '@/pages/ScreeningPage';
+import { SettingsPage } from '@/pages/SettingsPage';
 
 const LEGACY_TAB_ROUTE_MAP = {
   charts: '/charts',

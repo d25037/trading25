@@ -1,12 +1,12 @@
 import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { useMemo, useState } from 'react';
+import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
   FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS,
   type FundamentalsHistoryMetricId,
 } from '@/constants/fundamentalsHistoryMetrics';
-import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { cn } from '@/lib/utils';
 import { getFundamentalColor } from '@/utils/color-schemes';

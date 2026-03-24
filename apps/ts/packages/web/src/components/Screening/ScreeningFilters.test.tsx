@@ -80,13 +80,9 @@ vi.mock('@/components/ui/select', () => {
   const SelectContext = React.createContext<(value: string) => void>(() => {});
 
   return {
-    Select: ({
-      children,
-      onValueChange,
-    }: {
-      children: ReactNode;
-      onValueChange?: (value: string) => void;
-    }) => <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>,
+    Select: ({ children, onValueChange }: { children: ReactNode; onValueChange?: (value: string) => void }) => (
+      <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>
+    ),
     SelectTrigger: ({ children, id }: { children: ReactNode; id?: string }) => (
       <div data-testid={id ?? 'select-trigger'}>{children}</div>
     ),

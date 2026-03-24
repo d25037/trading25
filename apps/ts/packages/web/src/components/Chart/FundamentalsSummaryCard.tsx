@@ -237,7 +237,9 @@ function buildMetricCards({
     fcfMargin: <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />,
     cfoYield: <MetricCard label="CFO利回り" value={metrics.cfoYield} format="percent" colorScheme="cfoYield" />,
     cfoMargin: <MetricCard label="CFOマージン" value={metrics.cfoMargin} format="percent" colorScheme="cfoMargin" />,
-    cfoToNetProfitRatio: <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />,
+    cfoToNetProfitRatio: (
+      <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />
+    ),
     tradingValueToMarketCapRatio: (
       <MetricCard
         label={`時価総額/${tradingValuePeriod}日売買代金`}
@@ -310,8 +312,7 @@ export function FundamentalsSummaryCard({
           </span>
         </div>
         <div className="mt-1">
-          予想EPS &gt; 直近FY{forecastEpsLookbackFyCount}実績EPS:{' '}
-          {forecastEpsAboveRecentFyActualsLabel}
+          予想EPS &gt; 直近FY{forecastEpsLookbackFyCount}実績EPS: {forecastEpsAboveRecentFyActualsLabel}
         </div>
         {metrics.stockPrice && <div className="mt-1">株価 @ 開示日: {metrics.stockPrice.toLocaleString()}円</div>}
       </div>

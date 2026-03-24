@@ -46,13 +46,9 @@ vi.mock('@/hooks/useBacktest', () => ({
 }));
 
 vi.mock('./ResultHtmlViewer', () => ({
-  ResultHtmlViewer: ({
-    htmlContent,
-    isLoading,
-  }: {
-    htmlContent: string | null;
-    isLoading: boolean;
-  }) => <div data-testid="result-viewer">{isLoading ? 'loading' : htmlContent ?? 'empty'}</div>,
+  ResultHtmlViewer: ({ htmlContent, isLoading }: { htmlContent: string | null; isLoading: boolean }) => (
+    <div data-testid="result-viewer">{isLoading ? 'loading' : (htmlContent ?? 'empty')}</div>
+  ),
 }));
 
 vi.mock('@/components/ui/card', () => ({
@@ -112,13 +108,7 @@ vi.mock('@/components/ui/input', () => ({
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({
-    open,
-    children,
-  }: {
-    open: boolean;
-    children: ReactNode;
-  }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -129,13 +119,9 @@ vi.mock('@/components/ui/dialog', () => ({
 vi.mock('@/components/ui/select', () => {
   const SelectContext = React.createContext<(value: string) => void>(() => {});
   return {
-    Select: ({
-      children,
-      onValueChange,
-    }: {
-      children: ReactNode;
-      onValueChange?: (value: string) => void;
-    }) => <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>,
+    Select: ({ children, onValueChange }: { children: ReactNode; onValueChange?: (value: string) => void }) => (
+      <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>
+    ),
     SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
     SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
     SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,

@@ -23,13 +23,7 @@ vi.mock('@/hooks/useBacktest', () => ({
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({
-    open,
-    children,
-  }: {
-    open: boolean;
-    children: ReactNode;
-  }) => (open ? <div>{children}</div> : null),
+  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
   DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -44,15 +38,7 @@ vi.mock('@/components/ui/label', () => ({
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({
-    children,
-    onClick,
-    disabled,
-  }: {
-    children: ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-  }) => (
+  Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
@@ -63,13 +49,9 @@ vi.mock('@/components/ui/select', () => {
   const SelectContext = React.createContext<(value: string) => void>(() => {});
 
   return {
-    Select: ({
-      children,
-      onValueChange,
-    }: {
-      children: ReactNode;
-      onValueChange?: (value: string) => void;
-    }) => <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>,
+    Select: ({ children, onValueChange }: { children: ReactNode; onValueChange?: (value: string) => void }) => (
+      <SelectContext.Provider value={onValueChange ?? (() => {})}>{children}</SelectContext.Provider>
+    ),
     SelectTrigger: ({ children, id }: { children: ReactNode; id?: string }) => (
       <div data-testid={id ?? 'select-trigger'}>{children}</div>
     ),
@@ -96,12 +78,7 @@ describe('MoveGroupDialog', () => {
 
   it('shows target groups excluding current group', () => {
     render(
-      <MoveGroupDialog
-        open
-        onOpenChange={vi.fn()}
-        strategyName="production/range_break"
-        currentCategory="production"
-      />
+      <MoveGroupDialog open onOpenChange={vi.fn()} strategyName="production/range_break" currentCategory="production" />
     );
 
     expect(screen.getByText('Move Strategy Group')).toBeInTheDocument();
@@ -146,12 +123,7 @@ describe('MoveGroupDialog', () => {
     const user = userEvent.setup();
 
     render(
-      <MoveGroupDialog
-        open
-        onOpenChange={vi.fn()}
-        strategyName="production/range_break"
-        currentCategory="production"
-      />
+      <MoveGroupDialog open onOpenChange={vi.fn()} strategyName="production/range_break" currentCategory="production" />
     );
 
     await user.click(screen.getByRole('button', { name: 'Legacy' }));
@@ -171,12 +143,7 @@ describe('MoveGroupDialog', () => {
     mockMoveState.error = new Error('move failed');
 
     render(
-      <MoveGroupDialog
-        open
-        onOpenChange={vi.fn()}
-        strategyName="production/range_break"
-        currentCategory="production"
-      />
+      <MoveGroupDialog open onOpenChange={vi.fn()} strategyName="production/range_break" currentCategory="production" />
     );
 
     expect(screen.getByText('Error: move failed')).toBeInTheDocument();
@@ -186,12 +153,7 @@ describe('MoveGroupDialog', () => {
     mockMoveState.isPending = true;
 
     render(
-      <MoveGroupDialog
-        open
-        onOpenChange={vi.fn()}
-        strategyName="production/range_break"
-        currentCategory="production"
-      />
+      <MoveGroupDialog open onOpenChange={vi.fn()} strategyName="production/range_break" currentCategory="production" />
     );
 
     expect(screen.getByRole('button', { name: 'Moving...' })).toBeDisabled();

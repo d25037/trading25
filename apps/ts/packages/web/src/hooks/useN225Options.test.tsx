@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiGet, ApiError } from '@/lib/api-client';
+import { ApiError, apiGet } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
 import { useN225Options } from './useN225Options';
 

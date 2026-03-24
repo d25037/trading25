@@ -17,12 +17,7 @@ vi.mock('@/components/Stock/StockSearchInput', () => ({
     onSelect: (stock: { code: string }) => void;
   }) => (
     <div>
-      <input
-        id={id}
-        aria-label="StockSearchInput"
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-      />
+      <input id={id} aria-label="StockSearchInput" value={value} onChange={(e) => onValueChange(e.target.value)} />
       <button type="button" onClick={() => onSelect({ code: '6501' })}>
         SelectStock
       </button>

@@ -2,7 +2,7 @@ import { TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
-import { INDEX_CATEGORY_LABELS, getIndexCategorySortOrder } from '@/lib/indexCategories';
+import { getIndexCategorySortOrder, INDEX_CATEGORY_LABELS } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
 import type { IndexPerformanceItem } from '@/types/ranking';
 import { formatPercentage } from '@/utils/formatters';
@@ -96,9 +96,13 @@ export function IndexPerformanceTable({
           <div>
             <CardTitle className="text-base">
               Indices
-              {rows.length > 0 ? <span className="ml-2 text-sm font-normal text-muted-foreground">({rows.length})</span> : null}
+              {rows.length > 0 ? (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({rows.length})</span>
+              ) : null}
             </CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">Baseline: {lookbackDays} trading sessions before each index close</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Baseline: {lookbackDays} trading sessions before each index close
+            </p>
           </div>
         </div>
       </CardHeader>
@@ -134,11 +138,7 @@ export function IndexPerformanceTable({
                 </tr>
               ) : null}
               {virtual.visibleItems.map((item) => (
-                <IndexPerformanceRow
-                  key={item.code}
-                  item={item}
-                  onIndexClick={onIndexClick}
-                />
+                <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
               ))}
               {shouldVirtualize && virtual.paddingBottom > 0 ? (
                 <tr>

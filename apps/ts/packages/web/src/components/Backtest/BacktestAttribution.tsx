@@ -414,10 +414,7 @@ interface BacktestAttributionProps {
   onSelectedStrategyChange: (strategy: string | null) => void;
 }
 
-export function BacktestAttribution({
-  selectedStrategy,
-  onSelectedStrategyChange,
-}: BacktestAttributionProps) {
+export function BacktestAttribution({ selectedStrategy, onSelectedStrategyChange }: BacktestAttributionProps) {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [topN, setTopN] = useState(String(DEFAULT_TOP_N));

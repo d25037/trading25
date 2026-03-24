@@ -42,7 +42,13 @@ export function useMultiTimeframeChart(selectedSymbol: string | null, strategyNa
   // apps/bt/ API signals
   const dailySig = useBtSignals(selectedSymbol, 'daily', settings.signalOverlay, strategyName, settings.relativeMode);
   const weeklySig = useBtSignals(selectedSymbol, 'weekly', settings.signalOverlay, strategyName, settings.relativeMode);
-  const monthlySig = useBtSignals(selectedSymbol, 'monthly', settings.signalOverlay, strategyName, settings.relativeMode);
+  const monthlySig = useBtSignals(
+    selectedSymbol,
+    'monthly',
+    settings.signalOverlay,
+    strategyName,
+    settings.relativeMode
+  );
 
   const isLoading =
     ohlcv.isLoading ||

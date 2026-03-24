@@ -98,11 +98,24 @@ interface PersistedContainer {
   version?: number;
 }
 
-const SCREENING_SUB_TABS: ScreeningSubTab[] = ['preOpenScreening', 'inSessionScreening', 'ranking', 'fundamentalRanking'];
+const SCREENING_SUB_TABS: ScreeningSubTab[] = [
+  'preOpenScreening',
+  'inSessionScreening',
+  'ranking',
+  'fundamentalRanking',
+];
 const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
-const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
+const BACKTEST_SUB_TABS: BacktestSubTab[] = [
+  'runner',
+  'results',
+  'attribution',
+  'strategies',
+  'status',
+  'dataset',
+  'lab',
+];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
 const OPTIONS_225_PUT_CALL_VALUES: Options225PutCallFilter[] = ['all', 'put', 'call'];
 const OPTIONS_225_SORT_VALUES: Options225SortBy[] = [
@@ -112,7 +125,12 @@ const OPTIONS_225_SORT_VALUES: Options225SortBy[] = [
   'impliedVolatility',
   'wholeDayClose',
 ];
-const SCREENING_SORT_VALUES: ScreeningSortBy[] = ['bestStrategyScore', 'matchedDate', 'stockCode', 'matchStrategyCount'];
+const SCREENING_SORT_VALUES: ScreeningSortBy[] = [
+  'bestStrategyScore',
+  'matchedDate',
+  'stockCode',
+  'matchStrategyCount',
+];
 const SORT_ORDER_VALUES: SortOrder[] = ['asc', 'desc'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -200,10 +218,7 @@ function assignIfDefinedAndNotDefault<T extends object, K extends keyof T>(
   }
 }
 
-function assignSearchParams<T extends object>(
-  base: T,
-  entries: Array<[keyof T, T[keyof T] | undefined]>
-): T {
+function assignSearchParams<T extends object>(base: T, entries: Array<[keyof T, T[keyof T] | undefined]>): T {
   const next = { ...base };
 
   for (const [key, value] of entries) {
@@ -324,7 +339,11 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   const normalizedTab = normalizeScreeningSubTab(search.tab);
 
   assignIfDefined(next, 'tab', normalizedTab);
-  assignIfDefined(next, 'preOpenMarkets', normalizeString(search.preOpenMarkets) ?? normalizeString(search.screeningMarkets));
+  assignIfDefined(
+    next,
+    'preOpenMarkets',
+    normalizeString(search.preOpenMarkets) ?? normalizeString(search.screeningMarkets)
+  );
   assignIfDefined(
     next,
     'preOpenStrategies',
@@ -339,7 +358,8 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(
     next,
     'preOpenSortBy',
-    normalizeEnum(search.preOpenSortBy, SCREENING_SORT_VALUES) ?? normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES)
+    normalizeEnum(search.preOpenSortBy, SCREENING_SORT_VALUES) ??
+      normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES)
   );
   assignIfDefined(
     next,
@@ -370,7 +390,8 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(
     next,
     'inSessionSortBy',
-    normalizeEnum(search.inSessionSortBy, SCREENING_SORT_VALUES) ?? normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES)
+    normalizeEnum(search.inSessionSortBy, SCREENING_SORT_VALUES) ??
+      normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES)
   );
   assignIfDefined(
     next,
@@ -404,30 +425,24 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
 } {
   return {
     activeSubTab: search.tab ?? 'preOpenScreening',
-    preOpenScreeningParams: assignSearchParams(
-      { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS },
-      [
-        ['markets', search.preOpenMarkets],
-        ['strategies', search.preOpenStrategies],
-        ['recentDays', search.preOpenRecentDays],
-        ['date', search.preOpenDate],
-        ['sortBy', search.preOpenSortBy],
-        ['order', search.preOpenOrder],
-        ['limit', search.preOpenLimit],
-      ]
-    ),
-    inSessionScreeningParams: assignSearchParams(
-      { ...DEFAULT_IN_SESSION_SCREENING_PARAMS },
-      [
-        ['markets', search.inSessionMarkets],
-        ['strategies', search.inSessionStrategies],
-        ['recentDays', search.inSessionRecentDays],
-        ['date', search.inSessionDate],
-        ['sortBy', search.inSessionSortBy],
-        ['order', search.inSessionOrder],
-        ['limit', search.inSessionLimit],
-      ]
-    ),
+    preOpenScreeningParams: assignSearchParams({ ...DEFAULT_PRE_OPEN_SCREENING_PARAMS }, [
+      ['markets', search.preOpenMarkets],
+      ['strategies', search.preOpenStrategies],
+      ['recentDays', search.preOpenRecentDays],
+      ['date', search.preOpenDate],
+      ['sortBy', search.preOpenSortBy],
+      ['order', search.preOpenOrder],
+      ['limit', search.preOpenLimit],
+    ]),
+    inSessionScreeningParams: assignSearchParams({ ...DEFAULT_IN_SESSION_SCREENING_PARAMS }, [
+      ['markets', search.inSessionMarkets],
+      ['strategies', search.inSessionStrategies],
+      ['recentDays', search.inSessionRecentDays],
+      ['date', search.inSessionDate],
+      ['sortBy', search.inSessionSortBy],
+      ['order', search.inSessionOrder],
+      ['limit', search.inSessionLimit],
+    ]),
     rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
       ['date', search.rankingDate],
       ['limit', search.rankingLimit],
@@ -810,7 +825,11 @@ export function extractLegacyScreeningSearch(state: Record<string, unknown>): Sc
 
   return serializeScreeningSearch({
     activeSubTab: normalizeScreeningSubTab(state.activeSubTab) ?? 'preOpenScreening',
-    preOpenScreeningParams: { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS, ...screeningParams, entry_decidability: 'pre_open_decidable' },
+    preOpenScreeningParams: {
+      ...DEFAULT_PRE_OPEN_SCREENING_PARAMS,
+      ...screeningParams,
+      entry_decidability: 'pre_open_decidable',
+    },
     inSessionScreeningParams: {
       ...DEFAULT_IN_SESSION_SCREENING_PARAMS,
       ...sameDayScreeningParams,

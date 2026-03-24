@@ -1,10 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_RANKING_PARAMS,
-} from '@/stores/screeningStore';
+import { DEFAULT_FUNDAMENTAL_RANKING_PARAMS, DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
@@ -145,7 +142,9 @@ describe('RankingPage', () => {
 
     expect(screen.getByText('Indices Filters')).toBeInTheDocument();
     expect(screen.getAllByText('Lookback Days')).toHaveLength(1);
-    expect(screen.getByText('Index performance compares each latest close with the selected trading sessions earlier.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Index performance compares each latest close with the selected trading sessions earlier.')
+    ).toBeInTheDocument();
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();

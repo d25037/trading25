@@ -1,5 +1,5 @@
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import type { LabEvolveResult } from '@/types/backtest';
 
 interface LabEvolveResultsProps {

@@ -214,14 +214,17 @@ function FileListCard({
       <CardContent className="pt-4">
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           <p className="text-sm text-muted-foreground">
-            {filteredFiles.length} files {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
+            {filteredFiles.length} files{' '}
+            {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
           </p>
 
           {sortedFiles.map((file) => (
             <FileListItem
               key={`${file.strategy_name}/${file.filename}`}
               file={file}
-              isSelected={selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename}
+              isSelected={
+                selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename
+              }
               onSelect={() => onSelectFile(file)}
             />
           ))}
@@ -350,7 +353,9 @@ function PreviewCard({
               Open in new tab
             </Button>
           </div>
-          {renameErrorMessage && <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>}
+          {renameErrorMessage && (
+            <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>
+          )}
           {metrics && <MetricsGrid metrics={metrics} />}
           <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
         </div>
@@ -368,14 +373,7 @@ interface DeleteDialogProps {
   onDelete: () => void;
 }
 
-function DeleteDialog({
-  open,
-  selectedFilename,
-  isPending,
-  errorMessage,
-  onOpenChange,
-  onDelete,
-}: DeleteDialogProps) {
+function DeleteDialog({ open, selectedFilename, isPending, errorMessage, onOpenChange, onDelete }: DeleteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -430,7 +428,10 @@ export function HtmlFileBrowser() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const strategies = useMemo(() => resolveStrategies(htmlFilesData?.files), [htmlFilesData?.files]);
-  const filteredFiles = useMemo(() => resolveFilteredFiles(htmlFilesData?.files, searchQuery), [htmlFilesData?.files, searchQuery]);
+  const filteredFiles = useMemo(
+    () => resolveFilteredFiles(htmlFilesData?.files, searchQuery),
+    [htmlFilesData?.files, searchQuery]
+  );
   const sortedFiles = useMemo(() => resolveSortedFiles(filteredFiles), [filteredFiles]);
 
   const handleStartRename = () => {

@@ -171,7 +171,9 @@ export function DatasetList() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${storageClass(item)}`}>
+                        <span
+                          className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${storageClass(item)}`}
+                        >
                           {storageLabel(item)}
                         </span>
                         <span className="text-xs text-muted-foreground">{storageDetail(item)}</span>
@@ -201,7 +203,6 @@ export function DatasetList() {
               </TableBody>
             </Table>
           )}
-
         </CardContent>
       </Card>
 

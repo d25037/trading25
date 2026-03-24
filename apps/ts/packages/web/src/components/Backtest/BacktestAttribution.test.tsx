@@ -77,10 +77,7 @@ vi.mock('./AttributionArtifactBrowser', () => ({
 
 function renderBacktestAttribution() {
   return render(
-    <BacktestAttribution
-      selectedStrategy={selectedStrategy}
-      onSelectedStrategyChange={mockOnSelectedStrategyChange}
-    />
+    <BacktestAttribution selectedStrategy={selectedStrategy} onSelectedStrategyChange={mockOnSelectedStrategyChange} />
   );
 }
 

@@ -1,4 +1,4 @@
-import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
+import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { JobStatus, LabJobResponse } from '@/types/backtest';
 
 interface LabJobHistoryTableProps {

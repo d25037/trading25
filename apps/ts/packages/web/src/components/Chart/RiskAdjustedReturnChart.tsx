@@ -1,8 +1,8 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useEffect, useMemo, useRef } from 'react';
 import { CHART_COLORS } from '@/lib/constants';
-import { useChartStore } from '@/stores/chartStore';
 import type { RiskAdjustedReturnCondition, RiskAdjustedReturnRatioType } from '@/stores/chartStore';
+import { useChartStore } from '@/stores/chartStore';
 import type { RiskAdjustedReturnData } from '@/types/chart';
 
 function setChartVisibleBars(chart: IChartApi, dataLength: number, barsToShow: number) {

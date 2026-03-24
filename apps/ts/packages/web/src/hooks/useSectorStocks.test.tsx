@@ -25,7 +25,9 @@ describe('useSectorStocks', () => {
     const params = { sector33Name: '輸送用機器' };
     const { result } = renderHook(() => useSectorStocks(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(analyticsClient.getSectorStocks).toHaveBeenCalledWith(expect.objectContaining({ sector33Name: '輸送用機器' }));
+    expect(analyticsClient.getSectorStocks).toHaveBeenCalledWith(
+      expect.objectContaining({ sector33Name: '輸送用機器' })
+    );
   });
 
   it('is disabled when enabled is false', () => {

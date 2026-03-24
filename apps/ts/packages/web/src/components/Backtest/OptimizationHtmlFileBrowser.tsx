@@ -75,7 +75,10 @@ function resolveStrategies(files: OptimizationHtmlFileInfo[] | undefined): strin
   return Array.from(new Set(files.map((file) => file.strategy_name))).sort();
 }
 
-function resolveFilteredFiles(files: OptimizationHtmlFileInfo[] | undefined, searchQuery: string): OptimizationHtmlFileInfo[] {
+function resolveFilteredFiles(
+  files: OptimizationHtmlFileInfo[] | undefined,
+  searchQuery: string
+): OptimizationHtmlFileInfo[] {
   if (!files) return [];
   if (!searchQuery) return files;
   const query = searchQuery.toLowerCase();
@@ -167,13 +170,16 @@ function OptimizationFileListCard({
       <CardContent className="pt-4">
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           <p className="text-sm text-muted-foreground">
-            {filteredFiles.length} files {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
+            {filteredFiles.length} files{' '}
+            {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
           </p>
           {sortedFiles.map((file) => (
             <FileListItem
               key={`${file.strategy_name}/${file.filename}`}
               file={file}
-              isSelected={selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename}
+              isSelected={
+                selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename
+              }
               onSelect={() => onSelectFile(file)}
             />
           ))}
@@ -298,7 +304,9 @@ function OptimizationPreviewCard({
               Open in new tab
             </Button>
           </div>
-          {renameErrorMessage && <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>}
+          {renameErrorMessage && (
+            <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>
+          )}
           <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
         </div>
       </CardContent>

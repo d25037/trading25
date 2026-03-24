@@ -1,6 +1,6 @@
+import { describe, expect, it } from 'vitest';
 import type { SignalConfig } from '@/stores/chartStore';
 import type { SignalDefinition } from '@/types/backtest';
-import { describe, expect, it } from 'vitest';
 import { buildSignalPanelLinks } from './signalPanelLinks';
 
 function makeSignal(type: string, enabled = true): SignalConfig {

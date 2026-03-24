@@ -5,17 +5,20 @@ import {
   useBacktestRouteState,
   useChartsRouteState,
   useIndicesRouteState,
-  useMigrateScreeningRouteState,
-  useRankingRouteState,
   useMigrateBacktestRouteState,
   useMigrateChartsRouteState,
   useMigrateIndicesRouteState,
   useMigratePortfolioRouteState,
+  useMigrateScreeningRouteState,
   usePortfolioRouteState,
+  useRankingRouteState,
   useScreeningRouteState,
 } from './usePageRouteState';
 
-type RouteSearchState = Record<'charts' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest', Record<string, unknown>>;
+type RouteSearchState = Record<
+  'charts' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest',
+  Record<string, unknown>
+>;
 
 const routeSearchState: RouteSearchState = {
   charts: {},
@@ -43,8 +46,7 @@ const mockNavigate = vi.fn(
   }) => {
     const routeKey = routeKeyByPath[options.to];
     const currentSearch = routeSearchState[routeKey];
-    routeSearchState[routeKey] =
-      typeof options.search === 'function' ? options.search(currentSearch) : options.search;
+    routeSearchState[routeKey] = typeof options.search === 'function' ? options.search(currentSearch) : options.search;
     return Promise.resolve();
   }
 );

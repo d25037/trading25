@@ -91,12 +91,7 @@ interface LabPanelProps {
   onOperationChange: (operation: LabType) => void;
 }
 
-export function LabPanel({
-  selectedStrategy,
-  onSelectedStrategyChange,
-  operation,
-  onOperationChange,
-}: LabPanelProps) {
+export function LabPanel({ selectedStrategy, onSelectedStrategyChange, operation, onOperationChange }: LabPanelProps) {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const { activeLabJobId, setActiveLabJobId } = useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();

@@ -363,8 +363,7 @@ describe('ChartControls', () => {
   it('guards against stale fundamental metric reorder actions', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
-    const [firstFundamentalMetric, ...remainingFundamentalMetrics] =
-      DEFAULT_FUNDAMENTAL_METRIC_ORDER;
+    const [firstFundamentalMetric, ...remainingFundamentalMetrics] = DEFAULT_FUNDAMENTAL_METRIC_ORDER;
 
     if (!firstFundamentalMetric) {
       throw new Error('DEFAULT_FUNDAMENTAL_METRIC_ORDER must not be empty');
@@ -434,8 +433,7 @@ describe('ChartControls', () => {
   it('guards against stale FY history metric reorder actions', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
-    const [firstHistoryMetric, ...remainingHistoryMetrics] =
-      DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER;
+    const [firstHistoryMetric, ...remainingHistoryMetrics] = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER;
 
     if (!firstHistoryMetric) {
       throw new Error('DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER must not be empty');

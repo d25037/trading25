@@ -24,11 +24,7 @@ export function formatOptionsNumber(value: number | null | undefined, maximumFra
   return value.toLocaleString(undefined, { maximumFractionDigits });
 }
 
-export function formatOptionsRange(
-  min: number | null,
-  max: number | null,
-  maximumFractionDigits = 2
-): string {
+export function formatOptionsRange(min: number | null, max: number | null, maximumFractionDigits = 2): string {
   if (min === null && max === null) {
     return '-';
   }
@@ -113,10 +109,16 @@ export function filterOptionsItems(items: N225OptionItem[], filters: Options225F
       if (filters.contractMonth && item.contractMonth !== filters.contractMonth) {
         return false;
       }
-      if (typeof filters.strikeMin === 'number' && (item.strikePrice === null || item.strikePrice < filters.strikeMin)) {
+      if (
+        typeof filters.strikeMin === 'number' &&
+        (item.strikePrice === null || item.strikePrice < filters.strikeMin)
+      ) {
         return false;
       }
-      if (typeof filters.strikeMax === 'number' && (item.strikePrice === null || item.strikePrice > filters.strikeMax)) {
+      if (
+        typeof filters.strikeMax === 'number' &&
+        (item.strikePrice === null || item.strikePrice > filters.strikeMax)
+      ) {
         return false;
       }
       return true;
