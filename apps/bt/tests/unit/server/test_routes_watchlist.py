@@ -6,9 +6,12 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
+from src.entrypoints.http.routes import watchlist
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
@@ -19,11 +22,22 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db.close()
 
 
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(watchlist.router)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
 @pytest.fixture()
-def client(pdb: PortfolioDb) -> TestClient:
-    app = create_app()
-    app.state.portfolio_db = pdb
-    return TestClient(app, raise_server_exceptions=False)
+def client(app_client: TestClient, pdb: PortfolioDb) -> TestClient:
+    app_client.app.state.portfolio_db = pdb
+    return app_client
 
 
 # ===== List Watchlists =====

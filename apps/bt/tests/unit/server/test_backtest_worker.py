@@ -1,8 +1,8 @@
 """backtest_worker.py のテスト"""
 
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -201,9 +201,25 @@ async def test_run_backtest_worker_fails_fast_when_nautilus_dependency_is_missin
 
 
 @pytest.mark.asyncio
-async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_backtest_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy")
+    timeout_triggered = Event()
+
+    async def _timeout_heartbeat_loop(manager, job_id, *, lease_owner, heartbeat_seconds, exit_on_cancel):  # noqa: ANN001
+        _ = (lease_owner, heartbeat_seconds)
+        await manager.update_job_status(
+            job_id,
+            JobStatus.FAILED,
+            message="バックテストがタイムアウトしました",
+            error="worker_timed_out",
+        )
+        timeout_triggered.set()
+        exit_on_cancel(124)
+
+    monkeypatch.setattr(worker_mod, "_heartbeat_loop", _timeout_heartbeat_loop)
 
     class _SlowRunner(BacktestRunner):
         def execute(
@@ -214,7 +230,7 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
             data_access_mode: str | None = "direct",
         ) -> BacktestResult:
             _ = (strategy, progress_callback, config_override, data_access_mode)
-            time.sleep(1.2)
+            assert timeout_triggered.wait(timeout=0.1)
             return BacktestResult(
                 html_path=Path("/tmp/slow-result.html"),
                 elapsed_time=1.2,
@@ -228,7 +244,7 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
         "worker-strategy",
         manager=manager,
         runner=_SlowRunner(),
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )

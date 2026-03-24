@@ -7,9 +7,12 @@ import duckdb
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
+from src.entrypoints.http.routes import analytics_complex
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
@@ -55,36 +58,42 @@ def _create_market_db(path: str) -> None:
         INSERT INTO index_master VALUES ('1001', '食品', 'sector17');
         INSERT INTO index_master VALUES ('2001', '食料品', 'sector33');
     """)
-    # stock_data: 100日分の価格データ
-    dates = [f"2024-{(i // 25) + 1:02d}-{(i % 25) + 1:02d}" for i in range(100)]
+    # 回帰に必要な最小限の価格点だけ残して fixture 構築コストを抑える
+    dates = [f"2024-{(i // 25) + 1:02d}-{(i % 25) + 1:02d}" for i in range(61)]
+    stock_rows: list[tuple[str, str, float, float, float, float, int, float]] = []
+    topix_rows: list[tuple[str, float, float, float, float]] = []
+    index_rows: list[tuple[str, str, float]] = []
     for i, d in enumerate(dates):
         price_7203 = 2500 + i * 5
         price_6758 = 1500 + i * 3
         topix = 2000 + i * 3
-        conn.execute(
-            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        stock_rows.extend([
             ("72030", d, price_7203 - 10, price_7203 + 10, price_7203 - 15, price_7203, 1000000, 1.0),
-        )
-        conn.execute(
-            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
             ("67580", d, price_6758 - 5, price_6758 + 5, price_6758 - 8, price_6758, 500000, 1.0),
-        )
-        conn.execute(
-            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
-            (d, topix - 10, topix + 10, topix - 15, topix),
-        )
+        ])
+        topix_rows.append((d, topix - 10, topix + 10, topix - 15, topix))
         # indices_data for each index
         for idx_code in ["0000", "0001", "1001", "2001"]:
             idx_close = topix + int(idx_code) * 0.01 + i * 2
-            conn.execute(
-                "INSERT INTO indices_data VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL)",
-                (idx_code, d, idx_close),
-            )
+            index_rows.append((idx_code, d, idx_close))
+    conn.executemany(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        stock_rows,
+    )
+    conn.executemany(
+        "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
+        topix_rows,
+    )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL)",
+        index_rows,
+    )
     conn.close()
 
 
-@pytest.fixture()
-def market_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def market_db_path(tmp_path_factory) -> str:
+    tmp_path = tmp_path_factory.mktemp("portfolio-factor-regression")
     path = str(tmp_path / "market.duckdb")
     _create_market_db(path)
     return path
@@ -97,15 +106,34 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db.close()
 
 
-@pytest.fixture()
-def client(pdb: PortfolioDb, market_db_path: str) -> Generator[TestClient, None, None]:
-    app = create_app()
-    app.state.portfolio_db = pdb
+@pytest.fixture(scope="module")
+def market_reader(market_db_path: str) -> Generator[MarketDbReader, None, None]:
     reader = MarketDbReader(market_db_path)
-    app.state.market_reader = reader
-    c = TestClient(app, raise_server_exceptions=False)
-    yield c
+    yield reader
     reader.close()
+
+
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(analytics_complex.router)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture()
+def client(
+    app_client: TestClient,
+    pdb: PortfolioDb,
+    market_reader: MarketDbReader,
+) -> Generator[TestClient, None, None]:
+    app_client.app.state.portfolio_db = pdb
+    app_client.app.state.market_reader = market_reader
+    yield app_client
 
 
 class TestPortfolioFactorRegression:
@@ -151,9 +179,11 @@ class TestPortfolioFactorRegression:
         assert resp.json()["dataPoints"] <= 60
 
     def test_no_market_db(self, pdb: PortfolioDb) -> None:
-        app = create_app()
-        app.state.portfolio_db = pdb
-        app.state.market_reader = None
-        c = TestClient(app, raise_server_exceptions=False)
-        resp = c.get("/api/analytics/portfolio-factor-regression/1")
-        assert resp.status_code == 422
+        app = FastAPI(**get_openapi_config())
+        _configure_http_app(app)
+        app.include_router(analytics_complex.router)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            app.state.portfolio_db = pdb
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 422

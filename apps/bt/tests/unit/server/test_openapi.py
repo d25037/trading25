@@ -1,9 +1,11 @@
 """OpenAPI スキーマ互換性テスト"""
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _register_routes
+from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 
 # Hono baseline に存在する 10 operation tags
 HONO_OPERATION_TAGS = {
@@ -20,53 +22,65 @@ HONO_OPERATION_TAGS = {
 }
 
 
-def _make_client() -> TestClient:
-    return TestClient(create_app())
+@pytest.fixture(scope="module")
+def openapi_app():
+    app = FastAPI(**get_openapi_config())
+    _register_routes(app)
+    app.openapi = lambda: customize_openapi(app)  # type: ignore[method-assign]
+    return app
+
+
+@pytest.fixture(scope="module")
+def openapi_client(openapi_app):
+    client = TestClient(openapi_app)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture(scope="module")
+def openapi_schema(openapi_app):
+    return openapi_app.openapi()
 
 
 class TestOpenAPISchema:
     """OpenAPI スキーマの基本検証"""
 
-    def setup_method(self) -> None:
-        self.client = _make_client()
-        resp = self.client.get("/openapi.json")
-        assert resp.status_code == 200
-        self.schema = resp.json()
-
-    def test_openapi_version(self) -> None:
+    def test_openapi_version(self, openapi_schema) -> None:
         """OpenAPI 3.1 であること"""
-        assert self.schema["openapi"].startswith("3.1")
+        assert openapi_schema["openapi"].startswith("3.1")
 
-    def test_info_title(self) -> None:
+    def test_info_title(self, openapi_schema) -> None:
         """info.title = 'Trading25 API' であること"""
-        assert self.schema["info"]["title"] == "Trading25 API"
+        assert openapi_schema["info"]["title"] == "Trading25 API"
 
-    def test_info_version(self) -> None:
+    def test_info_version(self, openapi_schema) -> None:
         """info.version = '1.0.0' であること"""
-        assert self.schema["info"]["version"] == "1.0.0"
+        assert openapi_schema["info"]["version"] == "1.0.0"
 
-    def test_info_contact(self) -> None:
+    def test_info_contact(self, openapi_schema) -> None:
         """info.contact が設定されていること"""
-        assert self.schema["info"]["contact"]["name"] == "Trading25 Team"
+        assert openapi_schema["info"]["contact"]["name"] == "Trading25 Team"
 
-    def test_info_license(self) -> None:
+    def test_info_license(self, openapi_schema) -> None:
         """info.license が MIT であること"""
-        assert self.schema["info"]["license"]["name"] == "MIT"
+        assert openapi_schema["info"]["license"]["name"] == "MIT"
 
-    def test_servers(self) -> None:
+    def test_servers(self, openapi_schema) -> None:
         """servers に FastAPI (3002) エントリが存在すること"""
-        urls = [s["url"] for s in self.schema.get("servers", [])]
+        urls = [s["url"] for s in openapi_schema.get("servers", [])]
         assert "http://localhost:3002" in urls
 
-    def test_hono_operation_tags_defined(self) -> None:
+    def test_hono_operation_tags_defined(self, openapi_schema) -> None:
         """Hono baseline の 10 operation tags が top-level tags に定義されていること"""
-        tag_names = {t["name"] for t in self.schema.get("tags", [])}
+        tag_names = {t["name"] for t in openapi_schema.get("tags", [])}
         missing = HONO_OPERATION_TAGS - tag_names
         assert not missing, f"Missing tags: {missing}"
 
-    def test_ohlcv_refs_are_stable_and_legacy_compatible(self) -> None:
+    def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:
         """OHLCV系の $ref が baseline 互換キーへ固定されること"""
-        schemas = self.schema.get("components", {}).get("schemas", {})
+        schemas = openapi_schema.get("components", {}).get("schemas", {})
 
         ohlcv_resample = schemas.get("OHLCVResampleResponse", {})
         resample_ref = (
@@ -78,7 +92,7 @@ class TestOpenAPISchema:
         assert resample_ref == "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
 
         path_single_ref = (
-            self.schema.get("paths", {})
+            openapi_schema.get("paths", {})
             .get("/api/dataset/{name}/stocks/{code}/ohlcv", {})
             .get("get", {})
             .get("responses", {})
@@ -92,7 +106,7 @@ class TestOpenAPISchema:
         assert path_single_ref == "#/components/schemas/OHLCVRecord"
 
         path_batch_ref = (
-            self.schema.get("paths", {})
+            openapi_schema.get("paths", {})
             .get("/api/dataset/{name}/stocks/ohlcv/batch", {})
             .get("get", {})
             .get("responses", {})
@@ -113,8 +127,8 @@ class TestOpenAPISchema:
             "/api/db/sync/jobs/{jobId}/stream",
         ],
     )
-    def test_sse_endpoints_use_text_event_stream_for_200(self, path: str) -> None:
-        operation = self.schema["paths"][path]["get"]
+    def test_sse_endpoints_use_text_event_stream_for_200(self, openapi_schema, path: str) -> None:
+        operation = openapi_schema["paths"][path]["get"]
         content = operation["responses"]["200"]["content"]
         assert list(content.keys()) == ["text/event-stream"]
 
@@ -122,27 +136,22 @@ class TestOpenAPISchema:
 class TestErrorResponseSchema:
     """ErrorResponse スキーマの OpenAPI 公開テスト"""
 
-    def setup_method(self) -> None:
-        self.client = _make_client()
-        resp = self.client.get("/openapi.json")
-        self.schema = resp.json()
-
-    def test_error_response_in_components(self) -> None:
+    def test_error_response_in_components(self, openapi_schema) -> None:
         """ErrorResponse が components/schemas に存在すること"""
-        schemas = self.schema.get("components", {}).get("schemas", {})
+        schemas = openapi_schema.get("components", {}).get("schemas", {})
         assert "ErrorResponse" in schemas
 
-    def test_error_response_has_required_fields(self) -> None:
+    def test_error_response_has_required_fields(self, openapi_schema) -> None:
         """ErrorResponse スキーマに必須フィールドが含まれること"""
-        schemas = self.schema.get("components", {}).get("schemas", {})
+        schemas = openapi_schema.get("components", {}).get("schemas", {})
         er = schemas.get("ErrorResponse", {})
         props = er.get("properties", {})
         for field in ["status", "error", "message", "timestamp", "correlationId"]:
             assert field in props, f"Missing field: {field}"
 
-    def test_endpoints_have_error_responses(self) -> None:
+    def test_endpoints_have_error_responses(self, openapi_schema) -> None:
         """各エンドポイントに 400/500 レスポンスが定義されていること"""
-        paths = self.schema.get("paths", {})
+        paths = openapi_schema.get("paths", {})
         assert len(paths) > 0, "No paths found"
         for path, methods in paths.items():
             for method, operation in methods.items():
@@ -156,21 +165,18 @@ class TestErrorResponseSchema:
 class TestDocUI:
     """/doc エンドポイントのテスト"""
 
-    def setup_method(self) -> None:
-        self.client = _make_client()
-
-    def test_doc_returns_200(self) -> None:
+    def test_doc_returns_200(self, openapi_client) -> None:
         """/doc が 200 HTML を返すこと"""
-        resp = self.client.get("/doc")
+        resp = openapi_client.get("/doc")
         assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
 
-    def test_docs_disabled(self) -> None:
+    def test_docs_disabled(self, openapi_client) -> None:
         """デフォルトの /docs が無効であること"""
-        resp = self.client.get("/docs")
+        resp = openapi_client.get("/docs")
         assert resp.status_code == 404
 
-    def test_redoc_disabled(self) -> None:
+    def test_redoc_disabled(self, openapi_client) -> None:
         """/redoc が無効であること"""
-        resp = self.client.get("/redoc")
+        resp = openapi_client.get("/redoc")
         assert resp.status_code == 404

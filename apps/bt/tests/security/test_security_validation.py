@@ -14,6 +14,16 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.shared.utils.logger_config import sanitize_sensitive_info
 
 
+@pytest.fixture(autouse=True)
+def isolate_trading25_path_env(monkeypatch: pytest.MonkeyPatch):
+    for env_name in (
+        "TRADING25_DATA_DIR",
+        "TRADING25_STRATEGIES_DIR",
+        "TRADING25_BACKTEST_DIR",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+
 class TestPathTraversalSecurity:
     """パストラバーサル攻撃対策のテスト"""
 

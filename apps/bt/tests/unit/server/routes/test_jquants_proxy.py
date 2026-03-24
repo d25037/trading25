@@ -4,6 +4,7 @@ JQuants Proxy Routes Tests
 sync_client + mock を使用したルートテスト。
 """
 
+import os
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
@@ -33,12 +34,31 @@ def _proxy_client(app_client: TestClient) -> Any:
     return cast(Any, _proxy_service(app_client))._client
 
 
-@pytest.fixture
-def app_client(mock_jquants_env):
+@pytest.fixture(scope="module")
+def app_client():
     """JQuants mock 付きテストクライアント"""
+    from src.shared.config.settings import reload_settings
+
+    env_updates = {
+        "JQUANTS_API_KEY": "dummy_token_value_0000",
+        "JQUANTS_PLAN": "free",
+    }
+    original_env = {key: os.environ.get(key) for key in env_updates}
+
+    for key, value in env_updates.items():
+        os.environ[key] = value
+    reload_settings()
     app = create_app()
-    with TestClient(app) as client:
-        yield client
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        reload_settings()
 
 
 class TestAuthStatus:

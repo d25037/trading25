@@ -40,6 +40,13 @@ uv run pyright src
 uv run pytest tests
 ```
 
+## Test Modes
+
+- Full verification: `./scripts/test-packages.sh` and `./scripts/test-apps.sh`
+- Fast local loop: `BT_PYTEST_FAST=1 ./scripts/test-packages.sh`
+- Runtime profiling: `BT_PYTEST_DURATIONS=25 ./scripts/test-packages.sh`
+- Policy and current runtime notes: `docs/test-runtime.md`
+
 ## API
 
 - Base URL: `http://localhost:3002`

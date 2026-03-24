@@ -1,7 +1,7 @@
 """optimization_worker.py のテスト"""
 
-import time
 from datetime import datetime, timedelta
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -94,13 +94,29 @@ async def test_run_optimization_worker_marks_job_failed_on_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_optimization_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_optimization_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy", job_type="optimization")
+    timeout_triggered = Event()
+
+    async def _timeout_heartbeat_loop(manager, job_id, *, lease_owner, heartbeat_seconds, exit_on_cancel):  # noqa: ANN001
+        _ = (lease_owner, heartbeat_seconds)
+        await manager.update_job_status(
+            job_id,
+            JobStatus.FAILED,
+            message="最適化がタイムアウトしました",
+            error="worker_timed_out",
+        )
+        timeout_triggered.set()
+        exit_on_cancel(124)
+
+    monkeypatch.setattr(worker_mod, "_heartbeat_loop", _timeout_heartbeat_loop)
 
     def _slow_execute_sync(strategy_name: str) -> dict[str, object]:
         assert strategy_name == "worker-strategy"
-        time.sleep(1.2)
+        assert timeout_triggered.wait(timeout=0.1)
         return {"best_score": 1.0}
 
     exit_code = await run_optimization_worker(
@@ -108,7 +124,7 @@ async def test_run_optimization_worker_marks_job_failed_on_timeout() -> None:
         "worker-strategy",
         manager=manager,
         execute_sync=_slow_execute_sync,
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )

@@ -1,8 +1,8 @@
 """lab_worker.py のテスト"""
 
 import asyncio
-import time
 from datetime import datetime, timedelta
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -355,14 +355,30 @@ async def test_run_lab_worker_marks_job_failed_on_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_lab_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_lab_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("generate(n=1,top=1)", job_type="lab_generate")
     service = LabService(manager=manager, max_workers=1)
+    timeout_triggered = Event()
+
+    async def _timeout_heartbeat_loop(manager, job_id, *, lease_owner, heartbeat_seconds, exit_on_cancel):  # noqa: ANN001
+        _ = (lease_owner, heartbeat_seconds)
+        await manager.update_job_status(
+            job_id,
+            JobStatus.FAILED,
+            message="Labジョブがタイムアウトしました",
+            error="worker_timed_out",
+        )
+        timeout_triggered.set()
+        exit_on_cancel(124)
+
+    monkeypatch.setattr(worker_mod, "_heartbeat_loop", _timeout_heartbeat_loop)
 
     def _execute_generate_sync(*args):  # noqa: ANN002
         _ = args
-        time.sleep(1.2)
+        assert timeout_triggered.wait(timeout=0.1)
         return {"lab_type": "generate", "results": []}
 
     service._execute_generate_sync = _execute_generate_sync  # type: ignore[method-assign]
@@ -383,7 +399,7 @@ async def test_run_lab_worker_marks_job_failed_on_timeout() -> None:
         },
         manager=manager,
         service=service,
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )
