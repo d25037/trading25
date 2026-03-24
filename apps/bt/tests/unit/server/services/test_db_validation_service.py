@@ -263,7 +263,7 @@ def test_validate_market_db_flags_legacy_stock_snapshot_as_reset_required() -> N
     assert result.stocksNeedingRefreshCount == 0
     assert result.stocksNeedingRefresh == []
     assert result.sampleWindows.stocksNeedingRefresh.totalCount == 0
-    assert any("Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations)
+    assert any("Run initial sync with reset enabled" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_recommends_reset_before_enabling_local_projection() -> None:

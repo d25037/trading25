@@ -347,6 +347,7 @@ export interface StartSyncRequest {
   mode: SyncMode;
   dataPlane?: SyncDataPlaneOptions;
   enforceBulkForStockData?: boolean;
+  resetBeforeSync?: boolean;
 }
 
 // ===== DATASET TYPES =====

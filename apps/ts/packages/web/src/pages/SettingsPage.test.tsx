@@ -351,6 +351,30 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('requires confirmation before reset + initial sync', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
+    await user.click(screen.getByText(/Full bootstrap of the local DuckDB snapshot/i));
+    await user.click(screen.getByRole('switch', { name: /Reset market\.duckdb \+ parquet first/i }));
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(mockStartSyncState.mutate).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /Reset market DB before initial sync\?/i })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/Type RESET to continue/i), 'reset');
+    await user.click(screen.getByRole('button', { name: /Reset and Start Sync/i }));
+
+    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
+      { mode: 'initial', enforceBulkForStockData: false, resetBeforeSync: true },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
+  });
+
   it('sends enforce bulk option when enabled', async () => {
     const user = userEvent.setup();
 

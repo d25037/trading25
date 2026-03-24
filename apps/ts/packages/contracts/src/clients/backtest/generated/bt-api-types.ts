@@ -9550,6 +9550,11 @@ export interface components {
              * @enum {string}
              */
             mode: "auto" | "initial" | "incremental" | "indices-only" | "repair";
+            /**
+             * Resetbeforesync
+             * @default false
+             */
+            resetBeforeSync: boolean;
         };
         /** SyncResult */
         SyncResult: {

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Common ---
@@ -216,6 +216,13 @@ class SyncRequest(BaseModel):
     mode: SyncModeLiteral = "auto"
     dataPlane: SyncDataPlaneRequest | None = None
     enforceBulkForStockData: bool = False
+    resetBeforeSync: bool = False
+
+    @model_validator(mode="after")
+    def validate_reset_before_sync(self) -> "SyncRequest":
+        if self.resetBeforeSync and self.mode != "initial":
+            raise ValueError("resetBeforeSync is supported only when mode='initial'")
+        return self
 
 
 class SyncProgress(BaseModel):

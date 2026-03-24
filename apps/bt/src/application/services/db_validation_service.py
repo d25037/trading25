@@ -236,12 +236,13 @@ def validate_market_db(
     recommendations: list[str] = []
     if legacy_stock_snapshot:
         recommendations.append(
-            "Reset market-timeseries/market.duckdb and market-timeseries/parquet, "
-            "then run initial sync to rebuild stock_data_raw and local adjusted stock_data"
+            "Run initial sync with reset enabled, or manually reset "
+            "market-timeseries/market.duckdb and market-timeseries/parquet first, "
+            "to rebuild stock_data_raw and local adjusted stock_data"
         )
     elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
         recommendations.append(
-            "Run initial sync on a reset market DB to enable local stock price projection"
+            "Run initial sync with reset enabled to enable local stock price projection"
         )
     if not initialized:
         recommendations.append("Run initial sync to populate the database")

@@ -278,6 +278,36 @@ async def test_start_sync_rejects_legacy_stock_snapshot(
 
 
 @pytest.mark.asyncio
+async def test_start_sync_rejects_reset_before_sync_outside_initial_mode(
+    isolated_manager: GenericJobManager,
+) -> None:
+    del isolated_manager
+    with pytest.raises(RuntimeError, match="resetBeforeSync is supported only for initial sync"):
+        await sync_service.start_sync(
+            SyncMode.INCREMENTAL,
+            _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+            DummyJQuantsClient(),
+            time_series_store=_time_series_store(),
+            reset_before_sync=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_start_sync_requires_reset_callback_when_reset_enabled(
+    isolated_manager: GenericJobManager,
+) -> None:
+    del isolated_manager
+    with pytest.raises(RuntimeError, match="resetBeforeSync requires a reset callback"):
+        await sync_service.start_sync(
+            SyncMode.INITIAL,
+            _market_db(),
+            DummyJQuantsClient(),
+            time_series_store=_time_series_store(),
+            reset_before_sync=True,
+        )
+
+
+@pytest.mark.asyncio
 async def test_start_sync_returns_none_when_manager_rejects_job(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -348,6 +378,55 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 
 
 @pytest.mark.asyncio
+async def test_start_sync_resets_market_snapshot_before_initial_sync(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(emit_progress=False)
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    old_market_db = DummyMarketDb(legacy_stock_snapshot=True)
+    old_store = DummyTimeSeriesStore()
+    reset_market_db = DummyMarketDb()
+    reset_store = DummyTimeSeriesStore()
+    reset_calls = 0
+
+    def reset_snapshot() -> tuple[sync_service.SyncServiceMarketDbLike, sync_service.SyncServiceTimeSeriesStoreLike]:
+        nonlocal reset_calls
+        reset_calls += 1
+        return (
+            cast(sync_service.SyncServiceMarketDbLike, reset_market_db),
+            cast(sync_service.SyncServiceTimeSeriesStoreLike, reset_store),
+        )
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        cast(sync_service.SyncServiceMarketDbLike, old_market_db),
+        DummyJQuantsClient(),
+        time_series_store=cast(sync_service.SyncServiceTimeSeriesStoreLike, old_store),
+        reset_before_sync=True,
+        reset_market_snapshot=reset_snapshot,
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "completed"
+    assert reset_calls == 1
+    assert old_market_db.ensure_schema_calls == 0
+    assert METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"] not in old_market_db.metadata
+    assert reset_market_db.ensure_schema_calls == 1
+    assert reset_market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == "local_projection_v1"
+    assert strategy.captured_ctx is not None
+    assert strategy.captured_ctx.market_db is reset_market_db
+    assert strategy.captured_ctx.time_series_store is reset_store
+    assert stored.progress is not None
+    assert stored.progress.stage == "reset"
+    assert stored.progress.percentage == 100.0
+
+
+@pytest.mark.asyncio
 async def test_start_sync_passes_requested_bulk_enforcement(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
@@ -370,7 +449,6 @@ async def test_start_sync_passes_requested_bulk_enforcement(
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.enforce_bulk_for_stock_data is True
     assert stored.data.enforce_bulk_for_stock_data is True
-
 
 @pytest.mark.asyncio
 async def test_start_sync_trims_fetch_details_to_max_window(

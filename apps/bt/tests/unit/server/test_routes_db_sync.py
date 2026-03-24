@@ -7,6 +7,8 @@ import os
 import shutil
 from collections.abc import Generator
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,6 +21,10 @@ from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
 from src.entrypoints.http.schemas.job import JobStatus
 from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
+
+
+async def _collect_sync_events(job_id: str) -> list[dict[str, str]]:
+    return [event async for event in db_routes._sync_job_event_generator(job_id)]
 
 
 @pytest.fixture(scope="module")
@@ -70,6 +76,179 @@ def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient,
 
 
 class TestSyncRoutes:
+    def test_create_market_resources_closes_db_when_store_unavailable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        dummy_market_db = MagicMock()
+        monkeypatch.setattr(
+            db_routes,
+            "_market_timeseries_paths",
+            lambda: (Path("/tmp/test-market.duckdb"), Path("/tmp/test-parquet")),
+        )
+        monkeypatch.setattr(db_routes, "MarketDb", MagicMock(return_value=dummy_market_db))
+        monkeypatch.setattr(db_routes, "create_time_series_store", MagicMock(return_value=None))
+
+        with pytest.raises(RuntimeError, match="DuckDB market time-series store is unavailable"):
+            db_routes._create_market_resources()
+
+        dummy_market_db.close.assert_called_once()
+
+    def test_close_resource_handles_missing_non_callable_and_exception(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        warning = MagicMock()
+        monkeypatch.setattr(db_routes.logger, "warning", warning)
+
+        db_routes._close_resource(None, label="none")
+        db_routes._close_resource(object(), label="plain-object")
+
+        broken = MagicMock()
+        broken.close.side_effect = RuntimeError("boom")
+        db_routes._close_resource(broken, label="broken")
+
+        warning.assert_called_once()
+
+    def test_install_market_reader_services_assigns_services(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        request = MagicMock()
+        request.app.state = SimpleNamespace()
+        reader = MagicMock()
+        market_data_service = MagicMock()
+        roe_service = MagicMock()
+        margin_service = MagicMock()
+        chart_service = MagicMock()
+
+        monkeypatch.setattr(db_routes, "MarketDbReader", MagicMock(return_value=reader))
+        monkeypatch.setattr(db_routes, "MarketDataService", MagicMock(return_value=market_data_service))
+        monkeypatch.setattr(db_routes, "create_market_roe_service", MagicMock(return_value=roe_service))
+        monkeypatch.setattr(
+            db_routes,
+            "create_market_margin_analytics_service",
+            MagicMock(return_value=margin_service),
+        )
+        monkeypatch.setattr(db_routes, "ChartService", MagicMock(return_value=chart_service))
+
+        db_routes._install_market_reader_services(request, "/tmp/market.duckdb")
+
+        assert request.app.state.market_reader is reader
+        assert request.app.state.market_data_service is market_data_service
+        assert request.app.state.roe_service is roe_service
+        assert request.app.state.margin_analytics_service is margin_service
+        assert request.app.state.chart_service is chart_service
+
+    def test_install_market_reader_services_degrades_when_reader_init_fails(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        request = MagicMock()
+        request.app.state = SimpleNamespace()
+        warning = MagicMock()
+        monkeypatch.setattr(db_routes.logger, "warning", warning)
+        monkeypatch.setattr(db_routes, "MarketDbReader", MagicMock(side_effect=RuntimeError("reader failed")))
+        monkeypatch.setattr(db_routes, "MarketDataService", MagicMock())
+        monkeypatch.setattr(db_routes, "create_market_roe_service", MagicMock(return_value="roe"))
+        monkeypatch.setattr(
+            db_routes,
+            "create_market_margin_analytics_service",
+            MagicMock(return_value="margin"),
+        )
+        monkeypatch.setattr(db_routes, "ChartService", MagicMock(return_value="chart"))
+
+        db_routes._install_market_reader_services(request, "/tmp/market.duckdb")
+
+        assert request.app.state.market_reader is None
+        assert request.app.state.market_data_service is None
+        assert request.app.state.roe_service == "roe"
+        assert request.app.state.margin_analytics_service == "margin"
+        assert request.app.state.chart_service == "chart"
+        warning.assert_called_once()
+
+    def test_reset_market_resources_replaces_app_state_and_deletes_old_files(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        duckdb_path = tmp_path / "market.duckdb"
+        wal_path = tmp_path / "market.duckdb.wal"
+        parquet_dir = tmp_path / "parquet"
+        parquet_dir.mkdir()
+        (parquet_dir / "stock_data.parquet").write_text("old")
+        duckdb_path.write_text("old")
+        wal_path.write_text("wal")
+
+        current_reader = MagicMock()
+        current_store = MagicMock()
+        current_market_db = MagicMock()
+        request = MagicMock()
+        request.app.state = SimpleNamespace(
+            market_reader=current_reader,
+            market_data_service=MagicMock(),
+            roe_service=MagicMock(),
+            margin_analytics_service=MagicMock(),
+            chart_service=MagicMock(),
+            market_db=current_market_db,
+            market_time_series_store=current_store,
+        )
+        new_market_db = MagicMock()
+        new_store = MagicMock()
+        install_services = MagicMock()
+        close_cached = MagicMock()
+
+        monkeypatch.setattr(db_routes, "_market_timeseries_paths", lambda: (duckdb_path, parquet_dir))
+        monkeypatch.setattr(db_routes, "_create_market_resources", MagicMock(return_value=(new_market_db, new_store)))
+        monkeypatch.setattr(db_routes, "_install_market_reader_services", install_services)
+        monkeypatch.setattr(db_routes, "close_all_cached_data_access_clients", close_cached)
+
+        market_db, store = db_routes._reset_market_resources(request)
+
+        assert (market_db, store) == (new_market_db, new_store)
+        current_reader.close.assert_called_once()
+        current_store.close.assert_called_once()
+        current_market_db.close.assert_called_once()
+        close_cached.assert_called_once()
+        assert not duckdb_path.exists()
+        assert not wal_path.exists()
+        assert not parquet_dir.exists()
+        assert request.app.state.market_db is new_market_db
+        assert request.app.state.market_time_series_store is new_store
+        install_services.assert_called_once_with(request, str(duckdb_path))
+
+    def test_get_db_stats_routes_to_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        request = MagicMock()
+        request.app.state = SimpleNamespace(
+            market_db=MagicMock(),
+            market_time_series_store=MagicMock(),
+        )
+        stats_response = MagicMock()
+        get_market_stats = MagicMock(return_value=stats_response)
+        monkeypatch.setattr(db_routes.db_stats_service, "get_market_stats", get_market_stats)
+
+        assert db_routes.get_db_stats(request) is stats_response
+        get_market_stats.assert_called_once_with(
+            request.app.state.market_db,
+            time_series_store=request.app.state.market_time_series_store,
+        )
+
+    def test_get_db_validate_routes_to_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        request = MagicMock()
+        request.app.state = SimpleNamespace(
+            market_db=MagicMock(),
+            market_time_series_store=MagicMock(),
+        )
+        validation_response = MagicMock()
+        validate_market_db = MagicMock(return_value=validation_response)
+        monkeypatch.setattr(db_routes.db_validation_service, "validate_market_db", validate_market_db)
+
+        assert db_routes.get_db_validate(request) is validation_response
+        validate_market_db.assert_called_once_with(
+            request.app.state.market_db,
+            time_series_store=request.app.state.market_time_series_store,
+        )
+
     def test_sync_start(self, client: TestClient) -> None:
         default_store = MagicMock()
         client.app.state.market_time_series_store = default_store
@@ -112,6 +291,39 @@ class TestSyncRoutes:
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is default_store
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is True
+
+    def test_sync_start_with_reset_before_sync(self, client: TestClient) -> None:
+        default_store = MagicMock()
+        client.app.state.market_time_series_store = default_store
+
+        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+            mock_job = MagicMock()
+            mock_job.job_id = "test-job-reset"
+            mock_job.data.resolved_mode = "initial"
+            mock_job.cancelled = MagicMock()
+            mock_start.return_value = mock_job
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "initial", "resetBeforeSync": True},
+            )
+
+            assert resp.status_code == 202
+            assert mock_start.await_count == 1
+            assert mock_start.await_args.kwargs["reset_before_sync"] is True
+            assert callable(mock_start.await_args.kwargs["reset_market_snapshot"])
+
+    def test_sync_start_rejects_reset_before_sync_outside_initial_mode(self, client: TestClient) -> None:
+        client.app.state.market_time_series_store = MagicMock()
+
+        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "resetBeforeSync": True},
+            )
+
+        assert resp.status_code == 422
+        assert mock_start.await_count == 0
 
     def test_sync_start_with_data_plane_override(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None
@@ -335,6 +547,110 @@ class TestSyncRoutes:
         resp = client.get("/api/db/sync/jobs/nonexistent-id/fetch-details")
         assert resp.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_sync_job_event_generator_emits_error_when_job_missing(self) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.subscribe") as mock_subscribe,
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.unsubscribe") as mock_unsubscribe,
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_job", return_value=None),
+        ):
+            mock_subscribe.return_value = asyncio.Queue()
+            events = await _collect_sync_events("missing-job")
+
+        assert len(events) == 1
+        assert events[0]["event"] == "error"
+        assert "missing-job" in events[0]["data"]
+        mock_unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_job_event_generator_emits_heartbeat_and_stops_for_terminal_or_missing_jobs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        running_job = MagicMock()
+        running_job.job_id = "job-1"
+        running_job.status = JobStatus.RUNNING
+        running_job.data.resolved_mode = "incremental"
+        running_job.data.mode.value = "incremental"
+        running_job.data.enforce_bulk_for_stock_data = False
+        running_job.data.fetch_details = []
+        running_job.progress = None
+        running_job.result = None
+        running_job.created_at = datetime.now(UTC)
+        running_job.started_at = None
+        running_job.completed_at = None
+        running_job.error = None
+
+        completed_job = MagicMock()
+        completed_job.job_id = "job-2"
+        completed_job.status = JobStatus.COMPLETED
+        completed_job.data.resolved_mode = "initial"
+        completed_job.data.mode.value = "initial"
+        completed_job.data.enforce_bulk_for_stock_data = False
+        completed_job.data.fetch_details = []
+        completed_job.progress = None
+        completed_job.result = None
+        completed_job.created_at = datetime.now(UTC)
+        completed_job.started_at = None
+        completed_job.completed_at = None
+        completed_job.error = None
+
+        queue = asyncio.Queue()
+        queue.put_nowait(None)
+
+        original_wait_for = db_routes.asyncio.wait_for
+        call_count = 0
+
+        async def fake_wait_for(coro, timeout: float):
+            nonlocal call_count
+            del timeout
+            call_count += 1
+            if call_count == 1:
+                coro.close()
+                raise asyncio.TimeoutError()
+            return await original_wait_for(coro, timeout=0.01)
+
+        with (
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.subscribe", return_value=queue),
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.unsubscribe") as mock_unsubscribe,
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_job", side_effect=[running_job, completed_job]),
+        ):
+            monkeypatch.setattr(db_routes.asyncio, "wait_for", fake_wait_for)
+            events = await _collect_sync_events("job-1")
+
+        assert [event["event"] for event in events] == ["snapshot", "heartbeat"]
+        mock_unsubscribe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_job_event_generator_returns_when_latest_job_disappears(self) -> None:
+        running_job = MagicMock()
+        running_job.job_id = "job-1"
+        running_job.status = JobStatus.RUNNING
+        running_job.data.resolved_mode = "incremental"
+        running_job.data.mode.value = "incremental"
+        running_job.data.enforce_bulk_for_stock_data = False
+        running_job.data.fetch_details = []
+        running_job.progress = None
+        running_job.result = None
+        running_job.created_at = datetime.now(UTC)
+        running_job.started_at = None
+        running_job.completed_at = None
+        running_job.error = None
+
+        queue = asyncio.Queue()
+        queue.put_nowait(SyncStreamEvent(event="job"))
+
+        with (
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.subscribe", return_value=queue),
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.unsubscribe") as mock_unsubscribe,
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_job", side_effect=[running_job, None]),
+        ):
+            events = await _collect_sync_events("job-1")
+
+        assert len(events) == 1
+        assert events[0]["event"] == "snapshot"
+        mock_unsubscribe.assert_called_once()
+
     def test_stream_sync_job_success(self, client: TestClient) -> None:
         with (
             patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job,
@@ -392,6 +708,10 @@ class TestSyncRoutes:
         assert '"enforceBulkForStockData": true' in resp.text
         assert "/equities/bars/daily" in resp.text
         mock_unsubscribe.assert_called_once()
+
+    def test_stream_sync_job_not_found(self, client: TestClient) -> None:
+        resp = client.get("/api/db/sync/jobs/nonexistent-id/stream")
+        assert resp.status_code == 404
 
     def test_cancel_sync_job_not_found(self, client: TestClient) -> None:
         resp = client.delete("/api/db/sync/jobs/nonexistent-id")
@@ -490,6 +810,7 @@ class TestRefreshRoute:
         market_db = MarketDb(market_db_path, read_only=False)
         market_db.set_sync_metadata("init_completed", "false")
         app_client.app.state.market_db = market_db
+        app_client.app.state.market_time_series_store = MagicMock()
         mock_client = MagicMock()
         mock_client.has_api_key = True
         app_client.app.state.jquants_client = mock_client
@@ -498,3 +819,18 @@ class TestRefreshRoute:
             assert resp.status_code == 422
         finally:
             market_db.close()
+            app_client.app.state.market_time_series_store = None
+
+    def test_refresh_rejects_legacy_stock_snapshot(self, app_client: TestClient) -> None:
+        market_db = MagicMock()
+        market_db.is_initialized.return_value = True
+        market_db.is_legacy_stock_price_snapshot.return_value = True
+        app_client.app.state.market_db = market_db
+        app_client.app.state.market_time_series_store = MagicMock()
+        mock_client = MagicMock()
+        mock_client.has_api_key = True
+        app_client.app.state.jquants_client = mock_client
+        resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
+        assert resp.status_code == 422
+        assert "Legacy market.duckdb detected" in resp.json()["message"]
+        app_client.app.state.market_time_series_store = None

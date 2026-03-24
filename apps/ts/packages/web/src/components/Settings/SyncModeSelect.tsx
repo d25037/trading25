@@ -10,7 +10,11 @@ interface SyncModeSelectProps {
 
 const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Detect initial/incremental from DuckDB SoT state' },
-  { value: 'initial', label: 'Initial', description: 'Rebuild DuckDB SoT from scratch' },
+  {
+    value: 'initial',
+    label: 'Initial',
+    description: 'Full bootstrap of the local DuckDB snapshot; optional reset is configured below',
+  },
   { value: 'incremental', label: 'Incremental', description: 'Backfill missing dates and append latest market data' },
   {
     value: 'indices-only',

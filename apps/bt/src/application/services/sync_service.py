@@ -8,6 +8,7 @@ GenericJobManager を使用してバックグラウンド同期を管理する�
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -44,6 +45,12 @@ class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
 
 class SyncServiceClientLike(SyncClientLike, Protocol):
     pass
+
+
+type ResetMarketSnapshot = Callable[
+    [],
+    tuple[SyncServiceMarketDbLike, SyncServiceTimeSeriesStoreLike],
+]
 
 
 class SyncMode(str, Enum):
@@ -115,6 +122,23 @@ def _resolve_mode(
     return "incremental" if _inspection_has_existing_snapshot(inspection) else "initial"
 
 
+def _legacy_stock_snapshot_message() -> str:
+    return (
+        "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
+        "and market-timeseries/parquet, or run initial sync with reset enabled."
+    )
+
+
+def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
+    market_db.ensure_schema()
+    if market_db.is_legacy_stock_price_snapshot():
+        raise RuntimeError(_legacy_stock_snapshot_message())
+    market_db.set_sync_metadata(
+        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
+
+
 async def start_sync(
     mode: SyncMode,
     market_db: SyncServiceMarketDbLike,
@@ -122,21 +146,21 @@ async def start_sync(
     time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
     close_time_series_store: bool = False,
     enforce_bulk_for_stock_data: bool = False,
+    reset_before_sync: bool = False,
+    reset_market_snapshot: ResetMarketSnapshot | None = None,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
     if time_series_store is None:
         raise RuntimeError("DuckDB time-series store is required for sync")
-    market_db.ensure_schema()
-    if market_db.is_legacy_stock_price_snapshot():
-        raise RuntimeError(
-            "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
-            "and market-timeseries/parquet, then run initial sync."
-        )
-    market_db.set_sync_metadata(
-        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
-    )
-    resolved_mode = _resolve_mode(mode, market_db, time_series_store=time_series_store)
+    if reset_before_sync:
+        if mode is not SyncMode.INITIAL:
+            raise RuntimeError("resetBeforeSync is supported only for initial sync")
+        if reset_market_snapshot is None:
+            raise RuntimeError("resetBeforeSync requires a reset callback")
+        resolved_mode = SyncMode.INITIAL.value
+    else:
+        _prepare_market_db_for_sync(market_db)
+        resolved_mode = _resolve_mode(mode, market_db, time_series_store=time_series_store)
     data = SyncJobData(
         mode=mode,
         resolved_mode=resolved_mode,
@@ -150,6 +174,9 @@ async def start_sync(
     job.data.resolved_mode = resolved_mode
 
     async def _run() -> None:
+        current_market_db = market_db
+        current_time_series_store = time_series_store
+
         def on_fetch_detail(detail: dict[str, Any]) -> None:
             entry = {
                 **detail,
@@ -171,16 +198,23 @@ async def start_sync(
             )
             _publish_sync_job_event(job.job_id)
 
-        ctx = SyncContext(
-            client=jquants_client,
-            market_db=market_db,
-            time_series_store=time_series_store,
-            cancelled=job.cancelled,
-            on_progress=on_progress,
-            on_fetch_detail=on_fetch_detail,
-            enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
-        )
         try:
+            if reset_before_sync:
+                on_progress("reset", 0, 1, "Resetting market.duckdb and parquet before initial sync...")
+                assert reset_market_snapshot is not None
+                current_market_db, current_time_series_store = await asyncio.to_thread(reset_market_snapshot)
+                on_progress("reset", 1, 1, "Reset complete. Starting initial sync...")
+                _prepare_market_db_for_sync(current_market_db)
+
+            ctx = SyncContext(
+                client=jquants_client,
+                market_db=current_market_db,
+                time_series_store=current_time_series_store,
+                cancelled=job.cancelled,
+                on_progress=on_progress,
+                on_fetch_detail=on_fetch_detail,
+                enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
+            )
             result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
             if sync_job_manager.is_cancelled(job.job_id):
                 _publish_sync_job_event(job.job_id, close_stream=True)
@@ -201,9 +235,9 @@ async def start_sync(
             sync_job_manager.fail_job(job.job_id, str(e))
             _publish_sync_job_event(job.job_id, close_stream=True)
         finally:
-            if close_time_series_store and time_series_store is not None:
+            if close_time_series_store and current_time_series_store is not None:
                 try:
-                    await asyncio.to_thread(time_series_store.close)
+                    await asyncio.to_thread(current_time_series_store.close)
                 except Exception as e:  # pragma: no cover - close失敗はログのみ
                     logger.warning(f"Failed to close time-series store for job {job.job_id}: {e}")
 

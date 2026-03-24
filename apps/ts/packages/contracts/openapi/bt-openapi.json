@@ -14673,6 +14673,11 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "resetBeforeSync": {
+            "default": false,
+            "title": "Resetbeforesync",
+            "type": "boolean"
           }
         },
         "title": "SyncRequest",

@@ -101,6 +101,24 @@ describe('useDbSync hooks', () => {
     });
   });
 
+  it('useStartSync forwards resetBeforeSync when requested', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'initial' });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useStartSync(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        mode: 'initial',
+        resetBeforeSync: true,
+      });
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
+      mode: 'initial',
+      resetBeforeSync: true,
+    });
+  });
+
   it('useSyncJobStatus fetches job status', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({ jobId: 'abc', status: 'running' });
     const { wrapper } = createTestWrapper();

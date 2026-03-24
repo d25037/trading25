@@ -1,10 +1,24 @@
 import { Activity, Database, Loader2, RotateCcw, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { CompactMetric, PageIntro, PageIntroMetaList, SectionEyebrow, SectionHeading } from '@/components/Layout/Workspace';
+import {
+  CompactMetric,
+  PageIntro,
+  PageIntroMetaList,
+  SectionEyebrow,
+  SectionHeading,
+} from '@/components/Layout/Workspace';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -54,6 +68,7 @@ const EMPTY_OPTIONS_225_VALIDATION = {
   conflictingUnderlyingPriceDatesCount: 0,
   conflictingUnderlyingPriceDates: [],
 } as const;
+const RESET_CONFIRMATION_TOKEN = 'RESET';
 
 function readPersistedActiveSyncJobId(): string | null {
   if (typeof window === 'undefined') {
@@ -942,6 +957,8 @@ interface DatabaseSyncSectionProps {
   onSyncModeChange: (mode: SyncMode) => void;
   enforceBulkForStockData: boolean;
   onEnforceBulkChange: (checked: boolean) => void;
+  resetBeforeSync: boolean;
+  onResetBeforeSyncChange: (checked: boolean) => void;
   isRunning: boolean;
   isStarting: boolean;
   onStartSync: () => void;
@@ -954,6 +971,8 @@ function DatabaseSyncSection({
   onSyncModeChange,
   enforceBulkForStockData,
   onEnforceBulkChange,
+  resetBeforeSync,
+  onResetBeforeSyncChange,
   isRunning,
   isStarting,
   onStartSync,
@@ -972,13 +991,34 @@ function DatabaseSyncSection({
             <CardTitle className="text-xl tracking-tight">Database Sync</CardTitle>
             <CardDescription>
               Synchronize J-Quants market data into the local DuckDB source of truth. Use incremental to resume
-              interrupted syncs.
+              interrupted syncs. Initial mode becomes destructive only if you enable reset below.
             </CardDescription>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <SyncModeSelect value={syncMode} onChange={onSyncModeChange} disabled={isRunning || isStarting} />
+        {syncMode === 'initial' ? (
+          <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="reset-before-sync">Reset market.duckdb + parquet first</Label>
+                <p className="text-xs text-muted-foreground">
+                  Deletes the current market snapshot before the initial sync rebuilds the local 10-year window.
+                </p>
+              </div>
+              <Switch
+                id="reset-before-sync"
+                checked={resetBeforeSync}
+                onCheckedChange={onResetBeforeSyncChange}
+                disabled={isRunning || isStarting}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Existing datasets must be rebuilt after a reset. `portfolio.db` is not touched.
+            </p>
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-4">
           <div className="space-y-1">
             <Label htmlFor="enforce-stock-bulk">Enforce BULK for stock_data</Label>
@@ -1034,7 +1074,7 @@ function WarningRecoverySection({
             <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
             <CardDescription>
               Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy stock-price
-              adjustment drift requires a reset plus initial sync; N225 options coverage gaps must be handled from
+              adjustment drift requires initial sync with reset enabled; N225 options coverage gaps must be handled from
               Database Sync.
             </CardDescription>
           </div>
@@ -1063,8 +1103,8 @@ function WarningRecoverySection({
         </div>
         <p className="text-xs text-muted-foreground">
           Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
-          rebuild legacy stock-price snapshots or ingest `options_225_data`; reset + initial sync for legacy price
-          snapshots, and use Database Sync with `indices-only` for options gaps.
+          rebuild legacy stock-price snapshots or ingest `options_225_data`; use Initial sync with reset enabled for
+          legacy price snapshots, and use Database Sync with `indices-only` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>
@@ -1338,6 +1378,9 @@ function MarketDbHealthColumn({
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
   const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
+  const [resetBeforeSync, setResetBeforeSync] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetConfirmationText, setResetConfirmationText] = useState('');
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
   const [refreshCodesInput, setRefreshCodesInput] = useState('');
   const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
@@ -1373,6 +1416,15 @@ export function SettingsPage() {
     setActiveJobId(null);
   }, [syncJobError]);
 
+  useEffect(() => {
+    if (syncMode === 'initial') {
+      return;
+    }
+    setResetBeforeSync(false);
+    setResetConfirmOpen(false);
+    setResetConfirmationText('');
+  }, [syncMode]);
+
   const isJobStatusRunning = isSyncJobRunning(jobStatus);
   const isActiveJobRunning = isSyncJobRunning(activeSyncJob);
   const isRunning = startSync.isPending || isJobStatusRunning || (!jobStatus && isActiveJobRunning);
@@ -1402,11 +1454,32 @@ export function SettingsPage() {
     void refetchDbValidation();
   }, [isRunning, refetchDbStats, refetchDbValidation]);
 
-  const handleStartSync = () => {
+  const buildStartSyncRequest = (): StartSyncRequest => {
     const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };
+    if (syncMode === 'initial' && resetBeforeSync) {
+      request.resetBeforeSync = true;
+    }
+    return request;
+  };
+
+  const submitStartSync = () => {
+    const request = buildStartSyncRequest();
     startSync.mutate(request, {
-      onSuccess: (data) => setActiveJobId(data.jobId),
+      onSuccess: (data) => {
+        setActiveJobId(data.jobId);
+        setResetConfirmOpen(false);
+        setResetConfirmationText('');
+      },
     });
+  };
+
+  const handleStartSync = () => {
+    if (syncMode === 'initial' && resetBeforeSync) {
+      setResetConfirmationText('');
+      setResetConfirmOpen(true);
+      return;
+    }
+    submitStartSync();
   };
 
   const handleRepairWarnings = () => {
@@ -1471,6 +1544,8 @@ export function SettingsPage() {
               onSyncModeChange={setSyncMode}
               enforceBulkForStockData={enforceBulkForStockData}
               onEnforceBulkChange={setEnforceBulkForStockData}
+              resetBeforeSync={resetBeforeSync}
+              onResetBeforeSyncChange={setResetBeforeSync}
               isRunning={isRunning}
               isStarting={startSync.isPending}
               onStartSync={handleStartSync}
@@ -1515,6 +1590,63 @@ export function SettingsPage() {
           isCancelling={cancelSync.isPending}
         />
       </div>
+
+      <Dialog
+        open={resetConfirmOpen}
+        onOpenChange={(open) => {
+          setResetConfirmOpen(open);
+          if (!open) {
+            setResetConfirmationText('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Reset market DB before initial sync?</DialogTitle>
+            <DialogDescription>
+              This deletes the current `market.duckdb` and `parquet/` snapshot before rebuilding a fresh local 10-year
+              window from J-Quants.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+            <p>Local history older than the rolling 10-year J-Quants window is lost.</p>
+            <p>`datasets/*` built from the current market DB must be recreated.</p>
+            <p>`portfolio.db`, watchlists, and jobs metadata are not deleted.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="reset-confirmation-input">Type {RESET_CONFIRMATION_TOKEN} to continue</Label>
+            <Input
+              id="reset-confirmation-input"
+              value={resetConfirmationText}
+              onChange={(event) => setResetConfirmationText(event.target.value)}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResetConfirmOpen(false)}
+              disabled={startSync.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={submitStartSync}
+              disabled={startSync.isPending || resetConfirmationText.trim().toUpperCase() !== RESET_CONFIRMATION_TOKEN}
+            >
+              {startSync.isPending ? 'Starting...' : 'Reset and Start Sync'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
