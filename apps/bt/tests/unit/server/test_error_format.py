@@ -94,11 +94,38 @@ def _make_test_app() -> TestClient:
     return TestClient(app)
 
 
-class TestHttpExceptionFormat:
-    """HTTPException が統一エラーフォーマットに変換されることをテスト"""
+@pytest.fixture(scope="module")
+def shared_client():
+    with _make_test_app() as client:
+        yield client
 
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
+
+@pytest.fixture(scope="module")
+def no_db_client():
+    app = create_app()
+    app.state.market_data_service = None
+    app.state.chart_service = None
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+class UsesSharedClient:
+    @pytest.fixture(autouse=True)
+    def _inject_client(self, shared_client: TestClient) -> None:
+        self.client = shared_client
+
+
+class UsesNoDbClient:
+    @pytest.fixture(autouse=True)
+    def _inject_client(self, no_db_client: TestClient) -> None:
+        self.client = no_db_client
+
+
+class TestHttpExceptionFormat(UsesSharedClient):
+    """HTTPException が統一エラーフォーマットに変換されることをテスト"""
 
     def test_404_error_format(self) -> None:
         resp = self.client.get("/test/not-found")
@@ -152,11 +179,8 @@ class TestHttpExceptionFormat:
         ]
 
 
-class TestValidationErrorFormat:
+class TestValidationErrorFormat(UsesSharedClient):
     """RequestValidationError が統一エラーフォーマットに変換されることをテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
 
     def test_validation_error_format(self) -> None:
         resp = self.client.post("/test/validation", json={"name": "", "age": -1})
@@ -185,11 +209,8 @@ class TestValidationErrorFormat:
         assert "details" in body
 
 
-class TestCorrelationId:
+class TestCorrelationId(UsesSharedClient):
     """Correlation ID の伝播と自動生成をテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
 
     def test_auto_generated_correlation_id(self) -> None:
         """correlation ID が自動生成されること"""
@@ -226,12 +247,8 @@ class TestCorrelationId:
         assert body["correlationId"] == test_cid
 
 
-class TestExistingEndpointErrors:
+class TestExistingEndpointErrors(UsesSharedClient):
     """既存エンドポイントのエラーも統一フォーマットであることを確認"""
-
-    @pytest.fixture(autouse=True)
-    def setup(self) -> None:
-        self.client = _make_test_app()
 
     def test_nonexistent_strategy_returns_unified_format(self) -> None:
         """存在しない戦略の取得が統一フォーマットで返ること"""
@@ -244,11 +261,8 @@ class TestExistingEndpointErrors:
         assert "timestamp" in body
 
 
-class TestGenericExceptionHandler:
+class TestGenericExceptionHandler(UsesSharedClient):
     """汎用例外ハンドラが未処理例外を統一フォーマットでキャッチすることをテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
 
     def test_runtime_error_returns_500_unified_format(self) -> None:
         """RuntimeError が統一フォーマット 500 で返ること"""
@@ -285,11 +299,8 @@ class TestGenericExceptionHandler:
         assert body["correlationId"] == test_cid
 
 
-class TestSQLAlchemyExceptionHandler:
+class TestSQLAlchemyExceptionHandler(UsesSharedClient):
     """SQLAlchemy 例外ハンドラが DB エラーを統一フォーマットでキャッチすることをテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
 
     def test_sqlalchemy_error_returns_500_with_db_message(self) -> None:
         """SQLAlchemy OperationalError が統一フォーマット 500 + "Database error" で返ること"""
@@ -310,16 +321,8 @@ class TestSQLAlchemyExceptionHandler:
         assert "database is locked" not in body.get("message", "")
 
 
-class TestNoDatabaseGracefulError:
+class TestNoDatabaseGracefulError(UsesNoDbClient):
     """DB 未初期化時に 500 ではなく 422 が返ることを確認する回帰テスト"""
-
-    def setup_method(self) -> None:
-        app = create_app()
-        # market_data_service を None に強制設定
-        app.state.market_data_service = None
-        # chart_service を None に強制設定
-        app.state.chart_service = None
-        self.client = TestClient(app)
 
     def test_market_stocks_returns_422_not_500(self) -> None:
         resp = self.client.get("/api/market/stocks")
@@ -341,11 +344,8 @@ class TestNoDatabaseGracefulError:
         assert body["status"] == "error"
 
 
-class TestJQuantsApiErrorFormat:
+class TestJQuantsApiErrorFormat(UsesSharedClient):
     """JQuants API エラーが統一フォーマット + 502/504 で返ること"""
-
-    def setup_method(self) -> None:
-        self.client = _make_test_app()
 
     def test_502_jquants_error(self) -> None:
         """JQuants HTTP エラーが 502 Bad Gateway で返ること"""
