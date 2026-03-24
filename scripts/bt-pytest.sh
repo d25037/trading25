@@ -26,7 +26,25 @@ if [[ -n "${BT_PYTEST_DURATIONS_MIN:-}" ]]; then
   pytest_args+=("--durations-min=${BT_PYTEST_DURATIONS_MIN}")
 fi
 
-BT_SKIP_UV=1 BT_REQUIRE_DEPS=1 "${repo_root}/scripts/bt-env.sh"
+bt_env_vars=(BT_SKIP_UV=1 BT_REQUIRE_DEPS=1)
+needs_uv_bootstrap=false
+if [[ ! -x "${bt_python}" ]]; then
+  needs_uv_bootstrap=true
+elif ! "${bt_python}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+  needs_uv_bootstrap=true
+fi
+
+if ${needs_uv_bootstrap} && ! command -v uv >/dev/null 2>&1; then
+  echo "[apps/bt] Python 3.12+ venv is required and uv is unavailable to bootstrap it." >&2
+  exit 1
+fi
+
+if ${needs_uv_bootstrap}; then
+  # Clean or stale checkouts should bootstrap the project-managed Python env via uv.
+  bt_env_vars=(BT_USE_UV=1 BT_REQUIRE_DEPS=1)
+fi
+
+env "${bt_env_vars[@]}" "${repo_root}/scripts/bt-env.sh"
 
 log_command() {
   printf "[apps/bt] "
