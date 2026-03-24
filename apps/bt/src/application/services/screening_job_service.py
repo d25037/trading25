@@ -20,6 +20,7 @@ from src.application.services.job_manager import JobManager
 from src.application.services.run_contracts import build_parameterized_run_spec
 from src.application.services.screening_default_markets import (
     resolve_default_screening_markets,
+    validate_selected_screening_strategy_datasets,
 )
 from src.application.services.screening_service import ScreeningService
 from src.shared.observability.correlation import get_correlation_id
@@ -56,6 +57,10 @@ class ScreeningJobService:
         normalized = request.model_copy(deep=True)
         if normalized.markets is not None and normalized.markets.strip():
             normalized.markets = normalized.markets.strip()
+            validate_selected_screening_strategy_datasets(
+                entry_decidability=normalized.entry_decidability,
+                strategies=normalized.strategies,
+            )
             return normalized
 
         resolved = resolve_default_screening_markets(

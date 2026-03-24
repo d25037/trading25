@@ -13,6 +13,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.strategy.indicators import compute_macd
+from src.shared.models.signals import normalize_bool_series
 
 
 def index_macd_histogram_signal(
@@ -101,7 +102,7 @@ def index_macd_histogram_signal(
         )
 
     # NaN値をFalseに置換（初期期間のヒストグラムはNaNになる）
-    signal = signal.fillna(False)
+    signal = normalize_bool_series(signal)
 
     logger.debug(
         f"INDEXヒストグラムシグナル生成完了: True: {signal.sum()}/{len(signal)}"

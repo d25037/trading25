@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import numpy as np
 import pandas as pd
+from src.shared.models.signals import normalize_bool_series
 
 if TYPE_CHECKING:
     NumericSeries: TypeAlias = pd.Series[float] | pd.Series[int]
@@ -132,7 +133,7 @@ def _calc_threshold_signal(
 
     if require_positive:
         base_condition = base_condition & (data_float > 0)
-    return base_condition.fillna(False)
+    return normalize_bool_series(base_condition)
 
 
 def _calc_ratio_signal(
@@ -162,7 +163,7 @@ def _calc_ratio_signal(
     threshold_condition = (
         ratio_float < threshold if condition == "below" else ratio_float >= threshold
     )
-    return (threshold_condition & valid_ratio).fillna(False)
+    return normalize_bool_series(threshold_condition & valid_ratio)
 
 
 def _calc_consecutive_threshold_signal(

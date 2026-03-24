@@ -8,6 +8,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.strategy.indicators import compute_rsi
+from src.shared.models.signals import normalize_bool_series
 
 
 def rsi_threshold_signal(
@@ -57,7 +58,7 @@ def rsi_threshold_signal(
     else:
         raise ValueError(f"不正なcondition: {condition} (below/aboveのみ)")
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
 
     logger.debug(
         f"RSI閾値シグナル: 処理完了 (条件={condition}, True: {result.sum()}/{len(result)})"

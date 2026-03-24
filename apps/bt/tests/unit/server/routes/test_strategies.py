@@ -726,7 +726,7 @@ class TestListStrategies:
             strategies_mod,
             "resolve_strategy_dataset_metadata",
             side_effect=FileNotFoundError("manifest missing"),
-        ):
+        ), patch.object(strategies_mod.logger, "warning") as warning_mock:
             resp = client.get("/api/strategies")
 
         assert resp.status_code == 200
@@ -737,6 +737,7 @@ class TestListStrategies:
         assert data["strategies"][0]["dataset_name"] is None
         assert data["strategies"][0]["dataset_preset"] is None
         assert data["strategies"][0]["screening_default_markets"] is None
+        warning_mock.assert_not_called()
 
     def test_error_500(self, client, mock_config_loader):
         mock_config_loader.get_strategy_metadata.side_effect = RuntimeError("boom")

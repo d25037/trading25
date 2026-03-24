@@ -4,8 +4,13 @@ ATRサポートブレイクシグナル ユニットテスト
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from src.domains.strategy.signals.breakout import atr_support_break_signal
+from src.domains.strategy.signals.breakout import (
+    atr_support_break_signal,
+    atr_support_cross_signal,
+    atr_support_position_signal,
+)
 
 
 class TestATRSupportBreakSignal:
@@ -151,3 +156,38 @@ class TestATRSupportBreakSignal:
         assert isinstance(signal, pd.Series)
         # lookback > データ長なので全てFalse
         assert signal.sum() == 0
+
+    def test_direct_position_and_cross_signals(self):
+        position = atr_support_position_signal(
+            high=self.high,
+            low=self.low,
+            close=self.close,
+            lookback_period=20,
+            atr_multiplier=2.0,
+            direction="below",
+            price_column="low",
+        )
+        cross = atr_support_cross_signal(
+            high=self.high,
+            low=self.low,
+            close=self.close,
+            lookback_period=20,
+            atr_multiplier=2.0,
+            direction="above",
+            lookback_days=3,
+            price_column="close",
+        )
+
+        assert isinstance(position, pd.Series)
+        assert position.dtype == bool
+        assert isinstance(cross, pd.Series)
+        assert cross.dtype == bool
+
+    def test_invalid_direction_raises(self):
+        with pytest.raises(ValueError, match="不正なdirection"):
+            atr_support_break_signal(
+                high=self.high,
+                low=self.low,
+                close=self.close,
+                direction="invalid",
+            )

@@ -8,6 +8,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.strategy.indicators import compute_bollinger_bands
+from src.shared.models.signals import normalize_bool_series
 
 
 def volatility_relative_signal(
@@ -55,7 +56,7 @@ def volatility_relative_signal(
     ).std() * (252**0.5)
 
     # 相対ボラティリティ比較（銘柄ボラティリティ <= ベンチマーク * 閾値倍率）
-    signal = (stock_vol <= benchmark_vol * threshold_multiplier).fillna(False)
+    signal = normalize_bool_series(stock_vol <= benchmark_vol * threshold_multiplier)
 
     # 元のインデックスに戻す
     result = pd.Series(False, index=stock_price.index)
@@ -84,7 +85,7 @@ def rolling_volatility_signal(
     """
     returns = price.pct_change()
     rolling_vol = returns.rolling(window=window, min_periods=window).std() * (252**0.5)
-    return (rolling_vol <= threshold).fillna(False)
+    return normalize_bool_series(rolling_vol <= threshold)
 
 
 def volatility_percentile_signal(
@@ -115,7 +116,7 @@ def volatility_percentile_signal(
         window=lookback, min_periods=lookback
     ).quantile(percentile / 100.0)
 
-    return (rolling_vol <= vol_percentile).fillna(False)
+    return normalize_bool_series(rolling_vol <= vol_percentile)
 
 
 def low_volatility_stock_screen_signal(
@@ -142,7 +143,7 @@ def low_volatility_stock_screen_signal(
     rolling_vol = returns.rolling(window=window, min_periods=window).std() * (252**0.5)
 
     # 価格条件 AND ボラティリティ条件
-    return ((price >= min_price) & (rolling_vol <= max_volatility)).fillna(False)
+    return normalize_bool_series((price >= min_price) & (rolling_vol <= max_volatility))
 
 
 def _resolve_bollinger_band(
@@ -164,9 +165,9 @@ def _level_position_signal(
     direction: str,
 ) -> pd.Series:
     if direction == "below":
-        return (price <= level_series).fillna(False)
+        return normalize_bool_series(price <= level_series)
     if direction == "above":
-        return (price >= level_series).fillna(False)
+        return normalize_bool_series(price >= level_series)
     raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
 
 
@@ -183,9 +184,11 @@ def _level_cross_signal(
     else:
         raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
 
-    result = raw.fillna(False)
+    result = normalize_bool_series(raw)
     if lookback_days > 1:
-        result = (result.astype(int).rolling(lookback_days).max() >= 1).fillna(False)
+        result = normalize_bool_series(
+            result.astype(int).rolling(lookback_days).max() >= 1
+        )
     return result
 
 

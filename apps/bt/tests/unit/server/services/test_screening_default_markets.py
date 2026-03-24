@@ -8,6 +8,7 @@ import pytest
 
 from src.application.services.screening_default_markets import (
     resolve_default_screening_markets,
+    validate_selected_screening_strategy_datasets,
 )
 from src.application.services.strategy_dataset_metadata import StrategyDatasetMetadata
 
@@ -186,5 +187,91 @@ def test_resolve_default_screening_markets_raises_for_unresolvable_dataset(
         resolve_default_screening_markets(
             entry_decidability="pre_open_decidable",
             strategies=None,
+            config_loader=loader,
+        )
+
+
+def test_validate_selected_screening_strategy_datasets_ignores_unselected_broken_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = MagicMock()
+    loader.get_strategy_metadata.return_value = [
+        SimpleNamespace(
+            name="production/good",
+            category="production",
+            path=Path("/tmp/production/good.yaml"),
+        ),
+        SimpleNamespace(
+            name="production/broken",
+            category="production",
+            path=Path("/tmp/production/broken.yaml"),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.load_strategy_screening_config",
+        lambda _loader, name: {
+            "production/good": _make_loaded_config("dataset-good", "pre_open_decidable"),
+            "production/broken": _make_loaded_config("dataset-broken", "pre_open_decidable"),
+        }[name],
+    )
+
+    resolved_names: list[str] = []
+
+    def _resolve_dataset(dataset_name: str, dataset_base_path=None) -> StrategyDatasetMetadata:
+        resolved_names.append(dataset_name)
+        if dataset_name == "dataset-broken":
+            raise FileNotFoundError("broken snapshot")
+        return StrategyDatasetMetadata(
+            dataset_name="dataset-good",
+            dataset_preset="preset-good",
+            screening_default_markets=["prime"],
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.resolve_dataset_metadata",
+        _resolve_dataset,
+    )
+
+    selected = validate_selected_screening_strategy_datasets(
+        entry_decidability="pre_open_decidable",
+        strategies="production/good",
+        config_loader=loader,
+    )
+
+    assert selected == ["production/good"]
+    assert resolved_names == ["dataset-good"]
+
+
+def test_validate_selected_screening_strategy_datasets_raises_for_selected_broken_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = MagicMock()
+    loader.get_strategy_metadata.return_value = [
+        SimpleNamespace(
+            name="production/broken",
+            category="production",
+            path=Path("/tmp/production/broken.yaml"),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.load_strategy_screening_config",
+        lambda _loader, _name: _make_loaded_config("dataset-broken", "pre_open_decidable"),
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.resolve_dataset_metadata",
+        lambda dataset_name, dataset_base_path=None: (_ for _ in ()).throw(
+            FileNotFoundError(f"{dataset_name} missing")
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid dataset for screening strategy production/broken: dataset-broken missing",
+    ):
+        validate_selected_screening_strategy_datasets(
+            entry_decidability="pre_open_decidable",
+            strategies="production/broken",
             config_loader=loader,
         )

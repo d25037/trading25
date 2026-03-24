@@ -32,6 +32,10 @@ async def test_submit_screening_passes_explicit_run_spec(monkeypatch: pytest.Mon
         return fake_task
 
     monkeypatch.setattr(asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.validate_selected_screening_strategy_datasets",
+        lambda **_kwargs: ["production/range_break_v15"],
+    )
 
     request = ScreeningJobRequest(markets="0111", recentDays=5, limit=20)
     job_id = await service.submit_screening(reader=MagicMock(), request=request)
@@ -167,6 +171,10 @@ async def test_get_job_request_returns_submitted_request(monkeypatch: pytest.Mon
         return object()
 
     monkeypatch.setattr(asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.validate_selected_screening_strategy_datasets",
+        lambda **_kwargs: ["production/range_break_v15"],
+    )
     request = ScreeningJobRequest(markets="0111", recentDays=3)
 
     await service.submit_screening(reader=MagicMock(), request=request)
@@ -236,6 +244,37 @@ async def test_submit_screening_propagates_default_market_resolution_error(
 
     with pytest.raises(ValueError, match="production/broken"):
         await service.submit_screening(reader=MagicMock(), request=ScreeningJobRequest())
+
+    manager.create_job.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_submit_screening_propagates_selected_strategy_dataset_error_for_explicit_markets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MagicMock()
+    manager.create_job.return_value = "job-error"
+    manager.set_job_task = AsyncMock()
+    service = ScreeningJobService(manager=manager, max_workers=1)
+
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.validate_selected_screening_strategy_datasets",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            ValueError("Invalid dataset for screening strategy production/broken: broken snapshot")
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid dataset for screening strategy production/broken: broken snapshot",
+    ):
+        await service.submit_screening(
+            reader=MagicMock(),
+            request=ScreeningJobRequest(
+                markets="prime",
+                strategies="production/broken",
+            ),
+        )
 
     manager.create_job.assert_not_called()
     service._executor.shutdown(wait=True)  # noqa: SLF001

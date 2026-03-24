@@ -2,10 +2,17 @@
 期間ブレイクアウトシグナル ユニットテスト
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
+import pytest
 
-from src.domains.strategy.signals.breakout import period_breakout_signal
+from src.domains.strategy.signals.breakout import (
+    period_breakout_signal,
+    period_extrema_break_signal,
+    period_extrema_position_signal,
+)
 
 
 class TestPeriodBreakoutSignal:
@@ -153,3 +160,59 @@ class TestPeriodBreakoutSignal:
         )
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
+
+    def test_period_extrema_break_avoids_fillna_downcasting_warning(self):
+        """object dtype + fillna(False) の FutureWarning を出さない"""
+        price = pd.Series(
+            [100.0, 101.0, 103.0, 102.0, 105.0],
+            index=pd.date_range("2024-01-01", periods=5),
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            signal = period_extrema_break_signal(
+                price=price,
+                period=2,
+                direction="high",
+                lookback_days=1,
+            )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+
+    def test_period_extrema_position_supports_direct_states(self):
+        signal = period_extrema_position_signal(
+            price=self.price_up,
+            period=10,
+            direction="high",
+            state="at_extrema",
+            lookback_days=3,
+        )
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+
+    def test_period_extrema_break_rejects_invalid_direction(self):
+        with pytest.raises(ValueError, match="不正なdirection"):
+            period_extrema_break_signal(
+                price=self.price_up,
+                period=10,
+                direction="sideways",
+            )
+
+    def test_period_extrema_position_rejects_invalid_state(self):
+        with pytest.raises(ValueError, match="不正なstate"):
+            period_extrema_position_signal(
+                price=self.price_up,
+                period=10,
+                direction="high",
+                state="invalid",
+            )
+
+    def test_period_breakout_rejects_invalid_condition(self):
+        with pytest.raises(ValueError, match="不正なcondition"):
+            period_breakout_signal(
+                price=self.price_up,
+                period=10,
+                direction="high",
+                condition="invalid",
+            )

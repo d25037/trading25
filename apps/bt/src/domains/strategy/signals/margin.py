@@ -6,7 +6,7 @@ VectorBTベースの信用残高関連シグナル関数を提供
 
 import pandas as pd
 
-from src.shared.models.signals import MarginSignalParams
+from src.shared.models.signals import MarginSignalParams, normalize_bool_series
 
 
 def margin_balance_percentile_signal(
@@ -62,4 +62,4 @@ def margin_balance_percentile_signal(
     # パーセンタイル条件：現在値 <= ローリングパーセンタイル
     percentile_condition = margin_balance <= rolling_percentile
 
-    return percentile_condition.fillna(False)
+    return normalize_bool_series(percentile_condition)

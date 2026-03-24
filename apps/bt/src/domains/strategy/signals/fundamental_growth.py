@@ -11,6 +11,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from src.shared.models.signals import normalize_bool_series
+
 from .fundamental_helpers import NumericSeries, _calc_growth_signal
 
 
@@ -78,13 +80,13 @@ def is_expected_growth_eps(
     else:  # below
         threshold_condition = forward_growth_rate < growth_threshold
 
-    return (
+    return normalize_bool_series(
         threshold_condition
         & forward_growth_rate.notna()
         & (forward_growth_rate < 10.0)
         & (eps > 0)
         & (next_year_forecast_eps > 0)
-    ).fillna(False)
+    )
 
 
 def is_forecast_eps_above_recent_fy_actuals(
@@ -145,11 +147,11 @@ def is_forecast_eps_above_recent_fy_actuals(
     ).max()
     recent_window_max_daily = recent_window_max.reindex(actual_ffill.index).ffill()
 
-    return (
+    return normalize_bool_series(
         (forecast > recent_window_max_daily)
         & forecast.notna()
         & recent_window_max_daily.notna()
-    ).fillna(False)
+    )
 
 
 def is_expected_growth_dividend_per_share(
@@ -187,13 +189,13 @@ def is_expected_growth_dividend_per_share(
     else:  # below
         threshold_condition = forward_growth_rate < growth_threshold
 
-    return (
+    return normalize_bool_series(
         threshold_condition
         & forward_growth_rate.notna()
         & (forward_growth_rate < 10.0)
         & (dividend_fy > 0)
         & (next_year_forecast_dividend_fy > 0)
-    ).fillna(False)
+    )
 
 
 def is_growing_profit(

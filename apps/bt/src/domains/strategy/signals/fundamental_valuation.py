@@ -11,6 +11,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from src.shared.models.signals import normalize_bool_series
+
 from .fundamental_helpers import _calc_ratio_signal
 
 
@@ -84,7 +86,7 @@ def is_undervalued_by_pbr(
 
     result = pd.Series(False, index=close.index)
     result.loc[common_index] = pbr_signal
-    return result.fillna(False)
+    return normalize_bool_series(result)
 
 
 def is_undervalued_growth_by_peg(

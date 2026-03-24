@@ -4,7 +4,13 @@
 後方互換性のため、全クラスを再エクスポート
 """
 
-from .base import BaseSignalParams, Signals, _validate_condition_above_below, _validate_period_order
+from .base import (
+    BaseSignalParams,
+    Signals,
+    _validate_condition_above_below,
+    _validate_period_order,
+    normalize_bool_series,
+)
 from .breakout import (
     BaselineCrossSignalParams,
     BaselineDeviationSignalParams,
@@ -56,6 +62,7 @@ __all__ = [
     "_validate_period_order",
     "BaseSignalParams",
     "Signals",
+    "normalize_bool_series",
     # volume
     "TradingValueRangeSignalParams",
     "TradingValueSignalParams",

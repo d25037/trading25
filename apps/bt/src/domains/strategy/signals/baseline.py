@@ -16,6 +16,7 @@ from src.domains.strategy.indicators import (
     compute_moving_average,
     compute_volume_weighted_ema,
 )
+from src.shared.models.signals import normalize_bool_series
 
 
 def _compute_baseline(
@@ -77,7 +78,7 @@ def deviation_signal(
     else:
         raise ValueError(f"不正なdirection: {direction} (below/aboveのみ)")
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
     logger.debug(
         f"基準線乖離シグナル: 処理完了 (閾値={threshold:.1%}, 方向={direction}, True: {result.sum()}/{len(result)})"
     )
@@ -98,7 +99,7 @@ def position_signal(
     else:
         raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
     logger.debug(
         f"基準線位置シグナル: 処理完了 (方向={direction}, True: {result.sum()}/{len(result)})"
     )
@@ -122,9 +123,11 @@ def cross_signal(
     else:
         raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
     if lookback_days > 1:
-        result = (result.astype(int).rolling(lookback_days).max() >= 1).fillna(False)
+        result = normalize_bool_series(
+            result.astype(int).rolling(lookback_days).max() >= 1
+        )
 
     logger.debug(
         f"基準線クロスシグナル: 処理完了 (方向={direction}, True: {result.sum()}/{len(result)})"

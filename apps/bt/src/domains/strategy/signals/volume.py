@@ -7,6 +7,8 @@ from __future__ import annotations
 import pandas as pd
 from loguru import logger
 
+from src.shared.models.signals import normalize_bool_series
+
 
 def _volume_ratio_signal(
     volume: pd.Series,
@@ -23,9 +25,13 @@ def _volume_ratio_signal(
     )
 
     if direction == "above":
-        result = (volume_short_ma > volume_long_ma * ratio_threshold).fillna(False)
+        result = normalize_bool_series(
+            volume_short_ma > volume_long_ma * ratio_threshold
+        )
     elif direction == "below":
-        result = (volume_short_ma < volume_long_ma * ratio_threshold).fillna(False)
+        result = normalize_bool_series(
+            volume_short_ma < volume_long_ma * ratio_threshold
+        )
     else:
         raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
     return result

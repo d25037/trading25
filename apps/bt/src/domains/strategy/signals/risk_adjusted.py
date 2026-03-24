@@ -13,6 +13,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.strategy.indicators import compute_risk_adjusted_return
+from src.shared.models.signals import normalize_bool_series
 
 
 def risk_adjusted_return_signal(
@@ -78,7 +79,7 @@ def risk_adjusted_return_signal(
 
     # 閾値判定
     signal: pd.Series[bool] = ratio >= threshold if condition == "above" else ratio < threshold
-    result: pd.Series[bool] = signal.fillna(False).astype(bool)
+    result: pd.Series[bool] = normalize_bool_series(signal)
 
     logger.debug(
         f"リスク調整リターンシグナル: 処理完了 "

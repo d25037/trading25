@@ -8,6 +8,8 @@ VectorBTベースの売買代金関連シグナル関数を提供
 import pandas as pd
 from loguru import logger
 
+from src.shared.models.signals import normalize_bool_series
+
 
 def trading_value_signal(
     close: pd.Series,
@@ -50,10 +52,10 @@ def trading_value_signal(
     # direction分岐
     if direction == "above":
         # X日平均売買代金が閾値以上
-        result = (trading_value_ma >= threshold_value).fillna(False)
+        result = normalize_bool_series(trading_value_ma >= threshold_value)
     else:  # direction == "below"
         # X日平均売買代金が閾値以下
-        result = (trading_value_ma < threshold_value).fillna(False)
+        result = normalize_bool_series(trading_value_ma < threshold_value)
 
     logger.debug(f"売買代金シグナル: 処理完了 (True: {result.sum()}/{len(result)})")
     return result

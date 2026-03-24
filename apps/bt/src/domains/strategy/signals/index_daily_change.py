@@ -12,6 +12,8 @@
 import pandas as pd
 from typing import cast
 
+from src.shared.models.signals import normalize_bool_series
+
 
 def index_daily_change_signal(
     index_data: pd.DataFrame,
@@ -82,7 +84,7 @@ def index_daily_change_signal(
         )
 
     # NaN値をFalseに置換（初日の前日比はNaNになる）
-    signal = cast(pd.Series, signal.fillna(False))
+    signal = cast(pd.Series, normalize_bool_series(signal))
 
     return signal
 

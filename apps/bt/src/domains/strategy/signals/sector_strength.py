@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from src.shared.models.signals import normalize_bool_series
+
 
 def sector_strength_ranking_signal(
     sector_data: dict[str, pd.DataFrame],
@@ -133,14 +135,14 @@ def sector_strength_ranking_signal(
 
     if selection_mode == "top":
         # 上位N位以内: ランクがtop_n以下
-        result = (rank_df[stock_sector_name] <= top_n).fillna(False)
+        result = normalize_bool_series(rank_df[stock_sector_name] <= top_n)
     else:
         # 下位N位以内: ランクが (有効セクター数 - top_n + 1) 以上
         # 日ごとに有効セクター数が異なるため動的に計算
         total_sectors: pd.Series[int] = rank_df.notna().sum(axis=1)
         bottom_threshold: pd.Series[int] = (total_sectors - top_n + 1).clip(lower=1)
         # top_n >= total_sectorsの場合、thresholdは1となり全セクターが選択される
-        result = (rank_df[stock_sector_name] >= bottom_threshold).fillna(False)
+        result = normalize_bool_series(rank_df[stock_sector_name] >= bottom_threshold)
 
     logger.debug(
         f"セクター強度ランキング完了: True={result.sum()}/{len(result)} "
@@ -220,7 +222,7 @@ def sector_rotation_phase_signal(
         signal = rs_below_ma & (rs_momentum > 0)
 
     # 元のインデックスに合わせて返却
-    result = signal.reindex(sector_close.index).fillna(False)
+    result = normalize_bool_series(signal.reindex(sector_close.index))
     logger.debug(
         f"セクターローテーション位相完了: True={result.sum()}/{len(result)} "
         f"(direction={direction})"
@@ -286,7 +288,7 @@ def sector_volatility_regime_signal(
         # 高ボラ環境: current_vol > vol_ma * spike_multiplier
         signal = current_vol > (vol_ma * spike_multiplier)
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
     logger.debug(
         f"セクターボラティリティレジーム完了: True={result.sum()}/{len(result)} "
         f"(direction={direction})"

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Callable, Literal, Optional, Protocol
 import pandas as pd
 from loguru import logger
 
-from src.shared.models.signals import SignalParams, Signals
+from src.shared.models.signals import SignalParams, Signals, normalize_bool_series
 
 # データ駆動設計: シグナルレジストリからの動的処理
 from .registry import SIGNAL_REGISTRY
@@ -213,7 +213,9 @@ class SignalProcessor:
             and screening_recent_days is not None
             and screening_recent_days > 0
         ):
-            recent_entries = filtered_entries.tail(screening_recent_days).fillna(False).astype(bool)
+            recent_entries = normalize_bool_series(
+                filtered_entries.tail(screening_recent_days)
+            )
             if not recent_entries.any():
                 logger.debug(
                     "Entry candidate vanished in recent window; skipping exit signal evaluation "
@@ -394,14 +396,14 @@ class SignalProcessor:
             for condition in signal_conditions[1:]:
                 # NaNをFalse扱い（判定不能な期間は取引を許可しない = 安全側）
                 # pandas 2.2+: fillna downcasting警告回避のため infer_objects 使用
-                filled = condition.fillna(False).infer_objects(copy=False)
+                filled = normalize_bool_series(condition)
                 final_signal = final_signal & filled
         else:  # signal_type == "exit"
             # OR条件: いずれかの条件を満たせばエグジット
             for condition in signal_conditions[1:]:
                 # NaNをFalse扱い（データ不足の期間は発火しない）
                 # pandas 2.2+: fillna downcasting警告回避のため infer_objects 使用
-                filled = condition.fillna(False).infer_objects(copy=False)
+                filled = normalize_bool_series(condition)
                 final_signal = final_signal | filled
 
         # シグナル統計ログ
@@ -417,7 +419,7 @@ class SignalProcessor:
             if base_count > 0
             else f"{signal_type.capitalize()} signal処理完了: {final_count}/{total_count} signals"
         )
-        return final_signal.fillna(False)
+        return normalize_bool_series(final_signal)
 
     def _apply_signal_set(
         self,
@@ -470,7 +472,7 @@ class SignalProcessor:
             and entry_recent_days_for_early_stop > 0
         ):
             recent_window_size = min(entry_recent_days_for_early_stop, len(base_signal))
-            running_entry_signal = base_signal.fillna(False).infer_objects(copy=False).astype(bool)
+            running_entry_signal = normalize_bool_series(base_signal)
 
         # 統一シグナル処理（SIGNAL_REGISTRY）
         for signal_def in SIGNAL_REGISTRY:
@@ -492,7 +494,7 @@ class SignalProcessor:
                 continue
 
             latest_condition = signal_conditions[-1]
-            filled = latest_condition.fillna(False).infer_objects(copy=False).astype(bool)
+            filled = normalize_bool_series(latest_condition)
             running_entry_signal = running_entry_signal & filled
 
             if not running_entry_signal.tail(recent_window_size).any():

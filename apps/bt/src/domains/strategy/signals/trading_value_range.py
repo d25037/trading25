@@ -9,6 +9,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.strategy.indicators import compute_trading_value_ma
+from src.shared.models.signals import normalize_bool_series
 
 
 def trading_value_range_signal(
@@ -51,9 +52,9 @@ def trading_value_range_signal(
     trading_value_ma = compute_trading_value_ma(close, volume, period)
 
     # 範囲判定: min_threshold ≤ trading_value_ma ≤ max_threshold
-    result = (
+    result = normalize_bool_series(
         (trading_value_ma >= min_threshold) & (trading_value_ma <= max_threshold)
-    ).fillna(False)
+    )
 
     logger.debug(
         f"売買代金範囲シグナル: 処理完了 (True: {result.sum()}/{len(result)})"

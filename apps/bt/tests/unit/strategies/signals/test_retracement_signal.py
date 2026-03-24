@@ -7,7 +7,12 @@
 import pandas as pd
 import pytest
 
-from src.domains.strategy.signals.breakout import retracement_signal
+from src.domains.strategy.signals.breakout import (
+    retracement_cross_signal,
+    retracement_position_signal,
+    retracement_signal,
+    threshold_breakout_signal,
+)
 
 
 class TestRetracementSignal:
@@ -306,3 +311,81 @@ class TestRetracementSignal:
         assert result.iloc[-2]  # 21 < 21.4
         assert result.iloc[-1]  # 15 < 21.4
         assert not result.iloc[-3]  # 40 > 21.4
+
+    def test_direct_position_and_cross_signals(self):
+        index = pd.date_range("2020-01-01", periods=7)
+        high = pd.Series([100, 100, 100, 100, 100, 100, 100], index=index)
+        close = pd.Series([100, 100, 90, 70, 60, 65, 70], index=index)
+        low = pd.Series([100, 100, 88, 68, 58, 63, 68], index=index)
+
+        position = retracement_position_signal(
+            high=high,
+            close=close,
+            low=low,
+            lookback_period=5,
+            retracement_level=0.382,
+            direction="below",
+            price_column="low",
+        )
+        cross = retracement_cross_signal(
+            high=high,
+            close=close,
+            low=low,
+            lookback_period=5,
+            retracement_level=0.382,
+            direction="above",
+            lookback_days=2,
+            price_column="close",
+        )
+
+        assert isinstance(position, pd.Series)
+        assert position.dtype == bool
+        assert isinstance(cross, pd.Series)
+        assert cross.dtype == bool
+
+    def test_threshold_breakout_signal_supports_all_paths(self):
+        ohlc = pd.DataFrame(
+            {
+                "High": [100, 101, 103, 104, 106],
+                "Low": [95, 96, 97, 98, 99],
+                "Close": [98, 99, 102, 103, 105],
+            },
+            index=pd.date_range("2020-01-01", periods=5),
+        )
+
+        rolling = threshold_breakout_signal(
+            ohlc,
+            threshold_type="rolling_max",
+            period=2,
+            direction="downward",
+            price_column="low",
+        )
+        baseline = threshold_breakout_signal(
+            ohlc,
+            threshold_type="sma",
+            period=2,
+            direction="upward",
+            price_column="close",
+        )
+
+        assert isinstance(rolling, pd.Series)
+        assert rolling.dtype == bool
+        assert isinstance(baseline, pd.Series)
+        assert baseline.dtype == bool
+
+    def test_threshold_breakout_signal_rejects_unknown_type(self):
+        ohlc = pd.DataFrame(
+            {
+                "High": [100, 101, 103],
+                "Low": [95, 96, 97],
+                "Close": [98, 99, 102],
+            },
+            index=pd.date_range("2020-01-01", periods=3),
+        )
+
+        with pytest.raises(ValueError, match="未対応の閾値タイプ"):
+            threshold_breakout_signal(
+                ohlc,
+                threshold_type="median",
+                period=2,
+            )

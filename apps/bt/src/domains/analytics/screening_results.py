@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, Protocol, TypeVar
 
-from src.shared.models.signals import Signals
+from src.shared.models.signals import Signals, normalize_bool_series
 
 ScreeningSortBy = Literal["matchedDate", "stockCode", "bestStrategyScore", "matchStrategyCount"]
 SortOrder = Literal["asc", "desc"]
@@ -81,8 +81,8 @@ def find_recent_match_date(
     format_date: Callable[[Any], str] = _default_format_date,
 ) -> str | None:
     """Return latest date where entry is True and exit is False within recent window."""
-    entries = signals.entries.fillna(False).astype(bool)
-    exits = signals.exits.fillna(False).astype(bool)
+    entries = normalize_bool_series(signals.entries)
+    exits = normalize_bool_series(signals.exits)
     candidates = entries & (~exits)
 
     recent = candidates.tail(recent_days)

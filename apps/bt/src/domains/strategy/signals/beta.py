@@ -19,6 +19,8 @@ import pandas as pd
 from numba import njit
 from typing import Literal, cast
 
+from src.shared.models.signals import normalize_bool_series
+
 BetaMethod = Literal["pandas", "numba", "vectorbt"]
 
 
@@ -165,7 +167,7 @@ def beta_range_signal(
             stock_price, market_price, window=lookback_period
         )
         signal_condition = (rolling_beta >= beta_min) & (rolling_beta <= beta_max)
-        return cast(pd.Series, signal_condition.fillna(False))
+        return cast(pd.Series, normalize_bool_series(signal_condition))
 
 
 # ===== 高速化実装 =====
@@ -387,7 +389,7 @@ def beta_range_signal_with_value(
 
     # シグナル条件適用
     signal_condition = (rolling_beta >= beta_min) & (rolling_beta <= beta_max)
-    signal_result = cast(pd.Series, signal_condition.fillna(False))
+    signal_result = cast(pd.Series, normalize_bool_series(signal_condition))
 
     # 最新β値を取得
     latest_beta: float | None = None
@@ -434,7 +436,7 @@ def fast_beta_range_signal(
     # シグナル条件適用
     signal_condition = (rolling_beta >= beta_min) & (rolling_beta <= beta_max)
 
-    return cast(pd.Series, signal_condition.fillna(False))
+    return cast(pd.Series, normalize_bool_series(signal_condition))
 
 
 # ===== 拡張機能（テスト互換性のため） =====

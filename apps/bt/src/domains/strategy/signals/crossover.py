@@ -12,6 +12,7 @@ from src.domains.strategy.indicators import (
     compute_moving_average,
     compute_rsi,
 )
+from src.shared.models.signals import normalize_bool_series
 
 
 def crossover_signal(
@@ -57,7 +58,7 @@ def crossover_signal(
     else:
         raise ValueError(f"不正なdirection: {direction} (golden/deadのみ)")
 
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
 
     logger.debug(
         f"クロスオーバーシグナル: 処理完了 (方向={direction}, True: {result.sum()}/{len(result)})"
@@ -148,6 +149,8 @@ def indicator_crossover_signal(
     # lookback_days > 1の場合、直近X日以内クロス検出
     if lookback_days > 1:
         logger.debug(f"直近{lookback_days}日以内クロス検出を適用")
-        signal = (signal.astype(int).rolling(lookback_days).max() >= 1).fillna(False)
+        signal = normalize_bool_series(
+            signal.astype(int).rolling(lookback_days).max() >= 1
+        )
 
     return signal

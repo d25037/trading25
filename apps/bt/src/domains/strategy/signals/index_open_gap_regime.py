@@ -4,6 +4,8 @@ from typing import Literal, cast
 
 import pandas as pd
 
+from src.shared.models.signals import normalize_bool_series
+
 IndexOpenGapRegime = Literal[
     "down_large",
     "down_medium",
@@ -62,4 +64,4 @@ def index_open_gap_regime_signal(
     else:
         raise ValueError(f"regime が不正です: {regime}")
 
-    return cast(pd.Series, signal.fillna(False).astype(bool))
+    return cast(pd.Series, normalize_bool_series(signal))

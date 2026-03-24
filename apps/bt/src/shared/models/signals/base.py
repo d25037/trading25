@@ -12,6 +12,7 @@ __all__ = [
     "BaseSignalParams",
     "_validate_period_order",
     "_validate_condition_above_below",
+    "normalize_bool_series",
 ]
 
 
@@ -137,3 +138,9 @@ def _validate_condition_above_below(v: str) -> str:
     if v not in ["above", "below"]:
         raise ValueError("conditionは'above'または'below'のみ指定可能です")
     return v
+
+
+def normalize_bool_series(series: pd.Series) -> pd.Series:
+    """Coerce boolean-like Series with NA to bool without silent downcasting warnings."""
+    with pd.option_context("future.no_silent_downcasting", True):
+        return series.fillna(False).infer_objects(copy=False).astype(bool)

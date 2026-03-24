@@ -11,6 +11,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from src.shared.models.signals import normalize_bool_series
 from src.shared.utils.financial import calc_market_cap
 
 from .fundamental_helpers import (
@@ -365,7 +366,7 @@ def _build_release_mask(
         aligned_source = source.reindex(index)
         # NaN継続は「更新なし」とみなす。NaN -> 値 の遷移は更新として扱う。
         source_release = aligned_source.notna() & aligned_source.ne(aligned_source.shift(1))
-        release_mask |= source_release.fillna(False)
+        release_mask |= normalize_bool_series(source_release)
 
     if len(release_mask) > 0:
         release_mask.iloc[0] = True

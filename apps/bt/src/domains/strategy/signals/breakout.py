@@ -7,15 +7,17 @@ from __future__ import annotations
 import pandas as pd
 from loguru import logger
 
+from src.shared.models.signals import normalize_bool_series
+
 from .baseline import baseline_cross_signal, cross_signal, position_signal
 
 
 def _recent_true(signal: pd.Series, lookback_days: int) -> pd.Series:
-    result = signal.fillna(False)
+    result = normalize_bool_series(signal)
     if lookback_days <= 1:
         return result
-    return (result.astype(int).rolling(lookback_days, min_periods=1).max() >= 1).fillna(
-        False
+    return normalize_bool_series(
+        result.astype(int).rolling(lookback_days, min_periods=1).max() >= 1
     )
 
 
@@ -34,7 +36,7 @@ def _period_extrema_hits(
         raise ValueError(f"不正なdirection: {direction} (high/lowのみ)")
 
     valid = price.notna() & extrema.notna()
-    return (hits & valid).fillna(False), valid.fillna(False)
+    return normalize_bool_series(hits & valid), normalize_bool_series(valid)
 
 
 def period_extrema_break_signal(
@@ -52,7 +54,7 @@ def period_extrema_break_signal(
     )
 
     hits, _valid = _period_extrema_hits(price, period, direction)
-    event = hits & ~hits.shift(1).fillna(False)
+    event = hits & ~normalize_bool_series(hits.shift(1))
     result = _recent_true(event, lookback_days)
 
     logger.debug(
@@ -85,7 +87,7 @@ def period_extrema_position_signal(
     if state == "at_extrema":
         result = recent_hits
     elif state == "away_from_extrema":
-        result = (valid & ~recent_hits).fillna(False)
+        result = normalize_bool_series(valid & ~recent_hits)
     else:
         raise ValueError(f"不正なstate: {state} (at_extrema/away_from_extremaのみ)")
 

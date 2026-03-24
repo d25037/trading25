@@ -94,7 +94,6 @@ def _resolve_screening_metadata(
         )
         screening_error = None
     except Exception as exc:
-        logger.warning(f"failed to resolve strategy dataset metadata for {strategy_name}: {exc}")
         dataset_metadata = StrategyDatasetMetadata(
             dataset_name=None,
             dataset_preset=None,
