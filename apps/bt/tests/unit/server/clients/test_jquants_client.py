@@ -9,23 +9,24 @@ import httpx
 import respx
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError, JQuantsAsyncClient
+from src.shared.config.reliability import RetryPolicy
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch: pytest.MonkeyPatch):
     """テスト用 JQuantsAsyncClient"""
-    return JQuantsAsyncClient(api_key="dummy_token_value_0000", plan="premium", timeout=5.0)
+    client = JQuantsAsyncClient(api_key="dummy_token_value_0000", plan="premium", timeout=5.0)
 
-
-@pytest.fixture(autouse=True)
-def skip_retry_backoff_sleep(monkeypatch: pytest.MonkeyPatch):
-    async def _sleep_immediately(_delay: float) -> None:
+    async def _acquire_immediately() -> None:
         return None
 
-    monkeypatch.setattr(
-        "src.infrastructure.external_api.clients.jquants_client.asyncio.sleep",
-        _sleep_immediately,
-    )
+    monkeypatch.setattr(client._rate_limiter, "acquire", _acquire_immediately)
+    return client
+
+
+@pytest.fixture
+def fast_retry_backoff(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(RetryPolicy, "backoff_seconds", lambda _self, _attempt: 0.0)
 
 
 class TestJQuantsAsyncClient:
@@ -66,7 +67,7 @@ class TestGet:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_get_with_retry_on_500(self, client):
+    async def test_get_with_retry_on_500(self, client, fast_retry_backoff):
         """500 エラー時のリトライ"""
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
@@ -80,7 +81,7 @@ class TestGet:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_get_with_retry_on_429(self, client):
+    async def test_get_with_retry_on_429(self, client, fast_retry_backoff):
         """429 エラー時のリトライ"""
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
@@ -94,7 +95,7 @@ class TestGet:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_get_max_retries_exceeded(self, client):
+    async def test_get_max_retries_exceeded(self, client, fast_retry_backoff):
         """最大リトライ回数超過で JQuantsApiError(502) が発生"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
             return_value=httpx.Response(500, json={"error": "Internal Server Error"})
@@ -210,7 +211,7 @@ class TestJQuantsApiError:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_timeout_raises_api_error_504(self, client):
+    async def test_timeout_raises_api_error_504(self, client, fast_retry_backoff):
         """タイムアウトが JQuantsApiError(504) を発生させること"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
             side_effect=httpx.ReadTimeout("read timed out")
@@ -223,7 +224,7 @@ class TestJQuantsApiError:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_connection_error_raises_api_error_502(self, client):
+    async def test_connection_error_raises_api_error_502(self, client, fast_retry_backoff):
         """接続エラーが JQuantsApiError(502) を発生させること"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
             side_effect=httpx.ConnectError("connection refused")
