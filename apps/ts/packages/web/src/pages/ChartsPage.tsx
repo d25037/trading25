@@ -15,7 +15,7 @@ import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
 import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { SplitLayout, SplitMain, SplitSidebar } from '@/components/Layout/Workspace';
+import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
@@ -91,8 +91,8 @@ function resolveLatestMarketCaps(
 
 function ChartHeaderInfoField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border/60 bg-card/72 px-3 py-2">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+    <div className="min-w-0 border-l border-border/70 pl-3">
+      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
       <div className="truncate text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
@@ -100,8 +100,8 @@ function ChartHeaderInfoField({ label, value }: { label: string; value: string }
 
 function ChartHeaderMetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-full border border-border/60 bg-background/78 px-3 py-1 text-xs shadow-sm shadow-black/5">
-      <span className="text-muted-foreground">{label}: </span>
+    <div className="inline-flex items-center gap-2 text-xs">
+      <span className="uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
     </div>
   );
@@ -169,7 +169,7 @@ function MarginPressureIndicatorsSection({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-4 h-full">
+    <div className="grid h-full grid-cols-1 gap-4 xl:grid-cols-3">
       <ErrorBoundary>
         <MarginPressureChart type="longPressure" longPressureData={data.longPressure} />
       </ErrorBoundary>
@@ -354,96 +354,84 @@ function renderOrderedPanelSection({
           data-testid="fundamentals-panel-section"
           style={{ height: `${fundamentalsPanelHeight}px` }}
         >
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground">Fundamental Analysis</h3>
-              </div>
-              <div className="h-[calc(100%-4rem)] p-4">
-                <ErrorBoundary>
-                  <FundamentalsPanel
-                    symbol={selectedSymbol}
-                    enabled={fundamentalsPanelSection.isVisible}
-                    tradingValuePeriod={tradingValuePeriod}
-                    metricOrder={settings.fundamentalsMetricOrder}
-                    metricVisibility={settings.fundamentalsMetricVisibility}
-                  />
-                </ErrorBoundary>
-              </div>
+          <Surface className="h-full overflow-hidden">
+            <div className="border-b border-border/60 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Fundamental Analysis</h3>
             </div>
-          </div>
+            <div className="h-[calc(100%-3.75rem)] p-4">
+              <ErrorBoundary>
+                <FundamentalsPanel
+                  symbol={selectedSymbol}
+                  enabled={fundamentalsPanelSection.isVisible}
+                  tradingValuePeriod={tradingValuePeriod}
+                  metricOrder={settings.fundamentalsMetricOrder}
+                  metricVisibility={settings.fundamentalsMetricVisibility}
+                />
+              </ErrorBoundary>
+            </div>
+          </Surface>
         </div>
       );
     case 'fundamentalsHistory':
       return (
         <div key={panelId} ref={fundamentalsHistorySection.sectionRef} className="h-[340px]">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
-              </div>
-              <div className="h-[calc(100%-4rem)] p-4">
-                <ErrorBoundary>
-                  <FundamentalsHistoryPanel
-                    symbol={selectedSymbol}
-                    enabled={fundamentalsHistorySection.isVisible}
-                    metricOrder={settings.fundamentalsHistoryMetricOrder}
-                    metricVisibility={settings.fundamentalsHistoryMetricVisibility}
-                  />
-                </ErrorBoundary>
-              </div>
+          <Surface className="h-full overflow-hidden">
+            <div className="border-b border-border/60 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">FY推移</h3>
             </div>
-          </div>
+            <div className="h-[calc(100%-3.75rem)] p-4">
+              <ErrorBoundary>
+                <FundamentalsHistoryPanel
+                  symbol={selectedSymbol}
+                  enabled={fundamentalsHistorySection.isVisible}
+                  metricOrder={settings.fundamentalsHistoryMetricOrder}
+                  metricVisibility={settings.fundamentalsHistoryMetricVisibility}
+                />
+              </ErrorBoundary>
+            </div>
+          </Surface>
         </div>
       );
     case 'marginPressure':
       return (
         <div key={panelId} ref={marginSection.sectionRef} className="h-72">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground">
-                  信用圧力指標
-                  {marginPressureData && (
-                    <span className="text-sm font-normal text-muted-foreground ml-2">
-                      ({marginPressureData.averagePeriod}日平均)
-                    </span>
-                  )}
-                </h3>
-              </div>
-              <div className="h-[calc(100%-4rem)] p-4">
-                <MarginPressureIndicatorsSection
-                  data={marginPressureData}
-                  isLoading={marginPressureLoading}
-                  error={marginPressureError}
-                />
-              </div>
+          <Surface className="h-full overflow-hidden">
+            <div className="border-b border-border/60 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">
+                信用圧力指標
+                {marginPressureData && (
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">
+                    ({marginPressureData.averagePeriod}日平均)
+                  </span>
+                )}
+              </h3>
             </div>
-          </div>
+            <div className="h-[calc(100%-3.75rem)] p-4">
+              <MarginPressureIndicatorsSection
+                data={marginPressureData}
+                isLoading={marginPressureLoading}
+                error={marginPressureError}
+              />
+            </div>
+          </Surface>
         </div>
       );
     case 'factorRegression':
       return (
         <div key={panelId} ref={factorSection.sectionRef} className="h-64">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground">Factor Regression Analysis</h3>
-              </div>
-              <div className="h-[calc(100%-4rem)] p-4">
-                <ErrorBoundary>
-                  <FactorRegressionPanel
-                    symbol={selectedSymbol}
-                    enabled={settings.showFactorRegressionPanel && factorSection.isVisible}
-                  />
-                </ErrorBoundary>
-              </div>
+          <Surface className="h-full overflow-hidden">
+            <div className="border-b border-border/60 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Factor Regression Analysis</h3>
             </div>
-          </div>
+            <div className="h-[calc(100%-3.75rem)] p-4">
+              <ErrorBoundary>
+                <FactorRegressionPanel
+                  symbol={selectedSymbol}
+                  enabled={settings.showFactorRegressionPanel && factorSection.isVisible}
+                />
+              </ErrorBoundary>
+            </div>
+          </Surface>
         </div>
       );
     default:
@@ -453,29 +441,17 @@ function renderOrderedPanelSection({
 
 function LoadingState({ selectedSymbol }: { selectedSymbol: string | null }) {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center space-y-4">
-        <div className="relative">
-          <div className="gradient-primary rounded-full p-4 mx-auto w-fit">
-            <Loader2 className="h-8 w-8 text-white animate-spin" />
-          </div>
-          <div className="absolute inset-0 gradient-primary rounded-full animate-ping opacity-20" />
+    <Surface className="flex min-h-[20rem] items-center justify-center px-6 py-12">
+      <div className="space-y-4 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--app-surface-muted)] text-primary">
+          <Loader2 className="h-6 w-6 animate-spin" />
         </div>
-
-        <div className="space-y-2">
+        <div className="space-y-1">
           <p className="text-lg font-semibold text-foreground">Loading chart data...</p>
           <p className="text-sm text-muted-foreground">Fetching latest market data for {selectedSymbol}</p>
-
-          <div className="flex justify-center gap-1 mt-4">
-            <div className="w-2 h-4 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
-            <div className="w-2 h-6 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '100ms' }} />
-            <div className="w-2 h-3 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '200ms' }} />
-            <div className="w-2 h-5 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
-            <div className="w-2 h-4 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '400ms' }} />
-          </div>
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }
 
@@ -486,12 +462,10 @@ function ErrorState({ error }: { error: unknown }) {
   const showMarketDbGuidance = context.reason === 'topix_data_missing';
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="relative">
-          <div className="bg-destructive/10 rounded-full p-4 mx-auto w-fit">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-          </div>
+    <Surface className="flex min-h-[20rem] items-center justify-center px-6 py-12">
+      <div className="max-w-xl space-y-5 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+          <AlertCircle className="h-6 w-6" />
         </div>
 
         <div className="space-y-2">
@@ -509,59 +483,55 @@ function ErrorState({ error }: { error: unknown }) {
           )}
         </div>
 
-        <div className="flex gap-3 justify-center">
-          <Button variant="outline" onClick={() => window.location.reload()} className="glass-panel hover:bg-accent/50">
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" onClick={() => window.location.reload()}>
             Try Again
           </Button>
           {showMarketDbGuidance && (
-            <Button variant="default" className="gradient-primary hover:opacity-90" asChild>
+            <Button variant="default" asChild>
               <a href="/market-db">Open Market DB</a>
             </Button>
           )}
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="relative">
-          <div className="gradient-secondary rounded-full p-8 mx-auto w-fit">
-            <TrendingUp className="h-12 w-12 text-primary" />
-          </div>
-          <div className="absolute inset-0 gradient-glass rounded-full" />
+    <Surface className="flex min-h-[24rem] items-center justify-center px-6 py-12">
+      <div className="max-w-lg space-y-6 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[1.25rem] bg-[var(--app-surface-muted)] text-primary">
+          <TrendingUp className="h-8 w-8" />
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-2xl font-semibold text-foreground">Start Trading Analysis</h3>
+          <p className="text-sm text-muted-foreground">
+            Enter a stock symbol in the search rail to open price history, overlays, and supporting analytics.
+          </p>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-2xl font-bold text-foreground">Start Trading Analysis</h3>
-          <p className="text-muted-foreground">
-            Enter a stock symbol in the search box to view real-time charts and technical analysis
-          </p>
-
-          <div className="pt-4">
-            <p className="text-sm text-muted-foreground mb-3">Popular symbols:</p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {['7203', '6758', '8306', '9984', '4502'].map((symbol) => (
-                <Button
-                  key={symbol}
-                  variant="outline"
-                  size="sm"
-                  className="glass-panel hover:bg-primary/10 hover:border-primary/50 transition-all duration-200"
-                  onClick={() => {
-                    logger.debug('Symbol selected from popular list', { symbol });
-                  }}
-                >
-                  {symbol}
-                </Button>
-              ))}
-            </div>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Popular symbols</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {['7203', '6758', '8306', '9984', '4502'].map((symbol) => (
+              <Button
+                key={symbol}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  logger.debug('Symbol selected from popular list', { symbol });
+                }}
+              >
+                {symbol}
+              </Button>
+            ))}
           </div>
         </div>
       </div>
-    </div>
+    </Surface>
   );
 }
 
@@ -621,26 +591,45 @@ function ChartHeader({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-border/70 bg-card/90 px-5 py-4 shadow-sm shadow-black/5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <TrendingUp className="h-5 w-5" />
+      <Surface className="px-5 py-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--app-surface-muted)] text-primary">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <SectionEyebrow>Selected Symbol</SectionEyebrow>
+                <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">
+                  {selectedSymbol}
+                  {stockInfo?.companyName && <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>}
+                  {settings.relativeMode && <span className="font-medium text-muted-foreground"> / TOPIX</span>}
+                </h2>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Selected Symbol
-              </p>
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                {selectedSymbol}
-                {stockInfo?.companyName && (
-                  <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>
-                )}
-                {settings.relativeMode && <span className="font-medium text-muted-foreground"> / TOPIX</span>}
-              </h2>
+
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              <ChartHeaderMetaChip label="Overlay" value={overlayLabel} />
+              <ChartHeaderMetaChip label="Matched Date" value={formatOptionalDate(matchedDate)} />
+              <ChartHeaderMetaChip label="Market Snapshot" value={marketSnapshotId} />
+              <ChartHeaderMetaChip label="Signal Domains" value={formatList(mergedLoadedDomains)} />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <Button variant="outline" size="sm" onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)} title="四季報を開く">
+              <BookOpen className="mr-1 h-4 w-4" />
+              四季報
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
+              title="Buffett Codeを開く"
+            >
+              <Wallet className="mr-1 h-4 w-4" />
+              B.C.
+            </Button>
             <Button variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing}>
               {isRefreshing ? (
                 <>
@@ -657,48 +646,19 @@ function ChartHeader({
             <TimeframeSelector />
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <ChartHeaderMetaChip label="Overlay" value={overlayLabel} />
-          <ChartHeaderMetaChip label="Matched Date" value={formatOptionalDate(matchedDate)} />
-          <ChartHeaderMetaChip label="Market Snapshot" value={marketSnapshotId} />
-          <ChartHeaderMetaChip label="Signal Domains" value={formatList(mergedLoadedDomains)} />
-        </div>
-      </div>
 
-      <div className="rounded-xl border border-border/70 bg-card/82 px-5 py-4 shadow-sm shadow-black/5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
-            <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
-            <ChartHeaderInfoField label="時価総額 (Free Float)" value={formatMarketCap(latestMarketCaps.freeFloat)} />
-            <ChartHeaderInfoField
-              label="時価総額 (発行済み株式数)"
-              value={formatMarketCap(latestMarketCaps.issuedShares)}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
-              title="四季報を開く"
-            >
-              <BookOpen className="mr-1 h-4 w-4" />
-              四季報
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
-              title="Buffett Codeを開く"
-            >
-              <Wallet className="mr-1 h-4 w-4" />
-              B.C.
-            </Button>
-          </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
+          <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
+          <ChartHeaderInfoField label="時価総額 (Free Float)" value={formatMarketCap(latestMarketCaps.freeFloat)} />
+          <ChartHeaderInfoField
+            label="時価総額 (発行済み株式数)"
+            value={formatMarketCap(latestMarketCaps.issuedShares)}
+          />
         </div>
+
         {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (
-          <div className="mt-4 space-y-1 border-t border-border/30 pt-4 text-xs text-muted-foreground">
+          <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
             <div>
               Reference Date:{' '}
               <span className="font-medium text-foreground">
@@ -706,13 +666,13 @@ function ChartHeader({
               </span>
             </div>
             {warnings.length > 0 && (
-              <div>
+              <div className="mt-1">
                 Warnings: <span className="font-medium text-foreground">{warnings.join(' | ')}</span>
               </div>
             )}
           </div>
         )}
-      </div>
+      </Surface>
 
       {refreshFeedback && <ChartRefreshFeedbackBanner feedback={refreshFeedback} />}
     </div>
@@ -751,129 +711,81 @@ function ChartsPanelsContent({
   marginPressureError: Error | null;
 }) {
   return (
-    <div className="h-full flex flex-col gap-4">
-      <div className="h-[512px] shrink-0">
-        <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
-          <div className="h-full">
-            <div className="p-4 border-b border-border/30">
-              <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} Chart</h3>
-            </div>
-            <div className="h-[448px]">
-              <ErrorBoundary>
-                <StockChart
-                  data={chartData[settings.displayTimeframe]?.candlestickData || []}
-                  atrSupport={
-                    chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined
-                  }
-                  nBarSupport={
-                    chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined
-                  }
-                  bollingerBands={
-                    chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined
-                  }
-                  vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
-                  signalMarkers={signalMarkers?.[settings.displayTimeframe]}
-                />
-              </ErrorBoundary>
-            </div>
+    <div className="flex h-full flex-col gap-3">
+      <Surface className="min-h-[34rem] overflow-hidden lg:min-h-[40rem]">
+        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+          <div>
+            <SectionEyebrow>Primary</SectionEyebrow>
+            <h3 className="text-base font-semibold capitalize text-foreground">{settings.displayTimeframe} Chart</h3>
           </div>
         </div>
-      </div>
+        <div className="h-[calc(100%-4.25rem)]">
+          <ErrorBoundary>
+            <StockChart
+              data={chartData[settings.displayTimeframe]?.candlestickData || []}
+              atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
+              nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
+              bollingerBands={
+                chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined
+              }
+              vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
+              signalMarkers={signalMarkers?.[settings.displayTimeframe]}
+            />
+          </ErrorBoundary>
+        </div>
+      </Surface>
 
       {settings.showPPOChart && (
-        <div className="h-96 shrink-0">
-          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
-            <div className="h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} PPO</h3>
-              </div>
-              <div className="h-[calc(100%-4rem)]">
-                <ErrorBoundary>
-                  <PPOChart
-                    data={(chartData[settings.displayTimeframe]?.indicators.ppo as PPOIndicatorData[]) || []}
-                    title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} PPO`}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Surface className="h-96 shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <PPOChart
+              data={(chartData[settings.displayTimeframe]?.indicators.ppo as PPOIndicatorData[]) || []}
+              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} PPO`}
+            />
+          </ErrorBoundary>
+        </Surface>
       )}
 
       {settings.showRiskAdjustedReturnChart && (
-        <div className="h-[240px] shrink-0">
-          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
-            <div className="h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">
-                  {settings.displayTimeframe} Risk Adjusted Return
-                </h3>
-              </div>
-              <div className="h-[calc(100%-4rem)]">
-                <ErrorBoundary>
-                  <RiskAdjustedReturnChart
-                    data={
-                      (chartData[settings.displayTimeframe]?.indicators
-                        .riskAdjustedReturn as RiskAdjustedReturnData[]) || []
-                    }
-                    lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
-                    ratioType={settings.riskAdjustedReturn.ratioType}
-                    threshold={settings.riskAdjustedReturn.threshold}
-                    condition={settings.riskAdjustedReturn.condition}
-                    title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Risk Adjusted Return`}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Surface className="h-[240px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <RiskAdjustedReturnChart
+              data={
+                (chartData[settings.displayTimeframe]?.indicators.riskAdjustedReturn as RiskAdjustedReturnData[]) || []
+              }
+              lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
+              ratioType={settings.riskAdjustedReturn.ratioType}
+              threshold={settings.riskAdjustedReturn.threshold}
+              condition={settings.riskAdjustedReturn.condition}
+              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Risk Adjusted Return`}
+            />
+          </ErrorBoundary>
+        </Surface>
       )}
 
       {settings.showVolumeComparison && (
-        <div className="h-[240px] shrink-0">
-          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
-            <div className="h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">
-                  {settings.displayTimeframe} Volume Comparison
-                </h3>
-              </div>
-              <div className="h-[calc(100%-4rem)]">
-                <ErrorBoundary>
-                  <VolumeComparisonChart
-                    data={(chartData[settings.displayTimeframe]?.volumeComparison as VolumeComparisonData[]) || []}
-                    shortPeriod={settings.volumeComparison.shortPeriod}
-                    longPeriod={settings.volumeComparison.longPeriod}
-                    lowerMultiplier={settings.volumeComparison.lowerMultiplier}
-                    higherMultiplier={settings.volumeComparison.higherMultiplier}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Surface className="h-[240px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <VolumeComparisonChart
+              data={(chartData[settings.displayTimeframe]?.volumeComparison as VolumeComparisonData[]) || []}
+              shortPeriod={settings.volumeComparison.shortPeriod}
+              longPeriod={settings.volumeComparison.longPeriod}
+              lowerMultiplier={settings.volumeComparison.lowerMultiplier}
+              higherMultiplier={settings.volumeComparison.higherMultiplier}
+            />
+          </ErrorBoundary>
+        </Surface>
       )}
 
       {settings.showTradingValueMA && (
-        <div className="h-[200px] shrink-0">
-          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
-            <div className="h-full">
-              <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">
-                  {settings.displayTimeframe} Trading Value MA
-                </h3>
-              </div>
-              <div className="h-[calc(100%-4rem)]">
-                <ErrorBoundary>
-                  <TradingValueMAChart
-                    data={(chartData[settings.displayTimeframe]?.tradingValueMA as TradingValueMAData[]) || []}
-                    period={settings.tradingValueMA.period}
-                  />
-                </ErrorBoundary>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Surface className="h-[200px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <TradingValueMAChart
+              data={(chartData[settings.displayTimeframe]?.tradingValueMA as TradingValueMAData[]) || []}
+              period={settings.tradingValueMA.period}
+            />
+          </ErrorBoundary>
+        </Surface>
       )}
 
       {settings.fundamentalsPanelOrder
@@ -982,14 +894,16 @@ export function ChartsPage() {
   }, [queryClient, refreshStocks, selectedSymbol]);
 
   return (
-    <SplitLayout className="gap-0">
-      <SplitSidebar className={cn('w-72 border-r border-border/30', 'glass-panel')}>
-        <ErrorBoundary>
-          <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
-        </ErrorBoundary>
+    <SplitLayout className="min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:flex-row lg:items-stretch lg:overflow-hidden">
+      <SplitSidebar className="w-full lg:w-[18rem]">
+        <Surface className="h-full min-h-0 overflow-hidden">
+          <ErrorBoundary>
+            <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
+          </ErrorBoundary>
+        </Surface>
       </SplitSidebar>
 
-      <SplitMain className="space-y-4 overflow-auto p-6">
+      <SplitMain className="min-h-0 gap-3 lg:overflow-y-auto lg:pr-1">
         {selectedSymbol && (
           <ChartHeader
             settings={settings}

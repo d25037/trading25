@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { type DisplayTimeframe, useChartStore } from '@/stores/chartStore';
 
@@ -15,20 +14,20 @@ export function TimeframeSelector() {
   return (
     <div className="flex gap-2">
       {timeframeOptions.map((option) => (
-        <Button
+        <button
           key={option.value}
-          variant={currentTimeframe === option.value ? 'default' : 'outline'}
-          size="sm"
+          type="button"
+          aria-pressed={currentTimeframe === option.value}
           onClick={() => setDisplayTimeframe(option.value)}
           className={cn(
-            'transition-all duration-200',
+            'inline-flex items-center rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
             currentTimeframe === option.value
-              ? 'gradient-primary text-white shadow-lg'
-              : 'glass-panel hover:bg-accent/50'
+              ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground shadow-sm'
+              : 'border-transparent bg-transparent text-muted-foreground hover:border-border/60 hover:bg-[var(--app-surface-muted)] hover:text-foreground'
           )}
         >
           {option.label}
-        </Button>
+        </button>
       ))}
     </div>
   );
