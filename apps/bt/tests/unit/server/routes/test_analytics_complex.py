@@ -5,6 +5,7 @@ Ranking, Factor Regression, Screening のルートテスト。
 """
 
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -32,11 +33,12 @@ def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
     return dates
 
 
-@pytest.fixture
-def analytics_timeseries_dir(tmp_path):
+@pytest.fixture(scope="module")
+def analytics_timeseries_dir(tmp_path_factory):
     """factor-regression/screening 用に十分なデータを持つ market.duckdb"""
     import duckdb
 
+    tmp_path = tmp_path_factory.mktemp("analytics-complex")
     base_dir = tmp_path / "market-timeseries"
     base_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(base_dir / "market.duckdb")
@@ -237,19 +239,33 @@ def analytics_timeseries_dir(tmp_path):
     return str(base_dir)
 
 
-@pytest.fixture
-def analytics_client(analytics_timeseries_dir, monkeypatch):
+@pytest.fixture(scope="module")
+def analytics_client(analytics_timeseries_dir):
     """analytics テスト用クライアント"""
-    monkeypatch.setenv("MARKET_TIMESERIES_DIR", analytics_timeseries_dir)
-    monkeypatch.setenv("MARKET_DB_PATH", str(Path(analytics_timeseries_dir) / "market.duckdb"))
-    monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
-    monkeypatch.setenv("JQUANTS_PLAN", "free")
     from src.shared.config.settings import reload_settings
+
+    env_updates = {
+        "MARKET_TIMESERIES_DIR": analytics_timeseries_dir,
+        "MARKET_DB_PATH": str(Path(analytics_timeseries_dir) / "market.duckdb"),
+        "JQUANTS_API_KEY": "dummy_token_value_0000",
+        "JQUANTS_PLAN": "free",
+    }
+    original_env = {key: os.environ.get(key) for key in env_updates}
+
+    for key, value in env_updates.items():
+        os.environ[key] = value
     reload_settings()
     app = create_app()
-    with TestClient(app) as client:
-        yield client
-    reload_settings()
+    try:
+        with TestClient(app) as client:
+            yield client
+    finally:
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        reload_settings()
 
 
 # --- Ranking Tests ---
