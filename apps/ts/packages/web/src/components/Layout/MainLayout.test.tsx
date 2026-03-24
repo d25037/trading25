@@ -16,6 +16,6 @@ describe('MainLayout', () => {
 
     expect(screen.getByTestId('mock-header')).toBeInTheDocument();
     expect(screen.getByText('Page Content')).toBeInTheDocument();
-    expect(container.querySelector('main')).toHaveClass('flex', 'min-h-0', 'flex-1', 'overflow-auto');
+    expect(container.querySelector('main')).toHaveClass('flex', 'min-h-0', 'flex-1', 'flex-col', 'overflow-auto');
   });
 });
