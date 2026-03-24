@@ -20,21 +20,23 @@ HONO_OPERATION_TAGS = {
 }
 
 
-def _make_client() -> TestClient:
-    return TestClient(create_app())
+@pytest.fixture(scope="module")
+def openapi_app():
+    return create_app()
 
 
 @pytest.fixture(scope="module")
-def openapi_client():
-    with _make_client() as client:
+def openapi_client(openapi_app):
+    client = TestClient(openapi_app)
+    try:
         yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture(scope="module")
-def openapi_schema(openapi_client):
-    resp = openapi_client.get("/openapi.json")
-    assert resp.status_code == 200
-    return resp.json()
+def openapi_schema(openapi_app):
+    return openapi_app.openapi()
 
 
 class TestOpenAPISchema:

@@ -22,8 +22,11 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
 @pytest.fixture(scope="module")
 def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    with TestClient(app, raise_server_exceptions=False) as client:
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
         yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture()

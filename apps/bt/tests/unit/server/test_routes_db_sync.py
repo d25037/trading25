@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,14 +43,30 @@ def market_db_path(tmp_path, market_db_template_path: str):
     return db_path
 
 
-@pytest.fixture
-def client(market_db_path: str):
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.market_db = MarketDb(market_db_path, read_only=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture
+def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient, None, None]:
+    market_db = MarketDb(market_db_path, read_only=False)
     mock_client = MagicMock()
     mock_client.has_api_key = True
-    app.state.jquants_client = mock_client
-    return TestClient(app, raise_server_exceptions=False)
+    app_client.app.state.market_db = market_db
+    app_client.app.state.jquants_client = mock_client
+    try:
+        yield app_client
+    finally:
+        market_db.close()
+        app_client.app.state.market_db = None
+        app_client.app.state.jquants_client = None
+        app_client.app.state.market_time_series_store = None
 
 
 class TestSyncRoutes:
@@ -454,29 +471,30 @@ class TestRefreshRoute:
         resp = client.post("/api/db/stocks/refresh", json={"codes": []})
         assert resp.status_code == 422
 
-    def test_refresh_no_db(self) -> None:
-        app = create_app()
-        app.state.market_db = None
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
+    def test_refresh_no_db(self, app_client: TestClient) -> None:
+        app_client.app.state.market_db = None
+        resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
         assert resp.status_code == 422
 
-    def test_refresh_no_jquants_client(self, market_db_path: str) -> None:
-        app = create_app()
-        app.state.market_db = MarketDb(market_db_path, read_only=False)
-        app.state.jquants_client = None
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
-        assert resp.status_code == 422
+    def test_refresh_no_jquants_client(self, app_client: TestClient, market_db_path: str) -> None:
+        market_db = MarketDb(market_db_path, read_only=False)
+        app_client.app.state.market_db = market_db
+        app_client.app.state.jquants_client = None
+        try:
+            resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
+            assert resp.status_code == 422
+        finally:
+            market_db.close()
 
-    def test_refresh_not_initialized(self, market_db_path: str) -> None:
-        app = create_app()
+    def test_refresh_not_initialized(self, app_client: TestClient, market_db_path: str) -> None:
         market_db = MarketDb(market_db_path, read_only=False)
         market_db.set_sync_metadata("init_completed", "false")
-        app.state.market_db = market_db
+        app_client.app.state.market_db = market_db
         mock_client = MagicMock()
         mock_client.has_api_key = True
-        app.state.jquants_client = mock_client
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
-        assert resp.status_code == 422
+        app_client.app.state.jquants_client = mock_client
+        try:
+            resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
+            assert resp.status_code == 422
+        finally:
+            market_db.close()

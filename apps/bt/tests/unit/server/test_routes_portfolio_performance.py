@@ -87,8 +87,11 @@ def market_reader(market_db_path: str) -> Generator[MarketDbReader, None, None]:
 @pytest.fixture(scope="module")
 def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    with TestClient(app, raise_server_exceptions=False) as client:
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
         yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture()
@@ -156,9 +159,9 @@ class TestPortfolioPerformance:
 
     def test_no_market_db(self, pdb: PortfolioDb) -> None:
         app = create_app()
-        app.state.portfolio_db = pdb
-        app.state.market_reader = None
-        c = TestClient(app, raise_server_exceptions=False)
-        pdb.create_portfolio("Test")
-        resp = c.get("/api/portfolio/1/performance")
-        assert resp.status_code == 422
+        with TestClient(app, raise_server_exceptions=False) as client:
+            app.state.portfolio_db = pdb
+            app.state.market_reader = None
+            pdb.create_portfolio("Test")
+            resp = client.get("/api/portfolio/1/performance")
+            assert resp.status_code == 422

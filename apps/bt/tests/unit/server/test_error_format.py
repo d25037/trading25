@@ -96,8 +96,11 @@ def _make_test_app() -> TestClient:
 
 @pytest.fixture(scope="module")
 def shared_client():
-    with _make_test_app() as client:
+    client = _make_test_app()
+    try:
         yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture(scope="module")

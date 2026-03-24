@@ -287,8 +287,11 @@ def market_source_template_path(tmp_path_factory: pytest.TempPathFactory) -> Pat
 @pytest.fixture(scope="module")
 def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    with TestClient(app, raise_server_exceptions=False) as client:
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
         yield client
+    finally:
+        client.close()
 
 
 @pytest.fixture

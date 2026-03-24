@@ -1,5 +1,6 @@
 """CORS 設定のテスト"""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
@@ -16,11 +17,23 @@ def _make_client() -> TestClient:
     return TestClient(create_app())
 
 
-class TestCORSPreflight:
-    """OPTIONS preflight リクエストのテスト"""
+@pytest.fixture(scope="module")
+def shared_client():
+    client = _make_client()
+    try:
+        yield client
+    finally:
+        client.close()
 
-    def setup_method(self) -> None:
-        self.client = _make_client()
+
+class UsesSharedClient:
+    @pytest.fixture(autouse=True)
+    def _inject_client(self, shared_client: TestClient) -> None:
+        self.client = shared_client
+
+
+class TestCORSPreflight(UsesSharedClient):
+    """OPTIONS preflight リクエストのテスト"""
 
     def test_preflight_returns_cors_headers(self) -> None:
         """preflight が正しい CORS ヘッダを返すこと"""
@@ -50,11 +63,8 @@ class TestCORSPreflight:
         assert "x-correlation-id" in allowed
 
 
-class TestCORSAllowedOrigins:
+class TestCORSAllowedOrigins(UsesSharedClient):
     """許可されたオリジンのテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_client()
 
     def test_all_allowed_origins(self) -> None:
         """全ての許可オリジンが正しく動作すること"""
@@ -71,11 +81,8 @@ class TestCORSAllowedOrigins:
         assert resp.headers.get("access-control-allow-origin") is None
 
 
-class TestCORSExposeHeaders:
+class TestCORSExposeHeaders(UsesSharedClient):
     """expose-headers のテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_client()
 
     def test_correlation_id_exposed(self) -> None:
         """x-correlation-id が expose-headers に含まれること"""
@@ -87,11 +94,8 @@ class TestCORSExposeHeaders:
         assert "x-correlation-id" in exposed
 
 
-class TestCORSMethods:
+class TestCORSMethods(UsesSharedClient):
     """許可メソッドのテスト"""
-
-    def setup_method(self) -> None:
-        self.client = _make_client()
 
     def test_allowed_methods(self) -> None:
         """GET/POST/PUT/DELETE/OPTIONS が許可されていること"""
