@@ -44,6 +44,8 @@ parent: null
 - 2026-03-24: `tests/unit/server/routes/test_jquants_proxy.py` の実行時間は `18 passed in 3.52s` から `18 passed in 0.32s` まで短縮した。あわせて `test_jquants_proxy.py + test_routes_dataset_data.py` の subset で `44 passed in 0.59s` を確認した。
 - 2026-03-24: `tests/unit/server/test_routes_db_sync.py` は mutable DB を共有しない方針を維持し、market DB を毎回生成する代わりに module-scope template DB を 1 回作成して各テストでコピーする形へ変更した。
 - 2026-03-24: `tests/unit/server/test_routes_db_sync.py` の実行時間は `25 passed in 3.09s` から `25 passed in 2.62s` へ短縮した。`test_jquants_proxy.py + test_routes_dataset_data.py + test_routes_db_sync.py` の subset では `69 passed in 3.13s` を確認した。
+- 2026-03-24: `tests/unit/server/routes/test_market_data.py` は read-only な market DuckDB と env/app 初期化を module 共有 fixture に置き換えた。共通 fixture への依存をやめ、必要最小限の test data をファイル内 helper で閉じた。
+- 2026-03-24: `tests/unit/server/routes/test_market_data.py` の実行時間は `22 passed in 5.82s` から `22 passed in 0.23s` へ短縮した。`test_market_data.py + test_jquants_proxy.py + test_routes_dataset_data.py + test_routes_db_sync.py` の subset では `91 passed in 1.97s` を確認した。
 
 ## 補足
 - `pytest-xdist` 導入可否の再検討は、この issue の主目的ではない。
