@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import duckdb
 import pandas as pd
@@ -11,6 +12,7 @@ from src.domains.analytics import topix_gap_intraday_distribution as analysis_mo
 from src.domains.analytics.topix_gap_intraday_distribution import (
     format_gap_bucket_label,
     get_topix_available_date_range,
+    get_topix_gap_return_stats,
     run_topix_gap_intraday_distribution,
 )
 
@@ -368,6 +370,38 @@ def test_get_topix_available_date_range_reads_metadata(analytics_db_path: str) -
     assert get_topix_available_date_range(analytics_db_path) == ("2024-01-01", "2024-01-04")
 
 
+def test_get_topix_gap_return_stats_returns_sigma_thresholds(
+    analytics_db_path: str,
+) -> None:
+    stats = get_topix_gap_return_stats(
+        analytics_db_path,
+        sigma_threshold_1=1.0,
+        sigma_threshold_2=2.0,
+    )
+
+    assert stats is not None
+    assert stats.sample_count == 3
+    assert stats.mean_return == pytest.approx(-0.0016151202749140894)
+    assert stats.std_return == pytest.approx(0.016105037480859615)
+    assert stats.threshold_1 == pytest.approx(0.016105037480859615)
+    assert stats.threshold_2 == pytest.approx(0.03221007496171923)
+    assert stats.min_return == pytest.approx(-0.02)
+    assert stats.median_return == pytest.approx(0.005154639175257732)
+    assert stats.max_return == pytest.approx(0.01)
+
+
+def test_get_topix_gap_return_stats_returns_none_when_no_rows(
+    analytics_db_path: str,
+) -> None:
+    stats = get_topix_gap_return_stats(
+        analytics_db_path,
+        start_date="2024-01-01",
+        end_date="2024-01-01",
+    )
+
+    assert stats is None
+
+
 def test_lock_contention_falls_back_to_snapshot(analytics_db_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
     original_connect = analysis_module._connect_duckdb
     attempts = {"count": 0}
@@ -449,6 +483,11 @@ def test_selected_groups_are_deduplicated(analytics_db_path: str) -> None:
             {"clip_percentiles": (99.0, 99.0)},
             "clip_percentiles must satisfy 0 <= lower < upper <= 100",
         ),
+        ({"sigma_threshold_1": 0.0}, "sigma_threshold_1 must be positive"),
+        (
+            {"sigma_threshold_1": 2.0, "sigma_threshold_2": 2.0},
+            "sigma_threshold_2 must be greater than sigma_threshold_1",
+        ),
     ],
 )
 def test_invalid_inputs_raise(
@@ -456,8 +495,12 @@ def test_invalid_inputs_raise(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
+    target = run_topix_gap_intraday_distribution
+    if "sigma_threshold_1" in kwargs or "sigma_threshold_2" in kwargs:
+        target = get_topix_gap_return_stats
+
     with pytest.raises(ValueError, match=message):
-        run_topix_gap_intraday_distribution(analytics_db_path, **kwargs)
+        target(analytics_db_path, **cast(dict[str, Any], kwargs))
 
 
 def test_gap_bucket_labels_support_fractional_thresholds() -> None:

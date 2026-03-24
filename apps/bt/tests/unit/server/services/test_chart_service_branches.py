@@ -131,6 +131,7 @@ class TestStockPaths:
 class TestMiscBranches:
     def test_get_indices_list_builds_response(self):
         reader = FakeReader(
+            query_one_results=[None],
             query_results=[
                 [
                     {
@@ -150,6 +151,30 @@ class TestMiscBranches:
         assert result is not None
         assert result.indices[0].code == "TOPIX"
         assert result.indices[0].nameEnglish == "Tokyo Stock Price Index"
+
+    def test_get_indices_list_appends_nt_ratio_when_local_data_exists(self):
+        reader = FakeReader(
+            query_one_results=[{"data_start_date": "2026-02-06"}],
+            query_results=[
+                [
+                    {
+                        "code": "N225_UNDERPX",
+                        "name": "日経平均",
+                        "name_english": "Nikkei 225 (UnderPx derived)",
+                        "category": "synthetic",
+                        "data_start_date": "2026-02-06",
+                    }
+                ]
+            ],
+        )
+        service = ChartService(reader)
+
+        result = service.get_indices_list()
+
+        assert result is not None
+        assert [item.code for item in result.indices] == ["N225_UNDERPX", "NT_RATIO"]
+        assert result.indices[1].name == "NT倍率"
+        assert result.indices[1].dataStartDate == "2026-02-06"
 
     def test_get_index_data_builds_response(self):
         reader = FakeReader(
@@ -174,6 +199,28 @@ class TestMiscBranches:
         assert result.code == "TOPIX"
         assert len(result.data) == 1
         assert result.data[0].close == 100.5
+
+    def test_get_index_data_builds_nt_ratio_response(self):
+        reader = FakeReader(
+            query_results=[
+                [
+                    {
+                        "date": "2026-02-06",
+                        "value": 14.1284,
+                    }
+                ]
+            ],
+        )
+        service = ChartService(reader)
+
+        result = service.get_index_data("NT_RATIO")
+
+        assert result is not None
+        assert result.code == "NT_RATIO"
+        assert result.name == "NT倍率"
+        assert len(result.data) == 1
+        assert result.data[0].open == 14.1284
+        assert result.data[0].close == 14.1284
 
     def test_search_stocks_returns_ranked_results(self):
         reader = FakeReader(

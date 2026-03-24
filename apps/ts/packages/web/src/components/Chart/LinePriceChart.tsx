@@ -1,6 +1,7 @@
 import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS } from '@/lib/constants';
+import { useChartStore } from '@/stores/chartStore';
 
 export interface LinePricePoint {
   time: string;
@@ -11,10 +12,23 @@ interface LinePriceChartProps {
   data?: LinePricePoint[];
 }
 
+function setChartVisibleBars(chart: IChartApi, dataLength: number, barsToShow: number) {
+  if (dataLength === 0) return;
+
+  const from = Math.max(0, dataLength - barsToShow - 0.5);
+  const to = dataLength - 0.5;
+
+  chart.timeScale().setVisibleLogicalRange({
+    from,
+    to,
+  });
+}
+
 export function LinePriceChart({ data = [] }: LinePriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const { settings } = useChartStore();
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -67,8 +81,8 @@ export function LinePriceChart({ data = [] }: LinePriceChartProps) {
       return;
     }
     lineSeries.setData(data);
-    chart.timeScale().fitContent();
-  }, [data]);
+    setChartVisibleBars(chart, data.length, settings.visibleBars);
+  }, [data, settings.visibleBars]);
 
   useEffect(() => {
     const container = chartContainerRef.current;

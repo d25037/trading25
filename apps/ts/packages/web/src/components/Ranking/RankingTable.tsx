@@ -147,9 +147,9 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
                   <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingTop }} />
                 </tr>
               )}
-              {virtual.visibleItems.map((item, offset) => (
+              {virtual.visibleItems.map((item) => (
                 <RankingRow
-                  key={`${item.code}-${item.rank}-${virtual.startIndex + offset}`}
+                  key={`${item.code}-${item.rank}`}
                   item={item}
                   onStockClick={onStockClick}
                   showChange={showChange}

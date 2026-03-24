@@ -363,6 +363,12 @@ describe('ChartControls', () => {
   it('guards against stale fundamental metric reorder actions', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
+    const [firstFundamentalMetric, ...remainingFundamentalMetrics] =
+      DEFAULT_FUNDAMENTAL_METRIC_ORDER;
+
+    if (!firstFundamentalMetric) {
+      throw new Error('DEFAULT_FUNDAMENTAL_METRIC_ORDER must not be empty');
+    }
 
     renderChartControls();
 
@@ -383,9 +389,9 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
     mockChartStore.settings.fundamentalsMetricOrder = [
-      DEFAULT_FUNDAMENTAL_METRIC_ORDER[0]!,
+      firstFundamentalMetric,
       undefined as unknown as (typeof DEFAULT_FUNDAMENTAL_METRIC_ORDER)[number],
-      ...DEFAULT_FUNDAMENTAL_METRIC_ORDER.slice(2),
+      ...remainingFundamentalMetrics.slice(1),
     ];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
@@ -428,6 +434,12 @@ describe('ChartControls', () => {
   it('guards against stale FY history metric reorder actions', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
+    const [firstHistoryMetric, ...remainingHistoryMetrics] =
+      DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER;
+
+    if (!firstHistoryMetric) {
+      throw new Error('DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER must not be empty');
+    }
 
     renderChartControls();
 
@@ -448,9 +460,9 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
     mockChartStore.settings.fundamentalsHistoryMetricOrder = [
-      DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER[0]!,
+      firstHistoryMetric,
       undefined as unknown as (typeof DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER)[number],
-      ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2),
+      ...remainingHistoryMetrics.slice(1),
     ];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();

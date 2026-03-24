@@ -124,9 +124,9 @@ export function FundamentalRankingTable({ rankings, isLoading, error, onStockCli
                   <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
                 </tr>
               )}
-              {virtual.visibleItems.map((item, offset) => (
+              {virtual.visibleItems.map((item) => (
                 <FundamentalRankingRow
-                  key={`${item.code}-${item.rank}-${virtual.startIndex + offset}`}
+                  key={`${item.code}-${item.rank}-${item.disclosedDate}-${item.source}`}
                   item={item}
                   onStockClick={onStockClick}
                 />

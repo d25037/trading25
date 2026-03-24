@@ -133,9 +133,9 @@ export function IndexPerformanceTable({
                   <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
                 </tr>
               ) : null}
-              {virtual.visibleItems.map((item, offset) => (
+              {virtual.visibleItems.map((item) => (
                 <IndexPerformanceRow
-                  key={`${item.code}-${virtual.startIndex + offset}`}
+                  key={item.code}
                   item={item}
                   onIndexClick={onIndexClick}
                 />

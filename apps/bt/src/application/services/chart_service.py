@@ -8,6 +8,14 @@ from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.application.services.market_code_alias import resolve_market_codes
 from src.application.services.market_data_errors import MarketDataError
+from src.application.services.synthetic_indices import (
+    NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
+    NT_RATIO_SYNTHETIC_INDEX_CODE,
+    NT_RATIO_SYNTHETIC_INDEX_NAME,
+    NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
+    get_nt_ratio_data_start_date,
+    get_nt_ratio_rows,
+)
 from src.entrypoints.http.schemas.chart import (
     IndexDataResponse,
     IndexInfo,
@@ -69,12 +77,46 @@ class ChartService:
             for row in rows
         ]
 
+        if not any(index.code == NT_RATIO_SYNTHETIC_INDEX_CODE for index in indices):
+            nt_ratio_start_date = get_nt_ratio_data_start_date(self._reader)
+            if nt_ratio_start_date is not None:
+                indices.append(
+                    IndexInfo(
+                        code=NT_RATIO_SYNTHETIC_INDEX_CODE,
+                        name=NT_RATIO_SYNTHETIC_INDEX_NAME,
+                        nameEnglish=NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
+                        category=NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
+                        dataStartDate=nt_ratio_start_date,
+                    )
+                )
+
         return IndicesListResponse(indices=indices, lastUpdated=_now_iso())
 
     def get_index_data(self, code: str) -> IndexDataResponse | None:
         """指数チャートデータを取得"""
         if self._reader is None:
             return None
+
+        if code == NT_RATIO_SYNTHETIC_INDEX_CODE:
+            rows = get_nt_ratio_rows(self._reader)
+            if not rows:
+                return None
+
+            return IndexDataResponse(
+                code=NT_RATIO_SYNTHETIC_INDEX_CODE,
+                name=NT_RATIO_SYNTHETIC_INDEX_NAME,
+                data=[
+                    IndexOHLCRecord(
+                        date=row.date,
+                        open=row.value,
+                        high=row.value,
+                        low=row.value,
+                        close=row.value,
+                    )
+                    for row in rows
+                ],
+                lastUpdated=_now_iso(),
+            )
 
         # 指数メタデータ
         meta = self._reader.query_one(
