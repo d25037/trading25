@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
+from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,10 +15,7 @@ from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import MarketDb
 
 
-@pytest.fixture
-def market_db_path(tmp_path):
-    """テスト用 DuckDB market file"""
-    db_path = os.path.join(str(tmp_path), "market.duckdb")
+def _build_market_db(db_path: str) -> None:
     db = MarketDb(db_path, read_only=False)
     db.upsert_stocks([
         {
@@ -67,7 +67,21 @@ def market_db_path(tmp_path):
     db.set_sync_metadata("last_sync_date", "2024-01-06T10:00:00")
     db.set_sync_metadata("failed_dates", "[\"2024-01-03\"]")
     db.close()
-    return db_path
+
+
+@pytest.fixture(scope="module")
+def market_db_template_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """テスト用 DuckDB market file の template"""
+    db_path = tmp_path_factory.mktemp("db-routes-market") / "market.duckdb"
+    _build_market_db(str(db_path))
+    return str(db_path)
+
+
+@pytest.fixture
+def market_db_path(tmp_path: Path, market_db_template_path: str) -> str:
+    db_path = tmp_path / "market.duckdb"
+    shutil.copyfile(market_db_template_path, db_path)
+    return str(db_path)
 
 
 def _build_time_series_store(inspection: TimeSeriesInspection):
@@ -92,11 +106,18 @@ def _build_time_series_store(inspection: TimeSeriesInspection):
     return _Store()
 
 
-@pytest.fixture
-def client(market_db_path: str):
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.market_db = MarketDb(market_db_path, read_only=False)
-    app.state.market_time_series_store = _build_time_series_store(
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture
+def client(app_client: TestClient, market_db_path: str) -> Generator[TestClient, None, None]:
+    market_db = MarketDb(market_db_path, read_only=False)
+    app_client.app.state.market_db = market_db
+    app_client.app.state.market_time_series_store = _build_time_series_store(
         TimeSeriesInspection(
             source="duckdb-parquet",
             topix_count=3,
@@ -122,7 +143,11 @@ def client(market_db_path: str):
             statement_codes=set(),
         )
     )
-    return TestClient(app, raise_server_exceptions=False)
+    try:
+        yield app_client
+    finally:
+        market_db.close()
+        app_client.app.state.market_db = None
 
 
 class TestDbStatsRoute:
@@ -151,10 +176,10 @@ class TestDbStatsRoute:
 
     def test_stats_no_db(self) -> None:
         app = create_app()
-        app.state.market_db = None
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/db/stats")
-        assert resp.status_code == 422
+        with TestClient(app, raise_server_exceptions=False) as client:
+            app.state.market_db = None
+            resp = client.get("/api/db/stats")
+            assert resp.status_code == 422
 
 
 class TestDbValidateRoute:
@@ -186,13 +211,14 @@ class TestDbValidateRoute:
         db = MarketDb(db_path, read_only=False)
         db.close()
         app = create_app()
-        app.state.market_db = MarketDb(db_path, read_only=False)
-        app.state.market_time_series_store = _build_time_series_store(
-            TimeSeriesInspection(source="duckdb-parquet")
-        )
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.get("/api/db/validate")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "error"
-        assert data["initialized"] is False
+        with TestClient(app, raise_server_exceptions=False) as client:
+            app.state.market_db = MarketDb(db_path, read_only=False)
+            app.state.market_time_series_store = _build_time_series_store(
+                TimeSeriesInspection(source="duckdb-parquet")
+            )
+            resp = client.get("/api/db/validate")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "error"
+            assert data["initialized"] is False
+            app.state.market_db.close()
