@@ -15,6 +15,11 @@ import type { IndexItem } from '@/types/indices';
 type SortField = 'tradingValue' | 'changePercentage' | 'code';
 type SortOrder = 'asc' | 'desc';
 
+const BENCHMARK_DISPLAY_ORDER: Record<string, number> = {
+  N225_UNDERPX: 0,
+  NT_RATIO: 1,
+};
+
 function formatNumber(value: number | undefined): string {
   if (value === undefined || value === null) return '-';
   return value.toLocaleString();
@@ -32,6 +37,35 @@ function formatChangePercentage(value: number | undefined): string {
   if (value === undefined || value === null) return '-';
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
+}
+
+function formatLatestIndexValue(value: number | null, code: string | null | undefined): string {
+  if (value === undefined || value === null) return '-';
+  if (code === 'NT_RATIO') {
+    return value.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return value.toLocaleString();
+}
+
+function reorderCategoryIndices(category: string, indices: IndexItem[]): IndexItem[] {
+  if (category !== 'synthetic' || indices.length < 2) {
+    return indices;
+  }
+
+  return indices
+    .map((index, position) => ({ index, position }))
+    .sort((left, right) => {
+      const leftPriority = BENCHMARK_DISPLAY_ORDER[left.index.code] ?? Number.MAX_SAFE_INTEGER;
+      const rightPriority = BENCHMARK_DISPLAY_ORDER[right.index.code] ?? Number.MAX_SAFE_INTEGER;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+      return left.position - right.position;
+    })
+    .map(({ index }) => index);
 }
 
 interface SortableHeaderProps {
@@ -86,7 +120,7 @@ function getFlatIndicesList(indices: IndexItem[]): IndexItem[] {
   for (const category of INDEX_CATEGORY_ORDER) {
     const categoryGroup = groups[category];
     if (categoryGroup) {
-      result.push(...categoryGroup);
+      result.push(...reorderCategoryIndices(category, categoryGroup));
     }
   }
   return result;
@@ -135,8 +169,9 @@ function IndicesList({ indices, selectedCode, onSelect, isLoading, containerRef 
   return (
     <div className="space-y-3" ref={containerRef}>
       {INDEX_CATEGORY_ORDER.filter((cat) => groupedIndices[cat]).map((category) => {
-        const categoryIndices = groupedIndices[category];
-        if (!categoryIndices) return null;
+        const rawCategoryIndices = groupedIndices[category];
+        if (!rawCategoryIndices) return null;
+        const categoryIndices = reorderCategoryIndices(category, rawCategoryIndices);
         return (
           <div key={category}>
             <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1 px-1">
@@ -358,6 +393,7 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
 
   const isSectorIndex = indexInfo?.category === 'sector33' || indexInfo?.category === 'sector17';
   const isSyntheticIndex = indexInfo?.category === 'synthetic';
+  const isNtRatioIndex = code === 'NT_RATIO';
   const sectorType = indexInfo?.category as 'sector33' | 'sector17' | undefined;
 
   // Convert IndexDataPoint to StockDataPoint format
@@ -433,13 +469,19 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">{data.name}</h2>
             <p className="text-sm text-muted-foreground">Code: {data.code}</p>
             {isSyntheticIndex ? (
-              <p className="mt-1 text-xs text-muted-foreground">UnderPx derived daily reference series</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isNtRatioIndex
+                  ? 'Nikkei 225 close / TOPIX close from local market snapshot'
+                  : 'UnderPx derived daily reference series'}
+              </p>
             ) : null}
           </div>
           {latestPrice !== null && (
             <div className="text-right">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Latest</p>
-              <p className="text-2xl font-semibold tabular-nums text-foreground">{latestPrice.toLocaleString()}</p>
+              <p className="text-2xl font-semibold tabular-nums text-foreground">
+                {formatLatestIndexValue(latestPrice, data.code)}
+              </p>
             </div>
           )}
         </div>

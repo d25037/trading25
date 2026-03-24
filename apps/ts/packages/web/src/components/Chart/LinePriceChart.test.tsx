@@ -6,9 +6,19 @@ import { LinePriceChart } from './LinePriceChart';
 import { CHART_DIMENSIONS } from '@/lib/constants';
 
 const mockSetData = vi.fn();
-const mockFitContent = vi.fn();
+const mockSetVisibleLogicalRange = vi.fn();
 const mockApplyOptions = vi.fn();
 const mockRemove = vi.fn();
+
+const mockChartStore = {
+  settings: {
+    visibleBars: 30,
+  },
+};
+
+vi.mock('@/stores/chartStore', () => ({
+  useChartStore: () => mockChartStore,
+}));
 
 vi.mock('lightweight-charts', () => ({
   createChart: vi.fn(() => ({
@@ -16,7 +26,7 @@ vi.mock('lightweight-charts', () => ({
       setData: mockSetData,
     })),
     timeScale: vi.fn(() => ({
-      fitContent: mockFitContent,
+      setVisibleLogicalRange: mockSetVisibleLogicalRange,
     })),
     applyOptions: mockApplyOptions,
     remove: mockRemove,
@@ -50,6 +60,7 @@ const sampleData: LinePricePoint[] = [
 describe('LinePriceChart', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChartStore.settings.visibleBars = 30;
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get: () => 640,
@@ -71,12 +82,26 @@ describe('LinePriceChart', () => {
     expect(mockSetData).toHaveBeenCalledWith([]);
   });
 
-  it('sets line data and fits content when data is provided', () => {
+  it('sets line data and applies the default visible range when data is provided', () => {
     render(<LinePriceChart data={sampleData} />);
 
     expect(screen.queryByText('No chart data available')).not.toBeInTheDocument();
     expect(mockSetData).toHaveBeenCalledWith(sampleData);
-    expect(mockFitContent).toHaveBeenCalled();
+    expect(mockSetVisibleLogicalRange).toHaveBeenCalledWith({
+      from: 0,
+      to: sampleData.length - 0.5,
+    });
+  });
+
+  it('limits the visible range to the configured visible bars', () => {
+    mockChartStore.settings.visibleBars = 1;
+
+    render(<LinePriceChart data={sampleData} />);
+
+    expect(mockSetVisibleLogicalRange).toHaveBeenCalledWith({
+      from: 0.5,
+      to: sampleData.length - 0.5,
+    });
   });
 
   it('uses the default height when the container height is zero', () => {
