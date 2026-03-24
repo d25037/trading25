@@ -13,12 +13,4 @@ fi
 echo "[apps/ts] bun run packages:test"
 ( cd "${repo_root}/apps/ts" && bun run packages:test )
 
-if [[ -n "${BT_COVERAGE_DATA_FILE:-}" ]]; then
-  echo "[apps/bt] coverage run --data-file=${BT_COVERAGE_DATA_FILE} -m pytest tests/unit"
-  BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage run \
-    --data-file="${BT_COVERAGE_DATA_FILE}" \
-    -m pytest tests/unit
-else
-  echo "[apps/bt] pytest tests/unit"
-  BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" pytest tests/unit
-fi
+"${repo_root}/scripts/bt-pytest.sh" tests/unit

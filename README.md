@@ -122,6 +122,8 @@ GET /api/analytics/fundamental-ranking?markets=prime&limit=20
 ./scripts/test.sh         # test-packages + test-apps
 ```
 
+`apps/bt` のローカル高速実行は `BT_PYTEST_FAST=1`、durations 可視化は `BT_PYTEST_DURATIONS=25` を各 test script に付けて使う。詳細は [apps/bt/docs/test-runtime.md](apps/bt/docs/test-runtime.md) を参照。
+
 ## OpenAPI Contract Sync
 
 FastAPI スキーマ更新後は `apps/ts` で次を実行:

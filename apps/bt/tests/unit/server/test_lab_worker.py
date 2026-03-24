@@ -355,14 +355,21 @@ async def test_run_lab_worker_marks_job_failed_on_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_lab_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_lab_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("generate(n=1,top=1)", job_type="lab_generate")
     service = LabService(manager=manager, max_workers=1)
+    monkeypatch.setattr(
+        manager,
+        "_resolve_timeout_at",
+        lambda started_at, timeout_seconds=None: started_at + timedelta(seconds=0.1),
+    )
 
     def _execute_generate_sync(*args):  # noqa: ANN002
         _ = args
-        time.sleep(1.2)
+        time.sleep(0.2)
         return {"lab_type": "generate", "results": []}
 
     service._execute_generate_sync = _execute_generate_sync  # type: ignore[method-assign]
@@ -383,7 +390,7 @@ async def test_run_lab_worker_marks_job_failed_on_timeout() -> None:
         },
         manager=manager,
         service=service,
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )

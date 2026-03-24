@@ -204,6 +204,7 @@ class TestComputeMovingAverage:
             compute_moving_average(series, 2, ma_type="wma")  # type: ignore[arg-type]
 
 
+@pytest.mark.slow
 class TestVectorbtCompatibility:
     def setup_method(self):
         rng = np.random.default_rng(123)

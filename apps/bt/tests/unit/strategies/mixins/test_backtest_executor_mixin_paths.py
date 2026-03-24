@@ -530,6 +530,7 @@ class TestBacktestExecutorMixinPaths:
         assert portfolio == "pf-individual"
         assert all_entries is None
 
+    @pytest.mark.slow
     def test_run_multi_backtest_individual_round_trip_executes_open_to_close(self) -> None:
         strategy = _RuntimeStrategy()
         strategy.group_by = False
@@ -689,6 +690,7 @@ class TestBacktestExecutorMixinPaths:
         assert len(portfolio.trades.records_readable) == 0
         assert any("Open/Close was missing" in message for _level, message in strategy.logs)
 
+    @pytest.mark.slow
     def test_run_multi_backtest_overnight_round_trip_exits_next_open(
         self,
     ) -> None:

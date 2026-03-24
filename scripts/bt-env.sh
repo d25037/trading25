@@ -34,7 +34,7 @@ if [[ ! -x "${venv_path}/bin/python" ]]; then
   "${python_bin}" -m venv "${venv_path}"
 fi
 
-if [[ ! -x "${venv_path}/bin/pip" ]]; then
+if ! "${venv_path}/bin/python" -m pip --version >/dev/null 2>&1; then
   echo "[apps/bt] ensurepip"
   "${venv_path}/bin/python" -m ensurepip --upgrade
 fi

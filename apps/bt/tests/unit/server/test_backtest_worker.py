@@ -201,9 +201,16 @@ async def test_run_backtest_worker_fails_fast_when_nautilus_dependency_is_missin
 
 
 @pytest.mark.asyncio
-async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_backtest_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy")
+    monkeypatch.setattr(
+        manager,
+        "_resolve_timeout_at",
+        lambda started_at, timeout_seconds=None: started_at + timedelta(seconds=0.1),
+    )
 
     class _SlowRunner(BacktestRunner):
         def execute(
@@ -214,7 +221,7 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
             data_access_mode: str | None = "direct",
         ) -> BacktestResult:
             _ = (strategy, progress_callback, config_override, data_access_mode)
-            time.sleep(1.2)
+            time.sleep(0.2)
             return BacktestResult(
                 html_path=Path("/tmp/slow-result.html"),
                 elapsed_time=1.2,
@@ -228,7 +235,7 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
         "worker-strategy",
         manager=manager,
         runner=_SlowRunner(),
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )

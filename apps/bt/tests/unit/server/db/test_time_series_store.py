@@ -609,6 +609,7 @@ def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     return store
 
 
+@pytest.mark.slow
 def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
     store = _build_lock_test_store(tmp_path)
     barrier = Barrier(3)

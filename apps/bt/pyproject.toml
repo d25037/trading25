@@ -77,7 +77,7 @@ addopts = ["--verbose", "--tb=short", "--strict-markers", "--disable-warnings"]
 markers = [
     "unit: Unit tests",
     "integration: Integration tests",
-    "slow: Slow running tests",
+    "slow: Runtime-heavy tests excluded by local fast mode",
     "nautilus_smoke: Real Nautilus runtime smoke tests",
 ]
 

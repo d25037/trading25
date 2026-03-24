@@ -94,13 +94,20 @@ async def test_run_optimization_worker_marks_job_failed_on_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_optimization_worker_marks_job_failed_on_timeout() -> None:
+async def test_run_optimization_worker_marks_job_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy", job_type="optimization")
+    monkeypatch.setattr(
+        manager,
+        "_resolve_timeout_at",
+        lambda started_at, timeout_seconds=None: started_at + timedelta(seconds=0.1),
+    )
 
     def _slow_execute_sync(strategy_name: str) -> dict[str, object]:
         assert strategy_name == "worker-strategy"
-        time.sleep(1.2)
+        time.sleep(0.2)
         return {"best_score": 1.0}
 
     exit_code = await run_optimization_worker(
@@ -108,7 +115,7 @@ async def test_run_optimization_worker_marks_job_failed_on_timeout() -> None:
         "worker-strategy",
         manager=manager,
         execute_sync=_slow_execute_sync,
-        heartbeat_seconds=0.05,
+        heartbeat_seconds=0.01,
         timeout_seconds=1,
         exit_on_cancel=lambda _code: None,
     )

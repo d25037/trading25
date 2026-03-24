@@ -17,6 +17,17 @@ def client():
     return JQuantsAsyncClient(api_key="dummy_token_value_0000", plan="premium", timeout=5.0)
 
 
+@pytest.fixture(autouse=True)
+def skip_retry_backoff_sleep(monkeypatch: pytest.MonkeyPatch):
+    async def _sleep_immediately(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(
+        "src.infrastructure.external_api.clients.jquants_client.asyncio.sleep",
+        _sleep_immediately,
+    )
+
+
 class TestJQuantsAsyncClient:
     def test_has_api_key(self, client):
         assert client.has_api_key is True
