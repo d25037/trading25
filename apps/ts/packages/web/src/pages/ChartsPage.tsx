@@ -752,7 +752,7 @@ function ChartsPanelsContent({
 }) {
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="h-[512px]">
+      <div className="h-[512px] shrink-0">
         <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
           <div className="h-full">
             <div className="p-4 border-b border-border/30">
@@ -781,7 +781,7 @@ function ChartsPanelsContent({
       </div>
 
       {settings.showPPOChart && (
-        <div className="h-96">
+        <div className="h-96 shrink-0">
           <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
             <div className="h-full">
               <div className="p-4 border-b border-border/30">
@@ -801,7 +801,7 @@ function ChartsPanelsContent({
       )}
 
       {settings.showRiskAdjustedReturnChart && (
-        <div className="h-[200px]">
+        <div className="h-[240px] shrink-0">
           <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
             <div className="h-full">
               <div className="p-4 border-b border-border/30">
@@ -830,7 +830,7 @@ function ChartsPanelsContent({
       )}
 
       {settings.showVolumeComparison && (
-        <div className="h-[200px]">
+        <div className="h-[240px] shrink-0">
           <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
             <div className="h-full">
               <div className="p-4 border-b border-border/30">
@@ -855,7 +855,7 @@ function ChartsPanelsContent({
       )}
 
       {settings.showTradingValueMA && (
-        <div className="h-[200px]">
+        <div className="h-[200px] shrink-0">
           <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
             <div className="h-full">
               <div className="p-4 border-b border-border/30">

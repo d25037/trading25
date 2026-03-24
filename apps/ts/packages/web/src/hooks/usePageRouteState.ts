@@ -72,6 +72,17 @@ function useLegacySearchMigration<TSearch extends object>(params: {
   }, [extractLegacySearch, hasManagedSearchValues, navigate, pruneFields, storageKey, storageType, to]);
 }
 
+function coerceRouteString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
 export function useChartsRouteState(): {
   selectedSymbol: string | null;
   strategyName: string | null;
@@ -80,9 +91,9 @@ export function useChartsRouteState(): {
 } {
   const navigate = useNavigate();
   const search = chartsRoute.useSearch();
-  const selectedSymbol = search.symbol ?? null;
-  const strategyName = search.strategy ?? null;
-  const matchedDate = search.matchedDate ?? null;
+  const selectedSymbol = coerceRouteString(search.symbol);
+  const strategyName = coerceRouteString(search.strategy);
+  const matchedDate = coerceRouteString(search.matchedDate);
 
   const setSelectedSymbol = useCallback(
     (symbol: string | null, options?: { replace?: boolean }) => {

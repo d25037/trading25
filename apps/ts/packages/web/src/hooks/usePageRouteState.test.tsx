@@ -107,6 +107,16 @@ describe('usePageRouteState', () => {
     );
   });
 
+  it('coerces numeric charts route values to strings', () => {
+    routeSearchState.charts = { symbol: 7203, strategy: 1234, matchedDate: 20260324 };
+
+    const { result } = renderHook(() => useChartsRouteState());
+
+    expect(result.current.selectedSymbol).toBe('7203');
+    expect(result.current.strategyName).toBe('1234');
+    expect(result.current.matchedDate).toBe('20260324');
+  });
+
   it('preserves strategy context and drops matched date when charts symbol changes', () => {
     routeSearchState.charts = {
       symbol: '7203',
