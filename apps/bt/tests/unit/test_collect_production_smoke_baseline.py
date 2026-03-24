@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import uuid
 from argparse import Namespace
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
@@ -22,6 +23,7 @@ def _load_smoke_module() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
+    module.os = SimpleNamespace(environ=dict(os.environ), chdir=os.chdir)
     return module
 
 
@@ -103,8 +105,8 @@ def test_smoke_baseline_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert mirrored_dataset.is_symlink() is True
     assert mirrored_dataset.resolve() == source_dataset.resolve()
 
-    monkeypatch.setenv("UV_CACHE_DIR", "/custom/cache")
-    monkeypatch.setenv("LOG_LEVEL", "INFO")
+    module.os.environ["UV_CACHE_DIR"] = "/custom/cache"
+    module.os.environ["LOG_LEVEL"] = "INFO"
     module.set_runtime_env(data_root, runtime_root)
     assert module.os.environ["MARKET_DB_PATH"] == str(data_root / "market-timeseries" / "market.duckdb")
     assert module.os.environ["DATASET_BASE_PATH"] == str(runtime_root / "datasets")
