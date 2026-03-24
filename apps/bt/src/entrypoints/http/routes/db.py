@@ -380,6 +380,14 @@ async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshRespo
 
     if not market_db.is_initialized():
         raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
+    if market_db.is_legacy_stock_price_snapshot():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
+                "and market-timeseries/parquet, then run initial sync."
+            ),
+        )
 
     return await stock_refresh_service.refresh_stocks(
         body.codes,

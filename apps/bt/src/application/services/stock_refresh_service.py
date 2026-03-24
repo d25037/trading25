@@ -14,7 +14,10 @@ from typing import Any, Protocol
 
 from loguru import logger
 
-from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_db import (
+    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    METADATA_KEYS,
+)
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
 from src.application.services.stock_data_row_builder import build_stock_data_row
@@ -22,7 +25,6 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 
 class StockRefreshMarketDbLike(Protocol):
     def set_sync_metadata(self, key: str, value: str) -> None: ...
-    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
 
 
 class StockRefreshClientLike(Protocol):
@@ -61,7 +63,6 @@ async def refresh_stocks(
     errors: list[str] = []
     any_rows_published = False
     cancelled = False
-    resolved_codes: list[str] = []
     unique_codes = list(dict.fromkeys(codes))
     total_codes = len(unique_codes)
 
@@ -131,7 +132,6 @@ async def refresh_stocks(
                 stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
                 if stored > 0:
                     any_rows_published = True
-                    resolved_codes.append(normalized)
                 else:
                     failure_message = "No rows were published to the local market snapshot"
                     errors.append(f"{normalized}: {failure_message}")
@@ -184,16 +184,16 @@ async def refresh_stocks(
         except Exception as e:
             logger.warning("Stock refresh index failed: {}", e)
             errors.append(f"stock_data index: {e}")
-        await asyncio.to_thread(
-            market_db.mark_stock_adjustments_resolved,
-            resolved_codes,
-        )
     if cancelled:
         errors.append("Cancelled")
 
     # Update metadata
     now_iso = datetime.now(UTC).isoformat()
     market_db.set_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"], now_iso)
+    market_db.set_sync_metadata(
+        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
 
     return RefreshResponse(
         totalStocks=total_codes,

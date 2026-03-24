@@ -61,7 +61,6 @@ from src.application.services.index_master_catalog import (
     build_index_master_seed_rows,
     get_index_catalog_codes,
 )
-from src.application.services import stock_refresh_service
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
@@ -82,7 +81,6 @@ class SyncClientLike(Protocol):  # pragma: no cover
 class SyncMarketDbLike(Protocol):  # pragma: no cover
     def get_sync_metadata(self, key: str) -> str | None: ...
     def set_sync_metadata(self, key: str, value: str) -> None: ...
-    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
@@ -636,11 +634,11 @@ def _convert_stock_bulk_rows(
         if target_dates is not None and date_text not in target_dates:
             continue
 
-        open_value = _coerce_float_fast(row.get("AdjO", row.get("O", row.get("open"))))
-        high_value = _coerce_float_fast(row.get("AdjH", row.get("H", row.get("high"))))
-        low_value = _coerce_float_fast(row.get("AdjL", row.get("L", row.get("low"))))
-        close_value = _coerce_float_fast(row.get("AdjC", row.get("C", row.get("close"))))
-        volume_value = _coerce_int_fast(row.get("AdjVo", row.get("Vo", row.get("volume"))))
+        open_value = _coerce_float_fast(row.get("O", row.get("open")))
+        high_value = _coerce_float_fast(row.get("H", row.get("high")))
+        low_value = _coerce_float_fast(row.get("L", row.get("low")))
+        close_value = _coerce_float_fast(row.get("C", row.get("close")))
+        volume_value = _coerce_int_fast(row.get("Vo", row.get("volume")))
         if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
             skipped += 1
             _collect_sample_code(sample_codes, code)
@@ -1438,7 +1436,6 @@ class InitialSyncStrategy:
                 )
 
             await _index_stock_data_rows(ctx)
-            await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 5: 指数データ
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
@@ -1772,8 +1769,6 @@ class IncrementalSyncStrategy:
                 )
 
             await _index_stock_data_rows(ctx)
-            if cold_start_bootstrap:
-                await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 4: 指数データ（増分）
             ctx.on_progress("indices", 3, 7, "Fetching incremental index data...")
@@ -2114,10 +2109,10 @@ class IncrementalSyncStrategy:
 
 
 class RepairSyncStrategy:
-    """warning 解消向け: adjustment refresh + fundamentals backfill"""
+    """warning 解消向け: fundamentals / metadata warnings の backfill"""
 
     def estimate_api_calls(self) -> int:
-        return 400
+        return 200
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
@@ -2127,47 +2122,20 @@ class RepairSyncStrategy:
         errors: list[str] = []
 
         try:
-            ctx.on_progress("repair", 0, 300, "Inspecting DuckDB warning repair targets...")
+            ctx.on_progress("repair", 0, 200, "Inspecting DuckDB warning repair targets...")
             if ctx.cancelled.is_set():
                 return _cancelled_sync_result(total_calls)
 
-            stock_codes = await asyncio.to_thread(ctx.market_db.get_stocks_needing_refresh, None)
             fundamentals_target_rows = await asyncio.to_thread(
                 ctx.market_db.get_fundamentals_target_stock_rows
             )
-
-            if stock_codes:
-                def _on_refresh_progress(completed: int, total: int, message: str) -> None:
-                    ctx.on_progress(
-                        "stock_refresh",
-                        _scale_repair_progress(completed, total, base=100),
-                        300,
-                        message,
-                    )
-
-                refresh_result = await stock_refresh_service.refresh_stocks(
-                    stock_codes,
-                    ctx.market_db,
-                    _require_time_series_store(ctx),
-                    ctx.client,
-                    progress_callback=_on_refresh_progress,
-                    cancel_check=ctx.cancelled.is_set,
-                )
-                total_calls += refresh_result.totalApiCalls
-                stocks_updated = refresh_result.successCount
-                errors.extend(refresh_result.errors)
-            else:
-                ctx.on_progress("stock_refresh", 200, 300, "No stock adjustment repairs needed.")
-
-            if ctx.cancelled.is_set():
-                return _cancelled_sync_result(total_calls)
 
             if fundamentals_target_rows:
                 def _on_fundamentals_progress(stage: str, current: int, total: int, message: str) -> None:
                     ctx.on_progress(
                         stage,
-                        _scale_repair_progress(current, total, base=200),
-                        300,
+                        _scale_repair_progress(current, total, base=0),
+                        200,
                         message,
                     )
 
@@ -2183,9 +2151,9 @@ class RepairSyncStrategy:
                 if fundamentals_sync["cancelled"]:
                     return _cancelled_sync_result(total_calls)
             else:
-                ctx.on_progress("fundamentals", 300, 300, "No listed-market fundamentals repair needed.")
+                ctx.on_progress("fundamentals", 200, 200, "No listed-market fundamentals repair needed.")
 
-            ctx.on_progress("complete", 300, 300, "Repair sync complete!")
+            ctx.on_progress("complete", 200, 200, "Repair sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,

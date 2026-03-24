@@ -475,6 +475,86 @@ interface IndexChartProps {
   panelMinHeight?: number | null;
 }
 
+function resolveIndexChartLayout(
+  panelMinHeight: number | null | undefined,
+  isSectorIndex: boolean
+) {
+  const workspaceMinHeight = panelMinHeight ? Math.max(panelMinHeight, 432) : 432;
+  const chartMinHeight = isSectorIndex ? Math.max(workspaceMinHeight, 520) : workspaceMinHeight;
+  const sectorMinHeight = isSectorIndex
+    ? Math.max(Math.round(workspaceMinHeight * 0.55), 320)
+    : null;
+
+  return {
+    workspaceMinHeight,
+    chartPanelStyle: { minHeight: `${chartMinHeight}px` } satisfies CSSProperties,
+    workspaceStyle: { minHeight: `${workspaceMinHeight}px` } satisfies CSSProperties,
+    surfaceStyle: { minHeight: `${workspaceMinHeight}px` } satisfies CSSProperties,
+    sectorPanelMinHeight: sectorMinHeight,
+  };
+}
+
+function resolveIndexChartCategoryLabel(indexInfo?: IndexItem): string {
+  if (!indexInfo) {
+    return 'Index';
+  }
+  if (indexInfo.category === 'synthetic') {
+    return 'Synthetic';
+  }
+  return INDEX_CATEGORY_LABELS[indexInfo.category] ?? indexInfo.category;
+}
+
+function resolveSyntheticDescription(
+  isSyntheticIndex: boolean,
+  isNtRatioIndex: boolean
+): string | null {
+  if (!isSyntheticIndex) {
+    return null;
+  }
+  return isNtRatioIndex
+    ? 'Nikkei 225 close / TOPIX close from local market snapshot'
+    : 'UnderPx derived daily reference series';
+}
+
+function renderIndexChartState(
+  kind: 'empty' | 'loading' | 'error',
+  surfaceStyle: CSSProperties,
+  errorMessage?: string
+) {
+  if (kind === 'empty') {
+    return (
+      <Surface className="flex flex-col overflow-hidden" style={surfaceStyle}>
+        <div className="border-b border-border/70 px-4 py-3">
+          <SectionEyebrow>Results</SectionEyebrow>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">Index Workspace</h2>
+        </div>
+        <div className="flex min-h-[24rem] flex-1 flex-col items-center justify-center px-6 text-center">
+          <TrendingUp className="mb-4 h-14 w-14 text-muted-foreground" />
+          <p className="text-lg font-medium text-foreground">Select an index to view chart</p>
+        </div>
+      </Surface>
+    );
+  }
+
+  if (kind === 'loading') {
+    return (
+      <Surface className="flex flex-col overflow-hidden" style={surfaceStyle}>
+        <div className="flex min-h-[24rem] flex-1 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </Surface>
+    );
+  }
+
+  return (
+    <Surface className="flex flex-col overflow-hidden" style={surfaceStyle}>
+      <div className="flex min-h-[24rem] flex-1 items-center justify-center px-6 text-center">
+        <p className="text-sm text-destructive">Failed to load index data: {errorMessage}</p>
+      </div>
+    </Surface>
+  );
+}
+
 function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChartProps) {
   const { data, isLoading, error } = useIndexData(code);
 
@@ -482,13 +562,10 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   const isSyntheticIndex = indexInfo?.category === 'synthetic';
   const isNtRatioIndex = code === 'NT_RATIO';
   const sectorType = indexInfo?.category as 'sector33' | 'sector17' | undefined;
-  const resolvedWorkspaceMinHeight = panelMinHeight ? Math.max(panelMinHeight, 432) : 432;
-  const chartPanelMinHeight = isSectorIndex ? Math.max(resolvedWorkspaceMinHeight, 520) : resolvedWorkspaceMinHeight;
-  const sectorPanelMinHeight = isSectorIndex
-    ? Math.max(Math.round(resolvedWorkspaceMinHeight * 0.55), 320)
-    : null;
-  const workspaceStyle: CSSProperties = { minHeight: `${resolvedWorkspaceMinHeight}px` };
-  const chartPanelStyle: CSSProperties = { minHeight: `${chartPanelMinHeight}px` };
+  const { workspaceStyle, chartPanelStyle, surfaceStyle, sectorPanelMinHeight } = resolveIndexChartLayout(
+    panelMinHeight,
+    isSectorIndex
+  );
 
   const chartData = useMemo(() => {
     if (!data?.data) return [];
@@ -515,38 +592,15 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   }, [data?.name, sectorType]);
 
   if (!code) {
-    return (
-      <Surface className="flex flex-col overflow-hidden" style={{ minHeight: `${resolvedWorkspaceMinHeight}px` }}>
-        <div className="border-b border-border/70 px-4 py-3">
-          <SectionEyebrow>Results</SectionEyebrow>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">Index Workspace</h2>
-        </div>
-        <div className="flex min-h-[24rem] flex-1 flex-col items-center justify-center px-6 text-center">
-          <TrendingUp className="mb-4 h-14 w-14 text-muted-foreground" />
-          <p className="text-lg font-medium text-foreground">Select an index to view chart</p>
-        </div>
-      </Surface>
-    );
+    return renderIndexChartState('empty', surfaceStyle);
   }
 
   if (isLoading) {
-    return (
-      <Surface className="flex flex-col overflow-hidden" style={{ minHeight: `${resolvedWorkspaceMinHeight}px` }}>
-        <div className="flex min-h-[24rem] flex-1 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </Surface>
-    );
+    return renderIndexChartState('loading', surfaceStyle);
   }
 
   if (error) {
-    return (
-      <Surface className="flex flex-col overflow-hidden" style={{ minHeight: `${resolvedWorkspaceMinHeight}px` }}>
-        <div className="flex min-h-[24rem] flex-1 items-center justify-center px-6 text-center">
-          <p className="text-sm text-destructive">Failed to load index data: {error.message}</p>
-        </div>
-      </Surface>
-    );
+    return renderIndexChartState('error', surfaceStyle, error.message);
   }
 
   if (!data) {
@@ -556,11 +610,8 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   const lastDataPoint = chartData.length > 0 ? chartData[chartData.length - 1] : null;
   const latestPrice = lastDataPoint?.close ?? lineData[lineData.length - 1]?.value ?? null;
   const chartTypeLabel = isSyntheticIndex ? 'Line reference' : 'OHLC bars';
-  const categoryLabel = indexInfo
-    ? indexInfo.category === 'synthetic'
-      ? 'Synthetic'
-      : (INDEX_CATEGORY_LABELS[indexInfo.category] ?? indexInfo.category)
-    : 'Index';
+  const categoryLabel = resolveIndexChartCategoryLabel(indexInfo);
+  const syntheticDescription = resolveSyntheticDescription(isSyntheticIndex, isNtRatioIndex);
 
   return (
     <div className="space-y-3" style={workspaceStyle}>
@@ -579,11 +630,9 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
                   className="max-w-full"
                 />
               </div>
-              {isSyntheticIndex ? (
+              {syntheticDescription ? (
                 <p className="text-xs text-muted-foreground">
-                  {isNtRatioIndex
-                    ? 'Nikkei 225 close / TOPIX close from local market snapshot'
-                    : 'UnderPx derived daily reference series'}
+                  {syntheticDescription}
                 </p>
               ) : null}
             </div>

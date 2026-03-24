@@ -25,7 +25,7 @@ def test_build_stock_data_row_with_raw_fields() -> None:
     assert row["created_at"] == "2026-02-12T00:00:00+00:00"
 
 
-def test_build_stock_data_row_prefers_adjusted_fields() -> None:
+def test_build_stock_data_row_ignores_adjusted_fields_and_uses_raw_ohlcv() -> None:
     row = build_stock_data_row(
         {
             "Date": "2026-02-10",
@@ -46,11 +46,11 @@ def test_build_stock_data_row_prefers_adjusted_fields() -> None:
 
     assert row is not None
     assert row["code"] == "131A"
-    assert row["open"] == 201.0
-    assert row["high"] == 211.0
-    assert row["low"] == 191.0
-    assert row["close"] == 205.0
-    assert row["volume"] == 777
+    assert row["open"] == 100.0
+    assert row["high"] == 110.0
+    assert row["low"] == 90.0
+    assert row["close"] == 105.0
+    assert row["volume"] == 1000
     assert row["adjustment_factor"] == 0.5
 
 

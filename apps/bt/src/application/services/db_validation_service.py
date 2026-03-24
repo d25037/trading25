@@ -18,7 +18,10 @@ from src.application.services.listed_market_targets import (
 )
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
-from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_db import (
+    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    METADATA_KEYS,
+)
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
@@ -95,6 +98,8 @@ _SIGNAL_STATEMENT_COLUMNS = sorted(
 
 class ValidationMarketDbLike(Protocol):
     def is_initialized(self) -> bool: ...
+    def is_legacy_stock_price_snapshot(self) -> bool: ...
+    def get_stock_price_adjustment_mode(self) -> str | None: ...
     def get_sync_metadata(self, key: str) -> str | None: ...
     def get_stats(self) -> dict[str, int]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
@@ -125,6 +130,8 @@ def validate_market_db(
 ) -> MarketValidationResponse:
     """DuckDB 時系列 SoT を基準とした整合性検証。"""
     initialized = market_db.is_initialized()
+    legacy_stock_snapshot = market_db.is_legacy_stock_price_snapshot()
+    stock_price_adjustment_mode = market_db.get_stock_price_adjustment_mode()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
     last_refresh = market_db.get_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"])
 
@@ -227,14 +234,19 @@ def validate_market_db(
 
     # Recommendations
     recommendations: list[str] = []
+    if legacy_stock_snapshot:
+        recommendations.append(
+            "Reset market-timeseries/market.duckdb and market-timeseries/parquet, "
+            "then run initial sync to rebuild stock_data_raw and local adjusted stock_data"
+        )
+    elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+        recommendations.append(
+            "Run initial sync on a reset market DB to enable local stock price projection"
+        )
     if not initialized:
         recommendations.append("Run initial sync to populate the database")
     if missing_dates_count > 0:
         recommendations.append(f"Run incremental sync to fill {missing_dates_count} missing dates")
-    if all_needing_count > 0:
-        recommendations.append(
-            f"Run repair sync to refresh {all_needing_count} stocks with pending adjustment backfill"
-        )
     if failed_dates:
         recommendations.append(f"Retry {len(failed_dates)} failed sync dates")
     if missing_fundamentals_count > 0:
@@ -277,12 +289,11 @@ def validate_market_db(
 
     # Status determination
     status: Literal["healthy", "warning", "error"] = "healthy"
-    if not initialized:
+    if legacy_stock_snapshot or not initialized:
         status = "error"
     elif (
         missing_dates_count > 0
         or failed_dates
-        or all_needing_count > 0
         or missing_fundamentals_count > 0
         or options_225_missing_local_data
         or options_225_stale_local_data

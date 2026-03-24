@@ -112,6 +112,22 @@ class DuckDbParquetTimeSeriesStore:
     _OPTIONS_225_RELATION_INSERT_THRESHOLD = 1000
     _MARGIN_DATA_RELATION_INSERT_THRESHOLD = 1000
 
+    _STOCK_DATA_RAW_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="stock_data_raw",
+        relation_name="__tmp_stock_data_raw_publish",
+        columns=(
+            "code",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "adjustment_factor",
+            "created_at",
+        ),
+        conflict_columns=("code", "date"),
+    )
     _STOCK_DATA_UPSERT_SPEC = _RelationUpsertSpec(
         table_name="stock_data",
         relation_name="__tmp_stock_data_publish",
@@ -194,6 +210,7 @@ class DuckDbParquetTimeSeriesStore:
     )
     _TABLE_SPECS = {
         "topix_data": _TableSpec("topix_data", "topix_data.parquet", "date"),
+        "stock_data_raw": _TableSpec("stock_data_raw", "stock_data_raw.parquet"),
         # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
         "stock_data": _TableSpec("stock_data", "stock_data.parquet"),
         "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
@@ -253,6 +270,8 @@ class DuckDbParquetTimeSeriesStore:
           AND low = close
           AND open = prev_close
     """
+    _STOCK_PROJECTION_TARGET_KEYS_RELATION = "__tmp_stock_projection_target_keys"
+    _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
 
     def __init__(
         self,
@@ -277,6 +296,7 @@ class DuckDbParquetTimeSeriesStore:
         # app state で共有されるため、sync 書き込みと stats/validate 読み取りを直列化する。
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
+        self._stock_projection_full_rebuild_codes: set[str] = set()
         self._ensure_schema()
         self._cleanup_invalid_topix_rows_on_startup()
 
@@ -291,6 +311,22 @@ class DuckDbParquetTimeSeriesStore:
                     low DOUBLE,
                     close DOUBLE,
                     created_at TEXT
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_data_raw (
+                    code TEXT,
+                    date TEXT,
+                    open DOUBLE,
+                    high DOUBLE,
+                    low DOUBLE,
+                    close DOUBLE,
+                    volume BIGINT,
+                    adjustment_factor DOUBLE,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date)
                 )
                 """
             )
@@ -477,15 +513,51 @@ class DuckDbParquetTimeSeriesStore:
         return invalid_count
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_with_upsert_spec(
-            rows,
-            spec=self._STOCK_DATA_UPSERT_SPEC,
-            relation_insert_threshold=self._STOCK_DATA_RELATION_INSERT_THRESHOLD,
-            relation_publisher=self._publish_stock_data_via_relation,
-        )
+        if not rows:
+            return 0
+
+        if len(rows) >= self._STOCK_DATA_RELATION_INSERT_THRESHOLD:
+            published = self._publish_stock_data_via_relation(rows)
+        else:
+            published = self._publish_stock_data_via_executemany(rows)
+
+        rebuild_codes = {
+            str(row.get("code"))
+            for row in rows
+            if row.get("code")
+            and self._requires_full_stock_reprojection(row.get("adjustment_factor"))
+        }
+        self._stock_projection_full_rebuild_codes.update(rebuild_codes)
+
+        point_projection_rows = [
+            row
+            for row in rows
+            if row.get("code")
+            and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
+        ]
+        if point_projection_rows:
+            self._project_stock_rows(point_projection_rows)
+
+        return published
 
     def _publish_stock_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_rows_via_relation(rows, spec=self._STOCK_DATA_UPSERT_SPEC)
+        return self._publish_rows_via_relation(
+            rows,
+            spec=self._STOCK_DATA_RAW_UPSERT_SPEC,
+        )
+
+    def _publish_stock_data_via_executemany(self, rows: list[dict[str, Any]]) -> int:
+        values = self._build_upsert_values(
+            rows,
+            columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
+        )
+        with self._lock:
+            self._conn.executemany(
+                self._build_executemany_upsert_sql(self._STOCK_DATA_RAW_UPSERT_SPEC),
+                values,
+            )
+            self._dirty_tables.add("stock_data_raw")
+        return len(rows)
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
         return self._publish_rows_with_upsert_spec(
@@ -554,6 +626,8 @@ class DuckDbParquetTimeSeriesStore:
         self._export_if_dirty("topix_data")
 
     def index_stock_data(self) -> None:
+        self._reproject_pending_stock_codes()
+        self._export_if_dirty("stock_data_raw")
         self._export_if_dirty("stock_data")
 
     def index_indices_data(self) -> None:
@@ -840,6 +914,194 @@ class DuckDbParquetTimeSeriesStore:
             self._dirty_tables.discard(table_name)
 
     @staticmethod
+    def _requires_full_stock_reprojection(adjustment_factor: Any) -> bool:
+        if adjustment_factor is None:
+            return False
+        try:
+            return float(adjustment_factor) != 1.0
+        except (TypeError, ValueError):
+            return False
+
+    def _stock_projection_sql(
+        self,
+        *,
+        target_codes_relation: str | None = None,
+        target_keys_relation: str | None = None,
+    ) -> str:
+        raw_filters: list[str] = []
+        if target_codes_relation is not None:
+            raw_filters.append(
+                f"code IN (SELECT code FROM {target_codes_relation})"
+            )
+
+        target_join = ""
+        if target_keys_relation is not None:
+            target_join = (
+                f"INNER JOIN {target_keys_relation} target_keys "
+                "ON target_keys.code = projected.code "
+                "AND target_keys.date = projected.date"
+            )
+
+        raw_where = ""
+        if raw_filters:
+            raw_where = "WHERE " + " AND ".join(raw_filters)
+
+        return f"""
+            WITH normalized_raw AS (
+                SELECT
+                    code,
+                    date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    CASE
+                        WHEN adjustment_factor IS NULL OR adjustment_factor <= 0 THEN 1.0
+                        ELSE adjustment_factor
+                    END AS normalized_adjustment_factor,
+                    adjustment_factor,
+                    created_at
+                FROM stock_data_raw
+                {raw_where}
+            ),
+            projected AS (
+                SELECT
+                    code,
+                    date,
+                    open * future_factor AS open,
+                    high * future_factor AS high,
+                    low * future_factor AS low,
+                    close * future_factor AS close,
+                    CAST(ROUND(volume / future_factor) AS BIGINT) AS volume,
+                    adjustment_factor,
+                    created_at
+                FROM (
+                    SELECT
+                        code,
+                        date,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        adjustment_factor,
+                        created_at,
+                        COALESCE(
+                            EXP(
+                                SUM(LN(normalized_adjustment_factor)) OVER (
+                                    PARTITION BY code
+                                    ORDER BY date DESC
+                                    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                                )
+                            ),
+                            1.0
+                        ) AS future_factor
+                    FROM normalized_raw
+                ) projected_source
+            )
+            SELECT
+                projected.code,
+                projected.date,
+                projected.open,
+                projected.high,
+                projected.low,
+                projected.close,
+                projected.volume,
+                projected.adjustment_factor,
+                projected.created_at
+            FROM projected
+            {target_join}
+        """
+
+    def _project_stock_rows(self, rows: list[dict[str, Any]]) -> None:
+        key_rows = [
+            {
+                "code": str(row["code"]),
+                "date": str(row["date"]),
+            }
+            for row in rows
+            if row.get("code") and row.get("date")
+        ]
+        if not key_rows:
+            return
+
+        codes = sorted({row["code"] for row in key_rows})
+        keys_df = pd.DataFrame.from_records(key_rows, columns=("code", "date"))
+        codes_df = pd.DataFrame.from_records(
+            [{"code": code} for code in codes],
+            columns=("code",),
+        )
+        with self._lock:
+            self._conn.register(self._STOCK_PROJECTION_TARGET_KEYS_RELATION, keys_df)
+            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, codes_df)
+            try:
+                columns_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.columns)
+                conflict_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.conflict_columns)
+                update_clause = self._build_upsert_update_clause(
+                    self._STOCK_DATA_UPSERT_SPEC
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_data ({columns_sql})
+                    {self._stock_projection_sql(
+                        target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION,
+                        target_keys_relation=self._STOCK_PROJECTION_TARGET_KEYS_RELATION,
+                    )}
+                    ON CONFLICT ({conflict_sql}) DO UPDATE
+                    SET {update_clause}
+                    """
+                )
+            finally:
+                self._conn.unregister(self._STOCK_PROJECTION_TARGET_KEYS_RELATION)
+                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
+            self._dirty_tables.add("stock_data")
+
+    def _reproject_pending_stock_codes(self) -> None:
+        codes = sorted(self._stock_projection_full_rebuild_codes)
+        if not codes:
+            return
+
+        code_df = pd.DataFrame.from_records(
+            [{"code": code} for code in codes],
+            columns=("code",),
+        )
+        with self._lock:
+            self._conn.register(self._STOCK_PROJECTION_TARGET_CODES_RELATION, code_df)
+            try:
+                self._conn.execute(
+                    f"""
+                    DELETE FROM stock_data
+                    WHERE code IN (
+                        SELECT code
+                        FROM {self._STOCK_PROJECTION_TARGET_CODES_RELATION}
+                    )
+                    """
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_data (
+                        code,
+                        date,
+                        open,
+                        high,
+                        low,
+                        close,
+                        volume,
+                        adjustment_factor,
+                        created_at
+                    )
+                    {self._stock_projection_sql(
+                        target_codes_relation=self._STOCK_PROJECTION_TARGET_CODES_RELATION
+                    )}
+                    """
+                )
+            finally:
+                self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
+            self._dirty_tables.add("stock_data")
+            self._stock_projection_full_rebuild_codes.clear()
+
+    @staticmethod
     def _resolve_upsert_update_columns(spec: _RelationUpsertSpec) -> tuple[str, ...]:
         if spec.update_columns is not None:
             return spec.update_columns
@@ -951,6 +1213,7 @@ class DuckDbParquetTimeSeriesStore:
 
     def close(self) -> None:
         with self._lock:
+            self._reproject_pending_stock_codes()
             for table_name in list(self._dirty_tables):
                 self._export_if_dirty(table_name)
             self._conn.close()

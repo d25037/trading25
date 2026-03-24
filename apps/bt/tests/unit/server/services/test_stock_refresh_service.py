@@ -5,6 +5,10 @@ from typing import Any
 import pytest
 
 from src.application.services.stock_refresh_service import refresh_stocks
+from src.infrastructure.db.market.market_db import (
+    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    METADATA_KEYS,
+)
 
 
 class DummyMarketDb:
@@ -60,6 +64,25 @@ class DummyFailingJQuantsClient:
         raise RuntimeError("network error")
 
 
+class RoutingJQuantsClient:
+    def __init__(self, responses: dict[str, list[dict[str, Any]] | Exception]) -> None:
+        self.responses = responses
+        self.calls: list[str] = []
+
+    async def get_paginated(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        del path
+        code = (params or {}).get("code", "")
+        self.calls.append(code)
+        response = self.responses[code]
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
 @pytest.mark.asyncio
 async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
     market_db = DummyMarketDb()
@@ -97,7 +120,7 @@ async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
     assert len(store.rows) == 1
     assert store.rows[0]["code"] == "131A"
     assert store.rows[0]["date"] == "2026-02-10"
-    assert market_db.resolved_calls == [["131A"]]
+    assert market_db.resolved_calls == []
 
 
 @pytest.mark.asyncio
@@ -269,3 +292,153 @@ async def test_refresh_stocks_reports_index_failure_without_raising() -> None:
     assert result.totalRecordsStored == 1
     assert result.errors == ["stock_data index: index failed"]
     assert store.index_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_handles_empty_code_list_without_indexing() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(rows=[])
+
+    result = await refresh_stocks([], market_db, store, client)
+
+    assert result.totalStocks == 0
+    assert result.successCount == 0
+    assert result.failedCount == 0
+    assert result.totalApiCalls == 0
+    assert result.totalRecordsStored == 0
+    assert result.errors == []
+    assert store.index_calls == 0
+    assert market_db.metadata[METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"]] == (
+        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE
+    )
+    assert METADATA_KEYS["LAST_STOCKS_REFRESH"] in market_db.metadata
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_cancels_before_first_fetch() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(rows=[])
+    progress_messages: list[str] = []
+
+    result = await refresh_stocks(
+        ["7203"],
+        market_db,
+        store,
+        client,
+        progress_callback=lambda _current, _total, message: progress_messages.append(message),
+        cancel_check=lambda: True,
+    )
+
+    assert result.totalApiCalls == 0
+    assert result.results == []
+    assert result.errors == ["Cancelled"]
+    assert store.index_calls == 0
+    assert progress_messages == ["Cancelled stock refresh before stock 1/1"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_cancels_after_fetch_before_processing_rows() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+        ]
+    )
+    progress_messages: list[str] = []
+    checks = iter([False, True])
+
+    result = await refresh_stocks(
+        ["7203"],
+        market_db,
+        store,
+        client,
+        progress_callback=lambda _current, _total, message: progress_messages.append(message),
+        cancel_check=lambda: next(checks, True),
+    )
+
+    assert result.totalApiCalls == 1
+    assert result.totalRecordsStored == 0
+    assert result.results == []
+    assert result.errors == ["Cancelled"]
+    assert store.rows == []
+    assert store.index_calls == 0
+    assert progress_messages[-1] == "Cancelled stock refresh after fetching stock 1/1: 7203"
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_cancels_before_publishing_rows() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+        ]
+    )
+    progress_messages: list[str] = []
+    checks = iter([False, False, True])
+
+    result = await refresh_stocks(
+        ["7203"],
+        market_db,
+        store,
+        client,
+        progress_callback=lambda _current, _total, message: progress_messages.append(message),
+        cancel_check=lambda: next(checks, True),
+    )
+
+    assert result.totalApiCalls == 1
+    assert result.totalRecordsStored == 0
+    assert result.results == []
+    assert result.errors == ["Cancelled"]
+    assert store.rows == []
+    assert store.index_calls == 0
+    assert progress_messages[-1] == "Cancelled stock refresh before publishing stock 1/1: 7203"
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_handles_empty_api_response_without_callback() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(rows=[])
+
+    result = await refresh_stocks(["7203"], market_db, store, client)
+
+    assert result.successCount == 0
+    assert result.failedCount == 1
+    assert result.results[0].success is False
+    assert result.results[0].error == "No publishable rows matched the local market snapshot date range"
+    assert result.errors == [
+        "7203: No publishable rows matched the local market snapshot date range"
+    ]
+    assert store.index_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_continues_after_success_and_failure_across_multiple_codes() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = RoutingJQuantsClient(
+        responses={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+            ],
+            "67580": RuntimeError("network error"),
+            "99840": [
+                {"Code": "99840", "Date": "2026-02-10", "O": 20, "H": 22, "L": 19, "C": 21, "Vo": 2000},
+            ],
+        }
+    )
+
+    result = await refresh_stocks(["7203", "6758", "9984"], market_db, store, client)
+
+    assert result.successCount == 2
+    assert result.failedCount == 1
+    assert result.totalApiCalls == 2
+    assert result.totalRecordsStored == 2
+    assert len(store.rows) == 2
+    assert store.index_calls == 1
+    assert client.calls == ["72030", "67580", "99840"]
+    assert any(error.startswith("6758: network error") for error in result.errors)

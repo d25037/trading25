@@ -1,7 +1,7 @@
 """
 Stock Data Row Builder
 
-J-Quants の日足レスポンスを DuckDB stock_data 行へ安全に変換する。
+J-Quants の日足レスポンスを DuckDB stock_data_raw 行へ安全に変換する。
 新規上場銘柄などで OHLCV が欠損している行は None を返してスキップする。
 """
 
@@ -62,7 +62,7 @@ def build_stock_data_row(
     normalized_code: str | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any] | None:
-    """J-Quants 日足1件を stock_data 行へ変換（欠損値がある場合は None）"""
+    """J-Quants 日足1件を stock_data_raw 行へ変換（欠損値がある場合は None）"""
     code = normalized_code or normalize_stock_code(quote.get("Code", ""))
     if not code:
         return None
@@ -71,11 +71,11 @@ def build_stock_data_row(
     if date is None:
         return None
 
-    open_value = _coerce_float(_pick_first(quote, "AdjO", "O"))
-    high_value = _coerce_float(_pick_first(quote, "AdjH", "H"))
-    low_value = _coerce_float(_pick_first(quote, "AdjL", "L"))
-    close_value = _coerce_float(_pick_first(quote, "AdjC", "C"))
-    volume_value = _coerce_int(_pick_first(quote, "AdjVo", "Vo"))
+    open_value = _coerce_float(_pick_first(quote, "O"))
+    high_value = _coerce_float(_pick_first(quote, "H"))
+    low_value = _coerce_float(_pick_first(quote, "L"))
+    close_value = _coerce_float(_pick_first(quote, "C"))
+    volume_value = _coerce_int(_pick_first(quote, "Vo"))
 
     if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
         return None

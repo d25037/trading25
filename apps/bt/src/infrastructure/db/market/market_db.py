@@ -20,6 +20,7 @@ METADATA_KEYS = {
     "INIT_COMPLETED": "init_completed",
     "LAST_SYNC_DATE": "last_sync_date",
     "LAST_STOCKS_REFRESH": "last_stocks_refresh",
+    "STOCK_PRICE_ADJUSTMENT_MODE": "stock_price_adjustment_mode",
     "FAILED_DATES": "failed_dates",
     "REFETCHED_STOCKS": "refetched_stocks",
     "MARGIN_EMPTY_CODES": "margin_empty_codes",
@@ -30,9 +31,11 @@ METADATA_KEYS = {
     "FUNDAMENTALS_EMPTY_CODES": "fundamentals_empty_codes",
     "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
 }
+LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v1"
 
 _STATS_TABLES: tuple[str, ...] = (
     "stocks",
+    "stock_data_raw",
     "stock_data",
     "topix_data",
     "indices_data",
@@ -180,6 +183,22 @@ class MarketDb:
                 listed_date TEXT NOT NULL,
                 created_at TEXT,
                 updated_at TEXT
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_data_raw (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                adjustment_factor DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
             )
             """
         )
@@ -340,7 +359,7 @@ class MarketDb:
             """
         )
         self._ensure_statements_columns()
-        self._ensure_adjustment_refresh_state_initialized()
+        self._ensure_stock_price_adjustment_mode_for_empty_db()
 
     def _ensure_statements_columns(self) -> None:
         """既存 statements テーブルに不足カラムを追加する。"""
@@ -377,6 +396,24 @@ class MarketDb:
             "existing_tables": sorted(existing & required),
             "missing_tables": sorted(missing),
         }
+
+    def get_stock_price_adjustment_mode(self) -> str | None:
+        return self.get_sync_metadata(METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"])
+
+    def is_legacy_stock_price_snapshot(self) -> bool:
+        stock_count = self._count_rows("stock_data") if self._table_exists("stock_data") else 0
+        raw_count = (
+            self._count_rows("stock_data_raw")
+            if self._table_exists("stock_data_raw")
+            else 0
+        )
+        if stock_count <= 0 and raw_count <= 0:
+            return False
+
+        adjustment_mode = self.get_stock_price_adjustment_mode()
+        if adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+            return True
+        return raw_count <= 0 and stock_count > 0
 
     def get_sync_metadata(self, key: str) -> str | None:
         """sync_metadata からキーの値を取得。"""
@@ -650,7 +687,7 @@ class MarketDb:
         return len(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        """stock_data テーブルに upsert。"""
+        """stock_data_raw と stock_data に upsert。"""
         if not rows:
             return 0
         self._assert_writable()
@@ -670,6 +707,23 @@ class MarketDb:
         ]
         self._executemany(
             """
+            INSERT INTO stock_data_raw (
+                code, date, open, high, low, close, volume, adjustment_factor, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code, date) DO UPDATE
+            SET open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                adjustment_factor = excluded.adjustment_factor,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        self._executemany(
+            """
             INSERT INTO stock_data (
                 code, date, open, high, low, close, volume, adjustment_factor, created_at
             )
@@ -684,6 +738,10 @@ class MarketDb:
                 created_at = excluded.created_at
             """,
             params,
+        )
+        self.set_sync_metadata(
+            METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+            LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
         )
         return len(rows)
 
@@ -1166,7 +1224,7 @@ class MarketDb:
         has_stocks = self._count_rows("stocks") > 0
         has_time_series = any(
             self._count_rows(table_name) > 0
-            for table_name in ("stock_data", "topix_data", "indices_data")
+            for table_name in ("stock_data_raw", "topix_data", "indices_data")
         )
         return has_stocks and has_time_series
 
@@ -1215,12 +1273,12 @@ class MarketDb:
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
         """adjustment_factor != 1.0 のイベント。"""
-        if limit <= 0 or not self._table_exists("stock_data"):
+        if limit <= 0 or not self._table_exists("stock_data_raw"):
             return []
         rows = self._fetchall(
             """
             SELECT code, date, adjustment_factor, close
-            FROM stock_data
+            FROM stock_data_raw
             WHERE adjustment_factor IS NOT NULL
               AND adjustment_factor != 1.0
             ORDER BY date DESC
@@ -1241,181 +1299,31 @@ class MarketDb:
         ]
 
     def get_adjustment_events_count(self) -> int:
-        if not self._table_exists("stock_data"):
+        if not self._table_exists("stock_data_raw"):
             return 0
         row = self._fetchone(
             """
             SELECT COUNT(*)
-            FROM stock_data
+            FROM stock_data_raw
             WHERE adjustment_factor IS NOT NULL
               AND adjustment_factor != 1.0
             """
         )
         return int(row[0] or 0) if row else 0
 
-    def _latest_adjustment_rows(self, codes: list[str] | None = None) -> list[tuple[str, str]]:
-        if not self._table_exists("stock_data"):
-            return []
-
-        normalized_codes: list[str] = []
-        if codes is not None:
-            seen: set[str] = set()
-            for code in codes:
-                text = str(code).strip()
-                if not text or text in seen:
-                    continue
-                seen.add(text)
-                normalized_codes.append(text)
-            if not normalized_codes:
-                return []
-
-        code_filter = ""
-        params: list[Any] = []
-        if normalized_codes:
-            placeholders = ", ".join("?" for _ in normalized_codes)
-            code_filter = f" AND code IN ({placeholders})"
-            params.extend(normalized_codes)
-
-        rows = self._fetchall(
-            f"""
-            SELECT code, adjustment_date
-            FROM (
-                SELECT
-                    code,
-                    date AS adjustment_date,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY code
-                        ORDER BY date DESC, created_at DESC NULLS LAST
-                    ) AS rn
-                FROM stock_data
-                WHERE adjustment_factor IS NOT NULL
-                  AND adjustment_factor != 1.0
-                  {code_filter}
-            ) ranked
-            WHERE rn = 1
-            """,
-            params,
-        )
-        return [
-            (str(row[0]), str(row[1]))
-            for row in rows
-            if row and row[0] and row[1]
-        ]
-
-    def _upsert_adjustment_refresh_state_rows(
-        self,
-        latest_rows: list[tuple[str, str]],
-        *,
-        updated_at: str,
-    ) -> None:
-        if not latest_rows:
-            return
-        self._executemany(
-            """
-            INSERT INTO stock_adjustment_refresh_state (
-                code, resolved_adjustment_date, updated_at
-            )
-            VALUES (?, ?, ?)
-            ON CONFLICT (code) DO UPDATE
-            SET resolved_adjustment_date = excluded.resolved_adjustment_date,
-                updated_at = excluded.updated_at
-            """,
-            [
-                (code, adjustment_date, updated_at)
-                for code, adjustment_date in latest_rows
-            ],
-        )
-
-    def _ensure_adjustment_refresh_state_initialized(self) -> None:
-        if self._read_only:
-            return
-        if not self._table_exists("stock_adjustment_refresh_state"):
-            return
-        if self.get_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"]):
-            return
-        if self._count_rows("stock_data") <= 0:
-            return
-
-        latest_rows = self._latest_adjustment_rows()
-        now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        self._upsert_adjustment_refresh_state_rows(latest_rows, updated_at=now_iso)
-        self.set_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"], now_iso)
-
-    @staticmethod
-    def _stocks_needing_refresh_query(select_clause: str) -> str:
-        return f"""
-            WITH latest_adjustment AS (
-                SELECT code, date AS adjustment_date
-                FROM (
-                    SELECT
-                        code,
-                        date,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY code
-                            ORDER BY date DESC, created_at DESC NULLS LAST
-                        ) AS rn
-                    FROM stock_data
-                    WHERE adjustment_factor IS NOT NULL
-                      AND adjustment_factor != 1.0
-                ) ranked
-                WHERE rn = 1
-            )
-            SELECT {select_clause}
-            FROM latest_adjustment latest
-            LEFT JOIN stock_adjustment_refresh_state refresh_state
-              ON refresh_state.code = latest.code
-            WHERE (
-                refresh_state.resolved_adjustment_date IS NULL
-                OR refresh_state.resolved_adjustment_date < latest.adjustment_date
-            )
-              AND EXISTS (
-                  SELECT 1
-                  FROM stock_data history
-                  WHERE history.code = latest.code
-                    AND history.date < latest.adjustment_date
-              )
-        """
-
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
-        """調整イベント後に履歴再取得が未完了な銘柄コードを返す。"""
-        if limit is not None and limit <= 0:
-            return []
-        if not self._table_exists("stock_data"):
-            return []
-        self._ensure_adjustment_refresh_state_initialized()
-        if not self._table_exists("stock_adjustment_refresh_state"):
-            return []
-        sql = self._stocks_needing_refresh_query("latest.code")
-        params: list[Any] = []
-        if limit is not None:
-            sql += "\n            ORDER BY latest.code\n            LIMIT ?"
-            params.append(int(limit))
-        else:
-            sql += "\n            ORDER BY latest.code"
-        rows = self._fetchall(
-            sql,
-            params,
-        )
-        return [str(row[0]) for row in rows if row and row[0]]
+        """local projection 移行後は常に空を返す。"""
+        del limit
+        return []
 
     def get_stocks_needing_refresh_count(self) -> int:
-        """調整イベント後に履歴再取得が未完了な銘柄数を返す。"""
-        if not self._table_exists("stock_data"):
-            return 0
-        self._ensure_adjustment_refresh_state_initialized()
-        if not self._table_exists("stock_adjustment_refresh_state"):
-            return 0
-        row = self._fetchone(self._stocks_needing_refresh_query("COUNT(*)"))
-        return int(row[0] or 0) if row else 0
+        """local projection 移行後は常に 0 を返す。"""
+        return 0
 
     def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
-        """指定銘柄の最新 adjustment event を refresh 済みとして記録する。"""
-        self._assert_writable()
-        latest_rows = self._latest_adjustment_rows(codes)
-        now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        self._upsert_adjustment_refresh_state_rows(latest_rows, updated_at=now_iso)
-        self.set_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"], now_iso)
-        return len(latest_rows)
+        """Deprecated no-op kept for call-site compatibility."""
+        del codes
+        return 0
 
     def get_stock_data_unique_date_count(self) -> int:
         """stock_data のユニーク日付数。"""
@@ -1423,3 +1331,21 @@ class MarketDb:
             return 0
         row = self._fetchone("SELECT COUNT(DISTINCT date) FROM stock_data")
         return int(row[0] or 0) if row else 0
+
+    def _ensure_stock_price_adjustment_mode_for_empty_db(self) -> None:
+        if self._read_only:
+            return
+        if self.get_stock_price_adjustment_mode() is not None:
+            return
+        stock_count = self._count_rows("stock_data") if self._table_exists("stock_data") else 0
+        raw_count = (
+            self._count_rows("stock_data_raw")
+            if self._table_exists("stock_data_raw")
+            else 0
+        )
+        if stock_count > 0 or raw_count > 0:
+            return
+        self.set_sync_metadata(
+            METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+            LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        )

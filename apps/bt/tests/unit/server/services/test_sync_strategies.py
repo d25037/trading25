@@ -1460,7 +1460,6 @@ async def test_initial_sync_populates_margin_data() -> None:
     assert result.success
     assert any(path == "/markets/margin-interest" for path, _ in client.calls)
     assert market_db.get_margin_codes() == {"7203"}
-    assert market_db.resolved_adjustment_calls == [None]
 
 
 @pytest.mark.asyncio
@@ -3786,7 +3785,7 @@ async def test_incremental_sync_margin_filters_non_listed_market_backfill_target
 
 
 @pytest.mark.asyncio
-async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamentals(
+async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb(
@@ -3825,17 +3824,15 @@ async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamental
     result = await RepairSyncStrategy().execute(ctx)
 
     assert result.success
-    assert result.stocksUpdated == 1
+    assert result.stocksUpdated == 0
     assert result.fundamentalsUpdated == 1
-    assert {row["code"] for row in market_db.stock_rows} == {"7203"}
+    assert market_db.stock_rows == []
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
-    assert market_db.resolved_adjustment_calls == [["7203"]]
-    assert any(stage == "stock_refresh" for stage, _, _, _ in progress_events)
     assert any(stage == "fundamentals" for stage, _, _, _ in progress_events)
 
 
 @pytest.mark.asyncio
-async def test_repair_sync_stops_after_cancel_during_stock_refresh(
+async def test_repair_sync_stops_after_cancel_during_fundamentals(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb(
@@ -3863,7 +3860,7 @@ async def test_repair_sync_stops_after_cancel_during_stock_refresh(
 
     def _on_progress(stage: str, current: int, total: int, message: str) -> None:
         del current, total
-        if stage == "stock_refresh" and message.startswith("Refreshed stock 1/2"):
+        if stage == "fundamentals" and message:
             cancelled.set()
 
     ctx = _build_ctx(
@@ -3877,8 +3874,8 @@ async def test_repair_sync_stops_after_cancel_during_stock_refresh(
 
     assert result.success is False
     assert result.errors == ["Cancelled"]
-    assert len(client.calls) == 1
-    assert {row["code"] for row in market_db.stock_rows} == {"7203"}
+    assert client.calls == []
+    assert market_db.stock_rows == []
     assert market_db.statements_rows == []
 
 
@@ -3937,7 +3934,7 @@ def test_strategy_selection_and_api_call_estimates() -> None:
     assert IndicesOnlySyncStrategy().estimate_api_calls() == 70
     assert InitialSyncStrategy().estimate_api_calls() == 3200
     assert IncrementalSyncStrategy().estimate_api_calls() == 180
-    assert RepairSyncStrategy().estimate_api_calls() == 400
+    assert RepairSyncStrategy().estimate_api_calls() == 200
 
 
 def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:

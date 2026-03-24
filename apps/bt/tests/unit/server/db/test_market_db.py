@@ -32,16 +32,18 @@ class TestMarketDbBasics:
     def test_empty_stats_and_schema(self, market_db: MarketDb) -> None:
         stats = market_db.get_stats()
         assert stats["stocks"] == 0
+        assert stats["stock_data_raw"] == 0
         assert stats["stock_data"] == 0
         assert stats["topix_data"] == 0
         assert stats["indices_data"] == 0
         assert stats["options_225_data"] == 0
         assert stats["margin_data"] == 0
-        assert stats["sync_metadata"] == 0
+        assert stats["sync_metadata"] == 1
 
         schema = market_db.validate_schema()
         assert schema["valid"] is True
         assert "stocks" in schema["required_tables"]
+        assert "stock_data_raw" in schema["required_tables"]
         assert "stock_data" in schema["required_tables"]
         assert "topix_data" in schema["required_tables"]
         assert "options_225_data" in schema["required_tables"]
@@ -93,6 +95,7 @@ class TestMarketDbBasics:
         )
 
         assert market_db.is_initialized() is True
+        assert market_db.get_stock_price_adjustment_mode() == "local_projection_v1"
 
     def test_is_initialized_prioritizes_explicit_metadata_flag(
         self, market_db: MarketDb
@@ -497,10 +500,6 @@ class TestMarketDbDerivedStats:
             ]
         )
 
-        assert market_db.get_stocks_needing_refresh() == ["7203"]
-        assert market_db.get_stocks_needing_refresh_count() == 1
-
-        assert market_db.mark_stock_adjustments_resolved(["7203"]) == 1
         assert market_db.get_stocks_needing_refresh() == []
         assert market_db.get_stocks_needing_refresh_count() == 0
         assert market_db.get_stock_data_unique_date_count() == 3
@@ -615,7 +614,7 @@ class TestMarketDbReadOnly:
             )
         ro.close()
 
-    def test_read_only_handles_legacy_db_without_adjustment_refresh_state(
+    def test_read_only_detects_legacy_stock_snapshot_without_raw_table(
         self, tmp_path: Path
     ) -> None:
         db_path = str(tmp_path / "market_ro_legacy.duckdb")
@@ -648,16 +647,13 @@ class TestMarketDbReadOnly:
 
         conn = duckdb.connect(db_path)
         try:
-            conn.execute("DROP TABLE stock_adjustment_refresh_state")
-            conn.execute(
-                "DELETE FROM sync_metadata WHERE key = 'adjustment_refresh_state_initialized'"
-            )
+            conn.execute("DROP TABLE stock_data_raw")
+            conn.execute("DELETE FROM sync_metadata WHERE key = 'stock_price_adjustment_mode'")
         finally:
             conn.close()
 
         ro = MarketDb(db_path, read_only=True)
-        assert ro.get_stocks_needing_refresh() == []
-        assert ro.get_stocks_needing_refresh_count() == 0
+        assert ro.is_legacy_stock_price_snapshot() is True
         ro.close()
 
     def test_get_db_file_size_handles_os_error(

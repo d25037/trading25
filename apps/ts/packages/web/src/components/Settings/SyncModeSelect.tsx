@@ -20,7 +20,7 @@ const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }
   {
     value: 'repair',
     label: 'Repair Warnings',
-    description: 'Bulk-fix adjustment refresh and listed-market fundamentals warnings',
+    description: 'Backfill listed-market fundamentals and other non-price warnings',
   },
 ];
 

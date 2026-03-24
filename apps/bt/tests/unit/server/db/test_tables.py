@@ -33,6 +33,7 @@ from src.infrastructure.db.market.tables import (
     portfolio_metadata,
     portfolios,
     statements,
+    stock_data_raw,
     stock_data,
     stocks,
     sync_metadata,
@@ -137,8 +138,8 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_8_tables(self) -> None:
-        assert len(market_meta.tables) == 8
+    def test_market_meta_has_9_tables(self) -> None:
+        assert len(market_meta.tables) == 9
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key
@@ -155,7 +156,7 @@ class TestMarketDbContract:
 # ===========================================================================
 
 class TestMarketDbContractV2:
-    """market.duckdb statements + margin_data 契約（v2 minor update）"""
+    """market.duckdb statements + margin_data + stock_data_raw 契約（v2 minor update）"""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
@@ -200,11 +201,25 @@ class TestMarketDbContractV2:
             assert idx["name"] in actual_indexes
             assert actual_indexes[idx["name"]] == idx["columns"]
 
+    def test_stock_data_raw_columns(self) -> None:
+        spec = self.tables["stock_data_raw"]["properties"]["columns"]["properties"]
+        for col_name, col_spec in spec.items():
+            col = stock_data_raw.c[col_name]
+            expected = col_spec["const"]
+            assert _sa_type_name(col.type) == expected["type"], f"market.stock_data_raw.{col_name} type mismatch"
+            assert col.nullable == expected["nullable"], f"market.stock_data_raw.{col_name} nullable mismatch"
+
+    def test_stock_data_raw_primary_key(self) -> None:
+        pk_cols = [c.name for c in stock_data_raw.primary_key.columns]
+        assert pk_cols == self.tables["stock_data_raw"]["properties"]["primary_key"]["const"]
+
     def test_v2_contract_keeps_additive_backward_compatibility(self) -> None:
-        assert set(self.contract["properties"]["schema_version"]["enum"]) == {"2.0.0", "2.1.0"}
+        assert set(self.contract["properties"]["schema_version"]["enum"]) == {"2.0.0", "2.1.0", "2.2.0"}
         required_tables = set(self.contract["properties"]["tables"]["required"])
         assert "margin_data" not in required_tables
         assert "margin_data" in self.tables
+        assert "stock_data_raw" not in required_tables
+        assert "stock_data_raw" in self.tables
 
 
 # ===========================================================================

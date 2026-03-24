@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import Barrier, Lock, RLock, Thread
 from time import sleep
 
+import duckdb
 import pytest
 
 from src.infrastructure.db.market.time_series_store import (
@@ -32,6 +33,14 @@ def _stock_row_for(date: str) -> dict[str, object]:
     row["date"] = date
     row["created_at"] = f"{date}T00:00:00+00:00"
     return row
+
+
+def _query_rows(db_path: Path, sql: str) -> list[tuple]:
+    conn = duckdb.connect(str(db_path))
+    try:
+        return conn.execute(sql).fetchall()
+    finally:
+        conn.close()
 
 
 def _topix_rows() -> list[dict[str, object]]:
@@ -291,6 +300,153 @@ def test_publish_stock_data_large_batch_uses_relation_insert(
     assert inspection.stock_count == 2
     assert inspection.stock_min == "2026-02-10"
     assert inspection.stock_max == "2026-02-11"
+
+    store.close()
+
+
+def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Path) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    store.publish_stock_data(
+        [
+            {
+                "code": "7203",
+                "date": "2026-02-05",
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.0,
+                "volume": 1000,
+                "adjustment_factor": 1.0,
+                "created_at": "2026-02-05T00:00:00+00:00",
+            },
+            {
+                "code": "7203",
+                "date": "2026-02-06",
+                "open": 5.0,
+                "high": 6.0,
+                "low": 4.0,
+                "close": 5.0,
+                "volume": 1000,
+                "adjustment_factor": 0.5,
+                "created_at": "2026-02-06T00:00:00+00:00",
+            },
+        ]
+    )
+    store.index_stock_data()
+
+    rows = _query_rows(
+        db_path,
+        """
+        SELECT date, open, high, low, close, volume, adjustment_factor
+        FROM stock_data
+        WHERE code = '7203'
+        ORDER BY date
+        """,
+    )
+
+    assert rows == [
+        ("2026-02-05", 5.0, 5.5, 4.5, 5.0, 2000, 1.0),
+        ("2026-02-06", 5.0, 6.0, 4.0, 5.0, 1000, 0.5),
+    ]
+
+    raw_rows = _query_rows(
+        db_path,
+        """
+        SELECT date, open, close, volume, adjustment_factor
+        FROM stock_data_raw
+        WHERE code = '7203'
+        ORDER BY date
+        """,
+    )
+    assert raw_rows == [
+        ("2026-02-05", 10.0, 10.0, 1000, 1.0),
+        ("2026-02-06", 5.0, 5.0, 1000, 0.5),
+    ]
+
+    store.close()
+
+
+def test_index_stock_data_projects_chained_adjustments_without_boundary_gap(tmp_path: Path) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    store.publish_stock_data(
+        [
+            {
+                "code": "9984",
+                "date": "2016-03-23",
+                "open": 5600.0,
+                "high": 5650.0,
+                "low": 5550.0,
+                "close": 5604.0,
+                "volume": 1000,
+                "adjustment_factor": 1.0,
+                "created_at": "2016-03-23T00:00:00+00:00",
+            },
+            {
+                "code": "9984",
+                "date": "2016-03-24",
+                "open": 5600.0,
+                "high": 5680.0,
+                "low": 5520.0,
+                "close": 5590.4,
+                "volume": 2000,
+                "adjustment_factor": 1.0,
+                "created_at": "2016-03-24T00:00:00+00:00",
+            },
+            {
+                "code": "9984",
+                "date": "2019-06-25",
+                "open": 600.0,
+                "high": 610.0,
+                "low": 590.0,
+                "close": 605.0,
+                "volume": 3000,
+                "adjustment_factor": 0.5,
+                "created_at": "2019-06-25T00:00:00+00:00",
+            },
+            {
+                "code": "9984",
+                "date": "2025-12-29",
+                "open": 150.0,
+                "high": 160.0,
+                "low": 140.0,
+                "close": 155.0,
+                "volume": 4000,
+                "adjustment_factor": 0.25,
+                "created_at": "2025-12-29T00:00:00+00:00",
+            },
+        ]
+    )
+    store.index_stock_data()
+
+    rows = _query_rows(
+        db_path,
+        """
+        SELECT date, ROUND(close, 1), volume
+        FROM stock_data
+        WHERE code = '9984'
+          AND date IN ('2016-03-23', '2016-03-24')
+        ORDER BY date
+        """,
+    )
+
+    assert rows == [
+        ("2016-03-23", 700.5, 8000),
+        ("2016-03-24", 698.8, 16000),
+    ]
 
     store.close()
 
@@ -564,6 +720,20 @@ class _ConcurrentAccessDetectingConnection:
         finally:
             self._exit_critical()
 
+    def register(self, _name: str, _value: object) -> None:
+        self._enter_critical()
+        try:
+            return
+        finally:
+            self._exit_critical()
+
+    def unregister(self, _name: str) -> None:
+        self._enter_critical()
+        try:
+            return
+        finally:
+            self._exit_critical()
+
     def close(self) -> None:
         self.closed = True
 
@@ -605,6 +775,7 @@ def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     store._parquet_dir.mkdir(parents=True, exist_ok=True)
     store._conn = _ConcurrentAccessDetectingConnection()
     store._dirty_tables = set()
+    store._stock_projection_full_rebuild_codes = set()
     store._lock = RLock()
     return store
 

@@ -15,7 +15,10 @@ from typing import Any, Protocol
 
 from loguru import logger
 
-from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.market_db import (
+    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    METADATA_KEYS,
+)
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
@@ -32,6 +35,7 @@ from src.shared.config.reliability import SYNC_JOB_TIMEOUT_MINUTES
 
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def ensure_schema(self) -> None: ...
+    def is_legacy_stock_price_snapshot(self) -> bool: ...
 
 
 class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
@@ -123,6 +127,15 @@ async def start_sync(
     if time_series_store is None:
         raise RuntimeError("DuckDB time-series store is required for sync")
     market_db.ensure_schema()
+    if market_db.is_legacy_stock_price_snapshot():
+        raise RuntimeError(
+            "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
+            "and market-timeseries/parquet, then run initial sync."
+        )
+    market_db.set_sync_metadata(
+        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
     resolved_mode = _resolve_mode(mode, market_db, time_series_store=time_series_store)
     data = SyncJobData(
         mode=mode,

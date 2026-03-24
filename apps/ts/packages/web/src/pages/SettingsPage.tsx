@@ -630,7 +630,7 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
 
   appendValidationDiagnostic(warningDiagnostics, dbValidation.stocksNeedingRefreshCount, {
     label: 'Stocks Needing Refresh',
-    helpText: 'Adjustment-aware repair will refresh these stock series.',
+    helpText: 'Deprecated diagnostic retained for response compatibility. Local projection should keep this at zero.',
     sampleItems: dbValidation.stocksNeedingRefresh,
     sampleLabel: 'Sample codes',
     sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
@@ -1033,8 +1033,9 @@ function WarningRecoverySection({
           <div className="space-y-1">
             <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
             <CardDescription>
-              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. N225 options coverage gaps
-              must be handled from Database Sync.
+              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. Legacy stock-price
+              adjustment drift requires a reset plus initial sync; N225 options coverage gaps must be handled from
+              Database Sync.
             </CardDescription>
           </div>
         </div>
@@ -1061,8 +1062,9 @@ function WarningRecoverySection({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market
-          fundamentals. It does not ingest `options_225_data`; use Database Sync with `indices-only` for options gaps.
+          Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
+          rebuild legacy stock-price snapshots or ingest `options_225_data`; reset + initial sync for legacy price
+          snapshots, and use Database Sync with `indices-only` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>
