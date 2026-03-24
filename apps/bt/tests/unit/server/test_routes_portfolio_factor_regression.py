@@ -57,29 +57,34 @@ def _create_market_db(path: str) -> None:
     """)
     # stock_data: 100日分の価格データ
     dates = [f"2024-{(i // 25) + 1:02d}-{(i % 25) + 1:02d}" for i in range(100)]
+    stock_rows: list[tuple[str, str, float, float, float, float, int, float]] = []
+    topix_rows: list[tuple[str, float, float, float, float]] = []
+    index_rows: list[tuple[str, str, float]] = []
     for i, d in enumerate(dates):
         price_7203 = 2500 + i * 5
         price_6758 = 1500 + i * 3
         topix = 2000 + i * 3
-        conn.execute(
-            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        stock_rows.extend([
             ("72030", d, price_7203 - 10, price_7203 + 10, price_7203 - 15, price_7203, 1000000, 1.0),
-        )
-        conn.execute(
-            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
             ("67580", d, price_6758 - 5, price_6758 + 5, price_6758 - 8, price_6758, 500000, 1.0),
-        )
-        conn.execute(
-            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
-            (d, topix - 10, topix + 10, topix - 15, topix),
-        )
+        ])
+        topix_rows.append((d, topix - 10, topix + 10, topix - 15, topix))
         # indices_data for each index
         for idx_code in ["0000", "0001", "1001", "2001"]:
             idx_close = topix + int(idx_code) * 0.01 + i * 2
-            conn.execute(
-                "INSERT INTO indices_data VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL)",
-                (idx_code, d, idx_close),
-            )
+            index_rows.append((idx_code, d, idx_close))
+    conn.executemany(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+        stock_rows,
+    )
+    conn.executemany(
+        "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, NULL)",
+        topix_rows,
+    )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL)",
+        index_rows,
+    )
     conn.close()
 
 
