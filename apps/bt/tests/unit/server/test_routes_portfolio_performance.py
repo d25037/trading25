@@ -7,9 +7,12 @@ import duckdb
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
+from src.entrypoints.http.routes import portfolio
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
@@ -41,8 +44,8 @@ def _create_market_db(path: str) -> None:
         INSERT INTO stocks VALUES ('72030', 'トヨタ自動車', 'TOYOTA', '0111', 'プライム', '7', '輸送用機器', '3050', '輸送用機器', 'TOPIX Core30', '1949-05-16', NULL, NULL);
         INSERT INTO stocks VALUES ('67580', 'ソニー', 'SONY', '0111', 'プライム', '5', '電気機器', '3650', '電気機器', 'TOPIX Core30', '1958-12-01', NULL, NULL);
     """)
-    # stock_data: 100日分の価格データ（現実的な値で）
-    dates = [f"2024-{(i // 25) + 1:02d}-{(i % 25) + 1:02d}" for i in range(100)]
+    # benchmark 比較に必要な十分量だけ残して fixture 構築コストを抑える
+    dates = [f"2024-{(i // 25) + 1:02d}-{(i % 25) + 1:02d}" for i in range(40)]
     stock_rows: list[tuple[str, str, float, float, float, float, int, float]] = []
     topix_rows: list[tuple[str, float, float, float, float]] = []
     for i, d in enumerate(dates):
@@ -89,7 +92,9 @@ def market_reader(market_db_path: str) -> Generator[MarketDbReader, None, None]:
 
 @pytest.fixture(scope="module")
 def app_client() -> Generator[TestClient, None, None]:
-    app = create_app()
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(portfolio.router)
     client = TestClient(app, raise_server_exceptions=False)
     try:
         yield client
@@ -161,7 +166,9 @@ class TestPortfolioPerformance:
             assert "rSquared" in data["benchmark"]
 
     def test_no_market_db(self, pdb: PortfolioDb) -> None:
-        app = create_app()
+        app = FastAPI(**get_openapi_config())
+        _configure_http_app(app)
+        app.include_router(portfolio.router)
         with TestClient(app, raise_server_exceptions=False) as client:
             app.state.portfolio_db = pdb
             app.state.market_reader = None

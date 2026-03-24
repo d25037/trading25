@@ -7,10 +7,12 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.routes import dataset_data as dataset_data_routes
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.market.dataset_snapshot_reader import (
@@ -262,7 +264,9 @@ def test_dataset_dir(tmp_path_factory):
 @pytest.fixture(scope="module")
 def client(test_dataset_dir: str):
     """テスト用 FastAPI クライアント"""
-    app = create_app()
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(dataset_data_routes.router)
     app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
     test_client = TestClient(app, raise_server_exceptions=False)
     yield test_client
@@ -282,7 +286,9 @@ class TestDatasetDataRoutes:
         assert resp.status_code == 404
 
     def test_dataset_resolver_not_initialized(self, test_dataset_dir: str) -> None:
-        app = create_app()
+        app = FastAPI(**get_openapi_config())
+        _configure_http_app(app)
+        app.include_router(dataset_data_routes.router)
         # 初期化漏れを再現
         app.state.dataset_resolver = None
         local_client = TestClient(app, raise_server_exceptions=False)

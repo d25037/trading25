@@ -3,18 +3,25 @@
 from uuid import UUID
 
 import pytest
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
+from src.entrypoints.http.routes import chart, health, market_data, strategies
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 
 
 def _make_test_app() -> TestClient:
     """テスト用のエンドポイントを追加した TestClient を作成"""
-    app = create_app()
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(health.router)
+    app.include_router(strategies.router)
+    app.include_router(market_data.router)
+    app.include_router(chart.router)
 
     test_router = APIRouter()
 
@@ -105,7 +112,10 @@ def shared_client():
 
 @pytest.fixture(scope="module")
 def no_db_client():
-    app = create_app()
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(market_data.router)
+    app.include_router(chart.router)
     app.state.market_data_service = None
     app.state.chart_service = None
     client = TestClient(app)

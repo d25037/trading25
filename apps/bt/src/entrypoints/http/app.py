@@ -283,15 +283,8 @@ def _build_error_response(status_code: int, message: str, details: list[ErrorDet
     return JSONResponse(status_code=status_code, content=body.model_dump(exclude_none=True))
 
 
-def create_app() -> FastAPI:
-    """FastAPIアプリケーションを作成"""
-    openapi_config = get_openapi_config()
-    app = FastAPI(
-        lifespan=lifespan,
-        **openapi_config,
-    )
-
-    # カスタム OpenAPI スキーマ（ErrorResponse 共通注入）
+def _configure_http_app(app: FastAPI) -> None:
+    """共通 HTTP 設定を app に適用する。"""
     cast(Any, app).openapi = lambda: customize_openapi(app)
 
     # --- ミドルウェア登録（LIFO: 下から上に実行される） ---
@@ -355,7 +348,9 @@ def create_app() -> FastAPI:
         logger.exception(f"Unhandled exception: {exc}")
         return _build_error_response(500, "Internal server error")
 
-    # ルーターを登録
+
+def _register_routes(app: FastAPI) -> None:
+    """HTTP routers を一括登録する。"""
     app.include_router(health.router)
     app.include_router(strategies.router)
     app.include_router(backtest.router)
@@ -366,22 +361,27 @@ def create_app() -> FastAPI:
     app.include_router(ohlcv.router)
     app.include_router(snapshots.router)
     app.include_router(fundamentals.router)
-    # Phase 3B-1: JQuants Proxy + Analytics
     app.include_router(jquants_proxy.router)
     app.include_router(analytics_market.router)
-    # Phase 3B-2a: Market Data (DuckDB)
     app.include_router(market_data.router)
-    # Phase 3B-2b: Chart + Sector Stocks
     app.include_router(chart.router)
-    # Phase 3B-3: Complex Analytics (Ranking, Factor Regression, Screening)
     app.include_router(analytics_complex.router)
-    # Phase 3D: Dataset Data + Dataset Management + DB
     app.include_router(db.router)
     app.include_router(dataset_data.router)
     app.include_router(dataset.router)
-    # Phase 3E: Portfolio + Watchlist
     app.include_router(portfolio.router)
     app.include_router(watchlist.router)
+
+
+def create_app() -> FastAPI:
+    """FastAPIアプリケーションを作成"""
+    openapi_config = get_openapi_config()
+    app = FastAPI(
+        lifespan=lifespan,
+        **openapi_config,
+    )
+    _configure_http_app(app)
+    _register_routes(app)
 
     return app
 

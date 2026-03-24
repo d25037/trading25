@@ -6,9 +6,12 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _configure_http_app
+from src.entrypoints.http.openapi_config import get_openapi_config
+from src.entrypoints.http.routes import portfolio
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
@@ -21,7 +24,9 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
 
 @pytest.fixture(scope="module")
 def app_client() -> Generator[TestClient, None, None]:
-    app = create_app()
+    app = FastAPI(**get_openapi_config())
+    _configure_http_app(app)
+    app.include_router(portfolio.router)
     client = TestClient(app, raise_server_exceptions=False)
     try:
         yield client
@@ -332,8 +337,10 @@ class TestGetCodes:
 
 class TestDbNotInitialized:
     def test_no_db(self) -> None:
-        app = create_app()
+        app = FastAPI(**get_openapi_config())
+        _configure_http_app(app)
+        app.include_router(portfolio.router)
         app.state.portfolio_db = None
-        c = TestClient(app, raise_server_exceptions=False)
-        resp = c.get("/api/portfolio")
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.get("/api/portfolio")
         assert resp.status_code == 422

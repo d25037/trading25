@@ -1,9 +1,11 @@
 """OpenAPI スキーマ互換性テスト"""
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
+from src.entrypoints.http.app import _register_routes
+from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 
 # Hono baseline に存在する 10 operation tags
 HONO_OPERATION_TAGS = {
@@ -22,7 +24,10 @@ HONO_OPERATION_TAGS = {
 
 @pytest.fixture(scope="module")
 def openapi_app():
-    return create_app()
+    app = FastAPI(**get_openapi_config())
+    _register_routes(app)
+    app.openapi = lambda: customize_openapi(app)  # type: ignore[method-assign]
+    return app
 
 
 @pytest.fixture(scope="module")

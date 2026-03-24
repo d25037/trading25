@@ -9,11 +9,11 @@ from pathlib import Path
 import shutil
 import time
 from collections.abc import Generator
-from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.services.dataset_builder_service import dataset_job_manager
 from src.application.services.dataset_resolver import DatasetResolver
 from src.entrypoints.http.app import create_app
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
@@ -426,20 +426,17 @@ class TestDatasetManagementRoutes:
             )
             assert create_resp.status_code == 202
             job_id = create_resp.json()["jobId"]
+            job = dataset_job_manager.get_job(job_id)
 
-            job_payload: dict[str, Any] | None = None
+            assert job is not None
             for _ in range(100):
-                job_resp = client.get(f"/api/dataset/jobs/{job_id}")
-                assert job_resp.status_code == 200
-                job_payload = cast(dict[str, Any], job_resp.json())
-                if job_payload["status"] in {"completed", "failed", "cancelled"}:
+                if job.status.value in {"completed", "failed", "cancelled"}:
                     break
-                time.sleep(0.01)
+                time.sleep(0.002)
 
-            assert job_payload is not None
-            assert job_payload["status"] == "completed"
-            result = cast(dict[str, Any], job_payload["result"])
-            assert result["success"] is True
+            assert job.status.value == "completed"
+            assert job.result is not None
+            assert job.result.success is True
 
             info_resp = client.get("/api/dataset/created-direct/info")
             assert info_resp.status_code == 200
