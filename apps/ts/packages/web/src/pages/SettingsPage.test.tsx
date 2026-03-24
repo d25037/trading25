@@ -225,7 +225,7 @@ beforeEach(() => {
       recommendations: [
         'Run repair sync to refresh 100 stocks with pending adjustment backfill',
         'Run repair sync to backfill fundamentals for 7 listed-market stocks',
-        'Run indices-only sync to ingest N225 options data into options_225_data',
+        'Run incremental sync to ingest N225 options data into options_225_data',
       ],
       lastUpdated: '2026-03-01T12:00:01Z',
     },
@@ -480,7 +480,7 @@ describe('SettingsPage', () => {
       screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length
     ).toBeGreaterThan(0);
     expect(
-      screen.getByText('Run indices-only sync to ingest N225 options data into options_225_data')
+      screen.getByText('Run incremental sync to ingest N225 options data into options_225_data')
     ).toBeInTheDocument();
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
@@ -617,7 +617,7 @@ describe('SettingsPage', () => {
           marginEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
         },
         recommendations: [
-          'Run indices-only sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)',
+          'Run incremental sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)',
         ],
         lastUpdated: '2026-03-01T12:00:01Z',
       },
@@ -633,7 +633,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Status: Behind TOPIX latest 2026-02-27')).toBeInTheDocument();
     expect(
       screen.getAllByText(
-        'Run indices-only sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)'
+        'Run incremental sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)'
       ).length
     ).toBeGreaterThan(0);
   });
@@ -677,7 +677,7 @@ describe('SettingsPage', () => {
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 0,
         integrityIssuesCount: 0,
-        recommendations: ['Run indices-only sync to ingest N225 options data into options_225_data'],
+        recommendations: ['Run incremental sync to ingest N225 options data into options_225_data'],
       },
       isLoading: false,
       error: null,
@@ -822,7 +822,7 @@ describe('SettingsPage', () => {
           marginEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
         },
         recommendations: [
-          'Run indices-only sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data',
+          'Run incremental sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data',
         ],
         lastUpdated: '2026-03-19T12:00:01Z',
       },
@@ -840,7 +840,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Showing 2 of 2,454.')).toBeInTheDocument();
     expect(
       screen.getAllByText(
-        'Run indices-only sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data'
+        'Run incremental sync to backfill N225 options history for 2454 TOPIX dates missing from options_225_data'
       ).length
     ).toBeGreaterThan(0);
   });

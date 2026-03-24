@@ -57,7 +57,6 @@ class SyncMode(str, Enum):
     AUTO = "auto"
     INITIAL = "initial"
     INCREMENTAL = "incremental"
-    INDICES_ONLY = "indices-only"
     REPAIR = "repair"
 
 

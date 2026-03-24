@@ -1261,8 +1261,9 @@ async def test_incremental_sync_handles_mixed_date_formats() -> None:
     result = await IncrementalSyncStrategy().execute(ctx)
 
     assert result.success
-    assert result.datesProcessed == 1
-    assert result.stocksUpdated == 1
+    assert result.datesProcessed == 2
+    assert result.stocksUpdated == 2
+    assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-06"} for path, params in client.calls)
     assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-10"} for path, params in client.calls)
 
     topix_calls = [c for c in client.calls if c[0] == "/indices/bars/daily/topix"]
@@ -2105,13 +2106,41 @@ async def test_incremental_sync_uses_stock_data_anchor_when_topix_is_ahead() -> 
     result = await IncrementalSyncStrategy().execute(ctx)
 
     assert result.success
-    assert result.datesProcessed == 1
+    assert result.datesProcessed == 2
+    assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-06"} for path, params in client.calls)
     assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-10"} for path, params in client.calls)
 
     topix_calls = [c for c in client.calls if c[0] == "/indices/bars/daily/topix"]
     assert topix_calls
     # topix_data ではなく stock_data の最新日（2026-02-06）を基準に差分取得する
     assert topix_calls[0][1] == {"from": "20260206"}
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_backfills_missing_stock_dates_without_new_topix_dates() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260210", latest_stock_data_date="20260210")
+    market_db.topix_rows = [
+        {"date": "2026-02-06", "open": 100, "high": 101, "low": 99, "close": 100},
+        {"date": "2026-02-10", "open": 102, "high": 103, "low": 101, "close": 102},
+    ]
+    market_db.stock_rows = [
+        {"code": "7203", "date": "2026-02-10", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 1000}
+    ]
+    client = DummyClient()
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.datesProcessed == 1
+    assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-06"} for path, params in client.calls)
+    assert any(row.get("date") == "2026-02-06" for row in market_db.stock_rows)
 
 
 @pytest.mark.asyncio
@@ -2208,9 +2237,10 @@ async def test_incremental_sync_skips_rows_with_missing_ohlcv() -> None:
 
     assert result.success
     assert result.errors == []
-    assert result.stocksUpdated == 1
-    assert len(market_db.stock_rows) == 1
-    assert market_db.stock_rows[0]["code"] == "7203"
+    assert result.stocksUpdated == 2
+    assert len(market_db.stock_rows) == 2
+    assert all(row["code"] == "7203" for row in market_db.stock_rows)
+    assert sorted(str(row["date"]) for row in market_db.stock_rows) == ["2026-02-06", "2026-02-10"]
 
 
 @pytest.mark.asyncio
@@ -3927,7 +3957,6 @@ async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata
 def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("initial"), InitialSyncStrategy)
     assert isinstance(get_strategy("incremental"), IncrementalSyncStrategy)
-    assert isinstance(get_strategy("indices-only"), IndicesOnlySyncStrategy)
     assert isinstance(get_strategy("repair"), RepairSyncStrategy)
     assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
 

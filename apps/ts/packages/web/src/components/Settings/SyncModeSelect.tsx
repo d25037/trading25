@@ -17,11 +17,6 @@ const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }
   },
   { value: 'incremental', label: 'Incremental', description: 'Backfill missing dates and append latest market data' },
   {
-    value: 'indices-only',
-    label: 'Indices Only',
-    description: 'Resync index series plus synthetic Nikkei UnderPx data',
-  },
-  {
     value: 'repair',
     label: 'Repair Warnings',
     description: 'Backfill listed-market fundamentals and other non-price warnings',

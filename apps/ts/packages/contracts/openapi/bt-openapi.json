@@ -14668,7 +14668,6 @@
               "auto",
               "initial",
               "incremental",
-              "indices-only",
               "repair"
             ],
             "title": "Mode",

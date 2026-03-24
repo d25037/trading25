@@ -266,7 +266,7 @@ export interface N225OptionsExplorerResponse {
 
 // ===== SYNC TYPES =====
 
-export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only' | 'repair';
+export type SyncMode = 'auto' | 'initial' | 'incremental' | 'repair';
 export type SyncDataBackend = 'duckdb-parquet';
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 

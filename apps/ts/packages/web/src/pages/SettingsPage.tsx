@@ -591,20 +591,20 @@ function buildOptions225CoverageWarning(dbValidation: MarketValidationResponse):
       return {
         label: 'N225 Options Missing Locally',
         value: 1,
-        helpText: `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
+        helpText: `No local N225 options chain is stored yet. Run Database Sync with \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
       };
     case 'stale':
       return {
         label: 'N225 Options Stale',
         value: 1,
-        helpText: `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
+        helpText: `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`incremental\` to refresh \`options_225_data\`.`,
       };
     case 'partial':
       return {
         label: 'N225 Options Partial Coverage',
         value: missingCoverageCount,
         helpText:
-          'Local N225 options latest date matches TOPIX, but historical TOPIX dates are still missing from `options_225_data`. Run Database Sync with `indices-only` to backfill local history.',
+          'Local N225 options latest date matches TOPIX, but historical TOPIX dates are still missing from `options_225_data`. Run Database Sync with `incremental` to backfill local history.',
         sampleItems: options225.missingTopixCoverageDates,
         sampleLabel: 'Sample dates',
         sampleHint: buildSampleHint(sampleWindows?.options225MissingTopixCoverageDates),
@@ -1104,7 +1104,7 @@ function WarningRecoverySection({
         <p className="text-xs text-muted-foreground">
           Runs `repair` sync mode to backfill listed-market fundamentals and related non-price warnings. It does not
           rebuild legacy stock-price snapshots or ingest `options_225_data`; use Initial sync with reset enabled for
-          legacy price snapshots, and use Database Sync with `indices-only` for options gaps.
+          legacy price snapshots, and use Database Sync with `incremental` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>

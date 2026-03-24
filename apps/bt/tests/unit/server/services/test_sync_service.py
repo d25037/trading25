@@ -183,7 +183,8 @@ def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
 
 def test_resolve_mode_prefers_requested_non_auto() -> None:
     market_db = _market_db(last_sync_date=None)
-    assert sync_service._resolve_mode(SyncMode.INDICES_ONLY, market_db) == "indices-only"
+    assert sync_service._resolve_mode(SyncMode.INITIAL, market_db) == "initial"
+    assert sync_service._resolve_mode(SyncMode.INCREMENTAL, market_db) == "incremental"
     assert sync_service._resolve_mode(SyncMode.REPAIR, market_db) == "repair"
 
 

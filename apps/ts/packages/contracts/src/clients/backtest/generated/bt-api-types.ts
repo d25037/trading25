@@ -9549,7 +9549,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            mode: "auto" | "initial" | "incremental" | "indices-only" | "repair";
+            mode: "auto" | "initial" | "incremental" | "repair";
             /**
              * Resetbeforesync
              * @default false

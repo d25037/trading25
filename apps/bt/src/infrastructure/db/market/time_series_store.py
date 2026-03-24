@@ -54,6 +54,7 @@ class _RelationUpsertSpec:
     columns: tuple[str, ...]
     conflict_columns: tuple[str, ...]
     update_columns: tuple[str, ...] | None = None
+    update_assignments: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -104,6 +105,17 @@ class TimeSeriesStorageStats:
         return self.duckdb_bytes + self.parquet_bytes
 
 
+def _build_coalesce_update_assignments(
+    columns: tuple[str, ...],
+    *,
+    target_table: str,
+) -> tuple[str, ...]:
+    return tuple(
+        f"{column} = COALESCE(excluded.{column}, {target_table}.{column})"
+        for column in columns
+    )
+
+
 class DuckDbParquetTimeSeriesStore:
     """DuckDB へ upsert し、Parquet を再生成する Data Plane store。"""
 
@@ -111,6 +123,7 @@ class DuckDbParquetTimeSeriesStore:
     _INDICES_DATA_RELATION_INSERT_THRESHOLD = 1000
     _OPTIONS_225_RELATION_INSERT_THRESHOLD = 1000
     _MARGIN_DATA_RELATION_INSERT_THRESHOLD = 1000
+    _STATEMENTS_RELATION_INSERT_THRESHOLD = 1000
 
     _STOCK_DATA_RAW_UPSERT_SPEC = _RelationUpsertSpec(
         table_name="stock_data_raw",
@@ -246,6 +259,20 @@ class DuckDbParquetTimeSeriesStore:
         "total_assets",
         "shares_outstanding",
         "treasury_shares",
+    )
+    _STATEMENTS_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="statements",
+        relation_name="__tmp_statements_publish",
+        columns=(
+            "code",
+            "disclosed_date",
+            *_STATEMENT_UPDATABLE_COLUMNS,
+        ),
+        conflict_columns=("code", "disclosed_date"),
+        update_assignments=_build_coalesce_update_assignments(
+            _STATEMENT_UPDATABLE_COLUMNS,
+            target_table="statements",
+        ),
     )
 
     _INVALID_TOPIX_DATE_SUBQUERY = """
@@ -595,32 +622,15 @@ class DuckDbParquetTimeSeriesStore:
         return self._publish_rows_via_relation(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
 
     def publish_statements(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-
-        insert_columns = [
-            "code",
-            "disclosed_date",
-            *self._STATEMENT_UPDATABLE_COLUMNS,
-        ]
-        placeholders = ", ".join("?" for _ in insert_columns)
-        update_clause = ", ".join(
-            f"{column} = COALESCE(excluded.{column}, statements.{column})"
-            for column in self._STATEMENT_UPDATABLE_COLUMNS
+        return self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._STATEMENTS_UPSERT_SPEC,
+            relation_insert_threshold=self._STATEMENTS_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_statements_via_relation,
         )
 
-        sql = (
-            f"INSERT INTO statements ({', '.join(insert_columns)}) "
-            f"VALUES ({placeholders}) "
-            "ON CONFLICT (code, disclosed_date) DO UPDATE "
-            f"SET {update_clause}"
-        )
-
-        values = [tuple(row.get(column) for column in insert_columns) for row in rows]
-        with self._lock:
-            self._conn.executemany(sql, values)
-            self._dirty_tables.add("statements")
-        return len(rows)
+    def _publish_statements_via_relation(self, rows: list[dict[str, Any]]) -> int:
+        return self._publish_rows_via_relation(rows, spec=self._STATEMENTS_UPSERT_SPEC)
 
     def index_topix_data(self) -> None:
         self._export_if_dirty("topix_data")
@@ -1111,6 +1121,8 @@ class DuckDbParquetTimeSeriesStore:
 
     @classmethod
     def _build_upsert_update_clause(cls, spec: _RelationUpsertSpec) -> str:
+        if spec.update_assignments is not None:
+            return ", ".join(spec.update_assignments)
         return ", ".join(
             f"{column} = excluded.{column}"
             for column in cls._resolve_upsert_update_columns(spec)

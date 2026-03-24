@@ -256,17 +256,17 @@ def validate_market_db(
         )
     if options_225_missing_local_data:
         recommendations.append(
-            "Run indices-only sync to ingest N225 options data into options_225_data"
+            "Run incremental sync to ingest N225 options data into options_225_data"
         )
     if options_225_stale_local_data:
         recommendations.append(
-            "Run indices-only sync to refresh N225 options data "
+            "Run incremental sync to refresh N225 options data "
             f"through {inspection.topix_max or 'the latest TOPIX date'} "
             f"(latest local options date: {inspection.options_225_max or 'n/a'})"
         )
     elif options_225_partial_local_data:
         recommendations.append(
-            "Run indices-only sync to backfill N225 options history for "
+            "Run incremental sync to backfill N225 options history for "
             f"{options_225_missing_topix_coverage_dates_count} TOPIX dates missing from "
             "options_225_data"
         )

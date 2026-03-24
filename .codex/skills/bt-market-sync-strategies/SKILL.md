@@ -1,13 +1,13 @@
 ---
 name: bt-market-sync-strategies
-description: bt の market 同期（initial、incremental、indices-only、repair）と J-Quants fetch 戦略を扱うスキル。`/api/db/sync`、`sync_service`、`sync_strategies` を変更するときに使用する。
+description: bt の market 同期（initial、incremental、repair）と J-Quants fetch 戦略を扱うスキル。`/api/db/sync`、`sync_service`、`sync_strategies` を変更するときに使用する。
 ---
 
 # bt-market-sync-strategies
 
 ## When to use
 
-- `initial` / `incremental` / `indices-only` / `repair` の sync 戦略や fetch planner を変更するとき。
+- `initial` / `incremental` / `repair` の sync 戦略や fetch planner を変更するとき。
 - `/api/db/sync`、watermark、failed_dates、bulk/rest fallback を見直すとき。
 
 ## Source of Truth
@@ -20,8 +20,8 @@ description: bt の market 同期（initial、incremental、indices-only、repai
 
 ## Workflow
 
-1. mode ごとの解決規則（`initial` / `incremental` / `indices-only`）を確認する。
-2. `incremental` では anchor、cold-start bootstrap、new date 抽出の順で判断する。
+1. mode ごとの解決規則（`initial` / `incremental` / `repair`）を確認する。
+2. `incremental` では anchor、cold-start bootstrap、new date 抽出、`missing_stock_dates` backfill の順で判断する。
 3. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。
 4. stock price は `Adj*` を永続 SoT にせず、raw `O/H/L/C/Vo + AdjFactor` を ingest して local projection で `stock_data` を再生成する。
 5. OHLCV 欠損行、placeholder backfill、metadata 更新規約を確認する。

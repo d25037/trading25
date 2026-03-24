@@ -115,6 +115,22 @@ def _margin_rows() -> list[dict[str, object]]:
     ]
 
 
+def _statement_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "7203",
+            "disclosed_date": "2026-02-10",
+            "earnings_per_share": 120.0,
+            "profit": 1000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2026-02-11",
+            "earnings_per_share": 122.0,
+        },
+    ]
+
+
 def test_create_time_series_store_returns_none_for_unsupported_backend(
     tmp_path: Path,
 ) -> None:
@@ -559,6 +575,62 @@ def test_publish_margin_data_large_batch_uses_relation_insert(
     assert inspection.margin_min == "2026-02-07"
     assert inspection.margin_max == "2026-02-10"
     assert inspection.margin_codes == {"7203"}
+
+    store.close()
+
+
+def test_publish_statements_large_batch_uses_relation_insert_and_preserves_non_null_merge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    called = {"relation": False}
+    original = DuckDbParquetTimeSeriesStore._publish_statements_via_relation
+
+    def _spy(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> int:
+        called["relation"] = True
+        return original(self, rows)
+
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_STATEMENTS_RELATION_INSERT_THRESHOLD", 1
+    )
+    monkeypatch.setattr(
+        DuckDbParquetTimeSeriesStore, "_publish_statements_via_relation", _spy
+    )
+
+    store.publish_statements(_statement_rows())
+    store.publish_statements(
+        [
+            {
+                "code": "7203",
+                "disclosed_date": "2026-02-10",
+                "earnings_per_share": None,
+                "profit": 1100.0,
+            }
+        ]
+    )
+
+    rows = _query_rows(
+        db_path,
+        """
+        SELECT disclosed_date, earnings_per_share, profit
+        FROM statements
+        ORDER BY disclosed_date
+        """,
+    )
+
+    assert called["relation"] is True
+    assert rows == [
+        ("2026-02-10", 120.0, 1100.0),
+        ("2026-02-11", 122.0, None),
+    ]
 
     store.close()
 

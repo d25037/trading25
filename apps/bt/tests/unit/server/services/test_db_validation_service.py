@@ -438,7 +438,7 @@ def test_validate_market_db_warns_when_options_225_local_data_is_missing() -> No
     assert result.status == "warning"
     assert result.options225.count == 0
     assert any(
-        "Run indices-only sync to ingest N225 options data into options_225_data" in rec
+        "Run incremental sync to ingest N225 options data into options_225_data" in rec
         for rec in result.recommendations
     )
 
@@ -467,7 +467,7 @@ def test_validate_market_db_warns_when_options_225_local_data_is_stale() -> None
 
     assert result.status == "warning"
     assert any(
-        "Run indices-only sync to refresh N225 options data through 2026-03-06" in rec
+        "Run incremental sync to refresh N225 options data through 2026-03-06" in rec
         for rec in result.recommendations
     )
     assert any("latest local options date: 2026-03-04" in rec for rec in result.recommendations)
@@ -508,7 +508,7 @@ def test_validate_market_db_warns_when_options_225_local_history_is_partial() ->
     ]
     assert result.sampleWindows.options225MissingTopixCoverageDates.truncated is True
     assert any(
-        "Run indices-only sync to backfill N225 options history for 25 TOPIX dates missing from options_225_data"
+        "Run incremental sync to backfill N225 options history for 25 TOPIX dates missing from options_225_data"
         in rec
         for rec in result.recommendations
     )

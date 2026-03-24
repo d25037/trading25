@@ -695,6 +695,104 @@ async def _ingest_stock_bulk_batch(
     return await _publish_stock_data_rows(ctx, rows)
 
 
+async def _ingest_fins_bulk_batch(
+    ctx: SyncContext,
+    *,
+    batch_rows: list[dict[str, Any]],
+    allowed_codes: set[str],
+    target_dates: set[str] | None = None,
+) -> int:
+    rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(batch_rows))
+    if allowed_codes:
+        rows = [row for row in rows if row.get("code") in allowed_codes]
+    if target_dates is not None:
+        rows = [
+            row
+            for row in rows
+            if _normalize_iso_date_text(row.get("disclosed_date")) in target_dates
+        ]
+    rows = validate_rows_required_fields(
+        rows,
+        required_fields=("code", "disclosed_date"),
+        dedupe_keys=("code", "disclosed_date"),
+        stage="fundamentals",
+    )
+    if not rows:
+        return 0
+    return await _publish_statement_rows(ctx, rows)
+
+
+async def _ingest_indices_only_bulk_batch(
+    ctx: SyncContext,
+    *,
+    batch_rows: list[dict[str, Any]],
+    target_code_set: set[str],
+    known_master_codes: set[str],
+) -> None:
+    rows = validate_rows_required_fields(
+        _convert_indices_data_rows(_normalize_bulk_indices_rows(batch_rows), None),
+        required_fields=("code", "date"),
+        dedupe_keys=("code", "date"),
+        stage="indices_data",
+    )
+    rows = [
+        row
+        for row in rows
+        if _normalize_index_code(row.get("code")) in target_code_set
+    ]
+    if rows:
+        await _upsert_indices_rows_with_master_backfill(
+            ctx,
+            rows,
+            known_master_codes,
+        )
+
+
+async def _ingest_incremental_indices_bulk_batch(
+    ctx: SyncContext,
+    *,
+    batch_rows: list[dict[str, Any]],
+    target_code_set: set[str],
+    known_master_codes: set[str],
+    latest_index_dates: dict[str, str],
+    fallback_date_set: set[str],
+) -> None:
+    rows = validate_rows_required_fields(
+        _convert_indices_data_rows(_normalize_bulk_indices_rows(batch_rows), None),
+        required_fields=("code", "date"),
+        dedupe_keys=("code", "date"),
+        stage="indices_data",
+    )
+    filtered_rows: list[dict[str, Any]] = []
+    for row in rows:
+        code = _normalize_index_code(row.get("code"))
+        row_date = _to_iso_date_text(str(row.get("date") or ""))
+        if not code or row_date is None:
+            continue
+
+        include = False
+        code_anchor = latest_index_dates.get(code)
+        if code in target_code_set:
+            if code_anchor is None:
+                include = True
+            else:
+                include = _is_date_after(row_date, code_anchor)
+
+        if not include and row_date in fallback_date_set:
+            include = True
+
+        if include:
+            filtered_rows.append(row)
+
+    if filtered_rows:
+        await _upsert_indices_rows_with_master_backfill(
+            ctx,
+            filtered_rows,
+            known_master_codes,
+            discovery_log="Inserted {} discovered index master rows while syncing by bulk.",
+        )
+
+
 def _is_incremental_cold_start(
     inspection: TimeSeriesInspection,
 ) -> bool:
@@ -1068,26 +1166,25 @@ class IndicesOnlySyncStrategy:
                         method="bulk",
                         target_label=f"{len(target_codes)} codes",
                     )
-                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
+
+                    async def _consume_indices_only_bulk_rows(
+                        batch_rows: list[dict[str, Any]],
+                        _file_info: BulkFileInfo,
+                    ) -> None:
+                        await _ingest_indices_only_bulk_batch(
+                            ctx,
+                            batch_rows=batch_rows,
+                            target_code_set=target_code_set,
+                            known_master_codes=known_master_codes,
+                        )
+
+                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                        decision.plan,
+                        on_rows_batch=_consume_indices_only_bulk_rows,
+                        accumulate_rows=False,
+                    )
                     total_calls += bulk_result.api_calls
                     stage_api_calls += bulk_result.api_calls
-                    rows = validate_rows_required_fields(
-                        _convert_indices_data_rows(_normalize_bulk_indices_rows(bulk_result.rows), None),
-                        required_fields=("code", "date"),
-                        dedupe_keys=("code", "date"),
-                        stage="indices_data",
-                    )
-                    rows = [
-                        row
-                        for row in rows
-                        if _normalize_index_code(row.get("code")) in target_code_set
-                    ]
-                    if rows:
-                        await _upsert_indices_rows_with_master_backfill(
-                            ctx,
-                            rows,
-                            known_master_codes,
-                        )
                     _log_sync_fetch_execution(
                         stage="indices_data",
                         endpoint="/indices/bars/daily",
@@ -1604,26 +1701,20 @@ class IncrementalSyncStrategy:
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
-            if last_date:
-                new_dates = sorted(
-                    {
-                        r["date"]
-                        for r in topix_rows
-                        if r.get("date") and _is_date_after(r["date"], last_date)
-                    },
-                    key=_date_sort_key,
-                )
-            else:
-                new_dates = sorted({r["date"] for r in topix_rows if r.get("date")}, key=_date_sort_key)
-            from_date_new, to_date_new = _select_bulk_candidates_from_dates(new_dates)
+            stock_target_dates = await _resolve_incremental_stock_date_targets(
+                ctx,
+                topix_rows=topix_rows,
+                anchor=last_date,
+            )
+            from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
             decision_stock_data = await _plan_fetch_method(
                 ctx,
                 stage="stock_data_incremental",
                 endpoint="/equities/bars/daily",
-                estimated_rest_calls=max(len(new_dates), 1),
+                estimated_rest_calls=max(len(stock_target_dates), 1),
                 date_from=from_date_new,
                 date_to=to_date_new,
-                exact_dates=new_dates,
+                exact_dates=stock_target_dates,
                 require_bulk=ctx.enforce_bulk_for_stock_data,
             )
             total_calls += decision_stock_data.planner_api_calls
@@ -1634,7 +1725,7 @@ class IncrementalSyncStrategy:
                 total=7,
                 endpoint="/equities/bars/daily",
                 decision=decision_stock_data,
-                target_label=f"{len(new_dates)} dates",
+                target_label=f"{len(stock_target_dates)} dates",
             )
 
             _enforce_stock_bulk_plan_available(
@@ -1644,7 +1735,7 @@ class IncrementalSyncStrategy:
                 progress_stage="stock_data",
                 current=2,
                 total=7,
-                target_count=len(new_dates),
+                target_count=len(stock_target_dates),
             )
 
             used_stock_rest_fallback = False
@@ -1660,9 +1751,9 @@ class IncrementalSyncStrategy:
                         total=7,
                         endpoint="/equities/bars/daily",
                         method="bulk",
-                        target_label=f"{len(new_dates)} dates",
+                        target_label=f"{len(stock_target_dates)} dates",
                     )
-                    new_date_set = _build_target_date_set(new_dates)
+                    new_date_set = _build_target_date_set(stock_target_dates)
 
                     async def _consume_incremental_stock_bulk_rows(
                         batch_rows: list[dict[str, Any]],
@@ -1692,7 +1783,7 @@ class IncrementalSyncStrategy:
                         bulk_result=stock_bulk_result,
                     )
                 except Exception as e:
-                    if ctx.enforce_bulk_for_stock_data and len(new_dates) > 0:
+                    if ctx.enforce_bulk_for_stock_data and len(stock_target_dates) > 0:
                         _raise_stock_bulk_required_error(
                             ctx,
                             progress_stage="stock_data",
@@ -1717,11 +1808,11 @@ class IncrementalSyncStrategy:
                     total=7,
                     endpoint="/equities/bars/daily",
                     method="rest",
-                    target_label=f"{len(new_dates)} dates",
+                    target_label=f"{len(stock_target_dates)} dates",
                     fallback=used_stock_rest_fallback,
                     fallback_reason=stock_bulk_fallback_reason,
                 )
-                for i, date in enumerate(new_dates, start=1):
+                for i, date in enumerate(stock_target_dates, start=1):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
                     if i > 1 and i % 50 == 0:
@@ -1729,7 +1820,7 @@ class IncrementalSyncStrategy:
                             "stock_data",
                             2,
                             7,
-                            f"Fetching /equities/bars/daily via REST: {i}/{len(new_dates)} dates...",
+                            f"Fetching /equities/bars/daily via REST: {i}/{len(stock_target_dates)} dates...",
                         )
                     try:
                         payload, page_calls = await _get_paginated_rows_with_call_count(
@@ -1845,6 +1936,11 @@ class IncrementalSyncStrategy:
             indices_bulk_result: BulkFetchResult | None = None
             if decision_indices.method == "bulk" and decision_indices.plan is not None:
                 try:
+                    fallback_date_set = {
+                        normalized
+                        for normalized in (_to_iso_date_text(value) for value in fallback_dates)
+                        if normalized is not None
+                    }
                     _emit_fetch_execution_progress(
                         ctx,
                         progress_stage="indices",
@@ -1854,48 +1950,27 @@ class IncrementalSyncStrategy:
                         method="bulk",
                         target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
                     )
-                    indices_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision_indices.plan)
+
+                    async def _consume_incremental_indices_bulk_rows(
+                        batch_rows: list[dict[str, Any]],
+                        _file_info: BulkFileInfo,
+                    ) -> None:
+                        await _ingest_incremental_indices_bulk_batch(
+                            ctx,
+                            batch_rows=batch_rows,
+                            target_code_set=target_code_set,
+                            known_master_codes=known_master_codes,
+                            latest_index_dates=latest_index_dates,
+                            fallback_date_set=fallback_date_set,
+                        )
+
+                    indices_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                        decision_indices.plan,
+                        on_rows_batch=_consume_incremental_indices_bulk_rows,
+                        accumulate_rows=False,
+                    )
                     total_calls += indices_bulk_result.api_calls
                     indices_stage_api_calls += indices_bulk_result.api_calls
-                    rows = validate_rows_required_fields(
-                        _convert_indices_data_rows(_normalize_bulk_indices_rows(indices_bulk_result.rows), None),
-                        required_fields=("code", "date"),
-                        dedupe_keys=("code", "date"),
-                        stage="indices_data",
-                    )
-                    fallback_date_set = {
-                        normalized
-                        for normalized in (_to_iso_date_text(value) for value in fallback_dates)
-                        if normalized is not None
-                    }
-                    filtered_rows: list[dict[str, Any]] = []
-                    for row in rows:
-                        code = _normalize_index_code(row.get("code"))
-                        row_date = _to_iso_date_text(str(row.get("date") or ""))
-                        if not code or row_date is None:
-                            continue
-
-                        include = False
-                        code_anchor = latest_index_dates.get(code)
-                        if code in target_code_set:
-                            if code_anchor is None:
-                                include = True
-                            else:
-                                include = _is_date_after(row_date, code_anchor)
-
-                        if not include and row_date in fallback_date_set:
-                            include = True
-
-                        if include:
-                            filtered_rows.append(row)
-
-                    if filtered_rows:
-                        await _upsert_indices_rows_with_master_backfill(
-                            ctx,
-                            filtered_rows,
-                            known_master_codes,
-                            discovery_log="Inserted {} discovered index master rows while syncing by bulk.",
-                        )
                     _log_sync_fetch_execution(
                         stage="indices_incremental",
                         endpoint="/indices/bars/daily",
@@ -2097,7 +2172,7 @@ class IncrementalSyncStrategy:
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
-                datesProcessed=len(new_dates),
+                datesProcessed=len(stock_target_dates),
                 fundamentalsUpdated=fundamentals_updated,
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
                 errors=errors,
@@ -2428,19 +2503,25 @@ async def _sync_fundamentals_initial(
                     issuer_alias=issuer_alias_count,
                 ),
             )
-            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
+
+            async def _consume_initial_fundamentals_bulk_rows(
+                batch_rows: list[dict[str, Any]],
+                _file_info: BulkFileInfo,
+            ) -> None:
+                nonlocal updated
+                updated += await _ingest_fins_bulk_batch(
+                    ctx,
+                    batch_rows=batch_rows,
+                    allowed_codes=allowed_statement_codes,
+                )
+
+            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                decision.plan,
+                on_rows_batch=_consume_initial_fundamentals_bulk_rows,
+                accumulate_rows=False,
+            )
             api_calls += bulk_result.api_calls
             stage_api_calls += bulk_result.api_calls
-            bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(bulk_result.rows))
-            rows = [row for row in bulk_rows if row.get("code") in allowed_statement_codes]
-            rows = validate_rows_required_fields(
-                rows,
-                required_fields=("code", "disclosed_date"),
-                dedupe_keys=("code", "disclosed_date"),
-                stage="fundamentals",
-            )
-            if rows:
-                updated += await _publish_statement_rows(ctx, rows)
             bulk_succeeded = True
             _log_sync_fetch_execution(
                 stage="fundamentals_initial",
@@ -2610,16 +2691,12 @@ async def _sync_fundamentals_incremental(
         or _get_latest_statement_disclosed_date(ctx)
     )
     date_targets = _build_incremental_date_targets(anchor, previous_failed_dates)
-    normalized_targets = {
-        normalized
-        for normalized in (_to_iso_date_text(value) for value in date_targets)
-        if normalized is not None
-    }
     dates_phase_completed = 0
     bulk_dates_succeeded = False
     date_phase_api_calls = 0
     date_phase_bulk_result: BulkFetchResult | None = None
     if date_targets:
+        normalized_target_dates = _build_target_date_set(date_targets)
         decision = await _plan_fetch_method(
             ctx,
             stage="fundamentals_incremental_dates",
@@ -2649,25 +2726,26 @@ async def _sync_fundamentals_incremental(
                     method="bulk",
                     target_label=f"{len(date_targets)} dates",
                 )
-                date_phase_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
+
+                async def _consume_incremental_fundamentals_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    nonlocal updated
+                    updated += await _ingest_fins_bulk_batch(
+                        ctx,
+                        batch_rows=batch_rows,
+                        allowed_codes=allowed_statement_codes,
+                        target_dates=normalized_target_dates,
+                    )
+
+                date_phase_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    decision.plan,
+                    on_rows_batch=_consume_incremental_fundamentals_bulk_rows,
+                    accumulate_rows=False,
+                )
                 api_calls += date_phase_bulk_result.api_calls
                 date_phase_api_calls += date_phase_bulk_result.api_calls
-                bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(date_phase_bulk_result.rows))
-                rows = [row for row in bulk_rows if row.get("code") in allowed_statement_codes]
-                if normalized_targets:
-                    rows = [
-                        row
-                        for row in rows
-                        if _to_iso_date_text(str(row.get("disclosed_date") or "")) in normalized_targets
-                    ]
-                rows = validate_rows_required_fields(
-                    rows,
-                    required_fields=("code", "disclosed_date"),
-                    dedupe_keys=("code", "disclosed_date"),
-                    stage="fundamentals",
-                )
-                if rows:
-                    updated += await _publish_statement_rows(ctx, rows)
                 bulk_dates_succeeded = True
                 dates_phase_completed = len(date_targets)
                 _log_sync_fetch_execution(
@@ -3443,6 +3521,30 @@ async def _resolve_incremental_options_date_targets(
     return _normalize_date_list(options_dates + list(missing_coverage.missing_options_225_dates))
 
 
+async def _resolve_incremental_stock_date_targets(
+    ctx: SyncContext,
+    *,
+    topix_rows: list[dict[str, Any]],
+    anchor: str | None,
+) -> list[str]:
+    inspection = _inspect_time_series(ctx)
+    topix_dates = _normalize_date_list(
+        [
+            str(r["date"])
+            for r in topix_rows
+            if r.get("date") and (anchor is None or _is_date_after(str(r["date"]), anchor))
+        ]
+    )
+    if inspection.missing_stock_dates_count <= 0:
+        return topix_dates
+
+    missing_coverage = _inspect_time_series(
+        ctx,
+        missing_stock_dates_limit=inspection.missing_stock_dates_count,
+    )
+    return _normalize_date_list(topix_dates + list(missing_coverage.missing_stock_dates))
+
+
 def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:
     inspection = _inspect_time_series(ctx)
     return inspection.latest_statement_disclosed_date
@@ -3459,8 +3561,6 @@ def get_strategy(resolved_mode: str) -> SyncStrategy:
         return InitialSyncStrategy()
     elif resolved_mode == "incremental":
         return IncrementalSyncStrategy()
-    elif resolved_mode == "indices-only":
-        return IndicesOnlySyncStrategy()
     elif resolved_mode == "repair":
         return RepairSyncStrategy()
     return InitialSyncStrategy()
