@@ -64,4 +64,25 @@ describe('RankingSummary', () => {
     expect(screen.getByText('-3.21%')).toBeInTheDocument();
     expect(screen.getByText('6758')).toBeInTheDocument();
   });
+
+  it('renders fallback values when ranking buckets are empty', () => {
+    render(
+      <RankingSummary
+        data={{
+          ...mockData,
+          rankings: {
+            tradingValue: [],
+            gainers: [],
+            losers: [],
+            periodHigh: [],
+            periodLow: [],
+          },
+        }}
+      />
+    );
+
+    expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText('+0%')).toBeInTheDocument();
+    expect(screen.getByText('0%')).toBeInTheDocument();
+  });
 });

@@ -9,7 +9,7 @@ import {
   Settings as SettingsIcon,
   TrendingUp,
 } from 'lucide-react';
-import { useCallback, useId, useMemo, useState, type ComponentType, type FormEvent } from 'react';
+import { type ComponentType, type FormEvent, useCallback, useId, useMemo, useState } from 'react';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -171,8 +171,14 @@ interface ChartControlsProps {
 }
 
 export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsProps) {
-  const { settings, updateSettings, toggleRelativeMode, updateIndicatorSettings, updateVolumeComparison, updateTradingValueMA } =
-    useChartStore();
+  const {
+    settings,
+    updateSettings,
+    toggleRelativeMode,
+    updateIndicatorSettings,
+    updateVolumeComparison,
+    updateTradingValueMA,
+  } = useChartStore();
 
   const [symbolInput, setSymbolInput] = useState('');
   const [openDialogId, setOpenDialogId] = useState<SettingDialogId | null>(null);
@@ -775,7 +781,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
     <div className="space-y-3 p-3">
       <ChartPresetSelector />
 
-      <div className="glass-panel rounded-lg p-3 space-y-2">
+      <div className="rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5 space-y-2">
         <SectionHeader icon={Search} title="Symbol Search" />
         <div className="space-y-2">
           <form onSubmit={handleSymbolSubmit} className="space-y-2" autoComplete="off">
@@ -785,14 +791,10 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
               value={symbolInput}
               onValueChange={setSymbolInput}
               onSelect={handleSelectStock}
-              className="glass-panel border-border/30 focus:border-primary/50 transition-all duration-200"
+              className="border-border/60 bg-background/80 focus:border-primary/50 transition-all duration-200"
               searchLimit={50}
             />
-            <Button
-              type="submit"
-              size="sm"
-              className="w-full gradient-primary hover:opacity-90 transition-all duration-200"
-            >
+            <Button type="submit" size="sm" className="w-full transition-colors duration-200">
               <Search className="h-3.5 w-3.5 mr-1.5" />
               検索
             </Button>
@@ -806,7 +808,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
         </div>
       </div>
 
-      <div className="glass-panel rounded-lg p-3 space-y-2">
+      <div className="rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5 space-y-2">
         <SectionHeader icon={SettingsIcon} title="Settings" />
         <div className="space-y-1.5">
           {SETTING_DIALOGS.map((dialog) => (
@@ -814,7 +816,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
               key={dialog.id}
               type="button"
               variant="outline"
-              className="w-full justify-start h-auto py-2 px-3 glass-panel border-border/30 hover:bg-accent/40"
+              className="h-auto w-full justify-start border-border/60 bg-background/75 px-3 py-2 hover:bg-accent/40"
               onClick={() => setOpenDialogId(dialog.id)}
             >
               <dialog.icon className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -851,8 +853,8 @@ interface SectionHeaderProps {
 function SectionHeader({ icon: Icon, title }: SectionHeaderProps) {
   return (
     <div className="flex items-center gap-2">
-      <div className="gradient-primary rounded p-1.5">
-        <Icon className="h-3.5 w-3.5 text-white" />
+      <div className="rounded-md bg-primary/10 p-1.5 text-primary">
+        <Icon className="h-3.5 w-3.5" />
       </div>
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
     </div>
@@ -870,7 +872,7 @@ interface ToggleRowProps {
 
 function ToggleRow({ id, icon: Icon, label, checked, onCheckedChange, meta }: ToggleRowProps) {
   return (
-    <div className="flex items-start justify-between p-2 rounded glass-panel gap-2">
+    <div className="flex items-start justify-between gap-2 rounded-lg border border-border/60 bg-background/72 p-2">
       <div className="flex items-start gap-1.5 min-w-0">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
         <div className="min-w-0">

@@ -51,4 +51,26 @@ describe('ScreeningSummary', () => {
 
     expect(screen.getByText('prime, standard / 20d / 2025-01-30')).toBeInTheDocument();
   });
+
+  it('renders fallback strategy and zero hit rate when no matches exist', () => {
+    render(
+      <ScreeningSummary
+        summary={{
+          ...mockSummary,
+          totalStocksScreened: 0,
+          matchCount: 0,
+          byStrategy: {},
+          strategiesWithoutBacktestMetrics: [],
+          warnings: [],
+        }}
+        markets={['prime']}
+        recentDays={5}
+      />
+    );
+
+    expect(screen.getByText('0.0% hit rate')).toBeInTheDocument();
+    expect(screen.getByText('No strategy hits')).toBeInTheDocument();
+    expect(screen.getByText('0 warnings')).toBeInTheDocument();
+    expect(screen.getByText('prime / 5d')).toBeInTheDocument();
+  });
 });

@@ -110,7 +110,10 @@ export function RankingPage() {
   } = useRankingRouteState();
   const navigate = useNavigate();
   const rankingQuery = useRanking(rankingParams, true);
-  const fundamentalRankingQuery = useFundamentalRanking(fundamentalRankingParams, activeSubTab === 'fundamentalRanking');
+  const fundamentalRankingQuery = useFundamentalRanking(
+    fundamentalRankingParams,
+    activeSubTab === 'fundamentalRanking'
+  );
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -133,23 +136,26 @@ export function RankingPage() {
 
   return (
     <div className="flex h-full flex-col p-4">
-      <div className="mb-4 flex gap-2">
-        {subTabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeSubTab === tab.id;
-          return (
-            <Button
-              key={tab.id}
-              variant={isActive ? 'default' : 'outline'}
-              size="sm"
-              className={cn('gap-2', isActive && 'shadow-md')}
-              onClick={() => setActiveSubTab(tab.id)}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </Button>
-          );
-        })}
+      <div className="mb-4 rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Ranking Mode</p>
+        <div className="flex flex-wrap gap-2">
+          {subTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSubTab === tab.id;
+            return (
+              <Button
+                key={tab.id}
+                variant={isActive ? 'default' : 'outline'}
+                size="sm"
+                className={cn('gap-2', isActive && 'shadow-md')}
+                onClick={() => setActiveSubTab(tab.id)}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">

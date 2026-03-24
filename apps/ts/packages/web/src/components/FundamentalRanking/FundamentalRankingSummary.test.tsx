@@ -34,8 +34,7 @@ describe('FundamentalRankingSummary', () => {
   it('renders date and markets', () => {
     render(<FundamentalRankingSummary data={mockData} />);
     expect(screen.getByText('2025-01-30')).toBeInTheDocument();
-    expect(screen.getByText('prime, standard')).toBeInTheDocument();
-    expect(screen.getByText('Metric: eps_forecast_to_actual')).toBeInTheDocument();
+    expect(screen.getByText('prime, standard / eps_forecast_to_actual')).toBeInTheDocument();
   });
 
   it('renders high/low ratio codes', () => {

@@ -1,12 +1,12 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinePriceChart } from '@/components/Chart/LinePriceChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
+import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
 import { type SectorStockItem, useSectorStocks } from '@/hooks/useSectorStocks';
 import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
@@ -152,8 +152,10 @@ function IndicesList({ indices, selectedCode, onSelect, isLoading, containerRef 
                   aria-label={`Select ${index.name}`}
                   aria-pressed={selectedCode === index.code}
                   className={cn(
-                    'w-full text-left px-2 py-1.5 rounded-lg transition-all text-xs',
-                    selectedCode === index.code ? 'gradient-primary text-white shadow-sm' : 'hover:bg-accent/50'
+                    'w-full rounded-lg border px-2 py-1.5 text-left text-xs transition-colors',
+                    selectedCode === index.code
+                      ? 'border-primary/25 bg-primary/10 text-primary shadow-sm'
+                      : 'border-transparent text-foreground hover:border-border/70 hover:bg-accent/40'
                   )}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -422,18 +424,22 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
 
   return (
     <div className="space-y-4">
-      {/* Index Header */}
-      <div className="px-6 py-4 gradient-primary rounded-xl">
-        <div className="flex items-center justify-between">
+      <div className="rounded-xl border border-border/70 bg-card/88 px-5 py-4 shadow-sm shadow-black/5">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">{data.name}</h2>
-            <p className="text-white/80">Code: {data.code}</p>
-            {isSyntheticIndex ? <p className="mt-1 text-xs text-white/75">UnderPx derived daily reference series</p> : null}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Selected Index
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">{data.name}</h2>
+            <p className="text-sm text-muted-foreground">Code: {data.code}</p>
+            {isSyntheticIndex ? (
+              <p className="mt-1 text-xs text-muted-foreground">UnderPx derived daily reference series</p>
+            ) : null}
           </div>
           {latestPrice !== null && (
-            <div className="text-right text-white">
-              <p className="text-sm opacity-80">Latest</p>
-              <p className="text-2xl font-bold tabular-nums">{latestPrice.toLocaleString()}</p>
+            <div className="text-right">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Latest</p>
+              <p className="text-2xl font-semibold tabular-nums text-foreground">{latestPrice.toLocaleString()}</p>
             </div>
           )}
         </div>
@@ -534,17 +540,19 @@ export function IndicesPage() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Indices List Sidebar */}
       <aside
         className="w-64 shrink-0 border-r border-border/30 overflow-y-auto p-4 glass-panel"
         style={{ minWidth: '16rem', maxWidth: '16rem' }}
       >
         <div className="mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="gradient-primary rounded-lg p-1.5">
-              <TrendingUp className="h-5 w-5 text-white" />
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <TrendingUp className="h-4 w-4" />
             </div>
-            <h2 className="text-lg font-bold">Indices</h2>
+            <div>
+              <h2 className="text-base font-semibold">Indices</h2>
+              <p className="text-xs text-muted-foreground">Benchmarks, TOPIX families, and sector baskets.</p>
+            </div>
           </div>
         </div>
         <IndicesList
@@ -561,8 +569,7 @@ export function IndicesPage() {
         )}
       </aside>
 
-      {/* Index Chart Area */}
-      <main className="flex-1 min-w-0 p-6 overflow-y-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-5">
         <IndexChart code={selectedIndexCode} indexInfo={selectedIndexInfo} onStockClick={handleStockClick} />
       </main>
     </div>

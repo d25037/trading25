@@ -517,14 +517,16 @@ describe('ScreeningPage', () => {
     const view = render(<ScreeningPage />);
 
     const standardToggle = screen.getByRole('switch', { name: 'Show History' });
-    expect(standardToggle).toBeChecked();
-    await user.click(standardToggle);
     expect(standardToggle).not.toBeChecked();
+    await user.click(standardToggle);
+    expect(standardToggle).toBeChecked();
 
     await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
     view.rerender(<ScreeningPage />);
 
     const sameDayToggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(sameDayToggle).not.toBeChecked();
+    await user.click(sameDayToggle);
     expect(sameDayToggle).toBeChecked();
     expect(screen.getByText('same-day...')).toBeInTheDocument();
 
@@ -532,7 +534,7 @@ describe('ScreeningPage', () => {
     view.rerender(<ScreeningPage />);
 
     const restoredStandardToggle = screen.getByRole('switch', { name: 'Show History' });
-    expect(restoredStandardToggle).not.toBeChecked();
-    expect(screen.queryByText('standard...')).not.toBeInTheDocument();
+    expect(restoredStandardToggle).toBeChecked();
+    expect(screen.getByText('standard...')).toBeInTheDocument();
   });
 });

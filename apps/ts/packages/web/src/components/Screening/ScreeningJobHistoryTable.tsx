@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
+import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
@@ -47,6 +47,7 @@ export function ScreeningJobHistoryTable({
     entryDecidability === 'requires_same_session_observation'
       ? '(all in-session production)'
       : '(all pre-open production)';
+  const jobCount = jobs?.length ?? 0;
 
   const columns: JobHistoryColumn<ScreeningJobResponse>[] = [
     {
@@ -72,9 +73,12 @@ export function ScreeningJobHistoryTable({
   ];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Job History</h4>
+    <section className="rounded-xl border border-border/70 bg-card/78 px-4 py-3 shadow-sm shadow-black/5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h4 className="text-sm font-medium">Job History</h4>
+          <p className="text-xs text-muted-foreground">{jobCount} saved runs for this mode.</p>
+        </div>
         <div className="flex items-center gap-2">
           <Label htmlFor={switchId} className="cursor-pointer text-xs text-muted-foreground">
             Show History
@@ -84,18 +88,24 @@ export function ScreeningJobHistoryTable({
       </div>
 
       {showHistory ? (
-        <JobHistoryTable
-          jobs={jobs}
-          isLoading={isLoading}
-          selectedJobId={selectedJobId}
-          emptyMessage="No screening jobs found"
-          columns={columns}
-          getJobId={(job) => job.job_id}
-          getStatus={(job) => job.status}
-          getActionLabel={(job) => actionLabel(job.status)}
-          onSelectJob={onSelectJob}
-        />
-      ) : null}
-    </div>
+        <div className="mt-3">
+          <JobHistoryTable
+            jobs={jobs}
+            isLoading={isLoading}
+            selectedJobId={selectedJobId}
+            emptyMessage="No screening jobs found"
+            columns={columns}
+            getJobId={(job) => job.job_id}
+            getStatus={(job) => job.status}
+            getActionLabel={(job) => actionLabel(job.status)}
+            onSelectJob={onSelectJob}
+          />
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Expand history only when you need to inspect prior runs, so the current results stay near the top.
+        </p>
+      )}
+    </section>
   );
 }

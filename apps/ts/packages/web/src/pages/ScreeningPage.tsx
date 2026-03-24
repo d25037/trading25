@@ -243,11 +243,16 @@ function ScreeningMainContent({
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
     const runButtonLabel =
       entryDecidability === 'requires_same_session_observation' ? 'Run In-Session Screening' : 'Run Pre-Open Screening';
+    const modeLabel =
+      entryDecidability === 'requires_same_session_observation'
+        ? 'Requires In-Session Observation'
+        : 'Pre-Open Decidable';
 
     return (
       <>
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-border/70 bg-card/84 px-4 py-3 shadow-sm shadow-black/5">
           <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{modeLabel}</p>
             {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
           </div>
           <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
@@ -263,16 +268,6 @@ function ScreeningMainContent({
           />
         )}
 
-        <ScreeningJobHistoryTable
-          entryDecidability={entryDecidability}
-          jobs={screeningJobHistory}
-          isLoading={false}
-          showHistory={showScreeningJobHistory}
-          onShowHistoryChange={onShowScreeningJobHistoryChange}
-          selectedJobId={screeningJob?.job_id ?? null}
-          onSelectJob={onSelectScreeningJob}
-        />
-
         <ScreeningSummary
           summary={screeningSummary}
           markets={screeningMarkets}
@@ -285,6 +280,16 @@ function ScreeningMainContent({
           isFetching={screeningIsRunning}
           error={screeningError}
           onStockClick={onStockClick}
+        />
+
+        <ScreeningJobHistoryTable
+          entryDecidability={entryDecidability}
+          jobs={screeningJobHistory}
+          isLoading={false}
+          showHistory={showScreeningJobHistory}
+          onShowHistoryChange={onShowScreeningJobHistoryChange}
+          selectedJobId={screeningJob?.job_id ?? null}
+          onSelectJob={onSelectScreeningJob}
         />
       </>
     );
@@ -450,8 +455,8 @@ export function ScreeningPage() {
   const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<
     Record<EntryDecidability, boolean>
   >({
-    pre_open_decidable: true,
-    requires_same_session_observation: true,
+    pre_open_decidable: false,
+    requires_same_session_observation: false,
   });
 
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
@@ -520,29 +525,31 @@ export function ScreeningPage() {
 
   return (
     <div className="flex h-full flex-col p-4">
-      {/* Sub-tab navigation */}
-      <div className="flex gap-2 mb-4">
-        {subTabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeSubTab === tab.id;
-          return (
-            <Button
-              key={tab.id}
-              variant={isActive ? 'default' : 'outline'}
-              size="sm"
-              className={cn('gap-2', isActive && 'shadow-md')}
-              onClick={() => setActiveSubTab(tab.id)}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </Button>
-          );
-        })}
+      <div className="mb-4 rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Screening Mode
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {subTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSubTab === tab.id;
+            return (
+              <Button
+                key={tab.id}
+                variant={isActive ? 'default' : 'outline'}
+                size="sm"
+                className={cn('gap-2', isActive && 'shadow-md')}
+                onClick={() => setActiveSubTab(tab.id)}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Content area */}
       <div className="flex flex-1 gap-4 min-h-0">
-        {/* Sidebar */}
         <div className="w-64 flex-shrink-0">
           <ScreeningSidebar
             activeSubTab={activeSubTab}
@@ -555,7 +562,6 @@ export function ScreeningPage() {
           />
         </div>
 
-        {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <ScreeningMainContent
             activeSubTab={activeSubTab}

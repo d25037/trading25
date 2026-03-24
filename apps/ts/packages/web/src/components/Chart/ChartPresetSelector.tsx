@@ -98,10 +98,10 @@ export function ChartPresetSelector() {
   };
 
   return (
-    <div className="glass-panel rounded-lg p-3 space-y-2">
+    <div className="rounded-xl border border-border/70 bg-card/82 p-3 shadow-sm shadow-black/5 space-y-2">
       <div className="flex items-center gap-2">
-        <div className="gradient-primary rounded p-1.5">
-          <Save className="h-3.5 w-3.5 text-white" />
+        <div className="rounded-md bg-primary/10 p-1.5 text-primary">
+          <Save className="h-3.5 w-3.5" />
         </div>
         <h3 className="text-sm font-semibold text-foreground">Presets</h3>
       </div>
@@ -117,7 +117,7 @@ export function ChartPresetSelector() {
               }
             }}
           >
-            <SelectTrigger className="flex-1 h-8 text-xs glass-panel border-border/30 focus:border-primary/50">
+            <SelectTrigger className="flex-1 h-8 text-xs border-border/60 bg-background/80 focus:border-primary/50">
               <SelectValue placeholder="Select preset..." />
             </SelectTrigger>
             <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
@@ -219,7 +219,7 @@ export function ChartPresetSelector() {
 
         {/* Active preset indicator */}
         {activePreset && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/5 border border-primary/20">
+          <div className="flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1">
             <Save className="h-3 w-3 text-primary" />
             <span className="text-xs text-primary truncate">{activePreset.name}</span>
           </div>

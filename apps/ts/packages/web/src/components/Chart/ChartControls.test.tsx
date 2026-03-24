@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +12,7 @@ import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
 } from '@/constants/fundamentalsHistoryMetrics';
 import { ChartControls } from './ChartControls';
+
 let selectedSymbol: string | null = null;
 const mockOnSelectSymbol = vi.fn();
 
@@ -125,6 +126,10 @@ vi.mock('@/hooks/useBacktest', () => ({
 
 vi.mock('@/hooks/useStockSearch', () => ({
   useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
+}));
+
+vi.mock('@/components/Chart/SignalMarkers', () => ({
+  SignalOverlayControls: () => <div>Signal Overlay Controls</div>,
 }));
 
 function renderChartControls() {
@@ -241,6 +246,20 @@ describe('ChartControls', () => {
     expect(screen.getByText('Visible Bars')).toBeInTheDocument();
   });
 
+  it('updates visible bars from chart settings', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: '60 bars' }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ visibleBars: 60 });
+  });
+
   it('opens panel layout dialog and toggles fundamentals panel visibility', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
@@ -268,6 +287,43 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
       fundamentalsPanelOrder: ['fundamentalsHistory', 'fundamentals', 'marginPressure', 'factorRegression'],
     });
+  });
+
+  it('guards against stale panel-layout reorder actions', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    const [upButton] = screen.getAllByRole('button', { name: /^Up$/ });
+    const [downButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(upButton).toBeDefined();
+    expect(downButton).toBeDefined();
+    if (!upButton || !downButton) return;
+
+    mockChartStore.settings.fundamentalsPanelOrder = [];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsPanelOrder = [
+      'fundamentals',
+      'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ];
+    upButton.removeAttribute('disabled');
+    fireEvent.click(upButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsPanelOrder = [
+      'fundamentals',
+      undefined as unknown as 'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });
 
   it('opens fundamental metrics dialog and toggles metric visibility', async () => {
@@ -304,6 +360,37 @@ describe('ChartControls', () => {
     });
   });
 
+  it('guards against stale fundamental metric reorder actions', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Fundamental Metrics' }));
+    const [upButton] = screen.getAllByRole('button', { name: /^Up$/ });
+    const [downButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(upButton).toBeDefined();
+    expect(downButton).toBeDefined();
+    if (!upButton || !downButton) return;
+
+    mockChartStore.settings.fundamentalsMetricOrder = [];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
+    upButton.removeAttribute('disabled');
+    fireEvent.click(upButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsMetricOrder = [
+      DEFAULT_FUNDAMENTAL_METRIC_ORDER[0]!,
+      undefined as unknown as (typeof DEFAULT_FUNDAMENTAL_METRIC_ORDER)[number],
+      ...DEFAULT_FUNDAMENTAL_METRIC_ORDER.slice(2),
+    ];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+  });
+
   it('opens FY history metrics dialog and toggles metric visibility', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
@@ -334,12 +421,39 @@ describe('ChartControls', () => {
     await user.click(firstDownButton);
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
-      fundamentalsHistoryMetricOrder: [
-        'forecastEps',
-        'eps',
-        ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2),
-      ],
+      fundamentalsHistoryMetricOrder: ['forecastEps', 'eps', ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2)],
     });
+  });
+
+  it('guards against stale FY history metric reorder actions', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    const [upButton] = screen.getAllByRole('button', { name: /^Up$/ });
+    const [downButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(upButton).toBeDefined();
+    expect(downButton).toBeDefined();
+    if (!upButton || !downButton) return;
+
+    mockChartStore.settings.fundamentalsHistoryMetricOrder = [];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsHistoryMetricOrder = [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER];
+    upButton.removeAttribute('disabled');
+    fireEvent.click(upButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
+
+    mockChartStore.settings.fundamentalsHistoryMetricOrder = [
+      DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER[0]!,
+      undefined as unknown as (typeof DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER)[number],
+      ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2),
+    ];
+    fireEvent.click(downButton);
+    expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });
 
   it('opens sub-chart indicators dialog and toggles risk adjusted return', async () => {
@@ -352,6 +466,88 @@ describe('ChartControls', () => {
     await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
+  });
+
+  it('updates sub-chart indicator numeric settings', async () => {
+    const user = userEvent.setup();
+    mockChartStore.settings.showRiskAdjustedReturnChart = true;
+    mockChartStore.settings.showVolumeComparison = true;
+    mockChartStore.settings.showTradingValueMA = true;
+    mockChartStore.updateVolumeComparison = vi.fn();
+    mockChartStore.updateTradingValueMA = vi.fn();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+
+    fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('Threshold'), { target: { value: '1.5' } });
+    fireEvent.change(screen.getByLabelText('Short Period'), { target: { value: '25' } });
+    fireEvent.change(screen.getByLabelText('Long Period'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('Lower Mult.'), { target: { value: '1.2' } });
+    fireEvent.change(screen.getByLabelText('Higher Mult.'), { target: { value: '1.8' } });
+    fireEvent.change(screen.getByLabelText('Period'), { target: { value: '18' } });
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      riskAdjustedReturn: expect.objectContaining({ lookbackPeriod: 80 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      riskAdjustedReturn: expect.objectContaining({ threshold: 1.5 }),
+    });
+    expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ shortPeriod: 25 });
+    expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ longPeriod: 120 });
+    expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ lowerMultiplier: 1.2 });
+    expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ higherMultiplier: 1.8 });
+    expect(mockChartStore.updateTradingValueMA).toHaveBeenCalledWith({ period: 18 });
+  });
+
+  it('updates ratio selects and toggles extra sub-chart panels', async () => {
+    const user = userEvent.setup();
+    mockChartStore.settings.showRiskAdjustedReturnChart = true;
+    mockChartStore.settings.showVolumeComparison = false;
+    mockChartStore.settings.showTradingValueMA = false;
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+
+    const dialog = screen.getByRole('dialog');
+    const [ratioTypeSelect, conditionSelect] = within(dialog).getAllByRole('combobox');
+    expect(ratioTypeSelect).toBeDefined();
+    expect(conditionSelect).toBeDefined();
+    if (!ratioTypeSelect || !conditionSelect) return;
+
+    await user.click(ratioTypeSelect);
+    await user.click(screen.getByRole('option', { name: 'sharpe' }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      riskAdjustedReturn: expect.objectContaining({ ratioType: 'sharpe' }),
+    });
+
+    await user.click(conditionSelect);
+    await user.click(screen.getByRole('option', { name: 'below' }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      riskAdjustedReturn: expect.objectContaining({ condition: 'below' }),
+    });
+
+    await user.click(screen.getByRole('switch', { name: /volume comparison/i }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showVolumeComparison: true });
+
+    await user.click(screen.getByRole('switch', { name: /trading value ma/i }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showTradingValueMA: true });
+  });
+
+  it('opens and closes the signal overlay dialog', async () => {
+    const user = userEvent.setup();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Signal Overlay' }));
+    expect(screen.getByText('Signal Overlay Controls')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByText('Signal Overlay Controls')).not.toBeInTheDocument());
   });
 
   it('opens overlay indicators dialog and toggles VWEMA', async () => {
@@ -425,6 +621,16 @@ describe('ChartControls', () => {
     await user.click(screen.getByRole('button', { name: /Toyota Motor/i }));
 
     expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
+  });
+
+  it('ignores blank symbol submissions', async () => {
+    const user = userEvent.setup();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: /検索/i }));
+
+    expect(mockOnSelectSymbol).not.toHaveBeenCalled();
   });
 
   it('supports keyboard navigation in search suggestions', async () => {

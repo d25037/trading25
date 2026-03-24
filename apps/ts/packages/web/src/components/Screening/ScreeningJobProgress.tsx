@@ -69,8 +69,8 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
   const progress = job.progress == null ? null : Math.round(job.progress * 100);
 
   return (
-    <Card className="glass-panel mb-4">
-      <CardHeader className="py-3">
+    <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
+      <CardHeader className="px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <StatusIcon status={job.status} />
@@ -80,13 +80,7 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground tabular-nums">{formatElapsedSeconds(elapsed)}</span>
               {onCancel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={onCancel}
-                  disabled={isCancelling}
-                >
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onCancel} disabled={isCancelling}>
                   Cancel
                 </Button>
               )}
@@ -94,14 +88,17 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2 pt-0">
+      <CardContent className="space-y-2 px-4 pb-4 pt-0">
         {isActive && (
           <>
             <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
               {progress == null ? (
                 <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
               ) : (
-                <div className="h-full rounded-full bg-blue-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
               )}
             </div>
             <div className="flex items-center justify-between text-xs text-muted-foreground">

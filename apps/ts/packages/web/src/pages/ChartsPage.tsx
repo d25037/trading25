@@ -17,15 +17,14 @@ import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
-import { useChartsRouteState, useMigrateChartsRouteState } from '@/hooks/usePageRouteState';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
+import { useChartsRouteState, useMigrateChartsRouteState } from '@/hooks/usePageRouteState';
 import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { type FundamentalsPanelId, useChartStore } from '@/stores/chartStore';
-import type { MarketRefreshResponse } from '@/types/sync';
 import type {
   BollingerBandsData,
   IndicatorValue,
@@ -35,6 +34,7 @@ import type {
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
+import type { MarketRefreshResponse } from '@/types/sync';
 import { formatMarketCap } from '@/utils/formatters';
 import { logger } from '@/utils/logger';
 
@@ -90,8 +90,8 @@ function resolveLatestMarketCaps(
 
 function ChartHeaderInfoField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border/40 bg-background/60 px-3 py-2">
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+    <div className="min-w-0 rounded-lg border border-border/60 bg-card/72 px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
       <div className="truncate text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
@@ -99,7 +99,7 @@ function ChartHeaderInfoField({ label, value }: { label: string; value: string }
 
 function ChartHeaderMetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-full border border-border/40 bg-background/70 px-3 py-1 text-xs">
+    <div className="rounded-full border border-border/60 bg-background/78 px-3 py-1 text-xs shadow-sm shadow-black/5">
       <span className="text-muted-foreground">{label}: </span>
       <span className="font-medium text-foreground">{value}</span>
     </div>
@@ -128,9 +128,7 @@ function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): stri
   return [...seen];
 }
 
-function mergeWarnings(
-  ...groups: Array<ResponseDiagnostics | DataProvenance | null | undefined>
-): string[] {
+function mergeWarnings(...groups: Array<ResponseDiagnostics | DataProvenance | null | undefined>): string[] {
   return mergeUniqueStrings(...groups.map((group) => group?.warnings));
 }
 
@@ -234,10 +232,7 @@ function shouldRenderChartPanels(
   return !isLoading && !error && !!selectedSymbol && !!chartData;
 }
 
-function getErrorDetailMessage(
-  details: unknown,
-  fieldName: 'reason' | 'recovery'
-): string | null {
+function getErrorDetailMessage(details: unknown, fieldName: 'reason' | 'recovery'): string | null {
   if (!Array.isArray(details)) {
     return null;
   }
@@ -277,10 +272,7 @@ function getChartErrorContext(error: unknown): ChartErrorContext {
   };
 }
 
-function buildRefreshFeedback(
-  result: MarketRefreshResponse,
-  selectedSymbol: string
-): ChartRefreshFeedback {
+function buildRefreshFeedback(result: MarketRefreshResponse, selectedSymbol: string): ChartRefreshFeedback {
   const stockResult = result.results.find((item) => item.code === selectedSymbol) ?? result.results[0];
 
   if (!stockResult) {
@@ -618,10 +610,7 @@ function ChartHeader({
     fundamentalsProvenance?.loaded_domains
   );
   const warnings = mergeWarnings(signalProvenance, fundamentalsProvenance, signalDiagnostics);
-  const marketSnapshotId =
-    signalProvenance?.market_snapshot_id ??
-    fundamentalsProvenance?.market_snapshot_id ??
-    '-';
+  const marketSnapshotId = signalProvenance?.market_snapshot_id ?? fundamentalsProvenance?.market_snapshot_id ?? '-';
   let overlayLabel = '-';
   if (strategyName) {
     overlayLabel = `${strategyName} (strategy)`;
@@ -631,28 +620,27 @@ function ChartHeader({
 
   return (
     <div className="space-y-3">
-      <div className="px-6 py-4 gradient-primary rounded-xl">
+      <div className="rounded-xl border border-border/70 bg-card/90 px-5 py-4 shadow-sm shadow-black/5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="gradient-secondary rounded-lg p-2">
-              <TrendingUp className="h-6 w-6 text-white" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <TrendingUp className="h-5 w-5" />
             </div>
             <div className="flex flex-col">
-              <h2 className="text-2xl font-bold text-white">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Selected Symbol
+              </p>
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground">
                 {selectedSymbol}
-                {stockInfo?.companyName && <span className="ml-2 font-medium text-white/90">{stockInfo.companyName}</span>}
-                {settings.relativeMode && <span className="font-medium text-white/70"> / TOPIX</span>}
+                {stockInfo?.companyName && (
+                  <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>
+                )}
+                {settings.relativeMode && <span className="font-medium text-muted-foreground"> / TOPIX</span>}
               </h2>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onRefresh}
-              disabled={isRefreshing}
-              className="bg-white/15 text-white hover:bg-white/25 hover:text-white"
-            >
+            <Button variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing}>
               {isRefreshing ? (
                 <>
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -676,15 +664,12 @@ function ChartHeader({
         </div>
       </div>
 
-      <div className="rounded-xl glass-panel px-6 py-4">
+      <div className="rounded-xl border border-border/70 bg-card/82 px-5 py-4 shadow-sm shadow-black/5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
             <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
-            <ChartHeaderInfoField
-              label="時価総額 (Free Float)"
-              value={formatMarketCap(latestMarketCaps.freeFloat)}
-            />
+            <ChartHeaderInfoField label="時価総額 (Free Float)" value={formatMarketCap(latestMarketCaps.freeFloat)} />
             <ChartHeaderInfoField
               label="時価総額 (発行済み株式数)"
               value={formatMarketCap(latestMarketCaps.issuedShares)}
@@ -767,9 +752,8 @@ function ChartsPanelsContent({
   return (
     <div className="h-full flex flex-col gap-4">
       <div className="h-[512px]">
-        <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-          <div className="absolute inset-0 gradient-glass opacity-50" />
-          <div className="relative z-10 h-full">
+        <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
+          <div className="h-full">
             <div className="p-4 border-b border-border/30">
               <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} Chart</h3>
             </div>
@@ -777,9 +761,15 @@ function ChartsPanelsContent({
               <ErrorBoundary>
                 <StockChart
                   data={chartData[settings.displayTimeframe]?.candlestickData || []}
-                  atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
-                  nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
-                  bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
+                  atrSupport={
+                    chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined
+                  }
+                  nBarSupport={
+                    chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined
+                  }
+                  bollingerBands={
+                    chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined
+                  }
                   vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
                   signalMarkers={signalMarkers?.[settings.displayTimeframe]}
                 />
@@ -791,9 +781,8 @@ function ChartsPanelsContent({
 
       {settings.showPPOChart && (
         <div className="h-96">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
+          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
+            <div className="h-full">
               <div className="p-4 border-b border-border/30">
                 <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} PPO</h3>
               </div>
@@ -812,9 +801,8 @@ function ChartsPanelsContent({
 
       {settings.showRiskAdjustedReturnChart && (
         <div className="h-[200px]">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
+          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
+            <div className="h-full">
               <div className="p-4 border-b border-border/30">
                 <h3 className="text-lg font-semibold text-foreground capitalize">
                   {settings.displayTimeframe} Risk Adjusted Return
@@ -823,7 +811,10 @@ function ChartsPanelsContent({
               <div className="h-[calc(100%-4rem)]">
                 <ErrorBoundary>
                   <RiskAdjustedReturnChart
-                    data={(chartData[settings.displayTimeframe]?.indicators.riskAdjustedReturn as RiskAdjustedReturnData[]) || []}
+                    data={
+                      (chartData[settings.displayTimeframe]?.indicators
+                        .riskAdjustedReturn as RiskAdjustedReturnData[]) || []
+                    }
                     lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
                     ratioType={settings.riskAdjustedReturn.ratioType}
                     threshold={settings.riskAdjustedReturn.threshold}
@@ -839,11 +830,12 @@ function ChartsPanelsContent({
 
       {settings.showVolumeComparison && (
         <div className="h-[200px]">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
+          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
+            <div className="h-full">
               <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} Volume Comparison</h3>
+                <h3 className="text-lg font-semibold text-foreground capitalize">
+                  {settings.displayTimeframe} Volume Comparison
+                </h3>
               </div>
               <div className="h-[calc(100%-4rem)]">
                 <ErrorBoundary>
@@ -863,11 +855,12 @@ function ChartsPanelsContent({
 
       {settings.showTradingValueMA && (
         <div className="h-[200px]">
-          <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-            <div className="absolute inset-0 gradient-glass opacity-50" />
-            <div className="relative z-10 h-full">
+          <div className="h-full overflow-hidden rounded-xl border border-border/70 bg-card/92 shadow-sm shadow-black/5">
+            <div className="h-full">
               <div className="p-4 border-b border-border/30">
-                <h3 className="text-lg font-semibold text-foreground capitalize">{settings.displayTimeframe} Trading Value MA</h3>
+                <h3 className="text-lg font-semibold text-foreground capitalize">
+                  {settings.displayTimeframe} Trading Value MA
+                </h3>
               </div>
               <div className="h-[calc(100%-4rem)]">
                 <ErrorBoundary>

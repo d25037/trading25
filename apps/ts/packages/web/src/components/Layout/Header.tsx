@@ -20,60 +20,51 @@ export function Header() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
-    <header
-      className={cn('relative flex h-14 items-center justify-between border-b border-border/50 px-4', 'glass-panel')}
-    >
-      {/* Gradient background */}
-      <div className="absolute inset-0 gradient-secondary opacity-30" />
+    <header className="sticky top-0 z-20 border-b border-border/70 bg-background/88 backdrop-blur-xl">
+      <div className="flex h-14 items-center justify-between gap-4 px-4">
+        <div className="flex min-w-0 items-center gap-5">
+          <button
+            type="button"
+            onClick={() => {
+              void navigate({ to: '/charts' });
+            }}
+            className="flex items-center gap-2.5 rounded-lg px-1 py-1 transition-colors hover:bg-accent/50"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <h1 className="text-base font-semibold tracking-tight text-foreground">Trading25</h1>
+          </button>
 
-      <div className="relative z-10 flex items-center gap-6">
-        {/* Logo */}
-        <div className="flex items-center gap-2">
-          <div className="gradient-primary rounded-lg p-1.5">
-            <TrendingUp className="h-5 w-5 text-white" />
-          </div>
-          <h1 className="text-lg font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            Trading25
-          </h1>
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.path || (item.path === '/market-db' && pathname === '/settings');
+
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  onClick={() => {
+                    void navigate({ to: item.path });
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-200',
+                    isActive
+                      ? 'border-primary/25 bg-primary/12 text-primary shadow-sm'
+                      : 'border-transparent text-muted-foreground hover:border-border/70 hover:bg-accent/50 hover:text-accent-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.path || (item.path === '/market-db' && pathname === '/settings');
-
-            return (
-              <button
-                key={item.path}
-                type="button"
-                onClick={() => {
-                  void navigate({ to: item.path });
-                }}
-                className={cn(
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
-                  'hover:scale-[1.02] active:scale-[0.98]',
-                  isActive
-                    ? 'gradient-primary text-white shadow-md shadow-primary/20'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      <div className="relative z-10 flex items-center gap-3">
-        {/* Action buttons */}
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-lg hover:bg-accent/50 transition-all duration-200"
-          >
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-accent/50">
             <Bell className="h-4 w-4" />
           </Button>
           <ThemeToggle />

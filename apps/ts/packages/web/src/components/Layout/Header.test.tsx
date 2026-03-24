@@ -50,7 +50,7 @@ describe('Header', () => {
     pathname = '/screening';
     render(<Header />);
 
-    expect(screen.getByRole('button', { name: 'Screening' })).toHaveClass('gradient-primary');
+    expect(screen.getByRole('button', { name: 'Screening' })).toHaveClass('bg-primary/12');
   });
 
   it('renders theme toggle', () => {
