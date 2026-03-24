@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 import duckdb
+import shutil
 from pathlib import Path
 
 import pytest
@@ -34,10 +35,18 @@ def _create_market_db(path: str) -> None:
     conn.close()
 
 
-@pytest.fixture()
-def market_db_path(tmp_path: Path) -> str:
-    path = str(tmp_path / "market.duckdb")
+@pytest.fixture(scope="module")
+def market_db_template_path(tmp_path_factory) -> str:
+    tmp_path = tmp_path_factory.mktemp("watchlist-prices")
+    path = str(tmp_path / "market-template.duckdb")
     _create_market_db(path)
+    return path
+
+
+@pytest.fixture()
+def market_db_path(tmp_path: Path, market_db_template_path: str) -> str:
+    path = str(tmp_path / "market.duckdb")
+    shutil.copyfile(market_db_template_path, path)
     return path
 
 
@@ -48,15 +57,26 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db.close()
 
 
-@pytest.fixture()
-def client(pdb: PortfolioDb, market_db_path: str) -> Generator[TestClient, None, None]:
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.portfolio_db = pdb
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture()
+def client(
+    app_client: TestClient,
+    pdb: PortfolioDb,
+    market_db_path: str,
+) -> Generator[TestClient, None, None]:
     reader = MarketDbReader(market_db_path)
-    app.state.market_reader = reader
-    c = TestClient(app, raise_server_exceptions=False)
-    yield c
-    reader.close()
+    app_client.app.state.portfolio_db = pdb
+    app_client.app.state.market_reader = reader
+    try:
+        yield app_client
+    finally:
+        reader.close()
 
 
 class TestWatchlistPrices:

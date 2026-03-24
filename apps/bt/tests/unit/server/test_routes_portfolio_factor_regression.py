@@ -83,8 +83,9 @@ def _create_market_db(path: str) -> None:
     conn.close()
 
 
-@pytest.fixture()
-def market_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def market_db_path(tmp_path_factory) -> str:
+    tmp_path = tmp_path_factory.mktemp("portfolio-factor-regression")
     path = str(tmp_path / "market.duckdb")
     _create_market_db(path)
     return path
@@ -97,15 +98,29 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db.close()
 
 
-@pytest.fixture()
-def client(pdb: PortfolioDb, market_db_path: str) -> Generator[TestClient, None, None]:
-    app = create_app()
-    app.state.portfolio_db = pdb
+@pytest.fixture(scope="module")
+def market_reader(market_db_path: str) -> Generator[MarketDbReader, None, None]:
     reader = MarketDbReader(market_db_path)
-    app.state.market_reader = reader
-    c = TestClient(app, raise_server_exceptions=False)
-    yield c
+    yield reader
     reader.close()
+
+
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
+    app = create_app()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture()
+def client(
+    app_client: TestClient,
+    pdb: PortfolioDb,
+    market_reader: MarketDbReader,
+) -> Generator[TestClient, None, None]:
+    app_client.app.state.portfolio_db = pdb
+    app_client.app.state.market_reader = market_reader
+    yield app_client
 
 
 class TestPortfolioFactorRegression:

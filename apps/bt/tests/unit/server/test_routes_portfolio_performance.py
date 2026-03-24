@@ -84,12 +84,22 @@ def market_reader(market_db_path: str) -> Generator[MarketDbReader, None, None]:
     reader.close()
 
 
-@pytest.fixture()
-def client(pdb: PortfolioDb, market_reader: MarketDbReader) -> Generator[TestClient, None, None]:
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.portfolio_db = pdb
-    app.state.market_reader = market_reader
-    yield TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture()
+def client(
+    app_client: TestClient,
+    pdb: PortfolioDb,
+    market_reader: MarketDbReader,
+) -> Generator[TestClient, None, None]:
+    app_client.app.state.portfolio_db = pdb
+    app_client.app.state.market_reader = market_reader
+    yield app_client
 
 
 class TestPortfolioPerformance:

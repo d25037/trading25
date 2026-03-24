@@ -19,11 +19,17 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db.close()
 
 
-@pytest.fixture()
-def client(pdb: PortfolioDb) -> TestClient:
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.portfolio_db = pdb
-    return TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture()
+def client(app_client: TestClient, pdb: PortfolioDb) -> TestClient:
+    app_client.app.state.portfolio_db = pdb
+    return app_client
 
 
 # ===== List Portfolios =====
