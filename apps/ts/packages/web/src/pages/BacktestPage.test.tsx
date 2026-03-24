@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BacktestPage } from './BacktestPage';
 
 const mockBacktestState = {
@@ -23,7 +23,11 @@ vi.mock('@/components/Backtest', () => ({
   BacktestResults: () => <div>Results Panel</div>,
   BacktestAttribution: () => <div>Attribution Panel</div>,
   BacktestStrategies: () => <div>Strategies Panel</div>,
-  BacktestStatus: () => <div>Status Panel</div>,
+  BacktestStatus: ({ onViewJob }: { onViewJob: (jobId: string) => void }) => (
+    <button type="button" onClick={() => onViewJob('job-123')}>
+      Status Panel
+    </button>
+  ),
   DatasetManager: () => <div>Dataset Panel</div>,
 }));
 
@@ -32,6 +36,13 @@ vi.mock('@/components/Lab', () => ({
 }));
 
 describe('BacktestPage', () => {
+  beforeEach(() => {
+    mockBacktestState.setActiveSubTab.mockClear();
+    mockBacktestState.setSelectedStrategy.mockClear();
+    mockBacktestState.setSelectedResultJobId.mockClear();
+    mockBacktestState.setActiveLabType.mockClear();
+  });
+
   it('shows the active sub-tab content', () => {
     mockBacktestState.activeSubTab = 'runner';
     const { rerender } = render(<BacktestPage />);
@@ -59,10 +70,21 @@ describe('BacktestPage', () => {
     expect(screen.getByText('Attribution Panel')).toBeInTheDocument();
   });
 
+  it('routes from status to results when a job is selected', async () => {
+    const user = userEvent.setup();
+    mockBacktestState.activeSubTab = 'status';
+
+    render(<BacktestPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Status Panel' }));
+
+    expect(mockBacktestState.setSelectedResultJobId).toHaveBeenCalledWith('job-123');
+    expect(mockBacktestState.setActiveSubTab).toHaveBeenCalledWith('results');
+  });
+
   it('renders remaining tab panels', () => {
     const matrix = [
       { tab: 'strategies', text: 'Strategies Panel' },
-      { tab: 'status', text: 'Status Panel' },
       { tab: 'dataset', text: 'Dataset Panel' },
       { tab: 'lab', text: 'Lab Panel' },
     ] as const;

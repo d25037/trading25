@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, T
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinePriceChart } from '@/components/Chart/LinePriceChart';
 import { StockChart } from '@/components/Chart/StockChart';
+import { SplitLayout, SplitMain, SplitSidebar } from '@/components/Layout/Workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
@@ -581,8 +582,8 @@ export function IndicesPage() {
   }, [handleKeyDown]);
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <aside
+    <SplitLayout className="h-full gap-0 overflow-hidden">
+      <SplitSidebar
         className="w-64 shrink-0 border-r border-border/30 overflow-y-auto p-4 glass-panel"
         style={{ minWidth: '16rem', maxWidth: '16rem' }}
       >
@@ -609,11 +610,11 @@ export function IndicesPage() {
             Failed to load indices: {indicesError.message}
           </div>
         )}
-      </aside>
+      </SplitSidebar>
 
-      <main className="flex-1 min-w-0 overflow-y-auto p-5">
+      <SplitMain className="overflow-y-auto p-5">
         <IndexChart code={selectedIndexCode} indexInfo={selectedIndexInfo} onStockClick={handleStockClick} />
-      </main>
-    </div>
+      </SplitMain>
+    </SplitLayout>
   );
 }
