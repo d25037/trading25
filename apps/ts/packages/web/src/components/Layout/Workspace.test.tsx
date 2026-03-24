@@ -3,8 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { Filter, TrendingUp } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CompactMetric,
   ModeSwitcherPanel,
   NavRail,
+  PageIntro,
+  PageIntroMetaList,
+  SectionHeading,
   SectionEyebrow,
   SegmentedTabs,
   SplitLayout,
@@ -19,11 +23,23 @@ describe('Workspace layout primitives', () => {
       <>
         <Surface className="custom-surface">Body</Surface>
         <SectionEyebrow className="custom-eyebrow">Label</SectionEyebrow>
+        <SectionHeading eyebrow="Overview" title="Section Title" description="Section description" />
+        <PageIntro
+          eyebrow="Desk"
+          title="Page Title"
+          description="Page description"
+          meta={<PageIntroMetaList items={[{ label: 'Source', value: 'DuckDB' }]} />}
+          aside={<CompactMetric label="Status" value="READY" detail="Metric detail" />}
+        />
       </>
     );
 
     expect(screen.getByText('Body')).toHaveClass('custom-surface');
     expect(screen.getByText('Label')).toHaveClass('custom-eyebrow');
+    expect(screen.getByText('Section Title')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Page Title' })).toBeInTheDocument();
+    expect(screen.getByText('DuckDB')).toBeInTheDocument();
+    expect(screen.getByText('READY')).toBeInTheDocument();
   });
 
   it('handles segmented tab interactions and disabled states', async () => {

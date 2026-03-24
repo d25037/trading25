@@ -33,7 +33,7 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       onClick={toggleTheme}
-      className="relative h-9 w-9 rounded-lg hover:bg-accent transition-all duration-200"
+      className="app-interactive relative h-9 w-9 rounded-xl hover:bg-[var(--app-surface-muted)]"
       title={`Current theme: ${theme}`}
     >
       {getIcon()}

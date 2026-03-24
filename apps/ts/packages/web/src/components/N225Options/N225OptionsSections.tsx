@@ -5,8 +5,8 @@ import type {
 } from '@trading25/contracts/types/api-response-types';
 import { BarChart3, Calendar, Filter, Loader2, type LucideIcon, RefreshCcw, Sigma } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Surface } from '@/components/Layout/Workspace';
 import { DateInput } from '@/components/shared/filters';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -57,18 +57,18 @@ function SummaryCard({
   icon: LucideIcon;
 }) {
   return (
-    <Card className="glass-panel">
-      <CardContent className="flex items-start justify-between p-4">
+    <Surface className="p-4">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">{title}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
           <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
         </div>
-        <div className="gradient-primary rounded-lg p-2">
-          <Icon className="h-4 w-4 text-white" />
+        <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+          <Icon className="h-4 w-4" />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }
 
@@ -151,21 +151,22 @@ export function N225OptionsFiltersCard(props: {
   } = props;
 
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
+    <Surface className="p-4">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">Filters</CardTitle>
+          <div className="space-y-1">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Filters</h2>
+          </div>
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="app-interactive inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground"
             onClick={onReset}
           >
             <RefreshCcw className="h-3.5 w-3.5" />
             Reset
           </button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <div className="mt-4 space-y-4">
         <DateInput
           value={date ?? undefined}
           onChange={(value) => setDate(value ?? null)}
@@ -178,7 +179,7 @@ export function N225OptionsFiltersCard(props: {
             Put / Call
           </Label>
           <Select value={putCall} onValueChange={(value) => setPutCall(value as Options225PutCallFilter)}>
-            <SelectTrigger id="put-call" className="h-8 text-xs">
+            <SelectTrigger id="put-call" className="h-9 border-border/70 bg-background/80 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -199,7 +200,7 @@ export function N225OptionsFiltersCard(props: {
             value={contractMonth ?? 'all'}
             onValueChange={(value) => setContractMonth(value === 'all' ? null : value)}
           >
-            <SelectTrigger id="contract-month" className="h-8 text-xs">
+            <SelectTrigger id="contract-month" className="h-9 border-border/70 bg-background/80 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -222,7 +223,7 @@ export function N225OptionsFiltersCard(props: {
               id="strike-min"
               type="number"
               inputMode="decimal"
-              className="h-8 text-xs"
+              className="h-9 border-border/70 bg-background/80 text-xs"
               value={strikeMin ?? ''}
               onChange={(event) => setStrikeRange(parseOptionsNumericInput(event.target.value), strikeMax)}
             />
@@ -235,7 +236,7 @@ export function N225OptionsFiltersCard(props: {
               id="strike-max"
               type="number"
               inputMode="decimal"
-              className="h-8 text-xs"
+              className="h-9 border-border/70 bg-background/80 text-xs"
               value={strikeMax ?? ''}
               onChange={(event) => setStrikeRange(strikeMin, parseOptionsNumericInput(event.target.value))}
             />
@@ -247,7 +248,7 @@ export function N225OptionsFiltersCard(props: {
             Sort By
           </Label>
           <Select value={sortBy} onValueChange={(value) => setSort(value as Options225SortBy, order)}>
-            <SelectTrigger id="sort-by" className="h-8 text-xs">
+            <SelectTrigger id="sort-by" className="h-9 border-border/70 bg-background/80 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -265,7 +266,7 @@ export function N225OptionsFiltersCard(props: {
             Order
           </Label>
           <Select value={order} onValueChange={(value) => setSort(sortBy, value as SortOrder)}>
-            <SelectTrigger id="sort-order" className="h-8 text-xs">
+            <SelectTrigger id="sort-order" className="h-9 border-border/70 bg-background/80 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -277,8 +278,8 @@ export function N225OptionsFiltersCard(props: {
             </SelectContent>
           </Select>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }
 
@@ -350,7 +351,10 @@ export function N225OptionsChainCard(props: {
               return (
                 <TableRow
                   key={rowKey}
-                  className={cn('cursor-pointer', isSelected && 'bg-accent/40')}
+                  className={cn(
+                    'cursor-pointer transition-colors hover:bg-[var(--app-surface-muted)]',
+                    isSelected && 'bg-[var(--app-surface-emphasis)]'
+                  )}
                   onClick={() => setSelectedRowKey(rowKey)}
                 >
                   <TableCell className="font-medium">{item.code}</TableCell>
@@ -380,11 +384,11 @@ export function N225OptionsChainCard(props: {
   }
 
   return (
-    <Card className="glass-panel overflow-hidden">
-      <CardHeader className="border-b border-border/30 pb-3">
+    <Surface className="overflow-hidden">
+      <div className="border-b border-border/70 px-5 py-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle className="text-base">Options Chain</CardTitle>
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Options Chain</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               {isLoading
                 ? 'Resolving date and loading contracts...'
@@ -393,31 +397,34 @@ export function N225OptionsChainCard(props: {
           </div>
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs transition-colors hover:bg-accent/50"
+            className="app-interactive inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-xs hover:bg-[var(--app-surface-muted)]"
             onClick={onRefresh}
           >
             <RefreshCcw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
             Refresh
           </button>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">{content}</CardContent>
-    </Card>
+      </div>
+      <div className="p-0">{content}</div>
+    </Surface>
   );
 }
 
 export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225OptionItem | null }) {
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Contract Detail</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Surface className="p-5">
+      <div className="space-y-1">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Inspector</p>
+        <h2 className="text-base font-semibold tracking-tight text-foreground">Contract Detail</h2>
+      </div>
+      <div className="mt-4 space-y-4">
         {selectedItem ? (
           <>
-            <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">Selected Contract</div>
-              <div className="mt-2 text-xl font-semibold">{selectedItem.code}</div>
+            <div className="app-panel-muted rounded-2xl p-4">
+              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Selected Contract
+              </div>
+              <div className="mt-2 text-xl font-semibold tracking-tight">{selectedItem.code}</div>
               <div className="mt-1 text-sm text-muted-foreground">
                 {selectedItem.contractMonth ?? '-'} / {selectedItem.putCallLabel ?? '-'} / strike{' '}
                 {formatOptionsNumber(selectedItem.strikePrice, 0)}
@@ -425,8 +432,8 @@ export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225Opti
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-xl border border-border/40 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Pricing</div>
+              <div className="app-panel-muted rounded-2xl p-4">
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Pricing</div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
                   <dt className="text-muted-foreground">Whole Day</dt>
                   <dd className="text-right tabular-nums">{formatOptionsNumber(selectedItem.wholeDayClose, 2)}</dd>
@@ -439,8 +446,10 @@ export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225Opti
                 </dl>
               </div>
 
-              <div className="rounded-xl border border-border/40 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Liquidity</div>
+              <div className="app-panel-muted rounded-2xl p-4">
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Liquidity
+                </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
                   <dt className="text-muted-foreground">Volume</dt>
                   <dd className="text-right tabular-nums">{formatOptionsNumber(selectedItem.volume, 0)}</dd>
@@ -453,8 +462,10 @@ export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225Opti
                 </dl>
               </div>
 
-              <div className="rounded-xl border border-border/40 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Risk Metrics</div>
+              <div className="app-panel-muted rounded-2xl p-4">
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Risk Metrics
+                </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
                   <dt className="text-muted-foreground">IV</dt>
                   <dd className="text-right tabular-nums">{formatOptionsNumber(selectedItem.impliedVolatility, 4)}</dd>
@@ -467,8 +478,10 @@ export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225Opti
                 </dl>
               </div>
 
-              <div className="rounded-xl border border-border/40 p-4">
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Calendar</div>
+              <div className="app-panel-muted rounded-2xl p-4">
+                <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Calendar
+                </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-2 text-sm">
                   <dt className="text-muted-foreground">Trade Date</dt>
                   <dd className="text-right">{selectedItem.date}</dd>
@@ -485,7 +498,7 @@ export function N225OptionsDetailCard({ selectedItem }: { selectedItem: N225Opti
             Select a contract to inspect details.
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

@@ -1,5 +1,6 @@
 import { Activity, Database, Loader2, RotateCcw, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { CompactMetric, PageIntro, PageIntroMetaList, SectionEyebrow, SectionHeading } from '@/components/Layout/Workspace';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
@@ -74,15 +75,15 @@ type SyncJobStatusShape = Pick<SyncJobResponse, 'status'> | null | undefined;
 function getToneClasses(tone: StatusTone): string {
   switch (tone) {
     case 'accent':
-      return 'border-primary/20 bg-primary/10 text-primary';
+      return 'border-primary/18 bg-primary/10 text-primary';
     case 'success':
-      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700';
+      return 'border-emerald-500/18 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
     case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-700';
+      return 'border-amber-500/18 bg-amber-500/10 text-amber-700 dark:text-amber-300';
     case 'danger':
-      return 'border-red-500/20 bg-red-500/10 text-red-700';
+      return 'border-red-500/18 bg-red-500/10 text-red-700 dark:text-red-300';
     default:
-      return 'border-border/70 bg-background/70 text-foreground';
+      return 'border-border/70 bg-[var(--app-surface-muted)] text-foreground';
   }
 }
 
@@ -960,23 +961,25 @@ function DatabaseSyncSection({
   className,
 }: DatabaseSyncSectionProps) {
   return (
-    <Card className={cn('border-border/70 bg-card/90 shadow-sm', className)}>
+    <Card className={cn('border-border/70 bg-[var(--app-surface)] shadow-none', className)}>
       <CardHeader className="pb-4">
-        <span className="inline-flex w-fit rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
-          Primary Action
-        </span>
-        <div className="flex items-center gap-2">
-          <Database className="h-5 w-5" />
-          <CardTitle className="text-xl">Database Sync</CardTitle>
+        <SectionEyebrow>Primary Action</SectionEyebrow>
+        <div className="mt-1 flex items-start gap-3">
+          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+            <Database className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Database Sync</CardTitle>
+            <CardDescription>
+              Synchronize J-Quants market data into the local DuckDB source of truth. Use incremental to resume
+              interrupted syncs.
+            </CardDescription>
+          </div>
         </div>
-        <CardDescription>
-          Synchronize J-Quants market data into the local DuckDB source of truth. Use incremental to resume interrupted
-          syncs.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <SyncModeSelect value={syncMode} onChange={onSyncModeChange} disabled={isRunning || isStarting} />
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background/60 p-4">
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-4">
           <div className="space-y-1">
             <Label htmlFor="enforce-stock-bulk">Enforce BULK for stock_data</Label>
             <p className="text-xs text-muted-foreground">
@@ -1020,37 +1023,39 @@ function WarningRecoverySection({
   const repairSignals = sumRepairTargets(repairTargets);
 
   return (
-    <Card className={cn('border-border/70 bg-card/90 shadow-sm', className)}>
+    <Card className={cn('border-border/70 bg-[var(--app-surface)] shadow-none', className)}>
       <CardHeader className="pb-4">
-        <span className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-amber-700">
-          Maintenance
-        </span>
-        <div className="flex items-center gap-2">
-          <Wrench className="h-5 w-5" />
-          <CardTitle className="text-xl">Warning Recovery</CardTitle>
+        <SectionEyebrow>Maintenance</SectionEyebrow>
+        <div className="mt-1 flex items-start gap-3">
+          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-amber-700 dark:text-amber-300">
+            <Wrench className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Warning Recovery</CardTitle>
+            <CardDescription>
+              Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. N225 options coverage gaps
+              must be handled from Database Sync.
+            </CardDescription>
+          </div>
         </div>
-        <CardDescription>
-          Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. N225 options coverage gaps must
-          be handled from Database Sync.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Stocks needing refresh</p>
             <p className="mt-2 text-lg font-semibold">{repairTargets.stocksNeedingRefresh}</p>
           </div>
-          <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               Missing listed-market fundamentals
             </p>
             <p className="mt-2 text-lg font-semibold">{repairTargets.missingListedMarketFundamentals}</p>
           </div>
-          <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Failed fundamentals dates</p>
             <p className="mt-2 text-lg font-semibold">{repairTargets.failedFundamentalsDates}</p>
           </div>
-          <div className="rounded-xl border border-border/70 bg-background/60 p-3">
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Failed fundamentals codes</p>
             <p className="mt-2 text-lg font-semibold">{repairTargets.failedFundamentalsCodes}</p>
           </div>
@@ -1059,7 +1064,7 @@ function WarningRecoverySection({
           Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market
           fundamentals. It does not ingest `options_225_data`; use Database Sync with `indices-only` for options gaps.
         </p>
-        <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-3">
+        <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Repair signals</p>
             <p className="mt-1 text-sm font-semibold">{repairSignals}</p>
@@ -1109,18 +1114,20 @@ function ManualStockRefreshSection({
   className,
 }: ManualStockRefreshSectionProps) {
   return (
-    <Card className={cn('border-border/70 bg-card/90 shadow-sm', className)}>
+    <Card className={cn('border-border/70 bg-[var(--app-surface)] shadow-none', className)}>
       <CardHeader className="pb-4">
-        <span className="inline-flex w-fit rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Targeted Repair
-        </span>
-        <div className="flex items-center gap-2">
-          <RotateCcw className="h-5 w-5" />
-          <CardTitle className="text-xl">Stock Refresh (Manual)</CardTitle>
+        <SectionEyebrow>Targeted Repair</SectionEyebrow>
+        <div className="mt-1 flex items-start gap-3">
+          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+            <RotateCcw className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Stock Refresh (Manual)</CardTitle>
+            <CardDescription>
+              Re-fetch specific DuckDB stock series when you need a one-off repair outside the chart header flow.
+            </CardDescription>
+          </div>
         </div>
-        <CardDescription>
-          Re-fetch specific DuckDB stock series when you need a one-off repair outside the chart header flow.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
@@ -1161,51 +1168,29 @@ function ManualStockRefreshSection({
   );
 }
 
-interface OverviewMetricCardProps {
-  label: string;
-  value: string;
-  tone: StatusTone;
-  description: string;
-}
-
-function OverviewMetricCard({ label, value, tone, description }: OverviewMetricCardProps) {
-  return (
-    <div className={cn('rounded-2xl border p-4 shadow-sm backdrop-blur-sm', getToneClasses(tone))}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.22em] opacity-80">{label}</p>
-      <p className="mt-3 text-xl font-semibold leading-tight">{value}</p>
-      <p className="mt-2 text-xs opacity-80">{description}</p>
-    </div>
-  );
-}
-
 function EmptyJobMonitorCard() {
   return (
-    <Card className="border-border/70 bg-card/90 shadow-sm">
+    <Card className="border-border/70 bg-[var(--app-surface)] shadow-none">
       <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <Activity className="h-5 w-5" />
-          <CardTitle className="text-xl">Job Monitor</CardTitle>
+        <SectionEyebrow>Job Monitor</SectionEyebrow>
+        <div className="mt-1 flex items-start gap-3">
+          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+            <Activity className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Live Sync Job</CardTitle>
+            <CardDescription>
+              Start a sync or repair job to inspect progress, fetch strategy details, and cancellation.
+            </CardDescription>
+          </div>
         </div>
-        <CardDescription>
-          Start a sync or repair job to inspect progress, fetch strategy details, and cancellation.
-        </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="rounded-xl border border-dashed border-border/80 bg-background/50 p-4 text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-border/80 bg-[var(--app-surface-muted)] p-4 text-sm text-muted-foreground">
           No active sync job. The live monitor appears here as soon as a job is running or a recent result is restored.
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function SectionLabel({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">{eyebrow}</p>
-      <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </div>
   );
 }
 
@@ -1225,64 +1210,48 @@ function MarketDbHero({
   repairSignalCount,
 }: MarketDbHeroProps) {
   const storageTotalBytes = dbStats?.storage?.totalBytes ?? dbStats?.databaseSize ?? 0;
-  return (
-    <section className="overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-primary/10 via-background to-amber-500/10 p-6 shadow-sm">
-      <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-        <div className="max-w-3xl space-y-4">
-          <span className="inline-flex w-fit rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
-            Local Data Plane
-          </span>
-          <div className="space-y-3">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Market DB</h1>
-            <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-              Sync, inspect, and repair the local DuckDB market snapshot. This page is focused on market data
-              operations, not general application settings.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
-              Source: {dbStats?.timeSeriesSource ?? 'duckdb-parquet'}
-            </span>
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
-              Storage: {formatBytes(storageTotalBytes)}
-            </span>
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
-              Status checked: {resolveSnapshotObservedAt(dbStats, dbValidation)}
-            </span>
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
-              Repair signals: {repairSignalCount}
-            </span>
-          </div>
-        </div>
+  const introMetaItems = [
+    { label: 'Source', value: dbStats?.timeSeriesSource ?? 'duckdb-parquet' },
+    { label: 'Storage', value: formatBytes(storageTotalBytes) },
+    { label: 'Status Checked', value: resolveSnapshotObservedAt(dbStats, dbValidation) },
+    { label: 'Repair Signals', value: repairSignalCount.toString() },
+  ];
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:w-[32rem]">
-          <OverviewMetricCard
+  return (
+    <PageIntro
+      eyebrow="Local Data Plane"
+      title="Market DB"
+      description="Sync, inspect, and repair the local DuckDB market snapshot without leaving the operational workspace."
+      meta={<PageIntroMetaList items={introMetaItems} />}
+      aside={
+        <div className="grid gap-3 sm:grid-cols-2">
+          <CompactMetric
             label="Validation"
             value={dbValidation ? dbValidation.status.toUpperCase() : isValidationLoading ? 'LOADING' : 'UNKNOWN'}
             tone={getValidationTone(dbValidation?.status)}
-            description={dbValidation?.recommendations?.[0] ?? 'Health state from /api/db/validate'}
+            detail={dbValidation?.recommendations?.[0] ?? 'Health state from /api/db/validate'}
           />
-          <OverviewMetricCard
+          <CompactMetric
             label="Last Sync"
             value={formatTimestamp(dbStats?.lastSync)}
             tone="neutral"
-            description={`Initialized: ${dbStats?.initialized ? 'Yes' : 'No'}`}
+            detail={`Initialized: ${dbStats?.initialized ? 'Yes' : 'No'}`}
           />
-          <OverviewMetricCard
+          <CompactMetric
             label="Storage"
             value={formatBytes(storageTotalBytes)}
             tone="neutral"
-            description={`DuckDB ${formatBytes(dbStats?.storage?.duckdbBytes ?? dbStats?.databaseSize ?? 0)} / Parquet ${formatBytes(dbStats?.storage?.parquetBytes ?? 0)}`}
+            detail={`DuckDB ${formatBytes(dbStats?.storage?.duckdbBytes ?? dbStats?.databaseSize ?? 0)} / Parquet ${formatBytes(dbStats?.storage?.parquetBytes ?? 0)}`}
           />
-          <OverviewMetricCard
+          <CompactMetric
             label="Active Job"
             value={formatSyncJobLabel(currentJob)}
             tone={getJobTone(currentJob?.status)}
-            description={currentJob ? `Mode: ${currentJob.mode}` : 'No running sync job'}
+            detail={currentJob ? `Mode: ${currentJob.mode}` : 'No running sync job'}
           />
         </div>
-      </div>
-    </section>
+      }
+    />
   );
 }
 
@@ -1315,21 +1284,26 @@ function MarketDbHealthColumn({
 }: MarketDbHealthColumnProps) {
   return (
     <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-      <SectionLabel
+      <SectionHeading
         eyebrow="Health"
         title="Snapshot and jobs"
         description="The right side stays focused on read-only inspection: current coverage, validation notes, and live job progress."
       />
 
-      <Card className="border-border/70 bg-card/90 shadow-sm">
+      <Card className="border-border/70 bg-[var(--app-surface)] shadow-none">
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            <CardTitle className="text-xl">DuckDB Snapshot</CardTitle>
+          <SectionEyebrow>Snapshot</SectionEyebrow>
+          <div className="mt-1 flex items-start gap-3">
+            <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+              <Database className="h-5 w-5" />
+            </div>
+            <div className="space-y-1">
+              <CardTitle className="text-xl tracking-tight">DuckDB Snapshot</CardTitle>
+              <CardDescription>
+                Current local source-of-truth status from FastAPI (`/api/db/stats`, `/api/db/validate`).
+              </CardDescription>
+            </div>
           </div>
-          <CardDescription>
-            Current local source-of-truth status from FastAPI (`/api/db/stats`, `/api/db/validate`).
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <SnapshotStatus
@@ -1345,7 +1319,7 @@ function MarketDbHealthColumn({
 
       {currentJob ? (
         <SyncStatusCard
-          className="border-border/70 bg-card/90 shadow-sm"
+          className="border-border/70 bg-[var(--app-surface)] shadow-none"
           job={currentJob}
           fetchDetails={syncFetchDetails}
           isLoading={isPolling}
@@ -1482,7 +1456,7 @@ export function SettingsPage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.88fr)]">
         <div className="space-y-6">
-          <SectionLabel
+          <SectionHeading
             eyebrow="Operations"
             title="Sync and repair"
             description="The left side is for actions that change the local market DB: full syncs, warning repair, and targeted stock refresh."

@@ -50,7 +50,8 @@ describe('Header', () => {
     pathname = '/screening';
     render(<Header />);
 
-    expect(screen.getByRole('button', { name: 'Screening' })).toHaveClass('bg-primary/12');
+    expect(screen.getByRole('button', { name: 'Screening' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Charts' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders theme toggle', () => {

@@ -10,19 +10,19 @@
   --color-foreground: oklch(9% 0 0);
   --color-card: oklch(100% 0 0);
   --color-card-foreground: oklch(9% 0 0);
-  --color-primary: oklch(58% 0.19 261);
-  --color-primary-foreground: oklch(98% 0 210);
-  --color-secondary: oklch(96% 0 210);
-  --color-secondary-foreground: oklch(11% 0.08 222);
-  --color-muted: oklch(96% 0 210);
-  --color-muted-foreground: oklch(47% 0.03 215);
-  --color-accent: oklch(97% 0.01 214);
-  --color-accent-foreground: oklch(11% 0.08 222);
+  --color-primary: oklch(54% 0.1 244);
+  --color-primary-foreground: oklch(99% 0 0);
+  --color-secondary: oklch(97% 0.004 248);
+  --color-secondary-foreground: oklch(19% 0.012 248);
+  --color-muted: oklch(97% 0.004 248);
+  --color-muted-foreground: oklch(46% 0.012 248);
+  --color-accent: oklch(95% 0.007 248);
+  --color-accent-foreground: oklch(18% 0.015 248);
   --color-destructive: oklch(60% 0.15 0);
   --color-destructive-foreground: oklch(98% 0 210);
-  --color-border: oklch(91% 0.03 214);
-  --color-input: oklch(91% 0.03 214);
-  --color-ring: oklch(58% 0.19 261);
+  --color-border: oklch(88% 0.008 248);
+  --color-input: oklch(88% 0.008 248);
+  --color-ring: oklch(54% 0.1 244);
   --color-popover: oklch(100% 0 0);
   --color-popover-foreground: oklch(9% 0 0);
 
@@ -37,26 +37,79 @@
 
 /* ダークモード時の変数オーバーライド */
 @layer theme {
+  :root {
+    --app-font-sans:
+      "SF Pro Text", "SF Pro Display", "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+    --app-font-mono:
+      "SF Mono", "Monaco", "Cascadia Mono", "Roboto Mono", "Consolas", monospace;
+    --app-surface: color-mix(in srgb, var(--color-card) 96%, var(--color-background) 4%);
+    --app-surface-muted: color-mix(in srgb, var(--color-muted) 74%, var(--color-background) 26%);
+    --app-surface-emphasis: color-mix(in srgb, var(--color-primary) 10%, var(--color-card) 90%);
+    --app-border-strong: color-mix(in srgb, var(--color-border) 88%, transparent);
+    --app-border-soft: color-mix(in srgb, var(--color-border) 62%, transparent);
+    --app-shadow: 0 14px 36px color-mix(in srgb, var(--color-foreground) 5%, transparent);
+    --app-shadow-soft: 0 8px 20px color-mix(in srgb, var(--color-foreground) 3%, transparent);
+    --app-transition:
+      background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease,
+      transform 160ms ease;
+  }
+
   .dark {
     --color-background: oklch(5% 0.01 222);
     --color-foreground: oklch(98% 0 210);
     --color-card: oklch(5% 0.01 222);
     --color-card-foreground: oklch(98% 0 210);
-    --color-secondary: oklch(18% 0.03 217);
+    --color-primary: oklch(72% 0.09 244);
+    --color-secondary: oklch(16% 0.01 248);
     --color-secondary-foreground: oklch(98% 0 210);
-    --color-muted: oklch(18% 0.03 217);
-    --color-muted-foreground: oklch(85% 0.02 215);
-    --color-accent: oklch(18% 0.03 217);
+    --color-muted: oklch(16% 0.01 248);
+    --color-muted-foreground: oklch(76% 0.01 248);
+    --color-accent: oklch(18% 0.012 248);
     --color-accent-foreground: oklch(98% 0 210);
     --color-destructive: oklch(31% 0.08 0);
-    --color-border: oklch(18% 0.03 217);
-    --color-input: oklch(18% 0.03 217);
+    --color-border: oklch(24% 0.012 248);
+    --color-input: oklch(24% 0.012 248);
     --color-popover: oklch(5% 0.01 222);
     --color-popover-foreground: oklch(98% 0 210);
+    --app-surface: color-mix(in srgb, var(--color-card) 92%, transparent);
+    --app-surface-muted: color-mix(in srgb, var(--color-muted) 78%, transparent);
+    --app-surface-emphasis: color-mix(in srgb, var(--color-primary) 18%, var(--color-card) 82%);
+    --app-border-strong: color-mix(in srgb, var(--color-border) 96%, transparent);
+    --app-border-soft: color-mix(in srgb, var(--color-border) 72%, transparent);
+    --app-shadow: 0 20px 48px color-mix(in srgb, black 34%, transparent);
+    --app-shadow-soft: 0 10px 24px color-mix(in srgb, black 24%, transparent);
   }
 }
 
 @layer components {
+  .app-shell {
+    background:
+      radial-gradient(circle at top left, color-mix(in srgb, var(--color-primary) 5%, transparent) 0%, transparent 34%),
+      linear-gradient(180deg, color-mix(in srgb, var(--color-muted) 18%, var(--color-background)) 0%, var(--color-background) 26%);
+  }
+
+  .app-panel {
+    background: var(--app-surface);
+    border: 1px solid var(--app-border-strong);
+    box-shadow: var(--app-shadow-soft);
+  }
+
+  .app-panel-muted {
+    background: var(--app-surface-muted);
+    border: 1px solid var(--app-border-soft);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+  }
+
+  .app-panel-emphasis {
+    background: var(--app-surface-emphasis);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 16%, var(--app-border-strong));
+    box-shadow: var(--app-shadow-soft);
+  }
+
+  .app-interactive {
+    transition: var(--app-transition);
+  }
+
   .glass-panel {
     background: color-mix(in srgb, var(--color-card) 92%, transparent);
     backdrop-filter: blur(8px);
@@ -105,15 +158,23 @@
   }
   
   body {
-    background:
-      radial-gradient(circle at top, color-mix(in srgb, var(--color-primary) 6%, transparent) 0%, transparent 28%),
-      linear-gradient(180deg, color-mix(in srgb, var(--color-muted) 50%, var(--color-background)) 0%, var(--color-background) 100%);
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--app-font-sans);
     font-feature-settings: "rlig" 1, "calt" 1;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   
   html {
     scroll-behavior: smooth;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--app-font-mono);
   }
 }

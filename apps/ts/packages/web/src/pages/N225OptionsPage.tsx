@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PageIntro, PageIntroMetaList } from '@/components/Layout/Workspace';
 import {
   N225OptionsChainCard,
   N225OptionsDetailCard,
@@ -60,35 +61,23 @@ export function N225OptionsPage() {
     () => filteredItems.find((item) => getOptionRowKey(item) === selectedRowKey) ?? null,
     [filteredItems, selectedRowKey]
   );
+  const introMetaItems = [
+    { label: 'Resolved Date', value: data?.resolvedDate ?? '-' },
+    { label: 'Requested Date', value: data?.requestedDate ?? 'auto' },
+    { label: 'Source Calls', value: data?.sourceCallCount?.toString() ?? '-' },
+  ];
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="rounded-2xl gradient-primary p-6 text-white shadow-lg shadow-primary/20">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.24em] text-white/70">Derivatives Explorer</p>
-            <h1 className="mt-2 text-3xl font-semibold">N225 Options</h1>
-            <p className="mt-2 max-w-3xl text-sm text-white/80">
-              Explore the Nikkei 225 options chain from the local DuckDB market snapshot, with URL-synced filters and
-              backend-managed latest-date resolution.
-            </p>
-          </div>
-          <div className="grid gap-2 text-sm text-white/90">
-            <div>
-              <span className="font-medium">Resolved Date:</span> {data?.resolvedDate ?? '-'}
-            </div>
-            <div>
-              <span className="font-medium">Requested Date:</span> {data?.requestedDate ?? 'auto'}
-            </div>
-            <div>
-              <span className="font-medium">Source Calls:</span> {data?.sourceCallCount ?? '-'}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col gap-6 p-6">
+      <PageIntro
+        eyebrow="Derivatives"
+        title="N225 Options"
+        description="Inspect the local Nikkei 225 options chain from DuckDB with URL-synced filters and backend-managed date resolution."
+        meta={<PageIntroMetaList items={introMetaItems} />}
+      />
 
       {error instanceof ApiError && error.status === 404 ? (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           Local N225 options data is not available yet. Run Market DB sync to ingest `options_225_data`.{' '}
           <a href="/market-db" className="font-medium underline underline-offset-4">
             Open Market DB
@@ -98,8 +87,8 @@ export function N225OptionsPage() {
 
       <N225OptionsSummaryGrid data={data} filteredSummary={filteredSummary} />
 
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_340px]">
-        <aside>
+      <div className="grid gap-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)_minmax(300px,340px)]">
+        <aside className="space-y-4">
           <N225OptionsFiltersCard
             date={date}
             putCall={putCall}
@@ -139,7 +128,7 @@ export function N225OptionsPage() {
           />
         </section>
 
-        <aside>
+        <aside className="space-y-4">
           <N225OptionsDetailCard selectedItem={selectedItem} />
         </aside>
       </div>

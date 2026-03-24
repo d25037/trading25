@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
 
@@ -34,9 +34,9 @@ function parseFetchProgressInfo(message: string): FetchProgressInfo {
 
 function getMethodBadgeClass(method: FetchProgressInfo['method']): string {
   if (method === 'BULK') {
-    return 'bg-emerald-500/15 text-emerald-700';
+    return 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300';
   }
-  return 'bg-blue-500/15 text-blue-700';
+  return 'bg-blue-500/12 text-blue-700 dark:text-blue-300';
 }
 
 function StatusIcon({ status }: { status: SyncJobResponse['status'] }) {
@@ -84,8 +84,10 @@ function FetchInfoRow({ endpoint, method }: FetchProgressInfo) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="text-muted-foreground">Fetch</span>
-      {method && <span className={`rounded px-2 py-0.5 font-medium ${getMethodBadgeClass(method)}`}>{method}</span>}
-      {endpoint && <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{endpoint}</code>}
+      {method && (
+        <span className={`rounded-full px-2 py-0.5 font-medium ${getMethodBadgeClass(method)}`}>{method}</span>
+      )}
+      {endpoint && <code className="rounded-md bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[11px]">{endpoint}</code>}
     </div>
   );
 }
@@ -96,10 +98,10 @@ function LatestFetchDetailCard({ detail }: { detail: SyncFetchDetail | null | un
   }
 
   return (
-    <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+    <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--app-surface-muted)] p-3 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground">Detail</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{detail.eventType}</span>
+        <span className="rounded-md bg-background/80 px-1.5 py-0.5 uppercase">{detail.eventType}</span>
         <span>{new Date(detail.timestamp).toLocaleTimeString()}</span>
       </div>
       {(detail.reason || detail.reasonDetail) && (
@@ -126,7 +128,7 @@ function RecentFetchEvents({ items }: { items: SyncFetchDetail[] }) {
   }
 
   return (
-    <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+    <div className="space-y-1 rounded-xl border border-border/70 bg-[var(--app-surface-muted)] p-3 text-xs">
       <p className="text-muted-foreground">Recent Fetch Events</p>
       {items.map((item) => {
         const displayMethod = toDisplayMethod(item.method) ?? 'REST';
@@ -135,9 +137,9 @@ function RecentFetchEvents({ items }: { items: SyncFetchDetail[] }) {
             key={`${item.timestamp}-${item.stage}-${item.endpoint}-${item.eventType}`}
             className="flex flex-wrap items-center gap-2"
           >
-            <span className="rounded bg-muted px-1 py-0.5 uppercase">{item.eventType}</span>
-            <span className={`rounded px-1 py-0.5 ${getMethodBadgeClass(displayMethod)}`}>{displayMethod}</span>
-            <code className="rounded bg-muted px-1 py-0.5">{item.endpoint}</code>
+            <span className="rounded-md bg-background/80 px-1 py-0.5 uppercase">{item.eventType}</span>
+            <span className={`rounded-full px-1.5 py-0.5 ${getMethodBadgeClass(displayMethod)}`}>{displayMethod}</span>
+            <code className="rounded-md bg-background/80 px-1 py-0.5">{item.endpoint}</code>
             <span className="text-muted-foreground">{item.stage}</span>
           </div>
         );
@@ -169,9 +171,9 @@ function ActiveProgressSection({
         <span className="text-muted-foreground">{progress.stage}</span>
         <span className="font-medium">{progress.percentage.toFixed(1)}%</span>
       </div>
-      <div className="h-2 w-full rounded-full bg-secondary">
+      <div className="h-2 w-full rounded-full bg-[var(--app-surface-muted)]">
         <div
-          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+          className="h-full rounded-full bg-primary transition-all duration-300"
           style={{ width: `${progress.percentage}%` }}
         />
       </div>
@@ -277,14 +279,20 @@ export function SyncStatusCard({
   const recentFetchDetails = fetchDetails?.items.slice(-5).reverse() ?? [];
 
   return (
-    <Card className={cn(className)}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+    <Surface className={cn('overflow-hidden', className)}>
+      <div className="border-b border-border/70 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-2">
-            <StatusIcon status={job.status} />
-            <CardTitle className="text-lg">
-              <StatusLabel status={job.status} />
-            </CardTitle>
+            <div>
+              <SectionEyebrow>Live Job</SectionEyebrow>
+              <div className="mt-2 flex items-center gap-2">
+                <StatusIcon status={job.status} />
+                <h3 className="text-lg font-semibold tracking-tight text-foreground">
+                  <StatusLabel status={job.status} />
+                </h3>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">Mode: {job.mode}</p>
+            </div>
           </div>
           {isActive && (
             <Button variant="outline" size="sm" onClick={onCancel} disabled={isCancelling || isLoading}>
@@ -292,9 +300,8 @@ export function SyncStatusCard({
             </Button>
           )}
         </div>
-        <CardDescription>Mode: {job.mode}</CardDescription>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="p-5">
         <ActiveProgressSection
           isActive={isActive}
           progress={progress}
@@ -305,7 +312,7 @@ export function SyncStatusCard({
         <CompletedResultSection mode={job.mode} status={job.status} result={job.result} />
         <SyncErrorSection status={job.status} error={job.error} />
         <CancelledSection status={job.status} />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

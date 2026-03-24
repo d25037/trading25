@@ -158,6 +158,7 @@ describe('N225OptionsPage', () => {
     render(<N225OptionsPage />);
 
     expect(screen.getByRole('heading', { name: 'N225 Options' })).toBeInTheDocument();
+    expect(screen.getByText('Resolved Date')).toBeInTheDocument();
     expect(screen.getByText('130060018')).toBeInTheDocument();
     expect(screen.getAllByText('130060019').length).toBeGreaterThan(0);
     expect(screen.getByText('Filtered Contracts')).toBeInTheDocument();
