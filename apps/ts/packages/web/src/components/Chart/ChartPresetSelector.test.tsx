@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import * as React from 'react';
+import type * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartPresetSelector } from './ChartPresetSelector';
 
@@ -44,7 +44,7 @@ vi.mock('@/components/ui/select', async () => {
 
   function SelectTrigger({ children }: { children: React.ReactNode }) {
     return (
-      <button type="button" role="combobox" aria-label="Chart preset">
+      <button type="button" role="combobox" aria-expanded="true" aria-label="Chart preset">
         {children}
       </button>
     );

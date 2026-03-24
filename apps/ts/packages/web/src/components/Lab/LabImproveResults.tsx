@@ -35,8 +35,8 @@ export function LabImproveResults({ result }: LabImproveResultsProps) {
       )}
 
       <div className="space-y-2">
-        {allImprovements.map((item, index) => (
-          <Card key={`${item.improvement_type}-${item.target}-${index}`}>
+        {allImprovements.map((item) => (
+          <Card key={`${item.improvement_type}-${item.target}-${item.signal_name}-${item.applied}-${item.reason}`}>
             <CardHeader className="pb-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-sm">{item.improvement_type}</CardTitle>
