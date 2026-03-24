@@ -251,19 +251,22 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     _write_manifest_v2(snapshot_dir, name)
 
 
-@pytest.fixture
-def test_dataset_dir(tmp_path):
+@pytest.fixture(scope="module")
+def test_dataset_dir(tmp_path_factory):
     """テスト用の DuckDB snapshot ディレクトリ"""
-    _build_snapshot(Path(tmp_path), "test-market")
+    tmp_path = tmp_path_factory.mktemp("dataset-data-routes")
+    _build_snapshot(tmp_path, "test-market")
     return str(tmp_path)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def client(test_dataset_dir: str):
     """テスト用 FastAPI クライアント"""
     app = create_app()
     app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
-    return TestClient(app, raise_server_exceptions=False)
+    test_client = TestClient(app, raise_server_exceptions=False)
+    yield test_client
+    test_client.close()
 
 
 class TestDatasetDataRoutes:

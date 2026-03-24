@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,9 +20,10 @@ from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
 
 
-@pytest.fixture
-def market_db_path(tmp_path):
-    db_path = os.path.join(str(tmp_path), "market.duckdb")
+@pytest.fixture(scope="module")
+def market_db_template_path(tmp_path_factory):
+    tmp_path = tmp_path_factory.mktemp("db-sync-routes")
+    db_path = os.path.join(str(tmp_path), "market-template.duckdb")
     db = MarketDb(db_path, read_only=False)
     db.upsert_topix_data([
         {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
@@ -30,6 +32,13 @@ def market_db_path(tmp_path):
     db.set_sync_metadata("init_completed", "true")
     db.set_sync_metadata("last_sync_date", "2024-01-06T10:00:00")
     db.close()
+    return db_path
+
+
+@pytest.fixture
+def market_db_path(tmp_path, market_db_template_path: str):
+    db_path = os.path.join(str(tmp_path), "market.duckdb")
+    shutil.copyfile(market_db_template_path, db_path)
     return db_path
 
 

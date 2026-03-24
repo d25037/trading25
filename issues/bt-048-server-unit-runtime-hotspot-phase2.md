@@ -1,7 +1,7 @@
 ---
 id: bt-048
 title: "server unit test の残 hotspot を phase2 で削減"
-status: open
+status: in-progress
 priority: medium
 labels: [bt, testing, performance]
 project: bt
@@ -24,20 +24,26 @@ parent: null
 - この環境では `BT_PYTEST_FAST=1 ./scripts/bt-pytest.sh tests/unit/server` の広域計測が無音のまま長引くため、次フェーズでは chunk ごとの durations 計測で詰める方が安全である。
 
 ## 受け入れ条件
-- [ ] `tests/unit/server` の残 hotspot を chunk 単位で棚卸しし、上位ファイルと主因を issue に記録する。
-- [ ] 少なくとも 1 つ以上の残 hotspot ファイルで、共有 fixture 化または service/domain 直呼びへの置換を実施する。
-- [ ] 変更対象の before/after runtime をファイル単位または subset 単位で比較し、回帰確認を残す。
-- [ ] `bt-047` で整備した `fast` / `slow` / xdist 保留方針と矛盾しない形で進める。
+- [x] `tests/unit/server` の残 hotspot を chunk 単位で棚卸しし、上位ファイルと主因を issue に記録する。
+- [x] 少なくとも 1 つ以上の残 hotspot ファイルで、共有 fixture 化または service/domain 直呼びへの置換を実施する。
+- [x] 変更対象の before/after runtime をファイル単位または subset 単位で比較し、回帰確認を残す。
+- [x] `bt-047` で整備した `fast` / `slow` / xdist 保留方針と矛盾しない形で進める。
 
 ## 実施内容
-- [ ] `tests/unit/server` を route/service/db などの chunk に分けて durations を再計測する。
-- [ ] `create_app()` / `TestClient` / 一時 DB 作成を毎テストで繰り返している fixture を候補抽出する。
-- [ ] 不変な app/schema/market fixture を module 共有に寄せられる箇所から順に最適化する。
+- [x] `tests/unit/server` を route/service/db などの chunk に分けて durations を再計測する。
+- [x] `create_app()` / `TestClient` / 一時 DB 作成を毎テストで繰り返している fixture を候補抽出する。
+- [x] 不変な app/schema/market fixture を module 共有に寄せられる箇所から順に最適化する。
 - [ ] HTTP 起動が不要なテストは service/domain 直呼びへ移せるかを確認する。
 - [ ] 必要なら `apps/bt/docs/test-runtime.md` に新しい hotspot 知見を追記する。
 
 ## 結果
-- 未着手
+- 2026-03-24: chunk ごとの durations を再計測した。`tests/unit/server/routes` は `293 passed in 27.14s`、`tests/unit/server/services` は `606 passed in 10.36s`、`tests/unit/server/db -m 'not slow'` は `248 passed, 1 deselected in 5.16s`、`tests/unit/server/test_*.py` は `480 passed in 42.50s` で、残 hotspot は route/top-level 側に偏っていることを確認した。
+- 2026-03-24: `tests/unit/server/test_routes_dataset_data.py` を最適化対象として選び、read-only な dataset snapshot bundle と `TestClient` を module 共有 fixture に寄せた。
+- 2026-03-24: `tests/unit/server/test_routes_dataset_data.py` の実行時間は `26 passed in 5.59s` から `26 passed in 0.51s` まで短縮し、重い setup がほぼ 1 回分に集約されることを確認した。
+- 2026-03-24: `tests/unit/server/routes/test_jquants_proxy.py` も最適化対象として選び、J-Quants env と `TestClient` 初期化を module 共有 fixture に寄せた。
+- 2026-03-24: `tests/unit/server/routes/test_jquants_proxy.py` の実行時間は `18 passed in 3.52s` から `18 passed in 0.32s` まで短縮した。あわせて `test_jquants_proxy.py + test_routes_dataset_data.py` の subset で `44 passed in 0.59s` を確認した。
+- 2026-03-24: `tests/unit/server/test_routes_db_sync.py` は mutable DB を共有しない方針を維持し、market DB を毎回生成する代わりに module-scope template DB を 1 回作成して各テストでコピーする形へ変更した。
+- 2026-03-24: `tests/unit/server/test_routes_db_sync.py` の実行時間は `25 passed in 3.09s` から `25 passed in 2.62s` へ短縮した。`test_jquants_proxy.py + test_routes_dataset_data.py + test_routes_db_sync.py` の subset では `69 passed in 3.13s` を確認した。
 
 ## 補足
 - `pytest-xdist` 導入可否の再検討は、この issue の主目的ではない。
