@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Filter } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ModeSwitcherPanel,
+  PageIntroMetaList,
   SectionEyebrow,
+  SegmentedTabs,
   SplitLayout,
   SplitMain,
   SplitSidebar,
@@ -25,7 +26,7 @@ import {
   useScreeningResult,
 } from '@/hooks/useScreening';
 import { ApiError } from '@/lib/api-client';
-import { unionMarkets } from '@/lib/marketUtils';
+import { formatMarketsLabel, unionMarkets } from '@/lib/marketUtils';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
@@ -169,14 +170,67 @@ function useSanitizedScreeningParams(
   }, [allowedStrategies, entryDecidability, params, setParams]);
 }
 
+function getScreeningModeLabel(entryDecidability: EntryDecidability): string {
+  return entryDecidability === 'requires_same_session_observation'
+    ? 'Requires In-Session Observation'
+    : 'Pre-Open Decidable';
+}
+
+function resolveScreeningMarketsLabel(markets: string | undefined, autoMarkets: string[]): string {
+  if (markets) {
+    return formatMarketsLabel(markets.split(','));
+  }
+
+  const autoLabel = formatMarketsLabel(autoMarkets);
+  return autoLabel === 'Auto' ? 'Auto' : `Auto (${autoLabel})`;
+}
+
+function useObservedElementHeight<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return;
+    }
+
+    const updateHeight = () => {
+      const nextHeight = Math.round(element.getBoundingClientRect().height);
+      setHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return [ref, height] as const;
+}
+
 interface ScreeningSidebarProps {
   activeSubTab: ScreeningSubTab;
   entryDecidability: EntryDecidability;
   screeningParams: ScreeningParams;
   screeningAutoMarkets: string[];
+  setActiveSubTab: (tab: ScreeningSubTab) => void;
   setScreeningParams: (params: ScreeningParams) => void;
   productionStrategies: string[];
   isLoadingStrategies: boolean;
+  handleRunScreening: () => Promise<void>;
+  screeningIsRunning: boolean;
+  screeningJob: ScreeningJobResponse | null;
+  handleCancelScreening: () => void;
+  cancelScreeningPending: boolean;
 }
 
 function ScreeningSidebar({
@@ -184,20 +238,67 @@ function ScreeningSidebar({
   entryDecidability,
   screeningParams,
   screeningAutoMarkets,
+  setActiveSubTab,
   setScreeningParams,
   productionStrategies,
   isLoadingStrategies,
+  handleRunScreening,
+  screeningIsRunning,
+  screeningJob,
+  handleCancelScreening,
+  cancelScreeningPending,
 }: ScreeningSidebarProps) {
   if (isScreeningSubTab(activeSubTab)) {
+    const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
+    const runButtonLabel =
+      entryDecidability === 'requires_same_session_observation'
+        ? 'Run In-Session Screening'
+        : 'Run Pre-Open Screening';
+
     return (
-      <ScreeningFilters
-        entryDecidability={entryDecidability}
-        params={screeningParams}
-        onChange={setScreeningParams}
-        strategyOptions={productionStrategies}
-        autoMarkets={screeningAutoMarkets}
-        strategiesLoading={isLoadingStrategies}
-      />
+      <div className="space-y-3">
+        <Surface className="p-3">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <SectionEyebrow>Workspace</SectionEyebrow>
+              <h2 className="text-sm font-semibold text-foreground">Screening Mode</h2>
+            </div>
+            <SegmentedTabs
+              items={subTabs}
+              value={activeSubTab}
+              onChange={setActiveSubTab}
+              className="flex-col"
+              itemClassName="h-8 justify-start rounded-lg px-3 py-1.5 text-xs"
+            />
+            {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
+            <Button
+              className="h-8 w-full"
+              aria-label={runButtonLabel}
+              onClick={() => void handleRunScreening()}
+              disabled={screeningIsRunning}
+            >
+              RUN
+            </Button>
+          </div>
+        </Surface>
+
+        {completedScreeningJob ? null : (
+          <ScreeningJobProgress
+            job={screeningJob}
+            onCancel={screeningIsRunning ? handleCancelScreening : undefined}
+            isCancelling={cancelScreeningPending}
+          />
+        )}
+
+        <ScreeningFilters
+          entryDecidability={entryDecidability}
+          params={screeningParams}
+          onChange={setScreeningParams}
+          strategyOptions={productionStrategies}
+          autoMarkets={screeningAutoMarkets}
+          strategiesLoading={isLoadingStrategies}
+        />
+      </div>
     );
   }
   return null;
@@ -206,11 +307,9 @@ function ScreeningSidebar({
 interface ScreeningMainContentProps {
   activeSubTab: ScreeningSubTab;
   entryDecidability: EntryDecidability;
-  handleRunScreening: () => Promise<void>;
   screeningIsRunning: boolean;
-  screeningJob: ScreeningJobResponse | null;
-  handleCancelScreening: () => void;
-  cancelScreeningPending: boolean;
+  selectedJobId: string | null;
+  resultsMinHeight?: number | null;
   screeningJobHistory: ScreeningJobResponse[];
   showScreeningJobHistory: boolean;
   onShowScreeningJobHistoryChange: (showHistory: boolean) => void;
@@ -228,11 +327,9 @@ interface ScreeningMainContentProps {
 function ScreeningMainContent({
   activeSubTab,
   entryDecidability,
-  handleRunScreening,
   screeningIsRunning,
-  screeningJob,
-  handleCancelScreening,
-  cancelScreeningPending,
+  selectedJobId,
+  resultsMinHeight,
   screeningJobHistory,
   showScreeningJobHistory,
   onShowScreeningJobHistoryChange,
@@ -247,46 +344,21 @@ function ScreeningMainContent({
   onStockClick,
 }: ScreeningMainContentProps) {
   if (isScreeningSubTab(activeSubTab)) {
-    const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
-    const runButtonLabel =
-      entryDecidability === 'requires_same_session_observation' ? 'Run In-Session Screening' : 'Run Pre-Open Screening';
-    const modeLabel =
-      entryDecidability === 'requires_same_session_observation'
-        ? 'Requires In-Session Observation'
-        : 'Pre-Open Decidable';
-
     return (
       <>
-        <Surface className="mb-4 flex flex-wrap items-center gap-3 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <SectionEyebrow>{modeLabel}</SectionEyebrow>
-            {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
-          </div>
-          <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
-            {runButtonLabel}
-          </Button>
-        </Surface>
-
-        {completedScreeningJob ? null : (
-          <ScreeningJobProgress
-            job={screeningJob}
-            onCancel={screeningIsRunning ? handleCancelScreening : undefined}
-            isCancelling={cancelScreeningPending}
-          />
-        )}
-
-        <ScreeningSummary
-          summary={screeningSummary}
-          markets={screeningMarkets}
-          recentDays={screeningRecentDays}
-          referenceDate={screeningReferenceDate}
-        />
         <ScreeningTable
           results={screeningResults}
           isLoading={screeningTableLoading}
           isFetching={screeningIsRunning}
           error={screeningError}
           onStockClick={onStockClick}
+          panelMinHeight={resultsMinHeight ?? undefined}
+        />
+        <ScreeningSummary
+          summary={screeningSummary}
+          markets={screeningMarkets}
+          recentDays={screeningRecentDays}
+          referenceDate={screeningReferenceDate}
         />
 
         <ScreeningJobHistoryTable
@@ -295,7 +367,7 @@ function ScreeningMainContent({
           isLoading={false}
           showHistory={showScreeningJobHistory}
           onShowHistoryChange={onShowScreeningJobHistoryChange}
-          selectedJobId={screeningJob?.job_id ?? null}
+          selectedJobId={selectedJobId}
           onSelectJob={onSelectScreeningJob}
         />
       </>
@@ -465,6 +537,7 @@ export function ScreeningPage() {
     pre_open_decidable: false,
     requires_same_session_observation: false,
   });
+  const [sidebarRef, sidebarHeight] = useObservedElementHeight<HTMLDivElement>();
 
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
   const preOpenProductionStrategies = selectStrategyNames(productionStrategies, isPreOpenScreeningStrategy);
@@ -506,6 +579,15 @@ export function ScreeningPage() {
   const activeScreeningAutoMarkets =
     activeEntryDecidability === 'requires_same_session_observation' ? inSessionAutoMarkets : preOpenAutoMarkets;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeEntryDecidability];
+  const selectedStrategyCount = parseCsvTokens(activeScreening.params.strategies).length;
+  const introMetaItems = [
+    { label: 'Mode', value: getScreeningModeLabel(activeEntryDecidability) },
+    {
+      label: 'Markets',
+      value: resolveScreeningMarketsLabel(activeScreening.params.markets, activeScreeningAutoMarkets),
+    },
+    { label: 'Scope', value: selectedStrategyCount > 0 ? `${selectedStrategyCount} selected` : 'All eligible' },
+  ];
 
   const handleStockClick = useCallback(
     (code: string, strategy?: string, matchedDate?: string) => {
@@ -531,31 +613,50 @@ export function ScreeningPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col p-4">
-      <ModeSwitcherPanel label="Screening Mode" items={subTabs} value={activeSubTab} onChange={setActiveSubTab} />
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
+      <Surface className="px-4 py-3">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-2">
+            <SectionEyebrow>Analytics Workspace</SectionEyebrow>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Screening</h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Run production screening and keep the result workspace ahead of setup details.
+              </p>
+            </div>
+          </div>
+          <PageIntroMetaList items={introMetaItems} className="gap-x-4 gap-y-2" />
+        </div>
+      </Surface>
 
-      <SplitLayout className="mt-4 gap-4">
-        <SplitSidebar className="w-64">
-          <ScreeningSidebar
-            activeSubTab={activeSubTab}
-            entryDecidability={activeEntryDecidability}
-            screeningParams={activeScreening.params}
-            screeningAutoMarkets={activeScreeningAutoMarkets}
-            setScreeningParams={activeScreening.setParams}
-            productionStrategies={activeScreening.allowedStrategies}
-            isLoadingStrategies={isLoadingStrategies}
-          />
+      <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch">
+        <SplitSidebar className="w-full lg:h-full lg:w-40 lg:overflow-auto xl:w-44 2xl:w-48">
+          <div ref={sidebarRef} className="h-full">
+            <ScreeningSidebar
+              activeSubTab={activeSubTab}
+              entryDecidability={activeEntryDecidability}
+              screeningParams={activeScreening.params}
+              screeningAutoMarkets={activeScreeningAutoMarkets}
+              setActiveSubTab={setActiveSubTab}
+              setScreeningParams={activeScreening.setParams}
+              productionStrategies={activeScreening.allowedStrategies}
+              isLoadingStrategies={isLoadingStrategies}
+              handleRunScreening={activeScreening.handleRun}
+              screeningIsRunning={activeScreening.isRunning}
+              screeningJob={activeScreening.job}
+              handleCancelScreening={activeScreening.handleCancel}
+              cancelScreeningPending={activeScreening.cancelPending}
+            />
+          </div>
         </SplitSidebar>
 
-        <SplitMain>
+        <SplitMain className="gap-3 lg:overflow-y-auto lg:pr-1">
           <ScreeningMainContent
             activeSubTab={activeSubTab}
             entryDecidability={activeEntryDecidability}
-            handleRunScreening={activeScreening.handleRun}
             screeningIsRunning={activeScreening.isRunning}
-            screeningJob={activeScreening.job}
-            handleCancelScreening={activeScreening.handleCancel}
-            cancelScreeningPending={activeScreening.cancelPending}
+            selectedJobId={activeScreening.job?.job_id ?? null}
+            resultsMinHeight={sidebarHeight}
             screeningJobHistory={activeScreening.history}
             showScreeningJobHistory={activeScreeningJobHistoryVisible}
             onShowScreeningJobHistoryChange={handleScreeningHistoryVisibilityChange}

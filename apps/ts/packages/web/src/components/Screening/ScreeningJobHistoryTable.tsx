@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
@@ -73,9 +74,10 @@ export function ScreeningJobHistoryTable({
   ];
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card/78 px-4 py-3 shadow-sm shadow-black/5">
+    <Surface className="px-3 py-3">
       <div className="flex items-center justify-between gap-4">
-        <div>
+        <div className="space-y-1">
+          <SectionEyebrow>History</SectionEyebrow>
           <h4 className="text-sm font-medium">Job History</h4>
           <p className="text-xs text-muted-foreground">{jobCount} saved runs for this mode.</p>
         </div>
@@ -106,6 +108,6 @@ export function ScreeningJobHistoryTable({
           Expand history only when you need to inspect prior runs, so the current results stay near the top.
         </p>
       )}
-    </section>
+    </Surface>
   );
 }

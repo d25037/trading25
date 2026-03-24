@@ -410,6 +410,9 @@ describe('ScreeningPage', () => {
   it('renders only screening tabs', () => {
     render(<ScreeningPage />);
 
+    expect(screen.getByRole('heading', { name: 'Screening' })).toBeInTheDocument();
+    expect(screen.getByText('Scope')).toBeInTheDocument();
+    expect(screen.getByText(/Run production screening and keep the result workspace ahead of setup details/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pre-Open Decidable' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Requires In-Session Observation' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Daily Ranking' })).not.toBeInTheDocument();

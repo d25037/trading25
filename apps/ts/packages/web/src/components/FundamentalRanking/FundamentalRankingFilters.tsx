@@ -1,5 +1,5 @@
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { MarketsSelect, NumberSelect } from '@/components/shared/filters';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
@@ -52,11 +52,13 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
     : 'Enabled only when EPS Condition is "Latest Forecast EPS > Recent FY Actual EPS".';
 
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Fundamental Ranking Filters</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Surface className="p-4">
+      <div className="space-y-1 pb-3">
+        <SectionEyebrow>Filter Rail</SectionEyebrow>
+        <h2 className="text-base font-semibold text-foreground">Fundamental Ranking Filters</h2>
+        <p className="text-xs text-muted-foreground">Refine market scope and the EPS condition used for the ratio view.</p>
+      </div>
+      <div className="space-y-3">
         <MarketsSelect
           value={selectedMarkets}
           onChange={(v) => updateParam('markets', v)}
@@ -101,7 +103,7 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
           id="fundamental-ranking-limit"
           label="Results per ranking"
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

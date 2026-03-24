@@ -1,5 +1,5 @@
 import { TrendingUp } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { getIndexCategorySortOrder, INDEX_CATEGORY_LABELS } from '@/lib/indexCategories';
@@ -16,8 +16,8 @@ interface IndexPerformanceTableProps {
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
-const INDEX_ROW_HEIGHT = 40;
-const INDEX_VIEWPORT_HEIGHT = 320;
+const INDEX_ROW_HEIGHT = 34;
+const INDEX_VIEWPORT_HEIGHT = 560;
 
 function formatIndexLevel(value: number): string {
   return value.toLocaleString('ja-JP', {
@@ -37,21 +37,21 @@ function IndexPerformanceRow({
 
   return (
     <tr
-      className="cursor-pointer border-b border-border/30 transition-colors hover:bg-accent/30"
+      className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
       onClick={() => onIndexClick(item.code)}
     >
-      <td className="p-2 font-medium">{item.code}</td>
-      <td className="p-2">
+      <td className="px-2 py-1.5 font-medium">{item.code}</td>
+      <td className="px-2 py-1.5">
         <div className="font-medium">{item.name}</div>
         <div className="text-[11px] text-muted-foreground">{INDEX_CATEGORY_LABELS[item.category] ?? item.category}</div>
       </td>
-      <td className="p-2 text-right tabular-nums">{formatIndexLevel(item.currentClose)}</td>
-      <td className="p-2 text-xs text-muted-foreground">{item.currentDate}</td>
-      <td className="p-2 text-right tabular-nums text-muted-foreground">{formatIndexLevel(item.baseClose)}</td>
-      <td className="p-2 text-xs text-muted-foreground">{item.baseDate}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatIndexLevel(item.currentClose)}</td>
+      <td className="px-2 py-1.5 text-xs text-muted-foreground">{item.currentDate}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{formatIndexLevel(item.baseClose)}</td>
+      <td className="px-2 py-1.5 text-xs text-muted-foreground">{item.baseDate}</td>
       <td
         className={cn(
-          'p-2 text-right font-medium tabular-nums',
+          'px-2 py-1.5 text-right font-medium tabular-nums',
           isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
         )}
       >
@@ -90,27 +90,24 @@ export function IndexPerformanceTable({
   const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;
 
   return (
-    <Card className="glass-panel overflow-hidden">
-      <CardHeader className="border-b border-border/30 py-3">
+    <Surface className="flex min-h-[24rem] flex-1 flex-col overflow-hidden">
+      <div className="space-y-1 border-b border-border/70 px-4 py-3">
+        <SectionEyebrow>Results</SectionEyebrow>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base">
+            <h2 className="text-base font-semibold text-foreground">
               Indices
               {rows.length > 0 ? (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">({rows.length})</span>
               ) : null}
-            </CardTitle>
+            </h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Baseline: {lookbackDays} trading sessions before each index close
             </p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent
-        className="overflow-auto p-0"
-        style={{ maxHeight: INDEX_VIEWPORT_HEIGHT + 56 }}
-        onScroll={virtual.onScroll}
-      >
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
         <DataStateWrapper
           isLoading={isLoading}
           error={error}
@@ -118,17 +115,18 @@ export function IndexPerformanceTable({
           emptyMessage="No index performance data available"
           emptySubMessage="Run index sync or choose a later date"
           emptyIcon={<TrendingUp className="h-8 w-8" />}
+          height="h-full min-h-[18rem]"
         >
           <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 border-b bg-background">
+            <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
               <tr>
-                <th className="w-20 p-2 text-left">Code</th>
-                <th className="p-2 text-left">Index</th>
-                <th className="w-28 p-2 text-right">Close</th>
-                <th className="w-28 p-2 text-left">Date</th>
-                <th className="w-28 p-2 text-right">Base Close</th>
-                <th className="w-28 p-2 text-left">Base Date</th>
-                <th className="w-24 p-2 text-right">{lookbackDays}D</th>
+                <th className="w-20 px-2 py-1.5 text-left">Code</th>
+                <th className="px-2 py-1.5 text-left">Index</th>
+                <th className="w-28 px-2 py-1.5 text-right">Close</th>
+                <th className="w-24 px-2 py-1.5 text-left">Date</th>
+                <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
+                <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
+                <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
               </tr>
             </thead>
             <tbody>
@@ -148,7 +146,7 @@ export function IndexPerformanceTable({
             </tbody>
           </table>
         </DataStateWrapper>
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

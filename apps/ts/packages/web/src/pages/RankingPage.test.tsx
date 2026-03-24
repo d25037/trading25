@@ -107,10 +107,12 @@ describe('RankingPage', () => {
   it('renders daily ranking by default', () => {
     render(<RankingPage />);
 
+    expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
+    expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
-    expect(screen.getByText('Ranking Summary')).toBeInTheDocument();
+    expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
   });
 
@@ -121,6 +123,7 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
     view.rerender(<RankingPage />);
 
+    expect(screen.getByText('Forecast / actual EPS')).toBeInTheDocument();
     expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
     expect(screen.getByText('Fundamental Ranking Summary')).toBeInTheDocument();
   });

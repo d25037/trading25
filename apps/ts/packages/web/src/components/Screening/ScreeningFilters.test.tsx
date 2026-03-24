@@ -195,6 +195,7 @@ describe('ScreeningFilters', () => {
     );
 
     expect(screen.getByText('2 strategies selected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'production/range_break_v15' })).toHaveAttribute('aria-pressed', 'true');
 
     await user.click(screen.getByRole('button', { name: 'production/range_break_v15' }));
     expect(onChange).toHaveBeenLastCalledWith({

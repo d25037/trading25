@@ -1,9 +1,10 @@
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, type MarketOption, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { canonicalizeMarkets, formatMarketsLabel } from '@/lib/marketUtils';
+import { cn } from '@/lib/utils';
 import type { EntryDecidability, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
@@ -118,11 +119,13 @@ export function ScreeningFilters({
   };
 
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Filters</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Surface className="p-4">
+      <div className="space-y-1 pb-3">
+        <SectionEyebrow>Filter Rail</SectionEyebrow>
+        <h2 className="text-base font-semibold text-foreground">Filters</h2>
+        <p className="text-xs text-muted-foreground">Choose market scope, strategies, and execution window before each run.</p>
+      </div>
+      <div className="space-y-3">
         <MarketsSelect
           value={selectedMarketsValue ?? AUTO_MARKETS_VALUE}
           onChange={(value) => updateParam('markets', value === AUTO_MARKETS_VALUE ? undefined : value)}
@@ -137,7 +140,7 @@ export function ScreeningFilters({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-6 px-2 text-[11px]"
+              className="h-6 rounded-lg px-2 text-[11px] text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground"
               onClick={() => updateParam('strategies', undefined)}
             >
               All {strategyGroupLabel}
@@ -148,7 +151,7 @@ export function ScreeningFilters({
           ) : strategyOptions.length === 0 ? (
             <p className="text-xs text-muted-foreground">No {strategyGroupLabel} strategies available</p>
           ) : (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1">
               {strategyOptions.map((strategyName) => {
                 const isSelected = selectedStrategies.includes(strategyName);
                 return (
@@ -156,8 +159,14 @@ export function ScreeningFilters({
                     key={strategyName}
                     type="button"
                     size="sm"
-                    variant={isSelected ? 'default' : 'outline'}
-                    className="h-7 px-2 text-[11px]"
+                    variant="ghost"
+                    aria-pressed={isSelected}
+                    className={cn(
+                      'h-6 rounded-lg border px-2 text-[10px]',
+                      isSelected
+                        ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground shadow-sm'
+                        : 'border-border/70 bg-background/80 text-muted-foreground hover:bg-[var(--app-surface-muted)] hover:text-foreground'
+                    )}
                     onClick={() => toggleStrategy(strategyName)}
                   >
                     {strategyName}
@@ -229,7 +238,7 @@ export function ScreeningFilters({
           id="screening-limit"
           label="Limit"
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

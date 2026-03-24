@@ -44,7 +44,8 @@ describe('FundamentalRankingTable', () => {
   it('switches tab and renders selected rows', async () => {
     const user = userEvent.setup();
     render(<FundamentalRankingTable rankings={rankings} isLoading={false} error={null} onStockClick={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'Ratio Low' }));
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: 'Ratio Low' }));
     expect(screen.getByText('Toshiba')).toBeInTheDocument();
   });
 

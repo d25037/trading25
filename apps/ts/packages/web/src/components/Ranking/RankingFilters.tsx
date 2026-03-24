@@ -1,5 +1,5 @@
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import type { RankingParams } from '@/types/ranking';
 
 const RANKING_MARKET_OPTIONS = [
@@ -39,11 +39,13 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
   };
 
   return (
-    <Card className="glass-panel">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Ranking Filters</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Surface className="p-4">
+      <div className="space-y-1 pb-3">
+        <SectionEyebrow>Filter Rail</SectionEyebrow>
+        <h2 className="text-base font-semibold text-foreground">Ranking Filters</h2>
+        <p className="text-xs text-muted-foreground">Adjust market scope, ranking window, and reference session.</p>
+      </div>
+      <div className="space-y-3">
         <MarketsSelect
           value={params.markets || 'prime'}
           onChange={(v) => updateParam('markets', v)}
@@ -72,7 +74,7 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           label="Period Days (High/Low)"
         />
         <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

@@ -53,7 +53,8 @@ describe('RankingTable', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: '30D High' }));
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: '30D High' }));
     expect(screen.getByText('Break %')).toBeInTheDocument();
   });
 

@@ -1,7 +1,7 @@
 import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ScreeningJobResponse } from '@/types/screening';
 
 interface ScreeningJobProgressProps {
@@ -38,7 +38,7 @@ function formatElapsedSeconds(seconds: number): string {
 
 export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps) {
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-[var(--app-surface-muted)] px-3 py-2 text-sm">
       <StatusIcon status={job.status} />
       <span className="font-medium">Screening Job: {job.status}</span>
     </div>
@@ -69,13 +69,16 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
   const progress = job.progress == null ? null : Math.round(job.progress * 100);
 
   return (
-    <Card className="border-border/70 bg-card/85 shadow-sm shadow-black/5">
-      <CardHeader className="px-4 py-3">
+    <Surface className="p-3">
+      <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <StatusIcon status={job.status} />
-            Screening Job: {job.status}
-          </CardTitle>
+          <div className="space-y-1">
+            <SectionEyebrow>Current Job</SectionEyebrow>
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <StatusIcon status={job.status} />
+              <span>Screening Job: {job.status}</span>
+            </div>
+          </div>
           {isActive && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground tabular-nums">{formatElapsedSeconds(elapsed)}</span>
@@ -87,16 +90,15 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
             </div>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-2 px-4 pb-4 pt-0">
+
         {isActive && (
           <>
-            <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--app-surface-muted)]">
               {progress == null ? (
-                <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
+                <div className="h-full rounded-full bg-primary animate-progress-indeterminate" />
               ) : (
                 <div
-                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  className="h-full rounded-full bg-primary transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 />
               )}
@@ -110,7 +112,7 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
 
         {job.status === 'failed' && <p className="text-xs text-red-500">{job.error ?? 'Screening failed'}</p>}
         {job.status === 'cancelled' && <p className="text-xs text-orange-500">Screening was cancelled.</p>}
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

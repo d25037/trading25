@@ -32,13 +32,13 @@ const toneClassName: Record<NonNullable<SummaryMetricItem['tone']>, string> = {
 
 export function SummaryMetrics({ items, className, columns = 4 }: SummaryMetricsProps) {
   return (
-    <div className={cn('mb-4 grid grid-cols-1 gap-3', columnsClassName[columns], className)}>
+    <div className={cn('grid grid-cols-1 gap-2', columnsClassName[columns], className)}>
       {items.map((item) => {
         const Icon = item.icon;
         return (
-          <Surface key={item.label} className="bg-card/90 px-4 py-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
+          <Surface key={item.label} className="bg-card/90 px-3 py-2.5">
+            <div className="flex items-start gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent text-muted-foreground">
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
