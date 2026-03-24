@@ -6,7 +6,9 @@ import importlib
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import time
+from collections.abc import Generator
 from typing import Any, cast
 
 import pytest
@@ -270,18 +272,37 @@ def _create_market_source_duckdb(base_dir: Path) -> Path:
     return source_path
 
 
-@pytest.fixture
-def test_dataset_dir(tmp_path: Path):
-    """テスト用のデータセットディレクトリ"""
-    _build_snapshot(Path(tmp_path), "test-market")
-    return str(tmp_path)
+@pytest.fixture(scope="module")
+def dataset_template_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    template_dir = tmp_path_factory.mktemp("dataset-routes-template")
+    _build_snapshot(template_dir, "test-market")
+    return template_dir
 
 
-@pytest.fixture
-def client(test_dataset_dir: str):
+@pytest.fixture(scope="module")
+def market_source_template_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return _create_market_source_duckdb(tmp_path_factory.mktemp("dataset-routes-market"))
+
+
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
-    app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
-    return TestClient(app, raise_server_exceptions=False)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+
+@pytest.fixture
+def test_dataset_dir(tmp_path: Path, dataset_template_dir: Path) -> str:
+    """テスト用のデータセットディレクトリ"""
+    dataset_dir = tmp_path / "datasets"
+    shutil.copytree(dataset_template_dir, dataset_dir)
+    return str(dataset_dir)
+
+
+@pytest.fixture
+def client(app_client: TestClient, test_dataset_dir: str) -> TestClient:
+    app_client.app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
+    return app_client
 
 
 class TestDatasetManagementRoutes:
@@ -375,10 +396,16 @@ class TestDatasetManagementRoutes:
         resp = client.delete("/api/dataset/nonexistent")
         assert resp.status_code == 404
 
-    def test_create_dataset_route_builds_valid_snapshot(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_create_dataset_route_builds_valid_snapshot(
+        self,
+        tmp_path: Path,
+        market_source_template_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         dataset_root = tmp_path / "datasets"
         dataset_root.mkdir(parents=True, exist_ok=True)
-        source_path = _create_market_source_duckdb(tmp_path)
+        source_path = tmp_path / "market.duckdb"
+        shutil.copyfile(market_source_template_path, source_path)
 
         app = create_app()
         with TestClient(app) as client:
@@ -404,7 +431,7 @@ class TestDatasetManagementRoutes:
                 job_payload = cast(dict[str, Any], job_resp.json())
                 if job_payload["status"] in {"completed", "failed", "cancelled"}:
                     break
-                time.sleep(0.02)
+                time.sleep(0.01)
 
             assert job_payload is not None
             assert job_payload["status"] == "completed"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,22 +23,27 @@ def _dataset_resolver(client: TestClient) -> Any:
     return _app_state(client).dataset_resolver
 
 
-@pytest.fixture
-def client() -> TestClient:
+@pytest.fixture(scope="module")
+def app_client() -> Generator[TestClient, None, None]:
     app = create_app()
+    with TestClient(app) as client:
+        yield client
 
+
+@pytest.fixture
+def client(app_client: TestClient) -> TestClient:
     # Mock dataset_resolver
     resolver = MagicMock()
     resolver.resolve.return_value = None
     resolver.list_datasets.return_value = []
     resolver.exists.return_value = False
     resolver.get_artifact_paths.return_value = []
-    app.state.dataset_resolver = resolver
+    app_client.app.state.dataset_resolver = resolver
 
     # Mock market reader
-    app.state.market_reader = MagicMock()
+    app_client.app.state.market_reader = MagicMock()
 
-    return TestClient(app)
+    return app_client
 
 
 # --- Create ---
