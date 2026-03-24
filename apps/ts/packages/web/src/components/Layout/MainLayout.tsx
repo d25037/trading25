@@ -7,9 +7,9 @@ interface MainLayoutProps {
 
 export function MainLayout({ children }: MainLayoutProps) {
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen min-h-0 flex-col bg-background">
       <Header />
-      <main className="flex-1 overflow-auto bg-gradient-to-br from-background via-background to-muted/20">
+      <main className="flex min-h-0 flex-1 overflow-auto bg-gradient-to-br from-background via-background to-muted/20">
         {children}
       </main>
     </div>
