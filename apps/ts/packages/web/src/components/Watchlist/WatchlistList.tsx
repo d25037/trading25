@@ -1,7 +1,7 @@
 import { ChevronRight, Eye, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {
   Dialog,
@@ -114,16 +114,16 @@ interface WatchlistListProps {
 
 function EmptyWatchlistState({ onSelect }: { onSelect: (id: number) => void }) {
   return (
-    <Card className="glass-panel">
-      <CardContent className="flex flex-col items-center justify-center py-8">
+    <Surface className="border border-dashed border-border/70 bg-transparent px-4 py-8">
+      <div className="flex flex-col items-center justify-center">
         <Eye className="h-12 w-12 text-muted-foreground mb-4" />
         <p className="text-muted-foreground text-center">No watchlists found</p>
         <p className="text-sm text-muted-foreground text-center mt-2 mb-4">
           Create your first watchlist to start monitoring stocks.
         </p>
         <CreateWatchlistDialog onSuccess={onSelect} />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }
 
@@ -141,8 +141,8 @@ function WatchlistListContent({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
+    <div className="space-y-2">
+      <div className="flex justify-end pb-1">
         <CreateWatchlistDialog onSuccess={onSelect} />
       </div>
       {watchlists.map((watchlist) => (
@@ -153,20 +153,26 @@ function WatchlistListContent({
           aria-label={`Select ${watchlist.name} watchlist`}
           aria-pressed={selectedId === watchlist.id}
           className={cn(
-            'w-full text-left p-4 rounded-xl transition-all duration-200',
-            'hover:scale-[1.01] active:scale-[0.99]',
-            selectedId === watchlist.id ? 'gradient-primary text-white shadow-lg' : 'glass-panel hover:bg-accent/50'
+            'w-full rounded-2xl border px-4 py-3 text-left transition-colors',
+            selectedId === watchlist.id
+              ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground shadow-sm'
+              : 'border-transparent bg-transparent text-foreground hover:border-border/60 hover:bg-[var(--app-surface-muted)]'
           )}
         >
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold truncate">{watchlist.name}</h3>
-              {watchlist.description && <p className="text-sm opacity-80 truncate">{watchlist.description}</p>}
-              <div className="flex gap-4 mt-2 text-sm opacity-70">
+              {watchlist.description && <p className="mt-1 text-sm text-muted-foreground truncate">{watchlist.description}</p>}
+              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
                 <span>{watchlist.stockCount} stocks</span>
               </div>
             </div>
-            <ChevronRight className="h-5 w-5 flex-shrink-0 ml-2" />
+            <ChevronRight
+              className={cn(
+                'ml-2 h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform',
+                selectedId === watchlist.id && 'translate-x-0.5 text-foreground'
+              )}
+            />
           </div>
         </button>
       ))}

@@ -2,9 +2,9 @@ import { useNavigate } from '@tanstack/react-router';
 import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
+import { CompactMetric, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {
   Dialog,
@@ -129,7 +129,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
               />
             </div>
           </div>
-          {addItem.error && <p className="text-sm text-destructive mb-4">{addItem.error.message}</p>}
+          {addItem.error && <p className="mb-4 text-sm text-destructive">{addItem.error.message}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
@@ -199,39 +199,39 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
   const removeItem = useRemoveWatchlistItem();
 
   return (
-    <tr className="border-b border-border/30 hover:bg-accent/30 transition-colors">
-      <td className="py-3 px-4">
+    <tr className="border-b border-border/50 transition-colors hover:bg-[var(--app-surface-muted)]">
+      <td className="px-4 py-3">
         <button
           type="button"
           onClick={() => onNavigateToChart(item.code)}
           aria-label={`View chart for ${item.code} ${item.companyName}`}
-          className="flex items-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors"
+          className="flex items-center gap-2 font-medium text-primary transition-colors hover:text-primary/80"
         >
           <TrendingUp className="h-4 w-4" />
           {item.code}
         </button>
       </td>
-      <td className="py-3 px-4">
+      <td className="px-4 py-3">
         <button
           type="button"
           onClick={() => onNavigateToChart(item.code)}
           aria-label={`View chart for ${item.companyName}`}
-          className="text-left hover:text-primary transition-colors"
+          className="text-left transition-colors hover:text-primary"
         >
           {item.companyName}
         </button>
       </td>
-      <td className="py-3 px-4 text-right tabular-nums">{price ? price.close.toLocaleString() : '-'}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{price ? price.close.toLocaleString() : '-'}</td>
       <td
-        className={`py-3 px-4 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
+        className={`px-4 py-3 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
       >
         {price?.changePercent != null
           ? `${price.changePercent >= 0 ? '+' : ''}${price.changePercent.toFixed(2)}%`
           : '-'}
       </td>
-      <td className="py-3 px-4 text-right tabular-nums">{price ? price.volume.toLocaleString() : '-'}</td>
-      <td className="py-3 px-4 text-muted-foreground text-sm">{item.memo ?? ''}</td>
-      <td className="py-3 px-2">
+      <td className="px-4 py-3 text-right tabular-nums">{price ? price.volume.toLocaleString() : '-'}</td>
+      <td className="px-4 py-3 text-sm text-muted-foreground">{item.memo ?? ''}</td>
+      <td className="px-2 py-3">
         <Button
           size="icon"
           variant="ghost"
@@ -259,29 +259,47 @@ function WatchlistTable({
   onNavigateToChart: (code: string) => void;
 }) {
   return (
-    <Card className="glass-panel overflow-hidden">
-      <CardHeader className="border-b border-border/30">
-        <CardTitle>Stocks ({items.length})</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
+    <Surface className="flex min-h-[26rem] flex-col overflow-hidden">
+      <div className="border-b border-border/60 px-5 py-4">
+        <SectionHeading
+          eyebrow="Results"
+          title="Tracked Stocks"
+          description="Monitor live prices, daily change, and memo context in one table."
+          actions={<div className="text-sm text-muted-foreground">{items.length} names</div>}
+        />
+      </div>
+
+      <div className="min-h-0 flex-1">
         {items.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground">
-            <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <div className="flex h-full flex-col items-center justify-center px-6 py-10 text-center text-muted-foreground">
+            <Eye className="mx-auto mb-4 h-12 w-12 opacity-50" />
             <p>No stocks in this watchlist</p>
-            <p className="text-sm mt-1">Click &quot;Add Stock&quot; above to add your first stock.</p>
+            <p className="mt-1 text-sm">Click &quot;Add Stock&quot; above to add your first stock.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="h-full overflow-auto">
             <table className="w-full">
-              <thead className="bg-muted/30">
+              <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className="py-3 px-4 text-left font-medium">Code</th>
-                  <th className="py-3 px-4 text-left font-medium">Company</th>
-                  <th className="py-3 px-4 text-right font-medium">Price</th>
-                  <th className="py-3 px-4 text-right font-medium">Change</th>
-                  <th className="py-3 px-4 text-right font-medium">Volume</th>
-                  <th className="py-3 px-4 text-left font-medium">Memo</th>
-                  <th className="py-3 px-2 text-center font-medium w-12" />
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Code
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Company
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Price
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Change
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-right text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Volume
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-4 py-3 text-left text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                    Memo
+                  </th>
+                  <th className="bg-[var(--app-surface-muted)] px-2 py-3 text-center text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground" />
                 </tr>
               </thead>
               <tbody>
@@ -298,8 +316,8 @@ function WatchlistTable({
             </table>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }
 
@@ -312,12 +330,12 @@ interface WatchlistDetailProps {
 
 function EmptySelectionState(): ReactNode {
   return (
-    <Card className="glass-panel">
-      <CardContent className="flex flex-col items-center justify-center py-16">
-        <Eye className="h-16 w-16 text-muted-foreground mb-4" />
-        <p className="text-muted-foreground text-lg">Select a watchlist to view details</p>
-      </CardContent>
-    </Card>
+    <Surface className="flex min-h-[24rem] items-center justify-center px-6 py-16">
+      <div className="flex flex-col items-center justify-center">
+        <Eye className="mb-4 h-16 w-16 text-muted-foreground" />
+        <p className="text-lg text-muted-foreground">Select a watchlist to view details</p>
+      </div>
+    </Surface>
   );
 }
 
@@ -344,25 +362,35 @@ function WatchlistDetailContent({
   const handleNavigateToChart = (code: string) => {
     void navigate({ to: '/charts', search: { symbol: code } });
   };
+  const memoCount = watchlist.items.filter((item) => item.memo?.trim()).length;
 
   return (
-    <div className="space-y-4">
-      <div className="px-6 py-4 gradient-primary rounded-xl">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-white">{watchlist.name}</h2>
-            {watchlist.description && <p className="text-white/80">{watchlist.description}</p>}
+    <div className="flex min-h-0 flex-col gap-3">
+      <Surface className="p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3">
+            <SectionEyebrow>Selected Watchlist</SectionEyebrow>
+            <div className="space-y-1">
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground">{watchlist.name}</h2>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                {watchlist.description || 'Keep monitored names close, then jump straight into prices and charts.'}
+              </p>
+            </div>
           </div>
-          <div className="text-right text-white">
-            <p className="text-sm opacity-80">Stocks</p>
-            <p className="text-2xl font-bold tabular-nums">{watchlist.items.length}</p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <AddStockDialog watchlistId={watchlist.id} />
+            <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-4">
-          <AddStockDialog watchlistId={watchlist.id} />
-          <DeleteWatchlistDialog watchlist={watchlist} onSuccess={onWatchlistDeleted} />
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <CompactMetric label="Stocks" value={watchlist.items.length.toLocaleString()} detail="Tracked names" />
+          <CompactMetric label="Live Prices" value={priceMap.size.toLocaleString()} detail="Symbols with current data" />
+          <CompactMetric label="Memos" value={memoCount.toLocaleString()} detail="Names with notes" />
+          <CompactMetric label="Created" value={watchlist.createdAt.slice(0, 10)} detail="Watchlist record" />
         </div>
-      </div>
+      </Surface>
 
       <WatchlistTable
         items={watchlist.items}
