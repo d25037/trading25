@@ -47,6 +47,8 @@
     "dompurify": "3.3.2",
     "minimatch": "5.1.8",
     "monaco-editor": "0.55.1",
-    "rollup": "4.59.0"
+    "rollup": "4.59.0",
+    "yaml": "2.8.3",
+    "picomatch": "4.0.4"
   }
 }

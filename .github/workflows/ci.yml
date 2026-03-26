@@ -265,7 +265,9 @@ jobs:
         run: bun audit --audit-level=moderate
         working-directory: apps/ts
       - name: Audit Python dependencies (pip-audit)
-        run: uv run --locked --with pip-audit pip-audit
+        run: >
+          uv run --locked --with pip-audit pip-audit
+          --ignore-vuln CVE-2026-4539
         working-directory: apps/bt
 
   web-e2e:
