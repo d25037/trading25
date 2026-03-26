@@ -3,15 +3,16 @@ Parameter Optimization Endpoints
 """
 
 import os
-from functools import reduce
-from operator import mul
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-from ruamel.yaml import YAML
 from sse_starlette.sse import EventSourceResponse
 
+from src.domains.optimization.grid_validation import (
+    format_grid_validation_issues,
+    validate_grid_yaml_content,
+)
 from src.shared.paths.resolver import get_all_optimization_grid_dirs, get_optimization_results_dir
 from src.entrypoints.http.routes.html_file_utils import (
     delete_html_file,
@@ -109,6 +110,8 @@ async def run_optimization(request: OptimizationRequest) -> OptimizationJobRespo
             engine_policy=request.engine_policy,
         )
         return _build_optimization_job_response(job_id)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("最適化サブミットエラー")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -163,28 +166,8 @@ def _parse_grid_yaml(content: str) -> tuple[int, int]:
     Returns:
         (param_count, combinations)
     """
-    ruamel_yaml = YAML()
-    data = ruamel_yaml.load(content)
-    if not data or "parameter_ranges" not in data:
-        return 0, 0
-
-    ranges = data["parameter_ranges"]
-
-    def count_params(d: dict, prefix: str = "") -> list[int]:
-        """ネストされたパラメータ範囲から各パラメータの値数を取得"""
-        counts: list[int] = []
-        for key, value in d.items():
-            if isinstance(value, list):
-                counts.append(len(value))
-            elif isinstance(value, dict):
-                counts.extend(count_params(value, f"{prefix}{key}."))
-        return counts
-
-    param_counts = count_params(ranges)
-    param_count = len(param_counts)
-    combinations = reduce(mul, param_counts, 1) if param_counts else 0
-
-    return param_count, combinations
+    validation = validate_grid_yaml_content(content)
+    return validation.param_count, validation.combinations
 
 
 def _find_grid_file(strategy_name: str) -> Path | None:
@@ -271,14 +254,14 @@ async def get_grid_config(strategy: str) -> OptimizationGridConfig:
 async def save_grid_config(strategy: str, request: OptimizationGridSaveRequest) -> OptimizationGridSaveResponse:
     """Grid設定を保存"""
     validate_path_param(strategy, "戦略名")
-    # YAML検証
-    try:
-        param_count, combinations = _parse_grid_yaml(request.content)
-    except Exception as e:
+    validation = validate_grid_yaml_content(request.content)
+    if not validation.valid:
         raise HTTPException(
             status_code=400,
-            detail=f"無効なYAML: {e}",
-        ) from e
+            detail=f"無効なGrid設定: {format_grid_validation_issues(validation.errors)}",
+        )
+
+    param_count, combinations = validation.param_count, validation.combinations
 
     grid_path = _get_grid_write_path(strategy)
 

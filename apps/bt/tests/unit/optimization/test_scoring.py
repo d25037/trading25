@@ -200,3 +200,28 @@ class TestNormalizeAndRecalculateScores:
         result = normalize_and_recalculate_scores(results, {"sharpe_ratio": 1.0})
         assert result[0]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(0.0)
         assert result[1]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(1.0)
+
+    def test_missing_metric_is_treated_as_zero(self):
+        results = [
+            {"params": {"a": 1}, "metric_values": {"total_return": 0.1}},
+            {
+                "params": {"a": 2},
+                "metric_values": {"sharpe_ratio": 1.0, "total_return": 0.2},
+            },
+        ]
+        result = normalize_and_recalculate_scores(results, {"sharpe_ratio": 1.0})
+        assert result[0]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(0.0)
+        assert result[0]["score"] == pytest.approx(0.0)
+        assert result[1]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(1.0)
+        assert result[1]["score"] == pytest.approx(1.0)
+
+    def test_non_mapping_metric_values_is_treated_as_zero(self):
+        results = [
+            {"params": {"a": 1}, "metric_values": []},
+            {"params": {"a": 2}, "metric_values": {"sharpe_ratio": 2.0}},
+        ]
+        result = normalize_and_recalculate_scores(results, {"sharpe_ratio": 1.0})
+        assert result[0]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(0.0)
+        assert result[0]["score"] == pytest.approx(0.0)
+        assert result[1]["normalized_metrics"]["sharpe_ratio"] == pytest.approx(1.0)
+        assert result[1]["score"] == pytest.approx(1.0)

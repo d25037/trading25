@@ -14,6 +14,7 @@ from src.domains.optimization.engine import (
     _run_with_timeout,
     _timeout_guard,
 )
+from src.domains.optimization.grid_validation import GridValidationResult
 
 
 def _make_engine() -> ParameterOptimizationEngine:
@@ -21,6 +22,12 @@ def _make_engine() -> ParameterOptimizationEngine:
     engine.verbose = False
     engine.strategy_basename = "demo_strategy"
     engine.parameter_ranges = {}
+    engine.grid_validation = GridValidationResult(
+        valid=True,
+        ready_to_run=True,
+        param_count=1,
+        combinations=1,
+    )
     engine.optimization_config = {
         "n_jobs": 1,
         "scoring_weights": {
@@ -140,7 +147,7 @@ def test_init_with_explicit_base_config(monkeypatch, tmp_path):
         "load_grid_config",
         lambda _path: {
             "description": "demo",
-            "parameter_ranges": {"entry_filter_params": {}},
+            "parameter_ranges": {"entry_filter_params": {"breakout": {"period": [10]}}},
             "base_config": str(base_config),
         },
     )
@@ -214,7 +221,12 @@ def test_init_with_inferred_base_config(monkeypatch, tmp_path):
 
 def test_total_combinations_uses_grid_loader(monkeypatch):
     engine = _make_engine()
-    monkeypatch.setattr(engine_mod, "generate_combinations", lambda _ranges: [{}, {}, {}])
+    engine.grid_validation = GridValidationResult(
+        valid=True,
+        ready_to_run=True,
+        param_count=2,
+        combinations=3,
+    )
     assert engine.total_combinations == 3
 
 

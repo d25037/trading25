@@ -88,6 +88,7 @@ async def test_submit_optimization_creates_task_and_returns_job_id(monkeypatch):
         ),
     )
     service = OptimizationService(manager=manager)
+    monkeypatch.setattr(service, "_validate_grid_ready", lambda _strategy_name: None)
     monkeypatch.setattr(service, "_run_optimization", _dummy_run_optimization)
 
     async def _set_job_task(job_id: str, task):
@@ -128,6 +129,7 @@ async def test_submit_optimization_resolves_dataset_from_base_strategy(monkeypat
         ),
     )
     service = OptimizationService(manager=manager)
+    monkeypatch.setattr(service, "_validate_grid_ready", lambda _strategy_name: None)
     monkeypatch.setattr(service, "_run_optimization", _dummy_run_optimization)
     monkeypatch.setattr(
         service._config_loader,
@@ -156,6 +158,20 @@ async def test_submit_optimization_resolves_dataset_from_base_strategy(monkeypat
     assert run_spec.dataset_name == "primeExTopix500"
     assert run_spec.dataset_snapshot_id == "primeExTopix500"
     service._executor.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_submit_optimization_rejects_invalid_grid(monkeypatch):
+    manager = _manager(create_job=lambda *_args, **_kwargs: "should-not-be-created")
+    service = OptimizationService(manager=manager)
+    monkeypatch.setattr(
+        service,
+        "_validate_grid_ready",
+        lambda _strategy_name: (_ for _ in ()).throw(ValueError("grid invalid")),
+    )
+
+    with pytest.raises(ValueError, match="grid invalid"):
+        await service.submit_optimization("strategy-bad")
 
 
 @pytest.mark.asyncio

@@ -77,6 +77,15 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
+vi.mock('@/utils/logger', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
 vi.mock('./SignalReferencePanel', () => ({
   SignalReferencePanel: ({ onCopySnippet }: { onCopySnippet: (snippet: string) => void }) => (
     <div>
@@ -159,7 +168,7 @@ describe('OptimizationGridEditor', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
   });
 
-  it('shows warning when parameter arrays are not detected', async () => {
+  it('shows validation error when a parameter leaf is a scalar instead of an array', async () => {
     render(<OptimizationGridEditor strategyName="production/demo" />);
 
     await openEditorDialog();
@@ -177,9 +186,39 @@ describe('OptimizationGridEditor', () => {
     });
 
     expect(
-      screen.getByText('No parameter arrays found under "parameter_ranges". Add list values like period: [10, 20, 30].')
+      screen.getByText('Validation failed: 1 issue(s) need to be fixed before saving or running optimization.')
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    expect(
+      screen.getByText(
+        'parameter_ranges.entry_filter_params.rsi.period.min: Parameter must be a candidate list such as [10, 20, 30], not a scalar value.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('shows structural validation errors and disables save', async () => {
+    render(<OptimizationGridEditor strategyName="production/demo" />);
+
+    await openEditorDialog();
+
+    fireEvent.change(screen.getByLabelText('Optimization YAML Editor'), {
+      target: {
+        value: `parameter_ranges:
+  entry_filter_params:
+    ratio_threshold: [1.0, 1.5, 2.0]
+`,
+      },
+    });
+
+    expect(
+      screen.getByText('Validation failed: 1 issue(s) need to be fixed before saving or running optimization.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'parameter_ranges.entry_filter_params.ratio_threshold: Signal must be a mapping of parameter names to candidate lists.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
   it('saves with basename strategy key and edited content', async () => {

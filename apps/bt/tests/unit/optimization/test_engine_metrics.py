@@ -53,6 +53,18 @@ def test_extract_trade_count_returns_zero_when_trades_access_fails():
     assert extract_trade_count(_BrokenPortfolio()) == 0
 
 
+def test_extract_trade_count_returns_zero_when_records_readable_is_missing():
+    portfolio = _make_portfolio()
+
+    class _TradesWithoutRecords:
+        def count(self):
+            raise RuntimeError("count failed")
+
+    portfolio.trades = _TradesWithoutRecords()
+
+    assert extract_trade_count(portfolio) == 0
+
+
 def test_extract_trade_count_clamps_negative_count_to_zero():
     portfolio = _make_portfolio()
     portfolio.trades.count.return_value = -3
@@ -103,7 +115,37 @@ def test_collect_metrics_uses_zero_for_invalid_canonical_metric():
 
     metrics = collect_metrics(portfolio, _make_scoring_weights())
 
-    assert "sharpe_ratio" not in metrics
+    assert metrics["sharpe_ratio"] == 0.0
+
+
+def test_collect_metrics_uses_zero_for_missing_scoring_metric():
+    portfolio = _make_portfolio()
+    portfolio.sharpe_ratio.return_value = None
+    portfolio.trades.count.return_value = 1
+
+    metrics = collect_metrics(portfolio, _make_scoring_weights())
+
+    assert metrics["sharpe_ratio"] == 0.0
+
+
+def test_collect_metrics_includes_optional_metric_when_not_scored():
+    portfolio = _make_portfolio()
+    portfolio.sortino_ratio.return_value = 0.7
+    portfolio.trades.count.return_value = 1
+
+    metrics = collect_metrics(portfolio, {"sharpe_ratio": 1.0})
+
+    assert metrics["sortino_ratio"] == 0.7
+
+
+def test_collect_metrics_does_not_duplicate_optional_metric_in_scoring_weights():
+    portfolio = _make_portfolio()
+    portfolio.sortino_ratio.return_value = 0.7
+    portfolio.trades.count.return_value = 1
+
+    metrics = collect_metrics(portfolio, {"sortino_ratio": 1.0})
+
+    assert metrics["sortino_ratio"] == 0.7
 
 
 def test_collect_metrics_ignores_unsupported_metric_key():

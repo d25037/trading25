@@ -114,4 +114,14 @@ class TestGenerateCombinations:
         } in combinations
 
     def test_returns_single_empty_combination_for_empty_ranges(self) -> None:
-        assert generate_combinations({}) == [{}]
+        assert generate_combinations({}) == []
+
+    def test_raises_for_invalid_signal_shape(self) -> None:
+        with pytest.raises(ValueError, match="Signal must be a mapping of parameter names to candidate lists"):
+            generate_combinations(
+                {
+                    "entry_filter_params": {
+                        "ratio_threshold": [1.0, 1.5, 2.0],
+                    }
+                }
+            )

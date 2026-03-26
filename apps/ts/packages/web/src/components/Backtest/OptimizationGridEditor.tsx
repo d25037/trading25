@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { useDeleteOptimizationGrid, useOptimizationGridConfig, useSaveOptimizationGrid } from '@/hooks/useOptimization';
 import { cn } from '@/lib/utils';
-import { analyzeGridParameters, type GridParameterAnalysis } from './optimizationGridParams';
+import { analyzeGridParameters, type GridParameterAnalysis, type GridValidationIssue } from './optimizationGridParams';
 import { SignalReferencePanel } from './SignalReferencePanel';
 
 const TEMPLATE_YAML = `# Parameter ranges for optimization grid search
@@ -35,6 +35,7 @@ type ValidationTone = 'error' | 'warning' | 'success';
 interface ValidationState {
   tone: ValidationTone;
   message: string;
+  details: string[];
 }
 
 interface EditorActionsProps {
@@ -42,7 +43,7 @@ interface EditorActionsProps {
   isDirty: boolean;
   isSavePending: boolean;
   isDeletePending: boolean;
-  hasParseError: boolean;
+  hasValidationError: boolean;
   onReset: () => void;
   onDelete: () => void;
   onSave: () => void;
@@ -90,26 +91,39 @@ const VALIDATION_TONE_ICON = {
 
 function buildValidationState(analysis: GridParameterAnalysis): ValidationState {
   if (analysis.parseError) {
-    return { tone: 'error', message: analysis.parseError };
+    return { tone: 'error', message: analysis.parseError, details: [] };
+  }
+
+  if (analysis.errors.length > 0) {
+    return {
+      tone: 'error',
+      message: `Validation failed: ${analysis.errors.length} issue(s) need to be fixed before saving or running optimization.`,
+      details: analysis.errors.map(formatValidationIssue),
+    };
   }
 
   if (!analysis.hasParameterRanges) {
     return {
       tone: 'warning',
       message: 'Missing "parameter_ranges" key. Saving is allowed, but optimization combinations will be 0.',
+      details: analysis.warnings.map(formatValidationIssue),
     };
   }
 
-  if (analysis.paramCount === 0) {
+  if (analysis.warnings.length > 0) {
     return {
       tone: 'warning',
-      message: 'No parameter arrays found under "parameter_ranges". Add list values like period: [10, 20, 30].',
+      message: analysis.readyToRun
+        ? `Validation passed with warnings: ${analysis.paramCount} parameters, ${analysis.combinations} combinations detected.`
+        : 'Validation passed with warnings, but this grid is not ready to run yet.',
+      details: analysis.warnings.map(formatValidationIssue),
     };
   }
 
   return {
     tone: 'success',
     message: `Ready: ${analysis.paramCount} parameters, ${analysis.combinations} combinations detected.`,
+    details: [],
   };
 }
 
@@ -121,13 +135,26 @@ function LoadingState() {
   );
 }
 
+function formatValidationIssue(issue: GridValidationIssue): string {
+  return `${issue.path}: ${issue.message}`;
+}
+
 function ValidationBanner({ validationState }: { validationState: ValidationState }) {
   const Icon = VALIDATION_TONE_ICON[validationState.tone];
 
   return (
     <div className={cn('flex items-start gap-2 rounded-md p-3 text-sm', VALIDATION_TONE_CLASS[validationState.tone])}>
       <Icon className="h-4 w-4 mt-0.5 shrink-0" />
-      <span>{validationState.message}</span>
+      <div className="space-y-1">
+        <p>{validationState.message}</p>
+        {validationState.details.length > 0 ? (
+          <ul className="list-disc pl-5 text-xs leading-5">
+            {validationState.details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -146,7 +173,7 @@ function EditorActions({
   isDirty,
   isSavePending,
   isDeletePending,
-  hasParseError,
+  hasValidationError,
   onReset,
   onDelete,
   onSave,
@@ -171,7 +198,7 @@ function EditorActions({
           Delete
         </Button>
       )}
-      <Button size="sm" onClick={onSave} disabled={!isDirty || hasParseError || isBusy}>
+      <Button size="sm" onClick={onSave} disabled={!isDirty || hasValidationError || isBusy}>
         {isSavePending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
         Save
       </Button>
@@ -268,7 +295,7 @@ function EditorDialog({
             isDirty={isDirty}
             isSavePending={isSavePending}
             isDeletePending={isDeletePending}
-            hasParseError={Boolean(analysis.parseError)}
+            hasValidationError={validationState.tone === 'error'}
             onReset={onReset}
             onDelete={onDelete}
             onSave={onSave}

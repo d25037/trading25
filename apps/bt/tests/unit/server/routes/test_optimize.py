@@ -172,7 +172,10 @@ class TestGridConfigEndpoints:
 
     def test_get_grid_config_success(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
-        grid_file.write_text("parameter_ranges:\n  period: [10, 20]\n")
+        grid_file.write_text(
+            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10, 20]\n",
+            encoding="utf-8",
+        )
         with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file):
             resp = client.get("/api/optimize/grid-configs/test")
         assert resp.status_code == 200
@@ -185,7 +188,14 @@ class TestGridConfigEndpoints:
         with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=grid_file):
             resp = client.put(
                 "/api/optimize/grid-configs/test",
-                json={"content": "parameter_ranges:\n  period: [10, 20, 30]\n"},
+                json={
+                    "content": (
+                        "parameter_ranges:\n"
+                        "  entry_filter_params:\n"
+                        "    breakout:\n"
+                        "      period: [10, 20, 30]\n"
+                    )
+                },
             )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
@@ -198,6 +208,21 @@ class TestGridConfigEndpoints:
                 json={"content": "invalid: [yaml: bad"},
             )
         assert resp.status_code == 400
+
+    def test_save_grid_config_invalid_structure(self, client):
+        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=Path("/tmp/test.yaml")):
+            resp = client.put(
+                "/api/optimize/grid-configs/test",
+                json={
+                    "content": (
+                        "parameter_ranges:\n"
+                        "  entry_filter_params:\n"
+                        "    ratio_threshold: [1.0, 1.5, 2.0]\n"
+                    )
+                },
+            )
+        assert resp.status_code == 400
+        assert "Signal must be a mapping" in resp.json()["message"]
 
     def test_delete_grid_config_success(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
@@ -213,9 +238,12 @@ class TestGridConfigEndpoints:
         assert resp.status_code == 404
 
     def test_list_grid_configs_reads_real_files(self, client, tmp_path):
-        (tmp_path / "alpha_grid.yaml").write_text("parameter_ranges:\n  period: [10, 20]\n", encoding="utf-8")
+        (tmp_path / "alpha_grid.yaml").write_text(
+            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10, 20]\n",
+            encoding="utf-8",
+        )
         (tmp_path / "nested_grid.yaml").write_text(
-            "parameter_ranges:\n  entry:\n    rsi: [20, 30, 40]\n",
+            "parameter_ranges:\n  entry_filter_params:\n    rsi:\n      threshold: [20, 30, 40]\n",
             encoding="utf-8",
         )
 
@@ -236,7 +264,14 @@ class TestGridConfigEndpoints:
         ):
             resp = client.put(
                 "/api/optimize/grid-configs/test",
-                json={"content": "parameter_ranges:\n  period: [10]\n"},
+                json={
+                    "content": (
+                        "parameter_ranges:\n"
+                        "  entry_filter_params:\n"
+                        "    breakout:\n"
+                        "      period: [10]\n"
+                    )
+                },
             )
 
         assert resp.status_code == 500
@@ -244,7 +279,10 @@ class TestGridConfigEndpoints:
 
     def test_delete_grid_config_file_remove_error_returns_500(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
-        grid_file.write_text("parameter_ranges:\n  period: [10]\n", encoding="utf-8")
+        grid_file.write_text(
+            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10]\n",
+            encoding="utf-8",
+        )
         with (
             patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file),
             patch("src.entrypoints.http.routes.optimize.os.remove", side_effect=OSError("permission denied")),
@@ -258,7 +296,14 @@ class TestGridConfigEndpoints:
         with patch("src.shared.paths.resolver.get_optimization_grid_dir", return_value=tmp_path):
             resp = client.put(
                 "/api/optimize/grid-configs/alpha",
-                json={"content": "parameter_ranges:\n  period: [5, 10]\n"},
+                json={
+                    "content": (
+                        "parameter_ranges:\n"
+                        "  entry_filter_params:\n"
+                        "    breakout:\n"
+                        "      period: [5, 10]\n"
+                    )
+                },
             )
 
         assert resp.status_code == 200
@@ -302,6 +347,15 @@ class TestOptimizationRouteAdditionalCoverage:
 
         assert resp.status_code == 500
         assert "submit failed" in resp.json()["message"]
+
+    def test_run_optimization_validation_error_returns_400(self, client):
+        with patch("src.entrypoints.http.routes.optimize.optimization_service") as mock_service:
+            mock_service.submit_optimization = AsyncMock(side_effect=ValueError("grid invalid"))
+
+            resp = client.post("/api/optimize/run", json={"strategy_name": "production/range_break_v5"})
+
+        assert resp.status_code == 400
+        assert "grid invalid" in resp.json()["message"]
 
     def test_stream_optimization_events_success(self, client):
         running_job = _make_job("opt-stream-1", JobStatus.RUNNING)

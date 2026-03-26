@@ -108,20 +108,26 @@ def normalize_and_recalculate_scores(
     if not results:
         return results
 
+    def _get_metric_value(result: dict[str, Any], metric: str) -> float:
+        metric_values = result.get("metric_values", {})
+        if not isinstance(metric_values, dict):
+            return 0.0
+        raw_value = metric_values.get(metric, 0.0)
+        return float(raw_value) if is_valid_metric(raw_value) else 0.0
+
     # 1. 各指標の最小値・最大値を収集
     metric_ranges: dict[str, dict[str, float]] = {}
     for metric in scoring_weights.keys():
-        values = [r["metric_values"][metric] for r in results]
+        values = [_get_metric_value(r, metric) for r in results]
         metric_ranges[metric] = {"min": min(values), "max": max(values)}
 
     # 2. 各結果を正規化し、複合スコアを再計算
     normalized_results = []
     for result in results:
         normalized_metrics = {}
-        composite_score = 0.0
 
         for metric in scoring_weights.keys():
-            raw_value = result["metric_values"][metric]
+            raw_value = _get_metric_value(result, metric)
             min_val = metric_ranges[metric]["min"]
             max_val = metric_ranges[metric]["max"]
 

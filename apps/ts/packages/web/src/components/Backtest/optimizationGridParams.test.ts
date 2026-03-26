@@ -15,11 +15,11 @@ parameter_ranges:
 
     expect(extractGridParameterEntries(yamlContent)).toEqual([
       {
-        path: 'entry_filter_params.period_extrema_break.period',
+        path: 'parameter_ranges.entry_filter_params.period_extrema_break.period',
         values: [10, 20, 30],
       },
       {
-        path: 'exit_trigger_params.atr_stop.atr_multiplier',
+        path: 'parameter_ranges.exit_trigger_params.atr_stop.atr_multiplier',
         values: [1.5, 2.0],
       },
     ]);
@@ -35,6 +35,7 @@ parameter_ranges:
     expect(analysis.hasParameterRanges).toBe(false);
     expect(analysis.paramCount).toBe(0);
     expect(analysis.combinations).toBe(0);
+    expect(analysis.valid).toBe(false);
   });
 
   it('returns warning-shaped analysis when parameter_ranges is missing', () => {
@@ -44,14 +45,34 @@ parameter_ranges:
     expect(analysis.entries).toEqual([]);
     expect(analysis.paramCount).toBe(0);
     expect(analysis.combinations).toBe(0);
+    expect(analysis.valid).toBe(true);
+    expect(analysis.readyToRun).toBe(false);
+    expect(analysis.warnings[0]?.path).toBe('parameter_ranges');
   });
 
-  it('does not treat non-object root as parse error', () => {
+  it('treats non-object root as validation error', () => {
     const analysis = analyzeGridParameters('- 1\n- 2');
     expect(analysis.parseError).toBeNull();
     expect(analysis.hasParameterRanges).toBe(false);
     expect(analysis.paramCount).toBe(0);
     expect(analysis.combinations).toBe(0);
+    expect(analysis.valid).toBe(false);
+    expect(analysis.errors[0]?.path).toBe('$');
+  });
+
+  it('reports invalid signal shapes as validation errors', () => {
+    const analysis = analyzeGridParameters(`
+parameter_ranges:
+  entry_filter_params:
+    ratio_threshold: [1.0, 1.5, 2.0]
+`);
+
+    expect(analysis.valid).toBe(false);
+    expect(analysis.readyToRun).toBe(false);
+    expect(analysis.errors[0]).toEqual({
+      path: 'parameter_ranges.entry_filter_params.ratio_threshold',
+      message: 'Signal must be a mapping of parameter names to candidate lists.',
+    });
   });
 
   it('formats parameter values for display', () => {

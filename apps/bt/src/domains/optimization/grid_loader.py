@@ -11,6 +11,11 @@ from typing import Any
 from ruamel.yaml import YAML
 from src.shared.paths import get_default_config_path
 
+from .grid_validation import (
+    format_grid_validation_issues,
+    validate_parameter_ranges,
+)
+
 
 def find_grid_config_path(strategy_basename: str, grid_config_path: str | None = None) -> str:
     """
@@ -129,6 +134,12 @@ def generate_combinations(parameter_ranges: dict[str, Any]) -> list[dict[str, An
     Returns:
         list[dict[str, Any]]: パラメータ組み合わせリスト
     """
+    validation = validate_parameter_ranges(parameter_ranges)
+    if validation.errors:
+        raise ValueError(format_grid_validation_issues(validation.errors))
+    if not validation.ready_to_run:
+        return []
+
     param_names = []
     param_values_list = []
 
@@ -144,7 +155,7 @@ def generate_combinations(parameter_ranges: dict[str, Any]) -> list[dict[str, An
                 param_names.append(full_key)
                 param_values_list.append(values)
 
-    return [
-        dict(zip(param_names, combination))
-        for combination in itertools.product(*param_values_list)
-    ]
+    if not param_values_list:
+        return []
+
+    return [dict(zip(param_names, combination)) for combination in itertools.product(*param_values_list)]

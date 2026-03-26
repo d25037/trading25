@@ -12,6 +12,12 @@ from src.domains.backtest.vectorbt_adapter import (
 from .scoring import is_valid_metric
 
 
+def _coerce_metric_value(value: float | None) -> float:
+    if value is None or not is_valid_metric(value):
+        return 0.0
+    return float(value)
+
+
 def extract_trade_count(portfolio: ExecutionPortfolioProtocol | Any) -> int:
     """
     ポートフォリオからclosed trades件数を取得
@@ -83,12 +89,19 @@ def collect_metrics(
         ),
     }
 
-    for metric in (*scoring_weights.keys(), "sortino_ratio", "max_drawdown", "win_rate"):
+    for metric in scoring_weights.keys():
+        if metric not in metric_lookup:
+            continue
+        value = metric_lookup.get(metric)
+        metric_values[metric] = _coerce_metric_value(value)
+
+    for metric in ("sortino_ratio", "max_drawdown", "win_rate"):
+        if metric in metric_values:
+            continue
         value = metric_lookup.get(metric)
         if value is None:
             continue
-
-        metric_values[metric] = float(value) if is_valid_metric(value) else 0.0
+        metric_values[metric] = _coerce_metric_value(value)
 
     # 表示用途: closed trades件数（スコア計算には使用しない）
     trade_count = (

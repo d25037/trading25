@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import signal
+from collections.abc import Mapping
 from contextlib import contextmanager
 from collections.abc import Iterator
 from types import FrameType
@@ -29,6 +30,10 @@ from .grid_loader import (
     generate_combinations,
     load_default_config,
     load_grid_config,
+)
+from .grid_validation import (
+    format_grid_validation_issues,
+    validate_grid_document,
 )
 from .param_builder import build_signal_params
 from .scoring import (
@@ -117,9 +122,11 @@ class ParameterOptimizationEngine:
             self.strategy_basename, grid_config_path
         )
         grid_config = load_grid_config(self.grid_config_path)
+        self.grid_validation = validate_grid_document(grid_config)
+        grid_config_mapping = grid_config if isinstance(grid_config, Mapping) else {}
 
-        self.parameter_ranges = grid_config.get("parameter_ranges", {})
-        self.description = grid_config.get("description", "")
+        self.parameter_ranges = grid_config_mapping.get("parameter_ranges", {})
+        self.description = grid_config_mapping.get("description", "")
 
         # default.yaml読み込み
         default_config = load_default_config()
@@ -132,9 +139,9 @@ class ParameterOptimizationEngine:
 
         config_loader = ConfigLoader()
 
-        if "base_config" in grid_config:
+        if "base_config" in grid_config_mapping:
             # グリッドYAMLで明示指定されている場合
-            self.base_config_path = grid_config["base_config"]
+            self.base_config_path = grid_config_mapping["base_config"]
             ruamel_yaml_base = YAML()
             ruamel_yaml_base.preserve_quotes = True
             with open(self.base_config_path) as f:
@@ -180,7 +187,7 @@ class ParameterOptimizationEngine:
     @property
     def total_combinations(self) -> int:
         """パラメータ組み合わせ総数を返す"""
-        return len(generate_combinations(self.parameter_ranges))
+        return self.grid_validation.combinations
 
     def optimize(self) -> OptimizationResult:
         """
@@ -189,6 +196,15 @@ class ParameterOptimizationEngine:
         Returns:
             OptimizationResult: 最適化結果
         """
+        if not self.grid_validation.valid:
+            raise ValueError(
+                "最適化グリッド設定が無効です。"
+                f" {format_grid_validation_issues(self.grid_validation.errors)}"
+            )
+        if not self.grid_validation.ready_to_run:
+            raise ValueError(
+                "最適化グリッド設定は読み込めましたが、実行できる候補値がありません。"
+            )
         # 1. パラメータ組み合わせ生成
         combinations = generate_combinations(self.parameter_ranges)
 
