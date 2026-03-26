@@ -9,6 +9,7 @@ import os
 from typing import Any
 
 from ruamel.yaml import YAML
+from src.shared.paths import get_default_config_path
 
 
 def find_grid_config_path(strategy_basename: str, grid_config_path: str | None = None) -> str:
@@ -77,7 +78,7 @@ def load_default_config() -> dict:
     """
     ruamel_yaml = YAML()
     ruamel_yaml.preserve_quotes = True
-    with open("config/default.yaml") as f:
+    with get_default_config_path().open(encoding="utf-8") as f:
         config = ruamel_yaml.load(f)
 
     return {

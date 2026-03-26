@@ -154,7 +154,7 @@ async def _execute_lab_payload(
             fast_save,
             str(payload["direction"]),
             str(payload["timeframe"]),
-            str(payload["dataset"]),
+            payload.get("dataset"),
             bool(payload.get("entry_filter_only", False)),
             list(payload.get("allowed_categories") or []),
         )

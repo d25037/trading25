@@ -10,6 +10,7 @@ from pathlib import Path
 ENV_DATA_DIR = "TRADING25_DATA_DIR"
 ENV_STRATEGIES_DIR = "TRADING25_STRATEGIES_DIR"
 ENV_BACKTEST_DIR = "TRADING25_BACKTEST_DIR"
+ENV_DEFAULT_CONFIG_PATH = "TRADING25_DEFAULT_CONFIG_PATH"
 
 # デフォルトデータディレクトリ（XDG Base Directory Specification準拠）
 DEFAULT_DATA_DIR = Path.home() / ".local" / "share" / "trading25"

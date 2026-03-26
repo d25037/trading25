@@ -61,6 +61,41 @@ def test_lab_generate_accepts_fundamental_constraints() -> None:
     assert config.allowed_categories == ["fundamental"]
 
 
+def test_lab_generate_uses_xdg_default_dataset_when_omitted() -> None:
+    with (
+        patch(
+            "src.entrypoints.cli.lab.load_default_shared_config",
+            return_value={"dataset": "xdg_dataset"},
+        ),
+        patch("src.domains.lab_agent.StrategyGenerator") as MockGenerator,
+        patch("src.domains.lab_agent.StrategyEvaluator") as MockEvaluator,
+        patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
+    ):
+        candidate = MagicMock()
+        candidate.strategy_id = "auto_test"
+        candidate.shared_config = {}
+        MockGenerator.return_value.generate.return_value = [candidate]
+
+        success_result = _make_eval_result()
+        success_result.candidate = candidate
+        MockEvaluator.return_value.evaluate_batch.return_value = [success_result]
+        MockYaml.return_value.save_candidate.return_value = "/tmp/auto.yaml"
+
+        result = runner.invoke(
+            app,
+            ["lab", "generate", "--count", "1", "--top", "1"],
+        )
+
+    assert result.exit_code == 0
+    output = _strip_ansi(result.stdout)
+    assert "dataset: xdg_dataset (XDG default)" in output
+    assert (
+        MockEvaluator.call_args.kwargs["shared_config_dict"]["dataset"] == "xdg_dataset"
+    )
+    saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
+    assert saved_candidate.shared_config["dataset"] == "xdg_dataset"
+
+
 def test_lab_generate_rejects_invalid_category() -> None:
     result = runner.invoke(
         app,

@@ -22,6 +22,7 @@ from src.application.services.verification_orchestrator import (
     build_verification_seed,
 )
 from src.domains.backtest.contracts import EnginePolicy, RunSpec
+from src.domains.lab_agent.evaluator import load_default_shared_config
 from src.domains.lab_agent.models import (
     LabStructureMode,
     LabTargetScope,
@@ -92,6 +93,43 @@ def _resolve_target_scope(
     if target_scope == "both" and entry_filter_only:
         return "entry_filter_only"
     return target_scope
+
+
+def _normalize_dataset_name(dataset: str | None) -> str | None:
+    if dataset is None:
+        return None
+
+    normalized = dataset.strip()
+    return normalized or None
+
+
+def _resolve_generate_dataset(dataset: str | None) -> str | None:
+    normalized_dataset = _normalize_dataset_name(dataset)
+    if normalized_dataset is not None:
+        return normalized_dataset
+
+    default_dataset = load_default_shared_config().get("dataset")
+    if not isinstance(default_dataset, str):
+        return None
+
+    return _normalize_dataset_name(default_dataset)
+
+
+def _merge_generate_shared_config(
+    candidate_shared_config: dict[str, Any] | None,
+    *,
+    direction: str,
+    timeframe: str,
+    dataset: str | None,
+) -> dict[str, Any]:
+    merged_shared_config = dict(candidate_shared_config or {})
+    merged_shared_config["direction"] = direction
+    merged_shared_config["timeframe"] = timeframe
+    if dataset is None:
+        merged_shared_config.pop("dataset", None)
+    else:
+        merged_shared_config["dataset"] = dataset
+    return merged_shared_config
 
 
 def _candidate_to_config_override(
@@ -385,7 +423,7 @@ class LabService:
         save: bool = True,
         direction: str = "longonly",
         timeframe: str = "daily",
-        dataset: str = "primeExTopix500",
+        dataset: str | None = None,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
         engine_policy: EnginePolicy | None = None,
@@ -393,40 +431,45 @@ class LabService:
         """戦略自動生成ジョブをサブミット"""
         resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        resolved_dataset = _resolve_generate_dataset(dataset)
+        parameters: dict[str, Any] = {
+            "count": count,
+            "top": top,
+            "seed": seed,
+            "save": save,
+            "direction": direction,
+            "timeframe": timeframe,
+            "entry_filter_only": entry_filter_only,
+            "allowed_categories": resolved_categories,
+            "engine_policy": resolved_engine_policy.model_dump(mode="json"),
+        }
+        if resolved_dataset is not None:
+            parameters["dataset"] = resolved_dataset
         run_spec = build_parameterized_run_spec(
             "lab_generate",
             f"generate(n={count},top={top})",
-            dataset_name=dataset,
-            parameters={
-                "count": count,
-                "top": top,
-                "seed": seed,
-                "save": save,
-                "direction": direction,
-                "timeframe": timeframe,
-                "dataset": dataset,
-                "entry_filter_only": entry_filter_only,
-                "allowed_categories": resolved_categories,
-                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
-            },
+            dataset_name=resolved_dataset,
+            parameters=parameters,
         )
+        payload: dict[str, Any] = {
+            "lab_type": "generate",
+            "count": count,
+            "top": top,
+            "seed": seed,
+            "save": save,
+            "direction": direction,
+            "timeframe": timeframe,
+            "entry_filter_only": entry_filter_only,
+            "allowed_categories": resolved_categories,
+            "engine_policy": resolved_engine_policy.model_dump(mode="json"),
+        }
+        if resolved_dataset is not None:
+            payload["dataset"] = resolved_dataset
         return await self._submit_worker_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
             run_spec=run_spec,
-            payload={
-                "lab_type": "generate",
-                "count": count,
-                "top": top,
-                "seed": seed,
-                "save": save,
-                "direction": direction,
-                "timeframe": timeframe,
-                "dataset": dataset,
-                "entry_filter_only": entry_filter_only,
-                "allowed_categories": resolved_categories,
-                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
-            },
+            payload=payload,
         )
 
     def _execute_generate_sync(
@@ -437,7 +480,7 @@ class LabService:
         save: bool,
         direction: str,
         timeframe: str,
-        dataset: str,
+        dataset: str | None,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
     ) -> dict[str, Any]:
@@ -448,6 +491,13 @@ class LabService:
         from src.domains.lab_agent.yaml_updater import YamlUpdater
 
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        resolved_dataset = _resolve_generate_dataset(dataset)
+        shared_config_override = _merge_generate_shared_config(
+            None,
+            direction=direction,
+            timeframe=timeframe,
+            dataset=resolved_dataset,
+        )
         config = GeneratorConfig(
             n_strategies=count,
             seed=seed,
@@ -458,11 +508,7 @@ class LabService:
         candidates = generator.generate()
 
         evaluator = StrategyEvaluator(
-            shared_config_dict={
-                "direction": direction,
-                "timeframe": timeframe,
-                "dataset": dataset,
-            },
+            shared_config_dict=shared_config_override,
             n_jobs=-1,
         )
         results = evaluator.evaluate_batch(candidates, top_k=top)
@@ -503,14 +549,16 @@ class LabService:
                     fast_score=result.score,
                     fast_metrics=fast_metrics,
                     strategy_name="reference/strategy_template",
-                    config_override=_candidate_to_config_override(
-                        result.candidate,
-                        shared_config_override={
-                            "direction": direction,
-                            "timeframe": timeframe,
-                            "dataset": dataset,
-                        },
-                    ),
+                    config_override={
+                        "shared_config": _merge_generate_shared_config(
+                            result.candidate.shared_config,
+                            direction=direction,
+                            timeframe=timeframe,
+                            dataset=resolved_dataset,
+                        ),
+                        "entry_filter_params": deepcopy(result.candidate.entry_filter_params),
+                        "exit_trigger_params": deepcopy(result.candidate.exit_trigger_params),
+                    },
                     strategy_candidate=result.candidate,
                 ).model_dump(mode="json")
             )
@@ -518,6 +566,12 @@ class LabService:
         saved_path: str | None = None
         if save and successful_results:
             best = successful_results[0]
+            best.candidate.shared_config = _merge_generate_shared_config(
+                best.candidate.shared_config,
+                direction=direction,
+                timeframe=timeframe,
+                dataset=resolved_dataset,
+            )
             yaml_updater = YamlUpdater()
             saved_path = yaml_updater.save_candidate(best.candidate)
 

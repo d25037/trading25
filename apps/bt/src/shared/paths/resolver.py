@@ -15,13 +15,17 @@ from .constants import (
     DEFAULT_DATA_DIR,
     ENV_BACKTEST_DIR,
     ENV_DATA_DIR,
+    ENV_DEFAULT_CONFIG_PATH,
     ENV_STRATEGIES_DIR,
     EXTERNAL_CATEGORIES,
     PROJECT_CATEGORIES,
+    PROJECT_CONFIG_DIR,
     PROJECT_OPTIMIZATION_DIR,
     PROJECT_STRATEGIES_DIR,
     SEARCH_ORDER,
 )
+
+_BT_APP_ROOT = Path(__file__).resolve().parents[3]
 
 
 def get_data_dir() -> Path:
@@ -38,6 +42,60 @@ def get_data_dir() -> Path:
     if env_value:
         return Path(env_value)
     return DEFAULT_DATA_DIR
+
+
+def get_config_dir() -> Path:
+    """
+    ユーザー設定ディレクトリのパスを取得
+
+    Returns:
+        Path: XDG配下の設定ディレクトリ
+    """
+    return get_data_dir() / "config"
+
+
+def get_project_default_config_path() -> Path:
+    """
+    リポジトリ内の baseline default.yaml を返す
+
+    Returns:
+        Path: プロジェクト内 default.yaml のパス
+    """
+    project_path = PROJECT_CONFIG_DIR / "default.yaml"
+    if project_path.exists():
+        return project_path
+    return _BT_APP_ROOT / "config" / "default.yaml"
+
+
+def get_default_config_override_path() -> Path:
+    """
+    ユーザー可変の default.yaml 保存先を返す
+
+    Returns:
+        Path: env override または XDG 配下の default.yaml
+    """
+    env_value = os.environ.get(ENV_DEFAULT_CONFIG_PATH)
+    if env_value:
+        return Path(env_value)
+    return get_config_dir() / "default.yaml"
+
+
+def get_default_config_path() -> Path:
+    """
+    有効な default.yaml の実体パスを返す
+
+    優先順:
+    1. `TRADING25_DEFAULT_CONFIG_PATH` で指定された override ファイル（存在する場合）
+    2. XDG 配下の override ファイル
+    3. リポジトリ内 baseline ファイル
+
+    Returns:
+        Path: 読み込みに使用する default.yaml のパス
+    """
+    override_path = get_default_config_override_path()
+    if override_path.exists():
+        return override_path
+    return get_project_default_config_path()
 
 
 def get_strategies_dir(category: str | None = None) -> Path:
@@ -357,6 +415,7 @@ def ensure_data_dirs() -> None:
     """
     dirs_to_create: list[Path] = [
         get_data_dir(),
+        get_config_dir(),
         get_backtest_results_dir(),
         get_backtest_attribution_dir(),
         get_optimization_results_dir(),

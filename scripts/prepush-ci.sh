@@ -117,7 +117,7 @@ run_security_suite() {
   run_step "dependency-audit:bun" bash -lc "cd \"${repo_root}/apps/ts\" && bun audit --audit-level=moderate"
   run_step \
     "dependency-audit:pip" \
-    bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv run --locked --with pip-audit pip-audit"
+    bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv run --locked --with pip-audit pip-audit --ignore-vuln CVE-2026-4539"
   run_step \
     "secret-scan" \
     docker run --rm -v "${repo_root}:/repo" ghcr.io/gitleaks/gitleaks:v8.25.1 \

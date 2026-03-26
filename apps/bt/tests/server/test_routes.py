@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import app
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager
+import src.entrypoints.http.routes.strategies as strategies_mod
 
 
 @pytest.fixture
@@ -201,13 +202,31 @@ class TestDefaultConfigEndpoint:
         assert response.status_code == 400
         assert "オブジェクト" in response.json()["message"]
 
-    def test_update_and_get_roundtrip(self, client: TestClient) -> None:
+    def test_update_and_get_roundtrip(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
         """更新→取得のラウンドトリップが正常に動作する"""
-        # 1. 現在の設定を取得してバックアップ
         original = client.get("/api/config/default").json()["content"]
+        baseline_path = tmp_path / "config" / "default.yaml"
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(original, encoding="utf-8")
+        override_path = tmp_path / "xdg" / "config" / "default.yaml"
+
+        monkeypatch.setattr(
+            strategies_mod._config_loader,
+            "get_default_config_path",
+            lambda: override_path if override_path.exists() else baseline_path,
+        )
+        monkeypatch.setattr(
+            strategies_mod._config_loader,
+            "get_default_config_write_path",
+            lambda: override_path,
+        )
 
         try:
-            # 2. 更新
             new_content = "default:\n  test_roundtrip: true\n"
             response = client.put(
                 "/api/config/default",
@@ -216,12 +235,10 @@ class TestDefaultConfigEndpoint:
             assert response.status_code == 200
             assert response.json()["success"] is True
 
-            # 3. 取得して確認
             response = client.get("/api/config/default")
             assert response.status_code == 200
             assert "test_roundtrip" in response.json()["content"]
         finally:
-            # 4. 元に戻す
             client.put(
                 "/api/config/default",
                 json={"content": original},

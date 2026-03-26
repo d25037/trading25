@@ -1,7 +1,7 @@
 import { Check, ExternalLink, File, Loader2, Pencil, Search, Trash2, X } from 'lucide-react';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -142,50 +142,38 @@ function OptimizationFileListCard({
 }) {
   if (isLoadingFiles) {
     return (
-      <Card className="lg:col-span-1">
-        <CardContent className="pt-4">
-          <div className="flex items-center justify-center h-48">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        </CardContent>
-      </Card>
+      <Surface className="lg:col-span-1 flex min-h-[24rem] items-center justify-center px-4 py-4">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </Surface>
     );
   }
 
   if (filteredFiles.length === 0) {
     return (
-      <Card className="lg:col-span-1">
-        <CardContent className="pt-4">
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-            <File className="h-12 w-12 mb-2" />
-            <p className="text-sm">No optimization result files found</p>
-          </div>
-        </CardContent>
-      </Card>
+      <Surface className="lg:col-span-1 flex min-h-[24rem] flex-col items-center justify-center px-4 py-4 text-muted-foreground">
+        <File className="mb-2 h-12 w-12" />
+        <p className="text-sm">No optimization result files found</p>
+      </Surface>
     );
   }
 
   return (
-    <Card className="lg:col-span-1">
-      <CardContent className="pt-4">
-        <div className="space-y-4 max-h-[600px] overflow-y-auto">
-          <p className="text-sm text-muted-foreground">
-            {filteredFiles.length} files{' '}
-            {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
-          </p>
-          {sortedFiles.map((file) => (
-            <FileListItem
-              key={`${file.strategy_name}/${file.filename}`}
-              file={file}
-              isSelected={
-                selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename
-              }
-              onSelect={() => onSelectFile(file)}
-            />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <Surface className="lg:col-span-1 flex min-h-[32rem] flex-col px-4 py-4">
+      <SectionEyebrow>History</SectionEyebrow>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {filteredFiles.length} files {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
+      </p>
+      <div className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
+        {sortedFiles.map((file) => (
+          <FileListItem
+            key={`${file.strategy_name}/${file.filename}`}
+            file={file}
+            isSelected={selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename}
+            onSelect={() => onSelectFile(file)}
+          />
+        ))}
+      </div>
+    </Surface>
   );
 }
 
@@ -222,95 +210,88 @@ function OptimizationPreviewCard({
 }) {
   if (!selectedFile) {
     return (
-      <Card className="lg:col-span-2">
-        <CardContent className="pt-4">
-          <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
-            <File className="h-12 w-12 mb-2" />
-            <p className="text-sm">Select a file to preview</p>
-          </div>
-        </CardContent>
-      </Card>
+      <Surface className="lg:col-span-2 flex min-h-[32rem] flex-col items-center justify-center px-4 py-4 text-muted-foreground">
+        <File className="mb-2 h-12 w-12" />
+        <p className="text-sm">Select a file to preview</p>
+      </Surface>
     );
   }
 
   const decodedHtmlContent = htmlContentBase64 ? safeAtob(htmlContentBase64) : null;
 
   return (
-    <Card className="lg:col-span-2">
-      <CardContent className="pt-4">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 flex-1">
-              {isRenaming ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    ref={renameInputRef}
-                    value={renameValue}
-                    onChange={(event) => setRenameValue(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') onConfirmRename();
-                      if (event.key === 'Escape') onCancelRename();
-                    }}
-                    className="h-8 text-sm"
-                    disabled={isRenamePending}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={onConfirmRename}
-                    disabled={isRenamePending}
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    onClick={onCancelRename}
-                    disabled={isRenamePending}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium truncate">{selectedFile.filename}</h3>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onStartRename}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                    onClick={onOpenDeleteDialog}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
-              <p className="text-sm text-muted-foreground">
-                {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDate(selectedFile.created_at)}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onOpenInNewTab}
-              disabled={!htmlContentBase64}
-              className="shrink-0 ml-2"
-            >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open in new tab
-            </Button>
+    <Surface className="lg:col-span-2 flex min-h-[32rem] flex-col px-4 py-4">
+      <SectionEyebrow>Selected Report</SectionEyebrow>
+      <div className="mt-3 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {isRenaming ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') onConfirmRename();
+                    if (event.key === 'Escape') onCancelRename();
+                  }}
+                  className="h-8 text-sm"
+                  disabled={isRenamePending}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={onConfirmRename}
+                  disabled={isRenamePending}
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  onClick={onCancelRename}
+                  disabled={isRenamePending}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h3 className="truncate text-base font-semibold text-foreground">{selectedFile.filename}</h3>
+                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onStartRename}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                  onClick={onOpenDeleteDialog}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDate(selectedFile.created_at)}
+            </p>
           </div>
-          {renameErrorMessage && (
-            <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>
-          )}
-          <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenInNewTab}
+            disabled={!htmlContentBase64}
+            className="ml-2 shrink-0"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Open in new tab
+          </Button>
         </div>
-      </CardContent>
-    </Card>
+        {renameErrorMessage && <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>}
+        <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
+      </div>
+    </Surface>
   );
 }
 
@@ -465,36 +446,38 @@ export function OptimizationHtmlFileBrowser() {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search files..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <Surface className="px-4 py-3">
+        <SectionEyebrow className="mb-3">Filters</SectionEyebrow>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
           </div>
+          <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
+            <SelectTrigger className="w-full lg:w-[220px]">
+              <SelectValue placeholder="All strategies" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All strategies</SelectItem>
+              {strategies.map((strategy) => (
+                <SelectItem key={strategy} value={strategy}>
+                  {strategy}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All strategies" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All strategies</SelectItem>
-            {strategies.map((strategy) => (
-              <SelectItem key={strategy} value={strategy}>
-                {strategy}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      </Surface>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-3">
         <OptimizationFileListCard
           isLoadingFiles={isLoadingFiles}
           filteredFiles={filteredFiles}

@@ -153,7 +153,7 @@ test.describe('backtest optimize popup smoke', () => {
     await expect(page.getByRole('heading', { name: STRATEGY_DISPLAY_NAME })).toBeVisible();
 
     await page.getByRole('heading', { name: STRATEGY_DISPLAY_NAME }).click();
-    await page.getByRole('button', { name: 'Optimize' }).click();
+    await page.getByRole('button', { name: 'Optimize', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Optimization Grid' })).toBeVisible();
     await expect(page.getByText('Current')).toBeVisible();

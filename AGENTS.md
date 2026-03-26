@@ -112,6 +112,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 両プロジェクトが `~/.local/share/trading25/` を共有:
 - `market-timeseries/market.duckdb` + `datasets/` + `portfolio.db` — FastAPI が管理
 - `strategies/experimental/` / `strategies/production/` / `strategies/legacy/` / `backtest/results/` / `backtest/attribution/` — bt が管理
+- `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.dataset` は空欄 baseline とする。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
 
 ## bt (Python / uv)
 VectorBT基盤の高速バックテスト・Marimo Notebook実行システム。

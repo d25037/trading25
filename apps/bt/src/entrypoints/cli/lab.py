@@ -10,6 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from src.domains.lab_agent.evaluator import load_default_shared_config
 from src.domains.lab_agent.models import SignalCategory
 
 console = Console()
@@ -32,6 +33,43 @@ VALID_SIGNAL_CATEGORIES: tuple[SignalCategory, ...] = (
 )
 
 
+def _normalize_dataset_name(dataset: str | None) -> str | None:
+    if dataset is None:
+        return None
+
+    normalized = dataset.strip()
+    return normalized or None
+
+
+def _resolve_generate_dataset(dataset: str | None) -> tuple[str | None, bool]:
+    normalized_dataset = _normalize_dataset_name(dataset)
+    if normalized_dataset is not None:
+        return normalized_dataset, False
+
+    default_dataset = load_default_shared_config().get("dataset")
+    if not isinstance(default_dataset, str):
+        return None, True
+
+    return _normalize_dataset_name(default_dataset), True
+
+
+def _merge_generate_shared_config(
+    shared_config: dict[str, object] | None,
+    *,
+    direction: str,
+    timeframe: str,
+    dataset: str | None,
+) -> dict[str, object]:
+    merged_shared_config = dict(shared_config or {})
+    merged_shared_config["direction"] = direction
+    merged_shared_config["timeframe"] = timeframe
+    if dataset is None:
+        merged_shared_config.pop("dataset", None)
+    else:
+        merged_shared_config["dataset"] = dataset
+    return merged_shared_config
+
+
 def _resolve_allowed_categories(allowed_category: list[str] | None) -> list[SignalCategory]:
     """カテゴリ制約を検証して正規化する。"""
     allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
@@ -51,7 +89,7 @@ def _resolve_allowed_categories(allowed_category: list[str] | None) -> list[Sign
 def generate_command(
     count: int = typer.Option(100, "--count", "-n", help="生成する戦略数"),
     top: int = typer.Option(10, "--top", "-t", help="評価する上位戦略数"),
-    seed: int = typer.Option(None, "--seed", "-s", help="乱数シード（再現性用）"),
+    seed: int | None = typer.Option(None, "--seed", "-s", help="乱数シード（再現性用）"),
     save: bool = typer.Option(True, "--save/--no-save", help="結果をYAMLに保存"),
     direction: str = typer.Option(
         "longonly",
@@ -65,11 +103,11 @@ def generate_command(
         "-T",
         help="時間軸 (daily/weekly)",
     ),
-    dataset: str = typer.Option(
-        "primeExTopix500",
+    dataset: str | None = typer.Option(
+        None,
         "--dataset",
         "-D",
-        help="データセット名 (primeExTopix500/topix500等)",
+        help="データセット名（未指定時は XDG default config を使用）",
     ),
     entry_filter_only: bool = typer.Option(
         False,
@@ -111,11 +149,17 @@ def generate_command(
         raise typer.Exit(code=1)
 
     allowed_categories = _resolve_allowed_categories(allowed_category)
+    resolved_dataset, used_default_dataset = _resolve_generate_dataset(dataset)
+    dataset_label = resolved_dataset or "(XDG default unresolved)"
+    if used_default_dataset and resolved_dataset is not None:
+        dataset_label = f"{resolved_dataset} (XDG default)"
 
     console.print(
         f"[bold blue]戦略自動生成[/bold blue]: {count}個生成 → 上位{top}個評価"
     )
-    console.print(f"  direction: {direction}, timeframe: {timeframe}, dataset: {dataset}")
+    console.print(
+        f"  direction: {direction}, timeframe: {timeframe}, dataset: {dataset_label}"
+    )
     console.print(
         f"  entry_filter_only: {entry_filter_only}, "
         f"allowed_categories: {allowed_categories or ['all']}"
@@ -136,12 +180,14 @@ def generate_command(
 
     # 評価（CLI指定値で上書き、デフォルトはconfig/default.yamlから読み込み）
     console.print("📊 バックテスト評価中...")
+    shared_config_dict = _merge_generate_shared_config(
+        None,
+        direction=direction,
+        timeframe=timeframe,
+        dataset=resolved_dataset,
+    )
     evaluator = StrategyEvaluator(
-        shared_config_dict={
-            "direction": direction,
-            "timeframe": timeframe,
-            "dataset": dataset,
-        }
+        shared_config_dict=shared_config_dict
     )
     results = evaluator.evaluate_batch(candidates, top_k=top)
 
@@ -179,13 +225,12 @@ def generate_command(
     # 保存（shared_config を候補に設定してから保存）
     if save and results and results[0].success:
         best_candidate = results[0].candidate
-        # shared_config を更新
-        best_candidate.shared_config = {
-            **best_candidate.shared_config,
-            "direction": direction,
-            "timeframe": timeframe,
-            "dataset": dataset,
-        }
+        best_candidate.shared_config = _merge_generate_shared_config(
+            best_candidate.shared_config,
+            direction=direction,
+            timeframe=timeframe,
+            dataset=resolved_dataset,
+        )
         yaml_updater = YamlUpdater()
         path = yaml_updater.save_candidate(best_candidate)
         console.print(f"💾 最良戦略を保存: {path}")

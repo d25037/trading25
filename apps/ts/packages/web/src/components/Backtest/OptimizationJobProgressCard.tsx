@@ -1,6 +1,6 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Surface } from '@/components/Layout/Workspace';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 
@@ -31,14 +31,14 @@ function CompletedSummary({
 }) {
   return (
     <div className="space-y-3 text-sm">
-      {job.total_combinations != null && (
+      {job.total_combinations != null ? (
         <div>
           <span className="text-muted-foreground">Combinations:</span>
           <span className="ml-2 font-medium">{job.total_combinations}</span>
         </div>
-      )}
+      ) : null}
 
-      {bestParamsText && (
+      {bestParamsText ? (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Best Params</span>
@@ -48,9 +48,9 @@ function CompletedSummary({
             {bestParamsText}
           </pre>
         </div>
-      )}
+      ) : null}
 
-      {worstParamsText && (
+      {worstParamsText ? (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Worst Params</span>
@@ -60,20 +60,20 @@ function CompletedSummary({
             {worstParamsText}
           </pre>
         </div>
-      )}
+      ) : null}
 
-      {!bestParamsText && job.best_score != null && (
+      {!bestParamsText && job.best_score != null ? (
         <div>
           <span className="text-muted-foreground">Best Score:</span>
           <span className="ml-2 font-medium">{formatScore(job.best_score)}</span>
         </div>
-      )}
-      {!worstParamsText && job.worst_score != null && (
+      ) : null}
+      {!worstParamsText && job.worst_score != null ? (
         <div>
           <span className="text-muted-foreground">Worst Score:</span>
           <span className="ml-2 font-medium">{formatScore(job.worst_score)}</span>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -130,23 +130,21 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
   if (isLoading && !job) {
     return (
-      <Card className="mt-2">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <CardTitle className="text-lg">Submitting...</CardTitle>
-          </div>
-        </CardHeader>
-      </Card>
+      <Surface className="mt-2 p-4 sm:p-5">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <h3 className="text-lg font-semibold tracking-tight text-foreground">Submitting...</h3>
+        </div>
+      </Surface>
     );
   }
 
   if (!job) return null;
 
-  const formatElapsed = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${String(sec).padStart(2, '0')}`;
+  const formatElapsed = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   const bestParamsText = stringifyParams(job.best_params);
@@ -154,43 +152,38 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
   const stageLabel = resolveStageLabel(job);
 
   return (
-    <Card className="mt-2">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <StatusIcon status={job.status} />
-            <CardTitle className="text-lg">
-              <StatusLabel status={job.status} />
-            </CardTitle>
-          </div>
-          {isActive && <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>}
+    <Surface className="mt-2 p-4 sm:p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <StatusIcon status={job.status} />
+          <h3 className="text-lg font-semibold tracking-tight text-foreground">
+            <StatusLabel status={job.status} />
+          </h3>
         </div>
-      </CardHeader>
-      <CardContent>
-        {/* Progress bar (indeterminate) */}
-        {isActive && (
+        {isActive ? <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span> : null}
+      </div>
+      <div className="mt-4">
+        {isActive ? (
           <div className="space-y-2">
-            {stageLabel && <p className="text-xs font-medium text-blue-600">{stageLabel}</p>}
-            <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-              <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
+            {stageLabel ? <p className="text-xs font-medium text-blue-600">{stageLabel}</p> : null}
+            <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <div className="h-full animate-progress-indeterminate rounded-full bg-blue-500" />
             </div>
-            {job.message && <p className="text-xs text-muted-foreground">{job.message}</p>}
+            {job.message ? <p className="text-xs text-muted-foreground">{job.message}</p> : null}
           </div>
-        )}
+        ) : null}
 
-        {/* Completed result summary */}
-        {job.status === 'completed' && (
+        {job.status === 'completed' ? (
           <div className="space-y-3">
             <CompletedSummary job={job} bestParamsText={bestParamsText} worstParamsText={worstParamsText} />
             <VerificationSummarySection fastCandidates={job.fast_candidates} verification={job.verification} />
           </div>
-        )}
+        ) : null}
 
-        {/* Failed error */}
-        {job.status === 'failed' && job.error && (
+        {job.status === 'failed' && job.error ? (
           <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{job.error}</div>
-        )}
-      </CardContent>
-    </Card>
+        ) : null}
+      </div>
+    </Surface>
   );
 }

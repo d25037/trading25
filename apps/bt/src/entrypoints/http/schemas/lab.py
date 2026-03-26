@@ -40,7 +40,10 @@ class LabGenerateRequest(BaseModel):
         default="longonly", description="売買方向"
     )
     timeframe: Literal["daily", "weekly"] = Field(default="daily", description="タイムフレーム")
-    dataset: str = Field(default="primeExTopix500", description="データセット名")
+    dataset: str | None = Field(
+        default=None,
+        description="データセット名（未指定時は XDG default config を使用）",
+    )
     entry_filter_only: bool = Field(
         default=False,
         description="Entryフィルターのみ生成（Exitシグナルを生成しない）",

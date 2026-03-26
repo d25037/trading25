@@ -58,6 +58,9 @@ uv run --locked --with pip-audit pip-audit
 2. Identify affected package and advisory ID.
 3. Upgrade dependency in `pyproject.toml` and refresh `uv.lock`.
 4. Re-run audit and project test suites.
+5. If the advisory has no published fix version, add a temporary `--ignore-vuln <ID>`
+   entry in both `.github/workflows/ci.yml` and `scripts/prepush-ci.sh`, with the
+   advisory ID and rationale documented in the PR or issue.
 
 ## 4) PR and Issue Handling
 1. Link failing job URL in the tracking issue.

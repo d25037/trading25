@@ -76,6 +76,47 @@ async def test_run_lab_worker_generate_completes_job() -> None:
 
 
 @pytest.mark.asyncio
+async def test_run_lab_worker_generate_allows_missing_dataset() -> None:
+    manager = JobManager()
+    job_id = manager.create_job("generate(n=3,top=1)", job_type="lab_generate")
+    service = LabService(manager=manager, max_workers=1)
+
+    def _execute_generate_sync(*args):  # noqa: ANN002
+        assert args[6] is None
+        return {
+            "lab_type": "generate",
+            "results": [],
+            "total_generated": 3,
+            "saved_strategy_path": None,
+        }
+
+    service._execute_generate_sync = _execute_generate_sync  # type: ignore[method-assign]
+
+    exit_code = await run_lab_worker(
+        job_id,
+        {
+            "lab_type": "generate",
+            "count": 3,
+            "top": 1,
+            "seed": None,
+            "save": False,
+            "direction": "longonly",
+            "timeframe": "daily",
+            "entry_filter_only": False,
+            "allowed_categories": [],
+        },
+        manager=manager,
+        service=service,
+        heartbeat_seconds=60.0,
+    )
+
+    job = manager.get_job(job_id)
+    assert exit_code == 0
+    assert job is not None
+    assert job.status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_run_lab_worker_fast_only_strips_internal_verification_metadata() -> None:
     manager = JobManager()
     job_id = manager.create_job("generate(n=3,top=1)", job_type="lab_generate")

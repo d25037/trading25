@@ -742,7 +742,8 @@ async def update_default_config(
             )
 
         # Atomic write: temp file → rename
-        default_path = _config_loader.get_default_config_path()
+        default_path = _config_loader.get_default_config_write_path()
+        default_path.parent.mkdir(parents=True, exist_ok=True)
         with NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -781,16 +782,18 @@ async def update_default_config_structured(
     try:
         _validate_default_structured_request(request)
 
-        default_path = _config_loader.get_default_config_path()
-        if not default_path.exists():
+        default_read_path = _config_loader.get_default_config_path()
+        if not default_read_path.exists():
             raise HTTPException(
                 status_code=404,
                 detail="default.yamlが見つかりません",
             )
+        default_write_path = _config_loader.get_default_config_write_path()
+        default_write_path.parent.mkdir(parents=True, exist_ok=True)
 
         yaml = YAML()
         yaml.preserve_quotes = True
-        document = yaml.load(StringIO(default_path.read_text(encoding="utf-8")))
+        document = yaml.load(StringIO(default_read_path.read_text(encoding="utf-8")))
         if not isinstance(document, CommentedMap):
             raise HTTPException(status_code=400, detail="default.yaml root must be a mapping")
 
@@ -802,7 +805,7 @@ async def update_default_config_structured(
         _patch_mapping(execution, request.execution)
         _patch_mapping(shared_config, request.shared_config)
 
-        with default_path.open("w", encoding="utf-8") as handle:
+        with default_write_path.open("w", encoding="utf-8") as handle:
             yaml.dump(document, handle)
 
         _config_loader.reload_default_config()

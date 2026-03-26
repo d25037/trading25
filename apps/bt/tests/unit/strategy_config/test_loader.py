@@ -5,6 +5,7 @@ shared_config マージ機能のテスト
 """
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from src.domains.strategy.runtime.loader import ConfigLoader, StrategyMetadata
@@ -196,6 +197,34 @@ def test_merge_shared_config_default_invalid_type():
     # デフォルトが無効な場合は空の辞書から開始し、戦略設定が追加される
     assert merged["initial_cash"] == 20000000
     assert "fees" not in merged  # デフォルトが無効なので存在しない
+
+
+def test_get_default_config_path_uses_shared_resolver_for_default_config_dir():
+    loader = ConfigLoader()
+    resolved_path = Path("/tmp/runtime-default.yaml")
+
+    with patch(
+        "src.domains.strategy.runtime.loader.resolve_default_config_path",
+        return_value=resolved_path,
+    ):
+        assert loader.get_default_config_path() == resolved_path
+
+
+def test_get_default_config_write_path_uses_xdg_override_for_default_config_dir():
+    loader = ConfigLoader()
+    override_path = Path("/tmp/xdg-default.yaml")
+
+    with patch(
+        "src.domains.strategy.runtime.loader.get_default_config_override_path",
+        return_value=override_path,
+    ):
+        assert loader.get_default_config_write_path() == override_path
+
+
+def test_get_default_config_write_path_uses_local_config_dir_for_custom_loader(tmp_path: Path):
+    loader = ConfigLoader(config_dir=str(tmp_path / "custom-config"))
+
+    assert loader.get_default_config_write_path() == tmp_path / "custom-config" / "default.yaml"
 
 
 # ========== is_editable_category テスト ==========
