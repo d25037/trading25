@@ -189,7 +189,7 @@ function SelectedStrategyPanel({
   selectedStrategyShortName: string | null;
 }) {
   return (
-    <div className="lg:col-span-2">
+    <div className="lg:col-span-2 lg:row-start-1">
       {strategyDetail ? (
         <StrategyInfoCard
           displayName={strategyDetail.display_name}
@@ -234,7 +234,7 @@ function BacktestWorkspacePanel({
   const showProgressCard = Boolean(jobStatus) || isLoadingJob || isSubmitting;
 
   return (
-    <Surface className="p-4 sm:p-5">
+    <Surface className="p-4 sm:p-5 lg:col-start-1 lg:row-start-2">
       <SectionHeading
         eyebrow="Workspace"
         title="Run Status"
@@ -281,7 +281,7 @@ function OptimizationWorkspacePanel({
   const showProgressCard = Boolean(optimizationJobStatus) || isLoadingOptJob || isSubmitting;
 
   return (
-    <Surface className="p-4 sm:p-5">
+    <Surface className="p-4 sm:p-5 lg:col-start-2 lg:row-start-2">
       <SectionHeading
         eyebrow="Workspace"
         title="Optimization Status"

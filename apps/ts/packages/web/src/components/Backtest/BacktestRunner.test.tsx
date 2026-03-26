@@ -231,6 +231,16 @@ describe('BacktestRunner', () => {
     expect(screen.getByRole('button', { name: 'Run Optimization' })).toBeDisabled();
   });
 
+  it('pins workspace panels to the left grid columns so the control rail does not overlap them', () => {
+    renderBacktestRunner();
+
+    const runStatusPanel = screen.getByText('Run Status').closest('.app-panel');
+    const optimizationStatusPanel = screen.getByText('Optimization Status').closest('.app-panel');
+
+    expect(runStatusPanel).toHaveClass('lg:col-start-1', 'lg:row-start-2');
+    expect(optimizationStatusPanel).toHaveClass('lg:col-start-2', 'lg:row-start-2');
+  });
+
   it('opens default config editor when button is clicked', async () => {
     const user = userEvent.setup();
     renderBacktestRunner();
