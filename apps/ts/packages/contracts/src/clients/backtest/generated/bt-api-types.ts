@@ -5557,10 +5557,9 @@ export interface components {
             count: number;
             /**
              * Dataset
-             * @description データセット名
-             * @default primeExTopix500
+             * @description データセット名（未指定時は XDG default config を使用）
              */
-            dataset: string;
+            dataset?: string | null;
             /**
              * Direction
              * @description 売買方向

@@ -42,11 +42,14 @@ from src.domains.strategy.runtime.validator import (
     validate_strategy_config,
     validate_strategy_name,
 )
+from src.shared.paths import (
+    get_default_config_override_path,
+    get_default_config_path as resolve_default_config_path,
+)
 from src.shared.paths.constants import EXTERNAL_CATEGORIES, STRATEGY_CATEGORIES
 
 
 MOVABLE_STRATEGY_CATEGORIES = {"production", "experimental", "legacy"}
-_BT_APP_ROOT = Path(__file__).resolve().parents[4]
 
 
 class ConfigLoader:
@@ -84,15 +87,15 @@ class ConfigLoader:
 
     def get_default_config_path(self) -> Path:
         """default.yaml の実体パスを解決する（cwd 非依存）"""
-        default_path = self.config_dir / "default.yaml"
-        if default_path.exists():
-            return default_path
-
         if self._is_default_config():
-            fallback = _BT_APP_ROOT / "config" / "default.yaml"
-            return fallback
+            return resolve_default_config_path()
+        return self.config_dir / "default.yaml"
 
-        return default_path
+    def get_default_config_write_path(self) -> Path:
+        """default.yaml の保存先パスを解決する"""
+        if self._is_default_config():
+            return get_default_config_override_path()
+        return self.config_dir / "default.yaml"
 
     def reload_default_config(self) -> None:
         """デフォルト設定をファイルからリロードしてメモリを更新する"""

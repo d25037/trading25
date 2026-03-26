@@ -5744,10 +5744,16 @@
             "type": "integer"
           },
           "dataset": {
-            "default": "primeExTopix500",
-            "description": "データセット名",
-            "title": "Dataset",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "データセット名（未指定時は XDG default config を使用）",
+            "title": "Dataset"
           },
           "direction": {
             "default": "longonly",

@@ -54,7 +54,7 @@ class TestLabGenerateRequestSchema:
         assert req.save is True
         assert req.direction == "longonly"
         assert req.timeframe == "daily"
-        assert req.dataset == "primeExTopix500"
+        assert req.dataset is None
         assert req.entry_filter_only is False
         assert req.allowed_categories is None
 
@@ -757,7 +757,7 @@ class TestLabSubmitEndpoints:
                 save=True,
                 direction="longonly",
                 timeframe="daily",
-                dataset="primeExTopix500",
+                dataset=None,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
                 engine_policy=EnginePolicy(),
@@ -1025,15 +1025,23 @@ class TestLabServiceAsync:
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
 
-        with patch.object(service, "_run_worker_job", new_callable=AsyncMock):
+        with (
+            patch(
+                "src.application.services.lab_service.load_default_shared_config",
+                return_value={"dataset": "xdg_dataset"},
+            ),
+            patch.object(service, "_run_worker_job", new_callable=AsyncMock),
+        ):
             job_id = await service.submit_generate(count=10, top=3)
             job = manager.get_job(job_id)
             assert job is not None
             assert job.job_type == "lab_generate"
             assert "generate" in job.strategy_name
             assert job.run_spec is not None
-            assert job.run_spec.dataset_name == "primeExTopix500"
+            assert job.run_spec.dataset_name == "xdg_dataset"
+            assert job.run_spec.dataset_snapshot_id == "xdg_dataset"
             assert job.run_spec.parameters["count"] == 10
+            assert job.run_spec.parameters["dataset"] == "xdg_dataset"
         service._executor.shutdown(wait=False)
 
     async def test_submit_evolve_creates_job(self) -> None:
@@ -1631,8 +1639,13 @@ class TestLabServiceSyncMethods:
             MockYaml.return_value.save_candidate.return_value = "/tmp/saved.yaml"
 
             result = service._execute_generate_sync(
-                count=10, top=3, seed=42, save=True,
-                direction="longonly", timeframe="daily", dataset="test",
+                count=10,
+                top=3,
+                seed=42,
+                save=True,
+                direction="longonly",
+                timeframe="daily",
+                dataset="test",
             )
 
         assert result["lab_type"] == "generate"
@@ -1640,6 +1653,67 @@ class TestLabServiceSyncMethods:
         assert result["saved_strategy_path"] == "/tmp/saved.yaml"
         assert len(result["results"]) == 1
         assert MockEval.call_args.kwargs["n_jobs"] == -1
+        assert MockEval.call_args.kwargs["shared_config_dict"]["dataset"] == "test"
+        saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
+        assert saved_candidate.shared_config["dataset"] == "test"
+        service._executor.shutdown(wait=False)
+
+    def test_execute_generate_sync_uses_xdg_default_dataset_when_omitted(self) -> None:
+        """_execute_generate_syncでdataset未指定時はXDG default configを使う"""
+        from unittest.mock import MagicMock
+
+        from src.application.services.lab_service import LabService
+
+        service = LabService(max_workers=1)
+
+        mock_candidate = MagicMock()
+        mock_candidate.strategy_id = "gen-default"
+        mock_candidate.entry_filter_params = {}
+        mock_candidate.exit_trigger_params = {}
+        mock_candidate.shared_config = {}
+
+        mock_result = MagicMock()
+        mock_result.candidate = mock_candidate
+        mock_result.score = 1.0
+        mock_result.sharpe_ratio = 0.7
+        mock_result.calmar_ratio = 0.4
+        mock_result.total_return = 0.08
+        mock_result.max_drawdown = -0.07
+        mock_result.win_rate = 0.5
+        mock_result.trade_count = 10
+        mock_result.success = True
+
+        with (
+            patch(
+                "src.application.services.lab_service.load_default_shared_config",
+                return_value={"dataset": "xdg_dataset"},
+            ),
+            patch(
+                "src.domains.lab_agent.strategy_generator.StrategyGenerator"
+            ) as MockGen,
+            patch("src.domains.lab_agent.evaluator.StrategyEvaluator") as MockEval,
+            patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
+        ):
+            MockGen.return_value.generate.return_value = [mock_candidate]
+            MockEval.return_value.evaluate_batch.return_value = [mock_result]
+            MockYaml.return_value.save_candidate.return_value = "/tmp/default.yaml"
+
+            result = service._execute_generate_sync(
+                count=5,
+                top=1,
+                seed=None,
+                save=True,
+                direction="longonly",
+                timeframe="daily",
+                dataset=None,
+            )
+
+        assert result["saved_strategy_path"] == "/tmp/default.yaml"
+        assert (
+            MockEval.call_args.kwargs["shared_config_dict"]["dataset"] == "xdg_dataset"
+        )
+        saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
+        assert saved_candidate.shared_config["dataset"] == "xdg_dataset"
         service._executor.shutdown(wait=False)
 
     def test_execute_generate_sync_no_save(self) -> None:

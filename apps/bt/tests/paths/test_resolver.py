@@ -9,11 +9,15 @@ from unittest.mock import patch
 import pytest
 
 from src.shared.paths import (
+    get_config_dir,
     get_all_backtest_result_dirs,
     get_all_optimization_grid_dirs,
     get_all_optimization_result_dirs,
     get_all_strategy_paths,
     get_data_dir,
+    get_default_config_override_path,
+    get_default_config_path,
+    get_project_default_config_path,
     get_strategies_dir,
     get_backtest_results_dir,
     get_backtest_attribution_dir,
@@ -34,6 +38,7 @@ def isolate_trading25_path_env(monkeypatch: pytest.MonkeyPatch):
         "TRADING25_DATA_DIR",
         "TRADING25_STRATEGIES_DIR",
         "TRADING25_BACKTEST_DIR",
+        "TRADING25_DEFAULT_CONFIG_PATH",
     ):
         monkeypatch.delenv(env_name, raising=False)
 
@@ -53,6 +58,60 @@ class TestGetDataDir:
         with patch.dict(os.environ, {"TRADING25_DATA_DIR": custom_dir}):
             result = get_data_dir()
             assert result == Path(custom_dir)
+
+
+class TestDefaultConfigPaths:
+    def test_get_config_dir_uses_xdg_base(self, tmp_path: Path):
+        with patch.dict(os.environ, {"TRADING25_DATA_DIR": str(tmp_path / "data")}):
+            result = get_config_dir()
+        assert result == tmp_path / "data" / "config"
+
+    def test_get_project_default_config_path_falls_back_to_bt_root(self, monkeypatch, tmp_path: Path):
+        project_dir = tmp_path / "config"
+        baseline = tmp_path / "apps" / "bt" / "config" / "default.yaml"
+        baseline.parent.mkdir(parents=True)
+        baseline.write_text("default:\n  parameters: {}\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_CONFIG_DIR", project_dir)
+        monkeypatch.setattr("src.shared.paths.resolver._BT_APP_ROOT", tmp_path / "apps" / "bt")
+
+        assert get_project_default_config_path() == baseline
+
+    def test_get_default_config_override_path_uses_env_override(self, tmp_path: Path):
+        override_path = tmp_path / "custom" / "default.yaml"
+        with patch.dict(os.environ, {"TRADING25_DEFAULT_CONFIG_PATH": str(override_path)}):
+            result = get_default_config_override_path()
+        assert result == override_path
+
+    def test_get_default_config_path_prefers_env_override_when_present(self, monkeypatch, tmp_path: Path):
+        baseline = tmp_path / "apps" / "bt" / "config" / "default.yaml"
+        baseline.parent.mkdir(parents=True)
+        baseline.write_text("default:\n  parameters: {}\n", encoding="utf-8")
+        override_path = tmp_path / "override" / "default.yaml"
+        override_path.parent.mkdir(parents=True)
+        override_path.write_text("default:\n  parameters:\n    shared_config:\n      dataset: custom\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_CONFIG_DIR", tmp_path / "missing-config")
+        monkeypatch.setattr("src.shared.paths.resolver._BT_APP_ROOT", tmp_path / "apps" / "bt")
+
+        with patch.dict(os.environ, {"TRADING25_DEFAULT_CONFIG_PATH": str(override_path)}):
+            result = get_default_config_path()
+
+        assert result == override_path
+
+    def test_get_default_config_path_prefers_xdg_override_before_baseline(self, monkeypatch, tmp_path: Path):
+        baseline = tmp_path / "apps" / "bt" / "config" / "default.yaml"
+        baseline.parent.mkdir(parents=True)
+        baseline.write_text("default:\n  parameters: {}\n", encoding="utf-8")
+        xdg_data_dir = tmp_path / "xdg-data"
+        override_path = xdg_data_dir / "config" / "default.yaml"
+        override_path.parent.mkdir(parents=True)
+        override_path.write_text("default:\n  execution: {}\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_CONFIG_DIR", tmp_path / "missing-config")
+        monkeypatch.setattr("src.shared.paths.resolver._BT_APP_ROOT", tmp_path / "apps" / "bt")
+
+        with patch.dict(os.environ, {"TRADING25_DATA_DIR": str(xdg_data_dir)}):
+            result = get_default_config_path()
+
+        assert result == override_path
 
 
 class TestGetStrategiesDir:
@@ -255,6 +314,7 @@ class TestEnsureDataDirs:
             # 作成されたディレクトリを確認
             data_dir = Path(custom_dir)
             assert data_dir.exists()
+            assert (data_dir / "config").exists()
             assert (data_dir / "strategies" / "experimental").exists()
             assert (data_dir / "strategies" / "production").exists()
             assert (data_dir / "strategies" / "legacy").exists()

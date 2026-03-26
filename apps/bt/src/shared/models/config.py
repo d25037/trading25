@@ -92,7 +92,7 @@ class SharedConfig(BaseModel):
     )
     start_date: str | None = Field(default="", description="開始日")
     end_date: str | None = Field(default="", description="終了日")
-    dataset: str = Field(default="primeExTopix500", description="データセット名")
+    dataset: str = Field(default="", description="データセット名")
     include_margin_data: bool = Field(
         default=True, description="信用残高データを含めるか"
     )
@@ -174,6 +174,11 @@ class SharedConfig(BaseModel):
         if info.context and info.context.get("resolve_stock_codes") is False:
             return self
         if self.stock_codes == ["all"]:
+            if not self.dataset.strip():
+                raise ValueError(
+                    "shared_config.dataset is required when stock_codes=['all']. "
+                    "Set it in strategy YAML or XDG default config."
+                )
             # データベースから銘柄一覧を取得
             from src.infrastructure.data_access.loaders import get_stock_list
 

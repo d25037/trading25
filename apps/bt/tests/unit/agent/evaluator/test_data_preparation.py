@@ -63,12 +63,16 @@ class TestGetFallbackSharedConfig:
         assert "initial_cash" in config
         assert "fees" in config
         assert "dataset" in config
+        assert config["dataset"] == ""
         assert "kelly_fraction" in config
 
 
 class TestLoadDefaultSharedConfig:
     def test_file_not_exists(self, monkeypatch: Any) -> None:
-        monkeypatch.setattr(Path, "exists", lambda self: False)
+        monkeypatch.setattr(
+            "src.domains.lab_agent.evaluator.data_preparation.get_default_config_path",
+            lambda: Path("/tmp/missing-default.yaml"),
+        )
         config = load_default_shared_config()
         assert "initial_cash" in config  # fallback config
 
@@ -83,7 +87,7 @@ default:
         yaml_file = tmp_path / "default.yaml"
         yaml_file.write_text(yaml_content)
         with patch(
-            "src.domains.lab_agent.evaluator.data_preparation.Path",
+            "src.domains.lab_agent.evaluator.data_preparation.get_default_config_path",
             return_value=yaml_file,
         ):
             config = load_default_shared_config()

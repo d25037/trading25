@@ -794,7 +794,8 @@ class TestDefaultConfig:
         assert data["advanced_only_paths"] == ["default.extra_note"]
 
     def test_update_success(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
+        write_path = tmp_path / "xdg" / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = write_path
 
         resp = client.put(
             "/api/config/default",
@@ -802,11 +803,11 @@ class TestDefaultConfig:
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        assert (tmp_path / "default.yaml").exists()
+        assert write_path.exists()
         mock_config_loader.reload_default_config.assert_called_once()
 
     def test_update_yaml_syntax_error_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -815,7 +816,7 @@ class TestDefaultConfig:
         assert resp.status_code == 400
 
     def test_update_non_object_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -825,7 +826,7 @@ class TestDefaultConfig:
         assert "オブジェクト" in resp.json()["detail"]
 
     def test_update_missing_default_key_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -835,7 +836,7 @@ class TestDefaultConfig:
         assert "default" in resp.json()["detail"]
 
     def test_update_default_not_object_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -843,16 +844,16 @@ class TestDefaultConfig:
         )
         assert resp.status_code == 400
 
-    def test_update_write_error_500(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.get_default_config_path.return_value = (
-            tmp_path / "missing_parent" / "default.yaml"
-        )
+    def test_update_creates_missing_xdg_parent(self, client, mock_config_loader, tmp_path):
+        write_path = tmp_path / "missing_parent" / "default.yaml"
+        mock_config_loader.get_default_config_write_path.return_value = write_path
 
         resp = client.put(
             "/api/config/default",
             json={"content": "default:\n  dataset: test\n"},
         )
-        assert resp.status_code == 500
+        assert resp.status_code == 200
+        assert write_path.exists()
 
     def test_structured_update_preserves_comments(self, client, mock_config_loader, tmp_path):
         default_path = tmp_path / "default.yaml"
@@ -872,6 +873,7 @@ class TestDefaultConfig:
             encoding="utf-8",
         )
         mock_config_loader.get_default_config_path.return_value = default_path
+        mock_config_loader.get_default_config_write_path.return_value = default_path
 
         resp = client.put(
             "/api/config/default/structured",
@@ -894,6 +896,38 @@ class TestDefaultConfig:
         assert "dataset: new-dataset" in saved
         mock_config_loader.reload_default_config.assert_called_once()
 
+    def test_structured_update_reads_baseline_and_writes_override(self, client, mock_config_loader, tmp_path):
+        baseline_path = tmp_path / "repo" / "default.yaml"
+        baseline_path.parent.mkdir(parents=True)
+        baseline_path.write_text(
+            (
+                "default:\n"
+                "  execution:\n"
+                "    template_notebook: old.py\n"
+                "  parameters:\n"
+                "    shared_config:\n"
+                "      dataset: baseline-dataset\n"
+            ),
+            encoding="utf-8",
+        )
+        override_path = tmp_path / "xdg" / "default.yaml"
+        mock_config_loader.get_default_config_path.return_value = baseline_path
+        mock_config_loader.get_default_config_write_path.return_value = override_path
+
+        resp = client.put(
+            "/api/config/default/structured",
+            json={
+                "execution": {"template_notebook": "override.py"},
+                "shared_config": {"dataset": "override-dataset"},
+            },
+        )
+
+        assert resp.status_code == 200
+        assert baseline_path.read_text(encoding="utf-8").find("baseline-dataset") >= 0
+        saved = override_path.read_text(encoding="utf-8")
+        assert "template_notebook: override.py" in saved
+        assert "dataset: override-dataset" in saved
+
     def test_structured_update_rejects_unknown_execution_field(
         self,
         client,
@@ -903,6 +937,7 @@ class TestDefaultConfig:
         default_path = tmp_path / "default.yaml"
         default_path.write_text("default:\n  execution: {}\n", encoding="utf-8")
         mock_config_loader.get_default_config_path.return_value = default_path
+        mock_config_loader.get_default_config_write_path.return_value = default_path
 
         resp = client.put(
             "/api/config/default/structured",

@@ -157,7 +157,7 @@ _SHARED_FIELD_OVERRIDES: dict[str, dict[str, Any]] = {
         "label": "Dataset",
         "widget": "combobox",
         "summary": "Dataset snapshot name resolved by the runtime.",
-        "placeholder": "primeExTopix500_20260316",
+        "placeholder": "Override in XDG default config or strategy YAML",
     },
     "include_margin_data": {
         "group": "data",

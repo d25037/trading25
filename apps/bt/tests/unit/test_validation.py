@@ -35,7 +35,7 @@ class TestSharedConfig:
         assert config.borrow_fee == 0.0
         assert config.max_concurrent_positions is None
         assert config.max_exposure is None
-        assert config.dataset == "primeExTopix500"
+        assert config.dataset == ""
         assert config.include_margin_data is True
         assert config.include_statements_data is True
         assert config.group_by is True
@@ -64,6 +64,12 @@ class TestSharedConfig:
         assert config.initial_cash == 200000
         assert config.fees == 0.002
         assert config.stock_codes == ["17190"]
+
+    def test_blank_dataset_requires_explicit_override_when_resolving_all_codes(self):
+        with pytest.raises(ValidationError) as exc_info:
+            SharedConfig()
+
+        assert "shared_config.dataset is required" in str(exc_info.value)
 
     def test_invalid_initial_cash(self):
         """無効な初期資金でValidationError"""

@@ -5,7 +5,6 @@
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -18,6 +17,7 @@ from src.shared.constants import (
     DEFAULT_MAX_ALLOCATION,
     DEFAULT_MIN_ALLOCATION,
 )
+from src.shared.paths import get_default_config_path
 
 
 @dataclass
@@ -84,7 +84,7 @@ def _get_fallback_shared_config() -> dict[str, Any]:
     return {
         "initial_cash": DEFAULT_INITIAL_CASH,
         "fees": DEFAULT_FEES,
-        "dataset": "primeExTopix500",
+        "dataset": "",
         "kelly_fraction": DEFAULT_KELLY_FRACTION,
         "min_allocation": DEFAULT_MIN_ALLOCATION,
         "max_allocation": DEFAULT_MAX_ALLOCATION,
@@ -97,7 +97,7 @@ def _get_fallback_shared_config() -> dict[str, Any]:
 
 def load_default_shared_config() -> dict[str, Any]:
     """config/default.yaml から shared_config を読み込む"""
-    default_yaml_path = Path("config/default.yaml")
+    default_yaml_path = get_default_config_path()
     if not default_yaml_path.exists():
         return _get_fallback_shared_config()
 
