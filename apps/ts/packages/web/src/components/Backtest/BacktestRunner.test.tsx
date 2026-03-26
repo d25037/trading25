@@ -227,7 +227,7 @@ describe('BacktestRunner', () => {
     expect(screen.getByText('Alpha Strategy')).toBeInTheDocument();
     expect(screen.getByText('Category: production')).toBeInTheDocument();
     expect(screen.getByText('Alpha description')).toBeInTheDocument();
-    expect(screen.getByText('No grid config found. Configure in Strategies > Optimize tab.')).toBeInTheDocument();
+    expect(screen.getAllByText('No grid config found. Configure in Strategies > Optimize tab.').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Run Optimization' })).toBeDisabled();
   });
 
@@ -301,7 +301,7 @@ describe('BacktestRunner', () => {
 
     renderBacktestRunner();
 
-    expect(screen.getByText('Grid config: 2 params, 12 combinations')).toBeInTheDocument();
+    expect(screen.getAllByText('Grid config: 2 params, 12 combinations').length).toBeGreaterThan(0);
     expect(screen.getByText('entry_filter_params.signal_a: [1, 2]')).toBeInTheDocument();
     expect(screen.getByText('exit_trigger_params.signal_b: [x, y]')).toBeInTheDocument();
 

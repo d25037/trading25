@@ -1,7 +1,7 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
@@ -48,8 +48,8 @@ function RunningProgress({ isActive, message }: { isActive: boolean; message: st
 
   return (
     <div className="space-y-2">
-      <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-        <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
+      <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+        <div className="h-full animate-progress-indeterminate rounded-full bg-blue-500" />
       </div>
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
@@ -124,61 +124,56 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
 
   if (isLoading && !job) {
     return (
-      <Card className="mt-4">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <CardTitle className="text-lg">Submitting...</CardTitle>
-          </div>
-        </CardHeader>
-      </Card>
+      <Surface className="mt-4 p-4 sm:p-5">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <h3 className="text-lg font-semibold tracking-tight text-foreground">Submitting...</h3>
+        </div>
+      </Surface>
     );
   }
 
   if (!job) return null;
 
   const completedResult = job.status === 'completed' ? job.result : null;
-
-  const formatElapsed = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${String(sec).padStart(2, '0')}`;
+  const formatElapsed = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   return (
-    <Card className="mt-4">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <StatusIcon status={job.status} />
-            <CardTitle className="text-lg">
-              <StatusLabel status={job.status} />
-            </CardTitle>
-          </div>
-          {isActive && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
-              {onCancel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onCancel}
-                  disabled={isCancelling}
-                  className="h-7 gap-1 text-xs text-muted-foreground hover:text-red-500"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  Cancel
-                </Button>
-              )}
-            </div>
-          )}
+    <Surface className="mt-4 p-4 sm:p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <StatusIcon status={job.status} />
+          <h3 className="text-lg font-semibold tracking-tight text-foreground">
+            <StatusLabel status={job.status} />
+          </h3>
         </div>
-      </CardHeader>
-      <CardContent>
+        {isActive ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
+            {onCancel ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancel}
+                disabled={isCancelling}
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-red-500"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4">
         <RunningProgress isActive={isActive} message={job.message} />
         <CompletedSummary result={completedResult} />
         <StatusAlert job={job} />
-      </CardContent>
-    </Card>
+      </div>
+    </Surface>
   );
 }

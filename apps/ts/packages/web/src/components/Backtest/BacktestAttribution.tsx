@@ -1,5 +1,6 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
+import { SegmentedTabs, SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,6 +26,10 @@ import { StrategySelector } from './StrategySelector';
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_PERMUTATIONS = 128;
+const attributionTabs = [
+  { value: 'run' as const, label: 'Run' },
+  { value: 'history' as const, label: 'History' },
+] as const;
 
 type StrategyOptions = ComponentProps<typeof StrategySelector>['strategies'];
 
@@ -469,38 +474,21 @@ export function BacktestAttribution({ selectedStrategy, onSelectedStrategyChange
 
   return (
     <div className="max-w-6xl space-y-4">
-      <div className="flex items-center gap-2">
-        <GitBranch className="h-5 w-5 text-primary" />
-        <div>
-          <h2 className="text-lg font-semibold">Signal Attribution</h2>
-          <p className="text-xs text-muted-foreground">LOO + Shapley top-N contribution analysis</p>
+      <Surface className="px-4 py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <SectionEyebrow>Attribution Workspace</SectionEyebrow>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg font-semibold tracking-tight text-foreground">Signal Attribution</h2>
+              </div>
+              <p className="text-sm text-muted-foreground">LOO + Shapley top-N contribution analysis.</p>
+            </div>
+          </div>
+          <SegmentedTabs items={attributionTabs} value={activeTab} onChange={setActiveTab} />
         </div>
-      </div>
-
-      <div className="flex border-b">
-        <button
-          type="button"
-          onClick={() => setActiveTab('run')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'run'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          Run
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'history'
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          History
-        </button>
-      </div>
+      </Surface>
 
       {activeTab === 'run' ? (
         <>
