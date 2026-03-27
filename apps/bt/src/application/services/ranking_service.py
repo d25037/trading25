@@ -31,6 +31,8 @@ from src.entrypoints.http.schemas.ranking import (
     MarketRankingResponse,
     RankingItem,
     Rankings,
+    Topix100RankingItem,
+    Topix100RankingResponse,
 )
 
 
@@ -128,6 +130,7 @@ FUNDAMENTAL_BASE_COLUMNS = (
     "s.code, s.company_name, s.market_code, s.sector_33_name, "
     "sd.close as current_price, sd.volume"
 )
+_TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
@@ -224,6 +227,42 @@ class RankingService:
             lastUpdated=_now_iso(),
         )
 
+    def get_topix100_ranking(
+        self,
+        date: str | None = None,
+    ) -> Topix100RankingResponse:
+        """TOPIX100 の SMA 20/80 snapshot ランキングを返す。"""
+        target_date = self._resolve_topix100_ranking_date(date)
+        rows = self._load_topix100_ranking_rows(target_date)
+        if not rows:
+            raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
+
+        items = [
+            Topix100RankingItem(
+                rank=int(row["rank"]),
+                code=str(row["code"]),
+                companyName=str(row["company_name"]),
+                marketCode=str(row["market_code"]),
+                sector33Name=str(row["sector_33_name"]),
+                scaleCategory=str(row["scale_category"] or ""),
+                currentPrice=float(row["current_price"]),
+                volume=float(row["volume"]),
+                priceSma20_80=float(row["price_sma_20_80"]),
+                volumeSma20_80=float(row["volume_sma_20_80"]),
+                priceDecile=int(row["price_decile"]),
+                priceBucket=str(row["price_bucket"]),
+                volumeBucket=str(row["volume_bucket"]) if row["volume_bucket"] is not None else None,
+            )
+            for row in rows
+        ]
+
+        return Topix100RankingResponse(
+            date=target_date,
+            itemCount=len(items),
+            items=items,
+            lastUpdated=_now_iso(),
+        )
+
     def get_fundamental_rankings(
         self,
         limit: int = 20,
@@ -317,6 +356,208 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
+
+    def _resolve_topix100_ranking_date(self, date: str | None) -> str:
+        if date:
+            return date
+
+        row = self._reader.query_one(
+            f"""
+            WITH topix100_stocks AS (
+                SELECT normalized_code
+                FROM (
+                    SELECT
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stocks
+                    WHERE coalesce(scale_category, '') IN (?, ?)
+                )
+                WHERE rn = 1
+            ),
+            stock_data_dedup AS (
+                SELECT normalized_code, date
+                FROM (
+                    SELECT
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        date,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}, date
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stock_data
+                )
+                WHERE rn = 1
+            )
+            SELECT MAX(sd.date) AS max_date
+            FROM stock_data_dedup sd
+            JOIN topix100_stocks s ON s.normalized_code = sd.normalized_code
+            """,
+            _TOPIX100_SCALE_CATEGORIES,
+        )
+        if row is None or row["max_date"] is None:
+            raise ValueError("No TOPIX100 trading data available in database")
+        return str(row["max_date"])
+
+    def _load_topix100_ranking_rows(self, target_date: str) -> list[Mapping[str, Any]]:
+        return self._reader.query(
+            f"""
+            WITH topix100_stocks AS (
+                SELECT
+                    code,
+                    company_name,
+                    market_code,
+                    sector_33_name,
+                    scale_category,
+                    normalized_code
+                FROM (
+                    SELECT
+                        code,
+                        company_name,
+                        market_code,
+                        sector_33_name,
+                        coalesce(scale_category, '') AS scale_category,
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stocks
+                    WHERE coalesce(scale_category, '') IN (?, ?)
+                )
+                WHERE rn = 1
+            ),
+            stock_data_dedup AS (
+                SELECT normalized_code, date, close, volume
+                FROM (
+                    SELECT
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        date,
+                        close,
+                        volume,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}, date
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date <= ?
+                )
+                WHERE rn = 1
+            ),
+            feature_history AS (
+                SELECT
+                    s.code,
+                    s.company_name,
+                    s.market_code,
+                    s.sector_33_name,
+                    s.scale_category,
+                    sd.normalized_code,
+                    sd.date,
+                    sd.close AS current_price,
+                    sd.volume,
+                    AVG(sd.close) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                    ) AS price_sma_20,
+                    AVG(sd.close) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
+                    ) AS price_sma_80,
+                    AVG(sd.volume) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                    ) AS volume_sma_20,
+                    AVG(sd.volume) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
+                    ) AS volume_sma_80,
+                    COUNT(*) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
+                    ) AS price_window_count_80
+                FROM stock_data_dedup sd
+                JOIN topix100_stocks s ON s.normalized_code = sd.normalized_code
+            ),
+            current_snapshot AS (
+                SELECT
+                    code,
+                    company_name,
+                    market_code,
+                    sector_33_name,
+                    scale_category,
+                    current_price,
+                    volume,
+                    price_sma_20 / NULLIF(price_sma_80, 0) AS price_sma_20_80,
+                    volume_sma_20 / NULLIF(volume_sma_80, 0) AS volume_sma_20_80
+                FROM feature_history
+                WHERE date = ? AND price_window_count_80 >= 80
+            ),
+            price_ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        ORDER BY price_sma_20_80 DESC, code ASC
+                    ) AS rank,
+                    NTILE(10) OVER (
+                        ORDER BY price_sma_20_80 DESC, code ASC
+                    ) AS price_decile
+                FROM current_snapshot
+                WHERE price_sma_20_80 IS NOT NULL AND volume_sma_20_80 IS NOT NULL
+            ),
+            bucketed AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN price_decile = 1 THEN 'q1'
+                        WHEN price_decile = 10 THEN 'q10'
+                        WHEN price_decile IN (4, 5, 6) THEN 'q456'
+                        ELSE 'other'
+                    END AS price_bucket
+                FROM price_ranked
+            ),
+            volume_ranked AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN price_bucket IN ('q1', 'q10', 'q456')
+                        THEN NTILE(2) OVER (
+                            PARTITION BY price_bucket
+                            ORDER BY volume_sma_20_80 DESC, code ASC
+                        )
+                        ELSE NULL
+                    END AS volume_half_rank
+                FROM bucketed
+            )
+            SELECT
+                rank,
+                code,
+                company_name,
+                market_code,
+                sector_33_name,
+                scale_category,
+                current_price,
+                volume,
+                price_sma_20_80,
+                volume_sma_20_80,
+                price_decile,
+                price_bucket,
+                CASE
+                    WHEN volume_half_rank = 1 THEN 'high'
+                    WHEN volume_half_rank = 2 THEN 'low'
+                    ELSE NULL
+                END AS volume_bucket
+            FROM volume_ranked
+            ORDER BY rank
+            """,
+            (*_TOPIX100_SCALE_CATEGORIES, target_date, target_date),
+        )
 
     def _load_fundamental_stock_rows(
         self,

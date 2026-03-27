@@ -28,6 +28,8 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   limit: 20,
   lookbackDays: 1,
   periodDays: 250,
+  topix100PriceBucket: 'all',
+  topix100VolumeBucket: 'all',
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {

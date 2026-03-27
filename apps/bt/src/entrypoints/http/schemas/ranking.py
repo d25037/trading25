@@ -67,6 +67,33 @@ class MarketRankingResponse(BaseModel):
     lastUpdated: str
 
 
+class Topix100RankingItem(BaseModel):
+    """TOPIX100 SMA ranking item."""
+
+    rank: int
+    code: str
+    companyName: str
+    marketCode: str
+    sector33Name: str
+    scaleCategory: str
+    currentPrice: float
+    volume: float
+    priceSma20_80: float
+    volumeSma20_80: float
+    priceDecile: int
+    priceBucket: Literal["q1", "q10", "q456", "other"]
+    volumeBucket: Literal["high", "low"] | None = None
+
+
+class Topix100RankingResponse(BaseModel):
+    """TOPIX100 SMA ranking response."""
+
+    date: str
+    itemCount: int
+    items: list[Topix100RankingItem] = Field(default_factory=list)
+    lastUpdated: str
+
+
 class FundamentalRankingItem(BaseModel):
     """ファンダメンタルランキング項目"""
 

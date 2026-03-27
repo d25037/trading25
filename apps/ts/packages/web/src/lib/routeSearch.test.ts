@@ -139,6 +139,8 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       rankingPeriodDays: '60',
+      rankingTopix100PriceBucket: 'q10',
+      rankingTopix100VolumeBucket: 'low',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: '7',
@@ -150,6 +152,8 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 60,
+      rankingTopix100PriceBucket: 'q10',
+      rankingTopix100VolumeBucket: 'low',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
@@ -159,21 +163,25 @@ describe('routeSearch', () => {
   it('roundtrips ranking route state and maps screening ranking tabs', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'fundamentalRanking',
-      dailyView: 'indices',
+      dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
+      rankingTopix100PriceBucket: 'q1',
+      rankingTopix100VolumeBucket: 'high',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
     expect(rankingState.activeSubTab).toBe('fundamentalRanking');
-    expect(rankingState.activeDailyView).toBe('indices');
+    expect(rankingState.activeDailyView).toBe('topix100');
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'fundamentalRanking',
-      dailyView: 'indices',
+      dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
+      rankingTopix100PriceBucket: 'q1',
+      rankingTopix100VolumeBucket: 'high',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });

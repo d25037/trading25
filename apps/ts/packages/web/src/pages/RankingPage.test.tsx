@@ -62,6 +62,14 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useTopix100Ranking', () => ({
+  useTopix100Ranking: () => ({
+    data: { date: '2026-03-25', itemCount: 0, items: [] },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 vi.mock('@/components/Ranking', () => ({
   RANKING_LOOKBACK_OPTIONS: [
     { value: 1, label: '1 day' },
@@ -77,6 +85,12 @@ vi.mock('@/components/Ranking', () => ({
   RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
     <button type="button" onClick={() => onStockClick('6758')}>
       Ranking Row
+    </button>
+  ),
+  Topix100RankingFilters: () => <div>TOPIX100 Ranking Filters</div>,
+  Topix100RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
+    <button type="button" onClick={() => onStockClick('7203')}>
+      TOPIX100 Ranking Table
     </button>
   ),
 }));
@@ -112,6 +126,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'TOPIX100' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
   });
@@ -153,6 +168,19 @@ describe('RankingPage', () => {
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
   });
 
+  it('switches daily ranking to topix100 view', async () => {
+    const user = userEvent.setup();
+    const view = render(<RankingPage />);
+
+    await user.click(screen.getByRole('button', { name: 'TOPIX100' }));
+    view.rerender(<RankingPage />);
+
+    expect(screen.getByText('TOPIX100 SMA ranking')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Ranking Filters')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Ranking Table')).toBeInTheDocument();
+    expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
+  });
+
   it('navigates to indices when an index row is selected', async () => {
     const user = userEvent.setup();
     mockRouteState.activeDailyView = 'indices';
@@ -160,5 +188,14 @@ describe('RankingPage', () => {
 
     await user.click(screen.getByText('Index Performance'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: 'TOPIX' } });
+  });
+
+  it('navigates to charts when a TOPIX100 row is selected', async () => {
+    const user = userEvent.setup();
+    mockRouteState.activeDailyView = 'topix100';
+    render(<RankingPage />);
+
+    await user.click(screen.getByText('TOPIX100 Ranking Table'));
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 });
