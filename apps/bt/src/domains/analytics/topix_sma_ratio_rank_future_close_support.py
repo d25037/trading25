@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 Shared definitions for TOPIX SMA-ratio rank / future-close research modules.
 
@@ -8,7 +9,7 @@ behavior aligned across split helper modules.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 
 import pandas as pd
 
@@ -340,5 +341,6 @@ def _ranking_feature_label_lookup(df: pd.DataFrame) -> dict[str, str]:
     for feature in _ordered_feature_values(
         df["ranking_feature"] if "ranking_feature" in df.columns else []
     ):
-        label_lookup.setdefault(feature, RANKING_FEATURE_LABEL_MAP.get(feature, feature))
+        feature_key = cast(RankingFeatureKey, feature)
+        label_lookup.setdefault(feature, RANKING_FEATURE_LABEL_MAP.get(feature_key, feature))
     return label_lookup

@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 Bucket-specific helper tables for TOPIX SMA-ratio rank / future-close research.
 
@@ -8,7 +9,7 @@ isolating the price-bucket and price-volume split analyses.
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -168,6 +169,7 @@ def _build_extreme_vs_middle_significance(
     )
     label_lookup = _ranking_feature_label_lookup(extreme_vs_middle_daily_means_df)
     for ranking_feature in feature_values:
+        feature_key = cast(RankingFeatureKey, ranking_feature)
         for horizon_key in HORIZON_ORDER:
             for metric_key in METRIC_ORDER:
                 pivot_df = _aligned_bucket_pivot(
@@ -183,7 +185,7 @@ def _build_extreme_vs_middle_significance(
                             "ranking_feature_label": label_lookup.get(
                                 ranking_feature,
                                 RANKING_FEATURE_LABEL_MAP.get(
-                                    ranking_feature,
+                                    feature_key,
                                     ranking_feature,
                                 ),
                             ),
@@ -225,7 +227,7 @@ def _build_extreme_vs_middle_significance(
                         "ranking_feature_label": label_lookup.get(
                             ranking_feature,
                             RANKING_FEATURE_LABEL_MAP.get(
-                                ranking_feature,
+                                feature_key,
                                 ranking_feature,
                             ),
                         ),

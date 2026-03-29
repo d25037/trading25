@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, cast
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_code_alias import resolve_market_codes
@@ -38,6 +38,10 @@ from src.entrypoints.http.schemas.ranking import (
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+Topix100PriceBucket = Literal["q1", "q10", "q456", "other"]
+Topix100VolumeBucket = Literal["high", "low"]
 
 
 def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
@@ -250,8 +254,12 @@ class RankingService:
                 priceSma20_80=float(row["price_sma_20_80"]),
                 volumeSma20_80=float(row["volume_sma_20_80"]),
                 priceDecile=int(row["price_decile"]),
-                priceBucket=str(row["price_bucket"]),
-                volumeBucket=str(row["volume_bucket"]) if row["volume_bucket"] is not None else None,
+                priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
+                volumeBucket=(
+                    cast(Topix100VolumeBucket, row["volume_bucket"])
+                    if row["volume_bucket"] is not None
+                    else None
+                ),
             )
             for row in rows
         ]

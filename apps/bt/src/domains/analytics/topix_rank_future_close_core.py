@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 Shared core helpers for TOPIX rank / future-close research modules.
 
@@ -9,7 +10,7 @@ and significance logic without depending on one another's concrete modules.
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -588,14 +589,14 @@ def _safe_kruskal(samples: list[np.ndarray]) -> tuple[float | None, float | None
     if any(len(sample) == 0 for sample in samples):
         return None, None
     statistic, p_value = stats.kruskal(*samples)
-    return float(statistic), float(p_value)
+    return float(cast(float, statistic)), float(cast(float, p_value))
 
 
 def _safe_friedman(samples: list[np.ndarray]) -> tuple[float | None, float | None]:
     if not samples or len(samples[0]) < 2:
         return None, None
     statistic, p_value = stats.friedmanchisquare(*samples)
-    return float(statistic), float(p_value)
+    return float(np.asarray(statistic).item()), float(np.asarray(p_value).item())
 
 
 def _kendalls_w(
@@ -652,10 +653,10 @@ def _safe_wilcoxon(
     if np.allclose(diff, 0.0):
         return 0.0, 1.0
     try:
-        statistic, p_value = stats.wilcoxon(left, right, zero_method="wilcox")
+        result = stats.wilcoxon(left, right, zero_method="wilcox")
     except ValueError:
         return None, None
-    return float(statistic), float(p_value)
+    return float(result.statistic), float(result.pvalue)
 
 
 def _build_global_significance(

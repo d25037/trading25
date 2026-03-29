@@ -173,7 +173,9 @@ def _build_rule_signal_summary(daily_market_df: pd.DataFrame) -> pd.DataFrame:
         for rule_name in RULE_ORDER:
             signal = split_df[rule_name].fillna(False).astype(bool)
             run_lengths = _run_lengths(signal)
-            transitions = int(signal.astype(int).diff().abs().fillna(signal.astype(int)).sum())
+            signal_int = signal.astype(int)
+            initial_transition = int(signal_int.iloc[0]) if not signal_int.empty else 0
+            transitions = int(signal_int.diff().abs().fillna(initial_transition).sum())
             rows.append(
                 {
                     "split": split_name,

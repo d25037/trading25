@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 Shared core helpers for TOPIX regime-conditioning research modules.
 
@@ -130,13 +131,17 @@ def _sort_frame(df: pd.DataFrame) -> pd.DataFrame:
             {key: index for index, key in enumerate(REGIME_TYPE_ORDER, start=1)}
         )
     if "regime_bucket_key" in ordered.columns:
-        ordered["_regime_bucket_order"] = ordered.apply(
-            lambda row: _regime_bucket_sort_index(
-                regime_type=row.get("regime_type"),
-                regime_bucket_key=row.get("regime_bucket_key"),
-            ),
-            axis=1,
-        )
+        ordered["_regime_bucket_order"] = [
+            _regime_bucket_sort_index(
+                regime_type=regime_type,
+                regime_bucket_key=regime_bucket_key,
+            )
+            for regime_type, regime_bucket_key in zip(
+                ordered["regime_type"],
+                ordered["regime_bucket_key"],
+                strict=False,
+            )
+        ]
     if "regime_group_key" in ordered.columns:
         ordered["_regime_group_order"] = ordered["regime_group_key"].map(
             {key: index for index, key in enumerate(REGIME_GROUP_ORDER, start=1)}
@@ -173,6 +178,8 @@ def _regime_bucket_sort_index(
     regime_type: str | None,
     regime_bucket_key: str | None,
 ) -> int | None:
+    if regime_bucket_key is None:
+        return None
     if regime_type == "topix_close":
         return {
             key: index for index, key in enumerate(CLOSE_BUCKET_ORDER, start=1)
@@ -448,13 +455,17 @@ def _build_regime_assignments_df(regime_market_df: pd.DataFrame) -> pd.DataFrame
 
     assignments_df = pd.concat([topix_df, nt_df], ignore_index=True, sort=False)
     assignments_df = assignments_df.dropna(subset=["regime_bucket_key"]).copy()
-    assignments_df["regime_group_key"] = assignments_df.apply(
-        lambda row: _collapse_regime_bucket(
-            regime_type=row["regime_type"],
-            regime_bucket_key=row["regime_bucket_key"],
-        ),
-        axis=1,
-    )
+    assignments_df["regime_group_key"] = [
+        _collapse_regime_bucket(
+            regime_type=regime_type,
+            regime_bucket_key=regime_bucket_key,
+        )
+        for regime_type, regime_bucket_key in zip(
+            assignments_df["regime_type"],
+            assignments_df["regime_bucket_key"],
+            strict=False,
+        )
+    ]
     assignments_df["regime_group_label"] = assignments_df["regime_group_key"].map(
         REGIME_GROUP_LABEL_MAP
     )

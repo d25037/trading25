@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 Selection and composite helper tables for TOPIX SMA-ratio rank research.
 
@@ -7,7 +8,7 @@ construction from the public research entrypoint.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -33,6 +34,7 @@ from src.domains.analytics.topix_sma_ratio_rank_future_close_support import (
     HorizonKey,
     MetricKey,
     RANKING_FEATURE_LABEL_MAP,
+    RankingFeatureKey,
     RANKING_FEATURE_ORDER,
     VALIDATION_START_DATE,
     DecileKey,
@@ -59,9 +61,9 @@ def _oriented_rank_score(
 
 def _build_composite_feature_name(
     *,
-    price_feature: str,
+    price_feature: RankingFeatureKey,
     price_direction: str,
-    volume_feature: str,
+    volume_feature: RankingFeatureKey,
     volume_direction: str,
     score_method: str,
 ) -> str:
@@ -74,9 +76,9 @@ def _build_composite_feature_name(
 
 def _build_composite_feature_label(
     *,
-    price_feature: str,
+    price_feature: RankingFeatureKey,
     price_direction: str,
-    volume_feature: str,
+    volume_feature: RankingFeatureKey,
     volume_direction: str,
     score_method: str,
 ) -> str:
@@ -91,9 +93,9 @@ def _build_composite_feature_label(
 def _build_composite_ranked_panel(
     event_panel_df: pd.DataFrame,
     *,
-    price_feature: str,
+    price_feature: RankingFeatureKey,
     price_direction: str,
-    volume_feature: str,
+    volume_feature: RankingFeatureKey,
     volume_direction: str,
     score_method: str,
 ) -> pd.DataFrame:
@@ -411,9 +413,9 @@ def _build_composite_candidates(
         if price_row is None or volume_row is None:
             continue
 
-        price_feature = str(price_row["ranking_feature"])
+        price_feature = cast(RankingFeatureKey, price_row["ranking_feature"])
         price_direction = str(price_row["discovery_direction"])
-        volume_feature = str(volume_row["ranking_feature"])
+        volume_feature = cast(RankingFeatureKey, volume_row["ranking_feature"])
         volume_direction = str(volume_row["discovery_direction"])
 
         for score_method in COMPOSITE_METHOD_ORDER:

@@ -1,3 +1,5 @@
+# pyright: reportUnusedFunction=false
+
 from __future__ import annotations
 
 from typing import Any
@@ -44,7 +46,7 @@ def _split_filter(df: pd.DataFrame, split_name: SplitName) -> pd.DataFrame:
 
 def _build_beta_neutral_weights(daily_proxy_returns_df: pd.DataFrame) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for stock_group, group_df in daily_proxy_returns_df.groupby("stock_group", sort=False):
+    for _stock_group, group_df in daily_proxy_returns_df.groupby("stock_group", sort=False):
         ordered = group_df.sort_values("date").copy()
         long_returns = ordered["long_next_close_to_close_return"].shift(1)
         etf_returns = ordered["etf_next_close_to_close_return"].shift(1)
@@ -207,7 +209,9 @@ def _evaluate_etf_strategy(
     expected_shortfall = _expected_shortfall(strategy_returns)
     max_drawdown = _max_drawdown(strategy_returns)
     strategy_total_return = (
-        float((1.0 + strategy_returns).prod() - 1.0) if not strategy_returns.empty else np.nan
+        float(np.prod(1.0 + strategy_returns.to_numpy(dtype=float)) - 1.0)
+        if not strategy_returns.empty
+        else np.nan
     )
     return {
         "target_name": target_name,

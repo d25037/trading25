@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 """
 TOPIX100 SMA-ratio regime conditioning research analytics.
 
