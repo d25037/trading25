@@ -19,7 +19,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _normalize_code_sql,
 )
 
-QuartileKey = Literal[
+DecileKey = Literal[
     "Q1",
     "Q2",
     "Q3",
@@ -35,7 +35,7 @@ HorizonKey = Literal["t_plus_1", "t_plus_5", "t_plus_10"]
 MetricKey = Literal["future_close", "future_return"]
 UniverseKey = Literal["topix100", "prime_ex_topix500"]
 
-QUARTILE_ORDER: tuple[QuartileKey, ...] = (
+DECILE_ORDER: tuple[DecileKey, ...] = (
     "Q1",
     "Q2",
     "Q3",
@@ -54,7 +54,7 @@ _HORIZON_DAY_MAP: dict[HorizonKey, int] = {
     "t_plus_5": 5,
     "t_plus_10": 10,
 }
-_QUARTILE_LABEL_MAP: dict[QuartileKey, str] = {
+_DECILE_LABEL_MAP: dict[DecileKey, str] = {
     "Q1": "Q1 Highest Ratio",
     "Q2": "Q2",
     "Q3": "Q3",
@@ -328,9 +328,17 @@ def _sort_frame(
         sorted_df["_horizon_order"] = sorted_df["horizon_key"].map(
             {key: index for index, key in enumerate(HORIZON_ORDER, start=1)}
         )
-    if "feature_quartile" in sorted_df.columns:
-        sorted_df["_quartile_order"] = sorted_df["feature_quartile"].map(
-            {key: index for index, key in enumerate(QUARTILE_ORDER, start=1)}
+    if "feature_decile" in sorted_df.columns:
+        sorted_df["_decile_order"] = sorted_df["feature_decile"].map(
+            {key: index for index, key in enumerate(DECILE_ORDER, start=1)}
+        )
+    if "left_decile" in sorted_df.columns:
+        sorted_df["_left_decile_order"] = sorted_df["left_decile"].map(
+            {key: index for index, key in enumerate(DECILE_ORDER, start=1)}
+        )
+    if "right_decile" in sorted_df.columns:
+        sorted_df["_right_decile_order"] = sorted_df["right_decile"].map(
+            {key: index for index, key in enumerate(DECILE_ORDER, start=1)}
         )
 
     sort_columns = [
@@ -339,11 +347,13 @@ def _sort_frame(
             "_selected_horizon_order",
             "_feature_order",
             "_horizon_order",
-            "_quartile_order",
+            "_decile_order",
+            "_left_decile_order",
+            "_right_decile_order",
             "date",
             "metric_key",
-            "left_quartile",
-            "right_quartile",
+            "left_decile",
+            "right_decile",
         ]
         if column in sorted_df.columns
     ]
@@ -357,7 +367,9 @@ def _sort_frame(
                 "_selected_horizon_order",
                 "_feature_order",
                 "_horizon_order",
-                "_quartile_order",
+                "_decile_order",
+                "_left_decile_order",
+                "_right_decile_order",
             ]
             if column in sorted_df.columns
         ]
@@ -390,19 +402,19 @@ def _assign_feature_deciles(
         .rank(method="first", ascending=False)
         .astype(int)
     )
-    group_count = len(QUARTILE_ORDER)
-    ranked_panel_df["feature_quartile_index"] = (
+    group_count = len(DECILE_ORDER)
+    ranked_panel_df["feature_decile_index"] = (
         ((ranked_panel_df["feature_rank_desc"] - 1) * group_count)
         // ranked_panel_df["date_constituent_count"]
     ) + 1
-    ranked_panel_df["feature_quartile_index"] = ranked_panel_df[
-        "feature_quartile_index"
+    ranked_panel_df["feature_decile_index"] = ranked_panel_df[
+        "feature_decile_index"
     ].clip(1, group_count)
-    ranked_panel_df["feature_quartile"] = ranked_panel_df["feature_quartile_index"].map(
+    ranked_panel_df["feature_decile"] = ranked_panel_df["feature_decile_index"].map(
         {index: f"Q{index}" for index in range(1, group_count + 1)}
     )
-    ranked_panel_df["feature_quartile_label"] = ranked_panel_df["feature_quartile"].map(
-        _QUARTILE_LABEL_MAP
+    ranked_panel_df["feature_decile_label"] = ranked_panel_df["feature_decile"].map(
+        _DECILE_LABEL_MAP
     )
     return _sort_frame(
         ranked_panel_df.reset_index(drop=True),
@@ -429,9 +441,9 @@ def _build_horizon_panel(
         "ranking_feature_label",
         "ranking_value",
         "feature_rank_desc",
-        "feature_quartile_index",
-        "feature_quartile",
-        "feature_quartile_label",
+        "feature_decile_index",
+        "feature_decile",
+        "feature_decile_label",
     ]
     frames: list[pd.DataFrame] = []
     for horizon_key in HORIZON_ORDER:
@@ -465,8 +477,8 @@ def _summarize_ranking_features(
             [
                 "ranking_feature",
                 "ranking_feature_label",
-                "feature_quartile",
-                "feature_quartile_label",
+                "feature_decile",
+                "feature_decile_label",
             ],
             as_index=False,
         )
@@ -497,8 +509,8 @@ def _summarize_future_targets(
                 "ranking_feature_label",
                 "horizon_key",
                 "horizon_days",
-                "feature_quartile",
-                "feature_quartile_label",
+                "feature_decile",
+                "feature_decile_label",
             ],
             as_index=False,
         )
@@ -533,8 +545,8 @@ def _build_daily_group_means(
                 "horizon_key",
                 "horizon_days",
                 "date",
-                "feature_quartile",
-                "feature_quartile_label",
+                "feature_decile",
+                "feature_decile_label",
             ],
             as_index=False,
         )
@@ -550,7 +562,7 @@ def _build_daily_group_means(
     return _sort_frame(daily_group_means_df, known_feature_order=known_feature_order)
 
 
-def _aligned_quartile_pivot(
+def _aligned_decile_pivot(
     daily_group_means_df: pd.DataFrame,
     *,
     ranking_feature: str,
@@ -562,10 +574,10 @@ def _aligned_quartile_pivot(
         & (daily_group_means_df["horizon_key"] == horizon_key)
     ]
     if scoped_df.empty:
-        return pd.DataFrame(columns=list(QUARTILE_ORDER))
+        return pd.DataFrame(columns=list(DECILE_ORDER))
     pivot_df = (
-        scoped_df.pivot(index="date", columns="feature_quartile", values=value_column)
-        .reindex(columns=list(QUARTILE_ORDER))
+        scoped_df.pivot(index="date", columns="feature_decile", values=value_column)
+        .reindex(columns=list(DECILE_ORDER))
         .dropna()
     )
     pivot_df.index = pivot_df.index.astype(str)
@@ -667,7 +679,7 @@ def _build_global_significance(
     for ranking_feature in feature_values:
         for horizon_key in HORIZON_ORDER:
             for metric_key in METRIC_ORDER:
-                pivot_df = _aligned_quartile_pivot(
+                pivot_df = _aligned_decile_pivot(
                     daily_group_means_df,
                     ranking_feature=ranking_feature,
                     horizon_key=horizon_key,
@@ -685,8 +697,8 @@ def _build_global_significance(
                             "metric_key": metric_key,
                             "n_dates": 0,
                             "q1_mean": None,
-                            "q4_mean": None,
-                            "q1_minus_q4_mean": None,
+                            "q10_mean": None,
+                            "q1_minus_q10_mean": None,
                             "friedman_statistic": None,
                             "friedman_p_value": None,
                             "kendalls_w": None,
@@ -696,11 +708,11 @@ def _build_global_significance(
                     )
                     continue
 
-                samples = [pivot_df[quartile].to_numpy(dtype=float) for quartile in QUARTILE_ORDER]
+                samples = [pivot_df[decile].to_numpy(dtype=float) for decile in DECILE_ORDER]
                 friedman_statistic, friedman_p_value = _safe_friedman(samples)
                 kruskal_statistic, kruskal_p_value = _safe_kruskal(samples)
                 q1_mean = float(samples[0].mean())
-                q4_mean = float(samples[-1].mean())
+                q10_mean = float(samples[-1].mean())
                 records.append(
                     {
                         "ranking_feature": ranking_feature,
@@ -712,14 +724,14 @@ def _build_global_significance(
                         "metric_key": metric_key,
                         "n_dates": int(len(pivot_df)),
                         "q1_mean": q1_mean,
-                        "q4_mean": q4_mean,
-                        "q1_minus_q4_mean": q1_mean - q4_mean,
+                        "q10_mean": q10_mean,
+                        "q1_minus_q10_mean": q1_mean - q10_mean,
                         "friedman_statistic": friedman_statistic,
                         "friedman_p_value": friedman_p_value,
                         "kendalls_w": _kendalls_w(
                             friedman_statistic=friedman_statistic,
                             n_dates=len(pivot_df),
-                            n_groups=len(QUARTILE_ORDER),
+                            n_groups=len(DECILE_ORDER),
                         ),
                         "kruskal_statistic": kruskal_statistic,
                         "kruskal_p_value": kruskal_p_value,
@@ -749,14 +761,14 @@ def _build_pairwise_significance(
     for ranking_feature in feature_values:
         for horizon_key in HORIZON_ORDER:
             for metric_key in METRIC_ORDER:
-                pivot_df = _aligned_quartile_pivot(
+                pivot_df = _aligned_decile_pivot(
                     daily_group_means_df,
                     ranking_feature=ranking_feature,
                     horizon_key=horizon_key,
                     value_column=metric_columns[metric_key],
                 )
                 if pivot_df.empty:
-                    for left_quartile, right_quartile in combinations(QUARTILE_ORDER, 2):
+                    for left_decile, right_decile in combinations(DECILE_ORDER, 2):
                         records.append(
                             {
                                 "ranking_feature": ranking_feature,
@@ -766,8 +778,8 @@ def _build_pairwise_significance(
                                 ),
                                 "horizon_key": horizon_key,
                                 "metric_key": metric_key,
-                                "left_quartile": left_quartile,
-                                "right_quartile": right_quartile,
+                                "left_decile": left_decile,
+                                "right_decile": right_decile,
                                 "n_dates": 0,
                                 "mean_difference": None,
                                 "paired_t_statistic": None,
@@ -778,9 +790,9 @@ def _build_pairwise_significance(
                         )
                     continue
 
-                for left_quartile, right_quartile in combinations(QUARTILE_ORDER, 2):
-                    left = pivot_df[left_quartile].to_numpy(dtype=float)
-                    right = pivot_df[right_quartile].to_numpy(dtype=float)
+                for left_decile, right_decile in combinations(DECILE_ORDER, 2):
+                    left = pivot_df[left_decile].to_numpy(dtype=float)
+                    right = pivot_df[right_decile].to_numpy(dtype=float)
                     paired_t_statistic, paired_t_p_value = _safe_paired_t_test(left, right)
                     wilcoxon_statistic, wilcoxon_p_value = _safe_wilcoxon(left, right)
                     records.append(
@@ -792,8 +804,8 @@ def _build_pairwise_significance(
                             ),
                             "horizon_key": horizon_key,
                             "metric_key": metric_key,
-                            "left_quartile": left_quartile,
-                            "right_quartile": right_quartile,
+                            "left_decile": left_decile,
+                            "right_decile": right_decile,
                             "n_dates": int(len(pivot_df)),
                             "mean_difference": float((left - right).mean()),
                             "paired_t_statistic": paired_t_statistic,
@@ -821,4 +833,3 @@ def _build_pairwise_significance(
                     pairwise_df.loc[mask, "wilcoxon_p_value"].tolist()
                 )
     return _sort_frame(pairwise_df, known_feature_order=known_feature_order)
-

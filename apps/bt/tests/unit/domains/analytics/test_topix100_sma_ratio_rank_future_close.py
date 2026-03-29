@@ -68,13 +68,13 @@ def test_ranked_panel_uses_all_sma_ratio_features_and_4digit_preference(
 
     feature_summary = result.ranking_feature_summary_df[
         result.ranking_feature_summary_df["ranking_feature"] == "price_sma_20_80"
-    ].set_index("feature_quartile")
+    ].set_index("feature_decile")
     assert list(feature_summary.index) == [f"Q{i}" for i in range(1, 11)]
     assert feature_summary["mean_ranking_value"].is_monotonic_decreasing
 
     volume_summary = result.ranking_feature_summary_df[
         result.ranking_feature_summary_df["ranking_feature"] == "volume_sma_20_80"
-    ].set_index("feature_quartile")
+    ].set_index("feature_decile")
     assert volume_summary["mean_ranking_value"].is_monotonic_decreasing
 
 
@@ -254,7 +254,7 @@ def test_significance_tables_detect_ratio_rank_difference(
     ].iloc[0]
 
     assert global_row["n_dates"] == 61
-    assert global_row["q1_mean"] > global_row["q4_mean"]
+    assert global_row["q1_mean"] > global_row["q10_mean"]
     assert global_row["friedman_p_value"] < 0.05
     assert global_row["kruskal_p_value"] < 0.05
 
@@ -262,8 +262,8 @@ def test_significance_tables_detect_ratio_rank_difference(
         (result.pairwise_significance_df["ranking_feature"] == "price_sma_20_80")
         & (result.pairwise_significance_df["horizon_key"] == "t_plus_10")
         & (result.pairwise_significance_df["metric_key"] == "future_return")
-        & (result.pairwise_significance_df["left_quartile"] == "Q1")
-        & (result.pairwise_significance_df["right_quartile"] == "Q10")
+        & (result.pairwise_significance_df["left_decile"] == "Q1")
+        & (result.pairwise_significance_df["right_decile"] == "Q10")
     ].iloc[0]
 
     assert pairwise_row["mean_difference"] > 0

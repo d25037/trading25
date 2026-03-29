@@ -8,9 +8,9 @@ PRIME ex TOPIX500 universe preset.
 from __future__ import annotations
 
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
+    DECILE_ORDER,
     HORIZON_ORDER,
     METRIC_ORDER,
-    QUARTILE_ORDER,
     RANKING_FEATURE_ORDER,
     Topix100SmaRatioRankFutureCloseResearchResult,
     get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range,
@@ -24,7 +24,7 @@ PrimeExTopix500SmaRatioRankFutureCloseResearchResult = (
 __all__ = [
     "HORIZON_ORDER",
     "METRIC_ORDER",
-    "QUARTILE_ORDER",
+    "DECILE_ORDER",
     "RANKING_FEATURE_ORDER",
     "PrimeExTopix500SmaRatioRankFutureCloseResearchResult",
     "get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range",

@@ -45,7 +45,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _open_analysis_connection,
 )
 
-QuartileKey = Literal[
+DecileKey = Literal[
     "Q1",
     "Q2",
     "Q3",
@@ -92,7 +92,7 @@ Q10MiddleCombinedBucketKey = Literal[
     "middle_volume_high",
 ]
 
-QUARTILE_ORDER: tuple[QuartileKey, ...] = (
+DECILE_ORDER: tuple[DecileKey, ...] = (
     "Q1",
     "Q2",
     "Q3",
@@ -146,7 +146,7 @@ _HORIZON_DAY_MAP: dict[HorizonKey, int] = {
     "t_plus_5": 5,
     "t_plus_10": 10,
 }
-_QUARTILE_LABEL_MAP: dict[QuartileKey, str] = {
+_DECILE_LABEL_MAP: dict[DecileKey, str] = {
     "Q1": "Q1 Highest Ratio",
     "Q2": "Q2",
     "Q3": "Q3",
@@ -167,7 +167,7 @@ _RANKING_FEATURE_LABEL_MAP: dict[RankingFeatureKey, str] = {
     "volume_sma_50_150": "Volume SMA 50 / 150",
 }
 BUCKET_GROUP_ORDER: tuple[BucketGroupKey, ...] = ("q1_q10_extreme", "q4_q5_q6_middle")
-_BUCKET_GROUP_DECILES: dict[BucketGroupKey, tuple[QuartileKey, ...]] = {
+_BUCKET_GROUP_DECILES: dict[BucketGroupKey, tuple[DecileKey, ...]] = {
     "q1_q10_extreme": ("Q1", "Q10"),
     "q4_q5_q6_middle": ("Q4", "Q5", "Q6"),
 }
@@ -180,7 +180,7 @@ _NESTED_PRICE_BUCKET_LABEL_MAP: dict[NestedPriceBucketKey, str] = {
     "extreme": "Q1 + Q10",
     "middle": "Q4 + Q5 + Q6",
 }
-_NESTED_PRICE_BUCKET_DECILES: dict[NestedPriceBucketKey, tuple[QuartileKey, ...]] = {
+_NESTED_PRICE_BUCKET_DECILES: dict[NestedPriceBucketKey, tuple[DecileKey, ...]] = {
     "extreme": ("Q1", "Q10"),
     "middle": ("Q4", "Q5", "Q6"),
 }
@@ -209,7 +209,7 @@ _Q1_Q10_PRICE_BUCKET_LABEL_MAP: dict[Q1Q10PriceBucketKey, str] = {
     "q1": "Q1",
     "q10": "Q10",
 }
-_Q1_Q10_PRICE_BUCKET_DECILES: dict[Q1Q10PriceBucketKey, tuple[QuartileKey, ...]] = {
+_Q1_Q10_PRICE_BUCKET_DECILES: dict[Q1Q10PriceBucketKey, tuple[DecileKey, ...]] = {
     "q1": ("Q1",),
     "q10": ("Q10",),
 }
@@ -233,7 +233,7 @@ _Q10_MIDDLE_PRICE_BUCKET_LABEL_MAP: dict[Q10MiddlePriceBucketKey, str] = {
     "q10": "Q10",
     "middle": "Q4 + Q5 + Q6",
 }
-_Q10_MIDDLE_PRICE_BUCKET_DECILES: dict[Q10MiddlePriceBucketKey, tuple[QuartileKey, ...]] = {
+_Q10_MIDDLE_PRICE_BUCKET_DECILES: dict[Q10MiddlePriceBucketKey, tuple[DecileKey, ...]] = {
     "q10": ("Q10",),
     "middle": ("Q4", "Q5", "Q6"),
 }
@@ -280,7 +280,7 @@ class Topix100SmaRatioRankFutureCloseResearchResult:
     event_panel_df: pd.DataFrame
     ranked_panel_df: pd.DataFrame
     ranking_feature_summary_df: pd.DataFrame
-    quartile_future_summary_df: pd.DataFrame
+    decile_future_summary_df: pd.DataFrame
     daily_group_means_df: pd.DataFrame
     global_significance_df: pd.DataFrame
     pairwise_significance_df: pd.DataFrame
@@ -713,8 +713,8 @@ def _sort_frame(df: pd.DataFrame) -> pd.DataFrame:
             "_q10_middle_combined_bucket_order",
             "date",
             "metric_key",
-            "left_quartile",
-            "right_quartile",
+            "left_decile",
+            "right_decile",
         ]
         if column in sorted_df.columns
     ]
@@ -768,7 +768,7 @@ def _build_daily_group_means(horizon_panel_df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _aligned_quartile_pivot(
+def _aligned_decile_pivot(
     daily_group_means_df: pd.DataFrame,
     *,
     ranking_feature: str,
@@ -780,14 +780,14 @@ def _aligned_quartile_pivot(
         & (daily_group_means_df["horizon_key"] == horizon_key)
     ]
     if scoped_df.empty:
-        return pd.DataFrame(columns=list(QUARTILE_ORDER))
+        return pd.DataFrame(columns=list(DECILE_ORDER))
     pivot_df = (
         scoped_df.pivot(
             index="date",
-            columns="feature_quartile",
+            columns="feature_decile",
             values=value_column,
         )
-        .reindex(columns=list(QUARTILE_ORDER))
+        .reindex(columns=list(DECILE_ORDER))
         .dropna()
     )
     pivot_df.index = pivot_df.index.astype(str)
@@ -857,7 +857,7 @@ def _build_extreme_vs_middle_daily_means(
     for bucket_group in BUCKET_GROUP_ORDER:
         bucket_deciles = _BUCKET_GROUP_DECILES[bucket_group]
         frame = horizon_panel_df.loc[
-            horizon_panel_df["feature_quartile"].isin(bucket_deciles)
+            horizon_panel_df["feature_decile"].isin(bucket_deciles)
         ].copy()
         if frame.empty:
             continue
@@ -1065,14 +1065,14 @@ def _build_nested_volume_split_panel(
         .astype(int)
     )
     panel_df["price_decile_index"] = (
-        ((panel_df["price_rank_desc"] - 1) * len(QUARTILE_ORDER))
+        ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
         // panel_df["date_constituent_count"]
     ) + 1
     panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
-        1, len(QUARTILE_ORDER)
+        1, len(DECILE_ORDER)
     )
     panel_df["price_decile"] = panel_df["price_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(QUARTILE_ORDER) + 1)}
+        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
     panel_df["nested_price_bucket"] = None
     for bucket_key, bucket_deciles in _NESTED_PRICE_BUCKET_DECILES.items():
@@ -1538,14 +1538,14 @@ def _build_q1_q10_volume_split_panel(
         .astype(int)
     )
     panel_df["price_decile_index"] = (
-        ((panel_df["price_rank_desc"] - 1) * len(QUARTILE_ORDER))
+        ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
         // panel_df["date_constituent_count"]
     ) + 1
     panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
-        1, len(QUARTILE_ORDER)
+        1, len(DECILE_ORDER)
     )
     panel_df["price_decile"] = panel_df["price_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(QUARTILE_ORDER) + 1)}
+        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
     panel_df["q1_q10_price_bucket"] = None
     for bucket_key, bucket_deciles in _Q1_Q10_PRICE_BUCKET_DECILES.items():
@@ -2011,14 +2011,14 @@ def _build_q10_middle_volume_split_panel(
         .astype(int)
     )
     panel_df["price_decile_index"] = (
-        ((panel_df["price_rank_desc"] - 1) * len(QUARTILE_ORDER))
+        ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
         // panel_df["date_constituent_count"]
     ) + 1
     panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
-        1, len(QUARTILE_ORDER)
+        1, len(DECILE_ORDER)
     )
     panel_df["price_decile"] = panel_df["price_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(QUARTILE_ORDER) + 1)}
+        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
     panel_df["q10_middle_price_bucket"] = None
     for bucket_key, bucket_deciles in _Q10_MIDDLE_PRICE_BUCKET_DECILES.items():
@@ -2386,7 +2386,7 @@ def _analyze_ranked_panel(ranked_panel_df: pd.DataFrame) -> dict[str, pd.DataFra
         empty_df = pd.DataFrame()
         return {
             "ranking_feature_summary_df": empty_df,
-            "quartile_future_summary_df": empty_df,
+            "decile_future_summary_df": empty_df,
             "daily_group_means_df": empty_df,
             "global_significance_df": empty_df,
             "pairwise_significance_df": empty_df,
@@ -2402,7 +2402,7 @@ def _analyze_ranked_panel(ranked_panel_df: pd.DataFrame) -> dict[str, pd.DataFra
     )
     return {
         "ranking_feature_summary_df": _summarize_ranking_features(ranked_panel_df),
-        "quartile_future_summary_df": _summarize_future_targets(horizon_panel_df),
+        "decile_future_summary_df": _summarize_future_targets(horizon_panel_df),
         "daily_group_means_df": daily_group_means_df,
         "global_significance_df": _build_global_significance(daily_group_means_df),
         "pairwise_significance_df": _build_pairwise_significance(daily_group_means_df),
@@ -2440,8 +2440,8 @@ def _extract_pairwise_row(
     *,
     ranking_feature: str,
     horizon_key: HorizonKey,
-    left_quartile: QuartileKey = "Q1",
-    right_quartile: QuartileKey = "Q10",
+    left_decile: DecileKey = "Q1",
+    right_decile: DecileKey = "Q10",
     metric_key: MetricKey = "future_return",
 ) -> pd.Series | None:
     if pairwise_significance_df.empty:
@@ -2450,8 +2450,8 @@ def _extract_pairwise_row(
         (pairwise_significance_df["ranking_feature"] == ranking_feature)
         & (pairwise_significance_df["horizon_key"] == horizon_key)
         & (pairwise_significance_df["metric_key"] == metric_key)
-        & (pairwise_significance_df["left_quartile"] == left_quartile)
-        & (pairwise_significance_df["right_quartile"] == right_quartile)
+        & (pairwise_significance_df["left_decile"] == left_decile)
+        & (pairwise_significance_df["right_decile"] == right_decile)
     ]
     if row.empty:
         return None
@@ -2518,10 +2518,10 @@ def _build_feature_selection(
             )
 
             discovery_diff = _as_float(
-                discovery_global["q1_minus_q4_mean"] if discovery_global is not None else None
+                discovery_global["q1_minus_q10_mean"] if discovery_global is not None else None
             )
             validation_diff = _as_float(
-                validation_global["q1_minus_q4_mean"] if validation_global is not None else None
+                validation_global["q1_minus_q10_mean"] if validation_global is not None else None
             )
             direction = _direction_from_difference(discovery_diff)
             aligned_discovery_diff = abs(discovery_diff) if discovery_diff is not None else None
@@ -2537,14 +2537,14 @@ def _build_feature_selection(
                     "horizon_key": horizon_key,
                     "discovery_direction": direction,
                     "discovery_q1_mean": _as_float(discovery_global["q1_mean"] if discovery_global is not None else None),
-                    "discovery_q10_mean": _as_float(discovery_global["q4_mean"] if discovery_global is not None else None),
+                    "discovery_q10_mean": _as_float(discovery_global["q10_mean"] if discovery_global is not None else None),
                     "discovery_q1_minus_q10_mean": discovery_diff,
                     "discovery_friedman_p_value": _as_float(discovery_global["friedman_p_value"] if discovery_global is not None else None),
                     "discovery_kendalls_w": _as_float(discovery_global["kendalls_w"] if discovery_global is not None else None),
                     "discovery_q1_q10_paired_t_p_value": _as_float(discovery_pairwise["paired_t_p_value_holm"] if discovery_pairwise is not None else None),
                     "discovery_q1_q10_wilcoxon_p_value": _as_float(discovery_pairwise["wilcoxon_p_value_holm"] if discovery_pairwise is not None else None),
                     "validation_q1_mean": _as_float(validation_global["q1_mean"] if validation_global is not None else None),
-                    "validation_q10_mean": _as_float(validation_global["q4_mean"] if validation_global is not None else None),
+                    "validation_q10_mean": _as_float(validation_global["q10_mean"] if validation_global is not None else None),
                     "validation_q1_minus_q10_mean": validation_diff,
                     "validation_aligned_q1_minus_q10_mean": aligned_validation_diff,
                     "validation_friedman_p_value": _as_float(validation_global["friedman_p_value"] if validation_global is not None else None),
@@ -2663,10 +2663,10 @@ def _build_composite_candidates(
                 horizon_key=horizon_key,
             )
             discovery_diff = _as_float(
-                discovery_global["q1_minus_q4_mean"] if discovery_global is not None else None
+                discovery_global["q1_minus_q10_mean"] if discovery_global is not None else None
             )
             validation_diff = _as_float(
-                validation_global["q1_minus_q4_mean"] if validation_global is not None else None
+                validation_global["q1_minus_q10_mean"] if validation_global is not None else None
             )
             candidate_record = {
                 "selected_horizon_key": horizon_key,
@@ -2680,12 +2680,12 @@ def _build_composite_candidates(
                 "volume_direction": volume_direction,
                 "score_method": score_method,
                 "discovery_q1_mean": _as_float(discovery_global["q1_mean"] if discovery_global is not None else None),
-                "discovery_q10_mean": _as_float(discovery_global["q4_mean"] if discovery_global is not None else None),
+                "discovery_q10_mean": _as_float(discovery_global["q10_mean"] if discovery_global is not None else None),
                 "discovery_q1_minus_q10_mean": discovery_diff,
                 "discovery_friedman_p_value": _as_float(discovery_global["friedman_p_value"] if discovery_global is not None else None),
                 "discovery_q1_q10_paired_t_p_value": _as_float(discovery_pairwise["paired_t_p_value_holm"] if discovery_pairwise is not None else None),
                 "validation_q1_mean": _as_float(validation_global["q1_mean"] if validation_global is not None else None),
-                "validation_q10_mean": _as_float(validation_global["q4_mean"] if validation_global is not None else None),
+                "validation_q10_mean": _as_float(validation_global["q10_mean"] if validation_global is not None else None),
                 "validation_q1_minus_q10_mean": validation_diff,
                 "validation_friedman_p_value": _as_float(validation_global["friedman_p_value"] if validation_global is not None else None),
                 "validation_q1_q10_paired_t_p_value": _as_float(validation_pairwise["paired_t_p_value_holm"] if validation_pairwise is not None else None),
@@ -2745,7 +2745,7 @@ def _collect_selected_composite_tables(
 ) -> dict[str, pd.DataFrame]:
     analysis_table_names = (
         "ranking_feature_summary_df",
-        "quartile_future_summary_df",
+        "decile_future_summary_df",
         "daily_group_means_df",
         "global_significance_df",
         "pairwise_significance_df",
@@ -2960,7 +2960,7 @@ def _run_sma_ratio_rank_future_close_research(
         event_panel_df=event_panel_df,
         ranked_panel_df=ranked_panel_df,
         ranking_feature_summary_df=full_analysis["ranking_feature_summary_df"],
-        quartile_future_summary_df=full_analysis["quartile_future_summary_df"],
+        decile_future_summary_df=full_analysis["decile_future_summary_df"],
         daily_group_means_df=full_analysis["daily_group_means_df"],
         global_significance_df=full_analysis["global_significance_df"],
         pairwise_significance_df=full_analysis["pairwise_significance_df"],
@@ -2996,7 +2996,7 @@ def _run_sma_ratio_rank_future_close_research(
             "ranking_feature_summary_df"
         ],
         selected_composite_future_summary_df=selected_composite_tables[
-            "quartile_future_summary_df"
+            "decile_future_summary_df"
         ],
         selected_composite_daily_group_means_df=selected_composite_tables[
             "daily_group_means_df"

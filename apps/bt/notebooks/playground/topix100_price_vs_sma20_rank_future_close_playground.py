@@ -209,12 +209,6 @@ def _(PRIMARY_PRICE_FEATURE, error_message, mo, result):
         _decile_df = result.ranking_feature_summary_df[
             result.ranking_feature_summary_df["ranking_feature"] == PRIMARY_PRICE_FEATURE
         ].copy()
-        _decile_df = _decile_df.rename(
-            columns={
-                "feature_quartile": "feature_decile",
-                "feature_quartile_label": "feature_decile_label",
-            }
-        )
         _view = mo.vstack(
             [
                 mo.md("### Price Feature Deciles"),
@@ -234,18 +228,12 @@ def _(PRIMARY_PRICE_FEATURE, error_message, horizon_view, metric_view, mo, resul
             & (result.global_significance_df["horizon_key"] == horizon_view.value)
             & (result.global_significance_df["metric_key"] == metric_view.value)
         ].copy()
-        _global_df = _global_df.rename(
-            columns={
-                "q4_mean": "q10_mean",
-                "q1_minus_q4_mean": "q1_minus_q10_mean",
-            }
-        )
         _pairwise_df = result.pairwise_significance_df[
             (result.pairwise_significance_df["ranking_feature"] == PRIMARY_PRICE_FEATURE)
             & (result.pairwise_significance_df["horizon_key"] == horizon_view.value)
             & (result.pairwise_significance_df["metric_key"] == metric_view.value)
-            & (result.pairwise_significance_df["left_quartile"] == "Q1")
-            & (result.pairwise_significance_df["right_quartile"] == "Q10")
+            & (result.pairwise_significance_df["left_decile"] == "Q1")
+            & (result.pairwise_significance_df["right_decile"] == "Q10")
         ].copy()
         _view = mo.vstack(
             [
@@ -337,25 +325,25 @@ def _(error_message, horizon_view, metric_view, mo, result):
 def _(PRIMARY_PRICE_FEATURE_LABEL, error_message, mo, plt, result):
     _chart = mo.md("")
     if not error_message and result is not None:
-        _summary_df = result.quartile_future_summary_df[
-            result.quartile_future_summary_df["ranking_feature_label"]
+        _summary_df = result.decile_future_summary_df[
+            result.decile_future_summary_df["ranking_feature_label"]
             == PRIMARY_PRICE_FEATURE_LABEL
         ].copy()
         _fig, _ax = plt.subplots(figsize=(10, 4.5))
         _x_positions = [1, 5, 10]
-        for _quartile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
-            _quartile_df = _summary_df[
-                _summary_df["feature_quartile"] == _quartile_key
+        for _decile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
+            _decile_df = _summary_df[
+                _summary_df["feature_decile"] == _decile_key
             ].copy()
-            _quartile_df = _quartile_df.set_index("horizon_key").reindex(
+            _decile_df = _decile_df.set_index("horizon_key").reindex(
                 ["t_plus_1", "t_plus_5", "t_plus_10"]
             )
             _ax.plot(
                 _x_positions,
-                _quartile_df["mean_future_return"].tolist(),
+                _decile_df["mean_future_return"].tolist(),
                 marker="o",
                 linewidth=2,
-                label=_quartile_key,
+                label=_decile_key,
                 color=_color,
             )
         _ax.set_title("Mean Future Return by Decile (Q1 vs Q10)")

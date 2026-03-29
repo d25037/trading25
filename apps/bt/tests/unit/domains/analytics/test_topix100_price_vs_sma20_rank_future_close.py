@@ -69,7 +69,7 @@ def test_deciles_and_price_volume_split_tables_are_built(
 
     feature_summary = result.ranking_feature_summary_df[
         result.ranking_feature_summary_df["ranking_feature"] == PRIMARY_PRICE_FEATURE
-    ].set_index("feature_quartile")
+    ].set_index("feature_decile")
     assert list(feature_summary.index) == [f"Q{i}" for i in range(1, 11)]
     assert feature_summary["mean_ranking_value"].is_monotonic_decreasing
 

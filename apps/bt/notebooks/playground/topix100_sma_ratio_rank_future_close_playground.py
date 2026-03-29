@@ -40,8 +40,8 @@ def _(Path, sys):
 
     from src.shared.config.settings import get_settings
     from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
+        DECILE_ORDER,
         HORIZON_ORDER,
-        QUARTILE_ORDER,
         RANKING_FEATURE_ORDER,
         get_topix100_sma_ratio_rank_future_close_available_date_range,
         run_topix100_sma_ratio_rank_future_close_research,
@@ -49,8 +49,8 @@ def _(Path, sys):
 
     default_db_path = get_settings().market_db_path
     return (
+        DECILE_ORDER,
         HORIZON_ORDER,
-        QUARTILE_ORDER,
         RANKING_FEATURE_ORDER,
         default_db_path,
         get_topix100_sma_ratio_rank_future_close_available_date_range,
@@ -164,7 +164,7 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(HORIZON_ORDER, QUARTILE_ORDER, RANKING_FEATURE_ORDER, error_message, mo, result):
+def _(DECILE_ORDER, HORIZON_ORDER, RANKING_FEATURE_ORDER, error_message, mo, result):
     if error_message or result is None:
         ranking_feature_view = mo.md("")
         horizon_view = mo.md("")
@@ -189,7 +189,7 @@ def _(HORIZON_ORDER, QUARTILE_ORDER, RANKING_FEATURE_ORDER, error_message, mo, r
             label="Metric",
         )
     mo.hstack([ranking_feature_view, horizon_view, metric_view])
-    return QUARTILE_ORDER, horizon_view, metric_view, ranking_feature_view
+    return DECILE_ORDER, horizon_view, metric_view, ranking_feature_view
 
 
 @app.cell
@@ -333,24 +333,12 @@ def _(
                 (result.selected_composite_global_significance_df["ranking_feature"] == _ranking_feature)
                 & (result.selected_composite_global_significance_df["metric_key"] == metric_view.value)
             ].copy()
-            _global = _global.rename(
-                columns={
-                    "q4_mean": "q10_mean",
-                    "q1_minus_q4_mean": "q1_minus_q10_mean",
-                }
-            )
             _pairwise = result.selected_composite_pairwise_significance_df[
                 (result.selected_composite_pairwise_significance_df["ranking_feature"] == _ranking_feature)
                 & (result.selected_composite_pairwise_significance_df["metric_key"] == metric_view.value)
-                & (result.selected_composite_pairwise_significance_df["left_quartile"] == "Q1")
-                & (result.selected_composite_pairwise_significance_df["right_quartile"] == "Q10")
+                & (result.selected_composite_pairwise_significance_df["left_decile"] == "Q1")
+                & (result.selected_composite_pairwise_significance_df["right_decile"] == "Q10")
             ].copy()
-            _pairwise = _pairwise.rename(
-                columns={
-                    "left_quartile": "left_decile",
-                    "right_quartile": "right_decile",
-                }
-            )
             _view = mo.vstack(
                 [
                     mo.md("### Selected Composite Significance"),
@@ -379,19 +367,19 @@ def _(error_message, mo, plt, result, selection_horizon_view):
             ].copy()
             _x_positions = [1, 5, 10]
             _fig, _ax = plt.subplots(figsize=(10, 4.5))
-            for _quartile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
-                _quartile_df = _summary[
-                    _summary["feature_quartile"] == _quartile_key
+            for _decile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
+                _decile_df = _summary[
+                    _summary["feature_decile"] == _decile_key
                 ].copy()
-                _quartile_df = _quartile_df.set_index("horizon_key").reindex(
+                _decile_df = _decile_df.set_index("horizon_key").reindex(
                     ["t_plus_1", "t_plus_5", "t_plus_10"]
                 )
                 _ax.plot(
                     _x_positions,
-                    _quartile_df["mean_future_return"].tolist(),
+                    _decile_df["mean_future_return"].tolist(),
                     marker="o",
                     linewidth=2,
-                    label=_quartile_key,
+                    label=_decile_key,
                     color=_color,
                 )
             _ax.set_title(
@@ -416,12 +404,6 @@ def _(error_message, mo, ranking_feature_view, result):
             result.ranking_feature_summary_df["ranking_feature"]
             == ranking_feature_view.value
         ].copy()
-        _table = _table.rename(
-            columns={
-                "feature_quartile": "feature_decile",
-                "feature_quartile_label": "feature_decile_label",
-            }
-        )
         _view = mo.vstack(
             [
                 mo.md("### Ranking Feature Deciles"),
@@ -448,25 +430,13 @@ def _(
             & (result.global_significance_df["horizon_key"] == horizon_view.value)
             & (result.global_significance_df["metric_key"] == metric_view.value)
         ].copy()
-        _global = _global.rename(
-            columns={
-                "q4_mean": "q10_mean",
-                "q1_minus_q4_mean": "q1_minus_q10_mean",
-            }
-        )
         _pairwise = result.pairwise_significance_df[
             (result.pairwise_significance_df["ranking_feature"] == ranking_feature_view.value)
             & (result.pairwise_significance_df["horizon_key"] == horizon_view.value)
             & (result.pairwise_significance_df["metric_key"] == metric_view.value)
-            & (result.pairwise_significance_df["left_quartile"] == "Q1")
-            & (result.pairwise_significance_df["right_quartile"] == "Q10")
+            & (result.pairwise_significance_df["left_decile"] == "Q1")
+            & (result.pairwise_significance_df["right_decile"] == "Q10")
         ].copy()
-        _pairwise = _pairwise.rename(
-            columns={
-                "left_quartile": "left_decile",
-                "right_quartile": "right_decile",
-            }
-        )
         _view = mo.vstack(
             [
                 mo.md("### Significance"),
@@ -706,16 +676,10 @@ def _(
 def _(error_message, horizon_view, mo, ranking_feature_view, result):
     _view = mo.md("")
     if not error_message and result is not None:
-        _summary = result.quartile_future_summary_df[
-            (result.quartile_future_summary_df["ranking_feature"] == ranking_feature_view.value)
-            & (result.quartile_future_summary_df["horizon_key"] == horizon_view.value)
+        _summary = result.decile_future_summary_df[
+            (result.decile_future_summary_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.decile_future_summary_df["horizon_key"] == horizon_view.value)
         ].copy()
-        _summary = _summary.rename(
-            columns={
-                "feature_quartile": "feature_decile",
-                "feature_quartile_label": "feature_decile_label",
-            }
-        )
         _view = mo.vstack(
             [
                 mo.md("### Future Target Summary"),
@@ -748,7 +712,7 @@ def _(error_message, mo, plt, ranking_feature_view, result):
         ]
         _fig, _ax = plt.subplots(figsize=(10, 4.5))
         _ax.bar(
-            _summary["feature_quartile"].tolist(),
+            _summary["feature_decile"].tolist(),
             _summary["mean_ranking_value"].tolist(),
             color=_bar_colors[: len(_summary)],
         )
@@ -764,7 +728,7 @@ def _(error_message, mo, plt, ranking_feature_view, result):
 
 @app.cell
 def _(
-    QUARTILE_ORDER,
+    DECILE_ORDER,
     error_message,
     horizon_view,
     metric_view,
@@ -785,11 +749,11 @@ def _(
             & (result.daily_group_means_df["horizon_key"] == horizon_view.value)
         ].copy()
         _grouped_values = [
-            _daily.loc[_daily["feature_quartile"] == quartile_key, _metric_column].dropna()
-            for quartile_key in QUARTILE_ORDER
+            _daily.loc[_daily["feature_decile"] == decile_key, _metric_column].dropna()
+            for decile_key in DECILE_ORDER
         ]
         _fig, _ax = plt.subplots(figsize=(12, 4.5))
-        _ax.boxplot(_grouped_values, labels=list(QUARTILE_ORDER))
+        _ax.boxplot(_grouped_values, labels=list(DECILE_ORDER))
         _ax.set_title(
             f"Daily Mean {metric_view.value} by Decile ({ranking_feature_view.value}, {horizon_view.value})"
         )
@@ -806,24 +770,24 @@ def _(
 def _(error_message, mo, plt, ranking_feature_view, result):
     _chart = mo.md("")
     if not error_message and result is not None:
-        _summary = result.quartile_future_summary_df[
-            result.quartile_future_summary_df["ranking_feature"] == ranking_feature_view.value
+        _summary = result.decile_future_summary_df[
+            result.decile_future_summary_df["ranking_feature"] == ranking_feature_view.value
         ].copy()
         _x_positions = [1, 5, 10]
         _fig, _ax = plt.subplots(figsize=(10, 4.5))
-        for _quartile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
-            _quartile_df = _summary[
-                _summary["feature_quartile"] == _quartile_key
+        for _decile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
+            _decile_df = _summary[
+                _summary["feature_decile"] == _decile_key
             ].copy()
-            _quartile_df = _quartile_df.set_index("horizon_key").reindex(
+            _decile_df = _decile_df.set_index("horizon_key").reindex(
                 ["t_plus_1", "t_plus_5", "t_plus_10"]
             )
             _ax.plot(
                 _x_positions,
-                _quartile_df["mean_future_return"].tolist(),
+                _decile_df["mean_future_return"].tolist(),
                 marker="o",
                 linewidth=2,
-                label=_quartile_key,
+                label=_decile_key,
                 color=_color,
             )
         _ax.set_title(
@@ -854,13 +818,12 @@ def _(error_message, mo, ranking_feature_view, result):
                 "ranking_feature",
                 "ranking_value",
                 "feature_rank_desc",
-                "feature_quartile",
+                "feature_decile",
                 "t_plus_1_close",
                 "t_plus_5_close",
                 "t_plus_10_close",
             ]
         ].tail(80)
-        _sample = _sample.rename(columns={"feature_quartile": "feature_decile"})
         _view = mo.vstack(
             [
                 mo.md("### Ranked Event Sample (tail 80 rows)"),

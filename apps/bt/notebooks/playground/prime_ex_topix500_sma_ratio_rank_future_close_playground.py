@@ -208,10 +208,10 @@ def _(error_message, horizon_view, metric_view, mo, price_feature_view, result):
         ranking_summary = result.ranking_feature_summary_df[
             result.ranking_feature_summary_df["ranking_feature"] == feature_key
         ].copy()
-        future_summary = result.quartile_future_summary_df[
-            (result.quartile_future_summary_df["ranking_feature"] == feature_key)
-            & (result.quartile_future_summary_df["horizon_key"] == horizon_key)
-            & (result.quartile_future_summary_df["metric_key"] == metric_key)
+        future_summary = result.decile_future_summary_df[
+            (result.decile_future_summary_df["ranking_feature"] == feature_key)
+            & (result.decile_future_summary_df["horizon_key"] == horizon_key)
+            & (result.decile_future_summary_df["metric_key"] == metric_key)
         ].copy()
         extreme_summary = result.extreme_vs_middle_summary_df[
             (result.extreme_vs_middle_summary_df["ranking_feature"] == feature_key)

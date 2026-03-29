@@ -49,7 +49,7 @@ from src.domains.analytics.topix_regime_conditioning_core import (
     _summarize_regime_group_daily_means as _core_summarize_regime_group_daily_means,
 )
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
-    QUARTILE_ORDER,
+    DECILE_ORDER,
     Topix100SmaRatioRankFutureCloseResearchResult,
     run_topix100_sma_ratio_rank_future_close_research,
 )
@@ -300,14 +300,14 @@ def _build_price_volume_split_panel(
         .astype(int)
     )
     panel_df["price_decile_index"] = (
-        ((panel_df["price_rank_desc"] - 1) * len(QUARTILE_ORDER))
+        ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
         // panel_df["date_constituent_count"]
     ) + 1
     panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
-        1, len(QUARTILE_ORDER)
+        1, len(DECILE_ORDER)
     )
     panel_df["price_decile"] = panel_df["price_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(QUARTILE_ORDER) + 1)}
+        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
     panel_df["price_bucket"] = None
     for bucket_key, deciles in PRICE_BUCKET_DECILES.items():

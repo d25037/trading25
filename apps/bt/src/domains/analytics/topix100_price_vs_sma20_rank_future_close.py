@@ -15,9 +15,9 @@ from typing import Any, Literal
 import pandas as pd
 
 from src.domains.analytics.topix_rank_future_close_core import (
+    DECILE_ORDER,
     HORIZON_ORDER,
     METRIC_ORDER,
-    QUARTILE_ORDER,
     _DEFAULT_LOOKBACK_YEARS,
     _DEFAULT_TOPIX100_MIN_CONSTITUENTS_PER_DAY,
     _HORIZON_DAY_MAP,
@@ -126,7 +126,7 @@ class Topix100PriceVsSma20RankFutureCloseResearchResult:
     event_panel_df: pd.DataFrame
     ranked_panel_df: pd.DataFrame
     ranking_feature_summary_df: pd.DataFrame
-    quartile_future_summary_df: pd.DataFrame
+    decile_future_summary_df: pd.DataFrame
     daily_group_means_df: pd.DataFrame
     global_significance_df: pd.DataFrame
     pairwise_significance_df: pd.DataFrame
@@ -301,7 +301,7 @@ def _build_price_bucket_daily_means(horizon_panel_df: pd.DataFrame) -> pd.DataFr
     for bucket_key in PRICE_BUCKET_ORDER:
         bucket_deciles = PRICE_BUCKET_DECILES[bucket_key]
         frame = horizon_panel_df.loc[
-            horizon_panel_df["feature_quartile"].isin(bucket_deciles)
+            horizon_panel_df["feature_decile"].isin(bucket_deciles)
         ].copy()
         if frame.empty:
             continue
@@ -540,14 +540,14 @@ def _build_price_volume_split_panel(event_panel_df: pd.DataFrame) -> pd.DataFram
         .astype(int)
     )
     panel_df["price_decile_index"] = (
-        ((panel_df["price_rank_desc"] - 1) * len(QUARTILE_ORDER))
+        ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
         // panel_df["date_constituent_count"]
     ) + 1
     panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
-        1, len(QUARTILE_ORDER)
+        1, len(DECILE_ORDER)
     )
     panel_df["price_decile"] = panel_df["price_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(QUARTILE_ORDER) + 1)}
+        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
     panel_df["price_bucket"] = None
     for bucket_key, bucket_deciles in PRICE_BUCKET_DECILES.items():
@@ -953,7 +953,7 @@ def run_topix100_price_vs_sma20_rank_future_close_research(
             ranked_panel_df,
             known_feature_order=[PRIMARY_PRICE_FEATURE],
         ),
-        quartile_future_summary_df=_summarize_future_targets(
+        decile_future_summary_df=_summarize_future_targets(
             horizon_panel_df,
             known_feature_order=[PRIMARY_PRICE_FEATURE],
         ),
