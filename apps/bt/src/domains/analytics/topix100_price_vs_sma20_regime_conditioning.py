@@ -10,11 +10,9 @@ from __future__ import annotations
 from src.domains.analytics.topix100_price_vs_sma20_rank_future_close import (
     run_topix100_price_vs_sma20_rank_future_close_research,
 )
-from src.domains.analytics.topix100_sma_ratio_regime_conditioning import (
+from src.domains.analytics.topix_regime_conditioning_core import (
     DEFAULT_SIGMA_THRESHOLD_1,
     DEFAULT_SIGMA_THRESHOLD_2,
-    REGIME_TYPE_ORDER as _REGIME_TYPE_ORDER,
-    Topix100SmaRatioRegimeConditioningResearchResult,
     _build_horizon_panel,
     _build_regime_assignments_df,
     _build_regime_daily_means,
@@ -29,6 +27,8 @@ from src.domains.analytics.topix100_sma_ratio_regime_conditioning import (
     _query_market_regime_history,
     _summarize_regime_daily_means,
     _summarize_regime_group_daily_means,
+    TopixRegimeConditioningResearchResult,
+    REGIME_TYPE_ORDER as _REGIME_TYPE_ORDER,
 )
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _open_analysis_connection,
@@ -46,7 +46,7 @@ def run_topix100_price_vs_sma20_regime_conditioning_research(
     min_constituents_per_day: int = 80,
     sigma_threshold_1: float = DEFAULT_SIGMA_THRESHOLD_1,
     sigma_threshold_2: float = DEFAULT_SIGMA_THRESHOLD_2,
-) -> Topix100SmaRatioRegimeConditioningResearchResult:
+) -> TopixRegimeConditioningResearchResult:
     if sigma_threshold_1 <= 0:
         raise ValueError("sigma_threshold_1 must be positive")
     if sigma_threshold_2 <= sigma_threshold_1:
@@ -101,7 +101,7 @@ def run_topix100_price_vs_sma20_regime_conditioning_research(
         regime_group_pairwise_significance_df
     )
 
-    return Topix100SmaRatioRegimeConditioningResearchResult(
+    return TopixRegimeConditioningResearchResult(
         db_path=db_path,
         source_mode=base_result.source_mode,
         source_detail=base_result.source_detail,
