@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
-from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
+from src.domains.analytics.topix_rank_future_close_core import (
     HORIZON_ORDER,
     METRIC_ORDER,
     QUARTILE_ORDER,
@@ -145,7 +145,7 @@ def _sort_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    sorted_df = _base_sort_frame(df)
+    sorted_df = _base_sort_frame(df, known_feature_order=[PRIMARY_PRICE_FEATURE])
     if "price_bucket" in sorted_df.columns:
         sorted_df["_price_bucket_order"] = sorted_df["price_bucket"].map(
             {key: index for index, key in enumerate(PRICE_BUCKET_ORDER, start=1)}
@@ -287,7 +287,10 @@ def _build_ranked_panel(event_panel_df: pd.DataFrame) -> pd.DataFrame:
     ranked_panel_df["ranking_feature"] = PRIMARY_PRICE_FEATURE
     ranked_panel_df["ranking_feature_label"] = PRIMARY_PRICE_FEATURE_LABEL
     ranked_panel_df["ranking_value"] = event_panel_df[PRIMARY_PRICE_FEATURE].astype(float)
-    return _assign_feature_deciles(ranked_panel_df)
+    return _assign_feature_deciles(
+        ranked_panel_df,
+        known_feature_order=[PRIMARY_PRICE_FEATURE],
+    )
 
 
 def _build_price_bucket_daily_means(horizon_panel_df: pd.DataFrame) -> pd.DataFrame:
@@ -899,8 +902,14 @@ def run_topix100_price_vs_sma20_rank_future_close_research(
         min_constituents_per_day=min_constituents_per_day,
     )
     ranked_panel_df = _build_ranked_panel(event_panel_df)
-    horizon_panel_df = _build_horizon_panel(ranked_panel_df)
-    daily_group_means_df = _build_daily_group_means(horizon_panel_df)
+    horizon_panel_df = _build_horizon_panel(
+        ranked_panel_df,
+        known_feature_order=[PRIMARY_PRICE_FEATURE],
+    )
+    daily_group_means_df = _build_daily_group_means(
+        horizon_panel_df,
+        known_feature_order=[PRIMARY_PRICE_FEATURE],
+    )
 
     price_bucket_daily_means_df = _build_price_bucket_daily_means(horizon_panel_df)
     price_bucket_pairwise_significance_df = _build_price_bucket_pairwise_significance(
@@ -940,11 +949,23 @@ def run_topix100_price_vs_sma20_rank_future_close_research(
         else 0,
         event_panel_df=event_panel_df,
         ranked_panel_df=ranked_panel_df,
-        ranking_feature_summary_df=_summarize_ranking_features(ranked_panel_df),
-        quartile_future_summary_df=_summarize_future_targets(horizon_panel_df),
+        ranking_feature_summary_df=_summarize_ranking_features(
+            ranked_panel_df,
+            known_feature_order=[PRIMARY_PRICE_FEATURE],
+        ),
+        quartile_future_summary_df=_summarize_future_targets(
+            horizon_panel_df,
+            known_feature_order=[PRIMARY_PRICE_FEATURE],
+        ),
         daily_group_means_df=daily_group_means_df,
-        global_significance_df=_build_global_significance(daily_group_means_df),
-        pairwise_significance_df=_build_pairwise_significance(daily_group_means_df),
+        global_significance_df=_build_global_significance(
+            daily_group_means_df,
+            known_feature_order=[PRIMARY_PRICE_FEATURE],
+        ),
+        pairwise_significance_df=_build_pairwise_significance(
+            daily_group_means_df,
+            known_feature_order=[PRIMARY_PRICE_FEATURE],
+        ),
         price_bucket_daily_means_df=price_bucket_daily_means_df,
         price_bucket_summary_df=_summarize_price_buckets(price_bucket_daily_means_df),
         price_bucket_pairwise_significance_df=price_bucket_pairwise_significance_df,
