@@ -37,6 +37,7 @@ interface ScreeningFiltersProps {
   onChange: (params: ScreeningParams) => void;
   strategyOptions: string[];
   autoMarkets: string[];
+  autoScopeLabel: string;
   strategiesLoading?: boolean;
 }
 
@@ -66,11 +67,15 @@ function normalizeMarketsValue(value: string | undefined): string | undefined {
   return normalized.length > 0 ? normalized.join(',') : undefined;
 }
 
-function buildMarketsOptions(autoMarkets: string[], explicitMarkets: string | undefined): MarketOption[] {
+function buildMarketsOptions(
+  autoMarkets: string[],
+  autoScopeLabel: string,
+  explicitMarkets: string | undefined
+): MarketOption[] {
   const options: MarketOption[] = [
     {
       value: AUTO_MARKETS_VALUE,
-      label: autoMarkets.length > 0 ? `Auto (${formatMarketsLabel(autoMarkets)})` : 'Auto',
+      label: autoScopeLabel === 'Auto' ? 'Auto' : `Auto (${autoScopeLabel})`,
     },
     ...BASE_MARKET_OPTIONS,
   ];
@@ -96,6 +101,7 @@ export function ScreeningFilters({
   onChange,
   strategyOptions,
   autoMarkets,
+  autoScopeLabel,
   strategiesLoading = false,
 }: ScreeningFiltersProps) {
   const updateParam = <K extends keyof ScreeningParams>(key: K, value: ScreeningParams[K]) => {
@@ -106,7 +112,7 @@ export function ScreeningFilters({
   const strategyGroupLabel =
     entryDecidability === 'requires_same_session_observation' ? 'in-session production' : 'pre-open production';
   const selectedMarketsValue = normalizeMarketsValue(params.markets);
-  const marketOptions = buildMarketsOptions(autoMarkets, selectedMarketsValue);
+  const marketOptions = buildMarketsOptions(autoMarkets, autoScopeLabel, selectedMarketsValue);
 
   const toggleStrategy = (strategyName: string) => {
     const selected = new Set(selectedStrategies);
@@ -123,7 +129,9 @@ export function ScreeningFilters({
       <div className="space-y-1 pb-3">
         <SectionEyebrow>Filter Rail</SectionEyebrow>
         <h2 className="text-base font-semibold text-foreground">Filters</h2>
-        <p className="text-xs text-muted-foreground">Choose market scope, strategies, and execution window before each run.</p>
+        <p className="text-xs text-muted-foreground">
+          Choose universe, strategies, and execution window before each run.
+        </p>
       </div>
       <div className="space-y-3">
         <MarketsSelect
@@ -131,6 +139,7 @@ export function ScreeningFilters({
           onChange={(value) => updateParam('markets', value === AUTO_MARKETS_VALUE ? undefined : value)}
           options={marketOptions}
           id="screening-markets"
+          label="Universe"
         />
 
         <div className="space-y-2">

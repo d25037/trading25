@@ -52,6 +52,7 @@ describe('ScreeningJobHistoryTable', () => {
     );
 
     expect(screen.getByText('job-comp...')).toBeInTheDocument();
+    expect(screen.getByText('Prime')).toBeInTheDocument();
     expect(screen.getByText('production/range_break_v15')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'View' }));
@@ -124,5 +125,23 @@ describe('ScreeningJobHistoryTable', () => {
     );
 
     expect(screen.getByText('(all in-session production)')).toBeInTheDocument();
+  });
+
+  it('prefers scope label over raw markets in history rows', () => {
+    const job = createJob({ job_id: 'job-topix', scopeLabel: 'TOPIX 500' });
+
+    render(
+      <ScreeningJobHistoryTable
+        entryDecidability="pre_open_decidable"
+        jobs={[job]}
+        isLoading={false}
+        showHistory
+        onShowHistoryChange={vi.fn()}
+        selectedJobId={null}
+        onSelectJob={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('TOPIX 500')).toBeInTheDocument();
   });
 });

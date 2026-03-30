@@ -7,7 +7,11 @@ from typing import Any
 from src.application.services.dataset_presets import get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.run_contracts import extract_dataset_name_from_shared_config
-from src.infrastructure.db.market.dataset_snapshot_reader import read_dataset_snapshot_manifest
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    DatasetSnapshotReader,
+    read_dataset_snapshot_manifest,
+)
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.config.settings import get_settings
 from src.domains.strategy.runtime.loader import ConfigLoader
 
@@ -19,6 +23,11 @@ _MARKET_ALIAS_TO_CANONICAL = {
     "0111": "prime",
     "0112": "standard",
     "0113": "growth",
+}
+_MARKET_LABELS = {
+    "prime": "Prime",
+    "standard": "Standard",
+    "growth": "Growth",
 }
 
 
@@ -74,6 +83,15 @@ def stringify_markets(markets: list[str]) -> str:
     return ",".join(canonicalize_market_list(markets))
 
 
+def format_market_scope_label(markets: list[str]) -> str:
+    normalized = canonicalize_market_list(markets)
+    if not normalized:
+        return "Auto"
+    if normalized == list(_PREFERRED_MARKET_ORDER):
+        return "All Markets"
+    return " + ".join(_MARKET_LABELS.get(market, market) for market in normalized)
+
+
 def resolve_dataset_metadata(
     dataset_name: str,
     *,
@@ -98,6 +116,39 @@ def resolve_dataset_metadata(
         dataset_preset=preset_name,
         screening_default_markets=canonicalize_market_list(preset.markets),
     )
+
+
+def resolve_dataset_stock_codes(
+    dataset_name: str,
+    *,
+    dataset_base_path: str | None = None,
+) -> list[str]:
+    resolver = _dataset_resolver(dataset_base_path)
+    normalized_name = extract_dataset_name_from_shared_config({"dataset": dataset_name})
+    if normalized_name is None:
+        raise ValueError(f"Invalid dataset name: {dataset_name}")
+    if not resolver.exists(normalized_name):
+        raise FileNotFoundError(f"Dataset not found: {normalized_name}")
+
+    reader = DatasetSnapshotReader(resolver.get_snapshot_dir(normalized_name))
+    try:
+        rows = reader.query("SELECT code FROM stocks ORDER BY code")
+    finally:
+        reader.close()
+
+    codes: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        raw_code = row["code"]
+        if raw_code is None:
+            continue
+        normalized_code = normalize_stock_code(str(raw_code))
+        if normalized_code in seen:
+            continue
+        seen.add(normalized_code)
+        codes.append(normalized_code)
+
+    return codes
 
 
 def resolve_strategy_dataset_metadata(

@@ -4,6 +4,7 @@ Screening service helper tests.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from typing import Any, cast
 import pandas as pd
 import pytest
 
+from src.domains.analytics.screening_requirements import StrategyDataRequirements
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.runtime.screening_profile import (
     resolve_screening_profile,
@@ -219,6 +221,58 @@ class TestDataLoadingHelpers:
         universe = service._load_stock_universe(["prime"])  # noqa: SLF001
         assert len(universe) == 1
         assert universe[0].code == "1001"
+
+    def test_prepare_strategy_inputs_uses_strategy_dataset_universe_codes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        service = ScreeningService(DummyReader())
+        stock_universe = [
+            StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None),
+            StockUniverseItem(code="1002", company_name="B", scale_category=None, sector_33_name=None),
+            StockUniverseItem(code="1003", company_name="C", scale_category=None, sector_33_name=None),
+        ]
+        s1 = replace(_runtime("s1"), dataset_universe_codes=frozenset({"1001", "1002"}))
+        s2 = replace(_runtime("s2"), dataset_universe_codes=frozenset({"1002"}))
+        captured: dict[str, tuple[str, ...]] = {}
+
+        def _build_requirements(*, strategy, stock_codes, reference_date, recent_days):
+            del reference_date, recent_days
+            captured[strategy.response_name] = stock_codes
+            return StrategyDataRequirements(
+                include_margin_data=False,
+                include_statements_data=False,
+                needs_benchmark=False,
+                needs_sector=False,
+                multi_data_key=MultiDataRequirementKey(
+                    stock_codes=stock_codes,
+                    start_date=None,
+                    end_date=None,
+                    include_margin_data=False,
+                    include_statements_data=False,
+                    timeframe="daily",
+                    period_type="FY",
+                    include_forecast_revision=False,
+                ),
+                benchmark_data_key=None,
+                sector_data_key=None,
+                sector_mapping_key=None,
+            )
+
+        monkeypatch.setattr(service, "_build_data_requirements", _build_requirements)
+        monkeypatch.setattr(service, "_load_multi_data", lambda _key: {})
+
+        service._prepare_strategy_inputs(  # noqa: SLF001
+            strategy_runtimes=[s1, s2],
+            stock_universe=stock_universe,
+            reference_date="2026-02-17",
+            recent_days=10,
+        )
+
+        assert captured == {
+            "s1": ("1001", "1002"),
+            "s2": ("1002",),
+        }
 
     def test_load_latest_metric_handles_missing_invalid_and_non_numeric(
         self,

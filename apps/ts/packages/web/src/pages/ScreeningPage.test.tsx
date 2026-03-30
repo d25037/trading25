@@ -63,6 +63,7 @@ let mockStrategiesQueryResult: {
       category: string;
       screening_support: 'supported' | 'unsupported';
       entry_decidability?: 'pre_open_decidable' | 'requires_same_session_observation' | null;
+      dataset_preset?: string | null;
       screening_default_markets?: string[] | null;
     }>;
   } | null;
@@ -83,6 +84,7 @@ function createCachedScreeningResult(): MarketScreeningResponse {
       warnings: [],
     },
     markets: ['prime'],
+    scopeLabel: 'Prime',
     recentDays: 10,
     referenceDate: '2026-02-18',
     sortBy: 'matchedDate',
@@ -125,6 +127,7 @@ function createScreeningJob(overrides: Partial<ScreeningJobResponse> = {}): Scre
     created_at: '2026-02-18T00:00:00Z',
     entry_decidability: 'pre_open_decidable',
     markets: 'prime',
+    scopeLabel: 'Prime',
     recentDays: 10,
     sortBy: 'matchedDate',
     order: 'desc',
@@ -224,6 +227,7 @@ describe('ScreeningPage', () => {
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'pre_open_decidable',
+            dataset_preset: 'primeMarket',
             screening_default_markets: ['prime'],
           },
           {
@@ -231,14 +235,16 @@ describe('ScreeningPage', () => {
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'pre_open_decidable',
-            screening_default_markets: ['prime', 'standard'],
+            dataset_preset: 'standardMarket',
+            screening_default_markets: ['standard'],
           },
           {
             name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
             screening_support: 'supported',
             entry_decidability: 'requires_same_session_observation',
-            screening_default_markets: ['growth'],
+            dataset_preset: 'topix500',
+            screening_default_markets: ['prime', 'standard', 'growth'],
           },
         ],
       },
@@ -286,6 +292,7 @@ describe('ScreeningPage', () => {
       expect.objectContaining({
         entryDecidability: 'pre_open_decidable',
         autoMarkets: ['prime', 'standard'],
+        autoScopeLabel: 'Prime Market + Standard Market',
         strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
       })
     );
@@ -301,7 +308,8 @@ describe('ScreeningPage', () => {
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
         entryDecidability: 'requires_same_session_observation',
-        autoMarkets: ['growth'],
+        autoMarkets: ['prime', 'standard', 'growth'],
+        autoScopeLabel: 'TOPIX 500',
         strategyOptions: ['production/topix_gap_down_intraday_same_day'],
       })
     );
@@ -318,6 +326,7 @@ describe('ScreeningPage', () => {
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
         autoMarkets: ['prime'],
+        autoScopeLabel: 'Prime Market',
         params: expect.objectContaining({
           strategies: 'production/range_break_v15',
         }),
@@ -411,8 +420,11 @@ describe('ScreeningPage', () => {
     render(<ScreeningPage />);
 
     expect(screen.getByRole('heading', { name: 'Screening' })).toBeInTheDocument();
-    expect(screen.getByText('Scope')).toBeInTheDocument();
-    expect(screen.getByText(/Run production screening and keep the result workspace ahead of setup details/i)).toBeInTheDocument();
+    expect(screen.getByText('Universe')).toBeInTheDocument();
+    expect(screen.getByText('Strategies')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Run production screening and keep the result workspace ahead of setup details/i)
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pre-Open Decidable' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Requires In-Session Observation' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Daily Ranking' })).not.toBeInTheDocument();
