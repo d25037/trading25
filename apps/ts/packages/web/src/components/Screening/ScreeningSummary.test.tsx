@@ -49,7 +49,13 @@ describe('ScreeningSummary', () => {
       />
     );
 
-    expect(screen.getByText('prime, standard / 20d / 2025-01-30')).toBeInTheDocument();
+    expect(screen.getByText('Prime + Standard / 20d / 2025-01-30')).toBeInTheDocument();
+  });
+
+  it('prefers scope label when provided', () => {
+    render(<ScreeningSummary summary={mockSummary} markets={['prime']} scopeLabel="TOPIX 500" recentDays={10} />);
+
+    expect(screen.getByText('TOPIX 500 / 10d')).toBeInTheDocument();
   });
 
   it('renders fallback strategy and zero hit rate when no matches exist', () => {
@@ -71,6 +77,6 @@ describe('ScreeningSummary', () => {
     expect(screen.getByText('0.0% hit rate')).toBeInTheDocument();
     expect(screen.getByText('No strategy hits')).toBeInTheDocument();
     expect(screen.getByText('0 warnings')).toBeInTheDocument();
-    expect(screen.getByText('prime / 5d')).toBeInTheDocument();
+    expect(screen.getByText('Prime / 5d')).toBeInTheDocument();
   });
 });

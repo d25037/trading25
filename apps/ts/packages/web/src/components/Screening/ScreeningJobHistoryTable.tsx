@@ -3,6 +3,7 @@ import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHis
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
 
 interface ScreeningJobHistoryTableProps {
@@ -58,8 +59,8 @@ export function ScreeningJobHistoryTable({
     },
     {
       key: 'markets',
-      header: 'Markets',
-      render: (job) => <span className="text-xs">{job.markets}</span>,
+      header: 'Universe',
+      render: (job) => <span className="text-xs">{job.scopeLabel ?? formatMarketsLabel(job.markets.split(','))}</span>,
     },
     {
       key: 'strategies',

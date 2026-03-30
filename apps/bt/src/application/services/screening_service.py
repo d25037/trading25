@@ -63,6 +63,7 @@ from src.entrypoints.http.schemas.screening import (
 )
 from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.application.services.analytics_provenance import build_market_provenance
+from src.application.services.dataset_presets import get_preset_label
 from src.application.services.market_code_alias import resolve_market_codes
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
@@ -74,6 +75,11 @@ from src.application.services.screening_strategy_selection import (
     build_strategy_response_names,
     build_strategy_selection_catalog,
     resolve_selected_strategy_names,
+)
+from src.application.services.strategy_dataset_metadata import (
+    format_market_scope_label,
+    resolve_dataset_metadata,
+    resolve_dataset_stock_codes,
 )
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
@@ -109,6 +115,8 @@ class StrategyRuntime:
     shared_config: SharedConfig
     compiled_strategy: CompiledStrategyIR
     entry_decidability: EntryDecidability
+    dataset_universe_codes: frozenset[str] | None = None
+    dataset_scope_label: str | None = None
 
 
 @dataclass
@@ -278,19 +286,27 @@ class ScreeningService:
         sort_by: ScreeningSortBy = "matchedDate",
         order: SortOrder = "desc",
         limit: int | None = None,
+        scope_label: str | None = None,
+        use_strategy_dataset_universe: bool = False,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> MarketScreeningResponse:
         """スクリーニングを実行"""
         run_started = perf_counter()
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
         effective_reference_date = reference_date or self._get_latest_market_date()
-
-        load_stage_started = perf_counter()
-        stock_universe = self._load_stock_universe(query_market_codes)
         strategy_runtimes = self._resolve_strategies(
             strategies,
             entry_decidability=entry_decidability,
+            use_strategy_dataset_universe=use_strategy_dataset_universe,
         )
+
+        load_stage_started = perf_counter()
+        stock_universe = self._load_stock_universe(query_market_codes)
+        if use_strategy_dataset_universe:
+            stock_universe = self._filter_stock_universe_by_codes(
+                stock_universe,
+                self._collect_dataset_universe_codes(strategy_runtimes),
+            )
         strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
             strategy_runtimes
         )
@@ -388,12 +404,18 @@ class ScreeningService:
             strategiesWithoutBacktestMetrics=missing_metric_strategies,
             warnings=self._dedupe_warnings(warnings),
         )
+        resolved_scope_label = scope_label or self._resolve_scope_label(
+            requested_market_codes=requested_market_codes,
+            strategy_runtimes=strategy_runtimes,
+            use_strategy_dataset_universe=use_strategy_dataset_universe,
+        )
 
         response = MarketScreeningResponse(
             results=sorted_results,
             summary=summary,
             entry_decidability=entry_decidability,
             markets=requested_market_codes,
+            scopeLabel=resolved_scope_label,
             recentDays=recent_days,
             referenceDate=effective_reference_date,
             sortBy=sort_by,
@@ -455,11 +477,61 @@ class ScreeningService:
 
         return list(deduped.values())
 
+    @staticmethod
+    def _filter_stock_universe_by_codes(
+        stock_universe: list[StockUniverseItem],
+        allowed_codes: frozenset[str] | None,
+    ) -> list[StockUniverseItem]:
+        if not allowed_codes:
+            return []
+        return [stock for stock in stock_universe if stock.code in allowed_codes]
+
+    @staticmethod
+    def _collect_dataset_universe_codes(
+        strategy_runtimes: list[StrategyRuntime],
+    ) -> frozenset[str] | None:
+        union_codes: set[str] = set()
+        has_dataset_universe = False
+        for strategy in strategy_runtimes:
+            if strategy.dataset_universe_codes is None:
+                continue
+            has_dataset_universe = True
+            union_codes.update(strategy.dataset_universe_codes)
+        if not has_dataset_universe:
+            return None
+        return frozenset(union_codes)
+
+    @staticmethod
+    def _resolve_scope_label(
+        *,
+        requested_market_codes: list[str],
+        strategy_runtimes: list[StrategyRuntime],
+        use_strategy_dataset_universe: bool,
+    ) -> str:
+        if not use_strategy_dataset_universe:
+            return format_market_scope_label(requested_market_codes)
+
+        scope_labels: list[str] = []
+        seen_labels: set[str] = set()
+        for strategy in strategy_runtimes:
+            scope_label = strategy.dataset_scope_label
+            if scope_label is None:
+                return format_market_scope_label(requested_market_codes)
+            if scope_label in seen_labels:
+                continue
+            scope_labels.append(scope_label)
+            seen_labels.add(scope_label)
+
+        if scope_labels:
+            return " + ".join(scope_labels)
+        return format_market_scope_label(requested_market_codes)
+
     def _resolve_strategies(
         self,
         strategies: str | None,
         *,
         entry_decidability: EntryDecidability,
+        use_strategy_dataset_universe: bool = False,
     ) -> list[StrategyRuntime]:
         """対象戦略をproductionカテゴリから解決する。"""
         metadata = [m for m in self._config_loader.get_strategy_metadata() if m.category == "production"]
@@ -490,6 +562,21 @@ class ScreeningService:
             if screening_support != "supported" or resolved_entry_decidability is None:
                 raise ValueError(f"Unsupported screening strategy selected: {name}")
 
+            dataset_universe_codes: frozenset[str] | None = None
+            dataset_scope_label: str | None = None
+            if use_strategy_dataset_universe:
+                try:
+                    dataset_metadata = resolve_dataset_metadata(runtime_payload.shared_config.dataset)
+                    dataset_universe_codes = frozenset(
+                        resolve_dataset_stock_codes(runtime_payload.shared_config.dataset)
+                    )
+                    if dataset_metadata.dataset_preset is not None:
+                        dataset_scope_label = get_preset_label(dataset_metadata.dataset_preset)
+                except Exception as exc:
+                    raise ValueError(
+                        f"Invalid dataset universe for screening strategy {name}: {exc}"
+                    ) from exc
+
             runtime = StrategyRuntime(
                 name=name,
                 response_name=response_names[name],
@@ -499,6 +586,8 @@ class ScreeningService:
                 shared_config=runtime_payload.shared_config,
                 compiled_strategy=runtime_payload.compiled_strategy,
                 entry_decidability=cast(EntryDecidability, resolved_entry_decidability),
+                dataset_universe_codes=dataset_universe_codes,
+                dataset_scope_label=dataset_scope_label,
             )
             runtimes.append(runtime)
 
@@ -571,14 +660,18 @@ class ScreeningService:
         if not strategy_runtimes:
             return [], RequestCacheStats(hits=0, misses=0)
 
-        stock_codes = tuple(stock.code for stock in stock_universe)
         cache = ScreeningRequestCache()
         inputs: list[StrategyExecutionInput] = []
 
         for strategy in strategy_runtimes:
+            strategy_stock_universe = (
+                self._filter_stock_universe_by_codes(stock_universe, strategy.dataset_universe_codes)
+                if strategy.dataset_universe_codes is not None
+                else stock_universe
+            )
             requirements = self._build_data_requirements(
                 strategy=strategy,
-                stock_codes=stock_codes,
+                stock_codes=tuple(stock.code for stock in strategy_stock_universe),
                 reference_date=reference_date,
                 recent_days=recent_days,
             )

@@ -1,20 +1,23 @@
 import { AlertTriangle, BarChart3, TrendingUp, Trophy } from 'lucide-react';
 import { SummaryMetrics } from '@/components/shared/SummaryMetrics';
+import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { ScreeningSummary as Summary } from '@/types/screening';
 
 interface ScreeningSummaryProps {
   summary: Summary | undefined;
   markets: string[];
+  scopeLabel?: string;
   recentDays: number;
   referenceDate?: string;
 }
 
-export function ScreeningSummary({ summary, markets, recentDays, referenceDate }: ScreeningSummaryProps) {
+export function ScreeningSummary({ summary, markets, scopeLabel, recentDays, referenceDate }: ScreeningSummaryProps) {
   if (!summary) return null;
 
+  const resolvedScopeLabel = scopeLabel ?? formatMarketsLabel(markets);
   const marketInfo = referenceDate
-    ? `${markets.join(', ')} / ${recentDays}d / ${referenceDate}`
-    : `${markets.join(', ')} / ${recentDays}d`;
+    ? `${resolvedScopeLabel} / ${recentDays}d / ${referenceDate}`
+    : `${resolvedScopeLabel} / ${recentDays}d`;
 
   const hitRate = summary.totalStocksScreened > 0 ? (summary.matchCount / summary.totalStocksScreened) * 100 : 0;
 
