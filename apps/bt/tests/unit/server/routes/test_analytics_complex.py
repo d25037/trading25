@@ -335,6 +335,38 @@ class TestRanking:
             assert resp.status_code == 422
 
 
+class TestTopix100Ranking:
+    def test_200_default(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "date" in data
+        assert "itemCount" in data
+        assert "items" in data
+        assert "lastUpdated" in data
+
+    def test_item_shape(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["items"]:
+            item = data["items"][0]
+            assert "rank" in item
+            assert "code" in item
+            assert "priceSma20_80" in item
+            assert "volumeSma20_80" in item
+            assert "priceDecile" in item
+            assert "priceBucket" in item
+            assert "volumeBucket" in item
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/topix100-ranking")
+            assert resp.status_code == 422
+
+
 class TestFundamentalRanking:
     def test_200_default(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking")

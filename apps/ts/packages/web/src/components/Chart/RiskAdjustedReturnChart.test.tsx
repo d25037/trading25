@@ -178,6 +178,38 @@ describe('RiskAdjustedReturnChart', () => {
     vi.unstubAllGlobals();
   });
 
+  it('skips resize updates after unmount clears the chart ref', () => {
+    let resizeCallback: (() => void) | undefined;
+
+    class MockResizeObserver {
+      observe = vi.fn();
+      disconnect = vi.fn();
+
+      constructor(callback: () => void) {
+        resizeCallback = callback;
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', MockResizeObserver as unknown as typeof ResizeObserver);
+
+    const { unmount } = render(
+      <RiskAdjustedReturnChart
+        data={sampleData}
+        lookbackPeriod={60}
+        ratioType="sortino"
+        threshold={1}
+        condition="above"
+      />
+    );
+
+    unmount();
+    resizeCallback?.();
+
+    expect(mockChart.applyOptions).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
   it('cleans up chart on unmount', () => {
     const { unmount } = render(
       <RiskAdjustedReturnChart

@@ -286,6 +286,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/topix100-ranking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get TOPIX100 SMA ranking snapshot
+         * @description Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, with volume SMA 20/80 sidecar buckets.
+         */
+        get: operations["get_topix100_ranking_api_analytics_topix100_ranking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/attribution-files": {
         parameters: {
             query?: never;
@@ -9606,6 +9626,55 @@ export interface components {
             date: string;
         };
         /**
+         * Topix100RankingItem
+         * @description TOPIX100 SMA ranking item.
+         */
+        Topix100RankingItem: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Currentprice */
+            currentPrice: number;
+            /** Marketcode */
+            marketCode: string;
+            /**
+             * Pricebucket
+             * @enum {string}
+             */
+            priceBucket: "q1" | "q10" | "q456" | "other";
+            /** Pricedecile */
+            priceDecile: number;
+            /** Pricesma20 80 */
+            priceSma20_80: number;
+            /** Rank */
+            rank: number;
+            /** Scalecategory */
+            scaleCategory: string;
+            /** Sector33Name */
+            sector33Name: string;
+            /** Volume */
+            volume: number;
+            /** Volumebucket */
+            volumeBucket?: ("high" | "low") | null;
+            /** Volumesma20 80 */
+            volumeSma20_80: number;
+        };
+        /**
+         * Topix100RankingResponse
+         * @description TOPIX100 SMA ranking response.
+         */
+        Topix100RankingResponse: {
+            /** Date */
+            date: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Items */
+            items?: components["schemas"]["Topix100RankingItem"][];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
          * TopixDataPoint
          * @description TOPIX データポイント
          */
@@ -10827,6 +10896,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarginVolumeRatioResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_topix100_ranking_api_analytics_topix100_ranking_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Topix100RankingResponse"];
                 };
             };
             /** @description Bad Request */

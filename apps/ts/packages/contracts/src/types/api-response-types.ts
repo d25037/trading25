@@ -57,6 +57,31 @@ export interface MarketRankingResponse {
 }
 
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
+export type Topix100PriceBucket = 'q1' | 'q10' | 'q456' | 'other';
+export type Topix100VolumeBucket = 'high' | 'low' | null;
+
+export interface Topix100RankingItem {
+  rank: number;
+  code: string;
+  companyName: string;
+  marketCode: string;
+  sector33Name: string;
+  scaleCategory: string;
+  currentPrice: number;
+  volume: number;
+  priceSma20_80: number;
+  volumeSma20_80: number;
+  priceDecile: number;
+  priceBucket: Topix100PriceBucket;
+  volumeBucket: Topix100VolumeBucket;
+}
+
+export interface Topix100RankingResponse {
+  date: string;
+  itemCount: number;
+  items: Topix100RankingItem[];
+  lastUpdated: string;
+}
 
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type FundamentalRankingMetricKey = string;
