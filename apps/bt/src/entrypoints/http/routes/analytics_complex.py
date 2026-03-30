@@ -38,6 +38,7 @@ from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
+from src.application.services.strategy_dataset_metadata import format_market_scope_label
 
 router = APIRouter(tags=["Analytics"])
 _SCREENING_JOB_TYPE = "screening"
@@ -228,6 +229,9 @@ def _get_screening_job_or_404(job_id: str) -> JobInfo:
 def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
     """JobInfo から ScreeningJobResponse を構築。"""
     params = screening_job_service.get_job_request(job.job_id) or ScreeningJobRequest()
+    scope_label = screening_job_service.get_job_scope_label(job.job_id)
+    if not isinstance(scope_label, str) or not scope_label:
+        scope_label = format_market_scope_label(params.markets.split(",")) if params.markets else None
 
     return ScreeningJobResponse(
         job_id=job.job_id,
@@ -242,6 +246,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         execution_control=build_job_execution_control(job),
         entry_decidability=params.entry_decidability,
         markets=params.markets or "",
+        scopeLabel=scope_label,
         strategies=params.strategies,
         recentDays=params.recentDays,
         referenceDate=params.date,

@@ -6310,6 +6310,8 @@ export interface components {
             lastUpdated: string;
             /** Markets */
             markets: string[];
+            /** Scopelabel */
+            scopeLabel?: string | null;
             /**
              * Order
              * @enum {string}
@@ -7739,6 +7741,11 @@ export interface components {
              * @description 市場コードフィルタ
              */
             markets: string;
+            /**
+             * Scopelabel
+             * @description 表示用スコープラベル
+             */
+            scopeLabel?: string | null;
             /**
              * Message
              * @description ステータスメッセージ

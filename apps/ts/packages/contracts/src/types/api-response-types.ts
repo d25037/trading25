@@ -129,6 +129,7 @@ export interface MarketScreeningResponse {
   summary: ScreeningSummary;
   entry_decidability?: EntryDecidability;
   markets: string[];
+  scopeLabel?: string | null;
   recentDays: number;
   referenceDate?: string;
   sortBy: ScreeningSortBy;
@@ -160,6 +161,7 @@ export interface ScreeningJobResponse {
   error?: string | null;
   entry_decidability?: EntryDecidability;
   markets: string;
+  scopeLabel?: string | null;
   strategies?: string | null;
   recentDays: number;
   referenceDate?: string | null;

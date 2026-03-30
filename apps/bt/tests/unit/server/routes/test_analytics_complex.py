@@ -547,6 +547,7 @@ class TestScreening:
         assert data["entry_decidability"] == "pre_open_decidable"
         assert data["recentDays"] == 5
         assert data["markets"] == "prime,standard"
+        assert data["scopeLabel"] == "Prime + Standard"
 
     def test_stream_job_status(self, analytics_client):
         with (
@@ -581,6 +582,7 @@ class TestScreening:
         assert "event: job" in resp.text
         assert '"job_id":"job-stream"' in resp.text
         assert '"markets":"prime,standard"' in resp.text
+        assert '"scopeLabel":"Prime + Standard"' in resp.text
         assert '"recentDays":5' in resp.text
 
     def test_cancel_job_conflict_for_completed(self, analytics_client):
@@ -606,6 +608,7 @@ class TestScreening:
                     "warnings": [],
                 },
                 "markets": ["prime"],
+                "scopeLabel": "Prime ex TOPIX500",
                 "entry_decidability": "pre_open_decidable",
                 "recentDays": 10,
                 "referenceDate": None,
@@ -633,6 +636,7 @@ class TestScreening:
         assert resp.status_code == 200
         data = resp.json()
         assert data["entry_decidability"] == "pre_open_decidable"
+        assert data["scopeLabel"] == "Prime ex TOPIX500"
         assert data["sortBy"] == "matchedDate"
         assert "backtestMetric" not in data
 
