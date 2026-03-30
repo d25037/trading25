@@ -6310,8 +6310,6 @@ export interface components {
             lastUpdated: string;
             /** Markets */
             markets: string[];
-            /** Scopelabel */
-            scopeLabel?: string | null;
             /**
              * Order
              * @enum {string}
@@ -6324,6 +6322,8 @@ export interface components {
             referenceDate?: string | null;
             /** Results */
             results: components["schemas"]["ScreeningResultItem"][];
+            /** Scopelabel */
+            scopeLabel?: string | null;
             /**
              * Sortby
              * @enum {string}
@@ -7742,11 +7742,6 @@ export interface components {
              */
             markets: string;
             /**
-             * Scopelabel
-             * @description 表示用スコープラベル
-             */
-            scopeLabel?: string | null;
-            /**
              * Message
              * @description ステータスメッセージ
              */
@@ -7774,6 +7769,11 @@ export interface components {
             referenceDate?: string | null;
             /** @description Engine-neutral run metadata */
             run_metadata?: components["schemas"]["RunMetadata"] | null;
+            /**
+             * Scopelabel
+             * @description 表示用スコープラベル
+             */
+            scopeLabel?: string | null;
             /**
              * Sortby
              * @description 並び順の基準
