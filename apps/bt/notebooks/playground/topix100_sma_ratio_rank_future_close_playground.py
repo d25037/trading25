@@ -1,0 +1,837 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "marimo",
+#     "pandas>=2.0.0",
+#     "matplotlib>=3.0.0",
+# ]
+# ///
+
+import marimo
+
+__generated_with = "0.21.1"
+app = marimo.App(
+    width="full",
+    app_title="TOPIX100 SMA Ratio Rank / Future Close Playground",
+)
+
+
+@app.cell
+def _():
+    import marimo as mo
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    import sys
+    from pathlib import Path
+
+    return Path, mo, pd, plt, sys
+
+
+@app.cell
+def _(Path, sys):
+    _project_root = Path.cwd()
+    if _project_root.name == "playground":
+        _project_root = _project_root.parent.parent
+    elif _project_root.name == "notebooks":
+        _project_root = _project_root.parent
+
+    if str(_project_root) not in sys.path:
+        sys.path.insert(0, str(_project_root))
+
+    from src.shared.config.settings import get_settings
+    from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
+        DECILE_ORDER,
+        HORIZON_ORDER,
+        RANKING_FEATURE_ORDER,
+        get_topix100_sma_ratio_rank_future_close_available_date_range,
+        run_topix100_sma_ratio_rank_future_close_research,
+    )
+
+    default_db_path = get_settings().market_db_path
+    return (
+        DECILE_ORDER,
+        HORIZON_ORDER,
+        RANKING_FEATURE_ORDER,
+        default_db_path,
+        get_topix100_sma_ratio_rank_future_close_available_date_range,
+        run_topix100_sma_ratio_rank_future_close_research,
+    )
+
+
+@app.cell
+def _(
+    default_db_path,
+    get_topix100_sma_ratio_rank_future_close_available_date_range,
+):
+    try:
+        initial_range = get_topix100_sma_ratio_rank_future_close_available_date_range(
+            default_db_path
+        )
+    except Exception:
+        initial_range = (None, None)
+    return (initial_range,)
+
+
+@app.cell
+def _(default_db_path, initial_range, mo, pd):
+    _available_start_date, _available_end_date = initial_range
+    _default_start_date = _available_start_date or ""
+    if _available_end_date:
+        _candidate = (
+            pd.Timestamp(_available_end_date)
+            - pd.DateOffset(years=10)
+            + pd.Timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        if _available_start_date:
+            _default_start_date = max(_available_start_date, _candidate)
+        else:
+            _default_start_date = _candidate
+
+    db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
+    start_date = mo.ui.text(
+        value=_default_start_date,
+        label="Analysis Start Date (YYYY-MM-DD)",
+    )
+    end_date = mo.ui.text(
+        value=_available_end_date or "",
+        label="Analysis End Date (YYYY-MM-DD)",
+    )
+    lookback_years = mo.ui.number(
+        value=10,
+        start=1,
+        step=1,
+        label="Lookback Years",
+    )
+    min_constituents_per_day = mo.ui.number(
+        value=80,
+        start=4,
+        step=1,
+        label="Min Constituents / Day",
+    )
+
+    mo.vstack(
+        [
+            db_path,
+            mo.hstack([start_date, end_date]),
+            mo.hstack([lookback_years, min_constituents_per_day]),
+        ]
+    )
+    return (
+        db_path,
+        end_date,
+        lookback_years,
+        min_constituents_per_day,
+        start_date,
+    )
+
+
+@app.cell
+def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
+    parsed_inputs = {
+        "selected_db_path": db_path.value.strip(),
+        "selected_start": start_date.value.strip() or None,
+        "selected_end": end_date.value.strip() or None,
+        "lookback_years": int(lookback_years.value),
+        "min_constituents_per_day": int(min_constituents_per_day.value),
+    }
+    return (parsed_inputs,)
+
+
+@app.cell
+def _(parsed_inputs, run_topix100_sma_ratio_rank_future_close_research):
+    try:
+        result = run_topix100_sma_ratio_rank_future_close_research(
+            parsed_inputs["selected_db_path"],
+            start_date=parsed_inputs["selected_start"],
+            end_date=parsed_inputs["selected_end"],
+            lookback_years=parsed_inputs["lookback_years"],
+            min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
+        )
+        error_message = None
+    except Exception as exc:
+        result = None
+        error_message = str(exc)
+    return error_message, result
+
+
+@app.cell
+def _(error_message, mo):
+    _error_view = mo.md("")
+    if error_message:
+        _error_view = mo.md(f"## Input Error\n\n`{error_message}`")
+    _error_view
+    return
+
+
+@app.cell
+def _(DECILE_ORDER, HORIZON_ORDER, RANKING_FEATURE_ORDER, error_message, mo, result):
+    if error_message or result is None:
+        ranking_feature_view = mo.md("")
+        horizon_view = mo.md("")
+        metric_view = mo.md("")
+    else:
+        ranking_feature_view = mo.ui.dropdown(
+            options={key: key for key in RANKING_FEATURE_ORDER},
+            value="price_sma_20_80",
+            label="Ranking Feature",
+        )
+        horizon_view = mo.ui.dropdown(
+            options={key: key for key in HORIZON_ORDER},
+            value="t_plus_5",
+            label="Horizon",
+        )
+        metric_view = mo.ui.dropdown(
+            options={
+                "future_return": "future_return",
+                "future_close": "future_close",
+            },
+            value="future_return",
+            label="Metric",
+        )
+    mo.hstack([ranking_feature_view, horizon_view, metric_view])
+    return DECILE_ORDER, horizon_view, metric_view, ranking_feature_view
+
+
+@app.cell
+def _(error_message, mo, parsed_inputs, result):
+    _summary_view = mo.md("")
+    if not error_message and result is not None:
+        _summary_view = mo.md(
+            "\n".join(
+                [
+                    "## TOPIX100 SMA Ratio Rank / Future Close Research",
+                    "",
+                    f"- Source mode: **{result.source_mode}**",
+                    f"- Source detail: **{result.source_detail}**",
+                    f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
+                    f"- Requested range: **{parsed_inputs['selected_start'] or result.default_start_date} -> {parsed_inputs['selected_end'] or result.available_end_date}**",
+                    f"- Effective analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
+                    f"- Latest TOPIX100 constituent count: **{result.topix100_constituent_count}**",
+                    f"- Stock-day rows after SMA warmup/filter: **{result.stock_day_count}**",
+                    f"- Ranked events (`stock-day x 6 features`): **{result.ranked_event_count}**",
+                    f"- Valid dates: **{result.valid_date_count}**",
+                    f"- Discovery / validation split: **<= {result.discovery_end_date} / >= {result.validation_start_date}**",
+                    "",
+                    "`Q1` is the highest SMA-ratio decile and `Q10` is the lowest for the selected ranking feature.",
+                    "`future_close` is provided as requested, but `future_return` is the cleaner interpretation.",
+                ]
+            )
+        )
+    _summary_view
+    return
+
+
+@app.cell
+def _(HORIZON_ORDER, error_message, mo, result):
+    if error_message or result is None:
+        selection_horizon_view = mo.md("")
+    else:
+        selection_horizon_view = mo.ui.dropdown(
+            options={key: key for key in HORIZON_ORDER},
+            value="t_plus_10",
+            label="Selection Horizon",
+        )
+    selection_horizon_view
+    return (selection_horizon_view,)
+
+
+@app.cell
+def _(error_message, mo, result, selection_horizon_view):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _selected_features = result.selected_feature_df[
+            result.selected_feature_df["horizon_key"] == selection_horizon_view.value
+        ].copy()
+        _feature_selection = result.feature_selection_df[
+            result.feature_selection_df["horizon_key"] == selection_horizon_view.value
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("## Discovery / Validation Feature Selection"),
+                mo.md("### Selected Price / Volume Features"),
+                mo.Html(_selected_features.round(6).to_html(index=False)),
+                mo.md("### All Feature Scores"),
+                mo.Html(_feature_selection.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(error_message, mo, result, selection_horizon_view):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _candidates = result.composite_candidate_df[
+            result.composite_candidate_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _selected = result.selected_composite_df[
+            result.selected_composite_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("## Price x Volume Composite Ranking"),
+                mo.md("### Selected Composite"),
+                mo.Html(_selected.round(6).to_html(index=False)),
+                mo.md("### Composite Method Candidates"),
+                mo.Html(_candidates.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(error_message, mo, result, selection_horizon_view):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _selected = result.selected_composite_df[
+            result.selected_composite_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        if not _selected.empty:
+            _ranking_feature = _selected.iloc[0]["ranking_feature"]
+            _ranking_summary = result.selected_composite_ranking_summary_df[
+                result.selected_composite_ranking_summary_df["ranking_feature"]
+                == _ranking_feature
+            ].copy()
+            _future_summary = result.selected_composite_future_summary_df[
+                result.selected_composite_future_summary_df["ranking_feature"]
+                == _ranking_feature
+            ].copy()
+            _view = mo.vstack(
+                [
+                    mo.md("### Selected Composite Deciles"),
+                    mo.Html(_ranking_summary.round(6).to_html(index=False)),
+                    mo.md("### Selected Composite Future Summary"),
+                    mo.Html(_future_summary.round(6).to_html(index=False)),
+                ]
+            )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    metric_view,
+    mo,
+    result,
+    selection_horizon_view,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _selected = result.selected_composite_df[
+            result.selected_composite_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        if not _selected.empty:
+            _ranking_feature = _selected.iloc[0]["ranking_feature"]
+            _global = result.selected_composite_global_significance_df[
+                (result.selected_composite_global_significance_df["ranking_feature"] == _ranking_feature)
+                & (result.selected_composite_global_significance_df["metric_key"] == metric_view.value)
+            ].copy()
+            _pairwise = result.selected_composite_pairwise_significance_df[
+                (result.selected_composite_pairwise_significance_df["ranking_feature"] == _ranking_feature)
+                & (result.selected_composite_pairwise_significance_df["metric_key"] == metric_view.value)
+                & (result.selected_composite_pairwise_significance_df["left_decile"] == "Q1")
+                & (result.selected_composite_pairwise_significance_df["right_decile"] == "Q10")
+            ].copy()
+            _view = mo.vstack(
+                [
+                    mo.md("### Selected Composite Significance"),
+                    mo.Html(_global.round(6).to_html(index=False)),
+                    mo.md("### Selected Composite Pairwise (Q1 vs Q10)"),
+                    mo.Html(_pairwise.round(6).to_html(index=False)),
+                ]
+            )
+    _view
+    return
+
+
+@app.cell
+def _(error_message, mo, plt, result, selection_horizon_view):
+    _chart = mo.md("")
+    if not error_message and result is not None:
+        _selected = result.selected_composite_df[
+            result.selected_composite_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        if not _selected.empty:
+            _ranking_feature = _selected.iloc[0]["ranking_feature"]
+            _summary = result.selected_composite_future_summary_df[
+                result.selected_composite_future_summary_df["ranking_feature"]
+                == _ranking_feature
+            ].copy()
+            _x_positions = [1, 5, 10]
+            _fig, _ax = plt.subplots(figsize=(10, 4.5))
+            for _decile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
+                _decile_df = _summary[
+                    _summary["feature_decile"] == _decile_key
+                ].copy()
+                _decile_df = _decile_df.set_index("horizon_key").reindex(
+                    ["t_plus_1", "t_plus_5", "t_plus_10"]
+                )
+                _ax.plot(
+                    _x_positions,
+                    _decile_df["mean_future_return"].tolist(),
+                    marker="o",
+                    linewidth=2,
+                    label=_decile_key,
+                    color=_color,
+                )
+            _ax.set_title(
+                f"Selected Composite Mean Future Return ({selection_horizon_view.value}, Q1 vs Q10)"
+            )
+            _ax.set_xlabel("Trading Days Ahead")
+            _ax.set_ylabel("Mean Future Return")
+            _ax.set_xticks(_x_positions)
+            _ax.grid(alpha=0.2)
+            _ax.legend()
+            _fig.tight_layout()
+            _chart = _fig
+    _chart
+    return
+
+
+@app.cell
+def _(error_message, mo, ranking_feature_view, result):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _table = result.ranking_feature_summary_df[
+            result.ranking_feature_summary_df["ranking_feature"]
+            == ranking_feature_view.value
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Ranking Feature Deciles"),
+                mo.Html(_table.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    ranking_feature_view,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _global = result.global_significance_df[
+            (result.global_significance_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.global_significance_df["horizon_key"] == horizon_view.value)
+            & (result.global_significance_df["metric_key"] == metric_view.value)
+        ].copy()
+        _pairwise = result.pairwise_significance_df[
+            (result.pairwise_significance_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.pairwise_significance_df["horizon_key"] == horizon_view.value)
+            & (result.pairwise_significance_df["metric_key"] == metric_view.value)
+            & (result.pairwise_significance_df["left_decile"] == "Q1")
+            & (result.pairwise_significance_df["right_decile"] == "Q10")
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Significance"),
+                mo.Html(_global.round(6).to_html(index=False)),
+                mo.md("### Pairwise Significance (Q1 vs Q10)"),
+                mo.Html(_pairwise.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    ranking_feature_view,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.extreme_vs_middle_summary_df[
+            (result.extreme_vs_middle_summary_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.extreme_vs_middle_summary_df["horizon_key"] == horizon_view.value)
+        ].copy()
+        _significance = result.extreme_vs_middle_significance_df[
+            (result.extreme_vs_middle_significance_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.extreme_vs_middle_significance_df["horizon_key"] == horizon_view.value)
+            & (result.extreme_vs_middle_significance_df["metric_key"] == metric_view.value)
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Q1+Q10 vs Q4+Q5+Q6"),
+                mo.Html(_summary.round(6).to_html(index=False)),
+                mo.md("### Q1+Q10 vs Q4+Q5+Q6 Significance"),
+                mo.Html(_significance.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.nested_volume_split_summary_df[
+            result.nested_volume_split_summary_df["horizon_key"] == horizon_view.value
+        ].copy()
+        _global = result.nested_volume_split_global_significance_df[
+            (result.nested_volume_split_global_significance_df["horizon_key"] == horizon_view.value)
+            & (result.nested_volume_split_global_significance_df["metric_key"] == metric_view.value)
+        ].copy()
+        _pairwise = result.nested_volume_split_pairwise_significance_df[
+            (result.nested_volume_split_pairwise_significance_df["horizon_key"] == horizon_view.value)
+            & (result.nested_volume_split_pairwise_significance_df["metric_key"] == metric_view.value)
+            & (
+                result.nested_volume_split_pairwise_significance_df[
+                    "left_nested_combined_bucket"
+                ].isin(["extreme_volume_high", "extreme_volume_low"])
+            )
+            & (
+                result.nested_volume_split_pairwise_significance_df[
+                    "right_nested_combined_bucket"
+                ].isin(["middle_volume_high", "middle_volume_low"])
+            )
+        ].copy()
+        _interaction = result.nested_volume_split_interaction_df[
+            (result.nested_volume_split_interaction_df["horizon_key"] == horizon_view.value)
+            & (result.nested_volume_split_interaction_df["metric_key"] == metric_view.value)
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md(
+                    "### Price SMA 20 / 80 Bucket x Volume SMA 20 / 80 Half-Split"
+                ),
+                mo.Html(_summary.round(6).to_html(index=False)),
+                mo.md("### 4-Cell Global Significance"),
+                mo.Html(_global.round(6).to_html(index=False)),
+                mo.md("### Extreme vs Middle Within Same Volume Half"),
+                mo.Html(_pairwise.round(6).to_html(index=False)),
+                mo.md("### Volume-Split Interaction"),
+                mo.Html(_interaction.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.q1_q10_volume_split_summary_df[
+            result.q1_q10_volume_split_summary_df["horizon_key"] == horizon_view.value
+        ].copy()
+        _global = result.q1_q10_volume_split_global_significance_df[
+            (result.q1_q10_volume_split_global_significance_df["horizon_key"] == horizon_view.value)
+            & (result.q1_q10_volume_split_global_significance_df["metric_key"] == metric_view.value)
+        ].copy()
+        _pairwise = result.q1_q10_volume_split_pairwise_significance_df[
+            (result.q1_q10_volume_split_pairwise_significance_df["horizon_key"] == horizon_view.value)
+            & (result.q1_q10_volume_split_pairwise_significance_df["metric_key"] == metric_view.value)
+            & (
+                (
+                    result.q1_q10_volume_split_pairwise_significance_df[
+                        "left_q1_q10_combined_bucket"
+                    ]
+                    == "q1_volume_high"
+                )
+                & (
+                    result.q1_q10_volume_split_pairwise_significance_df[
+                        "right_q1_q10_combined_bucket"
+                    ]
+                    == "q10_volume_high"
+                )
+                | (
+                    (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "left_q1_q10_combined_bucket"
+                        ]
+                        == "q1_volume_low"
+                    )
+                    & (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "right_q1_q10_combined_bucket"
+                        ]
+                        == "q10_volume_low"
+                    )
+                )
+                | (
+                    (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "left_q1_q10_combined_bucket"
+                        ]
+                        == "q1_volume_high"
+                    )
+                    & (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "right_q1_q10_combined_bucket"
+                        ]
+                        == "q1_volume_low"
+                    )
+                )
+                | (
+                    (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "left_q1_q10_combined_bucket"
+                        ]
+                        == "q10_volume_high"
+                    )
+                    & (
+                        result.q1_q10_volume_split_pairwise_significance_df[
+                            "right_q1_q10_combined_bucket"
+                        ]
+                        == "q10_volume_low"
+                    )
+                )
+            )
+        ].copy()
+        _interaction = result.q1_q10_volume_split_interaction_df[
+            (result.q1_q10_volume_split_interaction_df["horizon_key"] == horizon_view.value)
+            & (result.q1_q10_volume_split_interaction_df["metric_key"] == metric_view.value)
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Q1 / Q10 x Volume SMA 20 / 80 Half-Split"),
+                mo.Html(_summary.round(6).to_html(index=False)),
+                mo.md("### Q1 / Q10 4-Cell Global Significance"),
+                mo.Html(_global.round(6).to_html(index=False)),
+                mo.md("### Q1 vs Q10 / Within-Bucket Volume Split"),
+                mo.Html(_pairwise.round(6).to_html(index=False)),
+                mo.md("### Q1-Q10 Spread Interaction"),
+                mo.Html(_interaction.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.q10_middle_volume_split_summary_df[
+            result.q10_middle_volume_split_summary_df["horizon_key"] == horizon_view.value
+        ].copy()
+        _hypothesis = result.q10_low_hypothesis_df[
+            (result.q10_low_hypothesis_df["horizon_key"] == horizon_view.value)
+            & (result.q10_low_hypothesis_df["metric_key"] == metric_view.value)
+        ].copy()
+        _pairwise = result.q10_middle_volume_split_pairwise_significance_df[
+            (result.q10_middle_volume_split_pairwise_significance_df["horizon_key"] == horizon_view.value)
+            & (result.q10_middle_volume_split_pairwise_significance_df["metric_key"] == metric_view.value)
+            & (
+                result.q10_middle_volume_split_pairwise_significance_df[
+                    "left_q10_middle_combined_bucket"
+                ]
+                == "q10_volume_low"
+            )
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Q10 Low Hypothesis"),
+                mo.Html(_summary.round(6).to_html(index=False)),
+                mo.md("### Q10 Low Direct Comparisons"),
+                mo.Html(_hypothesis.round(6).to_html(index=False)),
+                mo.md("### Q10 Low Pairwise Detail"),
+                mo.Html(_pairwise.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(error_message, horizon_view, mo, ranking_feature_view, result):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.decile_future_summary_df[
+            (result.decile_future_summary_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.decile_future_summary_df["horizon_key"] == horizon_view.value)
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Future Target Summary"),
+                mo.Html(_summary.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(error_message, mo, plt, ranking_feature_view, result):
+    _chart = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.ranking_feature_summary_df[
+            result.ranking_feature_summary_df["ranking_feature"]
+            == ranking_feature_view.value
+        ].copy()
+        _bar_colors = [
+            "#0f766e",
+            "#0d9488",
+            "#14b8a6",
+            "#2dd4bf",
+            "#67e8f9",
+            "#fcd34d",
+            "#fbbf24",
+            "#f59e0b",
+            "#ea580c",
+            "#dc2626",
+        ]
+        _fig, _ax = plt.subplots(figsize=(10, 4.5))
+        _ax.bar(
+            _summary["feature_decile"].tolist(),
+            _summary["mean_ranking_value"].tolist(),
+            color=_bar_colors[: len(_summary)],
+        )
+        _ax.set_title(f"Mean {ranking_feature_view.value} by Decile")
+        _ax.set_xlabel("Ranking Decile")
+        _ax.set_ylabel("Mean Ranking Value")
+        _ax.grid(axis="y", alpha=0.2)
+        _fig.tight_layout()
+        _chart = _fig
+    _chart
+    return
+
+
+@app.cell
+def _(
+    DECILE_ORDER,
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    plt,
+    ranking_feature_view,
+    result,
+):
+    _chart = mo.md("")
+    if not error_message and result is not None:
+        _metric_column = (
+            "group_mean_future_return"
+            if metric_view.value == "future_return"
+            else "group_mean_future_close"
+        )
+        _daily = result.daily_group_means_df[
+            (result.daily_group_means_df["ranking_feature"] == ranking_feature_view.value)
+            & (result.daily_group_means_df["horizon_key"] == horizon_view.value)
+        ].copy()
+        _grouped_values = [
+            _daily.loc[_daily["feature_decile"] == decile_key, _metric_column].dropna()
+            for decile_key in DECILE_ORDER
+        ]
+        _fig, _ax = plt.subplots(figsize=(12, 4.5))
+        _ax.boxplot(_grouped_values, labels=list(DECILE_ORDER))
+        _ax.set_title(
+            f"Daily Mean {metric_view.value} by Decile ({ranking_feature_view.value}, {horizon_view.value})"
+        )
+        _ax.set_xlabel("Ranking Decile")
+        _ax.set_ylabel(metric_view.value)
+        _ax.grid(axis="y", alpha=0.2)
+        _fig.tight_layout()
+        _chart = _fig
+    _chart
+    return
+
+
+@app.cell
+def _(error_message, mo, plt, ranking_feature_view, result):
+    _chart = mo.md("")
+    if not error_message and result is not None:
+        _summary = result.decile_future_summary_df[
+            result.decile_future_summary_df["ranking_feature"] == ranking_feature_view.value
+        ].copy()
+        _x_positions = [1, 5, 10]
+        _fig, _ax = plt.subplots(figsize=(10, 4.5))
+        for _decile_key, _color in (("Q1", "#0f766e"), ("Q10", "#dc2626")):
+            _decile_df = _summary[
+                _summary["feature_decile"] == _decile_key
+            ].copy()
+            _decile_df = _decile_df.set_index("horizon_key").reindex(
+                ["t_plus_1", "t_plus_5", "t_plus_10"]
+            )
+            _ax.plot(
+                _x_positions,
+                _decile_df["mean_future_return"].tolist(),
+                marker="o",
+                linewidth=2,
+                label=_decile_key,
+                color=_color,
+            )
+        _ax.set_title(
+            f"Mean Future Return by Decile ({ranking_feature_view.value}, Q1 vs Q10)"
+        )
+        _ax.set_xlabel("Trading Days Ahead")
+        _ax.set_ylabel("Mean Future Return")
+        _ax.set_xticks(_x_positions)
+        _ax.grid(alpha=0.2)
+        _ax.legend()
+        _fig.tight_layout()
+        _chart = _fig
+    _chart
+    return
+
+
+@app.cell
+def _(error_message, mo, ranking_feature_view, result):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _sample = result.ranked_panel_df[
+            result.ranked_panel_df["ranking_feature"] == ranking_feature_view.value
+        ][
+            [
+                "date",
+                "code",
+                "close",
+                "ranking_feature",
+                "ranking_value",
+                "feature_rank_desc",
+                "feature_decile",
+                "t_plus_1_close",
+                "t_plus_5_close",
+                "t_plus_10_close",
+            ]
+        ].tail(80)
+        _view = mo.vstack(
+            [
+                mo.md("### Ranked Event Sample (tail 80 rows)"),
+                mo.Html(_sample.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+if __name__ == "__main__":
+    app.run()

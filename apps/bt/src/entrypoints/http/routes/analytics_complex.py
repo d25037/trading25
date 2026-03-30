@@ -24,6 +24,7 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFa
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    Topix100RankingResponse,
 )
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
@@ -161,6 +162,39 @@ async def get_fundamental_ranking(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get fundamental rankings: {e}",
+        )
+
+
+@router.get(
+    "/api/analytics/topix100-ranking",
+    response_model=Topix100RankingResponse,
+    summary="Get TOPIX100 SMA ranking snapshot",
+    description=(
+        "Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, "
+        "with volume SMA 20/80 sidecar buckets."
+    ),
+)
+async def get_topix100_ranking(
+    request: Request,
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+) -> Topix100RankingResponse:
+    """TOPIX100 の当日 SMA ランキングを取得"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+
+    service = RankingService(reader)
+    try:
+        return service.get_topix100_ranking(date=date)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception(f"TOPIX100 ranking error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get TOPIX100 ranking: {e}",
         )
 
 

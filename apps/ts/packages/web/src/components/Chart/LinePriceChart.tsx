@@ -1,5 +1,6 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';
 
@@ -51,6 +52,7 @@ export function LinePriceChart({ data = [] }: LinePriceChartProps) {
         timeVisible: true,
         secondsVisible: false,
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
     const lineSeries = chart.addSeries(LineSeries, {
       color: CHART_COLORS.BOLLINGER,

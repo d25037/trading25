@@ -1,5 +1,6 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { useChartStore } from '@/stores/chartStore';
 import type { TradingValueMAData } from '@/types/chart';
 import { formatInteger } from '@/utils/formatters';
@@ -60,6 +61,7 @@ export function TradingValueMAChart({ data, title, period = 15 }: TradingValueMA
           bottom: 0.1,
         },
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
 
     chartRef.current = chart;

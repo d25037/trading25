@@ -2,6 +2,8 @@
 Ranking Service Unit Tests
 """
 
+from datetime import date as calendar_date, timedelta
+
 import duckdb
 
 import pytest
@@ -159,10 +161,10 @@ def ranking_db(tmp_path):
     }
     index_dates = ["2024-01-12", "2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
     for code, closes in index_rows.items():
-        for date, close in zip(index_dates, closes, strict=True):
+        for current_date, close in zip(index_dates, closes, strict=True):
             conn.execute(
                 "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
-                (code, date, close, close, close, close, None, None),
+                (code, current_date, close, close, close, close, None, None),
             )
 
     # statements (FY + quarter revisions)
@@ -318,6 +320,82 @@ def service(ranking_db):
     reader.close()
 
 
+@pytest.fixture
+def topix100_ranking_service(tmp_path):
+    db_path = str(tmp_path / "topix100-ranking.db")
+    conn = duckdb.connect(db_path)
+
+    conn.execute("""
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY, company_name TEXT NOT NULL, company_name_english TEXT,
+            market_code TEXT NOT NULL, market_name TEXT NOT NULL,
+            sector_17_code TEXT, sector_17_name TEXT,
+            sector_33_code TEXT, sector_33_name TEXT NOT NULL,
+            scale_category TEXT, listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE stock_data (
+            code TEXT NOT NULL, date TEXT NOT NULL,
+            open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL,
+            volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+
+    volume_trends = [6, -6, 5, -5, 4, -4, 3, -3, 2, -2, 1, -1, 7, -7, 8, -8, 9, -9, 10, -10]
+    start_date = calendar_date(2024, 1, 1)
+    dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(90)]
+
+    for idx in range(20):
+        code = f"{1001 + idx}"
+        scale_category = "TOPIX Core30" if idx < 10 else "TOPIX Large70"
+        conn.execute(
+            "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                code,
+                f"Stock {idx + 1}",
+                f"STOCK {idx + 1}",
+                "0111",
+                "プライム",
+                "S17",
+                "テスト",
+                "S33",
+                "テスト業",
+                scale_category,
+                "2000-01-01",
+                None,
+                None,
+            ),
+        )
+        price_trend = 10 - idx
+        volume_trend = volume_trends[idx]
+        for day_index, current_date in enumerate(dates):
+            close = 100.0 + price_trend * 0.1 * day_index
+            volume = int(1_000_000 + volume_trend * 1_000 * day_index + idx * 1_000)
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    code,
+                    current_date,
+                    close,
+                    close,
+                    close,
+                    close,
+                    volume,
+                    1.0,
+                    None,
+                ),
+            )
+
+    conn.commit()
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    yield RankingService(reader)
+    reader.close()
+
+
 class TestGetRankings:
     def test_default(self, service):
         result = service.get_rankings()
@@ -443,6 +521,37 @@ class TestGetRankings:
         with pytest.raises(ValueError, match="No trading data"):
             service.get_rankings()
         reader.close()
+
+
+class TestGetTopix100Ranking:
+    def test_default_shape(self, topix100_ranking_service):
+        result = topix100_ranking_service.get_topix100_ranking()
+
+        assert result.date == "2024-03-30"
+        assert result.itemCount == 20
+        assert len(result.items) == 20
+        assert result.items[0].priceSma20_80 >= result.items[1].priceSma20_80
+        assert result.items[0].priceBucket == "q1"
+        assert result.items[-1].priceBucket == "q10"
+
+    def test_assigns_volume_buckets_inside_focus_groups(self, topix100_ranking_service):
+        result = topix100_ranking_service.get_topix100_ranking()
+
+        q1_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q1"}
+        q10_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q10"}
+        q456_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q456"}
+        other_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "other"}
+
+        assert q1_buckets == {"high", "low"}
+        assert q10_buckets == {"high", "low"}
+        assert q456_buckets == {"high", "low"}
+        assert other_buckets == {None}
+
+    def test_with_date(self, topix100_ranking_service):
+        result = topix100_ranking_service.get_topix100_ranking(date="2024-03-29")
+
+        assert result.date == "2024-03-29"
+        assert result.itemCount == 20
 
 
 class TestGetFundamentalRankings:

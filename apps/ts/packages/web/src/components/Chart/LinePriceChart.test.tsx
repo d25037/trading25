@@ -118,6 +118,23 @@ describe('LinePriceChart', () => {
     });
   });
 
+  it('disables mouse wheel chart interactions so page scroll stays available', () => {
+    render(<LinePriceChart data={sampleData} />);
+
+    expect(vi.mocked(createChart).mock.calls[0]?.[1]).toMatchObject({
+      handleScroll: {
+        mouseWheel: false,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: false,
+        pinch: true,
+      },
+    });
+  });
+
   it('resizes the chart when the container grows', () => {
     const resize = stubResizeObserver();
 
