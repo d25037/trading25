@@ -19,6 +19,8 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.deterministic_sampling import select_deterministic_samples
+
 CloseBucketKey = Literal[
     "close_le_negative_threshold_2",
     "close_negative_threshold_2_to_1",
@@ -762,30 +764,17 @@ def _query_samples(
             normalized_code AS code,
             overnight_diff,
             overnight_return,
-            direction,
-            sample_rank
-        FROM (
-            SELECT
-                stock_group,
-                close_bucket_key,
-                date,
-                next_date,
-                normalized_code,
-                overnight_diff,
-                overnight_return,
-                direction,
-                ROW_NUMBER() OVER (
-                    PARTITION BY stock_group, close_bucket_key
-                    ORDER BY md5(
-                        stock_group || '|' || normalized_code || '|' || date || '|' || next_date
-                    )
-                ) AS sample_rank
-            FROM grouped_stock_days
-        ) ranked_samples
-        WHERE sample_rank <= ?
-        ORDER BY stock_group, close_bucket_key, sample_rank
+            direction
+        FROM grouped_stock_days
     """
-    return cast(pd.DataFrame, conn.execute(sql, [*params, sample_size]).fetchdf())
+    samples_df = cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
+    return select_deterministic_samples(
+        samples_df,
+        sample_size=sample_size,
+        partition_columns=["stock_group", "close_bucket_key"],
+        hash_columns=["stock_group", "code", "date", "next_date"],
+        final_order_columns=["stock_group", "close_bucket_key", "sample_rank"],
+    )
 
 
 def _complete_day_counts(

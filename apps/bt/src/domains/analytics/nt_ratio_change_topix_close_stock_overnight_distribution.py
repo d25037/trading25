@@ -14,6 +14,7 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.deterministic_sampling import select_deterministic_samples
 from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
     NT_RATIO_BUCKET_ORDER,
     NtRatioReturnStats,
@@ -650,7 +651,7 @@ def _query_samples(
         topix_close_threshold_2=topix_close_threshold_2,
         selected_groups=selected_groups,
     )
-    return cast(
+    samples_df = cast(
         pd.DataFrame,
         conn.execute(
             f"""
@@ -666,44 +667,30 @@ def _query_samples(
                 topix_close_return,
                 overnight_diff,
                 overnight_return,
-                direction,
-                sample_rank
-            FROM (
-                SELECT
-                    stock_group,
-                    nt_ratio_bucket_key,
-                    topix_close_bucket_key,
-                    date,
-                    next_date,
-                    normalized_code,
-                    nt_ratio_return,
-                    topix_close_return,
-                    overnight_diff,
-                    overnight_return,
-                    direction,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY stock_group, nt_ratio_bucket_key, topix_close_bucket_key
-                        ORDER BY md5(
-                            stock_group
-                            || '|'
-                            || normalized_code
-                            || '|'
-                            || date
-                            || '|'
-                            || next_date
-                            || '|'
-                            || nt_ratio_bucket_key
-                            || '|'
-                            || topix_close_bucket_key
-                        )
-                    ) AS sample_rank
-                FROM grouped_stock_days
-            ) ranked_samples
-            WHERE sample_rank <= ?
-            ORDER BY stock_group, nt_ratio_bucket_key, topix_close_bucket_key, sample_rank
+                direction
+            FROM grouped_stock_days
             """,
-            [*params, sample_size],
+            params,
         ).fetchdf(),
+    )
+    return select_deterministic_samples(
+        samples_df,
+        sample_size=sample_size,
+        partition_columns=["stock_group", "nt_ratio_bucket_key", "topix_close_bucket_key"],
+        hash_columns=[
+            "stock_group",
+            "code",
+            "date",
+            "next_date",
+            "nt_ratio_bucket_key",
+            "topix_close_bucket_key",
+        ],
+        final_order_columns=[
+            "stock_group",
+            "nt_ratio_bucket_key",
+            "topix_close_bucket_key",
+            "sample_rank",
+        ],
     )
 
 
