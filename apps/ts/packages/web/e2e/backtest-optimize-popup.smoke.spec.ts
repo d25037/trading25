@@ -170,9 +170,10 @@ parameter_ranges:
     await page.getByRole('button', { name: 'Optimize', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Optimization Spec' })).toBeVisible();
-    await expect(page.getByText('Current')).toBeVisible();
-    await expect(page.getByText('Saved')).toBeVisible();
-    await expect(page.getByText('State')).toBeVisible();
+    await expect(page.getByText(/^Current$/).first()).toBeVisible();
+    await expect(page.getByText('2 params / 4 combos')).toBeVisible();
+    await expect(page.getByText('2 params, 4 combinations')).toBeVisible();
+    await expect(page.getByText('Ready to Run / 0 drift')).toBeVisible();
 
     await page.getByRole('button', { name: 'Open Editor' }).click();
 
