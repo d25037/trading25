@@ -1,5 +1,6 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useEffect, useMemo, useRef } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS } from '@/lib/constants';
 import type { RiskAdjustedReturnCondition, RiskAdjustedReturnRatioType } from '@/stores/chartStore';
 import { useChartStore } from '@/stores/chartStore';
@@ -67,6 +68,7 @@ export function RiskAdjustedReturnChart({
           bottom: 0.1,
         },
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
     chartRef.current = chart;
 

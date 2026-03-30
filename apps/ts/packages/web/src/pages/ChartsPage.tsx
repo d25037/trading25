@@ -117,6 +117,35 @@ function formatList(values: string[] | null | undefined): string {
   return values.join(', ');
 }
 
+const MARKET_CODE_LABELS: Record<string, string> = {
+  prime: 'Prime',
+  standard: 'Standard',
+  growth: 'Growth',
+  '0111': 'Prime',
+  '0112': 'Standard',
+  '0113': 'Growth',
+};
+
+function formatMarketLabel(stockInfo: StockInfoResponse | undefined): string {
+  if (!stockInfo) {
+    return '-';
+  }
+
+  const rawMarketCode = stockInfo.marketCode?.trim() ?? '';
+  const canonicalLabel = rawMarketCode ? MARKET_CODE_LABELS[rawMarketCode.toLowerCase()] ?? '' : '';
+  return canonicalLabel || stockInfo.marketName?.trim() || rawMarketCode || '-';
+}
+
+function formatScaleCategoryLabel(scaleCategory: string | null | undefined): string {
+  const normalized = scaleCategory?.trim();
+  if (!normalized) {
+    return '-';
+  }
+
+  const shortLabel = normalized.replace(/^TOPIX\s+/u, '');
+  return shortLabel || normalized;
+}
+
 function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): string[] {
   const seen = new Set<string>();
   for (const group of groups) {
@@ -647,7 +676,9 @@ function ChartHeader({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <ChartHeaderInfoField label="市場" value={formatMarketLabel(stockInfo)} />
+          <ChartHeaderInfoField label="指数採用" value={formatScaleCategoryLabel(stockInfo?.scaleCategory)} />
           <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
           <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
           <ChartHeaderInfoField label="時価総額 (Free Float)" value={formatMarketCap(latestMarketCaps.freeFloat)} />
