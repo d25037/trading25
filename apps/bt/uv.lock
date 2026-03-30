@@ -2399,7 +2399,7 @@ wheels = [
 
 [[package]]
 name = "vectorbt"
-version = "0.28.4"
+version = "0.28.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anywidget" },
@@ -2420,9 +2420,9 @@ dependencies = [
     { name = "scipy" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/f3/5d776cf70980045a1ff6aa3e5e33f172eae9bfd1a455e540247098c63b9a/vectorbt-0.28.4.tar.gz", hash = "sha256:4810815fe23cfa440c0dcc17b3f56e1e09cfbbc74de541000706980b298cbbb3", size = 486528, upload-time = "2026-01-26T17:11:05.112Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/92/d8f895bf16daac55311b8e218ccd84f6cf3a3e0a10d8b69282494fdff55f/vectorbt-0.28.5.tar.gz", hash = "sha256:79009c1048b80b4744d29abea3198fe8ec06acea66a42ae583745e8ac4c85fe1", size = 498084, upload-time = "2026-03-26T22:18:01.501Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/e0/7f56bf5c2f7d984939061b736ac00bffcc12e802e4502147d20d972da81e/vectorbt-0.28.4-py3-none-any.whl", hash = "sha256:5af539e896114f184908f4a7f7582224edb642f8e93a4f50b899c3b07af3ec27", size = 420723, upload-time = "2026-01-26T17:11:03.418Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/61/558641336106d99b8437415ddde6dd49c3c2342fccb9df481bedff989266/vectorbt-0.28.5-py3-none-any.whl", hash = "sha256:8820f2d13472947d0207f931ec1b0e041fc797aaf3db8eccd43cacd00663b894", size = 421680, upload-time = "2026-03-26T22:18:00.07Z" },
 ]
 
 [[package]]
