@@ -91,10 +91,12 @@ class ScreeningJobService:
         """Screening ジョブをサブミット"""
         use_strategy_dataset_universe = not bool(request.markets and request.markets.strip())
         request_copy, scope_label = self._normalize_request(request)
+        run_parameters = request_copy.model_dump(exclude_none=True)
+        run_parameters["scopeLabel"] = scope_label
         run_spec = build_parameterized_run_spec(
             "screening",
             "analytics/screening",
-            parameters=request_copy.model_dump(exclude_none=True),
+            parameters=run_parameters,
         )
         job_id = self._manager.create_job(
             strategy_name="analytics/screening",

@@ -220,6 +220,7 @@ async def test_submit_screening_infers_default_markets_when_missing(
     _, kwargs = manager.create_job.call_args
     run_spec = kwargs["run_spec"]
     assert run_spec.parameters["markets"] == "prime,standard"
+    assert run_spec.parameters["scopeLabel"] == "Prime Market + Standard Market"
     assert service.get_job_request("job-auto") == ScreeningJobRequest(
         markets="prime,standard",
         strategies="production/range_break_v15",
