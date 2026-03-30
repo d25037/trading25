@@ -129,7 +129,10 @@ function expectLatestChartToUsePageScrollOptions(): void {
 function getLastChartInstance() {
   const chart = chartInstances.at(-1);
   expect(chart).toBeDefined();
-  return chart!;
+  if (chart === undefined) {
+    throw new Error('Expected chart instance');
+  }
+  return chart;
 }
 
 function triggerLastResizeObserver(): void {

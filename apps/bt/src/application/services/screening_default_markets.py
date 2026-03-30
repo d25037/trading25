@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.application.services.dataset_presets import get_preset_label
 from src.application.services.screening_strategy_selection import (
     ScreeningStrategyCatalog,
     build_strategy_selection_catalog,
     resolve_selected_strategy_names,
 )
 from src.application.services.strategy_dataset_metadata import (
+    StrategyDatasetMetadata,
+    format_market_scope_label,
     resolve_dataset_metadata,
     stringify_markets,
     union_market_lists,
@@ -24,6 +27,7 @@ class ScreeningMarketResolution:
     strategy_names: list[str]
     markets: list[str]
     markets_param: str
+    scope_label: str
 
 
 def _resolve_selected_strategy_context(
@@ -47,13 +51,13 @@ def _resolve_selected_strategy_context(
     return catalog, selected_names
 
 
-def _resolve_selected_strategy_market_lists(
+def _resolve_selected_strategy_datasets(
     *,
     selected_names: list[str],
     catalog: ScreeningStrategyCatalog,
     dataset_base_path: str | None = None,
-) -> list[list[str]]:
-    market_lists: list[list[str]] = []
+) -> list[StrategyDatasetMetadata]:
+    metadata_items: list[StrategyDatasetMetadata] = []
 
     for name in selected_names:
         runtime_payload = catalog.runtime_payloads[name]
@@ -69,9 +73,30 @@ def _resolve_selected_strategy_market_lists(
 
         if not dataset_metadata.screening_default_markets:
             raise ValueError(f"Failed to resolve default markets for {name}")
-        market_lists.append(dataset_metadata.screening_default_markets)
+        metadata_items.append(dataset_metadata)
 
-    return market_lists
+    return metadata_items
+
+
+def _build_scope_label(dataset_metadata_items: list[StrategyDatasetMetadata], markets: list[str]) -> str:
+    fallback_label = format_market_scope_label(markets)
+    preset_labels: list[str] = []
+    seen_labels: set[str] = set()
+
+    for dataset_metadata in dataset_metadata_items:
+        if dataset_metadata.dataset_preset is None:
+            return fallback_label
+        preset_label = get_preset_label(dataset_metadata.dataset_preset)
+        if preset_label is None:
+            return fallback_label
+        if preset_label in seen_labels:
+            continue
+        preset_labels.append(preset_label)
+        seen_labels.add(preset_label)
+
+    if preset_labels:
+        return " + ".join(preset_labels)
+    return fallback_label
 
 
 def validate_selected_screening_strategy_datasets(
@@ -86,7 +111,7 @@ def validate_selected_screening_strategy_datasets(
         strategies=strategies,
         config_loader=config_loader,
     )
-    _resolve_selected_strategy_market_lists(
+    _resolve_selected_strategy_datasets(
         selected_names=selected_names,
         catalog=catalog,
         dataset_base_path=dataset_base_path,
@@ -107,11 +132,16 @@ def resolve_default_screening_markets(
         config_loader=config_loader,
     )
 
-    market_lists = _resolve_selected_strategy_market_lists(
+    dataset_metadata_items = _resolve_selected_strategy_datasets(
         selected_names=selected_names,
         catalog=catalog,
         dataset_base_path=dataset_base_path,
     )
+    market_lists = [
+        dataset_metadata.screening_default_markets
+        for dataset_metadata in dataset_metadata_items
+        if dataset_metadata.screening_default_markets
+    ]
 
     markets = union_market_lists(market_lists)
     if not markets:
@@ -123,4 +153,5 @@ def resolve_default_screening_markets(
         strategy_names=selected_names,
         markets=markets,
         markets_param=stringify_markets(markets),
+        scope_label=_build_scope_label(dataset_metadata_items, markets),
     )

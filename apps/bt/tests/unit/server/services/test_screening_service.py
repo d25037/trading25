@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -115,7 +116,7 @@ class TestMarketCodeCompatibility:
         monkeypatch.setattr(
             service,
             "_resolve_strategies",
-            lambda _strategies, *, entry_decidability: [runtime],
+            lambda _strategies, *, entry_decidability, use_strategy_dataset_universe=False: [runtime],
         )
         monkeypatch.setattr(
             service,
@@ -158,6 +159,71 @@ class TestMarketCodeCompatibility:
 
         assert prime_result.summary.totalStocksScreened == 2
         assert numeric_result.summary.totalStocksScreened == 2
+        assert prime_result.scopeLabel == "Prime"
+        assert numeric_result.scopeLabel == "Prime"
+
+    def test_run_screening_auto_mode_uses_dataset_universe_codes(
+        self,
+        service,
+        monkeypatch,
+    ):
+        runtime = replace(
+            _runtime("topix_gap_down_intraday_oracle"),
+            dataset_universe_codes=frozenset({"1001", "1003"}),
+            dataset_scope_label="TOPIX 500",
+        )
+        captured: dict[str, list[str]] = {}
+
+        monkeypatch.setattr(
+            service,
+            "_resolve_strategies",
+            lambda _strategies, *, entry_decidability, use_strategy_dataset_universe=False: [runtime],
+        )
+        monkeypatch.setattr(
+            service,
+            "_load_strategy_scores",
+            lambda strategies: ({runtime.response_name: 1.0}, [], []),
+        )
+
+        def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
+            captured["stock_universe"] = [stock.code for stock in stock_universe]
+            return (
+                [
+                    StrategyExecutionInput(
+                        strategy=runtime,
+                        data_bundle=StrategyDataBundle(multi_data={}),
+                        load_warnings=[],
+                    )
+                ],
+                RequestCacheStats(hits=0, misses=0),
+            )
+
+        monkeypatch.setattr(service, "_prepare_strategy_inputs", _prepare)
+        monkeypatch.setattr(
+            service,
+            "_evaluate_strategies",
+            lambda strategy_inputs, stock_universe, recent_days, progress_callback: (
+                [
+                    StrategyEvaluationResult(
+                        strategy=runtime,
+                        matched_rows=[],
+                        processed_codes={s.code for s in stock_universe},
+                        warnings=[],
+                    )
+                ],
+                [],
+                1,
+            ),
+        )
+
+        result = service.run_screening(
+            markets="prime,standard",
+            use_strategy_dataset_universe=True,
+        )
+
+        assert captured["stock_universe"] == ["1001", "1003"]
+        assert result.summary.totalStocksScreened == 2
+        assert result.scopeLabel == "TOPIX 500"
 
     def test_run_screening_uses_latest_market_date_when_reference_date_is_omitted(
         self,
@@ -171,7 +237,7 @@ class TestMarketCodeCompatibility:
         monkeypatch.setattr(
             service,
             "_resolve_strategies",
-            lambda _strategies, *, entry_decidability: [runtime],
+            lambda _strategies, *, entry_decidability, use_strategy_dataset_universe=False: [runtime],
         )
         monkeypatch.setattr(
             service,
@@ -509,7 +575,7 @@ class TestAggregationAndSorting:
         monkeypatch.setattr(
             service,
             "_resolve_strategies",
-            lambda _strategies, *, entry_decidability: [s1, s2],
+            lambda _strategies, *, entry_decidability, use_strategy_dataset_universe=False: [s1, s2],
         )
         monkeypatch.setattr(
             service,
@@ -577,7 +643,7 @@ class TestAggregationAndSorting:
         monkeypatch.setattr(
             service,
             "_resolve_strategies",
-            lambda _strategies, *, entry_decidability: [s1, s2],
+            lambda _strategies, *, entry_decidability, use_strategy_dataset_universe=False: [s1, s2],
         )
         monkeypatch.setattr(
             service,
