@@ -7,17 +7,15 @@ ParameterOptimizationEngineの非同期ラッパー（Grid Search）
 import asyncio
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
 from src.domains.backtest.contracts import EnginePolicy
-from src.domains.optimization.grid_loader import find_grid_config_path
 from src.domains.optimization.grid_validation import (
     format_grid_validation_issues,
-    validate_grid_yaml_content,
 )
+from src.domains.optimization.strategy_spec import analyze_saved_strategy_optimization
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
@@ -25,7 +23,6 @@ from src.application.services.run_contracts import build_strategy_run_spec
 from src.shared.config.settings import get_settings
 
 _WORKER_MODULE = "src.application.workers.optimization_worker"
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class OptimizationService:
@@ -95,21 +92,24 @@ class OptimizationService:
         return job_id
 
     def _validate_grid_ready(self, strategy_name: str) -> None:
-        strategy_basename = strategy_name.split("/")[-1]
-        grid_path = Path(find_grid_config_path(strategy_basename))
-        validation = validate_grid_yaml_content(grid_path.read_text(encoding="utf-8"))
-        if not validation.valid:
+        strategy_config = self._config_loader.load_strategy_config(strategy_name)
+        analysis = analyze_saved_strategy_optimization(strategy_config)
+        if analysis.optimization is None:
             raise ValueError(
-                "Optimization grid validation failed: "
-                f"{format_grid_validation_issues(validation.errors)}"
+                "Strategy optimization spec is missing. Save an optimization block on the strategy first."
             )
-        if not validation.ready_to_run:
+        if not analysis.valid:
+            raise ValueError(
+                "Strategy optimization validation failed: "
+                f"{format_grid_validation_issues(analysis.errors)}"
+            )
+        if not analysis.ready_to_run:
             warning_text = (
-                format_grid_validation_issues(validation.warnings)
-                if validation.warnings
+                format_grid_validation_issues(analysis.warnings)
+                if analysis.warnings
                 else "no parameter candidate lists were found"
             )
-            raise ValueError(f"Optimization grid is not ready to run: {warning_text}")
+            raise ValueError(f"Strategy optimization is not ready to run: {warning_text}")
 
     async def _run_optimization(
         self,

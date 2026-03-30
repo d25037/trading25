@@ -1,7 +1,6 @@
 import { expect, test } from '@playwright/test';
 
 const STRATEGY_NAME = 'production/smoke_strategy';
-const STRATEGY_BASENAME = 'smoke_strategy';
 const STRATEGY_DISPLAY_NAME = 'Smoke Strategy';
 
 function jsonResponse(body: unknown, status = 200) {
@@ -43,8 +42,8 @@ test.describe('backtest optimize popup smoke', () => {
       }
 
       if (path.startsWith('/api/strategies/')) {
-        const encodedName = path.slice('/api/strategies/'.length);
-        const strategyName = decodeURIComponent(encodedName);
+        const encodedRest = path.slice('/api/strategies/'.length);
+        const strategyName = decodeURIComponent(encodedRest);
         if (strategyName === STRATEGY_NAME) {
           await route.fulfill(
             jsonResponse({
@@ -64,21 +63,30 @@ test.describe('backtest optimize popup smoke', () => {
           );
           return;
         }
-      }
 
-      await route.continue();
-    });
-
-    await page.route('**/api/optimize/grid-configs**', async (route) => {
-      const request = route.request();
-      const url = new URL(request.url());
-      const path = url.pathname;
-
-      if (request.method() === 'GET' && path === `/api/optimize/grid-configs/${STRATEGY_BASENAME}`) {
-        await route.fulfill(
-          jsonResponse({
-            strategy_name: STRATEGY_BASENAME,
-            content: `parameter_ranges:
+        if (path === `/api/strategies/${encodeURIComponent(STRATEGY_NAME)}/optimization`) {
+          await route.fulfill(
+            jsonResponse({
+              strategy_name: STRATEGY_NAME,
+              persisted: true,
+              source: 'saved',
+              optimization: {
+                description: 'Smoke strategy optimization',
+                parameter_ranges: {
+                  entry_filter_params: {
+                    period_extrema_break: {
+                      period: [10, 20],
+                    },
+                  },
+                  exit_trigger_params: {
+                    atr_stop: {
+                      atr_multiplier: [1.5, 2.0],
+                    },
+                  },
+                },
+              },
+              yaml_content: `description: Smoke strategy optimization
+parameter_ranges:
   entry_filter_params:
     period_extrema_break:
       period: [10, 20]
@@ -86,11 +94,17 @@ test.describe('backtest optimize popup smoke', () => {
     atr_stop:
       atr_multiplier: [1.5, 2.0]
 `,
-            param_count: 2,
-            combinations: 4,
-          })
-        );
-        return;
+              valid: true,
+              ready_to_run: true,
+              param_count: 2,
+              combinations: 4,
+              errors: [],
+              warnings: [],
+              drift: [],
+            })
+          );
+          return;
+        }
       }
 
       await route.continue();
@@ -155,7 +169,7 @@ test.describe('backtest optimize popup smoke', () => {
     await page.getByRole('heading', { name: STRATEGY_DISPLAY_NAME }).click();
     await page.getByRole('button', { name: 'Optimize', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'Optimization Grid' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Optimization Spec' })).toBeVisible();
     await expect(page.getByText('Current')).toBeVisible();
     await expect(page.getByText('Saved')).toBeVisible();
     await expect(page.getByText('State')).toBeVisible();
@@ -164,7 +178,7 @@ test.describe('backtest optimize popup smoke', () => {
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText(`Optimization Grid Editor: ${STRATEGY_BASENAME}`)).toBeVisible();
+    await expect(dialog.getByText(`Optimization Spec Editor: ${STRATEGY_NAME}`)).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Signal Reference' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Close' }).first()).toBeVisible();

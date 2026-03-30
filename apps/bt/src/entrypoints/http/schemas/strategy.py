@@ -66,6 +66,61 @@ class StrategyDetailResponse(BaseModel):
     execution_info: dict[str, Any] = Field(description="実行情報")
 
 
+class OptimizationDiagnosticResponse(BaseModel):
+    """Optimization spec diagnostics."""
+
+    path: str = Field(description="Dot-separated path")
+    message: str = Field(description="Diagnostic message")
+
+
+class StrategyOptimizationStateResponse(BaseModel):
+    """Strategy-linked optimization state."""
+
+    strategy_name: str = Field(description="戦略名")
+    persisted: bool = Field(description="戦略YAMLに保存済みか")
+    source: Literal["saved", "draft"] = Field(description="Response source")
+    optimization: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured optimization block",
+    )
+    yaml_content: str = Field(description="Optimization block YAML")
+    valid: bool = Field(description="Spec validation result")
+    ready_to_run: bool = Field(description="Whether optimization can run immediately")
+    param_count: int = Field(description="Parameter leaf count")
+    combinations: int = Field(description="Cartesian product size")
+    errors: list[OptimizationDiagnosticResponse] = Field(
+        default_factory=list,
+        description="Blocking validation issues",
+    )
+    warnings: list[OptimizationDiagnosticResponse] = Field(
+        default_factory=list,
+        description="Non-blocking validation issues",
+    )
+    drift: list[OptimizationDiagnosticResponse] = Field(
+        default_factory=list,
+        description="Strategy/spec drift diagnostics",
+    )
+
+
+class StrategyOptimizationSaveRequest(BaseModel):
+    """Optimization block save request."""
+
+    yaml_content: str = Field(description="Optimization block YAML")
+
+
+class StrategyOptimizationSaveResponse(StrategyOptimizationStateResponse):
+    """Strategy optimization save response."""
+
+    success: bool = Field(description="保存成功フラグ")
+
+
+class StrategyOptimizationDeleteResponse(BaseModel):
+    """Strategy optimization delete response."""
+
+    success: bool = Field(description="削除成功フラグ")
+    strategy_name: str = Field(description="戦略名")
+
+
 class StrategyValidationRequest(BaseModel):
     """戦略設定検証リクエスト"""
 

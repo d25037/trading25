@@ -14,6 +14,9 @@ from src.application.services.strategy_authoring_service import (
     build_strategy_editor_context,
     build_strategy_editor_reference,
 )
+from src.application.services.strategy_optimization_service import (
+    strategy_optimization_service,
+)
 from src.domains.strategy.runtime.compiler import compile_strategy_config
 from src.domains.strategy.runtime.production_requirements import (
     validate_production_strategy_dataset_requirement,
@@ -23,10 +26,15 @@ from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
     DefaultConfigUpdateRequest,
     DefaultConfigUpdateResponse,
+    OptimizationDiagnosticResponse,
     StrategyDeleteResponse,
     StrategyDetailResponse,
     StrategyDuplicateRequest,
     StrategyDuplicateResponse,
+    StrategyOptimizationDeleteResponse,
+    StrategyOptimizationSaveRequest,
+    StrategyOptimizationSaveResponse,
+    StrategyOptimizationStateResponse,
     StrategyListResponse,
     StrategyMetadataResponse,
     StrategyMoveRequest,
@@ -160,6 +168,11 @@ def _validate_default_structured_request(
         )
 
     try:
+        ExecutionConfig.model_validate(request.execution)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         SharedConfig.model_validate(
             request.shared_config,
             context={"resolve_stock_codes": False},
@@ -167,10 +180,41 @@ def _validate_default_structured_request(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    try:
-        ExecutionConfig.model_validate(request.execution)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+def _build_optimization_diagnostics(
+    issues: list[object],
+) -> list[OptimizationDiagnosticResponse]:
+    diagnostics: list[OptimizationDiagnosticResponse] = []
+    for issue in issues:
+        path = getattr(issue, "path", "")
+        message = getattr(issue, "message", "")
+        diagnostics.append(
+            OptimizationDiagnosticResponse(path=str(path), message=str(message))
+        )
+    return diagnostics
+
+
+def _build_strategy_optimization_state_response(
+    strategy_name: str,
+    *,
+    persisted: bool,
+    source: str,
+    analysis,
+) -> StrategyOptimizationStateResponse:
+    return StrategyOptimizationStateResponse(
+        strategy_name=strategy_name,
+        persisted=persisted,
+        source=source,  # type: ignore[arg-type]
+        optimization=analysis.optimization,
+        yaml_content=analysis.yaml_content,
+        valid=analysis.valid,
+        ready_to_run=analysis.ready_to_run,
+        param_count=analysis.param_count,
+        combinations=analysis.combinations,
+        errors=_build_optimization_diagnostics(analysis.errors),
+        warnings=_build_optimization_diagnostics(analysis.warnings),
+        drift=_build_optimization_diagnostics(analysis.drift),
+    )
 
 
 @router.get(
@@ -211,6 +255,124 @@ async def get_strategy_editor_context(strategy_name: str) -> StrategyEditorConte
         raise
     except Exception as e:
         logger.exception(f"strategy editor context error: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/strategies/{strategy_name:path}/optimization",
+    response_model=StrategyOptimizationStateResponse,
+)
+async def get_strategy_optimization(
+    strategy_name: str,
+) -> StrategyOptimizationStateResponse:
+    """Fetch strategy-linked optimization state."""
+    try:
+        analysis = strategy_optimization_service.get_state(strategy_name)
+        return _build_strategy_optimization_state_response(
+            strategy_name,
+            persisted=analysis.optimization is not None,
+            source="saved",
+            analysis=analysis,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"戦略が見つかりません: {strategy_name}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"strategy optimization get error: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post(
+    "/api/strategies/{strategy_name:path}/optimization/draft",
+    response_model=StrategyOptimizationStateResponse,
+)
+async def generate_strategy_optimization_draft_endpoint(
+    strategy_name: str,
+) -> StrategyOptimizationStateResponse:
+    """Generate a strategy-linked optimization draft."""
+    try:
+        analysis = strategy_optimization_service.generate_draft(strategy_name)
+        return _build_strategy_optimization_state_response(
+            strategy_name,
+            persisted=False,
+            source="draft",
+            analysis=analysis,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"戦略が見つかりません: {strategy_name}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"strategy optimization draft error: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.put(
+    "/api/strategies/{strategy_name:path}/optimization",
+    response_model=StrategyOptimizationSaveResponse,
+)
+async def save_strategy_optimization(
+    strategy_name: str,
+    request: StrategyOptimizationSaveRequest,
+) -> StrategyOptimizationSaveResponse:
+    """Save strategy-linked optimization YAML onto the strategy file."""
+    try:
+        if not _config_loader.is_updatable_category(strategy_name):
+            raise HTTPException(
+                status_code=403,
+                detail="experimental / production カテゴリのみ更新可能です",
+            )
+
+        analysis = strategy_optimization_service.save(
+            strategy_name,
+            request.yaml_content,
+        )
+        response = _build_strategy_optimization_state_response(
+            strategy_name,
+            persisted=True,
+            source="saved",
+            analysis=analysis,
+        )
+        return StrategyOptimizationSaveResponse(success=True, **response.model_dump())
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"戦略が見つかりません: {strategy_name}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"strategy optimization save error: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete(
+    "/api/strategies/{strategy_name:path}/optimization",
+    response_model=StrategyOptimizationDeleteResponse,
+)
+async def delete_strategy_optimization(
+    strategy_name: str,
+) -> StrategyOptimizationDeleteResponse:
+    """Delete strategy-linked optimization block."""
+    try:
+        if not _config_loader.is_updatable_category(strategy_name):
+            raise HTTPException(
+                status_code=403,
+                detail="experimental / production カテゴリのみ更新可能です",
+            )
+        strategy_optimization_service.delete(strategy_name)
+        return StrategyOptimizationDeleteResponse(
+            success=True,
+            strategy_name=strategy_name,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=f"戦略が見つかりません: {strategy_name}") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"strategy optimization delete error: {strategy_name}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

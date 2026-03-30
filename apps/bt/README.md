@@ -31,6 +31,7 @@ uv run bt --help
 uv run bt list
 uv run bt backtest <strategy_name>
 uv run bt backtest <strategy_name> --optimize
+uv run bt migrate-optimization-specs
 uv run bt validate <strategy_name>
 uv run bt cleanup --days 7
 
@@ -63,6 +64,7 @@ uv run pytest tests
 - `/api/portfolio*`
 - `/api/watchlist*`
 - `/api/backtest*`, `/api/optimize*`, `/api/lab*`, `/api/indicators*`
+- Strategy optimization spec CRUD は `/api/strategies/{strategy_name}/optimization*` を使用し、探索実行は `/api/optimize/run` を使用
 
 ## Data Paths (XDG)
 

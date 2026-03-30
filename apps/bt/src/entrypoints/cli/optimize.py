@@ -9,6 +9,9 @@ import sys
 from rich.console import Console
 from rich.table import Table
 
+from src.application.services.strategy_optimization_service import (
+    strategy_optimization_service,
+)
 from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 from src.domains.optimization.engine import ParameterOptimizationEngine
 
@@ -39,7 +42,7 @@ def run_optimization(
         console.print("=" * 60, style="bold blue")
         console.print()
 
-        # エンジン初期化（grid_config は常に自動推測）
+        # エンジン初期化（strategy-linked optimization spec を使用）
         console.print("📋 設定読み込み中...", style="yellow")
         engine = ParameterOptimizationEngine(
             strategy_name, grid_config_path=None, verbose=verbose
@@ -80,21 +83,21 @@ def run_optimization(
     except FileNotFoundError as e:
         console.print(f"❌ ファイルが見つかりません: {e}", style="bold red")
         console.print(
-            "\n💡 ヒント: config/optimization/ ディレクトリに {strategy_name}_grid.yaml が存在することを確認してください。",
+            "\n💡 ヒント: 対象 strategy YAML が存在することを確認してください。",
             style="yellow",
         )
         sys.exit(1)
     except ValueError as e:
         console.print(f"❌ 設定エラー: {e}", style="bold red")
         console.print(
-            "\n💡 ヒント: グリッドYAMLファイルのparameter_ranges設定を確認してください。",
+            "\n💡 ヒント: strategy YAML 内の optimization.parameter_ranges 設定を確認してください。",
             style="yellow",
         )
         sys.exit(1)
     except RuntimeError as e:
         console.print(f"❌ 実行エラー: {e}", style="bold red")
         console.print(
-            "\n💡 ヒント: 戦略設定YAMLとグリッドYAMLの整合性を確認してください。",
+            "\n💡 ヒント: 戦略設定YAMLと optimization.parameter_ranges の整合性を確認してください。",
             style="yellow",
         )
         sys.exit(1)
@@ -246,3 +249,44 @@ def _format_params_table(params: dict) -> str:
         formatted.append(f"{short_key}={value}")
 
     return ", ".join(formatted)
+
+
+def migrate_legacy_optimization_specs() -> None:
+    """Legacy `*_grid.yaml` を strategy YAML の optimization block へ移行する。"""
+    report = strategy_optimization_service.migrate_legacy_specs()
+
+    console.print()
+    console.print("=" * 60, style="bold blue")
+    console.print("🔁 Legacy Optimization Spec Migration", style="bold")
+    console.print("=" * 60, style="bold blue")
+    console.print()
+
+    summary = Table(show_header=True, header_style="bold magenta")
+    summary.add_column("Result", style="cyan")
+    summary.add_column("Count", style="green", justify="right")
+    summary.add_row("Migrated", str(len(report.migrated)))
+    summary.add_row("Skipped", str(len(report.skipped)))
+    summary.add_row("Failed", str(len(report.failed)))
+    console.print(summary)
+    console.print()
+
+    detail_sections = (
+        ("Migrated", report.migrated, "green"),
+        ("Skipped", report.skipped, "yellow"),
+        ("Failed", report.failed, "red"),
+    )
+    for title, entries, color in detail_sections:
+        if not entries:
+            continue
+        console.print(f"{title}:", style=f"bold {color}")
+        for entry in entries:
+            strategy_suffix = f" -> {entry.strategy_name}" if entry.strategy_name else ""
+            message_suffix = f" ({entry.message})" if entry.message else ""
+            console.print(
+                f"  • {entry.legacy_path}{strategy_suffix}{message_suffix}",
+                style=color,
+            )
+        console.print()
+
+    if report.failed:
+        sys.exit(1)

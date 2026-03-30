@@ -34,6 +34,7 @@ vi.mock('./RenameDialog', () => ({
 
 vi.mock('./OptimizationGridEditor', () => ({
   OptimizationGridEditor: () => <div>Optimization Grid</div>,
+  OptimizationSpecEditor: () => <div>Optimization Grid</div>,
 }));
 
 const strategies: StrategyMetadata[] = [

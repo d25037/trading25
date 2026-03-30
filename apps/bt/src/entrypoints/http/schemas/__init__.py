@@ -18,10 +18,6 @@ from src.entrypoints.http.schemas.backtest import (
     SignalAttributionResultResponse,
 )
 from src.entrypoints.http.schemas.optimize import (
-    OptimizationGridConfig,
-    OptimizationGridListResponse,
-    OptimizationGridSaveRequest,
-    OptimizationGridSaveResponse,
     OptimizationJobResponse,
     OptimizationRequest,
 )
@@ -56,10 +52,6 @@ __all__ = [
     "JobStatus",
     "OptimizationRequest",
     "OptimizationJobResponse",
-    "OptimizationGridConfig",
-    "OptimizationGridListResponse",
-    "OptimizationGridSaveRequest",
-    "OptimizationGridSaveResponse",
     "StrategyListResponse",
     "StrategyMetadataResponse",
     "StrategyDetailResponse",

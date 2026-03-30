@@ -141,6 +141,19 @@ def cleanup_command(
     cleanup_notebooks(days=days, output_dir=output_dir)
 
 
+@app.command(name="migrate-optimization-specs")
+def migrate_optimization_specs_command() -> None:
+    """
+    legacy `*_grid.yaml` を strategy YAML の optimization block へ移行
+
+    Examples:
+        uv run bt migrate-optimization-specs
+    """
+    from src.entrypoints.cli.optimize import migrate_legacy_optimization_specs
+
+    migrate_legacy_optimization_specs()
+
+
 def _kill_process_on_port(port: int) -> bool:
     """指定ポートを使用しているプロセスをkillする
 

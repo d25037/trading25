@@ -1887,54 +1887,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/optimize/grid-configs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Grid Configs
-         * @description Grid設定一覧を取得
-         */
-        get: operations["list_grid_configs_api_optimize_grid_configs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/optimize/grid-configs/{strategy}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Grid Config
-         * @description Grid設定を取得
-         */
-        get: operations["get_grid_config_api_optimize_grid_configs__strategy__get"];
-        /**
-         * Save Grid Config
-         * @description Grid設定を保存
-         */
-        put: operations["save_grid_config_api_optimize_grid_configs__strategy__put"];
-        post?: never;
-        /**
-         * Delete Grid Config
-         * @description Grid設定を削除
-         */
-        delete: operations["delete_grid_config_api_optimize_grid_configs__strategy__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/optimize/html-files": {
         parameters: {
             query?: never;
@@ -2437,6 +2389,54 @@ export interface paths {
          *         production / experimental / legacy 間の移動のみサポート
          */
         post: operations["move_strategy_api_strategies__strategy_name__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/{strategy_name}/optimization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Strategy Optimization
+         * @description Fetch strategy-linked optimization state.
+         */
+        get: operations["get_strategy_optimization_api_strategies__strategy_name__optimization_get"];
+        /**
+         * Save Strategy Optimization
+         * @description Save strategy-linked optimization YAML onto the strategy file.
+         */
+        put: operations["save_strategy_optimization_api_strategies__strategy_name__optimization_put"];
+        post?: never;
+        /**
+         * Delete Strategy Optimization
+         * @description Delete strategy-linked optimization block.
+         */
+        delete: operations["delete_strategy_optimization_api_strategies__strategy_name__optimization_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/strategies/{strategy_name}/optimization/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Strategy Optimization Draft Endpoint
+         * @description Generate a strategy-linked optimization draft.
+         */
+        post: operations["generate_strategy_optimization_draft_endpoint_api_strategies__strategy_name__optimization_draft_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6686,99 +6686,20 @@ export interface components {
             timeframe: string;
         };
         /**
-         * OptimizationGridConfig
-         * @description Grid設定
+         * OptimizationDiagnosticResponse
+         * @description Optimization spec diagnostics.
          */
-        OptimizationGridConfig: {
+        OptimizationDiagnosticResponse: {
             /**
-             * Combinations
-             * @description 組み合わせ数
+             * Message
+             * @description Diagnostic message
              */
-            combinations: number;
+            message: string;
             /**
-             * Content
-             * @description YAML文字列
+             * Path
+             * @description Dot-separated path
              */
-            content: string;
-            /**
-             * Param Count
-             * @description パラメータ数
-             */
-            param_count: number;
-            /**
-             * Strategy Name
-             * @description 戦略名
-             */
-            strategy_name: string;
-        };
-        /**
-         * OptimizationGridDeleteResponse
-         * @description Grid設定削除レスポンス
-         */
-        OptimizationGridDeleteResponse: {
-            /**
-             * Strategy Name
-             * @description 戦略名
-             */
-            strategy_name: string;
-            /**
-             * Success
-             * @description 削除成功フラグ
-             */
-            success: boolean;
-        };
-        /**
-         * OptimizationGridListResponse
-         * @description Grid設定一覧レスポンス
-         */
-        OptimizationGridListResponse: {
-            /**
-             * Configs
-             * @description Grid設定一覧
-             */
-            configs: components["schemas"]["OptimizationGridConfig"][];
-            /**
-             * Total
-             * @description 総設定数
-             */
-            total: number;
-        };
-        /**
-         * OptimizationGridSaveRequest
-         * @description Grid設定保存リクエスト
-         */
-        OptimizationGridSaveRequest: {
-            /**
-             * Content
-             * @description YAML文字列
-             */
-            content: string;
-        };
-        /**
-         * OptimizationGridSaveResponse
-         * @description Grid設定保存レスポンス
-         */
-        OptimizationGridSaveResponse: {
-            /**
-             * Combinations
-             * @description 組み合わせ数
-             */
-            combinations: number;
-            /**
-             * Param Count
-             * @description パラメータ数
-             */
-            param_count: number;
-            /**
-             * Strategy Name
-             * @description 戦略名
-             */
-            strategy_name: string;
-            /**
-             * Success
-             * @description 保存成功フラグ
-             */
-            success: boolean;
+            path: string;
         };
         /**
          * OptimizationHtmlFileContentResponse
@@ -9333,6 +9254,176 @@ export interface components {
              * @description 移動先カテゴリ
              */
             target_category: string;
+        };
+        /**
+         * StrategyOptimizationDeleteResponse
+         * @description Strategy optimization delete response.
+         */
+        StrategyOptimizationDeleteResponse: {
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Success
+             * @description 削除成功フラグ
+             */
+            success: boolean;
+        };
+        /**
+         * StrategyOptimizationSaveRequest
+         * @description Optimization block save request.
+         */
+        StrategyOptimizationSaveRequest: {
+            /**
+             * Yaml Content
+             * @description Optimization block YAML
+             */
+            yaml_content: string;
+        };
+        /**
+         * StrategyOptimizationSaveResponse
+         * @description Strategy optimization save response.
+         */
+        StrategyOptimizationSaveResponse: {
+            /**
+             * Combinations
+             * @description Cartesian product size
+             */
+            combinations: number;
+            /**
+             * Drift
+             * @description Strategy/spec drift diagnostics
+             */
+            drift?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Errors
+             * @description Blocking validation issues
+             */
+            errors?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Optimization
+             * @description Structured optimization block
+             */
+            optimization?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Param Count
+             * @description Parameter leaf count
+             */
+            param_count: number;
+            /**
+             * Persisted
+             * @description 戦略YAMLに保存済みか
+             */
+            persisted: boolean;
+            /**
+             * Ready To Run
+             * @description Whether optimization can run immediately
+             */
+            ready_to_run: boolean;
+            /**
+             * Source
+             * @description Response source
+             * @enum {string}
+             */
+            source: "saved" | "draft";
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Success
+             * @description 保存成功フラグ
+             */
+            success: boolean;
+            /**
+             * Valid
+             * @description Spec validation result
+             */
+            valid: boolean;
+            /**
+             * Warnings
+             * @description Non-blocking validation issues
+             */
+            warnings?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Yaml Content
+             * @description Optimization block YAML
+             */
+            yaml_content: string;
+        };
+        /**
+         * StrategyOptimizationStateResponse
+         * @description Strategy-linked optimization state.
+         */
+        StrategyOptimizationStateResponse: {
+            /**
+             * Combinations
+             * @description Cartesian product size
+             */
+            combinations: number;
+            /**
+             * Drift
+             * @description Strategy/spec drift diagnostics
+             */
+            drift?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Errors
+             * @description Blocking validation issues
+             */
+            errors?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Optimization
+             * @description Structured optimization block
+             */
+            optimization?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Param Count
+             * @description Parameter leaf count
+             */
+            param_count: number;
+            /**
+             * Persisted
+             * @description 戦略YAMLに保存済みか
+             */
+            persisted: boolean;
+            /**
+             * Ready To Run
+             * @description Whether optimization can run immediately
+             */
+            ready_to_run: boolean;
+            /**
+             * Source
+             * @description Response source
+             * @enum {string}
+             */
+            source: "saved" | "draft";
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Valid
+             * @description Spec validation result
+             */
+            valid: boolean;
+            /**
+             * Warnings
+             * @description Non-blocking validation issues
+             */
+            warnings?: components["schemas"]["OptimizationDiagnosticResponse"][];
+            /**
+             * Yaml Content
+             * @description Optimization block YAML
+             */
+            yaml_content: string;
         };
         /**
          * StrategyRenameRequest
@@ -15908,231 +15999,6 @@ export interface operations {
             };
         };
     };
-    list_grid_configs_api_optimize_grid_configs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OptimizationGridListResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    get_grid_config_api_optimize_grid_configs__strategy__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                strategy: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OptimizationGridConfig"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    save_grid_config_api_optimize_grid_configs__strategy__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                strategy: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OptimizationGridSaveRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OptimizationGridSaveResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    delete_grid_config_api_optimize_grid_configs__strategy__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                strategy: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OptimizationGridDeleteResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     list_optimization_html_files_api_optimize_html_files_get: {
         parameters: {
             query?: {
@@ -17901,6 +17767,242 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StrategyMoveResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_strategy_optimization_api_strategies__strategy_name__optimization_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOptimizationStateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_strategy_optimization_api_strategies__strategy_name__optimization_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyOptimizationSaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOptimizationSaveResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_strategy_optimization_api_strategies__strategy_name__optimization_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOptimizationDeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    generate_strategy_optimization_draft_endpoint_api_strategies__strategy_name__optimization_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyOptimizationStateResponse"];
                 };
             };
             /** @description Bad Request */

@@ -157,7 +157,7 @@ class TestOptimizationJobEndpoints:
         assert "最適化ジョブではありません" in resp.json()["message"]
 
 
-class TestGridConfigEndpoints:
+class TestStrategyOptimizationEndpoints:
     @pytest.fixture(scope="module")
     def client(self):
         from src.entrypoints.http.app import create_app
@@ -165,151 +165,151 @@ class TestGridConfigEndpoints:
         with TestClient(app) as test_client:
             yield test_client
 
-    def test_get_grid_config_not_found(self, client):
-        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=None):
-            resp = client.get("/api/optimize/grid-configs/missing")
+    @staticmethod
+    def _analysis(
+        *,
+        optimization=None,
+        yaml_content="description: demo\nparameter_ranges: {}\n",
+        valid=True,
+        ready_to_run=False,
+        param_count=0,
+        combinations=0,
+        errors=None,
+        warnings=None,
+        drift=None,
+    ):
+        return MagicMock(
+            optimization=optimization,
+            yaml_content=yaml_content,
+            valid=valid,
+            ready_to_run=ready_to_run,
+            param_count=param_count,
+            combinations=combinations,
+            errors=errors or [],
+            warnings=warnings or [],
+            drift=drift or [],
+        )
+
+    def test_get_strategy_optimization_not_found(self, client):
+        with patch(
+            "src.entrypoints.http.routes.strategies.strategy_optimization_service.get_state",
+            side_effect=FileNotFoundError("missing"),
+        ):
+            resp = client.get("/api/strategies/missing/optimization")
         assert resp.status_code == 404
 
-    def test_get_grid_config_success(self, client, tmp_path):
-        grid_file = tmp_path / "test_grid.yaml"
-        grid_file.write_text(
-            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10, 20]\n",
-            encoding="utf-8",
+    def test_get_strategy_optimization_success(self, client):
+        analysis = self._analysis(
+            optimization={"description": "demo", "parameter_ranges": {}},
+            param_count=1,
+            combinations=3,
+            ready_to_run=True,
         )
-        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file):
-            resp = client.get("/api/optimize/grid-configs/test")
+        with patch(
+            "src.entrypoints.http.routes.strategies.strategy_optimization_service.get_state",
+            return_value=analysis,
+        ):
+            resp = client.get("/api/strategies/production/test/optimization")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["strategy_name"] == "test"
+        assert data["strategy_name"] == "production/test"
+        assert data["persisted"] is True
+        assert data["source"] == "saved"
         assert data["param_count"] == 1
+        assert data["ready_to_run"] is True
 
-    def test_save_grid_config_valid(self, client, tmp_path):
-        grid_file = tmp_path / "test_grid.yaml"
-        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=grid_file):
+    def test_generate_strategy_optimization_draft_success(self, client):
+        analysis = self._analysis(
+            optimization={"description": "draft", "parameter_ranges": {}},
+            yaml_content="description: draft\nparameter_ranges: {}\n",
+            warnings=[MagicMock(path="optimization.parameter_ranges", message="draft warning")],
+        )
+        with patch(
+            "src.entrypoints.http.routes.strategies.strategy_optimization_service.generate_draft",
+            return_value=analysis,
+        ):
+            resp = client.post("/api/strategies/production/test/optimization/draft")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source"] == "draft"
+        assert data["warnings"][0]["message"] == "draft warning"
+
+    def test_save_strategy_optimization_valid(self, client):
+        analysis = self._analysis(
+            optimization={"description": "saved", "parameter_ranges": {}},
+            yaml_content="description: saved\nparameter_ranges: {}\n",
+            param_count=2,
+            combinations=9,
+            ready_to_run=True,
+        )
+        with (
+            patch("src.entrypoints.http.routes.strategies._config_loader.is_updatable_category", return_value=True),
+            patch(
+                "src.entrypoints.http.routes.strategies.strategy_optimization_service.save",
+                return_value=analysis,
+            ),
+        ):
             resp = client.put(
-                "/api/optimize/grid-configs/test",
+                "/api/strategies/production/test/optimization",
                 json={
-                    "content": (
+                    "yaml_content": (
+                        "description: saved\n"
                         "parameter_ranges:\n"
                         "  entry_filter_params:\n"
                         "    breakout:\n"
                         "      period: [10, 20, 30]\n"
-                    )
+                    ),
                 },
             )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        assert resp.json()["combinations"] == 3
+        assert resp.json()["combinations"] == 9
+        assert resp.json()["ready_to_run"] is True
 
-    def test_save_grid_config_invalid_yaml(self, client):
-        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=Path("/tmp/test.yaml")):
+    def test_save_strategy_optimization_validation_error(self, client):
+        with (
+            patch("src.entrypoints.http.routes.strategies._config_loader.is_updatable_category", return_value=True),
+            patch(
+                "src.entrypoints.http.routes.strategies.strategy_optimization_service.save",
+                side_effect=ValueError("invalid optimization yaml"),
+            ),
+        ):
             resp = client.put(
-                "/api/optimize/grid-configs/test",
-                json={"content": "invalid: [yaml: bad"},
+                "/api/strategies/production/test/optimization",
+                json={"yaml_content": "invalid: [yaml: bad"},
             )
         assert resp.status_code == 400
+        assert "invalid optimization yaml" in resp.json()["message"]
 
-    def test_save_grid_config_invalid_structure(self, client):
-        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=Path("/tmp/test.yaml")):
+    def test_save_strategy_optimization_forbidden(self, client):
+        with patch("src.entrypoints.http.routes.strategies._config_loader.is_updatable_category", return_value=False):
             resp = client.put(
-                "/api/optimize/grid-configs/test",
-                json={
-                    "content": (
-                        "parameter_ranges:\n"
-                        "  entry_filter_params:\n"
-                        "    ratio_threshold: [1.0, 1.5, 2.0]\n"
-                    )
-                },
+                "/api/strategies/legacy/test/optimization",
+                json={"yaml_content": "description: demo\nparameter_ranges: {}\n"},
             )
-        assert resp.status_code == 400
-        assert "Signal must be a mapping" in resp.json()["message"]
+        assert resp.status_code == 403
 
-    def test_delete_grid_config_success(self, client, tmp_path):
-        grid_file = tmp_path / "test_grid.yaml"
-        grid_file.write_text("data")
-        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file):
-            resp = client.delete("/api/optimize/grid-configs/test")
+    def test_delete_strategy_optimization_success(self, client):
+        with (
+            patch("src.entrypoints.http.routes.strategies._config_loader.is_updatable_category", return_value=True),
+            patch("src.entrypoints.http.routes.strategies.strategy_optimization_service.delete"),
+        ):
+            resp = client.delete("/api/strategies/production/test/optimization")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+        assert resp.json()["strategy_name"] == "production/test"
 
-    def test_delete_grid_config_not_found(self, client):
-        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=None):
-            resp = client.delete("/api/optimize/grid-configs/missing")
+    def test_delete_strategy_optimization_not_found(self, client):
+        with (
+            patch("src.entrypoints.http.routes.strategies._config_loader.is_updatable_category", return_value=True),
+            patch(
+                "src.entrypoints.http.routes.strategies.strategy_optimization_service.delete",
+                side_effect=FileNotFoundError("missing"),
+            ),
+        ):
+            resp = client.delete("/api/strategies/missing/optimization")
         assert resp.status_code == 404
-
-    def test_list_grid_configs_reads_real_files(self, client, tmp_path):
-        (tmp_path / "alpha_grid.yaml").write_text(
-            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10, 20]\n",
-            encoding="utf-8",
-        )
-        (tmp_path / "nested_grid.yaml").write_text(
-            "parameter_ranges:\n  entry_filter_params:\n    rsi:\n      threshold: [20, 30, 40]\n",
-            encoding="utf-8",
-        )
-
-        with patch("src.entrypoints.http.routes.optimize.get_all_optimization_grid_dirs", return_value=[tmp_path]):
-            resp = client.get("/api/optimize/grid-configs")
-
-        assert resp.status_code == 200
-        payload = resp.json()
-        assert payload["total"] == 2
-        strategy_names = {item["strategy_name"] for item in payload["configs"]}
-        assert strategy_names == {"alpha", "nested"}
-
-    def test_save_grid_config_file_write_error_returns_500(self, client, tmp_path):
-        grid_file = tmp_path / "write_fail.yaml"
-        with (
-            patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=grid_file),
-            patch.object(Path, "write_text", side_effect=OSError("disk full")),
-        ):
-            resp = client.put(
-                "/api/optimize/grid-configs/test",
-                json={
-                    "content": (
-                        "parameter_ranges:\n"
-                        "  entry_filter_params:\n"
-                        "    breakout:\n"
-                        "      period: [10]\n"
-                    )
-                },
-            )
-
-        assert resp.status_code == 500
-        assert "ファイル保存エラー" in resp.json()["message"]
-
-    def test_delete_grid_config_file_remove_error_returns_500(self, client, tmp_path):
-        grid_file = tmp_path / "test_grid.yaml"
-        grid_file.write_text(
-            "parameter_ranges:\n  entry_filter_params:\n    breakout:\n      period: [10]\n",
-            encoding="utf-8",
-        )
-        with (
-            patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file),
-            patch("src.entrypoints.http.routes.optimize.os.remove", side_effect=OSError("permission denied")),
-        ):
-            resp = client.delete("/api/optimize/grid-configs/test")
-
-        assert resp.status_code == 500
-        assert "ファイル削除エラー" in resp.json()["message"]
-
-    def test_save_grid_config_uses_default_write_path(self, client, tmp_path):
-        with patch("src.shared.paths.resolver.get_optimization_grid_dir", return_value=tmp_path):
-            resp = client.put(
-                "/api/optimize/grid-configs/alpha",
-                json={
-                    "content": (
-                        "parameter_ranges:\n"
-                        "  entry_filter_params:\n"
-                        "    breakout:\n"
-                        "      period: [5, 10]\n"
-                    )
-                },
-            )
-
-        assert resp.status_code == 200
-        saved = tmp_path / "alpha_grid.yaml"
-        assert saved.exists()
-        assert "parameter_ranges" in saved.read_text(encoding="utf-8")
 
 
 class TestOptimizationRouteAdditionalCoverage:

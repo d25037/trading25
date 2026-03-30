@@ -357,38 +357,71 @@ describe('BacktestClient', () => {
     expect(lastCall?.[1]?.method).toBe('POST');
   });
 
-  test('optimization grid config methods call expected endpoints', async () => {
-    fetchSpy.mockResolvedValueOnce(createMockResponse({ configs: [], total: 0 }));
+  test('strategy optimization methods call expected endpoints', async () => {
     fetchSpy.mockResolvedValueOnce(
       createMockResponse({
         strategy_name: 'Alpha',
-        content: 'params: {}',
+        persisted: true,
+        source: 'saved',
+        optimization: { parameter_ranges: {} },
+        yaml_content: 'parameter_ranges: {}',
+        valid: true,
+        ready_to_run: true,
         param_count: 1,
         combinations: 10,
+        errors: [],
+        warnings: [],
+        drift: [],
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        strategy_name: 'Alpha',
+        persisted: false,
+        source: 'draft',
+        optimization: { parameter_ranges: {} },
+        yaml_content: 'parameter_ranges: {}',
+        valid: true,
+        ready_to_run: false,
+        param_count: 1,
+        combinations: 10,
+        errors: [],
+        warnings: [],
+        drift: [],
       })
     );
     fetchSpy.mockResolvedValueOnce(
       createMockResponse({
         success: true,
         strategy_name: 'Alpha',
+        persisted: true,
+        source: 'saved',
+        optimization: { parameter_ranges: {} },
+        yaml_content: 'parameter_ranges: {}',
+        valid: true,
+        ready_to_run: true,
         param_count: 1,
         combinations: 10,
+        errors: [],
+        warnings: [],
+        drift: [],
       })
     );
     fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, strategy_name: 'Alpha' }));
 
-    await client.getOptimizationGridConfigs();
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs');
+    await client.getStrategyOptimization('Alpha Strategy');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/Alpha%20Strategy/optimization');
 
-    await client.getOptimizationGridConfig('Alpha Strategy');
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha%20Strategy');
+    await client.generateStrategyOptimizationDraft('Alpha Strategy');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/Alpha%20Strategy/optimization/draft');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('POST');
 
-    await client.saveOptimizationGridConfig('Alpha', { content: 'param1: [1, 2, 3]' });
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha');
+    await client.saveStrategyOptimization('Alpha', { yaml_content: 'parameter_ranges:\n  test: {}\n' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/Alpha/optimization');
     expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('PUT');
 
-    await client.deleteOptimizationGridConfig('Alpha');
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha');
+    await client.deleteStrategyOptimization('Alpha');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/Alpha/optimization');
     expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
   });
 

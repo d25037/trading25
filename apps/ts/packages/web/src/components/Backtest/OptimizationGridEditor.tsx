@@ -10,25 +10,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useDeleteOptimizationGrid, useOptimizationGridConfig, useSaveOptimizationGrid } from '@/hooks/useOptimization';
+import {
+  useDeleteStrategyOptimization,
+  useGenerateStrategyOptimizationDraft,
+  useSaveStrategyOptimization,
+  useStrategyOptimization,
+} from '@/hooks/useOptimization';
 import { cn } from '@/lib/utils';
-import { analyzeGridParameters, type GridParameterAnalysis, type GridValidationIssue } from './optimizationGridParams';
+import type {
+  OptimizationDiagnosticResponse,
+  StrategyOptimizationStateResponse,
+} from '@/types/backtest';
+import {
+  analyzeGridParameters,
+  type GridParameterAnalysis,
+  type GridValidationIssue,
+} from './optimizationGridParams';
 import { SignalReferencePanel } from './SignalReferencePanel';
 
-const TEMPLATE_YAML = `# Parameter ranges for optimization grid search
-# Each parameter should be a list of values to try
-parameter_ranges:
-  entry_filter_params:
-    period_extrema_break:
-      period: [10, 15, 20, 25, 30]
-  exit_trigger_params:
-    atr_stop:
-      atr_multiplier: [1.5, 2.0, 2.5, 3.0]
+const EMPTY_OPTIMIZATION_YAML = `description: ""
+parameter_ranges: {}
 `;
-
-interface OptimizationGridEditorProps {
-  strategyName: string;
-}
 
 type ValidationTone = 'error' | 'warning' | 'success';
 
@@ -38,40 +40,33 @@ interface ValidationState {
   details: string[];
 }
 
-interface EditorActionsProps {
-  canDelete: boolean;
-  isDirty: boolean;
-  isSavePending: boolean;
-  isDeletePending: boolean;
-  hasValidationError: boolean;
-  onReset: () => void;
-  onDelete: () => void;
-  onSave: () => void;
-}
-
 interface SummaryCardsProps {
-  paramCount: number;
-  combinations: number;
+  currentParamCount: number;
+  currentCombinations: number;
   savedInfo: string;
-  isDirty: boolean;
+  stateLabel: string;
+  readyLabel: string;
+  driftCount: number;
 }
 
 interface EditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  basename: string;
+  strategyName: string;
   content: string;
-  analysis: GridParameterAnalysis;
   validationState: ValidationState;
-  savedInfo: string;
+  summary: SummaryCardsProps;
+  hasPersistedSpec: boolean;
   isDirty: boolean;
-  canDelete: boolean;
   isSavePending: boolean;
   isDeletePending: boolean;
+  isGeneratePending: boolean;
   saveErrorMessage: string | null;
   deleteErrorMessage: string | null;
+  generateErrorMessage: string | null;
   onContentChange: (value: string) => void;
   onCopySnippet: (snippet: string) => void;
+  onGenerateDraft: () => void;
   onReset: () => void;
   onDelete: () => void;
   onSave: () => void;
@@ -89,7 +84,36 @@ const VALIDATION_TONE_ICON = {
   success: CheckCircle2,
 } as const;
 
-function buildValidationState(analysis: GridParameterAnalysis): ValidationState {
+function formatValidationIssue(issue: GridValidationIssue | OptimizationDiagnosticResponse): string {
+  return `${issue.path}: ${issue.message}`;
+}
+
+function buildEmptyState(strategyName: string): StrategyOptimizationStateResponse {
+  return {
+    strategy_name: strategyName,
+    persisted: false,
+    source: 'saved',
+    optimization: null,
+    yaml_content: '',
+    valid: true,
+    ready_to_run: false,
+    param_count: 0,
+    combinations: 0,
+    errors: [],
+    warnings: [],
+    drift: [],
+  };
+}
+
+function normalizeEditorContent(yamlContent: string): string {
+  return yamlContent.trim() ? yamlContent : EMPTY_OPTIMIZATION_YAML;
+}
+
+function buildValidationState(
+  analysis: GridParameterAnalysis,
+  state: StrategyOptimizationStateResponse | null,
+  isDirty: boolean
+): ValidationState {
   if (analysis.parseError) {
     return { tone: 'error', message: analysis.parseError, details: [] };
   }
@@ -97,46 +121,86 @@ function buildValidationState(analysis: GridParameterAnalysis): ValidationState 
   if (analysis.errors.length > 0) {
     return {
       tone: 'error',
-      message: `Validation failed: ${analysis.errors.length} issue(s) need to be fixed before saving or running optimization.`,
+      message: `Validation failed: ${analysis.errors.length} structural issue(s) must be fixed before saving.`,
       details: analysis.errors.map(formatValidationIssue),
     };
   }
 
-  if (!analysis.hasParameterRanges) {
+  if (isDirty) {
+    const details = analysis.warnings.map(formatValidationIssue);
     return {
-      tone: 'warning',
-      message: 'Missing "parameter_ranges" key. Saving is allowed, but optimization combinations will be 0.',
-      details: analysis.warnings.map(formatValidationIssue),
+      tone: analysis.readyToRun ? 'success' : 'warning',
+      message: analysis.readyToRun
+        ? 'Draft is structurally valid. Strategy-linked validation and drift checks run on save.'
+        : 'Draft is structurally valid, but candidate ranges are not ready to run yet.',
+      details,
     };
   }
 
-  if (analysis.warnings.length > 0) {
+  if (state) {
+    const errorDetails = state.errors.map(formatValidationIssue);
+    if (errorDetails.length > 0) {
+      return {
+        tone: 'error',
+        message: `Saved optimization has ${errorDetails.length} blocking issue(s). Fix the strategy-linked spec before running optimization.`,
+        details: errorDetails,
+      };
+    }
+
+    const warningDetails = [...state.warnings, ...state.drift].map(formatValidationIssue);
+    if (!state.persisted) {
+      return {
+        tone: 'warning',
+        message: 'No saved optimization spec. Generate a draft from the current strategy or author one manually.',
+        details: warningDetails,
+      };
+    }
+    if (warningDetails.length > 0) {
+      return {
+        tone: 'warning',
+        message: state.ready_to_run
+          ? 'Saved optimization is usable, but drift or non-blocking warnings were detected.'
+          : 'Saved optimization is not ready to run yet.',
+        details: warningDetails,
+      };
+    }
     return {
-      tone: 'warning',
-      message: analysis.readyToRun
-        ? `Validation passed with warnings: ${analysis.paramCount} parameters, ${analysis.combinations} combinations detected.`
-        : 'Validation passed with warnings, but this grid is not ready to run yet.',
-      details: analysis.warnings.map(formatValidationIssue),
+      tone: 'success',
+      message: 'Saved optimization is ready to run.',
+      details: [],
     };
   }
 
   return {
-    tone: 'success',
-    message: `Ready: ${analysis.paramCount} parameters, ${analysis.combinations} combinations detected.`,
+    tone: 'warning',
+    message: 'Optimization state is not loaded yet.',
     details: [],
   };
 }
 
+function getSavedInfo(savedState: StrategyOptimizationStateResponse | null | undefined): string {
+  if (!savedState?.persisted) {
+    return 'Not saved';
+  }
+  return `${savedState.param_count} params, ${savedState.combinations} combinations`;
+}
+
+function getStateLabel(state: StrategyOptimizationStateResponse, isDirty: boolean): string {
+  if (isDirty) {
+    return state.source === 'draft' ? 'Generated draft (unsaved)' : 'Unsaved changes';
+  }
+  if (state.persisted) {
+    return 'Saved';
+  }
+  return state.source === 'draft' ? 'Generated draft' : 'No saved spec';
+}
+
 function LoadingState() {
   return (
-    <div className="flex items-center justify-center h-32">
+    <div className="flex h-32 items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
     </div>
   );
-}
-
-function formatValidationIssue(issue: GridValidationIssue): string {
-  return `${issue.path}: ${issue.message}`;
 }
 
 function ValidationBanner({ validationState }: { validationState: ValidationState }) {
@@ -144,7 +208,7 @@ function ValidationBanner({ validationState }: { validationState: ValidationStat
 
   return (
     <div className={cn('flex items-start gap-2 rounded-md p-3 text-sm', VALIDATION_TONE_CLASS[validationState.tone])}>
-      <Icon className="h-4 w-4 mt-0.5 shrink-0" />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
       <div className="space-y-1">
         <p>{validationState.message}</p>
         {validationState.details.length > 0 ? (
@@ -162,57 +226,26 @@ function ValidationBanner({ validationState }: { validationState: ValidationStat
 function ErrorBanner({ message }: { message: string }) {
   return (
     <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
       <span>{message}</span>
     </div>
   );
 }
 
-function EditorActions({
-  canDelete,
-  isDirty,
-  isSavePending,
-  isDeletePending,
-  hasValidationError,
-  onReset,
-  onDelete,
-  onSave,
-}: EditorActionsProps) {
-  const isBusy = isSavePending || isDeletePending;
-
+function SummaryCards({
+  currentParamCount,
+  currentCombinations,
+  savedInfo,
+  stateLabel,
+  readyLabel,
+  driftCount,
+}: SummaryCardsProps) {
   return (
-    <div className="flex flex-wrap gap-2 justify-end">
-      <Button variant="outline" size="sm" onClick={onReset} disabled={!isDirty || isBusy}>
-        <RotateCcw className="h-4 w-4 mr-1" />
-        Reset
-      </Button>
-      {canDelete && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onDelete}
-          disabled={isBusy}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4 mr-1" />
-          Delete
-        </Button>
-      )}
-      <Button size="sm" onClick={onSave} disabled={!isDirty || hasValidationError || isBusy}>
-        {isSavePending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-        Save
-      </Button>
-    </div>
-  );
-}
-
-function SummaryCards({ paramCount, combinations, savedInfo, isDirty }: SummaryCardsProps) {
-  return (
-    <div className="grid gap-2 md:grid-cols-3">
+    <div className="grid gap-2 md:grid-cols-4">
       <div className="rounded-md border bg-muted/20 p-2">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Current</p>
         <p className="text-sm font-medium">
-          {paramCount} params / {combinations} combos
+          {currentParamCount} params / {currentCombinations} combos
         </p>
       </div>
       <div className="rounded-md border bg-muted/20 p-2">
@@ -221,8 +254,12 @@ function SummaryCards({ paramCount, combinations, savedInfo, isDirty }: SummaryC
       </div>
       <div className="rounded-md border bg-muted/20 p-2">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">State</p>
-        <p className={cn('text-sm font-medium', isDirty ? 'text-amber-600' : 'text-muted-foreground')}>
-          {isDirty ? 'Unsaved changes' : 'Synced'}
+        <p className="text-sm font-medium">{stateLabel}</p>
+      </div>
+      <div className="rounded-md border bg-muted/20 p-2">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Run / Drift</p>
+        <p className="text-sm font-medium">
+          {readyLabel} / {driftCount} drift
         </p>
       </div>
     </div>
@@ -232,55 +269,67 @@ function SummaryCards({ paramCount, combinations, savedInfo, isDirty }: SummaryC
 function EditorDialog({
   open,
   onOpenChange,
-  basename,
+  strategyName,
   content,
-  analysis,
   validationState,
-  savedInfo,
+  summary,
+  hasPersistedSpec,
   isDirty,
-  canDelete,
   isSavePending,
   isDeletePending,
+  isGeneratePending,
   saveErrorMessage,
   deleteErrorMessage,
+  generateErrorMessage,
   onContentChange,
   onCopySnippet,
+  onGenerateDraft,
   onReset,
   onDelete,
   onSave,
 }: EditorDialogProps) {
+  const hasValidationError = validationState.tone === 'error';
+  const isBusy = isSavePending || isDeletePending || isGeneratePending;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl max-h-[92vh] flex flex-col">
+      <DialogContent className="flex max-h-[92vh] max-w-7xl flex-col">
         <DialogHeader>
-          <DialogTitle>Optimization Grid Editor: {basename}</DialogTitle>
+          <DialogTitle>Optimization Spec Editor: {strategyName}</DialogTitle>
           <DialogDescription>
-            Edit optimization ranges and use the signal reference panel for available signal definitions.
+            The optimization block is stored directly on the strategy YAML. Generate a draft from enabled signals, then
+            edit ranges as needed.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-hidden space-y-3">
-          <SummaryCards
-            paramCount={analysis.paramCount}
-            combinations={analysis.combinations}
-            savedInfo={savedInfo}
-            isDirty={isDirty}
-          />
+        <div className="min-h-0 flex-1 space-y-3 overflow-hidden">
+          <SummaryCards {...summary} />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[560px]">
-            <div className="lg:col-span-2 flex flex-col min-h-0">
-              <div className="flex-1 min-h-0">
+          <div className="grid h-[560px] grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="flex min-h-0 flex-col lg:col-span-2">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Save writes the top-level `optimization` block back into the current strategy YAML.
+                </p>
+                <Button variant="outline" size="sm" onClick={onGenerateDraft} disabled={isBusy}>
+                  {isGeneratePending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                  Generate Draft from Strategy
+                </Button>
+              </div>
+
+              <div className="min-h-0 flex-1">
                 <MonacoYamlEditor value={content} onChange={onContentChange} height="460px" />
               </div>
 
               <div className="mt-3 space-y-2">
                 <ValidationBanner validationState={validationState} />
-                {saveErrorMessage && <ErrorBanner message={saveErrorMessage} />}
-                {deleteErrorMessage && <ErrorBanner message={deleteErrorMessage} />}
+                {generateErrorMessage ? <ErrorBanner message={generateErrorMessage} /> : null}
+                {saveErrorMessage ? <ErrorBanner message={saveErrorMessage} /> : null}
+                {deleteErrorMessage ? <ErrorBanner message={deleteErrorMessage} /> : null}
               </div>
             </div>
 
-            <div className="lg:col-span-1 border rounded-md overflow-hidden min-h-0">
+            <div className="min-h-0 overflow-hidden rounded-md border lg:col-span-1">
               <SignalReferencePanel onCopySnippet={onCopySnippet} />
             </div>
           </div>
@@ -290,54 +339,67 @@ function EditorDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <EditorActions
-            canDelete={canDelete}
-            isDirty={isDirty}
-            isSavePending={isSavePending}
-            isDeletePending={isDeletePending}
-            hasValidationError={validationState.tone === 'error'}
-            onReset={onReset}
-            onDelete={onDelete}
-            onSave={onSave}
-          />
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={onReset} disabled={!isDirty || isBusy}>
+              <RotateCcw className="mr-1 h-4 w-4" />
+              Reset
+            </Button>
+            {hasPersistedSpec ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onDelete}
+                disabled={isBusy}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="mr-1 h-4 w-4" />
+                Delete
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={onSave} disabled={!isDirty || hasValidationError || isBusy}>
+              {isSavePending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+              Save
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorProps) {
-  const basename = strategyName.split('/').pop() ?? strategyName;
+interface OptimizationSpecEditorProps {
+  strategyName: string;
+}
 
-  const { data: gridConfig, isLoading, isError } = useOptimizationGridConfig(basename);
-  const saveGrid = useSaveOptimizationGrid();
-  const deleteGrid = useDeleteOptimizationGrid();
+export function OptimizationSpecEditor({ strategyName }: OptimizationSpecEditorProps) {
+  const { data: savedState, isLoading } = useStrategyOptimization(strategyName);
+  const saveOptimization = useSaveStrategyOptimization();
+  const deleteOptimization = useDeleteStrategyOptimization();
+  const generateDraft = useGenerateStrategyOptimizationDraft();
 
-  const [content, setContent] = useState('');
-  const [baselineContent, setBaselineContent] = useState('');
-  const [hasPersistedConfig, setHasPersistedConfig] = useState(false);
+  const [editorState, setEditorState] = useState<StrategyOptimizationStateResponse | null>(null);
+  const [content, setContent] = useState(EMPTY_OPTIMIZATION_YAML);
+  const [baselineContent, setBaselineContent] = useState(EMPTY_OPTIMIZATION_YAML);
   const [isDirty, setIsDirty] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   useEffect(() => {
-    if (gridConfig) {
-      setContent(gridConfig.content);
-      setBaselineContent(gridConfig.content);
-      setHasPersistedConfig(true);
-      setIsDirty(false);
+    if (!savedState || isDirty) {
       return;
     }
 
-    if (isError) {
-      setContent(TEMPLATE_YAML);
-      setBaselineContent(TEMPLATE_YAML);
-      setHasPersistedConfig(false);
-      setIsDirty(false);
-    }
-  }, [gridConfig, isError]);
+    const normalizedContent = normalizeEditorContent(savedState.yaml_content);
+    setEditorState(savedState);
+    setContent(normalizedContent);
+    setBaselineContent(normalizedContent);
+  }, [savedState, isDirty]);
 
+  const effectiveState = editorState ?? savedState ?? buildEmptyState(strategyName);
   const analysis = useMemo(() => analyzeGridParameters(content), [content]);
-  const validationState = useMemo(() => buildValidationState(analysis), [analysis]);
+  const validationState = useMemo(
+    () => buildValidationState(analysis, effectiveState, isDirty),
+    [analysis, effectiveState, isDirty]
+  );
 
   const applyContent = useCallback(
     (nextContent: string) => {
@@ -355,96 +417,115 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
     [applyContent, content]
   );
 
+  const handleGenerateDraft = useCallback(() => {
+    generateDraft.mutate(strategyName, {
+      onSuccess: (nextState) => {
+        const nextContent = normalizeEditorContent(nextState.yaml_content);
+        setEditorState(nextState);
+        setContent(nextContent);
+        setIsDirty(nextContent !== baselineContent);
+      },
+    });
+  }, [baselineContent, generateDraft, strategyName]);
+
   const handleSave = useCallback(() => {
-    saveGrid.mutate(
-      { strategy: basename, request: { content } },
+    saveOptimization.mutate(
       {
-        onSuccess: () => {
-          setBaselineContent(content);
-          setHasPersistedConfig(true);
+        strategy: strategyName,
+        request: { yaml_content: content },
+      },
+      {
+        onSuccess: (nextState) => {
+          const nextContent = normalizeEditorContent(nextState.yaml_content);
+          setEditorState(nextState);
+          setContent(nextContent);
+          setBaselineContent(nextContent);
           setIsDirty(false);
         },
       }
     );
-  }, [basename, content, saveGrid]);
+  }, [content, saveOptimization, strategyName]);
 
   const handleDelete = useCallback(() => {
-    deleteGrid.mutate(basename, {
+    deleteOptimization.mutate(strategyName, {
       onSuccess: () => {
-        setContent(TEMPLATE_YAML);
-        setBaselineContent(TEMPLATE_YAML);
-        setHasPersistedConfig(false);
+        const emptyState = buildEmptyState(strategyName);
+        setEditorState(emptyState);
+        setContent(EMPTY_OPTIMIZATION_YAML);
+        setBaselineContent(EMPTY_OPTIMIZATION_YAML);
         setIsDirty(false);
       },
     });
-  }, [basename, deleteGrid]);
+  }, [deleteOptimization, strategyName]);
 
   const handleReset = useCallback(() => {
     setContent(baselineContent);
+    setEditorState(savedState ?? buildEmptyState(strategyName));
     setIsDirty(false);
-  }, [baselineContent]);
+  }, [baselineContent, savedState, strategyName]);
 
-  if (isLoading) {
+  if (isLoading && !savedState && !editorState) {
     return <LoadingState />;
   }
 
-  const savedInfo = gridConfig
-    ? `${gridConfig.param_count} params, ${gridConfig.combinations} combinations`
-    : 'Not saved';
-
-  const lastSaveInfo =
-    saveGrid.data && saveGrid.data.strategy_name === basename
-      ? `${saveGrid.data.param_count} params, ${saveGrid.data.combinations} combinations`
-      : null;
-
-  const displaySavedInfo = lastSaveInfo || savedInfo;
+  const currentParamCount = isDirty ? analysis.paramCount : effectiveState.param_count;
+  const currentCombinations = isDirty ? analysis.combinations : effectiveState.combinations;
+  const savedInfo = getSavedInfo(savedState);
+  const stateLabel = getStateLabel(effectiveState, isDirty);
+  const readyLabel = effectiveState.ready_to_run ? 'Ready to Run' : 'Needs Update';
+  const summary: SummaryCardsProps = {
+    currentParamCount,
+    currentCombinations,
+    savedInfo,
+    stateLabel,
+    readyLabel,
+    driftCount: effectiveState.drift.length,
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-1">
-          <h4 className="text-sm font-semibold">Optimization Grid</h4>
+          <h4 className="text-sm font-semibold">Optimization Spec</h4>
           <p className="text-xs text-muted-foreground">
-            Open the editor popup to modify grid YAML while browsing signal definitions.
+            This strategy stores optimization ranges in its own top-level `optimization` block.
           </p>
-          <p className="text-xs font-mono text-muted-foreground">strategy: {basename}</p>
+          <p className="font-mono text-xs text-muted-foreground">strategy: {strategyName}</p>
         </div>
 
-        <Button size="sm" variant="outline" onClick={() => setIsEditorOpen(true)}>
-          <Edit className="h-4 w-4 mr-1" />
-          Open Editor
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={handleGenerateDraft} disabled={generateDraft.isPending}>
+            {generateDraft.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Generate Draft from Strategy
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setIsEditorOpen(true)}>
+            <Edit className="mr-1 h-4 w-4" />
+            Open Editor
+          </Button>
+        </div>
       </div>
 
-      <SummaryCards
-        paramCount={analysis.paramCount}
-        combinations={analysis.combinations}
-        savedInfo={displaySavedInfo}
-        isDirty={isDirty}
-      />
-
-      {!hasPersistedConfig && (
-        <p className="text-xs text-muted-foreground">
-          No saved grid config exists yet. Use <span className="font-medium">Open Editor</span> and save to create one.
-        </p>
-      )}
+      <SummaryCards {...summary} />
+      <ValidationBanner validationState={validationState} />
 
       <EditorDialog
         open={isEditorOpen}
         onOpenChange={setIsEditorOpen}
-        basename={basename}
+        strategyName={strategyName}
         content={content}
-        analysis={analysis}
         validationState={validationState}
-        savedInfo={displaySavedInfo}
+        summary={summary}
+        hasPersistedSpec={effectiveState.persisted}
         isDirty={isDirty}
-        canDelete={hasPersistedConfig}
-        isSavePending={saveGrid.isPending}
-        isDeletePending={deleteGrid.isPending}
-        saveErrorMessage={saveGrid.isError ? saveGrid.error.message : null}
-        deleteErrorMessage={deleteGrid.isError ? deleteGrid.error.message : null}
+        isSavePending={saveOptimization.isPending}
+        isDeletePending={deleteOptimization.isPending}
+        isGeneratePending={generateDraft.isPending}
+        saveErrorMessage={saveOptimization.isError ? saveOptimization.error.message : null}
+        deleteErrorMessage={deleteOptimization.isError ? deleteOptimization.error.message : null}
+        generateErrorMessage={generateDraft.isError ? generateDraft.error.message : null}
         onContentChange={applyContent}
         onCopySnippet={handleCopySnippet}
+        onGenerateDraft={handleGenerateDraft}
         onReset={handleReset}
         onDelete={handleDelete}
         onSave={handleSave}
@@ -452,3 +533,5 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
     </div>
   );
 }
+
+export const OptimizationGridEditor = OptimizationSpecEditor;

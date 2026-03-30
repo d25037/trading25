@@ -7,14 +7,13 @@ import type {
   HtmlFileDeleteResponse,
   HtmlFileRenameRequest,
   HtmlFileRenameResponse,
-  OptimizationGridConfig,
-  OptimizationGridListResponse,
-  OptimizationGridSaveRequest,
-  OptimizationGridSaveResponse,
   OptimizationHtmlFileContentResponse,
   OptimizationHtmlFileListResponse,
   OptimizationJobResponse,
   OptimizationRequest,
+  StrategyOptimizationSaveRequest,
+  StrategyOptimizationSaveResponse,
+  StrategyOptimizationStateResponse,
 } from '@/types/backtest';
 import { logger } from '@/utils/logger';
 
@@ -22,8 +21,7 @@ import { logger } from '@/utils/logger';
 export const optimizationKeys = {
   all: ['optimization'] as const,
   job: (jobId: string) => [...optimizationKeys.all, 'job', jobId] as const,
-  gridConfigs: () => [...optimizationKeys.all, 'grid-configs'] as const,
-  gridConfig: (strategy: string) => [...optimizationKeys.all, 'grid-config', strategy] as const,
+  strategySpec: (strategy: string) => [...optimizationKeys.all, 'strategy-spec', strategy] as const,
   htmlFilesPrefix: () => [...optimizationKeys.all, 'html-files'] as const,
   htmlFiles: (strategy?: string) => [...optimizationKeys.all, 'html-files', strategy] as const,
   htmlFileContent: (strategy: string, filename: string) =>
@@ -43,20 +41,23 @@ function cancelOptimizationJob(jobId: string): Promise<OptimizationJobResponse> 
   return backtestClient.cancelOptimizationJob(jobId);
 }
 
-function fetchGridConfigs(): Promise<OptimizationGridListResponse> {
-  return backtestClient.getOptimizationGridConfigs();
+function fetchStrategyOptimization(strategy: string): Promise<StrategyOptimizationStateResponse> {
+  return backtestClient.getStrategyOptimization(strategy);
 }
 
-function fetchGridConfig(strategy: string): Promise<OptimizationGridConfig> {
-  return backtestClient.getOptimizationGridConfig(strategy);
+function generateStrategyOptimizationDraft(strategy: string): Promise<StrategyOptimizationStateResponse> {
+  return backtestClient.generateStrategyOptimizationDraft(strategy);
 }
 
-function saveGridConfig(strategy: string, request: OptimizationGridSaveRequest): Promise<OptimizationGridSaveResponse> {
-  return backtestClient.saveOptimizationGridConfig(strategy, request);
+function saveStrategyOptimization(
+  strategy: string,
+  request: StrategyOptimizationSaveRequest
+): Promise<StrategyOptimizationSaveResponse> {
+  return backtestClient.saveStrategyOptimization(strategy, request);
 }
 
-function deleteGridConfig(strategy: string): Promise<{ success: boolean; strategy_name: string }> {
-  return backtestClient.deleteOptimizationGridConfig(strategy);
+function deleteStrategyOptimization(strategy: string) {
+  return backtestClient.deleteStrategyOptimization(strategy);
 }
 
 function fetchOptimizationHtmlFiles(strategy?: string, limit = 100): Promise<OptimizationHtmlFileListResponse> {
@@ -139,71 +140,74 @@ export function useCancelOptimization() {
 }
 
 /**
- * Get all grid configs
+ * Get strategy-linked optimization state
  */
-export function useOptimizationGridConfigs() {
+export function useStrategyOptimization(strategy: string | null) {
   return useQuery({
-    queryKey: optimizationKeys.gridConfigs(),
-    queryFn: () => {
-      logger.debug('Fetching grid configs');
-      return fetchGridConfigs();
-    },
-    staleTime: 60 * 1000, // 1 minute
-  });
-}
-
-/**
- * Get grid config for a specific strategy
- */
-export function useOptimizationGridConfig(strategy: string | null) {
-  return useQuery({
-    queryKey: optimizationKeys.gridConfig(strategy ?? ''),
+    queryKey: optimizationKeys.strategySpec(strategy ?? ''),
     queryFn: () => {
       if (!strategy) throw new Error('Strategy name required');
-      logger.debug('Fetching grid config', { strategy });
-      return fetchGridConfig(strategy);
+      logger.debug('Fetching strategy optimization state', { strategy });
+      return fetchStrategyOptimization(strategy);
     },
     enabled: !!strategy,
     staleTime: 60 * 1000, // 1 minute
-    retry: false, // 404 is expected for strategies without grid config
+    retry: false,
   });
 }
 
 /**
- * Save grid config mutation
+ * Generate strategy-linked optimization draft
  */
-export function useSaveOptimizationGrid() {
+export function useGenerateStrategyOptimizationDraft() {
+  return useMutation({
+    mutationFn: (strategy: string) => generateStrategyOptimizationDraft(strategy),
+    onSuccess: (data, strategy) => {
+      logger.debug('Generated strategy optimization draft', {
+        strategy,
+        persisted: data.persisted,
+        readyToRun: data.ready_to_run,
+      });
+    },
+    onError: (error) => {
+      logger.error('Failed to generate strategy optimization draft', { error: error.message });
+    },
+  });
+}
+
+/**
+ * Save strategy optimization mutation
+ */
+export function useSaveStrategyOptimization() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ strategy, request }: { strategy: string; request: OptimizationGridSaveRequest }) =>
-      saveGridConfig(strategy, request),
+    mutationFn: ({ strategy, request }: { strategy: string; request: StrategyOptimizationSaveRequest }) =>
+      saveStrategyOptimization(strategy, request),
     onSuccess: (_data, { strategy }) => {
-      logger.debug('Grid config saved', { strategy });
-      queryClient.invalidateQueries({ queryKey: optimizationKeys.gridConfigs() });
-      queryClient.invalidateQueries({ queryKey: optimizationKeys.gridConfig(strategy) });
+      logger.debug('Strategy optimization saved', { strategy });
+      queryClient.invalidateQueries({ queryKey: optimizationKeys.strategySpec(strategy) });
     },
     onError: (error) => {
-      logger.error('Failed to save grid config', { error: error.message });
+      logger.error('Failed to save strategy optimization', { error: error.message });
     },
   });
 }
 
 /**
- * Delete grid config mutation
+ * Delete strategy optimization mutation
  */
-export function useDeleteOptimizationGrid() {
+export function useDeleteStrategyOptimization() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (strategy: string) => deleteGridConfig(strategy),
+    mutationFn: (strategy: string) => deleteStrategyOptimization(strategy),
     onSuccess: (_data, strategy) => {
-      logger.debug('Grid config deleted', { strategy });
-      queryClient.invalidateQueries({ queryKey: optimizationKeys.gridConfigs() });
-      queryClient.removeQueries({ queryKey: optimizationKeys.gridConfig(strategy) });
+      logger.debug('Strategy optimization deleted', { strategy });
+      queryClient.invalidateQueries({ queryKey: optimizationKeys.strategySpec(strategy) });
     },
     onError: (error) => {
-      logger.error('Failed to delete grid config', { error: error.message });
+      logger.error('Failed to delete strategy optimization', { error: error.message });
     },
   });
 }

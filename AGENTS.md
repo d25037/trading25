@@ -126,6 +126,7 @@ uv run bt lab generate --entry-filter-only --allowed-category fundamental
 uv run bt lab evolve <strategy> --entry-filter-only --allowed-category fundamental
 uv run bt lab optimize <strategy> --entry-filter-only --allowed-category fundamental
 uv run bt lab improve <strategy> --entry-filter-only --allowed-category fundamental
+uv run bt migrate-optimization-specs  # legacy `*_grid.yaml` を strategy YAML に移行
 uv sync --group nautilus         # optional: real Nautilus runtime smoke 用依存を追加
 uv run pytest tests/             # テスト
 uv run ruff check src/           # リント
@@ -182,7 +183,8 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
 - Backtest `Strategies` 画面の Strategy Editor は `production` / `experimental` の編集を許可し、`Visual / Advanced YAML / Preview` の hybrid editor、section sidebar、backend metadata-driven な `shared_config` / signal guidance、`dataset` / `benchmark_table` の reference select UI を提供する。`Rename` / `Delete` は `experimental` のみ許可
 - Backtest `Default Config` editor は `default.execution` と `default.parameters.shared_config` を visual 編集でき、`dataset` / `benchmark_table` は Strategy Editor と同じ reference select card を使い、raw YAML は advanced fallback として維持する
-- Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラーと grid 構造エラー時のみとし、warning は保存可能とする
+- Strategy optimization の SoT は strategy YAML トップレベル `optimization` block とし、旧 `*_grid.yaml` sidecar / `/api/optimize/grid-configs*` は廃止する。`GET/POST draft/PUT/DELETE /api/strategies/{strategy}/optimization` を strategy-scoped API とし、CLI では `bt migrate-optimization-specs` で legacy sidecar を one-shot 移行する
+- Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、saved spec が無ければ `Generate Draft from Strategy` を主導線にする。`Saved` / `Generated Draft` / `Drift` / `Ready to Run` を表示し、保存ブロックは YAML 構文エラーと構造エラー時のみ、warning は保存可能とする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する
 - `screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止。`markets` 未指定時は selected strategies（未選択なら eligible production strategies 全体）の dataset manifest preset markets の union を Auto 既定値とし、explicit な request/URL/UI 指定が常に優先する

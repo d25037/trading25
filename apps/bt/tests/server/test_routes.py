@@ -120,9 +120,9 @@ class TestPathTraversalProtection:
         )
         assert response.status_code == 400
 
-    def test_optimize_grid_config_backslash_traversal(self, client: TestClient) -> None:
-        """Grid設定でバックスラッシュによるパストラバーサルを拒否"""
-        response = client.get("/api/optimize/grid-configs/strategy%5C..%5Cetc")
+    def test_strategy_optimization_backslash_traversal(self, client: TestClient) -> None:
+        """strategy-linked optimization でバックスラッシュによるパストラバーサルを拒否"""
+        response = client.get("/api/strategies/strategy%5C..%5Cetc/optimization")
         assert response.status_code == 400
 
     def test_optimize_html_file_null_byte(self, client: TestClient) -> None:

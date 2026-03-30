@@ -164,12 +164,13 @@ def build_signal_params(
             lookback_days: 10       # ← グリッドで上書き
             period: 100             # ← グリッドで上書き
 
-        # グリッドYAML (range_break_v6_grid.yaml)
-        parameter_ranges:
-          entry_filter_params:
-            period_extrema_break:
-              lookback_days: [5, 10, 15, 20]  # 最適化対象
-              period: [30, 50, 100, 200]      # 最適化対象
+        # strategy YAML optimization block
+        optimization:
+          parameter_ranges:
+            entry_filter_params:
+              period_extrema_break:
+                lookback_days: [5, 10, 15, 20]  # 最適化対象
+                period: [30, 50, 100, 200]      # 最適化対象
 
         # 結果: enabled=True, direction="high"は継承
         #       lookback_days=10, period=100はグリッドから設定

@@ -18,6 +18,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - 旧 `apps/ts/packages/api`（Hono 互換 API レイヤー）は削除済み
 - Dataset snapshot の正規形は `dataset.duckdb + parquet/ + manifest.v2.json`
 - Backtest 実行パスは `apps/bt` 内で dataset/market DuckDB reader を直接参照し、内部HTTP self-call を回避
+- Strategy optimization の SoT は各 strategy YAML のトップレベル `optimization` block。legacy `*_grid.yaml` sidecar は `uv run bt migrate-optimization-specs` で移行する
 
 ## Repository Layout
 

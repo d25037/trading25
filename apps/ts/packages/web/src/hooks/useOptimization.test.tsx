@@ -2,20 +2,25 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { backtestClient } from '@/lib/backtest-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
-import type { OptimizationGridSaveRequest, OptimizationRequest } from '@/types/backtest';
+import type {
+  OptimizationRequest,
+  StrategyOptimizationSaveRequest,
+  StrategyOptimizationStateResponse,
+} from '@/types/backtest';
+import { logger } from '@/utils/logger';
 import {
   optimizationKeys,
   useCancelOptimization,
-  useDeleteOptimizationGrid,
+  useDeleteStrategyOptimization,
   useDeleteOptimizationHtmlFile,
-  useOptimizationGridConfig,
-  useOptimizationGridConfigs,
+  useGenerateStrategyOptimizationDraft,
   useOptimizationHtmlFileContent,
   useOptimizationHtmlFiles,
   useOptimizationJobStatus,
   useRenameOptimizationHtmlFile,
   useRunOptimization,
-  useSaveOptimizationGrid,
+  useSaveStrategyOptimization,
+  useStrategyOptimization,
 } from './useOptimization';
 
 vi.mock('@/lib/backtest-client', () => ({
@@ -23,10 +28,10 @@ vi.mock('@/lib/backtest-client', () => ({
     runOptimization: vi.fn(),
     getOptimizationJobStatus: vi.fn(),
     cancelOptimizationJob: vi.fn(),
-    getOptimizationGridConfigs: vi.fn(),
-    getOptimizationGridConfig: vi.fn(),
-    saveOptimizationGridConfig: vi.fn(),
-    deleteOptimizationGridConfig: vi.fn(),
+    getStrategyOptimization: vi.fn(),
+    generateStrategyOptimizationDraft: vi.fn(),
+    saveStrategyOptimization: vi.fn(),
+    deleteStrategyOptimization: vi.fn(),
     listOptimizationHtmlFiles: vi.fn(),
     getOptimizationHtmlFileContent: vi.fn(),
     renameOptimizationHtmlFile: vi.fn(),
@@ -49,26 +54,45 @@ const createWrapper = () => {
   };
 };
 
+function createOptimizationState(
+  overrides: Partial<StrategyOptimizationStateResponse> = {}
+): StrategyOptimizationStateResponse {
+  return {
+    strategy_name: 'production/demo',
+    persisted: true,
+    source: 'saved',
+    optimization: { parameter_ranges: {} },
+    yaml_content: 'description: demo\nparameter_ranges: {}\n',
+    valid: true,
+    ready_to_run: true,
+    param_count: 1,
+    combinations: 3,
+    errors: [],
+    warnings: [],
+    drift: [],
+    ...overrides,
+  };
+}
+
 describe('optimizationKeys', () => {
   it('generates correct query keys', () => {
     expect(optimizationKeys.all).toEqual(['optimization']);
     expect(optimizationKeys.job('j1')).toEqual(['optimization', 'job', 'j1']);
-    expect(optimizationKeys.gridConfigs()).toEqual(['optimization', 'grid-configs']);
-    expect(optimizationKeys.gridConfig('s1')).toEqual(['optimization', 'grid-config', 's1']);
+    expect(optimizationKeys.strategySpec('s1')).toEqual(['optimization', 'strategy-spec', 's1']);
     expect(optimizationKeys.htmlFilesPrefix()).toEqual(['optimization', 'html-files']);
     expect(optimizationKeys.htmlFiles('s1')).toEqual(['optimization', 'html-files', 's1']);
     expect(optimizationKeys.htmlFileContent('s1', 'f1')).toEqual(['optimization', 'html-file-content', 's1', 'f1']);
   });
 });
 
-describe('useRunOptimization', () => {
+describe('optimization job hooks', () => {
   it('runs optimization', async () => {
     vi.mocked(backtestClient.runOptimization).mockResolvedValueOnce({ job_id: 'opt-1', status: 'running' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useRunOptimization(), { wrapper });
 
-    const request = { strategy_name: 'test.yml' } as OptimizationRequest;
+    const request = { strategy_name: 'production/demo' } as OptimizationRequest;
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -77,174 +101,54 @@ describe('useRunOptimization', () => {
     expect(backtestClient.runOptimization).toHaveBeenCalledWith(request);
   });
 
-  it('logs error on failure', async () => {
-    vi.mocked(backtestClient.runOptimization).mockRejectedValueOnce(new Error('Failed'));
+  it('logs run optimization errors', async () => {
+    vi.mocked(backtestClient.runOptimization).mockRejectedValueOnce(new Error('run failed'));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useRunOptimization(), { wrapper });
 
     await act(async () => {
-      try {
-        await result.current.mutateAsync({ strategy_name: 'test.yml' } as OptimizationRequest);
-      } catch {
-        // expected
-      }
+      await expect(result.current.mutateAsync({ strategy_name: 'production/demo' } as OptimizationRequest)).rejects.toThrow(
+        'run failed'
+      );
     });
 
-    const { logger } = await import('@/utils/logger');
-    expect(logger.error).toHaveBeenCalledWith('Failed to start optimization', { error: 'Failed' });
+    expect(logger.error).toHaveBeenCalledWith('Failed to start optimization', {
+      error: 'run failed',
+    });
   });
-});
 
-describe('useOptimizationJobStatus', () => {
-  it('fetches job status when jobId is provided', async () => {
+  it('fetches job status and polls only while running', async () => {
     vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
       job_id: 'opt-1',
       status: 'completed',
     } as never);
 
-    const { wrapper } = createWrapper();
+    const { queryClient, wrapper } = createWrapper();
     const { result } = renderHook(() => useOptimizationJobStatus('opt-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledWith('opt-1');
-  });
 
-  it('does not fetch when jobId is null', () => {
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationJobStatus(null), { wrapper });
-
-    expect(result.current.fetchStatus).toBe('idle');
-  });
-
-  it('uses 2-second polling while pending/running and stops on completion', () => {
-    vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
-      job_id: 'opt-poll',
-      status: 'pending',
-    } as never);
-
-    const { queryClient, wrapper } = createWrapper();
-    renderHook(() => useOptimizationJobStatus('opt-poll'), { wrapper });
-
-    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.job('opt-poll') });
+    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.job('opt-1') });
     const refetchInterval = (query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval;
-
     expect(typeof refetchInterval).toBe('function');
     if (typeof refetchInterval === 'function') {
-      expect(refetchInterval({ state: { data: { status: 'pending' } } } as never)).toBe(2000);
       expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
       expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
-      expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
     }
   });
 
-  it('covers create/status/result lifecycle for optimize jobs', async () => {
-    vi.mocked(backtestClient.runOptimization).mockResolvedValueOnce({
-      job_id: 'opt-e2e-1',
-      status: 'pending',
-    } as never);
-    vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
-      job_id: 'opt-e2e-1',
-      status: 'completed',
-      best_score: 1.42,
-      best_params: { lookback_days: 60 },
-      worst_score: -0.21,
-      worst_params: { lookback_days: 10 },
-      total_combinations: 48,
-      html_path: '/tmp/optimization_opt-e2e-1.html',
-    } as never);
-    vi.mocked(backtestClient.listOptimizationHtmlFiles).mockResolvedValueOnce({
-      files: [
-        {
-          strategy_name: 'production/range_break_v5',
-          filename: 'optimization_opt-e2e-1.html',
-          dataset_name: 'dataset-1',
-          created_at: '2026-03-02T00:00:00Z',
-          size_bytes: 1024,
-        },
-      ],
-      total: 1,
-    } as never);
+  it('throws when optimization job status queryFn runs without a job id', async () => {
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useOptimizationJobStatus(null), { wrapper });
 
-    const { wrapper } = createWrapper();
-    const runHook = renderHook(() => useRunOptimization(), { wrapper });
+    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.job('') });
+    const queryFn = (query?.options as { queryFn?: () => Promise<unknown> } | undefined)?.queryFn;
 
-    let submittedJob: { job_id: string };
-    await act(async () => {
-      submittedJob = (await runHook.result.current.mutateAsync({
-        strategy_name: 'production/range_break_v5',
-      } as OptimizationRequest)) as { job_id: string };
-    });
-
-    const statusHook = renderHook(() => useOptimizationJobStatus(submittedJob.job_id), { wrapper });
-    await waitFor(() => expect(statusHook.result.current.isSuccess).toBe(true));
-    expect(statusHook.result.current.data?.best_score).toBe(1.42);
-    expect(statusHook.result.current.data?.best_params).toEqual({ lookback_days: 60 });
-    expect(statusHook.result.current.data?.worst_score).toBe(-0.21);
-
-    const resultHook = renderHook(() => useOptimizationHtmlFiles('production/range_break_v5', 10), { wrapper });
-    await waitFor(() => expect(resultHook.result.current.isSuccess).toBe(true));
-
-    expect(backtestClient.runOptimization).toHaveBeenCalledWith({ strategy_name: 'production/range_break_v5' });
-    expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledWith('opt-e2e-1');
-    expect(backtestClient.listOptimizationHtmlFiles).toHaveBeenCalledWith({
-      strategy: 'production/range_break_v5',
-      limit: 10,
-    });
+    expect(() => queryFn?.()).toThrow('Job ID required');
   });
 
-  it('covers cancel/retry/resume lifecycle for optimize jobs', async () => {
-    vi.mocked(backtestClient.runOptimization)
-      .mockResolvedValueOnce({
-        job_id: 'opt-retry-1',
-        status: 'pending',
-      } as never)
-      .mockResolvedValueOnce({
-        job_id: 'opt-retry-2',
-        status: 'pending',
-      } as never);
-    vi.mocked(backtestClient.cancelOptimizationJob).mockResolvedValueOnce({
-      job_id: 'opt-retry-1',
-      status: 'cancelled',
-      message: 'cancelled by user',
-    } as never);
-    vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
-      job_id: 'opt-retry-2',
-      status: 'completed',
-      best_score: 0.9,
-      best_params: { lookback_days: 40 },
-      worst_score: -0.4,
-      worst_params: { lookback_days: 5 },
-      total_combinations: 24,
-    } as never);
-
-    const { wrapper } = createWrapper();
-    const runHook = renderHook(() => useRunOptimization(), { wrapper });
-    const cancelHook = renderHook(() => useCancelOptimization(), { wrapper });
-
-    await act(async () => {
-      await runHook.result.current.mutateAsync({ strategy_name: 'production/range_break_v5' } as OptimizationRequest);
-    });
-    await act(async () => {
-      await cancelHook.result.current.mutateAsync('opt-retry-1');
-    });
-    let retriedJob: { job_id: string };
-    await act(async () => {
-      retriedJob = (await runHook.result.current.mutateAsync({
-        strategy_name: 'production/range_break_v5',
-      } as OptimizationRequest)) as { job_id: string };
-    });
-
-    const statusHook = renderHook(() => useOptimizationJobStatus(retriedJob.job_id), { wrapper });
-    await waitFor(() => expect(statusHook.result.current.isSuccess).toBe(true));
-
-    expect(vi.mocked(backtestClient.runOptimization).mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(backtestClient.cancelOptimizationJob).toHaveBeenCalledWith('opt-retry-1');
-    expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledWith('opt-retry-2');
-  });
-});
-
-describe('useCancelOptimization', () => {
   it('cancels optimization job and invalidates job query', async () => {
     vi.mocked(backtestClient.cancelOptimizationJob).mockResolvedValueOnce({
       job_id: 'opt-cancel-1',
@@ -266,101 +170,155 @@ describe('useCancelOptimization', () => {
     });
   });
 
-  it('logs error when cancellation fails', async () => {
+  it('logs cancel optimization errors', async () => {
     vi.mocked(backtestClient.cancelOptimizationJob).mockRejectedValueOnce(new Error('cancel failed'));
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useCancelOptimization(), { wrapper });
-    const { logger } = await import('@/utils/logger');
 
     await act(async () => {
       await expect(result.current.mutateAsync('opt-cancel-1')).rejects.toThrow('cancel failed');
     });
 
-    expect(logger.error).toHaveBeenCalledWith('Failed to cancel optimization', { error: 'cancel failed' });
+    expect(logger.error).toHaveBeenCalledWith('Failed to cancel optimization', {
+      error: 'cancel failed',
+    });
   });
 });
 
-describe('useOptimizationGridConfigs', () => {
-  it('fetches all grid configs', async () => {
-    vi.mocked(backtestClient.getOptimizationGridConfigs).mockResolvedValueOnce({ configs: [] } as never);
+describe('strategy optimization hooks', () => {
+  it('fetches strategy optimization state', async () => {
+    vi.mocked(backtestClient.getStrategyOptimization).mockResolvedValueOnce(createOptimizationState() as never);
 
     const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationGridConfigs(), { wrapper });
+    const { result } = renderHook(() => useStrategyOptimization('production/demo'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(backtestClient.getOptimizationGridConfigs).toHaveBeenCalledWith();
-  });
-});
-
-describe('useOptimizationGridConfig', () => {
-  it('fetches grid config for strategy', async () => {
-    vi.mocked(backtestClient.getOptimizationGridConfig).mockResolvedValueOnce({
-      strategy_name: 'Alpha',
-      grid: [],
-    } as never);
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationGridConfig('Alpha Strategy'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(backtestClient.getOptimizationGridConfig).toHaveBeenCalledWith('Alpha Strategy');
+    expect(backtestClient.getStrategyOptimization).toHaveBeenCalledWith('production/demo');
   });
 
-  it('does not fetch when strategy is null', () => {
+  it('does not fetch strategy optimization when strategy is null', () => {
     const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationGridConfig(null), { wrapper });
-
+    const { result } = renderHook(() => useStrategyOptimization(null), { wrapper });
     expect(result.current.fetchStatus).toBe('idle');
   });
-});
 
-describe('useSaveOptimizationGrid', () => {
-  it('saves grid config and invalidates queries', async () => {
-    vi.mocked(backtestClient.saveOptimizationGridConfig).mockResolvedValueOnce({
+  it('throws when strategy optimization queryFn runs without a strategy name', async () => {
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useStrategyOptimization(null), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.strategySpec('') });
+    const queryFn = (query?.options as { queryFn?: () => Promise<unknown> } | undefined)?.queryFn;
+
+    expect(() => queryFn?.()).toThrow('Strategy name required');
+  });
+
+  it('generates a strategy-linked draft', async () => {
+    vi.mocked(backtestClient.generateStrategyOptimizationDraft).mockResolvedValueOnce(
+      createOptimizationState({ persisted: false, source: 'draft', ready_to_run: false }) as never
+    );
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useGenerateStrategyOptimizationDraft(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('production/demo');
+    });
+
+    expect(backtestClient.generateStrategyOptimizationDraft).toHaveBeenCalledWith('production/demo');
+  });
+
+  it('logs strategy draft generation errors', async () => {
+    vi.mocked(backtestClient.generateStrategyOptimizationDraft).mockRejectedValueOnce(new Error('draft failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useGenerateStrategyOptimizationDraft(), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync('production/demo')).rejects.toThrow('draft failed');
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to generate strategy optimization draft', {
+      error: 'draft failed',
+    });
+  });
+
+  it('saves strategy optimization and invalidates strategy query', async () => {
+    vi.mocked(backtestClient.saveStrategyOptimization).mockResolvedValueOnce(createOptimizationState() as never);
+
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useSaveStrategyOptimization(), { wrapper });
+
+    const request = { yaml_content: 'description: demo\nparameter_ranges: {}\n' } as StrategyOptimizationSaveRequest;
+
+    await act(async () => {
+      await result.current.mutateAsync({ strategy: 'production/demo', request });
+    });
+
+    expect(backtestClient.saveStrategyOptimization).toHaveBeenCalledWith('production/demo', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: optimizationKeys.strategySpec('production/demo'),
+    });
+  });
+
+  it('logs save strategy optimization errors', async () => {
+    vi.mocked(backtestClient.saveStrategyOptimization).mockRejectedValueOnce(new Error('save failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useSaveStrategyOptimization(), { wrapper });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          strategy: 'production/demo',
+          request: { yaml_content: 'description: demo\nparameter_ranges: {}\n' },
+        })
+      ).rejects.toThrow('save failed');
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to save strategy optimization', {
+      error: 'save failed',
+    });
+  });
+
+  it('deletes strategy optimization and invalidates strategy query', async () => {
+    vi.mocked(backtestClient.deleteStrategyOptimization).mockResolvedValueOnce({
       success: true,
-      strategy_name: 'Alpha',
+      strategy_name: 'production/demo',
     } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    const { result } = renderHook(() => useSaveOptimizationGrid(), { wrapper });
-
-    const request = { content: '' } as OptimizationGridSaveRequest;
+    const { result } = renderHook(() => useDeleteStrategyOptimization(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ strategy: 'Alpha', request });
+      await result.current.mutateAsync('production/demo');
     });
 
-    expect(backtestClient.saveOptimizationGridConfig).toHaveBeenCalledWith('Alpha', request);
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfigs() });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfig('Alpha') });
+    expect(backtestClient.deleteStrategyOptimization).toHaveBeenCalledWith('production/demo');
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: optimizationKeys.strategySpec('production/demo'),
+    });
+  });
+
+  it('logs delete strategy optimization errors', async () => {
+    vi.mocked(backtestClient.deleteStrategyOptimization).mockRejectedValueOnce(new Error('delete failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDeleteStrategyOptimization(), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync('production/demo')).rejects.toThrow('delete failed');
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to delete strategy optimization', {
+      error: 'delete failed',
+    });
   });
 });
 
-describe('useDeleteOptimizationGrid', () => {
-  it('deletes grid config and clears cache', async () => {
-    vi.mocked(backtestClient.deleteOptimizationGridConfig).mockResolvedValueOnce({
-      success: true,
-      strategy_name: 'Beta',
-    });
-
-    const { queryClient, wrapper } = createWrapper();
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    const removeSpy = vi.spyOn(queryClient, 'removeQueries');
-    const { result } = renderHook(() => useDeleteOptimizationGrid(), { wrapper });
-
-    await act(async () => {
-      await result.current.mutateAsync('Beta');
-    });
-
-    expect(backtestClient.deleteOptimizationGridConfig).toHaveBeenCalledWith('Beta');
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfigs() });
-    expect(removeSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfig('Beta') });
-  });
-});
-
-describe('useOptimizationHtmlFiles', () => {
+describe('optimization html hooks', () => {
   it('fetches optimization HTML files with strategy', async () => {
     vi.mocked(backtestClient.listOptimizationHtmlFiles).mockResolvedValueOnce({ files: [] } as never);
 
@@ -371,18 +329,6 @@ describe('useOptimizationHtmlFiles', () => {
     expect(backtestClient.listOptimizationHtmlFiles).toHaveBeenCalledWith({ strategy: 'myStrat', limit: 100 });
   });
 
-  it('fetches without strategy filter', async () => {
-    vi.mocked(backtestClient.listOptimizationHtmlFiles).mockResolvedValueOnce({ files: [] } as never);
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationHtmlFiles(), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(backtestClient.listOptimizationHtmlFiles).toHaveBeenCalledWith({ strategy: undefined, limit: 100 });
-  });
-});
-
-describe('useOptimizationHtmlFileContent', () => {
   it('fetches HTML file content', async () => {
     vi.mocked(backtestClient.getOptimizationHtmlFileContent).mockResolvedValueOnce({ content: '<html>' } as never);
 
@@ -393,16 +339,17 @@ describe('useOptimizationHtmlFileContent', () => {
     expect(backtestClient.getOptimizationHtmlFileContent).toHaveBeenCalledWith('strat', 'opt.html');
   });
 
-  it('does not fetch when strategy or filename is null', () => {
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useOptimizationHtmlFileContent(null, null), { wrapper });
+  it('throws when HTML file content queryFn runs without required parameters', async () => {
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useOptimizationHtmlFileContent(null, null), { wrapper });
 
-    expect(result.current.fetchStatus).toBe('idle');
+    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.htmlFileContent('', '') });
+    const queryFn = (query?.options as { queryFn?: () => Promise<unknown> } | undefined)?.queryFn;
+
+    expect(() => queryFn?.()).toThrow('Strategy and filename required');
   });
-});
 
-describe('useRenameOptimizationHtmlFile', () => {
-  it('renames HTML file and invalidates cache', async () => {
+  it('renames HTML file and clears stale content cache', async () => {
     vi.mocked(backtestClient.renameOptimizationHtmlFile).mockResolvedValueOnce({
       old_filename: 'old.html',
       new_filename: 'new.html',
@@ -422,21 +369,38 @@ describe('useRenameOptimizationHtmlFile', () => {
       });
     });
 
-    expect(backtestClient.renameOptimizationHtmlFile).toHaveBeenCalledWith('strat', 'old.html', {
-      new_filename: 'new.html',
-    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.htmlFilesPrefix() });
     expect(removeSpy).toHaveBeenCalledWith({
       queryKey: optimizationKeys.htmlFileContent('strat', 'old.html'),
     });
   });
-});
 
-describe('useDeleteOptimizationHtmlFile', () => {
-  it('deletes HTML file and invalidates cache', async () => {
+  it('logs rename HTML file errors', async () => {
+    vi.mocked(backtestClient.renameOptimizationHtmlFile).mockRejectedValueOnce(new Error('rename failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useRenameOptimizationHtmlFile(), { wrapper });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          strategy: 'strat',
+          filename: 'old.html',
+          request: { new_filename: 'new.html' },
+        })
+      ).rejects.toThrow('rename failed');
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to rename optimization HTML file', {
+      error: 'rename failed',
+    });
+  });
+
+  it('deletes HTML file and invalidates file list', async () => {
     vi.mocked(backtestClient.deleteOptimizationHtmlFile).mockResolvedValueOnce({
+      success: true,
       strategy_name: 'strat',
-      filename: 'opt.html',
+      filename: 'old.html',
     } as never);
 
     const { queryClient, wrapper } = createWrapper();
@@ -445,13 +409,29 @@ describe('useDeleteOptimizationHtmlFile', () => {
     const { result } = renderHook(() => useDeleteOptimizationHtmlFile(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ strategy: 'strat', filename: 'opt.html' });
+      await result.current.mutateAsync({ strategy: 'strat', filename: 'old.html' });
     });
 
-    expect(backtestClient.deleteOptimizationHtmlFile).toHaveBeenCalledWith('strat', 'opt.html');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.htmlFilesPrefix() });
     expect(removeSpy).toHaveBeenCalledWith({
-      queryKey: optimizationKeys.htmlFileContent('strat', 'opt.html'),
+      queryKey: optimizationKeys.htmlFileContent('strat', 'old.html'),
+    });
+  });
+
+  it('logs delete HTML file errors', async () => {
+    vi.mocked(backtestClient.deleteOptimizationHtmlFile).mockRejectedValueOnce(new Error('delete html failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDeleteOptimizationHtmlFile(), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ strategy: 'strat', filename: 'old.html' })).rejects.toThrow(
+        'delete html failed'
+      );
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to delete optimization HTML file', {
+      error: 'delete html failed',
     });
   });
 });

@@ -8235,130 +8235,25 @@
         "title": "OHLCVResampleResponse",
         "type": "object"
       },
-      "OptimizationGridConfig": {
-        "description": "Grid設定",
+      "OptimizationDiagnosticResponse": {
+        "description": "Optimization spec diagnostics.",
         "properties": {
-          "combinations": {
-            "description": "組み合わせ数",
-            "title": "Combinations",
-            "type": "integer"
-          },
-          "content": {
-            "description": "YAML文字列",
-            "title": "Content",
+          "message": {
+            "description": "Diagnostic message",
+            "title": "Message",
             "type": "string"
           },
-          "param_count": {
-            "description": "パラメータ数",
-            "title": "Param Count",
-            "type": "integer"
-          },
-          "strategy_name": {
-            "description": "戦略名",
-            "title": "Strategy Name",
+          "path": {
+            "description": "Dot-separated path",
+            "title": "Path",
             "type": "string"
           }
         },
         "required": [
-          "strategy_name",
-          "content",
-          "param_count",
-          "combinations"
+          "path",
+          "message"
         ],
-        "title": "OptimizationGridConfig",
-        "type": "object"
-      },
-      "OptimizationGridDeleteResponse": {
-        "description": "Grid設定削除レスポンス",
-        "properties": {
-          "strategy_name": {
-            "description": "戦略名",
-            "title": "Strategy Name",
-            "type": "string"
-          },
-          "success": {
-            "description": "削除成功フラグ",
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "strategy_name"
-        ],
-        "title": "OptimizationGridDeleteResponse",
-        "type": "object"
-      },
-      "OptimizationGridListResponse": {
-        "description": "Grid設定一覧レスポンス",
-        "properties": {
-          "configs": {
-            "description": "Grid設定一覧",
-            "items": {
-              "$ref": "#/components/schemas/OptimizationGridConfig"
-            },
-            "title": "Configs",
-            "type": "array"
-          },
-          "total": {
-            "description": "総設定数",
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "configs",
-          "total"
-        ],
-        "title": "OptimizationGridListResponse",
-        "type": "object"
-      },
-      "OptimizationGridSaveRequest": {
-        "description": "Grid設定保存リクエスト",
-        "properties": {
-          "content": {
-            "description": "YAML文字列",
-            "title": "Content",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content"
-        ],
-        "title": "OptimizationGridSaveRequest",
-        "type": "object"
-      },
-      "OptimizationGridSaveResponse": {
-        "description": "Grid設定保存レスポンス",
-        "properties": {
-          "combinations": {
-            "description": "組み合わせ数",
-            "title": "Combinations",
-            "type": "integer"
-          },
-          "param_count": {
-            "description": "パラメータ数",
-            "title": "Param Count",
-            "type": "integer"
-          },
-          "strategy_name": {
-            "description": "戦略名",
-            "title": "Strategy Name",
-            "type": "string"
-          },
-          "success": {
-            "description": "保存成功フラグ",
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "strategy_name",
-          "param_count",
-          "combinations"
-        ],
-        "title": "OptimizationGridSaveResponse",
+        "title": "OptimizationDiagnosticResponse",
         "type": "object"
       },
       "OptimizationHtmlFileContentResponse": {
@@ -14215,6 +14110,244 @@
           "new_path"
         ],
         "title": "StrategyMoveResponse",
+        "type": "object"
+      },
+      "StrategyOptimizationDeleteResponse": {
+        "description": "Strategy optimization delete response.",
+        "properties": {
+          "strategy_name": {
+            "description": "戦略名",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "success": {
+            "description": "削除成功フラグ",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "strategy_name"
+        ],
+        "title": "StrategyOptimizationDeleteResponse",
+        "type": "object"
+      },
+      "StrategyOptimizationSaveRequest": {
+        "description": "Optimization block save request.",
+        "properties": {
+          "yaml_content": {
+            "description": "Optimization block YAML",
+            "title": "Yaml Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml_content"
+        ],
+        "title": "StrategyOptimizationSaveRequest",
+        "type": "object"
+      },
+      "StrategyOptimizationSaveResponse": {
+        "description": "Strategy optimization save response.",
+        "properties": {
+          "combinations": {
+            "description": "Cartesian product size",
+            "title": "Combinations",
+            "type": "integer"
+          },
+          "drift": {
+            "description": "Strategy/spec drift diagnostics",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Drift",
+            "type": "array"
+          },
+          "errors": {
+            "description": "Blocking validation issues",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "optimization": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Structured optimization block",
+            "title": "Optimization"
+          },
+          "param_count": {
+            "description": "Parameter leaf count",
+            "title": "Param Count",
+            "type": "integer"
+          },
+          "persisted": {
+            "description": "戦略YAMLに保存済みか",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "ready_to_run": {
+            "description": "Whether optimization can run immediately",
+            "title": "Ready To Run",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "Response source",
+            "enum": [
+              "saved",
+              "draft"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "strategy_name": {
+            "description": "戦略名",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "success": {
+            "description": "保存成功フラグ",
+            "title": "Success",
+            "type": "boolean"
+          },
+          "valid": {
+            "description": "Spec validation result",
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "Non-blocking validation issues",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "yaml_content": {
+            "description": "Optimization block YAML",
+            "title": "Yaml Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_name",
+          "persisted",
+          "source",
+          "yaml_content",
+          "valid",
+          "ready_to_run",
+          "param_count",
+          "combinations",
+          "success"
+        ],
+        "title": "StrategyOptimizationSaveResponse",
+        "type": "object"
+      },
+      "StrategyOptimizationStateResponse": {
+        "description": "Strategy-linked optimization state.",
+        "properties": {
+          "combinations": {
+            "description": "Cartesian product size",
+            "title": "Combinations",
+            "type": "integer"
+          },
+          "drift": {
+            "description": "Strategy/spec drift diagnostics",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Drift",
+            "type": "array"
+          },
+          "errors": {
+            "description": "Blocking validation issues",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "optimization": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Structured optimization block",
+            "title": "Optimization"
+          },
+          "param_count": {
+            "description": "Parameter leaf count",
+            "title": "Param Count",
+            "type": "integer"
+          },
+          "persisted": {
+            "description": "戦略YAMLに保存済みか",
+            "title": "Persisted",
+            "type": "boolean"
+          },
+          "ready_to_run": {
+            "description": "Whether optimization can run immediately",
+            "title": "Ready To Run",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "Response source",
+            "enum": [
+              "saved",
+              "draft"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "strategy_name": {
+            "description": "戦略名",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "valid": {
+            "description": "Spec validation result",
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "Non-blocking validation issues",
+            "items": {
+              "$ref": "#/components/schemas/OptimizationDiagnosticResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "yaml_content": {
+            "description": "Optimization block YAML",
+            "title": "Yaml Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_name",
+          "persisted",
+          "source",
+          "yaml_content",
+          "valid",
+          "ready_to_run",
+          "param_count",
+          "combinations"
+        ],
+        "title": "StrategyOptimizationStateResponse",
         "type": "object"
       },
       "StrategyRenameRequest": {
@@ -24221,283 +24354,6 @@
         ]
       }
     },
-    "/api/optimize/grid-configs": {
-      "get": {
-        "description": "Grid設定一覧を取得",
-        "operationId": "list_grid_configs_api_optimize_grid_configs_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OptimizationGridListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "List Grid Configs",
-        "tags": [
-          "Optimization"
-        ]
-      }
-    },
-    "/api/optimize/grid-configs/{strategy}": {
-      "delete": {
-        "description": "Grid設定を削除",
-        "operationId": "delete_grid_config_api_optimize_grid_configs__strategy__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "strategy",
-            "required": true,
-            "schema": {
-              "title": "Strategy",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OptimizationGridDeleteResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Delete Grid Config",
-        "tags": [
-          "Optimization"
-        ]
-      },
-      "get": {
-        "description": "Grid設定を取得",
-        "operationId": "get_grid_config_api_optimize_grid_configs__strategy__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "strategy",
-            "required": true,
-            "schema": {
-              "title": "Strategy",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OptimizationGridConfig"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Get Grid Config",
-        "tags": [
-          "Optimization"
-        ]
-      },
-      "put": {
-        "description": "Grid設定を保存",
-        "operationId": "save_grid_config_api_optimize_grid_configs__strategy__put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "strategy",
-            "required": true,
-            "schema": {
-              "title": "Strategy",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OptimizationGridSaveRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OptimizationGridSaveResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Save Grid Config",
-        "tags": [
-          "Optimization"
-        ]
-      }
-    },
     "/api/optimize/html-files": {
       "get": {
         "description": "最適化結果HTMLファイル一覧を取得",
@@ -26850,6 +26706,304 @@
           }
         },
         "summary": "Move Strategy",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
+    "/api/strategies/{strategy_name}/optimization": {
+      "delete": {
+        "description": "Delete strategy-linked optimization block.",
+        "operationId": "delete_strategy_optimization_api_strategies__strategy_name__optimization_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyOptimizationDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Delete Strategy Optimization",
+        "tags": [
+          "Strategies"
+        ]
+      },
+      "get": {
+        "description": "Fetch strategy-linked optimization state.",
+        "operationId": "get_strategy_optimization_api_strategies__strategy_name__optimization_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyOptimizationStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Strategy Optimization",
+        "tags": [
+          "Strategies"
+        ]
+      },
+      "put": {
+        "description": "Save strategy-linked optimization YAML onto the strategy file.",
+        "operationId": "save_strategy_optimization_api_strategies__strategy_name__optimization_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyOptimizationSaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyOptimizationSaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Save Strategy Optimization",
+        "tags": [
+          "Strategies"
+        ]
+      }
+    },
+    "/api/strategies/{strategy_name}/optimization/draft": {
+      "post": {
+        "description": "Generate a strategy-linked optimization draft.",
+        "operationId": "generate_strategy_optimization_draft_endpoint_api_strategies__strategy_name__optimization_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyOptimizationStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Generate Strategy Optimization Draft Endpoint",
         "tags": [
           "Strategies"
         ]

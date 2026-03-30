@@ -8,6 +8,10 @@ import types
 import pytest
 
 from src.entrypoints.cli import optimize as optimize_module
+from src.application.services.strategy_optimization_service import (
+    StrategyOptimizationMigrationEntry,
+    StrategyOptimizationMigrationReport,
+)
 
 
 def _make_result() -> types.SimpleNamespace:
@@ -210,3 +214,72 @@ def test_run_optimization_unexpected_error_prints_traceback_and_exits(
         optimize_module.run_optimization("strategy")
 
     assert excinfo.value.code == 1
+
+
+def test_migrate_legacy_optimization_specs_prints_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printed: list[object] = []
+    monkeypatch.setattr(
+        optimize_module.console,
+        "print",
+        lambda value=None, *args, **kwargs: printed.append(value),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        optimize_module.strategy_optimization_service,
+        "migrate_legacy_specs",
+        lambda: StrategyOptimizationMigrationReport(),
+    )
+
+    optimize_module.migrate_legacy_optimization_specs()
+
+    rendered = "\n".join(str(value) for value in printed if value is not None)
+    assert "Legacy Optimization Spec Migration" in rendered
+
+
+def test_migrate_legacy_optimization_specs_exits_when_failures_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printed: list[object] = []
+    monkeypatch.setattr(
+        optimize_module.console,
+        "print",
+        lambda value=None, *args, **kwargs: printed.append(value),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        optimize_module.strategy_optimization_service,
+        "migrate_legacy_specs",
+        lambda: StrategyOptimizationMigrationReport(
+            migrated=[
+                StrategyOptimizationMigrationEntry(
+                    legacy_path="/tmp/demo_grid.yaml",
+                    strategy_name="production/demo",
+                    status="migrated",
+                )
+            ],
+            skipped=[
+                StrategyOptimizationMigrationEntry(
+                    legacy_path="/tmp/collision_grid.yaml",
+                    status="skipped",
+                    message="collision",
+                )
+            ],
+            failed=[
+                StrategyOptimizationMigrationEntry(
+                    legacy_path="/tmp/bad_grid.yaml",
+                    strategy_name="production/demo",
+                    status="failed",
+                    message="parse error",
+                )
+            ],
+        ),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        optimize_module.migrate_legacy_optimization_specs()
+
+    assert excinfo.value.code == 1
+    rendered = "\n".join(str(value) for value in printed if value is not None)
+    assert "Migrated" in rendered
+    assert "Skipped" in rendered
+    assert "Failed" in rendered
