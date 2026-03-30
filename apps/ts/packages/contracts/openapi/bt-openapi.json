@@ -7246,6 +7246,17 @@
             "title": "Results",
             "type": "array"
           },
+          "scopeLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopelabel"
+          },
           "sortBy": {
             "enum": [
               "bestStrategyScore",
@@ -10826,6 +10837,18 @@
               }
             ],
             "description": "Engine-neutral run metadata"
+          },
+          "scopeLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "表示用スコープラベル",
+            "title": "Scopelabel"
           },
           "sortBy": {
             "description": "並び順の基準",
@@ -14896,6 +14919,127 @@
         "title": "TimeSeriesPoint",
         "type": "object"
       },
+      "Topix100RankingItem": {
+        "description": "TOPIX100 SMA ranking item.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "companyName": {
+            "title": "Companyname",
+            "type": "string"
+          },
+          "currentPrice": {
+            "title": "Currentprice",
+            "type": "number"
+          },
+          "marketCode": {
+            "title": "Marketcode",
+            "type": "string"
+          },
+          "priceBucket": {
+            "enum": [
+              "q1",
+              "q10",
+              "q456",
+              "other"
+            ],
+            "title": "Pricebucket",
+            "type": "string"
+          },
+          "priceDecile": {
+            "title": "Pricedecile",
+            "type": "integer"
+          },
+          "priceSma20_80": {
+            "title": "Pricesma20 80",
+            "type": "number"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "scaleCategory": {
+            "title": "Scalecategory",
+            "type": "string"
+          },
+          "sector33Name": {
+            "title": "Sector33Name",
+            "type": "string"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          },
+          "volumeBucket": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volumebucket"
+          },
+          "volumeSma20_80": {
+            "title": "Volumesma20 80",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "code",
+          "companyName",
+          "marketCode",
+          "sector33Name",
+          "scaleCategory",
+          "currentPrice",
+          "volume",
+          "priceSma20_80",
+          "volumeSma20_80",
+          "priceDecile",
+          "priceBucket"
+        ],
+        "title": "Topix100RankingItem",
+        "type": "object"
+      },
+      "Topix100RankingResponse": {
+        "description": "TOPIX100 SMA ranking response.",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "itemCount": {
+            "title": "Itemcount",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Topix100RankingItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "itemCount",
+          "lastUpdated"
+        ],
+        "title": "Topix100RankingResponse",
+        "type": "object"
+      },
       "TopixDataPoint": {
         "description": "TOPIX データポイント",
         "properties": {
@@ -17218,6 +17362,87 @@
           }
         },
         "summary": "Get Margin Ratio",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/topix100-ranking": {
+      "get": {
+        "description": "Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, with volume SMA 20/80 sidecar buckets.",
+        "operationId": "get_topix100_ranking_api_analytics_topix100_ranking_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Topix100RankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get TOPIX100 SMA ranking snapshot",
         "tags": [
           "Analytics"
         ]

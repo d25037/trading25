@@ -867,7 +867,14 @@ describe('ChartsPage', () => {
       error: null,
     });
     mockUseStockInfo.mockReturnValue({
-      data: { companyName: 'Test Co', sector17Name: '自動車・輸送機', sector33Name: '輸送用機器' },
+      data: {
+        companyName: 'Test Co',
+        marketCode: '0111',
+        marketName: 'プライム',
+        scaleCategory: 'TOPIX Core30',
+        sector17Name: '自動車・輸送機',
+        sector33Name: '輸送用機器',
+      },
     });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
@@ -881,6 +888,10 @@ describe('ChartsPage', () => {
       MockIntersectionObserver.triggerAll(true);
     });
 
+    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('Prime')).toBeInTheDocument();
+    expect(screen.getByText('指数採用')).toBeInTheDocument();
+    expect(screen.getByText('Core30')).toBeInTheDocument();
     expect(screen.getByText('セクター17')).toBeInTheDocument();
     expect(screen.getByText('自動車・輸送機')).toBeInTheDocument();
     expect(screen.getByText('セクター33')).toBeInTheDocument();
@@ -901,6 +912,41 @@ describe('ChartsPage', () => {
       '_blank',
       'noopener,noreferrer'
     );
+  });
+
+  it('prefers the market name when the market code has no canonical label mapping', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '2510',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockInfo.mockReturnValue({
+      data: {
+        companyName: 'ETF Test',
+        marketCode: '9999',
+        marketName: 'ETF/ETN',
+      },
+    });
+
+    renderChartsPage();
+
+    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('ETF/ETN')).toBeInTheDocument();
+    expect(screen.queryByText('9999')).not.toBeInTheDocument();
   });
 
   it('falls back to immediate visibility when IntersectionObserver is unavailable', async () => {

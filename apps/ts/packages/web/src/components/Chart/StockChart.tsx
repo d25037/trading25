@@ -11,6 +11,7 @@ import {
   type Time,
 } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS, VOLUME_SCALE_MARGINS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';
 import type { BollingerBandsData, IndicatorValue, StockDataPoint, VolumeData } from '@/types/chart';
@@ -213,6 +214,7 @@ export function StockChart({
         timeVisible: true,
         secondsVisible: false,
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
 
     chartRef.current = chart;

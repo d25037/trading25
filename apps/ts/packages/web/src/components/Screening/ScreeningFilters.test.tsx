@@ -12,14 +12,16 @@ vi.mock('@/components/shared/filters', () => ({
     onChange,
     options,
     id,
+    label,
   }: {
     value: string;
     onChange: (value: string) => void;
     options?: Array<{ value: string; label: string }>;
     id: string;
+    label?: string;
   }) => (
     <label htmlFor={id}>
-      Markets
+      {label ?? 'Markets'}
       <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
         {(options ?? []).map((option) => (
           <option key={option.value} value={option.value}>
@@ -118,6 +120,7 @@ describe('ScreeningFilters', () => {
         onChange={vi.fn()}
         strategyOptions={strategyOptions}
         autoMarkets={['prime', 'standard']}
+        autoScopeLabel="Prime + Standard"
         strategiesLoading={false}
       />
     );
@@ -139,6 +142,7 @@ describe('ScreeningFilters', () => {
         onChange={vi.fn()}
         strategyOptions={strategyOptions}
         autoMarkets={[]}
+        autoScopeLabel="Auto"
         strategiesLoading={false}
       />
     );
@@ -155,6 +159,7 @@ describe('ScreeningFilters', () => {
         onChange={vi.fn()}
         strategyOptions={strategyOptions}
         autoMarkets={['growth', 'prime', 'standard']}
+        autoScopeLabel="All Markets"
         strategiesLoading={false}
       />
     );
@@ -173,6 +178,7 @@ describe('ScreeningFilters', () => {
         onChange={onChange}
         strategyOptions={strategyOptions}
         autoMarkets={['prime']}
+        autoScopeLabel="TOPIX 500"
         strategiesLoading={false}
       />
     );
@@ -190,6 +196,7 @@ describe('ScreeningFilters', () => {
         onChange={onChange}
         strategyOptions={strategyOptions}
         autoMarkets={['prime']}
+        autoScopeLabel="TOPIX 500"
         strategiesLoading={false}
       />
     );
@@ -210,6 +217,7 @@ describe('ScreeningFilters', () => {
         onChange={onChange}
         strategyOptions={strategyOptions}
         autoMarkets={['prime']}
+        autoScopeLabel="TOPIX 500"
         strategiesLoading={false}
       />
     );
@@ -235,6 +243,7 @@ describe('ScreeningFilters', () => {
         onChange={vi.fn()}
         strategyOptions={[]}
         autoMarkets={['prime']}
+        autoScopeLabel="TOPIX 500"
         strategiesLoading
       />
     );
@@ -248,6 +257,7 @@ describe('ScreeningFilters', () => {
         onChange={vi.fn()}
         strategyOptions={[]}
         autoMarkets={['growth']}
+        autoScopeLabel="TOPIX 500"
         strategiesLoading={false}
       />
     );
@@ -270,17 +280,18 @@ describe('ScreeningFilters', () => {
         onChange={onChange}
         strategyOptions={strategyOptions}
         autoMarkets={['prime', 'standard']}
+        autoScopeLabel="Prime ex TOPIX500"
         strategiesLoading={false}
       />
     );
 
-    await user.selectOptions(screen.getByLabelText('Markets'), 'growth');
+    await user.selectOptions(screen.getByLabelText('Universe'), 'growth');
     expect(onChange).toHaveBeenCalledWith({
       ...defaultParams,
       markets: 'growth',
     });
 
-    await user.selectOptions(screen.getByLabelText('Markets'), '__auto__');
+    await user.selectOptions(screen.getByLabelText('Universe'), '__auto__');
     expect(onChange).toHaveBeenCalledWith({
       ...defaultParams,
       markets: undefined,

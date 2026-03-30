@@ -18,6 +18,7 @@ from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.common import SSEJobEvent
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
+from src.application.services.run_contracts import build_parameterized_run_spec
 
 
 def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
@@ -334,6 +335,38 @@ class TestRanking:
             assert resp.status_code == 422
 
 
+class TestTopix100Ranking:
+    def test_200_default(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "date" in data
+        assert "itemCount" in data
+        assert "items" in data
+        assert "lastUpdated" in data
+
+    def test_item_shape(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["items"]:
+            item = data["items"][0]
+            assert "rank" in item
+            assert "code" in item
+            assert "priceSma20_80" in item
+            assert "volumeSma20_80" in item
+            assert "priceDecile" in item
+            assert "priceBucket" in item
+            assert "volumeBucket" in item
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/topix100-ranking")
+            assert resp.status_code == 422
+
+
 class TestFundamentalRanking:
     def test_200_default(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking")
@@ -547,6 +580,36 @@ class TestScreening:
         assert data["entry_decidability"] == "pre_open_decidable"
         assert data["recentDays"] == 5
         assert data["markets"] == "prime,standard"
+        assert data["scopeLabel"] == "Prime + Standard"
+
+    def test_get_job_status_restores_request_and_scope_from_run_spec(self, analytics_client):
+        with (
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+        ):
+            mock_service.get_job_request.return_value = None
+            mock_service.get_job_scope_label.return_value = None
+            job = self._make_job("job-restore", JobStatus.RUNNING)
+            job.run_spec = build_parameterized_run_spec(
+                "screening",
+                "analytics/screening",
+                parameters={
+                    "markets": "prime,standard",
+                    "recentDays": 7,
+                    "sortBy": "matchedDate",
+                    "order": "desc",
+                    "scopeLabel": "Prime Market + Standard Market",
+                },
+            )
+            mock_manager.get_job.return_value = job
+
+            resp = analytics_client.get("/api/analytics/screening/jobs/job-restore")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["markets"] == "prime,standard"
+        assert data["recentDays"] == 7
+        assert data["scopeLabel"] == "Prime Market + Standard Market"
 
     def test_stream_job_status(self, analytics_client):
         with (
@@ -581,6 +644,7 @@ class TestScreening:
         assert "event: job" in resp.text
         assert '"job_id":"job-stream"' in resp.text
         assert '"markets":"prime,standard"' in resp.text
+        assert '"scopeLabel":"Prime + Standard"' in resp.text
         assert '"recentDays":5' in resp.text
 
     def test_cancel_job_conflict_for_completed(self, analytics_client):
@@ -606,6 +670,7 @@ class TestScreening:
                     "warnings": [],
                 },
                 "markets": ["prime"],
+                "scopeLabel": "Prime ex TOPIX500",
                 "entry_decidability": "pre_open_decidable",
                 "recentDays": 10,
                 "referenceDate": None,
@@ -633,6 +698,7 @@ class TestScreening:
         assert resp.status_code == 200
         data = resp.json()
         assert data["entry_decidability"] == "pre_open_decidable"
+        assert data["scopeLabel"] == "Prime ex TOPIX500"
         assert data["sortBy"] == "matchedDate"
         assert "backtestMetric" not in data
 

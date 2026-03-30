@@ -20,11 +20,14 @@ import {
   RANKING_LOOKBACK_OPTIONS,
   RankingFilters,
   RankingTable,
+  Topix100RankingFilters,
+  Topix100RankingTable,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
+import { useTopix100Ranking } from '@/hooks/useTopix100Ranking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
@@ -37,6 +40,7 @@ const subTabs = [
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
+  { value: 'topix100' as RankingDailyView, label: 'TOPIX100' },
 ];
 
 interface RankingSidebarProps {
@@ -53,6 +57,17 @@ interface RankingSidebarProps {
 interface IndexPerformanceSidebarProps {
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
+}
+
+interface RankingContentProps {
+  activeSubTab: RankingPageTab;
+  activeDailyView: RankingDailyView;
+  rankingParams: RankingParams;
+  rankingQuery: ReturnType<typeof useRanking>;
+  topix100RankingQuery: ReturnType<typeof useTopix100Ranking>;
+  fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
+  onStockClick: (code: string) => void;
+  onIndexClick: (code: string) => void;
 }
 
 function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerformanceSidebarProps) {
@@ -133,6 +148,8 @@ function RankingSidebar({
       {activeSubTab === 'ranking' ? (
         activeDailyView === 'indices' ? (
           <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
+        ) : activeDailyView === 'topix100' ? (
+          <Topix100RankingFilters params={rankingParams} onChange={setRankingParams} />
         ) : (
           <RankingFilters params={rankingParams} onChange={setRankingParams} />
         )
@@ -140,6 +157,93 @@ function RankingSidebar({
         <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />
       )}
     </div>
+  );
+}
+
+function buildIntroMetaItems(
+  activeSubTab: RankingPageTab,
+  activeDailyView: RankingDailyView,
+  rankingParams: RankingParams,
+  fundamentalRankingParams: FundamentalRankingParams
+) {
+  if (activeSubTab === 'fundamentalRanking') {
+    return [
+      { label: 'Mode', value: 'Forecast / actual EPS' },
+      { label: 'Markets', value: formatMarketsLabel((fundamentalRankingParams.markets ?? 'prime').split(',')) },
+    ];
+  }
+  if (activeDailyView === 'topix100') {
+    return [
+      { label: 'Mode', value: 'TOPIX100 SMA ranking' },
+      { label: 'Universe', value: 'Latest TOPIX100' },
+    ];
+  }
+  return [
+    {
+      label: 'Mode',
+      value: activeDailyView === 'indices' ? 'Index performance' : 'Daily market ranking',
+    },
+    { label: 'Markets', value: formatMarketsLabel((rankingParams.markets ?? 'prime').split(',')) },
+  ];
+}
+
+function RankingContent({
+  activeSubTab,
+  activeDailyView,
+  rankingParams,
+  rankingQuery,
+  topix100RankingQuery,
+  fundamentalRankingQuery,
+  onStockClick,
+  onIndexClick,
+}: RankingContentProps) {
+  if (activeSubTab === 'fundamentalRanking') {
+    return (
+      <>
+        <FundamentalRankingTable
+          rankings={fundamentalRankingQuery.data?.rankings}
+          isLoading={fundamentalRankingQuery.isLoading}
+          error={fundamentalRankingQuery.error}
+          onStockClick={onStockClick}
+        />
+        <FundamentalRankingSummary data={fundamentalRankingQuery.data} />
+      </>
+    );
+  }
+
+  if (activeDailyView === 'indices') {
+    return (
+      <IndexPerformanceTable
+        items={rankingQuery.data?.indexPerformance}
+        isLoading={rankingQuery.isLoading}
+        error={rankingQuery.error}
+        onIndexClick={onIndexClick}
+        lookbackDays={rankingParams.lookbackDays}
+      />
+    );
+  }
+
+  if (activeDailyView === 'topix100') {
+    return (
+      <Topix100RankingTable
+        data={topix100RankingQuery.data}
+        isLoading={topix100RankingQuery.isLoading}
+        error={topix100RankingQuery.error}
+        onStockClick={onStockClick}
+        priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
+        volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
+      />
+    );
+  }
+
+  return (
+    <RankingTable
+      rankings={rankingQuery.data?.rankings}
+      isLoading={rankingQuery.isLoading}
+      error={rankingQuery.error}
+      onStockClick={onStockClick}
+      periodDays={rankingParams.periodDays}
+    />
   );
 }
 
@@ -155,24 +259,16 @@ export function RankingPage() {
     setFundamentalRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
-  const rankingQuery = useRanking(rankingParams, true);
+  const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking' && activeDailyView !== 'topix100');
+  const topix100RankingQuery = useTopix100Ranking(
+    rankingParams.date,
+    activeSubTab === 'ranking' && activeDailyView === 'topix100'
+  );
   const fundamentalRankingQuery = useFundamentalRanking(
     fundamentalRankingParams,
     activeSubTab === 'fundamentalRanking'
   );
-  const introMetaItems =
-    activeSubTab === 'fundamentalRanking'
-      ? [
-          { label: 'Mode', value: 'Forecast / actual EPS' },
-          { label: 'Markets', value: formatMarketsLabel((fundamentalRankingParams.markets ?? 'prime').split(',')) },
-        ]
-      : [
-          {
-            label: 'Mode',
-            value: activeDailyView === 'indices' ? 'Index performance' : 'Daily market ranking',
-          },
-          { label: 'Markets', value: formatMarketsLabel((rankingParams.markets ?? 'prime').split(',')) },
-        ];
+  const introMetaItems = buildIntroMetaItems(activeSubTab, activeDailyView, rankingParams, fundamentalRankingParams);
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -202,7 +298,7 @@ export function RankingPage() {
             <div className="space-y-1">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                Daily leaders, index moves, and forecast-to-actual EPS ratios.
+                Daily leaders, TOPIX100 SMA buckets, index moves, and forecast-to-actual EPS ratios.
               </p>
             </div>
           </div>
@@ -225,35 +321,16 @@ export function RankingPage() {
         </SplitSidebar>
 
         <SplitMain className="gap-3 lg:overflow-hidden">
-          {activeSubTab === 'ranking' ? (
-            activeDailyView === 'indices' ? (
-              <IndexPerformanceTable
-                items={rankingQuery.data?.indexPerformance}
-                isLoading={rankingQuery.isLoading}
-                error={rankingQuery.error}
-                onIndexClick={handleIndexClick}
-                lookbackDays={rankingParams.lookbackDays}
-              />
-            ) : (
-              <RankingTable
-                rankings={rankingQuery.data?.rankings}
-                isLoading={rankingQuery.isLoading}
-                error={rankingQuery.error}
-                onStockClick={handleStockClick}
-                periodDays={rankingParams.periodDays}
-              />
-            )
-          ) : (
-            <>
-              <FundamentalRankingTable
-                rankings={fundamentalRankingQuery.data?.rankings}
-                isLoading={fundamentalRankingQuery.isLoading}
-                error={fundamentalRankingQuery.error}
-                onStockClick={handleStockClick}
-              />
-              <FundamentalRankingSummary data={fundamentalRankingQuery.data} />
-            </>
-          )}
+          <RankingContent
+            activeSubTab={activeSubTab}
+            activeDailyView={activeDailyView}
+            rankingParams={rankingParams}
+            rankingQuery={rankingQuery}
+            topix100RankingQuery={topix100RankingQuery}
+            fundamentalRankingQuery={fundamentalRankingQuery}
+            onStockClick={handleStockClick}
+            onIndexClick={handleIndexClick}
+          />
         </SplitMain>
       </SplitLayout>
     </div>

@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import { createChart, createSeriesMarkers } from 'lightweight-charts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
@@ -200,6 +201,26 @@ describe('StockChart', () => {
     expect(container.querySelector('div')).toBeInTheDocument();
   });
 
+  it('disables mouse wheel chart interactions so page scroll remains available', () => {
+    render(<StockChart data={mockStockData} />);
+
+    expect(vi.mocked(createChart)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        handleScroll: expect.objectContaining({
+          mouseWheel: false,
+          pressedMouseMove: true,
+          horzTouchDrag: true,
+          vertTouchDrag: false,
+        }),
+        handleScale: expect.objectContaining({
+          mouseWheel: false,
+          pinch: true,
+        }),
+      })
+    );
+  });
+
   it('updates chart data when data prop changes', () => {
     const { rerender, container } = render(<StockChart data={mockStockData} />);
 
@@ -271,6 +292,150 @@ describe('StockChart', () => {
     rerender(<StockChart data={mockStockData} vwema={vwemaData} />);
 
     expect(mockRemoveSeries).toHaveBeenCalledWith(vwemaSeries);
+  });
+
+  it('renders and removes N-bar support overlay when toggled', () => {
+    mockChartStore.settings.indicators.nBarSupport.enabled = true;
+    const nBarData = mockStockData.map((item, index) => ({
+      time: item.time,
+      value: 95 + index,
+    }));
+
+    const { rerender } = render(<StockChart data={mockStockData} nBarSupport={nBarData} />);
+
+    const nBarCallIndex = mockAddSeries.mock.calls.findIndex(
+      ([seriesType, options]) =>
+        seriesType === 'LineSeries' &&
+        typeof options === 'object' &&
+        options !== null &&
+        'color' in options &&
+        options.color === CHART_COLORS.N_BAR_SUPPORT
+    );
+    expect(nBarCallIndex).toBeGreaterThanOrEqual(0);
+    const nBarSeries = mockSeriesInstances[nBarCallIndex];
+    expect(nBarSeries?.setData).toHaveBeenCalledWith(nBarData);
+
+    mockChartStore.settings.indicators.nBarSupport.enabled = false;
+    rerender(<StockChart data={mockStockData} nBarSupport={nBarData} />);
+
+    expect(mockRemoveSeries).toHaveBeenCalledWith(nBarSeries);
+  });
+
+  it('renders and removes ATR support overlay when toggled', () => {
+    mockChartStore.settings.indicators.atrSupport.enabled = true;
+    const atrData = mockStockData.map((item, index) => ({
+      time: item.time,
+      value: 90 + index,
+    }));
+
+    const { rerender } = render(<StockChart data={mockStockData} atrSupport={atrData} />);
+
+    const atrCallIndex = mockAddSeries.mock.calls.findIndex(
+      ([seriesType, options]) =>
+        seriesType === 'LineSeries' &&
+        typeof options === 'object' &&
+        options !== null &&
+        'color' in options &&
+        options.color === CHART_COLORS.ATR_SUPPORT
+    );
+    expect(atrCallIndex).toBeGreaterThanOrEqual(0);
+    const atrSeries = mockSeriesInstances[atrCallIndex];
+    expect(atrSeries?.setData).toHaveBeenCalledWith(atrData);
+
+    mockChartStore.settings.indicators.atrSupport.enabled = false;
+    rerender(<StockChart data={mockStockData} atrSupport={atrData} />);
+
+    expect(mockRemoveSeries).toHaveBeenCalledWith(atrSeries);
+  });
+
+  it('renders and removes Bollinger overlay when toggled', () => {
+    mockChartStore.settings.indicators.bollinger.enabled = true;
+    const bollingerData = mockStockData.map((item, index) => ({
+      time: item.time,
+      upper: 110 + index,
+      middle: 100 + index,
+      lower: 90 + index,
+    }));
+
+    const { rerender } = render(<StockChart data={mockStockData} bollingerBands={bollingerData} />);
+
+    const bollingerCallIndex = mockAddSeries.mock.calls.findIndex(
+      ([seriesType, options]) =>
+        seriesType === 'LineSeries' &&
+        typeof options === 'object' &&
+        options !== null &&
+        'color' in options &&
+        options.color === CHART_COLORS.BOLLINGER
+    );
+    expect(bollingerCallIndex).toBeGreaterThanOrEqual(0);
+    const bollingerSeries = mockSeriesInstances[bollingerCallIndex];
+    expect(bollingerSeries?.setData).toHaveBeenCalledWith([
+      { time: '2024-01-01', value: 110 },
+      { time: '2024-01-02', value: 111 },
+    ]);
+
+    mockChartStore.settings.indicators.bollinger.enabled = false;
+    rerender(<StockChart data={mockStockData} bollingerBands={bollingerData} />);
+
+    expect(mockRemoveSeries).toHaveBeenCalledWith(bollingerSeries);
+  });
+
+  it('updates signal markers after the initial marker plugin is created', () => {
+    const initialMarkers = [
+      {
+        time: '2024-01-01',
+        position: 'belowBar' as const,
+        color: '#00ff00',
+        shape: 'arrowUp' as const,
+        text: 'BUY',
+        size: 1,
+      },
+    ];
+    const nextMarkers = [
+      {
+        time: '2024-01-02',
+        position: 'aboveBar' as const,
+        color: '#ff0000',
+        shape: 'arrowDown' as const,
+        text: 'SELL',
+        size: 1,
+      },
+    ];
+
+    const { rerender } = render(<StockChart data={mockStockData} signalMarkers={initialMarkers} />);
+    rerender(<StockChart data={mockStockData} signalMarkers={nextMarkers} />);
+
+    const markersApi = vi.mocked(createSeriesMarkers).mock.results[0]?.value;
+    expect(markersApi?.setMarkers).toHaveBeenCalledWith([
+      {
+        time: '2024-01-02',
+        position: 'aboveBar',
+        color: '#ff0000',
+        shape: 'arrowDown',
+        text: 'SELL',
+        size: 1,
+      },
+    ]);
+  });
+
+  it('gracefully skips data updates when candlestick series creation fails', () => {
+    mockChartStore.settings.showVolume = false;
+    vi.mocked(createChart).mockImplementationOnce(
+      () =>
+        ({
+          addSeries: vi.fn(() => null),
+          timeScale: vi.fn(() => ({
+            setVisibleRange: vi.fn(),
+            setVisibleLogicalRange: vi.fn(),
+          })),
+          applyOptions: vi.fn(),
+          remove: vi.fn(),
+          removeSeries: vi.fn(),
+          subscribeCrosshairMove: vi.fn(),
+        }) as never
+    );
+
+    expect(() => render(<StockChart data={mockStockData} />)).not.toThrow();
   });
 
   it('resizes chart when observer reports valid dimensions', () => {

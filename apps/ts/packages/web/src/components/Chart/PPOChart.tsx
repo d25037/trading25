@@ -1,5 +1,6 @@
 import { createChart, HistogramSeries, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
 import { useCallback, useEffect, useRef } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { useChartStore } from '@/stores/chartStore';
 import type { PPOIndicatorData } from '@/types/chart';
 
@@ -171,6 +172,7 @@ export function PPOChart({ data, title }: PPOChartProps) {
           bottom: 0.1,
         },
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
 
     chartRef.current = chart;

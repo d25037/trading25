@@ -24,6 +24,7 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFa
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    Topix100RankingResponse,
 )
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
@@ -38,6 +39,7 @@ from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
+from src.application.services.strategy_dataset_metadata import format_market_scope_label
 
 router = APIRouter(tags=["Analytics"])
 _SCREENING_JOB_TYPE = "screening"
@@ -47,6 +49,7 @@ _SCREENING_DEPRECATED_MESSAGE = (
     "GET /api/analytics/screening/jobs/{job_id} to poll status, "
     "and GET /api/analytics/screening/result/{job_id} to fetch result."
 )
+_SCREENING_JOB_REQUEST_FIELDS = frozenset(ScreeningJobRequest.model_fields)
 
 
 def _normalize_factor_regression_symbol(symbol: str) -> str:
@@ -164,6 +167,39 @@ async def get_fundamental_ranking(
         )
 
 
+@router.get(
+    "/api/analytics/topix100-ranking",
+    response_model=Topix100RankingResponse,
+    summary="Get TOPIX100 SMA ranking snapshot",
+    description=(
+        "Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, "
+        "with volume SMA 20/80 sidecar buckets."
+    ),
+)
+async def get_topix100_ranking(
+    request: Request,
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+) -> Topix100RankingResponse:
+    """TOPIX100 の当日 SMA ランキングを取得"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+
+    service = RankingService(reader)
+    try:
+        return service.get_topix100_ranking(date=date)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception(f"TOPIX100 ranking error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get TOPIX100 ranking: {e}",
+        )
+
+
 # --- Factor Regression ---
 
 
@@ -225,9 +261,54 @@ def _get_screening_job_or_404(job_id: str) -> JobInfo:
     return job
 
 
+def _resolve_screening_job_request(job: JobInfo) -> ScreeningJobRequest:
+    params = screening_job_service.get_job_request(job.job_id)
+    if isinstance(params, ScreeningJobRequest):
+        return params
+
+    run_parameters = getattr(job.run_spec, "parameters", None)
+    if not isinstance(run_parameters, dict):
+        return ScreeningJobRequest()
+
+    request_payload = {
+        key: value
+        for key, value in run_parameters.items()
+        if key in _SCREENING_JOB_REQUEST_FIELDS
+    }
+    try:
+        return ScreeningJobRequest.model_validate(request_payload)
+    except Exception:
+        logger.warning("Failed to restore screening job request from run_spec", job_id=job.job_id)
+        return ScreeningJobRequest()
+
+
+def _resolve_screening_job_scope_label(
+    job: JobInfo,
+    params: ScreeningJobRequest,
+) -> str | None:
+    scope_label = screening_job_service.get_job_scope_label(job.job_id)
+    if isinstance(scope_label, str) and scope_label:
+        return scope_label
+
+    run_parameters = getattr(job.run_spec, "parameters", None)
+    if isinstance(run_parameters, dict):
+        persisted_scope_label = run_parameters.get("scopeLabel")
+        if isinstance(persisted_scope_label, str) and persisted_scope_label:
+            return persisted_scope_label
+
+    raw_response = job.raw_result.get("response") if isinstance(job.raw_result, dict) else None
+    if isinstance(raw_response, dict):
+        result_scope_label = raw_response.get("scopeLabel")
+        if isinstance(result_scope_label, str) and result_scope_label:
+            return result_scope_label
+
+    return format_market_scope_label(params.markets.split(",")) if params.markets else None
+
+
 def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
     """JobInfo から ScreeningJobResponse を構築。"""
-    params = screening_job_service.get_job_request(job.job_id) or ScreeningJobRequest()
+    params = _resolve_screening_job_request(job)
+    scope_label = _resolve_screening_job_scope_label(job, params)
 
     return ScreeningJobResponse(
         job_id=job.job_id,
@@ -242,6 +323,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         execution_control=build_job_execution_control(job),
         entry_decidability=params.entry_decidability,
         markets=params.markets or "",
+        scopeLabel=scope_label,
         strategies=params.strategies,
         recentDays=params.recentDays,
         referenceDate=params.date,

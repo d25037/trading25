@@ -41,6 +41,7 @@ class ScreeningJobResponse(BaseJobResponse):
         description="entry decidability classification",
     )
     markets: str = Field(description="市場コードフィルタ")
+    scopeLabel: str | None = Field(default=None, description="表示用スコープラベル")
     strategies: str | None = Field(default=None, description="対象戦略")
     recentDays: int = Field(description="判定対象の直近日数")
     referenceDate: str | None = Field(default=None, description="基準日（任意）")

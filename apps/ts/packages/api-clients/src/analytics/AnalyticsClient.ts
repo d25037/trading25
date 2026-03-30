@@ -1,10 +1,10 @@
-import { buildUrl, requestJson, type QueryParams } from '../base/http-client.js';
+import { buildUrl, type QueryParams, requestJson } from '../base/http-client.js';
 import type {
   AnalyticsClientConfig,
   FactorRegressionParams,
   FactorRegressionResponse,
-  FundamentalsParams,
   FundamentalRankingParams,
+  FundamentalsParams,
   MarginPressureIndicatorsParams,
   MarginVolumeRatioParams,
   MarketFundamentalRankingResponse,
@@ -15,9 +15,11 @@ import type {
   PortfolioFactorRegressionResponse,
   ROEParams,
   ROEResponse,
-  SectorStocksParams,
   ScreeningJobRequest,
   ScreeningJobResponse,
+  SectorStocksParams,
+  Topix100RankingParams,
+  Topix100RankingResponse,
 } from './types.js';
 
 function normalizeConfig(config?: string | Partial<AnalyticsClientConfig>): AnalyticsClientConfig {
@@ -75,6 +77,12 @@ export class AnalyticsClient {
       forecastAboveRecentFyActuals: params.forecastAboveRecentFyActuals,
       forecastLookbackFyCount: params.forecastLookbackFyCount,
       forecastAboveAllActuals: params.forecastAboveAllActuals,
+    });
+  }
+
+  async getTopix100Ranking(params: Topix100RankingParams = {}): Promise<Topix100RankingResponse> {
+    return this.request<Topix100RankingResponse>('/api/analytics/topix100-ranking', undefined, {
+      date: params.date,
     });
   }
 

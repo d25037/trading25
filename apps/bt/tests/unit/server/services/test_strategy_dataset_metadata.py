@@ -8,7 +8,9 @@ from src.application.services.strategy_dataset_metadata import (
     StrategyDatasetMetadata,
     _dataset_resolver,
     canonicalize_market_list,
+    format_market_scope_label,
     resolve_dataset_metadata,
+    resolve_dataset_stock_codes,
     resolve_strategy_dataset_metadata,
     stringify_markets,
     union_market_lists,
@@ -49,6 +51,11 @@ def test_union_market_lists_and_stringify_markets() -> None:
 
     assert markets == ["prime", "standard", "growth", "custom"]
     assert stringify_markets(markets) == "prime,standard,growth,custom"
+
+
+def test_format_market_scope_label_handles_auto_and_all_markets() -> None:
+    assert format_market_scope_label([]) == "Auto"
+    assert format_market_scope_label(["0113", "prime", "standard"]) == "All Markets"
 
 
 def test_resolve_dataset_metadata_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -135,6 +142,69 @@ def test_resolve_dataset_metadata_rejects_unknown_preset(monkeypatch: pytest.Mon
 
     with pytest.raises(ValueError, match="Unknown dataset preset in manifest: unknownPreset"):
         resolve_dataset_metadata("primeExTopix500_20260316")
+
+
+def test_resolve_dataset_stock_codes_normalizes_and_deduplicates(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResolver:
+        def exists(self, dataset_name: str) -> bool:
+            assert dataset_name == "topix500_20260325"
+            return True
+
+        def get_snapshot_dir(self, dataset_name: str) -> str:
+            assert dataset_name == "topix500_20260325"
+            return "/tmp/datasets/topix500_20260325"
+
+    class _StubReader:
+        def __init__(self, snapshot_dir: str) -> None:
+            assert snapshot_dir == "/tmp/datasets/topix500_20260325"
+
+        def query(self, sql: str) -> list[dict[str, str]]:
+            assert sql == "SELECT code FROM stocks ORDER BY code"
+            return [
+                {"code": None},
+                {"code": "10010"},
+                {"code": "1001"},
+                {"code": "20020"},
+            ]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "src.application.services.strategy_dataset_metadata._dataset_resolver",
+        lambda dataset_base_path=None: _StubResolver(),
+    )
+    monkeypatch.setattr(
+        "src.application.services.strategy_dataset_metadata.DatasetSnapshotReader",
+        _StubReader,
+    )
+
+    assert resolve_dataset_stock_codes("topix500_20260325") == ["1001", "2002"]
+
+
+def test_resolve_dataset_stock_codes_rejects_invalid_dataset_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.services.strategy_dataset_metadata._dataset_resolver",
+        lambda dataset_base_path=None: SimpleNamespace(),
+    )
+
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        resolve_dataset_stock_codes("   ")
+
+
+def test_resolve_dataset_stock_codes_rejects_missing_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResolver:
+        def exists(self, dataset_name: str) -> bool:
+            assert dataset_name == "missing"
+            return False
+
+    monkeypatch.setattr(
+        "src.application.services.strategy_dataset_metadata._dataset_resolver",
+        lambda dataset_base_path=None: _StubResolver(),
+    )
+
+    with pytest.raises(FileNotFoundError, match="Dataset not found: missing"):
+        resolve_dataset_stock_codes("missing")
 
 
 def test_resolve_strategy_dataset_metadata_returns_none_without_dataset() -> None:
