@@ -68,15 +68,30 @@ def _create_regime_tables(conn: duckdb.DuckDBPyConnection) -> None:
     )
 
 
+def _create_options_225_table(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE options_225_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            base_volatility DOUBLE
+        )
+        """
+    )
+
+
 def build_topix100_research_market_db(
     db_path: Path,
     *,
     include_regimes: bool = False,
+    include_vi: bool = False,
 ) -> str:
     conn = duckdb.connect(str(db_path))
     _create_stock_tables(conn)
     if include_regimes:
         _create_regime_tables(conn)
+    if include_vi:
+        _create_options_225_table(conn)
 
     stocks = [
         ("1111", "Alpha", "ALPHA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Core30", "2000-01-01", None, None),
@@ -181,6 +196,19 @@ def build_topix100_research_market_db(
 
         conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)", topix_rows)
         conn.executemany("INSERT INTO indices_data VALUES (?, ?, ?)", index_rows)
+
+    if include_vi:
+        vi_rows: list[tuple[str, str, float]] = []
+        vi_close = 20.0
+        vi_pattern = [-0.04, -0.02, 0.0, 0.02, 0.04]
+        for index, date in enumerate(dates):
+            if index > 0:
+                vi_close *= 1.0 + vi_pattern[index % len(vi_pattern)]
+            date_str = date.strftime("%Y-%m-%d")
+            vi_rows.append((f"OPT-A-{index}", date_str, vi_close))
+            vi_rows.append((f"OPT-B-{index}", date_str, vi_close))
+
+        conn.executemany("INSERT INTO options_225_data VALUES (?, ?, ?)", vi_rows)
 
     conn.close()
     return str(db_path)

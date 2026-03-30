@@ -19,5 +19,7 @@
   - NT 倍率の前日比を条件に、個別銘柄群の `close -> next open` を観察する実験。
 - [market-behavior/nt-ratio-change-topix-close-stock-overnight/](./market-behavior/nt-ratio-change-topix-close-stock-overnight/README.md)
   - NT 倍率前日比と TOPIX 引け変動の joint regime ごとに、個別銘柄群の `close -> next open` を観察する実験。
+- [market-behavior/topix100-vi-change-regime-conditioning/](./market-behavior/topix100-vi-change-regime-conditioning/README.md)
+  - 日経VI 前日比 regime ごとに、TOPIX100 の price/volume split がその後どう振る舞うかを観察する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。

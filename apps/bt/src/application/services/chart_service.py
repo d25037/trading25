@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from typing import Protocol
 
-from src.infrastructure.db.market.query_helpers import stock_code_candidates
-from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.application.services.market_code_alias import resolve_market_codes
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.synthetic_indices import (
@@ -13,8 +13,14 @@ from src.application.services.synthetic_indices import (
     NT_RATIO_SYNTHETIC_INDEX_CODE,
     NT_RATIO_SYNTHETIC_INDEX_NAME,
     NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
+    VI_SYNTHETIC_INDEX_CATEGORY,
+    VI_SYNTHETIC_INDEX_CODE,
+    VI_SYNTHETIC_INDEX_NAME,
+    VI_SYNTHETIC_INDEX_NAME_EN,
     get_nt_ratio_data_start_date,
     get_nt_ratio_rows,
+    get_vi_data_start_date,
+    get_vi_rows,
 )
 from src.entrypoints.http.schemas.chart import (
     IndexDataResponse,
@@ -30,6 +36,8 @@ from src.entrypoints.http.schemas.chart import (
     TopixDataPoint,
     TopixDataResponse,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReadable
+from src.infrastructure.db.market.query_helpers import stock_code_candidates
 
 
 def _now_iso() -> str:
@@ -44,6 +52,89 @@ def _db_stock_code_candidates(code: str) -> tuple[str, ...]:
 def _normalize_middle_dot(text: str) -> str:
     """全角中黒 (・ U+30FB) を半角中黒 (･ U+FF65) に変換"""
     return text.replace("\u30fb", "\uff65")
+
+
+class _ScalarIndexRowLike(Protocol):
+    date: str
+    value: float
+
+
+_SCALAR_SYNTHETIC_INDEX_LIST_SPECS: tuple[
+    tuple[str, str, str, str, Callable[[MarketDbReadable | None], str | None]],
+    ...,
+] = (
+    (
+        VI_SYNTHETIC_INDEX_CODE,
+        VI_SYNTHETIC_INDEX_NAME,
+        VI_SYNTHETIC_INDEX_NAME_EN,
+        VI_SYNTHETIC_INDEX_CATEGORY,
+        get_vi_data_start_date,
+    ),
+    (
+        NT_RATIO_SYNTHETIC_INDEX_CODE,
+        NT_RATIO_SYNTHETIC_INDEX_NAME,
+        NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
+        NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
+        get_nt_ratio_data_start_date,
+    ),
+)
+
+_SCALAR_SYNTHETIC_INDEX_RESPONSE_SPECS: dict[
+    str,
+    tuple[str, Callable[[MarketDbReadable | None], list[_ScalarIndexRowLike]]],
+] = {
+    VI_SYNTHETIC_INDEX_CODE: (VI_SYNTHETIC_INDEX_NAME, get_vi_rows),
+    NT_RATIO_SYNTHETIC_INDEX_CODE: (NT_RATIO_SYNTHETIC_INDEX_NAME, get_nt_ratio_rows),
+}
+
+
+def _append_synthetic_index_info(
+    indices: list[IndexInfo],
+    *,
+    code: str,
+    name: str,
+    name_english: str,
+    category: str,
+    data_start_date: str | None,
+) -> None:
+    if data_start_date is None or any(index.code == code for index in indices):
+        return
+
+    indices.append(
+        IndexInfo(
+            code=code,
+            name=name,
+            nameEnglish=name_english,
+            category=category,
+            dataStartDate=data_start_date,
+        )
+    )
+
+
+def _build_scalar_index_response(
+    *,
+    code: str,
+    name: str,
+    rows: Sequence[_ScalarIndexRowLike],
+) -> IndexDataResponse | None:
+    if not rows:
+        return None
+
+    return IndexDataResponse(
+        code=code,
+        name=name,
+        data=[
+            IndexOHLCRecord(
+                date=row.date,
+                open=row.value,
+                high=row.value,
+                low=row.value,
+                close=row.value,
+            )
+            for row in rows
+        ],
+        lastUpdated=_now_iso(),
+    )
 
 
 class ChartService:
@@ -77,18 +168,15 @@ class ChartService:
             for row in rows
         ]
 
-        if not any(index.code == NT_RATIO_SYNTHETIC_INDEX_CODE for index in indices):
-            nt_ratio_start_date = get_nt_ratio_data_start_date(self._reader)
-            if nt_ratio_start_date is not None:
-                indices.append(
-                    IndexInfo(
-                        code=NT_RATIO_SYNTHETIC_INDEX_CODE,
-                        name=NT_RATIO_SYNTHETIC_INDEX_NAME,
-                        nameEnglish=NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
-                        category=NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
-                        dataStartDate=nt_ratio_start_date,
-                    )
-                )
+        for code, name, name_english, category, resolve_start_date in _SCALAR_SYNTHETIC_INDEX_LIST_SPECS:
+            _append_synthetic_index_info(
+                indices,
+                code=code,
+                name=name,
+                name_english=name_english,
+                category=category,
+                data_start_date=resolve_start_date(self._reader),
+            )
 
         return IndicesListResponse(indices=indices, lastUpdated=_now_iso())
 
@@ -97,25 +185,13 @@ class ChartService:
         if self._reader is None:
             return None
 
-        if code == NT_RATIO_SYNTHETIC_INDEX_CODE:
-            rows = get_nt_ratio_rows(self._reader)
-            if not rows:
-                return None
-
-            return IndexDataResponse(
-                code=NT_RATIO_SYNTHETIC_INDEX_CODE,
-                name=NT_RATIO_SYNTHETIC_INDEX_NAME,
-                data=[
-                    IndexOHLCRecord(
-                        date=row.date,
-                        open=row.value,
-                        high=row.value,
-                        low=row.value,
-                        close=row.value,
-                    )
-                    for row in rows
-                ],
-                lastUpdated=_now_iso(),
+        scalar_index_spec = _SCALAR_SYNTHETIC_INDEX_RESPONSE_SPECS.get(code)
+        if scalar_index_spec is not None:
+            name, load_rows = scalar_index_spec
+            return _build_scalar_index_response(
+                code=code,
+                name=name,
+                rows=load_rows(self._reader),
             )
 
         # 指数メタデータ

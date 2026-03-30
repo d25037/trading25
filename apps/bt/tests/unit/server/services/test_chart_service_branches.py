@@ -154,7 +154,10 @@ class TestMiscBranches:
 
     def test_get_indices_list_appends_nt_ratio_when_local_data_exists(self):
         reader = FakeReader(
-            query_one_results=[{"data_start_date": "2026-02-06"}],
+            query_one_results=[
+                {"data_start_date": "2026-02-06"},
+                {"data_start_date": "2026-02-06"},
+            ],
             query_results=[
                 [
                     {
@@ -172,9 +175,11 @@ class TestMiscBranches:
         result = service.get_indices_list()
 
         assert result is not None
-        assert [item.code for item in result.indices] == ["N225_UNDERPX", "NT_RATIO"]
-        assert result.indices[1].name == "NT倍率"
+        assert [item.code for item in result.indices] == ["N225_UNDERPX", "N225_VI", "NT_RATIO"]
+        assert result.indices[1].name == "日経VI"
         assert result.indices[1].dataStartDate == "2026-02-06"
+        assert result.indices[2].name == "NT倍率"
+        assert result.indices[2].dataStartDate == "2026-02-06"
 
     def test_get_index_data_builds_response(self):
         reader = FakeReader(
@@ -221,6 +226,28 @@ class TestMiscBranches:
         assert len(result.data) == 1
         assert result.data[0].open == 14.1284
         assert result.data[0].close == 14.1284
+
+    def test_get_index_data_builds_vi_response(self):
+        reader = FakeReader(
+            query_results=[
+                [
+                    {
+                        "date": "2026-02-06",
+                        "value": 23.456789,
+                    }
+                ]
+            ],
+        )
+        service = ChartService(reader)
+
+        result = service.get_index_data("N225_VI")
+
+        assert result is not None
+        assert result.code == "N225_VI"
+        assert result.name == "日経VI"
+        assert len(result.data) == 1
+        assert result.data[0].open == 23.456789
+        assert result.data[0].close == 23.456789
 
     def test_search_stocks_returns_ranked_results(self):
         reader = FakeReader(

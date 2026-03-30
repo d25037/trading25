@@ -17,7 +17,16 @@ type SortOrder = 'asc' | 'desc';
 
 const BENCHMARK_DISPLAY_ORDER: Record<string, number> = {
   N225_UNDERPX: 0,
-  NT_RATIO: 1,
+  N225_VI: 1,
+  NT_RATIO: 2,
+};
+
+const TWO_DECIMAL_INDEX_CODES = new Set(['NT_RATIO', 'N225_VI']);
+
+const SYNTHETIC_INDEX_DESCRIPTIONS: Record<string, string> = {
+  NT_RATIO: 'Nikkei 225 close / TOPIX close from local market snapshot',
+  N225_VI: 'Daily BaseVol reference series derived from local N225 options snapshot',
+  N225_UNDERPX: 'UnderPx derived daily reference series',
 };
 
 const MARKET_LABELS: Record<string, string> = {
@@ -47,7 +56,7 @@ function formatChangePercentage(value: number | undefined): string {
 
 function formatLatestIndexValue(value: number | null, code: string | null | undefined): string {
   if (value === undefined || value === null) return '-';
-  if (code === 'NT_RATIO') {
+  if (code && TWO_DECIMAL_INDEX_CODES.has(code)) {
     return value.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -506,14 +515,12 @@ function resolveIndexChartCategoryLabel(indexInfo?: IndexItem): string {
 
 function resolveSyntheticDescription(
   isSyntheticIndex: boolean,
-  isNtRatioIndex: boolean
+  code: string | null | undefined
 ): string | null {
   if (!isSyntheticIndex) {
     return null;
   }
-  return isNtRatioIndex
-    ? 'Nikkei 225 close / TOPIX close from local market snapshot'
-    : 'UnderPx derived daily reference series';
+  return (code && SYNTHETIC_INDEX_DESCRIPTIONS[code]) || SYNTHETIC_INDEX_DESCRIPTIONS.N225_UNDERPX;
 }
 
 function renderIndexChartState(
@@ -560,7 +567,6 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
 
   const isSectorIndex = indexInfo?.category === 'sector33' || indexInfo?.category === 'sector17';
   const isSyntheticIndex = indexInfo?.category === 'synthetic';
-  const isNtRatioIndex = code === 'NT_RATIO';
   const sectorType = indexInfo?.category as 'sector33' | 'sector17' | undefined;
   const { workspaceStyle, chartPanelStyle, surfaceStyle, sectorPanelMinHeight } = resolveIndexChartLayout(
     panelMinHeight,
@@ -611,7 +617,7 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   const latestPrice = lastDataPoint?.close ?? lineData[lineData.length - 1]?.value ?? null;
   const chartTypeLabel = isSyntheticIndex ? 'Line reference' : 'OHLC bars';
   const categoryLabel = resolveIndexChartCategoryLabel(indexInfo);
-  const syntheticDescription = resolveSyntheticDescription(isSyntheticIndex, isNtRatioIndex);
+  const syntheticDescription = resolveSyntheticDescription(isSyntheticIndex, code);
 
   return (
     <div className="space-y-3" style={workspaceStyle}>

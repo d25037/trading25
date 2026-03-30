@@ -62,6 +62,7 @@ vi.mock('@/components/Chart/LinePriceChart', () => ({
 const makeIndicesList = () => ({
   indices: [
     { code: 'N225_UNDERPX', name: '日経平均', category: 'synthetic' },
+    { code: 'N225_VI', name: '日経VI', category: 'synthetic' },
     { code: 'NT_RATIO', name: 'NT倍率', category: 'synthetic' },
     { code: '1321', name: 'TOPIX', category: 'topix' },
     { code: '1305', name: 'TOPIX-33 Energy', category: 'sector33' },
@@ -123,6 +124,20 @@ const makeNtRatioIndexData = () => ({
   ],
   code: 'NT_RATIO',
   name: 'NT倍率',
+});
+
+const makeViIndexData = () => ({
+  data: [
+    {
+      date: '2026-02-13',
+      open: 22.34,
+      high: 22.34,
+      low: 22.34,
+      close: 22.34,
+    },
+  ],
+  code: 'N225_VI',
+  name: '日経VI',
 });
 
 beforeEach(() => {
@@ -322,9 +337,43 @@ describe('IndicesPage', () => {
 
     const indexButtons = screen.getAllByRole('button', { name: /^Select / });
     expect(indexButtons[0]).toHaveAttribute('aria-label', 'Select 日経平均');
-    expect(indexButtons[1]).toHaveAttribute('aria-label', 'Select NT倍率');
+    expect(indexButtons[1]).toHaveAttribute('aria-label', 'Select 日経VI');
+    expect(indexButtons[2]).toHaveAttribute('aria-label', 'Select NT倍率');
     expect(screen.getByText('Nikkei 225 close / TOPIX close from local market snapshot')).toBeInTheDocument();
     expect(screen.getByText('14.12')).toBeInTheDocument();
+    expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
+  });
+
+  it('renders Nikkei VI in benchmarks section with line chart and 2-decimal latest value', () => {
+    selectedIndexCode = 'N225_VI';
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockImplementation((code: string | null) => {
+      if (code === 'N225_VI') {
+        return {
+          data: makeViIndexData(),
+          isLoading: false,
+          error: null,
+        };
+      }
+      return {
+        data: null,
+        isLoading: false,
+        error: null,
+      };
+    });
+
+    render(<IndicesPage />);
+
+    const indexButtons = screen.getAllByRole('button', { name: /^Select / });
+    expect(indexButtons[0]).toHaveAttribute('aria-label', 'Select 日経平均');
+    expect(indexButtons[1]).toHaveAttribute('aria-label', 'Select 日経VI');
+    expect(indexButtons[2]).toHaveAttribute('aria-label', 'Select NT倍率');
+    expect(screen.getByText('Daily BaseVol reference series derived from local N225 options snapshot')).toBeInTheDocument();
+    expect(screen.getByText('22.34')).toBeInTheDocument();
     expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
   });
 
