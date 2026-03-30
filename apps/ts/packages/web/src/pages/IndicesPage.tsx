@@ -29,6 +29,9 @@ const SYNTHETIC_INDEX_DESCRIPTIONS: Record<string, string> = {
   N225_UNDERPX: 'UnderPx derived daily reference series',
 };
 
+const NIKKEI_PARENT_INDEX_CODE = 'N225_UNDERPX';
+const NIKKEI_VI_INDEX_CODE = 'N225_VI';
+
 const MARKET_LABELS: Record<string, string> = {
   prime: 'P',
   standard: 'S',
@@ -523,6 +526,18 @@ function resolveSyntheticDescription(
   return (code && SYNTHETIC_INDEX_DESCRIPTIONS[code]) || SYNTHETIC_INDEX_DESCRIPTIONS.N225_UNDERPX;
 }
 
+function toLinePriceData(
+  data: { data?: readonly { date: string; close: number }[] } | null | undefined
+) {
+  if (!data?.data) {
+    return [];
+  }
+  return data.data.map((point) => ({
+    time: point.date,
+    value: point.close,
+  }));
+}
+
 function renderIndexChartState(
   kind: 'empty' | 'loading' | 'error',
   surfaceStyle: CSSProperties,
@@ -564,6 +579,12 @@ function renderIndexChartState(
 
 function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChartProps) {
   const { data, isLoading, error } = useIndexData(code);
+  const showViSubChart = code === NIKKEI_PARENT_INDEX_CODE;
+  const {
+    data: viData,
+    isLoading: viIsLoading,
+    error: viError,
+  } = useIndexData(showViSubChart ? NIKKEI_VI_INDEX_CODE : null);
 
   const isSectorIndex = indexInfo?.category === 'sector33' || indexInfo?.category === 'sector17';
   const isSyntheticIndex = indexInfo?.category === 'synthetic';
@@ -585,12 +606,10 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   }, [data]);
 
   const lineData = useMemo(() => {
-    if (!data?.data) return [];
-    return data.data.map((point) => ({
-      time: point.date,
-      value: point.close,
-    }));
+    return toLinePriceData(data);
   }, [data]);
+
+  const viLineData = useMemo(() => toLinePriceData(viData), [viData]);
 
   const sectorName = useMemo(() => {
     if (!data?.name || !sectorType) return null;
@@ -618,6 +637,7 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   const chartTypeLabel = isSyntheticIndex ? 'Line reference' : 'OHLC bars';
   const categoryLabel = resolveIndexChartCategoryLabel(indexInfo);
   const syntheticDescription = resolveSyntheticDescription(isSyntheticIndex, code);
+  const viLatestValue = viLineData[viLineData.length - 1]?.value ?? null;
 
   return (
     <div className="space-y-3" style={workspaceStyle}>
@@ -664,6 +684,41 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
             {isSyntheticIndex ? <LinePriceChart data={lineData} /> : <StockChart data={chartData} />}
           </div>
         </div>
+
+        {showViSubChart ? (
+          <>
+            <div className="border-t border-border/70 px-4 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                  <SectionEyebrow>Sub-chart</SectionEyebrow>
+                  <h3 className="text-sm font-semibold text-foreground">日経VI ({viLineData.length} data points)</h3>
+                  <p className="text-xs text-muted-foreground">{SYNTHETIC_INDEX_DESCRIPTIONS[NIKKEI_VI_INDEX_CODE]}</p>
+                </div>
+                <div className="shrink-0 rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Latest VI</p>
+                  <p className="mt-1 whitespace-nowrap text-xl font-semibold tracking-tight text-foreground tabular-nums">
+                    {formatLatestIndexValue(viLatestValue, NIKKEI_VI_INDEX_CODE)}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="min-h-[14rem] border-t border-border/70 p-0">
+              {viIsLoading ? (
+                <div className="flex h-full min-h-[14rem] items-center justify-center">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : viError ? (
+                <div className="flex h-full min-h-[14rem] items-center justify-center px-6 text-center">
+                  <p className="text-sm text-destructive">Failed to load VI sub-chart: {viError.message}</p>
+                </div>
+              ) : (
+                <div className="h-full min-h-[14rem]">
+                  <LinePriceChart data={viLineData} />
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
       </Surface>
 
       {isSectorIndex && sectorType && sectorName ? (

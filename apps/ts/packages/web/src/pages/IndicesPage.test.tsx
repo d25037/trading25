@@ -295,6 +295,13 @@ describe('IndicesPage', () => {
           error: null,
         };
       }
+      if (code === 'N225_VI') {
+        return {
+          data: makeViIndexData(),
+          isLoading: false,
+          error: null,
+        };
+      }
       return {
         data: null,
         isLoading: false,
@@ -307,7 +314,10 @@ describe('IndicesPage', () => {
     expect(screen.getByText('Benchmarks')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Select 日経平均' })).toBeInTheDocument();
     expect(screen.getByText('UnderPx derived daily reference series')).toBeInTheDocument();
-    expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
+    expect(screen.getByText('日経VI (1 data points)')).toBeInTheDocument();
+    expect(screen.getByText('Latest VI')).toBeInTheDocument();
+    expect(screen.getByText('22.34')).toBeInTheDocument();
+    expect(screen.getAllByText('LinePriceChart')).toHaveLength(2);
     expect(screen.queryByText('StockChart')).not.toBeInTheDocument();
   });
 
