@@ -112,6 +112,24 @@ class SignalService:
             )
 
     @staticmethod
+    def _resolve_configured_universe_codes(
+        shared_config: SharedConfig,
+    ) -> tuple[list[str], bool]:
+        explicit_codes: list[str] = []
+        saw_all_placeholder = False
+
+        for raw_code in shared_config.stock_codes:
+            code = str(raw_code).strip()
+            if not code:
+                continue
+            if code.lower() == "all":
+                saw_all_placeholder = True
+                continue
+            explicit_codes.append(normalize_stock_code(code) or code)
+
+        return list(dict.fromkeys(explicit_codes)), saw_all_placeholder
+
+    @staticmethod
     def _resample_ohlcv(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         if timeframe == "daily":
             return df
@@ -277,11 +295,15 @@ class SignalService:
             entry_params,
             exit_params,
         )
-        configured_universe_codes = [
-            normalize_stock_code(code) or code
-            for code in shared_config.stock_codes
-            if code
-        ]
+        configured_universe_codes, saw_all_placeholder = (
+            self._resolve_configured_universe_codes(shared_config)
+        )
+        warnings: list[str] = []
+        if needs_universe_multi_data and saw_all_placeholder:
+            warnings.append(
+                "universe_rank_bucket requires explicit shared_config.stock_codes; "
+                "signal overlay falls back to the target stock only"
+            )
         universe_member_codes = (
             list(dict.fromkeys(configured_universe_codes))
             if needs_universe_multi_data and configured_universe_codes
@@ -300,7 +322,6 @@ class SignalService:
             signal_registry=SIGNAL_REGISTRY,
         )
 
-        warnings: list[str] = []
         multi_data, load_warnings = load_market_multi_data(
             self._market_reader,
             load_codes,
