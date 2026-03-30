@@ -108,11 +108,15 @@ def test_render_cli_reference_excludes_portfolio_commands() -> None:
     module, repo_root = _load_refresh_module()
 
     rendered: str = module._render_cli_reference(repo_root)
+    command_rows = [
+        line for line in rendered.splitlines() if line.startswith("| `bt ") and line.endswith("` |")
+    ]
 
     assert "portfolio " not in rendered
     assert "apps/bt/src/cli_portfolio/__init__.py" not in rendered
-    assert "Total commands: **9**" in rendered
+    assert f"Total commands: **{len(command_rows)}**" in rendered
     assert "| `bt lab optimize` |" in rendered
+    assert "| `bt migrate-optimization-specs` |" in rendered
     assert "| `bt server` |" in rendered
 
 
