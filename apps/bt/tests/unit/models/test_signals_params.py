@@ -20,6 +20,7 @@ from src.shared.models.signals.macro import (
     IndexMACDHistogramSignalParams,
     IndexOpenGapRegimeSignalParams,
     MarginSignalParams,
+    UniverseRankBucketSignalParams,
 )
 from src.shared.models.signals.oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from src.shared.models.signals.sector import (
@@ -180,6 +181,16 @@ class TestMacroSignalParams:
                 gap_threshold_1_pct=2.0,
                 gap_threshold_2_pct=1.0,
             )
+
+    def test_universe_rank_bucket_defaults(self) -> None:
+        p = UniverseRankBucketSignalParams()
+        assert p.price_sma_period == 20
+        assert p.price_bucket == "q1"
+        assert p.volume_bucket == "any"
+
+    def test_universe_rank_bucket_rejects_volume_split_for_other_bucket(self) -> None:
+        with pytest.raises(ValidationError, match="volume_bucket"):
+            UniverseRankBucketSignalParams(price_bucket="other", volume_bucket="high")
 
 
 class TestOscillatorSignalParams:

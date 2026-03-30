@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+import pandas as pd
+
 from src.shared.models.signals import SignalParams
 from .feature_registry import (
     SignalAvailabilityPolicy,
@@ -72,6 +74,7 @@ from .sector_strength import (
 )
 from .trading_value import trading_value_signal
 from .trading_value_range import trading_value_range_signal
+from .universe_rank_bucket import universe_rank_bucket_signal
 from .volatility import (
     bollinger_cross_signal,
     bollinger_position_signal,
@@ -333,6 +336,23 @@ def _has_stock_sector_close(d: dict[str, Any]) -> bool:
 def _has_sector_data_and_benchmark(d: dict[str, Any]) -> bool:
     """セクターデータとベンチマークデータの両方が存在するかチェック"""
     return _has_sector_data(d) and _has_benchmark_data(d)
+
+
+def _has_universe_ohlcv_data(d: dict[str, Any]) -> bool:
+    """ユニバース横断OHLCVデータと対象銘柄が利用可能かチェック."""
+    universe_multi_data = d.get("universe_multi_data")
+    stock_code = d.get("stock_code")
+    if not isinstance(universe_multi_data, dict) or not stock_code:
+        return False
+    payload = universe_multi_data.get(stock_code)
+    if not isinstance(payload, dict):
+        return False
+    daily = payload.get("daily")
+    return (
+        isinstance(daily, pd.DataFrame)
+        and not daily.empty
+        and {"Close", "Volume"}.issubset(daily.columns)
+    )
 
 
 def _has_stock_sector_close_and_benchmark(d: dict[str, Any]) -> bool:
@@ -926,6 +946,32 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         param_key="index_open_gap_regime",
         data_checker=_has_benchmark_open_and_close_data,
         data_requirements=["benchmark_open_gap"],
+    ),
+    # 22. 指数/ユニバース内順位バケットシグナル
+    SignalDefinition(
+        name="指数内順位バケット",
+        signal_func=universe_rank_bucket_signal,
+        enabled_checker=lambda p: hasattr(p, "universe_rank_bucket")
+        and p.universe_rank_bucket.enabled,
+        param_builder=lambda p, d: {
+            "stock_code": d["stock_code"],
+            "target_index": d["close"].index,
+            "universe_multi_data": d["universe_multi_data"],
+            "universe_member_codes": d.get("universe_member_codes"),
+            "price_sma_period": p.universe_rank_bucket.price_sma_period,
+            "volume_short_period": p.universe_rank_bucket.volume_short_period,
+            "volume_long_period": p.universe_rank_bucket.volume_long_period,
+            "price_bucket": p.universe_rank_bucket.price_bucket,
+            "volume_bucket": p.universe_rank_bucket.volume_bucket,
+            "min_constituents": p.universe_rank_bucket.min_constituents,
+        },
+        entry_purpose="指数/ユニバース内の価格順位バケットで対象銘柄を選別",
+        exit_purpose="指数/ユニバース内の価格順位バケット変化を検知",
+        category="macro",
+        description="price_vs_sma20 系の順位を q1 / q10 / q456 / other に丸めて判定",
+        param_key="universe_rank_bucket",
+        data_checker=_has_universe_ohlcv_data,
+        data_requirements=["universe_ohlcv"],
     ),
     # 22. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
     SignalDefinition(

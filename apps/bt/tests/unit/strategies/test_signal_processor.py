@@ -462,6 +462,14 @@ class TestSignalProcessor:
         statements = pd.DataFrame({"EPS": [1.0, 2.0]}, index=self.test_data.index[:2])
         margin = pd.DataFrame({"x": [1.0]}, index=self.test_data.index[:1])
         sector_data = {"情報・通信業": pd.DataFrame({"Close": [1.0]}, index=self.test_data.index[:1])}
+        universe_multi_data = {
+            "1111": {
+                "daily": pd.DataFrame(
+                    {"Close": [1.0, 2.0], "Volume": [100.0, 110.0]},
+                    index=self.test_data.index[:2],
+                )
+            }
+        }
         ohlc = self.test_data.copy()
         ohlc["Open"] = ohlc["Close"]
         sources = {
@@ -470,6 +478,8 @@ class TestSignalProcessor:
             "margin_data": margin,
             "sector_data": sector_data,
             "stock_sector_name": "情報・通信業",
+            "stock_code": "1111",
+            "universe_multi_data": universe_multi_data,
             "ohlc_data": ohlc[["Open", "High", "Low", "Close"]],
             "volume": self.test_data["Volume"],
         }
@@ -480,9 +490,122 @@ class TestSignalProcessor:
         assert not self.processor._is_requirement_satisfied("statements:ForwardForecastEPS", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("margin", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("sector", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("universe_ohlcv", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("ohlc", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("volume", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("unknown", sources)  # noqa: SLF001
+
+    def test_apply_signals_reuses_cached_universe_rank_bucket_panel(self):
+        index = pd.date_range("2025-01-01", periods=3)
+        ohlc_data = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [100.0, 101.0, 102.0],
+                "Volume": [1000.0, 1010.0, 1020.0],
+            },
+            index=index,
+        )
+        params = SignalParams.model_validate(
+            {"universe_rank_bucket": {"enabled": True, "min_constituents": 2}}
+        )
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111", "2222"],
+                    "execution_policy": {"mode": "standard"},
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=params,
+        )
+        universe_multi_data = {
+            "1111": {"daily": ohlc_data},
+            "2222": {"daily": ohlc_data},
+        }
+        feature_panel = pd.DataFrame(
+            {
+                "date": [*index, *index],
+                "stock_code": ["1111", "1111", "1111", "2222", "2222", "2222"],
+                "price_count": [2, 2, 2, 2, 2, 2],
+                "price_bucket": ["q1", "q1", "q1", "q10", "q10", "q10"],
+                "volume_bucket": ["high", "high", "high", "low", "low", "low"],
+            }
+        )
+
+        with patch(
+            "src.domains.strategy.signals.processor.build_universe_rank_bucket_feature_panel",
+            return_value=feature_panel,
+        ) as mock_builder:
+            result_1 = self.processor.apply_signals(
+                base_signal=pd.Series(True, index=index),
+                signal_type="entry",
+                ohlc_data=ohlc_data,
+                signal_params=params,
+                stock_code="1111",
+                universe_multi_data=universe_multi_data,
+                universe_member_codes=("1111", "2222"),
+                compiled_strategy=compiled_strategy,
+            )
+            result_2 = self.processor.apply_signals(
+                base_signal=pd.Series(True, index=index),
+                signal_type="entry",
+                ohlc_data=ohlc_data,
+                signal_params=params,
+                stock_code="2222",
+                universe_multi_data=universe_multi_data,
+                universe_member_codes=("1111", "2222"),
+                compiled_strategy=compiled_strategy,
+            )
+
+        assert mock_builder.call_count == 1
+        assert bool(result_1.all()) is True
+        assert bool(result_2.any()) is False
+
+    def test_universe_rank_bucket_cache_evicts_oldest_panel(self):
+        index = pd.date_range("2025-01-01", periods=3)
+        ohlc_data = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [100.0, 101.0, 102.0],
+                "Volume": [1000.0, 1010.0, 1020.0],
+            },
+            index=index,
+        )
+        universe_multi_data = {"1111": {"daily": ohlc_data}}
+        feature_panel = pd.DataFrame(
+            {
+                "date": index,
+                "stock_code": ["1111"] * len(index),
+                "price_count": [1] * len(index),
+                "price_bucket": ["q1"] * len(index),
+                "volume_bucket": ["high"] * len(index),
+            }
+        )
+
+        with patch(
+            "src.domains.strategy.signals.processor.build_universe_rank_bucket_feature_panel",
+            return_value=feature_panel,
+        ) as mock_builder:
+            for price_sma_period in range(
+                1,
+                self.processor._UNIVERSE_BUCKET_CACHE_LIMIT + 2,  # noqa: SLF001
+            ):
+                self.processor._get_cached_universe_rank_bucket_feature_panel(  # noqa: SLF001
+                    universe_multi_data=universe_multi_data,
+                    universe_member_codes=("1111",),
+                    price_sma_period=price_sma_period,
+                    volume_short_period=20,
+                    volume_long_period=80,
+                )
+
+        assert mock_builder.call_count == self.processor._UNIVERSE_BUCKET_CACHE_LIMIT + 1  # noqa: SLF001
+        assert len(self.processor._universe_rank_bucket_cache) == self.processor._UNIVERSE_BUCKET_CACHE_LIMIT  # noqa: SLF001
 
     def test_describe_missing_requirements_fallback_message(self):
         no_requirements = _signal_definition(data_requirements=[])

@@ -57,6 +57,14 @@ _FEATURE_REQUIREMENT_SPECS: dict[str, FeatureRequirementSpec] = {
         source_kind=AvailabilitySourceKind.MARKET_EVENT,
         observation_time=FeatureObservationPoint.CURRENT_SESSION_CLOSE,
     ),
+    "universe_ohlcv": FeatureRequirementSpec(
+        key="universe_ohlcv",
+        data_domain="market",
+        loader_key="universe_multi_data",
+        source_kind=AvailabilitySourceKind.MARKET_EVENT,
+        observation_time=FeatureObservationPoint.CURRENT_SESSION_CLOSE,
+        required_columns=("Close", "Volume"),
+    ),
     "benchmark_close": FeatureRequirementSpec(
         key="benchmark_close",
         data_domain="benchmark",

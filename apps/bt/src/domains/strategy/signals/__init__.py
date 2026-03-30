@@ -46,6 +46,9 @@ from .beta import beta_range_signal
 # Buy and Hold signals
 from .buy_and_hold import generate_buy_and_hold_signals
 
+# Universe bucket signals
+from .universe_rank_bucket import universe_rank_bucket_signal
+
 # Generic signals (新アーキテクチャ: YAML制御用)
 from .baseline import (
     baseline_cross_signal,
@@ -116,6 +119,8 @@ __all__ = [
     "beta_range_signal",
     # Buy and Hold
     "generate_buy_and_hold_signals",
+    # Universe bucket
+    "universe_rank_bucket_signal",
     # Generic signals (YAML制御用)
     "baseline_cross_signal",
     "baseline_deviation_signal",

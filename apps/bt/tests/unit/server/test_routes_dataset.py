@@ -24,6 +24,23 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
+def _wait_for_dataset_job_terminal_state(job_id: str, *, timeout_seconds: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        job = dataset_job_manager.get_job(job_id)
+        if job is None:
+            pytest.fail(f"dataset job disappeared before completion: {job_id}")
+        if job.status.value in {"completed", "failed", "cancelled"}:
+            return
+        if job.task is not None and job.task.done():
+            return
+        time.sleep(0.01)
+
+    job = dataset_job_manager.get_job(job_id)
+    status = job.status.value if job is not None else "missing"
+    pytest.fail(f"dataset job did not reach terminal state within {timeout_seconds}s: {status}")
+
+
 def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
     duckdb_path = snapshot_dir / "dataset.duckdb"
     parquet_dir = snapshot_dir / "parquet"
@@ -426,14 +443,10 @@ class TestDatasetManagementRoutes:
             )
             assert create_resp.status_code == 202
             job_id = create_resp.json()["jobId"]
+            _wait_for_dataset_job_terminal_state(job_id)
             job = dataset_job_manager.get_job(job_id)
 
             assert job is not None
-            for _ in range(100):
-                if job.status.value in {"completed", "failed", "cancelled"}:
-                    break
-                time.sleep(0.002)
-
             assert job.status.value == "completed"
             assert job.result is not None
             assert job.result.success is True

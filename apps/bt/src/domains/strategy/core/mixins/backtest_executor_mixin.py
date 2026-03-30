@@ -632,6 +632,8 @@ class BacktestExecutorMixin:
                     execution_data=execution_data,  # 実価格データを渡す（β値・売買代金シグナル用）
                     sector_data=sector_data,
                     stock_sector_name=stock_sector_name,
+                    universe_multi_data=execution_data_dict,
+                    universe_member_codes=self.stock_codes,
                 )
                 entries, exits = signals.entries, signals.exits
 
@@ -670,6 +672,8 @@ class BacktestExecutorMixin:
                     statements_data=statements_data,
                     sector_data=sector_data,
                     stock_sector_name=stock_sector_name,
+                    universe_multi_data=multi_data_dict,
+                    universe_member_codes=self.stock_codes,
                 )
                 entries, exits = signals.entries, signals.exits
             else:

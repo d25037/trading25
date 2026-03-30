@@ -15,6 +15,7 @@ from src.domains.strategy.signals.registry import (
     _has_sector_data_and_benchmark,
     _has_statements_column,
     _has_statements_columns,
+    _has_universe_ohlcv_data,
     _select_existing_fundamental_column,
     _has_stock_sector_close,
     _has_stock_sector_close_and_benchmark,
@@ -163,6 +164,26 @@ class TestHasSectorDataAndBenchmark:
         assert not _has_sector_data_and_benchmark(d)
 
 
+class TestHasUniverseOhlcvData:
+    def test_valid(self) -> None:
+        d = {
+            "stock_code": "7203",
+            "universe_multi_data": {
+                "7203": {
+                    "daily": pd.DataFrame(
+                        {"Close": [100.0], "Volume": [1000]},
+                        index=[pd.Timestamp("2025-01-01")],
+                    )
+                }
+            },
+        }
+        assert _has_universe_ohlcv_data(d)
+
+    def test_missing_target_stock(self) -> None:
+        d = {"stock_code": "7203", "universe_multi_data": {}}
+        assert not _has_universe_ohlcv_data(d)
+
+
 class TestHasStockSectorCloseAndBenchmark:
     def test_both_present(self) -> None:
         df = pd.DataFrame({"Close": [100.0]})
@@ -233,6 +254,14 @@ class TestSignalRegistry:
         assert sig.name == "指数寄り付きギャップレジーム"
         assert sig.category == "macro"
         assert sig.data_requirements == ["benchmark_open_gap"]
+
+    def test_universe_rank_bucket_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "universe_rank_bucket"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "指数内順位バケット"
+        assert sig.category == "macro"
+        assert sig.data_requirements == ["universe_ohlcv"]
 
     def test_forward_dividend_growth_registered(self) -> None:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.forward_dividend_growth"]

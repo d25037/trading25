@@ -76,6 +76,17 @@ _SIGNAL_COPY_OVERRIDES: dict[str, dict[str, list[str] | str]] = {
             "The market DB must include local margin snapshots; otherwise validation may succeed but execution can lack data.",
         ],
     },
+    "universe_rank_bucket": {
+        "summary": "Ranks daily `(close / SMA)` gaps inside the configured universe and selects q1 / q10 / q456 style buckets.",
+        "when_to_use": [
+            "Use when the strategy wants the strongest, weakest, or middle cohort relative to its own index or stock universe.",
+            "Pair with a fixed stock universe in shared_config so the bucket semantics stay stable across runs.",
+        ],
+        "pitfalls": [
+            "Single-stock or tiny universes will usually return no matches because decile buckets need enough constituents.",
+            "The price bucket is based on `close / SMA(period) - 1`, with optional volume high/low split only inside q1, q10, and q456.",
+        ],
+    },
 }
 
 _SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
@@ -129,6 +140,27 @@ _SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
     },
     "period_type": {
         "label": "Period Type",
+    },
+    "price_sma_period": {
+        "label": "Price SMA Period",
+        "unit": "bars",
+    },
+    "volume_short_period": {
+        "label": "Volume Short Period",
+        "unit": "bars",
+    },
+    "volume_long_period": {
+        "label": "Volume Long Period",
+        "unit": "bars",
+    },
+    "price_bucket": {
+        "label": "Price Bucket",
+    },
+    "volume_bucket": {
+        "label": "Volume Bucket",
+    },
+    "min_constituents": {
+        "label": "Min Constituents",
     },
     "use_adjusted": {
         "label": "Use Adjusted Values",

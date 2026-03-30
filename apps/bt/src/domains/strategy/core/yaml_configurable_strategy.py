@@ -185,6 +185,9 @@ class YamlConfigurableStrategy(
         execution_data: Optional[pd.DataFrame] = None,
         sector_data: Optional[Dict[str, pd.DataFrame]] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: Optional[str] = None,
+        universe_multi_data: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None,
+        universe_member_codes: Optional[list[str]] = None,
     ) -> Signals:
         """
         売買シグナルを生成（YAML完全制御版）
@@ -218,6 +221,9 @@ class YamlConfigurableStrategy(
             relative_mode=self.relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code or self.stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             compiled_strategy=self.compiled_strategy,
         )
         entries, exits = enhanced_signals.entries, enhanced_signals.exits
@@ -241,6 +247,8 @@ class YamlConfigurableStrategy(
         execution_data: Optional[pd.DataFrame] = None,
         sector_data: Optional[Dict[str, pd.DataFrame]] = None,
         stock_sector_name: Optional[str] = None,
+        universe_multi_data: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None,
+        universe_member_codes: Optional[list[str]] = None,
     ) -> Signals:
         """
         単一銘柄のシグナル生成（サブクラスで実装）
@@ -266,6 +274,9 @@ class YamlConfigurableStrategy(
                 execution_data,
                 sector_data=sector_data,
                 stock_sector_name=stock_sector_name,
+                stock_code=stock_code,
+                universe_multi_data=universe_multi_data,
+                universe_member_codes=universe_member_codes,
             )
         finally:
             self.stock_code = original_code
