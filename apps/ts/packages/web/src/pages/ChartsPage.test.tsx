@@ -867,7 +867,14 @@ describe('ChartsPage', () => {
       error: null,
     });
     mockUseStockInfo.mockReturnValue({
-      data: { companyName: 'Test Co', sector17Name: '自動車・輸送機', sector33Name: '輸送用機器' },
+      data: {
+        companyName: 'Test Co',
+        marketCode: '0111',
+        marketName: 'プライム',
+        scaleCategory: 'TOPIX Core30',
+        sector17Name: '自動車・輸送機',
+        sector33Name: '輸送用機器',
+      },
     });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
@@ -881,6 +888,10 @@ describe('ChartsPage', () => {
       MockIntersectionObserver.triggerAll(true);
     });
 
+    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('Prime')).toBeInTheDocument();
+    expect(screen.getByText('指数採用')).toBeInTheDocument();
+    expect(screen.getByText('Core30')).toBeInTheDocument();
     expect(screen.getByText('セクター17')).toBeInTheDocument();
     expect(screen.getByText('自動車・輸送機')).toBeInTheDocument();
     expect(screen.getByText('セクター33')).toBeInTheDocument();
