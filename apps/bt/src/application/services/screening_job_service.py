@@ -23,6 +23,7 @@ from src.application.services.screening_default_markets import (
     validate_selected_screening_strategy_datasets,
 )
 from src.application.services.screening_service import ScreeningService
+from src.application.services.strategy_dataset_metadata import format_market_scope_label
 from src.shared.observability.correlation import get_correlation_id
 from src.shared.observability.metrics import metrics_recorder
 
@@ -48,12 +49,17 @@ class ScreeningJobService:
         self._manager = manager
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._job_requests: dict[str, ScreeningJobRequest] = {}
+        self._job_scope_labels: dict[str, str] = {}
 
     def get_job_request(self, job_id: str) -> ScreeningJobRequest | None:
         """ジョブIDに紐づくリクエストを取得"""
         return self._job_requests.get(job_id)
 
-    def _normalize_request(self, request: ScreeningJobRequest) -> ScreeningJobRequest:
+    def get_job_scope_label(self, job_id: str) -> str | None:
+        """ジョブIDに紐づく表示用スコープラベルを取得"""
+        return self._job_scope_labels.get(job_id)
+
+    def _normalize_request(self, request: ScreeningJobRequest) -> tuple[ScreeningJobRequest, str]:
         normalized = request.model_copy(deep=True)
         if normalized.markets is not None and normalized.markets.strip():
             normalized.markets = normalized.markets.strip()
@@ -61,14 +67,14 @@ class ScreeningJobService:
                 entry_decidability=normalized.entry_decidability,
                 strategies=normalized.strategies,
             )
-            return normalized
+            return normalized, format_market_scope_label(normalized.markets.split(","))
 
         resolved = resolve_default_screening_markets(
             entry_decidability=normalized.entry_decidability,
             strategies=normalized.strategies,
         )
         normalized.markets = resolved.markets_param
-        return normalized
+        return normalized, resolved.scope_label
 
     @staticmethod
     def _require_effective_markets(request: ScreeningJobRequest) -> str:
@@ -83,11 +89,14 @@ class ScreeningJobService:
         request: ScreeningJobRequest,
     ) -> str:
         """Screening ジョブをサブミット"""
-        request_copy = self._normalize_request(request)
+        use_strategy_dataset_universe = not bool(request.markets and request.markets.strip())
+        request_copy, scope_label = self._normalize_request(request)
+        run_parameters = request_copy.model_dump(exclude_none=True)
+        run_parameters["scopeLabel"] = scope_label
         run_spec = build_parameterized_run_spec(
             "screening",
             "analytics/screening",
-            parameters=request_copy.model_dump(exclude_none=True),
+            parameters=run_parameters,
         )
         job_id = self._manager.create_job(
             strategy_name="analytics/screening",
@@ -95,8 +104,17 @@ class ScreeningJobService:
             run_spec=run_spec,
         )
         self._job_requests[job_id] = request_copy
+        self._job_scope_labels[job_id] = scope_label
 
-        task = asyncio.create_task(self._run_job(job_id, reader, request_copy))
+        task = asyncio.create_task(
+            self._run_job(
+                job_id,
+                reader,
+                request_copy,
+                scope_label=scope_label,
+                use_strategy_dataset_universe=use_strategy_dataset_universe,
+            )
+        )
         await self._manager.set_job_task(job_id, task)
 
         return job_id
@@ -106,6 +124,9 @@ class ScreeningJobService:
         job_id: str,
         reader: MarketDbReader,
         request: ScreeningJobRequest,
+        *,
+        scope_label: str | None = None,
+        use_strategy_dataset_universe: bool = False,
     ) -> None:
         """バックグラウンドで Screening を実行"""
         started_at = perf_counter()
@@ -152,6 +173,8 @@ class ScreeningJobService:
                     sort_by=request.sortBy,
                     order=request.order,
                     limit=request.limit,
+                    scope_label=scope_label,
+                    use_strategy_dataset_universe=use_strategy_dataset_universe,
                     progress_callback=progress_callback,
                 ),
             )

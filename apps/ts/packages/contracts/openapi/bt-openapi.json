@@ -7246,6 +7246,17 @@
             "title": "Results",
             "type": "array"
           },
+          "scopeLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopelabel"
+          },
           "sortBy": {
             "enum": [
               "bestStrategyScore",
@@ -10931,6 +10942,18 @@
               }
             ],
             "description": "Engine-neutral run metadata"
+          },
+          "scopeLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "表示用スコープラベル",
+            "title": "Scopelabel"
           },
           "sortBy": {
             "description": "並び順の基準",

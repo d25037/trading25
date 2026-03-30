@@ -71,6 +71,7 @@ class MarketScreeningResponse(BaseModel):
     summary: ScreeningSummary
     entry_decidability: EntryDecidability = Field(default="pre_open_decidable")
     markets: list[str]
+    scopeLabel: str | None = None
     recentDays: int
     referenceDate: str | None = None
     sortBy: ScreeningSortBy
