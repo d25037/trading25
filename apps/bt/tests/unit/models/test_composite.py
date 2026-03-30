@@ -37,7 +37,7 @@ class TestSignalParams:
             "crossover", "bollinger_position", "bollinger_cross", "buy_and_hold",
             "baseline_deviation", "baseline_position", "rsi_threshold", "rsi_spread",
             "baseline_cross", "index_daily_change", "index_macd_histogram",
-            "index_open_gap_regime",
+            "index_open_gap_regime", "universe_rank_bucket",
             "risk_adjusted_return",
             "sector_strength_ranking", "sector_rotation_phase", "sector_volatility_regime",
         ]

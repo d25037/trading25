@@ -162,6 +162,9 @@ def test_evaluate_stock_passes_entry_decidability_without_affecting_signal_gener
     assert captured["compiled_strategy"].execution_semantics == (
         "current_session_round_trip"
     )
+    assert captured["stock_code"] == "1001"
+    assert captured["universe_multi_data"] is bundle.multi_data
+    assert captured["universe_member_codes"] == ("1001",)
     assert "current_session_round_trip" not in captured
 
 
@@ -196,6 +199,8 @@ def test_evaluate_stock_does_not_infer_round_trip_from_decidability_label_alone(
     )
 
     assert captured["compiled_strategy"].execution_semantics == "standard"
+    assert captured["universe_multi_data"] is bundle.multi_data
+    assert captured["universe_member_codes"] == ("1001",)
     assert "current_session_round_trip" not in captured
 
 

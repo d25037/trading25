@@ -35,6 +35,7 @@ from .macro import (
     IndexOpenGapRegimeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
+    UniverseRankBucketSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from .trend import (
@@ -87,6 +88,7 @@ __all__ = [
     "IndexMACDHistogramSignalParams",
     "IndexOpenGapRegimeSignalParams",
     "MarginSignalParams",
+    "UniverseRankBucketSignalParams",
     # fundamental
     "FundamentalSignalParams",
     # breakout

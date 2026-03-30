@@ -27,6 +27,16 @@ def test_resolve_feature_requirement_spec_for_statements_field() -> None:
     assert spec.required_columns == ("EPS",)
 
 
+def test_resolve_feature_requirement_spec_for_universe_ohlcv() -> None:
+    spec = resolve_feature_requirement_spec("universe_ohlcv")
+
+    assert spec.data_domain == "market"
+    assert spec.loader_key == "universe_multi_data"
+    assert spec.source_kind == AvailabilitySourceKind.MARKET_EVENT
+    assert spec.observation_time == FeatureObservationPoint.CURRENT_SESSION_CLOSE
+    assert spec.required_columns == ("Close", "Volume")
+
+
 def test_resolve_feature_requirement_spec_unknown_requirement_raises() -> None:
     with pytest.raises(KeyError, match="Unknown feature requirement"):
         resolve_feature_requirement_spec("unknown_requirement")

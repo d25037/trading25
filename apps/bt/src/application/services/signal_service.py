@@ -75,6 +75,8 @@ class _LoadedSignalData:
     benchmark_data: pd.DataFrame | None
     sector_data: dict[str, pd.DataFrame] | None
     stock_sector_name: str | None
+    universe_multi_data: dict[str, dict[str, pd.DataFrame]]
+    universe_member_codes: list[str]
     loaded_domains: list[str]
     warnings: list[str]
 
@@ -161,6 +163,18 @@ class SignalService:
             exit_params=loaded.exit_params,
             compiled_strategy=loaded.compiled_strategy,
         )
+
+    @staticmethod
+    def _needs_universe_multi_data(
+        entry_params: SignalParams,
+        exit_params: SignalParams,
+    ) -> bool:
+        for sig_def in SIGNAL_REGISTRY:
+            if "universe_ohlcv" not in sig_def.data_requirements:
+                continue
+            if sig_def.enabled_checker(entry_params) or sig_def.enabled_checker(exit_params):
+                return True
+        return False
 
     def _build_signal_params(
         self,
@@ -258,11 +272,29 @@ class SignalService:
 
         start_str = start_date.isoformat() if start_date else None
         end_str = end_date.isoformat() if end_date else None
+        normalized_stock_code = normalize_stock_code(stock_code) or stock_code
+        needs_universe_multi_data = self._needs_universe_multi_data(
+            entry_params,
+            exit_params,
+        )
+        configured_universe_codes = [
+            normalize_stock_code(code) or code
+            for code in shared_config.stock_codes
+            if code
+        ]
+        universe_member_codes = (
+            list(dict.fromkeys(configured_universe_codes))
+            if needs_universe_multi_data and configured_universe_codes
+            else [normalized_stock_code]
+        )
+        load_codes = list(
+            dict.fromkeys([*universe_member_codes, normalized_stock_code])
+        )
         requirements = build_strategy_data_requirements(
             shared_config=shared_config,
             entry_params=entry_params,
             exit_params=exit_params,
-            stock_codes=(stock_code,),
+            stock_codes=tuple(load_codes),
             start_date=start_str,
             end_date=end_str,
             signal_registry=SIGNAL_REGISTRY,
@@ -271,7 +303,7 @@ class SignalService:
         warnings: list[str] = []
         multi_data, load_warnings = load_market_multi_data(
             self._market_reader,
-            [stock_code],
+            load_codes,
             start_date=requirements.multi_data_key.start_date,
             end_date=requirements.multi_data_key.end_date,
             include_margin_data=requirements.multi_data_key.include_margin_data,
@@ -281,8 +313,7 @@ class SignalService:
         )
         warnings.extend(load_warnings)
 
-        normalized_code = normalize_stock_code(stock_code)
-        stock_payload = multi_data.get(normalized_code, {})
+        stock_payload = multi_data.get(normalized_stock_code, {})
         daily = stock_payload.get("daily")
         if not isinstance(daily, pd.DataFrame) or daily.empty:
             if stock_exists_in_reader(self._market_reader, stock_code):
@@ -328,21 +359,45 @@ class SignalService:
                 end_date=requirements.sector_data_key.end_date,
             )
             stock_sector_mapping = load_market_stock_sector_mapping(self._market_reader)
-            stock_sector_name = stock_sector_mapping.get(normalized_code)
+            stock_sector_name = stock_sector_mapping.get(normalized_stock_code)
             if sector_data:
                 loaded_domains.append("indices_data")
 
         return _LoadedSignalData(
-            stock_code=normalized_code or stock_code,
+            stock_code=normalized_stock_code,
             daily=daily,
             margin_data=margin_data,
             statements_data=statements_data,
             benchmark_data=benchmark_data,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            universe_multi_data=multi_data,
+            universe_member_codes=universe_member_codes,
             loaded_domains=loaded_domains,
             warnings=warnings,
         )
+
+    def _resample_universe_multi_data(
+        self,
+        multi_data: dict[str, dict[str, pd.DataFrame]],
+        timeframe: Literal["daily", "weekly", "monthly"],
+    ) -> dict[str, dict[str, pd.DataFrame]]:
+        if timeframe == "daily":
+            return multi_data
+
+        resampled: dict[str, dict[str, pd.DataFrame]] = {}
+        for code, payload in multi_data.items():
+            daily = payload.get("daily")
+            if not isinstance(daily, pd.DataFrame) or daily.empty:
+                continue
+            resampled_daily = self._resample_ohlcv(daily, timeframe)
+            if resampled_daily.empty:
+                continue
+            resampled[code] = {
+                **payload,
+                "daily": resampled_daily,
+            }
+        return resampled
 
     def _build_signal_data(
         self,
@@ -371,6 +426,10 @@ class SignalService:
             loaded.statements_data,
             pd.DatetimeIndex(ohlcv.index),
         )
+        universe_multi_data = self._resample_universe_multi_data(
+            loaded.universe_multi_data,
+            timeframe,
+        )
 
         data = {
             "ohlc_data": ohlcv,
@@ -382,6 +441,9 @@ class SignalService:
             "benchmark_data": benchmark_data,
             "sector_data": sector_data,
             "stock_sector_name": loaded.stock_sector_name,
+            "stock_code": loaded.stock_code,
+            "universe_multi_data": universe_multi_data,
+            "universe_member_codes": loaded.universe_member_codes,
             "execution_data": None,
             "is_relative_mode": False,
         }
@@ -496,6 +558,9 @@ class SignalService:
                     relative_mode=bool(data.get("is_relative_mode", False)),
                     sector_data=data.get("sector_data"),
                     stock_sector_name=data.get("stock_sector_name"),
+                    stock_code=data.get("stock_code"),
+                    universe_multi_data=data.get("universe_multi_data"),
+                    universe_member_codes=data.get("universe_member_codes"),
                     compiled_strategy=compiled_strategy,
                 )
             else:
@@ -510,6 +575,9 @@ class SignalService:
                     relative_mode=bool(data.get("is_relative_mode", False)),
                     sector_data=data.get("sector_data"),
                     stock_sector_name=data.get("stock_sector_name"),
+                    stock_code=data.get("stock_code"),
+                    universe_multi_data=data.get("universe_multi_data"),
+                    universe_member_codes=data.get("universe_member_codes"),
                     compiled_strategy=compiled_strategy,
                 )
             trigger_dates = _extract_trigger_dates(signal_series)
@@ -649,6 +717,9 @@ class SignalService:
                 relative_mode=False,
                 sector_data=data.get("sector_data"),
                 stock_sector_name=data.get("stock_sector_name"),
+                stock_code=data.get("stock_code"),
+                universe_multi_data=data.get("universe_multi_data"),
+                universe_member_codes=data.get("universe_member_codes"),
                 compiled_strategy=compiled_strategy,
             )
             combined_entry = {

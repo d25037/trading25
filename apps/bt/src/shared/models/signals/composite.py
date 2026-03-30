@@ -21,6 +21,7 @@ from .macro import (
     IndexOpenGapRegimeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
+    UniverseRankBucketSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from .trend import (
@@ -158,6 +159,10 @@ class SignalParams(BaseModel):
     index_open_gap_regime: IndexOpenGapRegimeSignalParams = Field(
         default_factory=IndexOpenGapRegimeSignalParams,
         description="指数寄り付きギャップレジームシグナル",
+    )
+    universe_rank_bucket: UniverseRankBucketSignalParams = Field(
+        default_factory=UniverseRankBucketSignalParams,
+        description="指数/ユニバース内順位バケットシグナル",
     )
     risk_adjusted_return: RiskAdjustedReturnSignalParams = Field(
         default_factory=RiskAdjustedReturnSignalParams,

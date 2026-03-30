@@ -7,6 +7,9 @@ UnifiedFilterProcessor + UnifiedTriggerProcessor の統合版
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Sequence
+from threading import Lock
 from typing import TYPE_CHECKING, Callable, Literal, Optional, Protocol
 
 import pandas as pd
@@ -17,6 +20,7 @@ from src.shared.models.signals import SignalParams, Signals, normalize_bool_seri
 # データ駆動設計: シグナルレジストリからの動的処理
 from .registry import SIGNAL_REGISTRY
 from .scheduler import SignalDecisionScheduler
+from .universe_rank_bucket import build_universe_rank_bucket_feature_panel
 
 if TYPE_CHECKING:
     from src.domains.strategy.runtime.compiler import (
@@ -53,6 +57,7 @@ class SignalProcessor:
     """
 
     _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
+    _UNIVERSE_BUCKET_CACHE_LIMIT = 16
 
     def __init__(self):
         """
@@ -61,6 +66,11 @@ class SignalProcessor:
         外部依存なしの純粋な関数型シグナルプロセッサー
         """
         self._scheduler = SignalDecisionScheduler()
+        self._universe_rank_bucket_cache: OrderedDict[
+            tuple[object, ...],
+            pd.DataFrame,
+        ] = OrderedDict()
+        self._universe_rank_bucket_cache_lock = Lock()
 
     def apply_entry_signals(
         self,
@@ -77,6 +87,9 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: Sequence[str] | None = None,
         screening_recent_days: int | None = None,
     ) -> pd.Series:
         """
@@ -111,6 +124,9 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             entry_recent_days_for_early_stop=screening_recent_days,
             compiled_strategy=compiled_strategy,
         )
@@ -126,6 +142,9 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: Sequence[str] | None = None,
         **optional_data,
     ) -> pd.Series:
         """
@@ -151,6 +170,9 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             compiled_strategy=compiled_strategy,
             **optional_data,  # オプショナルデータを渡す
         )
@@ -168,6 +190,9 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: Sequence[str] | None = None,
         screening_recent_days: int | None = None,
         skip_exit_when_no_recent_entry: bool = False,
         **optional_data,
@@ -203,6 +228,9 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             screening_recent_days=screening_recent_days,
             compiled_strategy=compiled_strategy,
             **optional_data,
@@ -242,6 +270,9 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             compiled_strategy=compiled_strategy,
             **optional_data,  # オプショナルデータ（benchmark_data等）を渡す
         )
@@ -299,6 +330,9 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: Sequence[str] | None = None,
         entry_recent_days_for_early_stop: int | None = None,
     ) -> pd.Series:
         """
@@ -378,6 +412,9 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            stock_code=stock_code,
+            universe_multi_data=universe_multi_data,
+            universe_member_codes=universe_member_codes,
             entry_recent_days_for_early_stop=entry_recent_days_for_early_stop,
             compiled_strategy=compiled_strategy,
         )
@@ -439,6 +476,9 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        stock_code: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: Sequence[str] | None = None,
         entry_recent_days_for_early_stop: int | None = None,
     ) -> bool:
         """
@@ -462,6 +502,9 @@ class SignalProcessor:
             "is_relative_mode": is_relative_mode,  # 相対価格モードフラグ
             "sector_data": sector_data,  # セクターインデックスOHLCデータ
             "stock_sector_name": stock_sector_name,  # 当該銘柄のセクター名
+            "stock_code": stock_code,
+            "universe_multi_data": universe_multi_data,
+            "universe_member_codes": universe_member_codes,
         }
 
         running_entry_signal: Optional[pd.Series] = None
@@ -510,6 +553,50 @@ class SignalProcessor:
     def _has_non_empty_dataframe(value: object) -> bool:
         return isinstance(value, pd.DataFrame) and (not value.empty)
 
+    @staticmethod
+    def _normalize_universe_member_codes(
+        universe_member_codes: Sequence[str] | None,
+    ) -> tuple[str, ...]:
+        if universe_member_codes is None:
+            return ("__ALL__",)
+        return tuple(sorted({str(code) for code in universe_member_codes}))
+
+    def _get_cached_universe_rank_bucket_feature_panel(
+        self,
+        *,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]],
+        universe_member_codes: Sequence[str] | None,
+        price_sma_period: int,
+        volume_short_period: int,
+        volume_long_period: int,
+    ) -> pd.DataFrame:
+        cache_key = (
+            id(universe_multi_data),
+            self._normalize_universe_member_codes(universe_member_codes),
+            price_sma_period,
+            volume_short_period,
+            volume_long_period,
+        )
+
+        with self._universe_rank_bucket_cache_lock:
+            cached = self._universe_rank_bucket_cache.get(cache_key)
+            if cached is not None:
+                self._universe_rank_bucket_cache.move_to_end(cache_key)
+                return cached
+
+            feature_panel = build_universe_rank_bucket_feature_panel(
+                universe_multi_data=universe_multi_data,
+                universe_member_codes=universe_member_codes,
+                price_sma_period=price_sma_period,
+                volume_short_period=volume_short_period,
+                volume_long_period=volume_long_period,
+            )
+            self._universe_rank_bucket_cache[cache_key] = feature_panel
+            self._universe_rank_bucket_cache.move_to_end(cache_key)
+            while len(self._universe_rank_bucket_cache) > self._UNIVERSE_BUCKET_CACHE_LIMIT:
+                self._universe_rank_bucket_cache.popitem(last=False)
+            return feature_panel
+
     @classmethod
     def _get_compiled_signal_availability(
         cls,
@@ -527,6 +614,20 @@ class SignalProcessor:
 
     def _is_requirement_satisfied(self, requirement: str, data_sources: dict) -> bool:
         base, _, detail = requirement.partition(":")
+
+        if requirement == "universe_ohlcv":
+            universe_multi_data = data_sources.get("universe_multi_data")
+            stock_code = data_sources.get("stock_code")
+            if not isinstance(universe_multi_data, dict) or not stock_code:
+                return False
+            payload = universe_multi_data.get(stock_code)
+            if not isinstance(payload, dict):
+                return False
+            daily = payload.get("daily")
+            return (
+                self._has_non_empty_dataframe(daily)
+                and {"Close", "Volume"}.issubset(daily.columns)
+            )
 
         if requirement in {"benchmark_close", "benchmark_open_gap"}:
             benchmark = data_sources.get("benchmark_data")
@@ -645,6 +746,15 @@ class SignalProcessor:
 
             # 4. パラメータ構築
             params = signal_def.param_builder(signal_params, data_sources)
+
+            if signal_def.param_key == "universe_rank_bucket":
+                params["feature_panel"] = self._get_cached_universe_rank_bucket_feature_panel(
+                    universe_multi_data=params["universe_multi_data"],
+                    universe_member_codes=params.get("universe_member_codes"),
+                    price_sma_period=params["price_sma_period"],
+                    volume_short_period=params["volume_short_period"],
+                    volume_long_period=params["volume_long_period"],
+                )
 
             # 5. シグナル計算
             result = signal_def.signal_func(**params)

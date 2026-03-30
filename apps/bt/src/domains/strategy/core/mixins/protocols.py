@@ -78,8 +78,10 @@ class StrategyProtocol(Protocol):
         """Load multi-stock data."""
         ...
 
-    def load_relative_data(self) -> dict[str, dict[str, pd.DataFrame]]:
-        """Load relative mode data."""
+    def load_relative_data(
+        self,
+    ) -> tuple[dict[str, dict[str, pd.DataFrame]], dict[str, dict[str, pd.DataFrame]]]:
+        """Load relative-mode signal data and execution data."""
         ...
 
     def load_benchmark_data(self) -> pd.DataFrame:
@@ -100,6 +102,11 @@ class StrategyProtocol(Protocol):
         stock_data: pd.DataFrame,
         margin_data: pd.DataFrame | None = None,
         statements_data: pd.DataFrame | None = None,
+        execution_data: pd.DataFrame | None = None,
+        sector_data: dict[str, pd.DataFrame] | None = None,
+        stock_sector_name: str | None = None,
+        universe_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        universe_member_codes: list[str] | None = None,
     ) -> "Signals":
         """Generate trading signals for a single stock."""
         ...

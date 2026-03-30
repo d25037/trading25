@@ -38,22 +38,28 @@ def _make_ohlcv_df(n: int = 5) -> pd.DataFrame:
 
 
 def _make_loaded_signal_data() -> _LoadedSignalData:
+    daily = _make_ohlcv_df()
     return _LoadedSignalData(
         stock_code="7203",
-        daily=_make_ohlcv_df(),
+        daily=daily,
         margin_data=None,
         statements_data=None,
         benchmark_data=None,
         sector_data=None,
         stock_sector_name=None,
+        universe_multi_data={"7203": {"daily": daily}},
+        universe_member_codes=["7203"],
         loaded_domains=["stock_data"],
         warnings=[],
     )
 
 
-def _make_shared_config() -> SharedConfig:
+def _make_shared_config(*, stock_codes: list[str] | None = None) -> SharedConfig:
+    payload: dict[str, object] = {"timeframe": "daily"}
+    if stock_codes is not None:
+        payload["stock_codes"] = stock_codes
     return SharedConfig.model_validate(
-        {"timeframe": "daily"},
+        payload,
         context={"resolve_stock_codes": False},
     )
 
@@ -404,6 +410,8 @@ class TestSignalService:
         assert loaded.statements_data is not None
         assert loaded.benchmark_data is not None
         assert loaded.sector_data is not None
+        assert loaded.universe_member_codes == ["7203"]
+        assert set(loaded.universe_multi_data) == {"7203"}
         assert loaded.loaded_domains == [
             "stock_data",
             "margin_data",
@@ -411,6 +419,58 @@ class TestSignalService:
             "topix_data",
             "indices_data",
         ]
+
+    def test_load_signal_data_expands_load_scope_for_universe_signal(
+        self,
+        service: SignalService,
+    ) -> None:
+        service._market_reader = object()  # type: ignore[assignment]
+        daily = _make_ohlcv_df()
+        requirements = SimpleNamespace(
+            multi_data_key=SimpleNamespace(
+                start_date="2025-01-01",
+                end_date="2025-01-05",
+                include_margin_data=False,
+                include_statements_data=False,
+                period_type="FY",
+                include_forecast_revision=False,
+            ),
+            needs_benchmark=False,
+            benchmark_data_key=None,
+            needs_sector=False,
+            sector_data_key=None,
+        )
+        entry_params = SignalParams(universe_rank_bucket={"enabled": True})
+
+        with (
+            patch(
+                "src.application.services.signal_service.build_strategy_data_requirements",
+                return_value=requirements,
+            ) as build_requirements,
+            patch(
+                "src.application.services.signal_service.load_market_multi_data",
+                return_value=(
+                    {
+                        "7203": {"daily": daily},
+                        "6758": {"daily": daily},
+                    },
+                    [],
+                ),
+            ) as load_multi_data,
+        ):
+            loaded = service._load_signal_data(
+                "7203",
+                shared_config=_make_shared_config(stock_codes=["7203", "6758"]),
+                entry_params=entry_params,
+                exit_params=SignalParams(),
+                start_date=date(2025, 1, 1),
+                end_date=date(2025, 1, 5),
+            )
+
+        assert build_requirements.call_args.kwargs["stock_codes"] == ("7203", "6758")
+        assert load_multi_data.call_args.args[1] == ["7203", "6758"]
+        assert loaded.universe_member_codes == ["7203", "6758"]
+        assert set(loaded.universe_multi_data) == {"7203", "6758"}
 
     def test_load_signal_data_missing_daily_when_stock_exists_raises_refresh_error(
         self,
@@ -515,6 +575,8 @@ class TestSignalService:
             benchmark_data=None,
             sector_data=None,
             stock_sector_name=None,
+            universe_multi_data={"7203": {"daily": bad_daily}},
+            universe_member_codes=["7203"],
             loaded_domains=["stock_data"],
             warnings=[],
         )
@@ -533,6 +595,9 @@ class TestSignalService:
             "benchmark_data": None,
             "sector_data": None,
             "stock_sector_name": None,
+            "stock_code": "7203",
+            "universe_multi_data": {"7203": {"daily": _make_ohlcv_df(3)}},
+            "universe_member_codes": ["7203"],
             "execution_data": None,
             "is_relative_mode": False,
         }
@@ -561,6 +626,9 @@ class TestSignalService:
             "benchmark_data": None,
             "sector_data": None,
             "stock_sector_name": None,
+            "stock_code": "7203",
+            "universe_multi_data": {"7203": {"daily": _make_ohlcv_df(3)}},
+            "universe_member_codes": ["7203"],
             "execution_data": None,
             "is_relative_mode": False,
         }
