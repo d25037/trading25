@@ -7,6 +7,8 @@ optimization parameter range utilities
 import itertools
 from typing import Any
 
+from ruamel.yaml import YAML
+
 from src.shared.paths import get_default_config_path
 
 from .grid_validation import (
