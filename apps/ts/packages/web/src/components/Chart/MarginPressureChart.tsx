@@ -1,5 +1,6 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries, type Time } from 'lightweight-charts';
 import { useEffect, useRef } from 'react';
+import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import type { MarginFlowPressureData, MarginLongPressureData, MarginTurnoverDaysData } from '@/types/chart';
 import { logger } from '@/utils/logger';
 
@@ -124,6 +125,7 @@ export function MarginPressureChart({
       rightPriceScale: {
         borderColor: '#e1e1e1',
       },
+      ...PAGE_SCROLL_CHART_INTERACTION_OPTIONS,
     });
 
     chartRef.current = chart;
