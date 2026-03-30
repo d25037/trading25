@@ -109,6 +109,52 @@ function normalizeEditorContent(yamlContent: string): string {
   return yamlContent.trim() ? yamlContent : EMPTY_OPTIMIZATION_YAML;
 }
 
+function buildDirtyValidationState(analysis: GridParameterAnalysis): ValidationState {
+  const details = analysis.warnings.map(formatValidationIssue);
+  return {
+    tone: analysis.readyToRun ? 'success' : 'warning',
+    message: analysis.readyToRun
+      ? 'Draft is structurally valid. Strategy-linked validation and drift checks run on save.'
+      : 'Draft is structurally valid, but candidate ranges are not ready to run yet.',
+    details,
+  };
+}
+
+function buildSavedValidationState(state: StrategyOptimizationStateResponse): ValidationState {
+  const errorDetails = state.errors.map(formatValidationIssue);
+  if (errorDetails.length > 0) {
+    return {
+      tone: 'error',
+      message: `Saved optimization has ${errorDetails.length} blocking issue(s). Fix the strategy-linked spec before running optimization.`,
+      details: errorDetails,
+    };
+  }
+
+  const warningDetails = [...state.warnings, ...state.drift].map(formatValidationIssue);
+  if (!state.persisted) {
+    return {
+      tone: 'warning',
+      message: 'No saved optimization spec. Generate a draft from the current strategy or author one manually.',
+      details: warningDetails,
+    };
+  }
+  if (warningDetails.length > 0) {
+    return {
+      tone: 'warning',
+      message: state.ready_to_run
+        ? 'Saved optimization is usable, but drift or non-blocking warnings were detected.'
+        : 'Saved optimization is not ready to run yet.',
+      details: warningDetails,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: 'Saved optimization is ready to run.',
+    details: [],
+  };
+}
+
 function buildValidationState(
   analysis: GridParameterAnalysis,
   state: StrategyOptimizationStateResponse | null,
@@ -127,48 +173,11 @@ function buildValidationState(
   }
 
   if (isDirty) {
-    const details = analysis.warnings.map(formatValidationIssue);
-    return {
-      tone: analysis.readyToRun ? 'success' : 'warning',
-      message: analysis.readyToRun
-        ? 'Draft is structurally valid. Strategy-linked validation and drift checks run on save.'
-        : 'Draft is structurally valid, but candidate ranges are not ready to run yet.',
-      details,
-    };
+    return buildDirtyValidationState(analysis);
   }
 
   if (state) {
-    const errorDetails = state.errors.map(formatValidationIssue);
-    if (errorDetails.length > 0) {
-      return {
-        tone: 'error',
-        message: `Saved optimization has ${errorDetails.length} blocking issue(s). Fix the strategy-linked spec before running optimization.`,
-        details: errorDetails,
-      };
-    }
-
-    const warningDetails = [...state.warnings, ...state.drift].map(formatValidationIssue);
-    if (!state.persisted) {
-      return {
-        tone: 'warning',
-        message: 'No saved optimization spec. Generate a draft from the current strategy or author one manually.',
-        details: warningDetails,
-      };
-    }
-    if (warningDetails.length > 0) {
-      return {
-        tone: 'warning',
-        message: state.ready_to_run
-          ? 'Saved optimization is usable, but drift or non-blocking warnings were detected.'
-          : 'Saved optimization is not ready to run yet.',
-        details: warningDetails,
-      };
-    }
-    return {
-      tone: 'success',
-      message: 'Saved optimization is ready to run.',
-      details: [],
-    };
+    return buildSavedValidationState(state);
   }
 
   return {

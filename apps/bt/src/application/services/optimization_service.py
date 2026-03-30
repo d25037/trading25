@@ -7,6 +7,7 @@ ParameterOptimizationEngineの非同期ラッパー（Grid Search）
 import asyncio
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -23,6 +24,7 @@ from src.application.services.run_contracts import build_strategy_run_spec
 from src.shared.config.settings import get_settings
 
 _WORKER_MODULE = "src.application.workers.optimization_worker"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class OptimizationService:
