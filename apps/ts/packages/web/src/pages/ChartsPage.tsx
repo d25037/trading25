@@ -131,9 +131,9 @@ function formatMarketLabel(stockInfo: StockInfoResponse | undefined): string {
     return '-';
   }
 
-  const marketCode = stockInfo.marketCode?.trim().toLowerCase() ?? '';
-  const canonicalLabel = marketCode ? MARKET_CODE_LABELS[marketCode] ?? stockInfo.marketCode?.trim() ?? '' : '';
-  return canonicalLabel || stockInfo.marketName?.trim() || '-';
+  const rawMarketCode = stockInfo.marketCode?.trim() ?? '';
+  const canonicalLabel = rawMarketCode ? MARKET_CODE_LABELS[rawMarketCode.toLowerCase()] ?? '' : '';
+  return canonicalLabel || stockInfo.marketName?.trim() || rawMarketCode || '-';
 }
 
 function formatScaleCategoryLabel(scaleCategory: string | null | undefined): string {

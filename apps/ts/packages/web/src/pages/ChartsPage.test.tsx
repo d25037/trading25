@@ -914,6 +914,41 @@ describe('ChartsPage', () => {
     );
   });
 
+  it('prefers the market name when the market code has no canonical label mapping', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '2510',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockInfo.mockReturnValue({
+      data: {
+        companyName: 'ETF Test',
+        marketCode: '9999',
+        marketName: 'ETF/ETN',
+      },
+    });
+
+    renderChartsPage();
+
+    expect(screen.getByText('市場')).toBeInTheDocument();
+    expect(screen.getByText('ETF/ETN')).toBeInTheDocument();
+    expect(screen.queryByText('9999')).not.toBeInTheDocument();
+  });
+
   it('falls back to immediate visibility when IntersectionObserver is unavailable', async () => {
     vi.stubGlobal('IntersectionObserver', undefined);
 
