@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+import hashlib
 from typing import Any, Literal, cast
 
 import pandas as pd
@@ -631,7 +632,7 @@ def _query_samples(
         nt_ratio_stats=nt_ratio_stats,
         selected_groups=selected_groups,
     )
-    return cast(
+    samples_df = cast(
         pd.DataFrame,
         conn.execute(
             f"""
@@ -645,33 +646,41 @@ def _query_samples(
                 nt_ratio_return,
                 overnight_diff,
                 overnight_return,
-                direction,
-                sample_rank
-            FROM (
-                SELECT
-                    stock_group,
-                    nt_ratio_bucket_key,
-                    date,
-                    next_date,
-                    normalized_code,
-                    nt_ratio_return,
-                    overnight_diff,
-                    overnight_return,
-                    direction,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY stock_group, nt_ratio_bucket_key
-                        ORDER BY md5(
-                            stock_group || '|' || normalized_code || '|' || date || '|' || next_date
-                        )
-                    ) AS sample_rank
-                FROM grouped_stock_days
-            ) ranked_samples
-            WHERE sample_rank <= ?
-            ORDER BY stock_group, nt_ratio_bucket_key, sample_rank
+                direction
+            FROM grouped_stock_days
             """,
-            [*params, sample_size],
+            params,
         ).fetchdf(),
     )
+    if samples_df.empty:
+        samples_df["sample_rank"] = pd.Series(dtype="int64")
+        return samples_df
+
+    hash_input = (
+        samples_df["stock_group"].astype(str)
+        + "|"
+        + samples_df["code"].astype(str)
+        + "|"
+        + samples_df["date"].astype(str)
+        + "|"
+        + samples_df["next_date"].astype(str)
+    )
+    samples_df["sample_sort_key"] = hash_input.map(
+        lambda value: hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()
+    )
+    samples_df = samples_df.sort_values(
+        by=["stock_group", "nt_ratio_bucket_key", "sample_sort_key", "code", "date", "next_date"],
+        kind="stable",
+    )
+    samples_df["sample_rank"] = (
+        samples_df.groupby(["stock_group", "nt_ratio_bucket_key"]).cumcount() + 1
+    )
+    samples_df = samples_df.loc[samples_df["sample_rank"] <= sample_size].copy()
+    samples_df = samples_df.drop(columns=["sample_sort_key"])
+    return samples_df.sort_values(
+        by=["stock_group", "nt_ratio_bucket_key", "sample_rank"],
+        kind="stable",
+    ).reset_index(drop=True)
 
 
 def _apply_nt_ratio_sample_clipping(
