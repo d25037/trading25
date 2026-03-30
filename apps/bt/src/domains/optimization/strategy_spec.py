@@ -177,7 +177,7 @@ def generate_strategy_optimization_draft(
 
     for section_name, section_params in _build_section_signal_params(strategy_config).items():
         draft_section: dict[str, Any] = {}
-        for signal_name, signal_value in section_params.__class__.model_fields.items():
+        for signal_name in section_params.__class__.model_fields:
             current_signal_value = getattr(section_params, signal_name)
             signal_draft = _build_signal_draft(
                 signal_name=signal_name,
@@ -251,7 +251,7 @@ def _build_signal_draft(
 
 def _build_model_draft(model_value: BaseModel, *, path_prefix: str) -> dict[str, Any]:
     draft: dict[str, Any] = {}
-    for field_name, field_info in model_value.__class__.model_fields.items():
+    for field_name in model_value.__class__.model_fields:
         current_value = getattr(model_value, field_name)
         field_path = f"{path_prefix}.{field_name}"
         if isinstance(current_value, BaseModel):
@@ -295,8 +295,10 @@ def _generate_numeric_candidates(
     if isinstance(value, bool):
         return []
     if isinstance(value, int):
-        return _generate_int_candidates(int(value), schema)
-    return _generate_float_candidates(float(value), schema)
+        int_candidates = _generate_int_candidates(int(value), schema)
+        return [*int_candidates]
+    float_candidates = _generate_float_candidates(float(value), schema)
+    return [*float_candidates]
 
 
 def _generate_int_candidates(value: int, schema: dict[str, Any]) -> list[int]:
