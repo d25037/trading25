@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.services.screening_default_markets import (
+    _build_scope_label,
     resolve_default_screening_markets,
     validate_selected_screening_strategy_datasets,
 )
@@ -60,17 +61,17 @@ def test_resolve_default_screening_markets_uses_selected_strategy_union(monkeypa
         lambda dataset_name, dataset_base_path=None: {
             "dataset-prime": StrategyDatasetMetadata(
                 dataset_name="dataset-prime",
-                dataset_preset="preset-prime",
+                dataset_preset="primeMarket",
                 screening_default_markets=["prime"],
             ),
             "dataset-standard": StrategyDatasetMetadata(
                 dataset_name="dataset-standard",
-                dataset_preset="preset-standard",
+                dataset_preset="standardMarket",
                 screening_default_markets=["standard"],
             ),
             "dataset-growth": StrategyDatasetMetadata(
                 dataset_name="dataset-growth",
-                dataset_preset="preset-growth",
+                dataset_preset="growthMarket",
                 screening_default_markets=["growth"],
             ),
         }[dataset_name],
@@ -88,6 +89,7 @@ def test_resolve_default_screening_markets_uses_selected_strategy_union(monkeypa
     ]
     assert resolved.markets == ["prime", "standard"]
     assert resolved.markets_param == "prime,standard"
+    assert resolved.scope_label == "Standard Market + Prime Market"
 
 
 def test_resolve_default_screening_markets_uses_all_eligible_when_unselected(
@@ -128,17 +130,17 @@ def test_resolve_default_screening_markets_uses_all_eligible_when_unselected(
         lambda dataset_name, dataset_base_path=None: {
             "dataset-prime": StrategyDatasetMetadata(
                 dataset_name="dataset-prime",
-                dataset_preset="preset-prime",
+                dataset_preset="primeMarket",
                 screening_default_markets=["prime"],
             ),
             "dataset-standard": StrategyDatasetMetadata(
                 dataset_name="dataset-standard",
-                dataset_preset="preset-standard",
+                dataset_preset="standardMarket",
                 screening_default_markets=["standard"],
             ),
             "dataset-growth": StrategyDatasetMetadata(
                 dataset_name="dataset-growth",
-                dataset_preset="preset-growth",
+                dataset_preset="growthMarket",
                 screening_default_markets=["growth"],
             ),
         }[dataset_name],
@@ -156,6 +158,7 @@ def test_resolve_default_screening_markets_uses_all_eligible_when_unselected(
     ]
     assert resolved.markets == ["prime", "standard"]
     assert resolved.markets_param == "prime,standard"
+    assert resolved.scope_label == "Standard Market + Prime Market"
 
 
 def test_resolve_default_screening_markets_raises_for_unresolvable_dataset(
@@ -273,5 +276,91 @@ def test_validate_selected_screening_strategy_datasets_raises_for_selected_broke
         validate_selected_screening_strategy_datasets(
             entry_decidability="pre_open_decidable",
             strategies="production/broken",
+            config_loader=loader,
+        )
+
+
+def test_build_scope_label_falls_back_when_dataset_preset_is_missing() -> None:
+    assert (
+        _build_scope_label(
+            [
+                StrategyDatasetMetadata(
+                    dataset_name="dataset-a",
+                    dataset_preset=None,
+                    screening_default_markets=["prime"],
+                )
+            ],
+            ["prime"],
+        )
+        == "Prime"
+    )
+
+
+def test_build_scope_label_falls_back_when_preset_label_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.get_preset_label",
+        lambda _preset_name: None,
+    )
+
+    assert (
+        _build_scope_label(
+            [
+                StrategyDatasetMetadata(
+                    dataset_name="dataset-a",
+                    dataset_preset="unknown",
+                    screening_default_markets=["prime", "standard"],
+                )
+            ],
+            ["prime", "standard"],
+        )
+        == "Prime + Standard"
+    )
+
+
+def test_build_scope_label_deduplicates_preset_labels() -> None:
+    assert (
+        _build_scope_label(
+            [
+                StrategyDatasetMetadata(
+                    dataset_name="dataset-a",
+                    dataset_preset="primeMarket",
+                    screening_default_markets=["prime"],
+                ),
+                StrategyDatasetMetadata(
+                    dataset_name="dataset-b",
+                    dataset_preset="primeMarket",
+                    screening_default_markets=["prime"],
+                ),
+            ],
+            ["prime"],
+        )
+        == "Prime Market"
+    )
+
+
+def test_build_scope_label_falls_back_for_empty_dataset_list() -> None:
+    assert _build_scope_label([], ["prime", "standard", "growth"]) == "All Markets"
+
+
+def test_resolve_default_screening_markets_raises_when_union_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = MagicMock()
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets._resolve_selected_strategy_context",
+        lambda **_kwargs: (SimpleNamespace(runtime_payloads={}), ["production/empty"]),
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets._resolve_selected_strategy_datasets",
+        lambda **_kwargs: [],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Failed to resolve default screening markets from production strategy datasets",
+    ):
+        resolve_default_screening_markets(
+            entry_decidability="pre_open_decidable",
+            strategies=None,
             config_loader=loader,
         )

@@ -30,6 +30,7 @@ import { formatMarketsLabel, unionMarkets } from '@/lib/marketUtils';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
+import { DATASET_PRESETS } from '@/types/dataset';
 import type {
   EntryDecidability,
   MarketScreeningResponse,
@@ -42,6 +43,7 @@ const subTabs = [
   { value: 'preOpenScreening' as ScreeningSubTab, label: 'Pre-Open Decidable', icon: Filter },
   { value: 'inSessionScreening' as ScreeningSubTab, label: 'Requires In-Session Observation', icon: Filter },
 ];
+const DATASET_PRESET_LABELS = new Map(DATASET_PRESETS.map((preset) => [preset.value, preset.label]));
 
 function isScreeningSubTab(tab: ScreeningSubTab): tab is 'preOpenScreening' | 'inSessionScreening' {
   return tab === 'preOpenScreening' || tab === 'inSessionScreening';
@@ -133,11 +135,11 @@ function selectStrategyNames(
     .sort((left, right) => left.localeCompare(right));
 }
 
-function resolveAutoScreeningMarkets(
+function resolveTargetStrategies(
   strategies: StrategyMetadata[] | undefined,
   params: ScreeningParams,
   entryDecidability: EntryDecidability
-): string[] {
+): StrategyMetadata[] {
   if (!strategies) {
     return [];
   }
@@ -147,9 +149,47 @@ function resolveAutoScreeningMarkets(
   const selectedStrategies = parseCsvTokens(params.strategies)
     .map((name) => eligibleByName.get(name))
     .filter((strategy): strategy is StrategyMetadata => strategy !== undefined);
-  const targetStrategies = selectedStrategies.length > 0 ? selectedStrategies : eligibleStrategies;
+  return selectedStrategies.length > 0 ? selectedStrategies : eligibleStrategies;
+}
 
-  return unionMarkets(targetStrategies.map((strategy) => strategy.screening_default_markets));
+function resolveAutoScreeningMarkets(
+  strategies: StrategyMetadata[] | undefined,
+  params: ScreeningParams,
+  entryDecidability: EntryDecidability
+): string[] {
+  return unionMarkets(
+    resolveTargetStrategies(strategies, params, entryDecidability).map((strategy) => strategy.screening_default_markets)
+  );
+}
+
+function resolveAutoScreeningScopeLabel(
+  strategies: StrategyMetadata[] | undefined,
+  params: ScreeningParams,
+  entryDecidability: EntryDecidability,
+  autoMarkets: string[]
+): string {
+  const fallbackLabel = formatMarketsLabel(autoMarkets);
+  const targetStrategies = resolveTargetStrategies(strategies, params, entryDecidability);
+  if (targetStrategies.length === 0) {
+    return fallbackLabel;
+  }
+
+  const scopeLabels: string[] = [];
+  const seenLabels = new Set<string>();
+  for (const strategy of targetStrategies) {
+    const preset = strategy.dataset_preset;
+    const scopeLabel = preset ? DATASET_PRESET_LABELS.get(preset) : null;
+    if (!scopeLabel) {
+      return fallbackLabel;
+    }
+    if (seenLabels.has(scopeLabel)) {
+      continue;
+    }
+    scopeLabels.push(scopeLabel);
+    seenLabels.add(scopeLabel);
+  }
+
+  return scopeLabels.length > 0 ? scopeLabels.join(' + ') : fallbackLabel;
 }
 
 function useSanitizedScreeningParams(
@@ -176,13 +216,19 @@ function getScreeningModeLabel(entryDecidability: EntryDecidability): string {
     : 'Pre-Open Decidable';
 }
 
-function resolveScreeningMarketsLabel(markets: string | undefined, autoMarkets: string[]): string {
+function resolveRequestedScreeningScopeLabel(markets: string | undefined, autoScopeLabel: string): string {
+  if (markets) {
+    return formatMarketsLabel(markets.split(','));
+  }
+  return autoScopeLabel;
+}
+
+function resolveScreeningUniverseIntroLabel(markets: string | undefined, autoScopeLabel: string): string {
   if (markets) {
     return formatMarketsLabel(markets.split(','));
   }
 
-  const autoLabel = formatMarketsLabel(autoMarkets);
-  return autoLabel === 'Auto' ? 'Auto' : `Auto (${autoLabel})`;
+  return autoScopeLabel === 'Auto' ? 'Auto' : `Auto (${autoScopeLabel})`;
 }
 
 function useObservedElementHeight<T extends HTMLElement>() {
@@ -222,6 +268,7 @@ interface ScreeningSidebarProps {
   entryDecidability: EntryDecidability;
   screeningParams: ScreeningParams;
   screeningAutoMarkets: string[];
+  screeningAutoScopeLabel: string;
   setActiveSubTab: (tab: ScreeningSubTab) => void;
   setScreeningParams: (params: ScreeningParams) => void;
   productionStrategies: string[];
@@ -238,6 +285,7 @@ function ScreeningSidebar({
   entryDecidability,
   screeningParams,
   screeningAutoMarkets,
+  screeningAutoScopeLabel,
   setActiveSubTab,
   setScreeningParams,
   productionStrategies,
@@ -251,9 +299,7 @@ function ScreeningSidebar({
   if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
     const runButtonLabel =
-      entryDecidability === 'requires_same_session_observation'
-        ? 'Run In-Session Screening'
-        : 'Run Pre-Open Screening';
+      entryDecidability === 'requires_same_session_observation' ? 'Run In-Session Screening' : 'Run Pre-Open Screening';
 
     return (
       <div className="space-y-3">
@@ -296,6 +342,7 @@ function ScreeningSidebar({
           onChange={setScreeningParams}
           strategyOptions={productionStrategies}
           autoMarkets={screeningAutoMarkets}
+          autoScopeLabel={screeningAutoScopeLabel}
           strategiesLoading={isLoadingStrategies}
         />
       </div>
@@ -316,6 +363,7 @@ interface ScreeningMainContentProps {
   onSelectScreeningJob: (job: ScreeningJobResponse) => void;
   screeningSummary: MarketScreeningResponse['summary'] | undefined;
   screeningMarkets: string[];
+  screeningScopeLabel?: string;
   screeningRecentDays: number;
   screeningReferenceDate: string | undefined;
   screeningResults: ScreeningResultItem[];
@@ -336,6 +384,7 @@ function ScreeningMainContent({
   onSelectScreeningJob,
   screeningSummary,
   screeningMarkets,
+  screeningScopeLabel,
   screeningRecentDays,
   screeningReferenceDate,
   screeningResults,
@@ -357,6 +406,7 @@ function ScreeningMainContent({
         <ScreeningSummary
           summary={screeningSummary}
           markets={screeningMarkets}
+          scopeLabel={screeningScopeLabel}
           recentDays={screeningRecentDays}
           referenceDate={screeningReferenceDate}
         />
@@ -547,10 +597,22 @@ export function ScreeningPage() {
     preOpenScreeningParams,
     'pre_open_decidable'
   );
+  const preOpenAutoScopeLabel = resolveAutoScreeningScopeLabel(
+    productionStrategies,
+    preOpenScreeningParams,
+    'pre_open_decidable',
+    preOpenAutoMarkets
+  );
   const inSessionAutoMarkets = resolveAutoScreeningMarkets(
     productionStrategies,
     inSessionScreeningParams,
     'requires_same_session_observation'
+  );
+  const inSessionAutoScopeLabel = resolveAutoScreeningScopeLabel(
+    productionStrategies,
+    inSessionScreeningParams,
+    'requires_same_session_observation',
+    inSessionAutoMarkets
   );
   const activeEntryDecidability: EntryDecidability =
     activeSubTab === 'inSessionScreening' ? 'requires_same_session_observation' : 'pre_open_decidable';
@@ -578,15 +640,21 @@ export function ScreeningPage() {
     activeEntryDecidability === 'requires_same_session_observation' ? inSessionScreening : preOpenScreening;
   const activeScreeningAutoMarkets =
     activeEntryDecidability === 'requires_same_session_observation' ? inSessionAutoMarkets : preOpenAutoMarkets;
+  const activeScreeningAutoScopeLabel =
+    activeEntryDecidability === 'requires_same_session_observation' ? inSessionAutoScopeLabel : preOpenAutoScopeLabel;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeEntryDecidability];
   const selectedStrategyCount = parseCsvTokens(activeScreening.params.strategies).length;
+  const activeScreeningResultScopeLabel =
+    activeScreening.result?.scopeLabel ??
+    activeScreening.job?.scopeLabel ??
+    resolveRequestedScreeningScopeLabel(activeScreening.params.markets, activeScreeningAutoScopeLabel);
   const introMetaItems = [
     { label: 'Mode', value: getScreeningModeLabel(activeEntryDecidability) },
     {
-      label: 'Markets',
-      value: resolveScreeningMarketsLabel(activeScreening.params.markets, activeScreeningAutoMarkets),
+      label: 'Universe',
+      value: resolveScreeningUniverseIntroLabel(activeScreening.params.markets, activeScreeningAutoScopeLabel),
     },
-    { label: 'Scope', value: selectedStrategyCount > 0 ? `${selectedStrategyCount} selected` : 'All eligible' },
+    { label: 'Strategies', value: selectedStrategyCount > 0 ? `${selectedStrategyCount} selected` : 'All eligible' },
   ];
 
   const handleStockClick = useCallback(
@@ -637,6 +705,7 @@ export function ScreeningPage() {
               entryDecidability={activeEntryDecidability}
               screeningParams={activeScreening.params}
               screeningAutoMarkets={activeScreeningAutoMarkets}
+              screeningAutoScopeLabel={activeScreeningAutoScopeLabel}
               setActiveSubTab={setActiveSubTab}
               setScreeningParams={activeScreening.setParams}
               productionStrategies={activeScreening.allowedStrategies}
@@ -663,6 +732,7 @@ export function ScreeningPage() {
             onSelectScreeningJob={activeScreening.handleSelectJob}
             screeningSummary={activeScreening.result?.summary}
             screeningMarkets={activeScreening.result?.markets || []}
+            screeningScopeLabel={activeScreeningResultScopeLabel}
             screeningRecentDays={activeScreening.result?.recentDays || (activeScreening.params.recentDays ?? 0)}
             screeningReferenceDate={activeScreening.result?.referenceDate}
             screeningResults={activeScreening.result?.results || []}
