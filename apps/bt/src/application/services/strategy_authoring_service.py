@@ -35,6 +35,7 @@ _KNOWN_STRATEGY_TOP_LEVEL_KEYS = {
     "display_name",
     "description",
     "shared_config",
+    "optimization",
     "execution",
     "entry_filter_params",
     "exit_trigger_params",

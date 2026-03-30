@@ -10,7 +10,7 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src.shared.models.config import SharedConfig
+from src.shared.models.config import SharedConfig, StrategyOptimizationConfig
 from src.shared.models.signals import SignalParams
 
 
@@ -34,6 +34,10 @@ class StrategyConfig(BaseModel):
     description: str | None = Field(default=None, description="説明")
     execution: ExecutionConfig | None = Field(default=None, description="実行設定")
     shared_config: SharedConfig | None = Field(default=None, description="共通設定")
+    optimization: StrategyOptimizationConfig | None = Field(
+        default=None,
+        description="戦略と連動した optimization 仕様",
+    )
     entry_filter_params: SignalParams = Field(description="エントリーフィルター")
     exit_trigger_params: SignalParams | None = Field(
         default=None, description="エグジットトリガー"

@@ -8,7 +8,6 @@ import os
 import sys
 import threading
 import signal
-from collections.abc import Mapping
 from contextlib import contextmanager
 from collections.abc import Iterator
 from types import FrameType
@@ -17,7 +16,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 import pandas as pd
 
 from loguru import logger
-from ruamel.yaml import YAML
 
 from src.shared.constants import OPTIMIZATION_TIMEOUT_SECONDS
 from src.shared.models.config import SharedConfig
@@ -26,14 +24,12 @@ from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurabl
 from src.domains.strategy.utils.optimization import OptimizationResult
 
 from .grid_loader import (
-    find_grid_config_path,
     generate_combinations,
     load_default_config,
-    load_grid_config,
 )
 from .grid_validation import (
     format_grid_validation_issues,
-    validate_grid_document,
+    validate_parameter_ranges,
 )
 from .param_builder import build_signal_params
 from .scoring import (
@@ -41,6 +37,7 @@ from .scoring import (
     normalize_and_recalculate_scores,
 )
 from .metrics import collect_metrics as collect_optimization_metrics
+from .strategy_spec import analyze_saved_strategy_optimization
 
 # ワーカープロセス間データ共有用（initializer経由で設定）
 _worker_shared_data: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None
@@ -117,41 +114,29 @@ class ParameterOptimizationEngine:
         # loguruログレベル設定（親プロセス用）
         self._configure_logger(verbose)
 
-        # グリッドYAML読み込み
-        self.grid_config_path = find_grid_config_path(
-            self.strategy_basename, grid_config_path
-        )
-        grid_config = load_grid_config(self.grid_config_path)
-        self.grid_validation = validate_grid_document(grid_config)
-        grid_config_mapping = grid_config if isinstance(grid_config, Mapping) else {}
-
-        self.parameter_ranges = grid_config_mapping.get("parameter_ranges", {})
-        self.description = grid_config_mapping.get("description", "")
-
         # default.yaml読み込み
         default_config = load_default_config()
 
         # 最適化設定
         self.optimization_config = default_config["parameter_optimization"]
 
-        # ベース戦略YAML（グリッドで指定 or ConfigLoaderで推測）
+        # ベース戦略YAML（strategy-linked optimization を含む）
         from src.domains.strategy.runtime.loader import ConfigLoader
 
         config_loader = ConfigLoader()
+        base_strategy_config = config_loader.load_strategy_config(strategy_name)
+        inferred_path = config_loader._infer_strategy_path(strategy_name)
+        self.base_config_path = str(inferred_path)
+        self.grid_config_path = f"{self.base_config_path}#optimization"
 
-        if "base_config" in grid_config_mapping:
-            # グリッドYAMLで明示指定されている場合
-            self.base_config_path = grid_config_mapping["base_config"]
-            ruamel_yaml_base = YAML()
-            ruamel_yaml_base.preserve_quotes = True
-            with open(self.base_config_path) as f:
-                base_strategy_config = ruamel_yaml_base.load(f)
-        else:
-            # 未指定の場合はConfigLoaderで自動推測
-            base_strategy_config = config_loader.load_strategy_config(strategy_name)
-            # パスを取得（ログ表示用）
-            inferred_path = config_loader._infer_strategy_path(strategy_name)
-            self.base_config_path = str(inferred_path)
+        optimization_analysis = analyze_saved_strategy_optimization(base_strategy_config)
+        optimization_mapping = optimization_analysis.optimization or {}
+        self.optimization_analysis = optimization_analysis
+        self.grid_validation = validate_parameter_ranges(
+            optimization_mapping.get("parameter_ranges")
+        )
+        self.parameter_ranges = optimization_mapping.get("parameter_ranges", {})
+        self.description = optimization_mapping.get("description", "")
 
         # 共通設定（戦略YAML override 対応）
         self.shared_config_dict = config_loader.merge_shared_config(
@@ -196,6 +181,11 @@ class ParameterOptimizationEngine:
         Returns:
             OptimizationResult: 最適化結果
         """
+        if not self.optimization_analysis.valid:
+            raise ValueError(
+                "戦略に紐づく optimization 仕様が無効です。"
+                f" {format_grid_validation_issues(self.optimization_analysis.errors)}"
+            )
         if not self.grid_validation.valid:
             raise ValueError(
                 "最適化グリッド設定が無効です。"
@@ -211,8 +201,8 @@ class ParameterOptimizationEngine:
         # バリデーション: パラメータ範囲が空でないかチェック
         if len(combinations) == 0:
             raise ValueError(
-                "パラメータ範囲が空です。グリッドYAMLファイルを確認してください。\n"
-                f"グリッドファイル: {self.grid_config_path if hasattr(self, 'grid_config_path') else '不明'}"
+                "パラメータ範囲が空です。strategy YAML 内の optimization.parameter_ranges を確認してください。\n"
+                f"optimization spec: {self.grid_config_path if hasattr(self, 'grid_config_path') else '不明'}"
             )
 
         logger.info(f"パラメータ組み合わせ数: {len(combinations)}")

@@ -5,7 +5,7 @@ Config Models
 """
 
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -38,6 +38,21 @@ class ParameterOptimizationConfig(BaseModel):
         if v not in valid_methods:
             raise ValueError(f"methodは{valid_methods}のいずれかである必要があります")
         return v
+
+
+class StrategyOptimizationConfig(BaseModel):
+    """戦略ファイルに内包する最適化仕様"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str | None = Field(
+        default=None,
+        description="Optimization spec description shown in authoring UIs.",
+    )
+    parameter_ranges: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Strategy-linked optimization parameter ranges.",
+    )
 
 
 class WalkForwardConfig(BaseModel):

@@ -17,6 +17,9 @@
     "shared_config": {
       "anyOf": [{"$ref": "#/$defs/shared_config"}, {"type": "null"}]
     },
+    "optimization": {
+      "anyOf": [{"$ref": "#/$defs/strategy_optimization_config"}, {"type": "null"}]
+    },
     "entry_filter_params": {
       "$ref": "#/$defs/signal_params"
     },
@@ -169,6 +172,23 @@
         "timeframe": {
           "type": "string",
           "enum": ["daily", "weekly"]
+        }
+      }
+    },
+    "strategy_optimization_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": ["string", "null"]
+        },
+        "parameter_ranges": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
         }
       }
     },

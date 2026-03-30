@@ -18,9 +18,9 @@ import {
 } from '@/hooks/useBacktest';
 import {
   optimizationKeys,
-  useOptimizationGridConfig,
   useOptimizationJobStatus,
   useRunOptimization,
+  useStrategyOptimization,
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { EnginePolicyMode } from '@/types/backtest';
@@ -88,7 +88,7 @@ function GridConfigSummary({
   return (
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">
-        Grid config: {paramCount} params, {combinations} combinations
+        Optimization spec: {paramCount} params, {combinations} combinations
       </p>
       {entries.length > 0 ? (
         <div className="max-h-32 overflow-auto rounded-md border border-border/50 bg-muted/20 p-2">
@@ -272,13 +272,14 @@ function OptimizationWorkspacePanel({
   isSubmitting,
 }: {
   selectedStrategy: string | null;
-  gridConfig: ReturnType<typeof useOptimizationGridConfig>['data'];
+  gridConfig: ReturnType<typeof useStrategyOptimization>['data'];
   gridParameterEntries: Array<{ path: string; values: unknown[] }>;
   optimizationJobStatus: ReturnType<typeof useOptimizationJobStatus>['data'];
   isLoadingOptJob: boolean;
   isSubmitting: boolean;
 }) {
   const showProgressCard = Boolean(optimizationJobStatus) || isLoadingOptJob || isSubmitting;
+  const hasPersistedOptimization = Boolean(gridConfig?.persisted);
 
   return (
     <Surface className="p-4 sm:p-5 lg:col-start-2 lg:row-start-2">
@@ -288,7 +289,7 @@ function OptimizationWorkspacePanel({
         description="Grid search details, verification stage, and terminal summaries stay in view here."
       />
       <div className="mt-4 space-y-4">
-        {gridConfig ? (
+        {hasPersistedOptimization && gridConfig ? (
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-4">
             <GridConfigSummary
               paramCount={gridConfig.param_count}
@@ -296,9 +297,11 @@ function OptimizationWorkspacePanel({
               entries={gridParameterEntries}
             />
           </div>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-[var(--app-surface-muted)] px-4 py-5">
-            <p className="text-sm text-muted-foreground">No grid config found. Configure in Strategies &gt; Optimize tab.</p>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/70 bg-[var(--app-surface-muted)] px-4 py-5">
+            <p className="text-sm text-muted-foreground">
+              No optimization spec found. Configure it in Strategies &gt; Optimize.
+            </p>
           </div>
         )}
 
@@ -346,7 +349,7 @@ function RunnerControlPanel({
   onOpenDefaultConfig: () => void;
   onRunBacktest: () => Promise<void>;
   runBacktestErrorMessage: string | null;
-  gridConfig: ReturnType<typeof useOptimizationGridConfig>['data'];
+  gridConfig: ReturnType<typeof useStrategyOptimization>['data'];
   enginePolicyMode: EnginePolicyMode;
   onEnginePolicyModeChange: (value: EnginePolicyMode) => void;
   optimizationVerificationTopK: string;
@@ -354,6 +357,8 @@ function RunnerControlPanel({
   onRunOptimization: () => Promise<void>;
   runOptimizationErrorMessage: string | null;
 }) {
+  const hasPersistedOptimization = Boolean(gridConfig?.persisted);
+
   return (
     <div className="lg:row-span-2 lg:col-start-3 lg:row-start-1 lg:sticky lg:top-0 lg:self-start">
       <Surface className="space-y-5 p-4 sm:p-5">
@@ -405,12 +410,14 @@ function RunnerControlPanel({
             </p>
           </div>
 
-          {gridConfig ? (
+          {hasPersistedOptimization && gridConfig ? (
             <p className="text-xs text-muted-foreground">
-              Grid config: {gridConfig.param_count} params, {gridConfig.combinations} combinations
+              Optimization spec: {gridConfig.param_count} params, {gridConfig.combinations} combinations
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">No grid config found. Configure in Strategies &gt; Optimize tab.</p>
+            <p className="text-xs text-muted-foreground">
+              No optimization spec found. Configure it in Strategies &gt; Optimize.
+            </p>
           )}
 
           <EnginePolicySelector
@@ -423,7 +430,7 @@ function RunnerControlPanel({
 
           <Button
             onClick={onRunOptimization}
-            disabled={!selectedStrategy || !gridConfig || isOptRunning}
+            disabled={!selectedStrategy || !gridConfig?.ready_to_run || isOptRunning}
             variant="outline"
             className="w-full gap-2"
           >
@@ -449,11 +456,9 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
   const cancelBacktest = useCancelBacktest();
   const { data: optimizationJobStatus, isLoading: isLoadingOptJob } = useOptimizationJobStatus(activeOptimizationJobId);
   const runOptimization = useRunOptimization();
-  const { data: gridConfig } = useOptimizationGridConfig(
-    selectedStrategy ? (selectedStrategy.split('/').pop() ?? selectedStrategy) : null
-  );
+  const { data: gridConfig } = useStrategyOptimization(selectedStrategy);
   const gridParameterEntries = useMemo(
-    () => (gridConfig ? extractGridParameterEntries(gridConfig.content) : []),
+    () => (gridConfig ? extractGridParameterEntries(gridConfig.yaml_content) : []),
     [gridConfig]
   );
 

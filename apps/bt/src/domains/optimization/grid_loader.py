@@ -1,74 +1,20 @@
 """
-グリッドYAML読み込み・パラメータ組み合わせ生成
+optimization parameter range utilities
 
-最適化エンジンで使用するグリッド設定の読み込みとパラメータ組み合わせ生成を提供します。
+戦略内 optimization.parameter_ranges の組み合わせ生成を提供します。
 """
 
 import itertools
-import os
 from typing import Any
 
 from ruamel.yaml import YAML
+
 from src.shared.paths import get_default_config_path
 
 from .grid_validation import (
     format_grid_validation_issues,
     validate_parameter_ranges,
 )
-
-
-def find_grid_config_path(strategy_basename: str, grid_config_path: str | None = None) -> str:
-    """
-    グリッド設定ファイルのパスを解決
-
-    Args:
-        strategy_basename: 戦略ベース名（カテゴリなし）
-        grid_config_path: 明示指定パス（Noneで自動探索）
-
-    Returns:
-        str: グリッド設定ファイルパス
-
-    Raises:
-        FileNotFoundError: ファイルが見つからない場合
-    """
-    if grid_config_path is None:
-        from src.shared.paths import get_all_optimization_grid_dirs
-
-        grid_filename = f"{strategy_basename}_grid.yaml"
-
-        for search_dir in get_all_optimization_grid_dirs():
-            candidate = search_dir / grid_filename
-            if candidate.exists():
-                grid_config_path = str(candidate)
-                break
-
-        if grid_config_path is None:
-            grid_config_path = f"config/optimization/{strategy_basename}_grid.yaml"
-
-    if not os.path.exists(grid_config_path):
-        raise FileNotFoundError(
-            f"Grid config not found: {grid_config_path}\n"
-            f"Expected: config/optimization/{strategy_basename}_grid.yaml or "
-            f"~/.local/share/trading25/optimization/{strategy_basename}_grid.yaml"
-        )
-
-    return grid_config_path
-
-
-def load_grid_config(grid_config_path: str) -> dict[str, Any]:
-    """
-    グリッドYAML設定を読み込み
-
-    Args:
-        grid_config_path: グリッド設定ファイルパス
-
-    Returns:
-        dict: グリッド設定辞書
-    """
-    ruamel_yaml = YAML()
-    ruamel_yaml.preserve_quotes = True
-    with open(grid_config_path) as f:
-        return ruamel_yaml.load(f)
 
 
 def load_default_config() -> dict:

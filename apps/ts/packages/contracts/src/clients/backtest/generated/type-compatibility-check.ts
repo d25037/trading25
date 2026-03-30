@@ -32,10 +32,7 @@ import type {
   HtmlFileMetrics as ManualHtmlFileMetrics,
   HtmlFileRenameRequest as ManualHtmlFileRenameRequest,
   HtmlFileRenameResponse as ManualHtmlFileRenameResponse,
-  OptimizationGridConfig as ManualOptimizationGridConfig,
-  OptimizationGridListResponse as ManualOptimizationGridListResponse,
-  OptimizationGridSaveRequest as ManualOptimizationGridSaveRequest,
-  OptimizationGridSaveResponse as ManualOptimizationGridSaveResponse,
+  OptimizationDiagnosticResponse as ManualOptimizationDiagnosticResponse,
   OptimizationHtmlFileContentResponse as ManualOptimizationHtmlFileContentResponse,
   OptimizationHtmlFileInfo as ManualOptimizationHtmlFileInfo,
   OptimizationHtmlFileListResponse as ManualOptimizationHtmlFileListResponse,
@@ -63,6 +60,10 @@ import type {
   StrategyDuplicateResponse as ManualStrategyDuplicateResponse,
   StrategyListResponse as ManualStrategyListResponse,
   StrategyMetadata as ManualStrategyMetadata,
+  StrategyOptimizationDeleteResponse as ManualStrategyOptimizationDeleteResponse,
+  StrategyOptimizationSaveRequest as ManualStrategyOptimizationSaveRequest,
+  StrategyOptimizationSaveResponse as ManualStrategyOptimizationSaveResponse,
+  StrategyOptimizationStateResponse as ManualStrategyOptimizationStateResponse,
   StrategyRenameRequest as ManualStrategyRenameRequest,
   StrategyRenameResponse as ManualStrategyRenameResponse,
   StrategyUpdateRequest as ManualStrategyUpdateRequest,
@@ -210,18 +211,25 @@ type _OptimizationJobResponse = AssertExtends<
   Normalize<ManualOptimizationJobResponse>,
   Normalize<Schemas['OptimizationJobResponse']>
 >;
-type _OptimizationGridConfig = AssertExtends<ManualOptimizationGridConfig, Schemas['OptimizationGridConfig']>;
-type _OptimizationGridListResponse = AssertExtends<
-  ManualOptimizationGridListResponse,
-  Schemas['OptimizationGridListResponse']
+type _OptimizationDiagnosticResponse = AssertExtends<
+  ManualOptimizationDiagnosticResponse,
+  Schemas['OptimizationDiagnosticResponse']
 >;
-type _OptimizationGridSaveRequest = AssertExtends<
-  ManualOptimizationGridSaveRequest,
-  Schemas['OptimizationGridSaveRequest']
+type _StrategyOptimizationStateResponse = AssertExtends<
+  Normalize<ManualStrategyOptimizationStateResponse>,
+  Normalize<Schemas['StrategyOptimizationStateResponse']>
 >;
-type _OptimizationGridSaveResponse = AssertExtends<
-  ManualOptimizationGridSaveResponse,
-  Schemas['OptimizationGridSaveResponse']
+type _StrategyOptimizationSaveRequest = AssertExtends<
+  ManualStrategyOptimizationSaveRequest,
+  Schemas['StrategyOptimizationSaveRequest']
+>;
+type _StrategyOptimizationSaveResponse = AssertExtends<
+  Normalize<ManualStrategyOptimizationSaveResponse>,
+  Normalize<Schemas['StrategyOptimizationSaveResponse']>
+>;
+type _StrategyOptimizationDeleteResponse = AssertExtends<
+  ManualStrategyOptimizationDeleteResponse,
+  Schemas['StrategyOptimizationDeleteResponse']
 >;
 
 // ===== OPTIMIZATION HTML FILES =====
@@ -313,10 +321,11 @@ export type TypeChecks = [
   _HtmlFileDeleteResponse,
   _OptimizationRequest,
   _OptimizationJobResponse,
-  _OptimizationGridConfig,
-  _OptimizationGridListResponse,
-  _OptimizationGridSaveRequest,
-  _OptimizationGridSaveResponse,
+  _OptimizationDiagnosticResponse,
+  _StrategyOptimizationStateResponse,
+  _StrategyOptimizationSaveRequest,
+  _StrategyOptimizationSaveResponse,
+  _StrategyOptimizationDeleteResponse,
   _OptimizationHtmlFileInfo,
   _OptimizationHtmlFileListResponse,
   _OptimizationHtmlFileContentResponse,

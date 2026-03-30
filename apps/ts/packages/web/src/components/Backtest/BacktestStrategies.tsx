@@ -8,7 +8,7 @@ import type { StrategyMetadata } from '@/types/backtest';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DuplicateDialog } from './DuplicateDialog';
 import { MoveGroupDialog } from './MoveGroupDialog';
-import { OptimizationGridEditor } from './OptimizationGridEditor';
+import { OptimizationSpecEditor } from './OptimizationGridEditor';
 import { RenameDialog } from './RenameDialog';
 import { StrategyEditor } from './StrategyEditor';
 import { compareManagedStrategyCategory, isManagedStrategyCategory } from './strategyCategoryOrder';
@@ -155,7 +155,7 @@ function StrategyDetailContent({
   strategyName: string;
 }) {
   if (activeDetailTab === 'optimize') {
-    return <OptimizationGridEditor strategyName={strategyName} />;
+    return <OptimizationSpecEditor strategyName={strategyName} />;
   }
 
   return (
@@ -164,7 +164,7 @@ function StrategyDetailContent({
       <StrategyJsonCard title="Configuration" value={detail.config} />
       <StrategyJsonCard title="Execution Info" value={detail.execution_info} />
       <div className="border-t border-border/70 pt-4">
-        <OptimizationGridEditor strategyName={strategyName} />
+        <OptimizationSpecEditor strategyName={strategyName} />
       </div>
     </div>
   );

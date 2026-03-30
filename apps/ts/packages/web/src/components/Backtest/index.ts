@@ -9,7 +9,7 @@ export { DuplicateDialog } from './DuplicateDialog';
 export { JobProgressCard } from './JobProgressCard';
 export { JobsTable } from './JobsTable';
 export { MoveGroupDialog } from './MoveGroupDialog';
-export { OptimizationGridEditor } from './OptimizationGridEditor';
+export { OptimizationGridEditor, OptimizationSpecEditor } from './OptimizationGridEditor';
 export { OptimizationHtmlFileBrowser } from './OptimizationHtmlFileBrowser';
 export { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
 export { ResultHtmlViewer } from './ResultHtmlViewer';

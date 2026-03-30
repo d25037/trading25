@@ -1,19 +1,10 @@
-"""
-Parameter Optimization Endpoints
-"""
-
-import os
-from pathlib import Path
+"""Parameter Optimization Endpoints."""
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
-from src.domains.optimization.grid_validation import (
-    format_grid_validation_issues,
-    validate_grid_yaml_content,
-)
-from src.shared.paths.resolver import get_all_optimization_grid_dirs, get_optimization_results_dir
+from src.shared.paths.resolver import get_optimization_results_dir
 from src.entrypoints.http.routes.html_file_utils import (
     delete_html_file,
     list_html_files_in_dir,
@@ -24,18 +15,12 @@ from src.entrypoints.http.routes.job_response_utils import (
     build_job_execution_control,
     build_run_metadata,
 )
-from src.entrypoints.http.routes.utils import validate_path_param
 from src.entrypoints.http.schemas.backtest import (
     HtmlFileDeleteResponse,
     HtmlFileRenameRequest,
     HtmlFileRenameResponse,
 )
 from src.entrypoints.http.schemas.optimize import (
-    OptimizationGridConfig,
-    OptimizationGridDeleteResponse,
-    OptimizationGridListResponse,
-    OptimizationGridSaveRequest,
-    OptimizationGridSaveResponse,
     OptimizationHtmlFileContentResponse,
     OptimizationHtmlFileInfo,
     OptimizationHtmlFileListResponse,
@@ -151,159 +136,6 @@ async def stream_optimization_events(job_id: str) -> EventSourceResponse:
     _get_optimization_job_or_404(job_id)
 
     return EventSourceResponse(sse_manager.job_event_generator(job_id))
-
-
-
-# ============================================
-# Grid Config Endpoints
-# ============================================
-
-
-def _parse_grid_yaml(content: str) -> tuple[int, int]:
-    """
-    Grid YAML文字列をパースしてパラメータ数と組み合わせ数を計算
-
-    Returns:
-        (param_count, combinations)
-    """
-    validation = validate_grid_yaml_content(content)
-    return validation.param_count, validation.combinations
-
-
-def _find_grid_file(strategy_name: str) -> Path | None:
-    """戦略名からGrid設定ファイルを検索"""
-    # カテゴリ付きの場合、ベース名を抽出
-    basename = strategy_name.split("/")[-1] if "/" in strategy_name else strategy_name
-    grid_filename = f"{basename}_grid.yaml"
-
-    for search_dir in get_all_optimization_grid_dirs():
-        candidate = search_dir / grid_filename
-        if candidate.exists():
-            return candidate
-
-    return None
-
-
-def _get_grid_write_path(strategy_name: str) -> Path:
-    """Grid設定の書き込み先パスを取得（外部ディレクトリ優先）"""
-    from src.shared.paths.resolver import get_optimization_grid_dir
-
-    basename = strategy_name.split("/")[-1] if "/" in strategy_name else strategy_name
-    grid_dir = get_optimization_grid_dir()
-    grid_dir.mkdir(parents=True, exist_ok=True)
-    return grid_dir / f"{basename}_grid.yaml"
-
-
-@router.get("/api/optimize/grid-configs", response_model=OptimizationGridListResponse)
-async def list_grid_configs() -> OptimizationGridListResponse:
-    """Grid設定一覧を取得"""
-    configs: list[OptimizationGridConfig] = []
-
-    seen: set[str] = set()
-    for search_dir in get_all_optimization_grid_dirs():
-        if not search_dir.exists():
-            continue
-        for yaml_file in search_dir.glob("*_grid.yaml"):
-            strategy_name = yaml_file.stem.replace("_grid", "")
-            if strategy_name in seen:
-                continue
-            seen.add(strategy_name)
-
-            try:
-                content = yaml_file.read_text(encoding="utf-8")
-                param_count, combinations = _parse_grid_yaml(content)
-                configs.append(
-                    OptimizationGridConfig(
-                        strategy_name=strategy_name,
-                        content=content,
-                        param_count=param_count,
-                        combinations=combinations,
-                    )
-                )
-            except Exception as e:
-                logger.warning(f"Grid設定読み込みエラー: {yaml_file}: {e}")
-
-    configs.sort(key=lambda c: c.strategy_name)
-
-    return OptimizationGridListResponse(configs=configs, total=len(configs))
-
-
-@router.get("/api/optimize/grid-configs/{strategy}", response_model=OptimizationGridConfig)
-async def get_grid_config(strategy: str) -> OptimizationGridConfig:
-    """Grid設定を取得"""
-    validate_path_param(strategy, "戦略名")
-    grid_path = _find_grid_file(strategy)
-    if grid_path is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Grid設定が見つかりません: {strategy}",
-        )
-
-    content = grid_path.read_text(encoding="utf-8")
-    param_count, combinations = _parse_grid_yaml(content)
-
-    return OptimizationGridConfig(
-        strategy_name=strategy,
-        content=content,
-        param_count=param_count,
-        combinations=combinations,
-    )
-
-
-@router.put("/api/optimize/grid-configs/{strategy}", response_model=OptimizationGridSaveResponse)
-async def save_grid_config(strategy: str, request: OptimizationGridSaveRequest) -> OptimizationGridSaveResponse:
-    """Grid設定を保存"""
-    validate_path_param(strategy, "戦略名")
-    validation = validate_grid_yaml_content(request.content)
-    if not validation.valid:
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なGrid設定: {format_grid_validation_issues(validation.errors)}",
-        )
-
-    param_count, combinations = validation.param_count, validation.combinations
-
-    grid_path = _get_grid_write_path(strategy)
-
-    try:
-        grid_path.write_text(request.content, encoding="utf-8")
-        logger.info(f"Grid設定保存: {strategy} ({grid_path})")
-    except OSError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"ファイル保存エラー: {e}",
-        ) from e
-
-    return OptimizationGridSaveResponse(
-        success=True,
-        strategy_name=strategy,
-        param_count=param_count,
-        combinations=combinations,
-    )
-
-
-@router.delete("/api/optimize/grid-configs/{strategy}", response_model=OptimizationGridDeleteResponse)
-async def delete_grid_config(strategy: str) -> OptimizationGridDeleteResponse:
-    """Grid設定を削除"""
-    validate_path_param(strategy, "戦略名")
-    grid_path = _find_grid_file(strategy)
-    if grid_path is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Grid設定が見つかりません: {strategy}",
-        )
-
-    try:
-        os.remove(grid_path)
-        logger.info(f"Grid設定削除: {strategy} ({grid_path})")
-    except OSError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"ファイル削除エラー: {e}",
-        ) from e
-
-    return OptimizationGridDeleteResponse(success=True, strategy_name=strategy)
-
 
 # ============================================
 # Optimization HTML File Endpoints

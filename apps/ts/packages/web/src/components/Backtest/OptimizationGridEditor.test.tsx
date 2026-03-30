@@ -2,63 +2,77 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { OptimizationGridEditor } from './OptimizationGridEditor';
+import type { StrategyOptimizationStateResponse } from '@/types/backtest';
+import { OptimizationSpecEditor } from './OptimizationGridEditor';
 
 const mockSaveMutate = vi.fn();
 const mockDeleteMutate = vi.fn();
+const mockGenerateMutate = vi.fn();
 
-const DEFAULT_GRID_CONTENT = `parameter_ranges:
+const DEFAULT_SPEC_CONTENT = `description: saved
+parameter_ranges:
   entry_filter_params:
     period_extrema_break:
       period: [10, 20]
-  exit_trigger_params:
-    atr_stop:
-      atr_multiplier: [1.5, 2.0, 2.5]
 `;
 
-function createDefaultGridConfig() {
+function createSavedState(): StrategyOptimizationStateResponse {
   return {
-    strategy_name: 'demo',
-    content: DEFAULT_GRID_CONTENT,
-    param_count: 2,
-    combinations: 6,
+    strategy_name: 'production/demo',
+    persisted: true,
+    source: 'saved',
+    optimization: {
+      description: 'saved',
+      parameter_ranges: {
+        entry_filter_params: {
+          period_extrema_break: { period: [10, 20] },
+        },
+      },
+    },
+    yaml_content: DEFAULT_SPEC_CONTENT,
+    valid: true,
+    ready_to_run: true,
+    param_count: 1,
+    combinations: 2,
+    errors: [],
+    warnings: [],
+    drift: [],
   };
 }
 
 const mockHookState = {
-  gridConfig: createDefaultGridConfig() as {
-    strategy_name: string;
-    content: string;
-    param_count: number;
-    combinations: number;
-  } | null,
+  strategyOptimization: createSavedState() as ReturnType<typeof createSavedState> | null,
   isLoading: false,
-  isError: false,
   savePending: false,
   saveError: null as Error | null,
-  saveData: null as { strategy_name: string; param_count: number; combinations: number } | null,
   deletePending: false,
   deleteError: null as Error | null,
+  generatePending: false,
+  generateError: null as Error | null,
 };
 
 vi.mock('@/hooks/useOptimization', () => ({
-  useOptimizationGridConfig: () => ({
-    data: mockHookState.gridConfig,
+  useStrategyOptimization: () => ({
+    data: mockHookState.strategyOptimization,
     isLoading: mockHookState.isLoading,
-    isError: mockHookState.isError,
   }),
-  useSaveOptimizationGrid: () => ({
+  useSaveStrategyOptimization: () => ({
     mutate: mockSaveMutate,
     isPending: mockHookState.savePending,
     isError: !!mockHookState.saveError,
     error: mockHookState.saveError,
-    data: mockHookState.saveData,
   }),
-  useDeleteOptimizationGrid: () => ({
+  useDeleteStrategyOptimization: () => ({
     mutate: mockDeleteMutate,
     isPending: mockHookState.deletePending,
     isError: !!mockHookState.deleteError,
     error: mockHookState.deleteError,
+  }),
+  useGenerateStrategyOptimizationDraft: () => ({
+    mutate: mockGenerateMutate,
+    isPending: mockHookState.generatePending,
+    isError: !!mockHookState.generateError,
+    error: mockHookState.generateError,
   }),
 }));
 
@@ -77,166 +91,118 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
-vi.mock('@/utils/logger', () => ({
-  logger: {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  },
-}));
-
 vi.mock('./SignalReferencePanel', () => ({
   SignalReferencePanel: ({ onCopySnippet }: { onCopySnippet: (snippet: string) => void }) => (
     <div>
       <div>Signal Reference</div>
-      <button type="button" onClick={() => onCopySnippet('mock_signal:\n  period: 14')}>
+      <button type="button" onClick={() => onCopySnippet('entry_filter_params:\n  mock_signal:\n    period: [5, 10]')}>
         Insert Mock Signal
       </button>
     </div>
   ),
 }));
 
-describe('OptimizationGridEditor', () => {
+describe('OptimizationSpecEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockHookState.gridConfig = createDefaultGridConfig();
+    mockHookState.strategyOptimization = createSavedState();
     mockHookState.isLoading = false;
-    mockHookState.isError = false;
     mockHookState.savePending = false;
     mockHookState.saveError = null;
-    mockHookState.saveData = null;
     mockHookState.deletePending = false;
     mockHookState.deleteError = null;
+    mockHookState.generatePending = false;
+    mockHookState.generateError = null;
   });
 
-  async function openEditorDialog(basename = 'demo') {
+  async function openEditorDialog(strategyName = 'production/demo') {
     const user = userEvent.setup();
+    render(<OptimizationSpecEditor strategyName={strategyName} />);
     await user.click(screen.getByRole('button', { name: /Open Editor/i }));
-    await screen.findByText(`Optimization Grid Editor: ${basename}`);
+    await screen.findByText(`Optimization Spec Editor: ${strategyName}`);
     return user;
   }
 
-  it('renders loading state while grid config is being fetched', () => {
+  it('renders loading state while optimization state is fetched', () => {
     mockHookState.isLoading = true;
+    mockHookState.strategyOptimization = null;
 
-    render(<OptimizationGridEditor strategyName="production/demo" />);
+    render(<OptimizationSpecEditor strategyName="production/demo" />);
 
     expect(screen.queryByRole('button', { name: /Open Editor/i })).not.toBeInTheDocument();
   });
 
-  it('renders Current/Saved/State and opens popup editor with signal list', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
+  it('renders saved summary and opens popup editor', async () => {
+    const user = await openEditorDialog();
 
-    expect(screen.getByText('Current')).toBeInTheDocument();
-    expect(screen.getByText('Saved')).toBeInTheDocument();
-    expect(screen.getByText('State')).toBeInTheDocument();
-    expect(screen.getByText('2 params / 6 combos')).toBeInTheDocument();
-    expect(screen.getByText('Synced')).toBeInTheDocument();
-
-    await openEditorDialog();
-
+    expect(screen.getByText('Optimization Spec')).toBeInTheDocument();
+    expect(screen.getAllByText('Saved').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Ready to Run/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1 params / 2 combos').length).toBeGreaterThan(0);
     expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
       'parameter_ranges'
     );
     expect(screen.getByText('Signal Reference')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByText('Optimization Spec Editor: production/demo')).not.toBeInTheDocument();
   });
 
   it('shows YAML parse error and disables save', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
-    await openEditorDialog();
-
-    const editor = screen.getByLabelText('Optimization YAML Editor');
-    fireEvent.change(editor, { target: { value: 'parameter_ranges: [invalid' } });
-
-    expect(await screen.findByText(/YAML parse error:/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-  });
-
-  it('shows warning when parameter_ranges is missing but allows save', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
-    await openEditorDialog();
-
-    const editor = screen.getByLabelText('Optimization YAML Editor');
-    fireEvent.change(editor, { target: { value: 'foo: 1' } });
-
-    expect(
-      screen.getByText('Missing "parameter_ranges" key. Saving is allowed, but optimization combinations will be 0.')
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-  });
-
-  it('shows validation error when a parameter leaf is a scalar instead of an array', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
-    await openEditorDialog();
-
-    const editor = screen.getByLabelText('Optimization YAML Editor');
-    fireEvent.change(editor, {
-      target: {
-        value: `parameter_ranges:
-  entry_filter_params:
-    rsi:
-      period:
-        min: 10
-`,
-      },
-    });
-
-    expect(
-      screen.getByText('Validation failed: 1 issue(s) need to be fixed before saving or running optimization.')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'parameter_ranges.entry_filter_params.rsi.period.min: Parameter must be a candidate list such as [10, 20, 30], not a scalar value.'
-      )
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-  });
-
-  it('shows structural validation errors and disables save', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
     await openEditorDialog();
 
     fireEvent.change(screen.getByLabelText('Optimization YAML Editor'), {
-      target: {
-        value: `parameter_ranges:
-  entry_filter_params:
-    ratio_threshold: [1.0, 1.5, 2.0]
-`,
-      },
+      target: { value: 'parameter_ranges: [invalid' },
     });
 
-    expect(
-      screen.getByText('Validation failed: 1 issue(s) need to be fixed before saving or running optimization.')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'parameter_ranges.entry_filter_params.ratio_threshold: Signal must be a mapping of parameter names to candidate lists.'
-      )
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText(/YAML parse error:/).length).toBeGreaterThan(0);
+    });
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('saves with basename strategy key and edited content', async () => {
-    mockSaveMutate.mockImplementation((_payload: unknown, options?: { onSuccess?: () => void }) => {
-      options?.onSuccess?.();
+  it('generates draft using the full strategy name', async () => {
+    mockGenerateMutate.mockImplementation((_strategy: string, options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }) => {
+      options?.onSuccess?.({
+        ...createSavedState(),
+        persisted: false,
+        source: 'draft',
+        ready_to_run: false,
+        yaml_content: 'description: draft\nparameter_ranges:\n  exit_trigger_params:\n    atr_stop:\n      atr_multiplier: [1.5, 2.0]\n',
+      });
     });
 
-    render(<OptimizationGridEditor strategyName="production/demo" />);
+    render(<OptimizationSpecEditor strategyName="production/demo" />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Generate Draft from Strategy/i }));
+
+    expect(mockGenerateMutate).toHaveBeenCalledWith('production/demo', expect.any(Object));
+    expect(screen.getByText('Generated draft (unsaved)')).toBeInTheDocument();
+  });
+
+  it('saves edited YAML using strategy-scoped payload', async () => {
+    mockSaveMutate.mockImplementation(
+      (
+        _payload: unknown,
+        options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }
+      ) => {
+        options?.onSuccess?.({
+          ...createSavedState(),
+          combinations: 4,
+          yaml_content: 'description: updated\nparameter_ranges:\n  entry_filter_params:\n    period_extrema_break:\n      period: [5, 10, 15, 20]\n',
+        });
+      }
+    );
 
     const user = await openEditorDialog();
 
-    const editor = screen.getByLabelText('Optimization YAML Editor');
-    fireEvent.change(editor, {
+    fireEvent.change(screen.getByLabelText('Optimization YAML Editor'), {
       target: {
-        value: `parameter_ranges:
+        value: `description: updated
+parameter_ranges:
   entry_filter_params:
     period_extrema_break:
-      period: [5, 10]
+      period: [5, 10, 15, 20]
 `,
       },
     });
@@ -245,9 +211,9 @@ describe('OptimizationGridEditor', () => {
 
     expect(mockSaveMutate).toHaveBeenCalledWith(
       {
-        strategy: 'demo',
+        strategy: 'production/demo',
         request: {
-          content: expect.stringContaining('period: [5, 10]'),
+          yaml_content: expect.stringContaining('period: [5, 10, 15, 20]'),
         },
       },
       expect.any(Object)
@@ -255,74 +221,26 @@ describe('OptimizationGridEditor', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('shows fallback template when no persisted grid config exists', async () => {
-    mockHookState.gridConfig = null;
-    mockHookState.isError = true;
-
-    render(<OptimizationGridEditor strategyName="production/no-grid" />);
-
-    expect(screen.getByText('Not saved')).toBeInTheDocument();
-    expect(screen.getByText(/No saved grid config exists yet\./)).toBeInTheDocument();
-
-    await openEditorDialog('no-grid');
-
-    const editor = screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement;
-    expect(editor.value).toContain('period: [10, 15, 20, 25, 30]');
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
-  });
-
-  it('resets to baseline and deletes persisted config from dialog actions', async () => {
+  it('deletes persisted optimization and resets to empty spec', async () => {
     mockDeleteMutate.mockImplementation((_strategy: string, options?: { onSuccess?: () => void }) => {
       options?.onSuccess?.();
     });
 
-    render(<OptimizationGridEditor strategyName="production/demo" />);
     const user = await openEditorDialog();
-
-    fireEvent.change(screen.getByLabelText('Optimization YAML Editor'), {
-      target: { value: 'parameter_ranges:\n  test:\n    period: [1, 2]\n' },
-    });
-    expect(screen.getAllByText('Unsaved changes').length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole('button', { name: 'Reset' }));
-    expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
-      'period_extrema_break'
-    );
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
-    expect(mockDeleteMutate).toHaveBeenCalledWith('demo', expect.any(Object));
-    expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
-      'period: [10, 15, 20, 25, 30]'
-    );
+
+    expect(mockDeleteMutate).toHaveBeenCalledWith('production/demo', expect.any(Object));
+    await waitFor(() => {
+      expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
+        'parameter_ranges: {}'
+      );
+    });
   });
 
-  it('prefers latest save summary when save response matches current strategy', () => {
-    mockHookState.saveData = {
-      strategy_name: 'demo',
-      param_count: 9,
-      combinations: 81,
-    };
-
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
-    expect(screen.getByText('9 params, 81 combinations')).toBeInTheDocument();
-  });
-
-  it('shows mutation error banners inside popup editor', async () => {
-    mockHookState.saveError = new Error('save failed');
-    mockHookState.deleteError = new Error('delete failed');
-
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-    await openEditorDialog();
-
-    expect(screen.getByText('save failed')).toBeInTheDocument();
-    expect(screen.getByText('delete failed')).toBeInTheDocument();
-  });
-
-  it('inserts signal snippet from popup signal reference and keeps unsaved state', async () => {
-    render(<OptimizationGridEditor strategyName="production/demo" />);
-
+  it('inserts signal reference snippet and keeps unsaved state', async () => {
     const user = await openEditorDialog();
+
     await user.click(screen.getByRole('button', { name: 'Insert Mock Signal' }));
 
     await waitFor(() => {
@@ -330,5 +248,51 @@ describe('OptimizationGridEditor', () => {
     });
 
     expect(screen.getAllByText('Unsaved changes').length).toBeGreaterThan(0);
+  });
+
+  it('shows warning details and mutation error banners inside the editor', async () => {
+    mockHookState.strategyOptimization = {
+      ...createSavedState(),
+      ready_to_run: false,
+      warnings: [{ path: 'optimization.parameter_ranges.entry_filter_params', message: 'warning detail' }],
+      drift: [{ path: 'optimization.parameter_ranges.entry_filter_params', message: 'drift detail' }],
+    };
+    mockHookState.generateError = new Error('draft failed');
+    mockHookState.saveError = new Error('save failed');
+    mockHookState.deleteError = new Error('delete failed');
+
+    await openEditorDialog();
+
+    expect(screen.getAllByText(/warning detail/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/drift detail/).length).toBeGreaterThan(0);
+    expect(screen.getByText('draft failed')).toBeInTheDocument();
+    expect(screen.getByText('save failed')).toBeInTheDocument();
+    expect(screen.getByText('delete failed')).toBeInTheDocument();
+  });
+
+  it('resets unsaved edits back to the saved baseline', async () => {
+    const user = await openEditorDialog();
+
+    fireEvent.change(screen.getByLabelText('Optimization YAML Editor'), {
+      target: {
+        value: `description: changed
+parameter_ranges:
+  entry_filter_params:
+    period_extrema_break:
+      period: [99]
+`,
+      },
+    });
+
+    expect(screen.getAllByText('Unsaved changes').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
+        'period: [10, 20]'
+      );
+    });
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
   });
 });

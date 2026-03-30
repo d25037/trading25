@@ -553,27 +553,37 @@ export interface OptimizationJobResponse {
   verification?: VerificationSummary | null;
 }
 
-export interface OptimizationGridConfig {
+export interface OptimizationDiagnosticResponse {
+  path: string;
+  message: string;
+}
+
+export interface StrategyOptimizationStateResponse {
   strategy_name: string;
-  content: string;
+  persisted: boolean;
+  source: 'saved' | 'draft';
+  optimization: Record<string, unknown> | null;
+  yaml_content: string;
+  valid: boolean;
+  ready_to_run: boolean;
   param_count: number;
   combinations: number;
+  errors: OptimizationDiagnosticResponse[];
+  warnings: OptimizationDiagnosticResponse[];
+  drift: OptimizationDiagnosticResponse[];
 }
 
-export interface OptimizationGridListResponse {
-  configs: OptimizationGridConfig[];
-  total: number;
+export interface StrategyOptimizationSaveRequest {
+  yaml_content: string;
 }
 
-export interface OptimizationGridSaveRequest {
-  content: string;
+export interface StrategyOptimizationSaveResponse extends StrategyOptimizationStateResponse {
+  success: boolean;
 }
 
-export interface OptimizationGridSaveResponse {
+export interface StrategyOptimizationDeleteResponse {
   success: boolean;
   strategy_name: string;
-  param_count: number;
-  combinations: number;
 }
 
 export interface OptimizationHtmlFileInfo {

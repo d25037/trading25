@@ -26,10 +26,6 @@ import type {
   HtmlFileRenameResponse,
   OHLCVResampleRequest,
   OHLCVResampleResponse,
-  OptimizationGridConfig,
-  OptimizationGridListResponse,
-  OptimizationGridSaveRequest,
-  OptimizationGridSaveResponse,
   OptimizationHtmlFileContentResponse,
   OptimizationHtmlFileListResponse,
   OptimizationJobResponse,
@@ -44,6 +40,10 @@ import type {
   StrategyDuplicateResponse,
   StrategyEditorContextResponse,
   StrategyEditorReferenceResponse,
+  StrategyOptimizationDeleteResponse,
+  StrategyOptimizationSaveRequest,
+  StrategyOptimizationSaveResponse,
+  StrategyOptimizationStateResponse,
   StrategyListResponse,
   StrategyMoveRequest,
   StrategyMoveResponse,
@@ -353,27 +353,37 @@ export class BacktestClient {
     });
   }
 
-  async getOptimizationGridConfigs(): Promise<OptimizationGridListResponse> {
-    return this.request<OptimizationGridListResponse>('/api/optimize/grid-configs');
+  async getStrategyOptimization(strategyName: string): Promise<StrategyOptimizationStateResponse> {
+    return this.request<StrategyOptimizationStateResponse>(
+      `/api/strategies/${encodeURIComponent(strategyName)}/optimization`
+    );
   }
 
-  async getOptimizationGridConfig(strategy: string): Promise<OptimizationGridConfig> {
-    return this.request<OptimizationGridConfig>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`);
+  async generateStrategyOptimizationDraft(strategyName: string): Promise<StrategyOptimizationStateResponse> {
+    return this.request<StrategyOptimizationStateResponse>(
+      `/api/strategies/${encodeURIComponent(strategyName)}/optimization/draft`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
-  async saveOptimizationGridConfig(
-    strategy: string,
-    request: OptimizationGridSaveRequest
-  ): Promise<OptimizationGridSaveResponse> {
-    return this.request<OptimizationGridSaveResponse>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`, {
-      method: 'PUT',
-      body: JSON.stringify(request),
-    });
+  async saveStrategyOptimization(
+    strategyName: string,
+    request: StrategyOptimizationSaveRequest
+  ): Promise<StrategyOptimizationSaveResponse> {
+    return this.request<StrategyOptimizationSaveResponse>(
+      `/api/strategies/${encodeURIComponent(strategyName)}/optimization`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(request),
+      }
+    );
   }
 
-  async deleteOptimizationGridConfig(strategy: string): Promise<{ success: boolean; strategy_name: string }> {
-    return this.request<{ success: boolean; strategy_name: string }>(
-      `/api/optimize/grid-configs/${encodeURIComponent(strategy)}`,
+  async deleteStrategyOptimization(strategyName: string): Promise<StrategyOptimizationDeleteResponse> {
+    return this.request<StrategyOptimizationDeleteResponse>(
+      `/api/strategies/${encodeURIComponent(strategyName)}/optimization`,
       {
         method: 'DELETE',
       }

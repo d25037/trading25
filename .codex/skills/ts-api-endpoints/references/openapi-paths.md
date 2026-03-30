@@ -170,8 +170,6 @@ Total paths: **131**
 
 | Path | Methods |
 |---|---|
-| `/api/optimize/grid-configs` | `GET` |
-| `/api/optimize/grid-configs/{strategy}` | `GET, PUT, DELETE` |
 | `/api/optimize/html-files` | `GET` |
 | `/api/optimize/html-files/{strategy}/{filename}` | `GET, DELETE` |
 | `/api/optimize/html-files/{strategy}/{filename}/rename` | `POST` |
@@ -216,6 +214,8 @@ Total paths: **131**
 | `/api/strategies/{strategy_name}/duplicate` | `POST` |
 | `/api/strategies/{strategy_name}/editor-context` | `GET` |
 | `/api/strategies/{strategy_name}/move` | `POST` |
+| `/api/strategies/{strategy_name}/optimization` | `GET, PUT, DELETE` |
+| `/api/strategies/{strategy_name}/optimization/draft` | `POST` |
 | `/api/strategies/{strategy_name}/rename` | `POST` |
 | `/api/strategies/{strategy_name}/validate` | `POST` |
 

@@ -22,6 +22,7 @@ def _make_engine() -> ParameterOptimizationEngine:
     engine.verbose = False
     engine.strategy_basename = "demo_strategy"
     engine.parameter_ranges = {}
+    engine.optimization_analysis = SimpleNamespace(valid=True)
     engine.grid_validation = GridValidationResult(
         valid=True,
         ready_to_run=True,
@@ -133,23 +134,10 @@ def test_init_worker_data_sets_module_globals():
 
 
 def test_init_with_explicit_base_config(monkeypatch, tmp_path):
-    base_config = tmp_path / "base.yaml"
-    base_config.write_text("entry_filter_params: {}\nexit_trigger_params: {}\n", encoding="utf-8")
-
     monkeypatch.setattr(
         ParameterOptimizationEngine,
         "_configure_logger",
         staticmethod(lambda verbose: None),
-    )
-    monkeypatch.setattr(engine_mod, "find_grid_config_path", lambda _name, _path: "grid.yaml")
-    monkeypatch.setattr(
-        engine_mod,
-        "load_grid_config",
-        lambda _path: {
-            "description": "demo",
-            "parameter_ranges": {"entry_filter_params": {"breakout": {"period": [10]}}},
-            "base_config": str(base_config),
-        },
     )
     monkeypatch.setattr(
         engine_mod,
@@ -164,16 +152,25 @@ def test_init_with_explicit_base_config(monkeypatch, tmp_path):
             return {"dataset": "primeExTopix500", "stock_codes": ["1301"]}
 
         def load_strategy_config(self, _name):
-            raise AssertionError("load_strategy_config should not be called")
+            return {
+                "entry_filter_params": {},
+                "exit_trigger_params": {},
+                "optimization": {
+                    "description": "demo",
+                    "parameter_ranges": {
+                        "entry_filter_params": {"breakout": {"period": [10]}}
+                    },
+                },
+            }
 
         def _infer_strategy_path(self, _name):
-            raise AssertionError("_infer_strategy_path should not be called")
+            return tmp_path / "base.yaml"
 
     monkeypatch.setattr(loader_mod, "ConfigLoader", DummyLoader)
 
     engine = ParameterOptimizationEngine("experimental/demo_strategy", verbose=True)
     assert engine.strategy_basename == "demo_strategy"
-    assert engine.base_config_path == str(base_config)
+    assert engine.base_config_path == str(tmp_path / "base.yaml")
     assert engine.description == "demo"
     assert engine.total_combinations == 1
 
@@ -183,15 +180,6 @@ def test_init_with_inferred_base_config(monkeypatch, tmp_path):
         ParameterOptimizationEngine,
         "_configure_logger",
         staticmethod(lambda verbose: None),
-    )
-    monkeypatch.setattr(engine_mod, "find_grid_config_path", lambda _name, _path: "grid.yaml")
-    monkeypatch.setattr(
-        engine_mod,
-        "load_grid_config",
-        lambda _path: {
-            "description": "demo",
-            "parameter_ranges": {"entry_filter_params": {}},
-        },
     )
     monkeypatch.setattr(
         engine_mod,
@@ -205,7 +193,14 @@ def test_init_with_inferred_base_config(monkeypatch, tmp_path):
 
     class DummyLoader:
         def load_strategy_config(self, _name):
-            return {"entry_filter_params": {}, "exit_trigger_params": {}}
+            return {
+                "entry_filter_params": {},
+                "exit_trigger_params": {},
+                "optimization": {
+                    "description": "demo",
+                    "parameter_ranges": {"entry_filter_params": {}},
+                },
+            }
 
         def _infer_strategy_path(self, _name):
             return inferred

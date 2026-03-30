@@ -53,7 +53,13 @@ const mockHookState = {
     isError: false,
     error: null as Error | null,
   },
-  gridConfig: null as { content: string; param_count: number; combinations: number } | null,
+  gridConfig: null as {
+    persisted: boolean;
+    ready_to_run: boolean;
+    yaml_content: string;
+    param_count: number;
+    combinations: number;
+  } | null,
   gridEntries: [] as Array<{ path: string; values: unknown[] }>,
 };
 
@@ -112,7 +118,7 @@ vi.mock('@/hooks/useOptimization', () => ({
     isError: mockHookState.runOptimization.isError,
     error: mockHookState.runOptimization.error,
   }),
-  useOptimizationGridConfig: () => ({
+  useStrategyOptimization: () => ({
     data: mockHookState.gridConfig,
   }),
 }));
@@ -227,7 +233,7 @@ describe('BacktestRunner', () => {
     expect(screen.getByText('Alpha Strategy')).toBeInTheDocument();
     expect(screen.getByText('Category: production')).toBeInTheDocument();
     expect(screen.getByText('Alpha description')).toBeInTheDocument();
-    expect(screen.getAllByText('No grid config found. Configure in Strategies > Optimize tab.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('No optimization spec found. Configure it in Strategies > Optimize.').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Run Optimization' })).toBeDisabled();
   });
 
@@ -300,7 +306,9 @@ describe('BacktestRunner', () => {
   it('runs optimization with grid config and displays grid entry details', async () => {
     const user = userEvent.setup();
     mockHookState.gridConfig = {
-      content: 'dummy',
+      persisted: true,
+      ready_to_run: true,
+      yaml_content: 'dummy',
       param_count: 2,
       combinations: 12,
     };
@@ -311,7 +319,7 @@ describe('BacktestRunner', () => {
 
     renderBacktestRunner();
 
-    expect(screen.getAllByText('Grid config: 2 params, 12 combinations').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Optimization spec: 2 params, 12 combinations').length).toBeGreaterThan(0);
     expect(screen.getByText('entry_filter_params.signal_a: [1, 2]')).toBeInTheDocument();
     expect(screen.getByText('exit_trigger_params.signal_b: [x, y]')).toBeInTheDocument();
 
@@ -329,7 +337,9 @@ describe('BacktestRunner', () => {
 
   it('shows optimization running and error states, then invalidates html list on completion', () => {
     mockHookState.gridConfig = {
-      content: 'dummy',
+      persisted: true,
+      ready_to_run: true,
+      yaml_content: 'dummy',
       param_count: 1,
       combinations: 1,
     };
