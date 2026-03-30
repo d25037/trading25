@@ -6342,6 +6342,8 @@ export interface components {
             referenceDate?: string | null;
             /** Results */
             results: components["schemas"]["ScreeningResultItem"][];
+            /** Scopelabel */
+            scopeLabel?: string | null;
             /**
              * Sortby
              * @enum {string}
@@ -7787,6 +7789,11 @@ export interface components {
             referenceDate?: string | null;
             /** @description Engine-neutral run metadata */
             run_metadata?: components["schemas"]["RunMetadata"] | null;
+            /**
+             * Scopelabel
+             * @description 表示用スコープラベル
+             */
+            scopeLabel?: string | null;
             /**
              * Sortby
              * @description 並び順の基準

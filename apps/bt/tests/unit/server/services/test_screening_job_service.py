@@ -99,6 +99,7 @@ async def test_run_job_releases_slot_after_success(monkeypatch: pytest.MonkeyPat
                 },
                 "entry_decidability": "pre_open_decidable",
                 "markets": ["prime"],
+                "scopeLabel": "Prime",
                 "recentDays": 10,
                 "referenceDate": None,
                 "sortBy": "matchedDate",
@@ -180,6 +181,7 @@ async def test_get_job_request_returns_submitted_request(monkeypatch: pytest.Mon
     await service.submit_screening(reader=MagicMock(), request=request)
 
     assert service.get_job_request("job-2") == request
+    assert service.get_job_scope_label("job-2") == "Prime"
     service._executor.shutdown(wait=True)  # noqa: SLF001
 
 
@@ -205,6 +207,7 @@ async def test_submit_screening_infers_default_markets_when_missing(
             strategy_names=["production/range_break_v15", "production/forward_eps_driven"],
             markets=["prime", "standard"],
             markets_param="prime,standard",
+            scope_label="Prime Market + Standard Market",
         ),
     )
 
@@ -217,12 +220,61 @@ async def test_submit_screening_infers_default_markets_when_missing(
     _, kwargs = manager.create_job.call_args
     run_spec = kwargs["run_spec"]
     assert run_spec.parameters["markets"] == "prime,standard"
+    assert run_spec.parameters["scopeLabel"] == "Prime Market + Standard Market"
     assert service.get_job_request("job-auto") == ScreeningJobRequest(
         markets="prime,standard",
         strategies="production/range_break_v15",
     )
+    assert service.get_job_scope_label("job-auto") == "Prime Market + Standard Market"
     manager.set_job_task.assert_awaited_once_with("job-auto", fake_task)
 
+    service._executor.shutdown(wait=True)  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_submit_screening_marks_auto_requests_for_dataset_universe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = MagicMock()
+    manager.create_job.return_value = "job-auto-universe"
+    manager.set_job_task = AsyncMock()
+    service = ScreeningJobService(manager=manager, max_workers=1)
+    captured: dict[str, object] = {}
+
+    async def _fake_run_job(
+        job_id: str,
+        reader: object,
+        request: ScreeningJobRequest,
+        *,
+        scope_label: str | None = None,
+        use_strategy_dataset_universe: bool = False,
+    ) -> None:
+        del job_id, reader, request, scope_label, use_strategy_dataset_universe
+
+    def _fake_create_task(coro: object) -> object:
+        frame = getattr(coro, "cr_frame", None)
+        if frame is not None:
+            captured["use_strategy_dataset_universe"] = frame.f_locals["use_strategy_dataset_universe"]
+            captured["scope_label"] = frame.f_locals["scope_label"]
+        coro.close()
+        return object()
+
+    monkeypatch.setattr(asyncio, "create_task", _fake_create_task)
+    monkeypatch.setattr(
+        "src.application.services.screening_job_service.resolve_default_screening_markets",
+        lambda **_kwargs: ScreeningMarketResolution(
+            strategy_names=["production/topix_gap_down_intraday_oracle"],
+            markets=["prime", "standard", "growth"],
+            markets_param="prime,standard,growth",
+            scope_label="TOPIX 500",
+        ),
+    )
+    monkeypatch.setattr(service, "_run_job", _fake_run_job)
+
+    await service.submit_screening(reader=MagicMock(), request=ScreeningJobRequest())
+
+    assert captured["use_strategy_dataset_universe"] is True
+    assert captured["scope_label"] == "TOPIX 500"
     service._executor.shutdown(wait=True)  # noqa: SLF001
 
 
