@@ -2,13 +2,14 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import type {
   Topix100PriceBucketFilter,
+  Topix100PriceSmaWindow,
   Topix100RankingItem,
   Topix100RankingMetric,
   Topix100RankingResponse,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import { formatPriceJPY, formatRate, formatVolume, formatVolumeRatio } from '@/utils/formatters';
-import { getTopix100RankingMetricDescription, getTopix100RankingMetricLabel } from './topix100RankingMetric';
+import { getTopix100RankingMetricLabel } from './topix100RankingMetric';
 
 interface Topix100RankingTableProps {
   data: Topix100RankingResponse | undefined;
@@ -16,6 +17,7 @@ interface Topix100RankingTableProps {
   error: Error | null;
   onStockClick: (code: string) => void;
   rankingMetric: Topix100RankingMetric;
+  rankingSmaWindow: Topix100PriceSmaWindow;
   priceBucketFilter: Topix100PriceBucketFilter;
   volumeBucketFilter: Topix100VolumeBucketFilter;
 }
@@ -47,38 +49,47 @@ function bucketToneClass(priceBucket: Topix100RankingItem['priceBucket']): strin
   }
 }
 
+function getStudyReadItems(metric: Topix100RankingMetric): string[] {
+  if (metric === 'price_vs_sma_gap') {
+    return ['Q10 = below SMA', 'Volume Low first'];
+  }
+
+  return ['Legacy comparison'];
+}
+
 export function Topix100RankingTable({
   data,
   isLoading,
   error,
   onStockClick,
   rankingMetric,
+  rankingSmaWindow,
   priceBucketFilter,
   volumeBucketFilter,
 }: Topix100RankingTableProps) {
   const items = (data?.items ?? []).filter((item) => matchesFilters(item, priceBucketFilter, volumeBucketFilter));
   const effectiveMetric = data?.rankingMetric ?? rankingMetric;
-  const metricLabel = getTopix100RankingMetricLabel(effectiveMetric);
-  const metricDescription = getTopix100RankingMetricDescription(effectiveMetric);
+  const effectiveSmaWindow = data?.smaWindow ?? rankingSmaWindow;
+  const metricLabel = getTopix100RankingMetricLabel(effectiveMetric, effectiveSmaWindow);
+  const studyReadItems = getStudyReadItems(effectiveMetric);
 
   return (
     <Surface className="flex min-h-[24rem] flex-1 flex-col overflow-hidden">
-      <div className="space-y-2 border-b border-border/70 px-4 py-3">
+      <div className="space-y-1 border-b border-border/70 px-4 py-2">
         <SectionEyebrow>Results</SectionEyebrow>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-foreground">
-              TOPIX100 Ranking
-              {items.length > 0 ? (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>
-              ) : null}
-            </h2>
-            <p className="text-xs text-muted-foreground">{metricDescription}</p>
-          </div>
-          <div className="text-right text-[11px] text-muted-foreground">
-            <div>Metric: {metricLabel}</div>
-            <div>Universe: latest TOPIX100</div>
-            <div>Date: {data?.date ?? '-'}</div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <h2 className="text-base font-semibold text-foreground">
+            TOPIX100 SMA Divergence
+            {items.length > 0 ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">({items.length})</span>
+            ) : null}
+          </h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            <span>{metricLabel}</span>
+            {studyReadItems.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+            <span>{data?.date ?? '-'}</span>
           </div>
         </div>
       </div>
@@ -98,12 +109,12 @@ export function Topix100RankingTable({
                 <th className="w-12 px-2 py-1.5 text-center">#</th>
                 <th className="w-16 px-2 py-1.5 text-left">Code</th>
                 <th className="px-2 py-1.5 text-left">Company</th>
-                <th className="w-24 px-2 py-1.5 text-left">Sector</th>
                 <th className="w-28 px-2 py-1.5 text-right">{metricLabel}</th>
-                <th className="w-28 px-2 py-1.5 text-right">Volume SMA 20/80</th>
                 <th className="w-24 px-2 py-1.5 text-left">Bucket</th>
-                <th className="w-20 px-2 py-1.5 text-left">Vol</th>
+                <th className="w-20 px-2 py-1.5 text-left">Vol Split</th>
+                <th className="w-28 px-2 py-1.5 text-right">Volume SMA 20/80</th>
                 <th className="w-24 px-2 py-1.5 text-right">Price</th>
+                <th className="w-24 px-2 py-1.5 text-left">Sector</th>
                 <th className="w-24 px-2 py-1.5 text-right">Volume</th>
               </tr>
             </thead>
@@ -117,13 +128,11 @@ export function Topix100RankingTable({
                   <td className="px-2 py-1.5 text-center font-medium tabular-nums">{item.rank}</td>
                   <td className="px-2 py-1.5 font-medium">{item.code}</td>
                   <td className="max-w-[220px] truncate px-2 py-1.5">{item.companyName}</td>
-                  <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
                     {effectiveMetric === 'price_sma_20_80'
                       ? formatVolumeRatio(item.priceSma20_80)
-                      : formatRate(item.priceVsSma20Gap)}
+                      : formatRate(item.priceVsSmaGap)}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma20_80)}</td>
                   <td className="px-2 py-1.5">
                     <span
                       className={`rounded-full px-2 py-1 text-[11px] font-medium uppercase ${bucketToneClass(item.priceBucket)}`}
@@ -132,7 +141,9 @@ export function Topix100RankingTable({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-muted-foreground">{item.volumeBucket ?? '-'}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma20_80)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
+                  <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
                     {formatVolume(item.volume)}
                   </td>

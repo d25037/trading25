@@ -31,7 +31,6 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
 
 - Notebook:
   - [`apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py)
-  - [`apps/bt/notebooks/playground/topix100_price_vs_sma20_rank_future_close_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_price_vs_sma20_rank_future_close_playground.py)
 - Domain logic:
   - [`apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py)
   - [`apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py)

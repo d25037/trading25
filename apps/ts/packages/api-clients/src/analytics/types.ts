@@ -77,7 +77,8 @@ export interface MarketRankingResponse {
   lastUpdated: string;
 }
 
-export type Topix100RankingMetric = 'price_vs_sma20_gap' | 'price_sma_20_80';
+export type Topix100RankingMetric = 'price_vs_sma_gap' | 'price_sma_20_80';
+export type Topix100PriceSmaWindow = 20 | 50 | 100;
 
 export interface MarketRankingParams {
   date?: string;
@@ -99,7 +100,7 @@ export interface Topix100RankingItem {
   scaleCategory: string;
   currentPrice: number;
   volume: number;
-  priceVsSma20Gap: number;
+  priceVsSmaGap: number;
   priceSma20_80: number;
   volumeSma20_80: number;
   priceDecile: number;
@@ -110,6 +111,7 @@ export interface Topix100RankingItem {
 export interface Topix100RankingResponse {
   date: string;
   rankingMetric: Topix100RankingMetric;
+  smaWindow: Topix100PriceSmaWindow;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;
@@ -118,6 +120,7 @@ export interface Topix100RankingResponse {
 export interface Topix100RankingParams {
   date?: string;
   metric?: Topix100RankingMetric;
+  smaWindow?: Topix100PriceSmaWindow;
 }
 
 export interface FundamentalsParams {

@@ -24,40 +24,44 @@ describe('useTopix100Ranking', () => {
     vi.mocked(analyticsClient.getTopix100Ranking).mockResolvedValueOnce({
       date: '2026-03-30',
       rankingMetric: 'price_sma_20_80',
+      smaWindow: 50,
       itemCount: 0,
       items: [],
       lastUpdated: '2026-03-30T00:00:00Z',
     } as never);
 
     const { wrapper } = createTestWrapper();
-    const { result } = renderHook(() => useTopix100Ranking('2026-03-30', 'price_sma_20_80', true), { wrapper });
+    const { result } = renderHook(() => useTopix100Ranking('2026-03-30', 'price_sma_20_80', 50, true), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(analyticsClient.getTopix100Ranking).toHaveBeenCalledWith({
       date: '2026-03-30',
       metric: 'price_sma_20_80',
+      smaWindow: 50,
     });
   });
 
   it('stays idle when disabled', () => {
     const { wrapper } = createTestWrapper();
-    const { result } = renderHook(() => useTopix100Ranking('2026-03-30', 'price_vs_sma20_gap', false), { wrapper });
+    const { result } = renderHook(() => useTopix100Ranking('2026-03-30', 'price_vs_sma_gap', 50, false), { wrapper });
 
     expect(result.current.fetchStatus).toBe('idle');
   });
 
-  it('refetches when the metric changes', async () => {
+  it('refetches when the metric or sma window changes', async () => {
     vi.mocked(analyticsClient.getTopix100Ranking)
       .mockResolvedValueOnce({
         date: '2026-03-30',
-        rankingMetric: 'price_vs_sma20_gap',
+        rankingMetric: 'price_vs_sma_gap',
+        smaWindow: 50,
         itemCount: 0,
         items: [],
         lastUpdated: '2026-03-30T00:00:00Z',
       } as never)
       .mockResolvedValueOnce({
         date: '2026-03-30',
-        rankingMetric: 'price_sma_20_80',
+        rankingMetric: 'price_vs_sma_gap',
+        smaWindow: 100,
         itemCount: 0,
         items: [],
         lastUpdated: '2026-03-30T00:00:00Z',
@@ -65,9 +69,10 @@ describe('useTopix100Ranking', () => {
 
     const { wrapper } = createTestWrapper();
     const { rerender } = renderHook(
-      ({ metric }: { metric: Topix100RankingMetric }) => useTopix100Ranking('2026-03-30', metric, true),
+      ({ metric, smaWindow }: { metric: Topix100RankingMetric; smaWindow: 20 | 50 | 100 }) =>
+        useTopix100Ranking('2026-03-30', metric, smaWindow, true),
       {
-        initialProps: { metric: 'price_vs_sma20_gap' as Topix100RankingMetric },
+        initialProps: { metric: 'price_vs_sma_gap' as Topix100RankingMetric, smaWindow: 50 as 20 | 50 | 100 },
         wrapper,
       }
     );
@@ -75,16 +80,18 @@ describe('useTopix100Ranking', () => {
     await waitFor(() => {
       expect(analyticsClient.getTopix100Ranking).toHaveBeenNthCalledWith(1, {
         date: '2026-03-30',
-        metric: 'price_vs_sma20_gap',
+        metric: 'price_vs_sma_gap',
+        smaWindow: 50,
       });
     });
 
-    rerender({ metric: 'price_sma_20_80' });
+    rerender({ metric: 'price_vs_sma_gap', smaWindow: 100 });
 
     await waitFor(() => {
       expect(analyticsClient.getTopix100Ranking).toHaveBeenNthCalledWith(2, {
         date: '2026-03-30',
-        metric: 'price_sma_20_80',
+        metric: 'price_vs_sma_gap',
+        smaWindow: 100,
       });
     });
   });

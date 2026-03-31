@@ -84,6 +84,7 @@ export class AnalyticsClient {
     return this.request<Topix100RankingResponse>('/api/analytics/topix100-ranking', undefined, {
       date: params.date,
       metric: params.metric,
+      smaWindow: params.smaWindow,
     });
   }
 

@@ -25,6 +25,7 @@ import {
 } from '@/components/Ranking';
 import {
   getTopix100RankingMetricLabel,
+  resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
 } from '@/components/Ranking/topix100RankingMetric';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
@@ -44,7 +45,7 @@ const subTabs = [
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
-  { value: 'topix100' as RankingDailyView, label: 'TOPIX100' },
+  { value: 'topix100' as RankingDailyView, label: 'TOPIX100 Study' },
 ];
 
 interface RankingSidebarProps {
@@ -178,9 +179,10 @@ function buildIntroMetaItems(
   }
   if (activeDailyView === 'topix100') {
     const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
+    const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
     return [
-      { label: 'Mode', value: getTopix100RankingMetricLabel(topix100Metric) },
-      { label: 'Universe', value: 'Latest TOPIX100' },
+      { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
+      { label: 'Read', value: 'Q10 below SMA' },
     ];
   }
   return [
@@ -203,6 +205,7 @@ function RankingContent({
   onIndexClick,
 }: RankingContentProps) {
   const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
+  const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
 
   if (activeSubTab === 'fundamentalRanking') {
     return (
@@ -238,6 +241,7 @@ function RankingContent({
         error={topix100RankingQuery.error}
         onStockClick={onStockClick}
         rankingMetric={topix100Metric}
+        rankingSmaWindow={topix100SmaWindow}
         priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
         volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
       />
@@ -268,10 +272,12 @@ export function RankingPage() {
   } = useRankingRouteState();
   const navigate = useNavigate();
   const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
+  const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking' && activeDailyView !== 'topix100');
   const topix100RankingQuery = useTopix100Ranking(
     rankingParams.date,
     topix100Metric,
+    topix100SmaWindow,
     activeSubTab === 'ranking' && activeDailyView === 'topix100'
   );
   const fundamentalRankingQuery = useFundamentalRanking(
@@ -300,20 +306,19 @@ export function RankingPage() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
-      <Surface className="px-4 py-3">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:overflow-hidden">
+      <Surface className="px-4 py-2">
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+          <div className="space-y-1">
             <SectionEyebrow>Analytics Workspace</SectionEyebrow>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Daily leaders, TOPIX100 price / SMA20 gap or SMA 20/80 buckets, index moves, and forecast-to-actual
-                EPS ratios.
+              <p className="max-w-2xl text-xs text-muted-foreground sm:text-sm">
+                Daily ranking, index performance, TOPIX100 SMA divergence, and forecast/actual EPS ratios.
               </p>
             </div>
           </div>
-          <PageIntroMetaList items={introMetaItems} className="gap-x-4 gap-y-2" />
+          <PageIntroMetaList items={introMetaItems} className="gap-x-2.5 gap-y-1 [&>div]:min-w-[6.5rem] [&>div]:pl-2" />
         </div>
       </Surface>
 

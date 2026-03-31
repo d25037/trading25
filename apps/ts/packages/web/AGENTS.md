@@ -60,3 +60,8 @@ bun run build              # Production build
 bun run typecheck          # TypeScript validation
 bun run test               # Run tests
 ```
+
+## Layout Bias
+
+- desktop の主要作業幅はおおむね 1180px 前後のコンテンツ幅を前提に最適化する
+- header / intro / meta は縦に伸ばしすぎず、主テーブルや主チャートの初期表示領域を優先する

@@ -37,6 +37,7 @@ export type {
   SectorStocksParams,
   SortOrder,
   Topix100PriceBucket,
+  Topix100PriceSmaWindow,
   Topix100RankingItem,
   Topix100RankingMetric,
   Topix100RankingParams,

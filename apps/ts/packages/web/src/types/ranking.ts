@@ -3,7 +3,7 @@
  * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
-import type { Topix100RankingMetric } from '@trading25/contracts/types/api-response-types';
+import type { Topix100PriceSmaWindow, Topix100RankingMetric } from '@trading25/contracts/types/api-response-types';
 
 export type {
   IndexPerformanceItem,
@@ -12,6 +12,7 @@ export type {
   Rankings,
   RankingType,
   Topix100PriceBucket,
+  Topix100PriceSmaWindow,
   Topix100RankingItem,
   Topix100RankingResponse,
   Topix100VolumeBucket,
@@ -32,6 +33,7 @@ export interface RankingParams {
   lookbackDays?: number;
   periodDays?: number;
   topix100Metric?: Topix100RankingMetric;
+  topix100SmaWindow?: Topix100PriceSmaWindow;
   topix100PriceBucket?: Topix100PriceBucketFilter;
   topix100VolumeBucket?: Topix100VolumeBucketFilter;
 }

@@ -8,6 +8,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
   return {
     date: '2026-03-30',
     rankingMetric: metric,
+    smaWindow: 50,
     itemCount: 3,
     lastUpdated: '2026-03-30T00:00:00Z',
     items: [
@@ -20,7 +21,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         scaleCategory: 'TOPIX Core30',
         currentPrice: 3000,
         volume: 1_000_000,
-        priceVsSma20Gap: 0.12,
+        priceVsSmaGap: 0.12,
         priceSma20_80: 1.23,
         volumeSma20_80: 1.11,
         priceDecile: 1,
@@ -36,7 +37,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         scaleCategory: 'TOPIX Large70',
         currentPrice: 12000,
         volume: 800_000,
-        priceVsSma20Gap: -0.08,
+        priceVsSmaGap: -0.08,
         priceSma20_80: 0.95,
         volumeSma20_80: 0.88,
         priceDecile: 10,
@@ -52,7 +53,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         scaleCategory: 'TOPIX Mid400',
         currentPrice: 150,
         volume: 2_000_000,
-        priceVsSma20Gap: 0.01,
+        priceVsSmaGap: 0.01,
         priceSma20_80: 1.01,
         volumeSma20_80: 1.05,
         priceDecile: 5,
@@ -68,7 +69,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         scaleCategory: 'TOPIX Mid400',
         currentPrice: 1800,
         volume: 1_500_000,
-        priceVsSma20Gap: -0.01,
+        priceVsSmaGap: -0.01,
         priceSma20_80: 0.99,
         volumeSma20_80: 1.02,
         priceDecile: 7,
@@ -80,23 +81,26 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
 }
 
 describe('Topix100RankingTable', () => {
-  it('renders the price / SMA20 gap mode and row clicks', async () => {
+  it('renders the price / SMA50 gap mode and row clicks', async () => {
     const user = userEvent.setup();
     const onStockClick = vi.fn();
 
     render(
       <Topix100RankingTable
-        data={createResponse('price_vs_sma20_gap')}
+        data={createResponse('price_vs_sma_gap')}
         isLoading={false}
         error={null}
         onStockClick={onStockClick}
-        rankingMetric="price_vs_sma20_gap"
+        rankingMetric="price_vs_sma_gap"
+        rankingSmaWindow={50}
         priceBucketFilter="all"
         volumeBucketFilter="all"
       />
     );
 
-    expect(screen.getByText('Metric: Price / SMA20 Gap')).toBeInTheDocument();
+    expect(screen.getAllByText('Price / SMA50 Gap')).toHaveLength(2);
+    expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
+    expect(screen.getByText('Volume Low first')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
 
@@ -111,13 +115,15 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
-        rankingMetric="price_vs_sma20_gap"
+        rankingMetric="price_vs_sma_gap"
+        rankingSmaWindow={50}
         priceBucketFilter="q10"
         volumeBucketFilter="low"
       />
     );
 
-    expect(screen.getByText('Metric: Price SMA 20/80')).toBeInTheDocument();
+    expect(screen.getAllByText('Price SMA 20/80')).toHaveLength(2);
+    expect(screen.getByText('Legacy comparison')).toBeInTheDocument();
     expect(screen.getByText('0.95x')).toBeInTheDocument();
     expect(screen.getByText('Sony')).toBeInTheDocument();
     expect(screen.queryByText('Toyota')).not.toBeInTheDocument();
@@ -127,11 +133,12 @@ describe('Topix100RankingTable', () => {
   it('shows the empty state when filters remove every row', () => {
     render(
       <Topix100RankingTable
-        data={createResponse('price_vs_sma20_gap')}
+        data={createResponse('price_vs_sma_gap')}
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
-        rankingMetric="price_vs_sma20_gap"
+        rankingMetric="price_vs_sma_gap"
+        rankingSmaWindow={50}
         priceBucketFilter="q1"
         volumeBucketFilter="low"
       />

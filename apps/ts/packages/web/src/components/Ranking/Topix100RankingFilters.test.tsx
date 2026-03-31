@@ -18,10 +18,23 @@ vi.mock('@/components/shared/filters', () => ({
       Date Input
     </button>
   ),
+  NumberSelect: ({
+    label,
+    onChange,
+  }: {
+    label: string;
+    onChange: (value: number) => void;
+  }) => (
+    <button type="button" aria-label={label} onClick={() => onChange(100)}>
+      {label}
+    </button>
+  ),
 }));
 
 describe('Topix100RankingFilters', () => {
   const defaultParams: RankingParams = {
+    topix100Metric: 'price_vs_sma_gap',
+    topix100SmaWindow: 50,
     topix100PriceBucket: 'all',
     topix100VolumeBucket: 'all',
   };
@@ -29,15 +42,40 @@ describe('Topix100RankingFilters', () => {
   it('renders the default metric mode when params are omitted', () => {
     render(<Topix100RankingFilters params={{}} onChange={vi.fn()} />);
 
-    expect(screen.getByText('TOPIX100 Ranking')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Price / SMA20 Gap' })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByText(/Default short-term price \/ SMA20 gap ranking/i)).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 SMA Divergence')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
+    expect(
+      screen.getByText('Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Volume Low first.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('SMA Window')).toBeInTheDocument();
   });
 
-  it('updates metric, date, and bucket filters', async () => {
+  it('renders the legacy metric copy without the sma window control', () => {
+    render(
+      <Topix100RankingFilters
+        params={{
+          topix100Metric: 'price_sma_20_80',
+          topix100PriceBucket: 'all',
+          topix100VolumeBucket: 'all',
+        }}
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Legacy SMA 20/80 comparison view.')).toBeInTheDocument();
+    expect(screen.queryByText('SMA Window')).not.toBeInTheDocument();
+  });
+
+  it('updates metric, sma window, date, and bucket filters', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<Topix100RankingFilters params={defaultParams} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'SMA Window' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      topix100SmaWindow: 100,
+    });
 
     await user.click(screen.getByRole('button', { name: 'Price SMA 20/80' }));
     expect(onChange).toHaveBeenLastCalledWith({
@@ -52,7 +90,7 @@ describe('Topix100RankingFilters', () => {
     });
 
     await user.click(screen.getByRole('combobox', { name: 'Price Bucket' }));
-    await user.click(screen.getByRole('option', { name: 'Q10' }));
+    await user.click(screen.getByRole('option', { name: 'Q10 Below SMA' }));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       topix100PriceBucket: 'q10',

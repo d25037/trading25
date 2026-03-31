@@ -139,7 +139,8 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       rankingPeriodDays: '60',
-      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100Metric: 'price_vs_sma20_gap',
+      rankingTopix100SmaWindow: '100',
       rankingTopix100PriceBucket: 'q10',
       rankingTopix100VolumeBucket: 'low',
       fundamentalMarkets: '0112',
@@ -153,12 +154,33 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 60,
-      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100SmaWindow: 100,
       rankingTopix100PriceBucket: 'q10',
       rankingTopix100VolumeBucket: 'low',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
+    });
+  });
+
+  it('migrates legacy topix100 sma20 metric urls to the new metric plus sma window', () => {
+    const search = validateScreeningSearch({
+      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100SmaWindow: '20',
+    });
+
+    expect(search).toEqual({
+      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100SmaWindow: 20,
+    });
+
+    const legacySearch = validateScreeningSearch({
+      rankingTopix100Metric: 'price_vs_sma20_gap',
+    });
+
+    expect(legacySearch).toEqual({
+      rankingTopix100Metric: 'price_vs_sma_gap',
+      rankingTopix100SmaWindow: 20,
     });
   });
 
@@ -168,7 +190,8 @@ describe('routeSearch', () => {
       dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
-      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100Metric: 'price_vs_sma_gap',
+      rankingTopix100SmaWindow: '100',
       rankingTopix100PriceBucket: 'q1',
       rankingTopix100VolumeBucket: 'high',
       fundamentalMarkets: '0112',
@@ -183,7 +206,7 @@ describe('routeSearch', () => {
       dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
-      rankingTopix100Metric: 'price_sma_20_80',
+      rankingTopix100SmaWindow: 100,
       rankingTopix100PriceBucket: 'q1',
       rankingTopix100VolumeBucket: 'high',
       fundamentalMarkets: '0112',

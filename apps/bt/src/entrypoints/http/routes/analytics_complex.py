@@ -173,14 +173,16 @@ async def get_fundamental_ranking(
     response_model=Topix100RankingResponse,
     summary="Get TOPIX100 ranking snapshot",
     description=(
-        "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA20 gap "
-        "(default) or price SMA 20/80, with volume SMA 20/80 sidecar buckets."
+        "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap "
+        "(default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, "
+        "with volume SMA 20/80 sidecar buckets."
     ),
 )
 async def get_topix100_ranking(
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    metric: Topix100RankingMetric = Query("price_vs_sma20_gap"),
+    metric: Topix100RankingMetric = Query("price_vs_sma_gap"),
+    smaWindow: int = Query(50, description="Supported values: 20, 50, 100."),
 ) -> Topix100RankingResponse:
     """TOPIX100 の当日ランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -191,7 +193,11 @@ async def get_topix100_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_topix100_ranking(date=date, metric=metric)
+        return service.get_topix100_ranking(
+            date=date,
+            metric=metric,
+            sma_window=smaWindow,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

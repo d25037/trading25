@@ -44,9 +44,10 @@ def _now_iso() -> str:
 Topix100PriceBucket = Literal["q1", "q10", "q456", "other"]
 Topix100VolumeBucket = Literal["high", "low"]
 _TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
-    "price_vs_sma20_gap": "price_vs_sma20_gap",
+    "price_vs_sma_gap": "price_vs_sma_gap",
     "price_sma_20_80": "price_sma_20_80",
 }
+_TOPIX100_PRICE_SMA_WINDOWS: frozenset[int] = frozenset({20, 50, 100})
 
 
 def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
@@ -239,14 +240,17 @@ class RankingService:
     def get_topix100_ranking(
         self,
         date: str | None = None,
-        metric: Topix100RankingMetric = "price_vs_sma20_gap",
+        metric: Topix100RankingMetric = "price_vs_sma_gap",
+        sma_window: int = 50,
     ) -> Topix100RankingResponse:
         """TOPIX100 の snapshot ランキングを返す。"""
         if metric not in _TOPIX100_RANKING_METRIC_SQL:
             raise ValueError(f"Unsupported TOPIX100 ranking metric: {metric}")
+        if sma_window not in _TOPIX100_PRICE_SMA_WINDOWS:
+            raise ValueError(f"Unsupported TOPIX100 SMA window: {sma_window}")
 
         target_date = self._resolve_topix100_ranking_date(date)
-        rows = self._load_topix100_ranking_rows(target_date, metric)
+        rows = self._load_topix100_ranking_rows(target_date, metric, sma_window)
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
 
@@ -260,7 +264,7 @@ class RankingService:
                 scaleCategory=str(row["scale_category"] or ""),
                 currentPrice=float(row["current_price"]),
                 volume=float(row["volume"]),
-                priceVsSma20Gap=float(row["price_vs_sma20_gap"]),
+                priceVsSmaGap=float(row["price_vs_sma_gap"]),
                 priceSma20_80=float(row["price_sma_20_80"]),
                 volumeSma20_80=float(row["volume_sma_20_80"]),
                 priceDecile=int(row["price_decile"]),
@@ -277,6 +281,7 @@ class RankingService:
         return Topix100RankingResponse(
             date=target_date,
             rankingMetric=metric,
+            smaWindow=sma_window,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
@@ -424,8 +429,10 @@ class RankingService:
         self,
         target_date: str,
         metric: Topix100RankingMetric,
+        sma_window: int,
     ) -> list[Mapping[str, Any]]:
         metric_column = _TOPIX100_RANKING_METRIC_SQL[metric]
+        required_history_rows = max(int(sma_window), 80)
         return self._reader.query(
             f"""
             WITH topix100_stocks AS (
@@ -489,8 +496,18 @@ class RankingService:
                     AVG(sd.close) OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
+                        ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+                    ) AS price_sma_50,
+                    AVG(sd.close) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
                         ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
                     ) AS price_sma_80,
+                    AVG(sd.close) OVER (
+                        PARTITION BY sd.normalized_code
+                        ORDER BY sd.date
+                        ROWS BETWEEN 99 PRECEDING AND CURRENT ROW
+                    ) AS price_sma_100,
                     AVG(sd.volume) OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
@@ -501,11 +518,10 @@ class RankingService:
                         ORDER BY sd.date
                         ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
                     ) AS volume_sma_80,
-                    COUNT(*) OVER (
+                    ROW_NUMBER() OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
-                        ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
-                    ) AS price_window_count_80
+                    ) AS history_row_number
                 FROM stock_data_dedup sd
                 JOIN topix100_stocks s ON s.normalized_code = sd.normalized_code
             ),
@@ -518,11 +534,11 @@ class RankingService:
                     scale_category,
                     current_price,
                     volume,
-                    current_price / NULLIF(price_sma_20, 0) - 1 AS price_vs_sma20_gap,
+                    current_price / NULLIF(price_sma_{int(sma_window)}, 0) - 1 AS price_vs_sma_gap,
                     price_sma_20 / NULLIF(price_sma_80, 0) AS price_sma_20_80,
                     volume_sma_20 / NULLIF(volume_sma_80, 0) AS volume_sma_20_80
                 FROM feature_history
-                WHERE date = ? AND price_window_count_80 >= 80
+                WHERE date = ? AND history_row_number >= {required_history_rows}
             ),
             price_ranked AS (
                 SELECT
@@ -569,7 +585,7 @@ class RankingService:
                 scale_category,
                 current_price,
                 volume,
-                price_vs_sma20_gap,
+                price_vs_sma_gap,
                 price_sma_20_80,
                 volume_sma_20_80,
                 price_decile,

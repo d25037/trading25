@@ -64,7 +64,7 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
 
 vi.mock('@/hooks/useTopix100Ranking', () => ({
   useTopix100Ranking: () => ({
-    data: { date: '2026-03-25', rankingMetric: 'price_vs_sma20_gap', itemCount: 0, items: [] },
+    data: { date: '2026-03-25', rankingMetric: 'price_vs_sma_gap', smaWindow: 50, itemCount: 0, items: [] },
     isLoading: false,
     error: null,
   }),
@@ -126,7 +126,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'TOPIX100' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'TOPIX100 Study' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
   });
@@ -172,10 +172,10 @@ describe('RankingPage', () => {
     const user = userEvent.setup();
     const view = render(<RankingPage />);
 
-    await user.click(screen.getByRole('button', { name: 'TOPIX100' }));
+    await user.click(screen.getByRole('button', { name: 'TOPIX100 Study' }));
     view.rerender(<RankingPage />);
 
-    expect(screen.getByText('Price / SMA20 Gap')).toBeInTheDocument();
+    expect(screen.getByText('Price / SMA50 Gap')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Ranking Filters')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Ranking Table')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
