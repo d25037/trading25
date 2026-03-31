@@ -1,4 +1,4 @@
-"""Universe-relative price bucket signal."""
+"""Universe-relative price/SMA divergence bucket signal."""
 
 from __future__ import annotations
 
@@ -165,14 +165,14 @@ def universe_rank_bucket_signal(
     universe_multi_data: Mapping[str, Mapping[str, object]],
     universe_member_codes: Sequence[str] | None = None,
     feature_panel: pd.DataFrame | None = None,
-    price_sma_period: int = 20,
+    price_sma_period: int = 50,
     volume_short_period: int = 20,
     volume_long_period: int = 80,
     price_bucket: str = "q1",
     volume_bucket: str = "any",
     min_constituents: int = 10,
 ) -> pd.Series:
-    """Return True when the target stock sits in the requested universe bucket."""
+    """Return True when the target stock sits in the requested price/SMA universe bucket."""
 
     if min_constituents < 2:
         raise ValueError("min_constituents must be >= 2")

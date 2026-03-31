@@ -949,7 +949,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
     ),
     # 22. 指数/ユニバース内順位バケットシグナル
     SignalDefinition(
-        name="指数内順位バケット",
+        name="ユニバース順位バケット",
         signal_func=universe_rank_bucket_signal,
         enabled_checker=lambda p: hasattr(p, "universe_rank_bucket")
         and p.universe_rank_bucket.enabled,
@@ -965,10 +965,10 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
             "volume_bucket": p.universe_rank_bucket.volume_bucket,
             "min_constituents": p.universe_rank_bucket.min_constituents,
         },
-        entry_purpose="指数/ユニバース内の価格順位バケットで対象銘柄を選別",
-        exit_purpose="指数/ユニバース内の価格順位バケット変化を検知",
+        entry_purpose="ユニバース内の price / SMA 乖離バケットで対象銘柄を選別",
+        exit_purpose="ユニバース内の price / SMA 乖離バケット変化を検知",
         category="macro",
-        description="price_vs_sma20 系の順位を q1 / q10 / q456 / other に丸めて判定",
+        description="設定ユニバース内で close / SMA(period) を順位化し、q1 / q10 / q456 / other と volume split を判定",
         param_key="universe_rank_bucket",
         data_checker=_has_universe_ohlcv_data,
         data_requirements=["universe_ohlcv"],

@@ -113,10 +113,10 @@ class UniverseRankBucketSignalParams(BaseSignalParams):
     """指数/ユニバース内の価格順位バケット判定シグナル."""
 
     price_sma_period: int = Field(
-        default=20,
+        default=50,
         gt=0,
         le=500,
-        description="価格特徴量に使うSMA期間",
+        description="価格 / SMA 乖離の基準SMA期間（research default は 50）",
     )
     volume_short_period: int = Field(
         default=20,

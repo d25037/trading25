@@ -77,14 +77,15 @@ _SIGNAL_COPY_OVERRIDES: dict[str, dict[str, list[str] | str]] = {
         ],
     },
     "universe_rank_bucket": {
-        "summary": "Ranks daily `(close / SMA)` gaps inside the configured universe and selects q1 / q10 / q456 style buckets.",
+        "summary": "Ranks daily `close / SMA(period) - 1` divergence inside the configured universe, with SMA50 as the research default.",
         "when_to_use": [
             "Use when the strategy wants the strongest, weakest, or middle cohort relative to its own index or stock universe.",
+            "Start from SMA50 when reading oversold / rebound setups, then widen to SMA100 or shorten to SMA20 as needed.",
             "Pair with a fixed stock universe in shared_config so the bucket semantics stay stable across runs.",
         ],
         "pitfalls": [
             "Single-stock or tiny universes will usually return no matches because decile buckets need enough constituents.",
-            "The price bucket is based on `close / SMA(period) - 1`, with optional volume high/low split only inside q1, q10, and q456.",
+            "Q10 is the below-SMA cohort and Q1 is the above-SMA cohort; optional volume high/low split only applies inside q1, q10, and q456.",
         ],
     },
 }
@@ -142,7 +143,7 @@ _SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
         "label": "Period Type",
     },
     "price_sma_period": {
-        "label": "Price SMA Period",
+        "label": "Price SMA Window",
         "unit": "bars",
     },
     "volume_short_period": {

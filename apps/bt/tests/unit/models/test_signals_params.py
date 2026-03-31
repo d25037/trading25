@@ -184,7 +184,7 @@ class TestMacroSignalParams:
 
     def test_universe_rank_bucket_defaults(self) -> None:
         p = UniverseRankBucketSignalParams()
-        assert p.price_sma_period == 20
+        assert p.price_sma_period == 50
         assert p.price_bucket == "q1"
         assert p.volume_bucket == "any"
 

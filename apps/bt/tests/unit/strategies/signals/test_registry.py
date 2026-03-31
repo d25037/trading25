@@ -259,7 +259,7 @@ class TestSignalRegistry:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "universe_rank_bucket"]
         assert len(matches) == 1
         sig = matches[0]
-        assert sig.name == "指数内順位バケット"
+        assert sig.name == "ユニバース順位バケット"
         assert sig.category == "macro"
         assert sig.data_requirements == ["universe_ohlcv"]
 

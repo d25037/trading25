@@ -89,6 +89,22 @@ class TestBuildSignalReference:
         assert field["label"] == "Ratio Threshold"
         assert field["placeholder"] == "1.5"
 
+    def test_universe_rank_bucket_reference_reflects_sma50_default(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "universe_rank_bucket"
+        )
+        price_sma_period = next(
+            item for item in signal["fields"] if item["name"] == "price_sma_period"
+        )
+
+        assert signal["name"] == "ユニバース順位バケット"
+        assert "SMA50 as the research default" in signal["summary"]
+        assert any("Start from SMA50" in line for line in signal["when_to_use"])
+        assert any("Q10 is the below-SMA cohort" in line for line in signal["pitfalls"])
+        assert price_sma_period["label"] == "Price SMA Window"
+        assert price_sma_period["default"] == 50
+
     def test_signal_reference_omits_round_trip_exit_profiles(self):
         result = build_signal_reference()
         signal = next(
