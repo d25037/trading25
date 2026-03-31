@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Protocol
 
 from src.application.services.market_code_alias import resolve_market_codes
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.synthetic_indices import (
     NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
+    ScalarIndexRow,
     NT_RATIO_SYNTHETIC_INDEX_CODE,
     NT_RATIO_SYNTHETIC_INDEX_NAME,
     NT_RATIO_SYNTHETIC_INDEX_NAME_EN,
@@ -54,11 +54,6 @@ def _normalize_middle_dot(text: str) -> str:
     return text.replace("\u30fb", "\uff65")
 
 
-class _ScalarIndexRowLike(Protocol):
-    date: str
-    value: float
-
-
 _SCALAR_SYNTHETIC_INDEX_LIST_SPECS: tuple[
     tuple[str, str, str, str, Callable[[MarketDbReadable | None], str | None]],
     ...,
@@ -81,7 +76,7 @@ _SCALAR_SYNTHETIC_INDEX_LIST_SPECS: tuple[
 
 _SCALAR_SYNTHETIC_INDEX_RESPONSE_SPECS: dict[
     str,
-    tuple[str, Callable[[MarketDbReadable | None], list[_ScalarIndexRowLike]]],
+    tuple[str, Callable[[MarketDbReadable | None], Sequence[ScalarIndexRow]]],
 ] = {
     VI_SYNTHETIC_INDEX_CODE: (VI_SYNTHETIC_INDEX_NAME, get_vi_rows),
     NT_RATIO_SYNTHETIC_INDEX_CODE: (NT_RATIO_SYNTHETIC_INDEX_NAME, get_nt_ratio_rows),
@@ -115,7 +110,7 @@ def _build_scalar_index_response(
     *,
     code: str,
     name: str,
-    rows: Sequence[_ScalarIndexRowLike],
+    rows: Sequence[ScalarIndexRow],
 ) -> IndexDataResponse | None:
     if not rows:
         return None

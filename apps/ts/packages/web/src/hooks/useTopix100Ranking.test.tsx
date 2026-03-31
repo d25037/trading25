@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
+import type { Topix100RankingMetric } from '@/types/ranking';
 import { useTopix100Ranking } from './useTopix100Ranking';
 
 vi.mock('@/lib/analytics-client', () => ({
@@ -64,9 +65,9 @@ describe('useTopix100Ranking', () => {
 
     const { wrapper } = createTestWrapper();
     const { rerender } = renderHook(
-      ({ metric }) => useTopix100Ranking('2026-03-30', metric, true),
+      ({ metric }: { metric: Topix100RankingMetric }) => useTopix100Ranking('2026-03-30', metric, true),
       {
-        initialProps: { metric: 'price_vs_sma20_gap' as const },
+        initialProps: { metric: 'price_vs_sma20_gap' as Topix100RankingMetric },
         wrapper,
       }
     );

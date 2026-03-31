@@ -26,17 +26,15 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "ignoreDeprecations": "6.0",
 
-    "baseUrl": "./",
     "paths": {
-      "@trading25/api-clients": ["packages/api-clients/src"],
-      "@trading25/api-clients/*": ["packages/api-clients/src/*"],
-      "@trading25/contracts": ["packages/contracts/src"],
-      "@trading25/contracts/*": ["packages/contracts/src/*"],
-      "@trading25/utils": ["packages/utils/src"],
-      "@trading25/utils/*": ["packages/utils/src/*"],
-      "@trading25/web": ["packages/web/src"]
+      "@trading25/api-clients": ["./packages/api-clients/src"],
+      "@trading25/api-clients/*": ["./packages/api-clients/src/*"],
+      "@trading25/contracts": ["./packages/contracts/src"],
+      "@trading25/contracts/*": ["./packages/contracts/src/*"],
+      "@trading25/utils": ["./packages/utils/src"],
+      "@trading25/utils/*": ["./packages/utils/src/*"],
+      "@trading25/web": ["./packages/web/src"]
     }
   },
   "include": [

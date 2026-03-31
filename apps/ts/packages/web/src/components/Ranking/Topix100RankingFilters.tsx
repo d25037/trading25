@@ -50,7 +50,7 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
         <DateInput value={params.date} onChange={(value) => updateParam('date', value)} id="topix100-ranking-date" />
 
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-foreground">Ranking Metric</label>
+          <p className="text-xs font-medium text-foreground">Ranking Metric</p>
           <SegmentedTabs
             items={TOPIX100_RANKING_METRIC_OPTIONS}
             value={metric}

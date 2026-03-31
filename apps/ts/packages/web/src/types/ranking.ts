@@ -3,6 +3,8 @@
  * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
+import type { Topix100RankingMetric } from '@trading25/contracts/types/api-response-types';
+
 export type {
   IndexPerformanceItem,
   MarketRankingResponse,
@@ -11,10 +13,11 @@ export type {
   RankingType,
   Topix100PriceBucket,
   Topix100RankingItem,
-  Topix100RankingMetric,
   Topix100RankingResponse,
   Topix100VolumeBucket,
 } from '@trading25/contracts/types/api-response-types';
+
+export type { Topix100RankingMetric } from '@trading25/contracts/types/api-response-types';
 
 export type RankingPageTab = 'ranking' | 'fundamentalRanking';
 export type RankingDailyView = 'stocks' | 'indices' | 'topix100';
