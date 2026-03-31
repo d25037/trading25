@@ -21,6 +21,8 @@
   - NT 倍率前日比と TOPIX 引け変動の joint regime ごとに、個別銘柄群の `close -> next open` を観察する実験。
 - [market-behavior/topix100-vi-change-regime-conditioning/](./market-behavior/topix100-vi-change-regime-conditioning/README.md)
   - 日経VI 前日比 regime ごとに、TOPIX100 の price/volume split がその後どう振る舞うかを観察する実験。
+- [market-behavior/topix100-price-vs-sma-rank-future-close/](./market-behavior/topix100-price-vs-sma-rank-future-close/README.md)
+  - TOPIX100 の `price / SMA20|50|100` 単独特徴を decile と price/volume split で比較し、continuation か mean-reversion かを観察する実験。
 - [market-behavior/topix100-sma-ratio-lightgbm/](./market-behavior/topix100-sma-ratio-lightgbm/README.md)
   - TOPIX100 の 6 本の SMA ratio 特徴に対して、hand-crafted composite baseline と LightGBM ranker を walk-forward OOS で比較する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
