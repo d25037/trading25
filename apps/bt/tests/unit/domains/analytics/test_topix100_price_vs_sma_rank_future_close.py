@@ -3,16 +3,22 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pandas as pd
 
 from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
     PRIMARY_VOLUME_FEATURE,
     PRIMARY_VOLUME_SMA_WINDOW,
+    TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID,
     VOLUME_FEATURE_ORDER,
     VOLUME_SMA_WINDOW_ORDER,
     get_topix100_price_vs_sma_rank_future_close_available_date_range,
+    get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id,
+    get_topix100_price_vs_sma_rank_future_close_latest_bundle_path,
+    load_topix100_price_vs_sma_rank_future_close_research_bundle,
     run_topix100_price_vs_sma_rank_future_close_research,
+    write_topix100_price_vs_sma_rank_future_close_research_bundle,
 )
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
 
@@ -170,3 +176,52 @@ def test_multiple_volume_lenses_are_compared_when_requested(
         VOLUME_FEATURE_ORDER
     )
     assert len(target_rows) == len(VOLUME_FEATURE_ORDER) * 2
+
+
+def test_research_bundle_roundtrip_for_price_vs_sma_result(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_topix100_price_vs_sma_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+        volume_sma_windows=VOLUME_SMA_WINDOW_ORDER,
+    )
+
+    bundle = write_topix100_price_vs_sma_rank_future_close_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_123000_testabcd",
+    )
+    reloaded = load_topix100_price_vs_sma_rank_future_close_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix100_price_vs_sma_rank_future_close_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.price_sma_windows == result.price_sma_windows
+    assert reloaded.volume_sma_windows == result.volume_sma_windows
+    assert reloaded.source_mode == result.source_mode
+    pd.testing.assert_frame_equal(
+        reloaded.decile_future_summary_df,
+        result.decile_future_summary_df,
+        check_dtype=False,
+    )
+    pd.testing.assert_frame_equal(
+        reloaded.split_hypothesis_df,
+        result.split_hypothesis_df,
+        check_dtype=False,
+    )

@@ -9,12 +9,21 @@ single-SMA price features: `(close / sma20) - 1`, `(close / sma50) - 1`, and
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from itertools import combinations
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
     _open_analysis_connection,
@@ -60,6 +69,9 @@ CombinedBucketKey = Literal[
 PRICE_SMA_WINDOW_ORDER: tuple[int, ...] = (20, 50, 100)
 VOLUME_SMA_WINDOW_ORDER: tuple[tuple[int, int], ...] = ((5, 20), (20, 80), (50, 150))
 PRIMARY_VOLUME_SMA_WINDOW: tuple[int, int] = (20, 80)
+TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/topix100-price-vs-sma-rank-future-close"
+)
 
 PRICE_BUCKET_ORDER: tuple[PriceBucketKey, ...] = ("q1", "middle", "q10")
 PRICE_BUCKET_DECILES: dict[PriceBucketKey, tuple[str, ...]] = {
@@ -1247,3 +1259,216 @@ def run_topix100_price_vs_sma_rank_future_close_research(
             volume_feature_order=volume_feature_order,
         ),
     )
+
+
+def write_topix100_price_vs_sma_rank_future_close_research_bundle(
+    result: Topix100PriceVsSmaRankFutureCloseResearchResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_research_result_payload(result)
+    return write_research_bundle(
+        experiment_id=TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_topix100_price_vs_sma_rank_future_close_research",
+        params={
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "lookback_years": result.lookback_years,
+            "min_constituents_per_day": result.min_constituents_per_day,
+            "price_sma_windows": list(result.price_sma_windows),
+            "volume_sma_windows": [list(window) for window in result.volume_sma_windows],
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_topix100_price_vs_sma_rank_future_close_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100PriceVsSmaRankFutureCloseResearchResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    metadata = dict(info.result_metadata)
+    metadata["price_sma_windows"] = tuple(
+        int(window) for window in metadata["price_sma_windows"]
+    )
+    metadata["price_feature_order"] = tuple(
+        str(name) for name in metadata["price_feature_order"]
+    )
+    metadata["volume_sma_windows"] = tuple(
+        (int(short_window), int(long_window))
+        for short_window, long_window in metadata["volume_sma_windows"]
+    )
+    metadata["volume_feature_order"] = tuple(
+        str(name) for name in metadata["volume_feature_order"]
+    )
+    return Topix100PriceVsSmaRankFutureCloseResearchResult(
+        db_path=cast(str, metadata["db_path"]),
+        source_mode=cast(SourceMode, metadata["source_mode"]),
+        source_detail=cast(str, metadata["source_detail"]),
+        available_start_date=cast(str | None, metadata["available_start_date"]),
+        available_end_date=cast(str | None, metadata["available_end_date"]),
+        default_start_date=cast(str | None, metadata["default_start_date"]),
+        analysis_start_date=cast(str | None, metadata["analysis_start_date"]),
+        analysis_end_date=cast(str | None, metadata["analysis_end_date"]),
+        lookback_years=int(metadata["lookback_years"]),
+        min_constituents_per_day=int(metadata["min_constituents_per_day"]),
+        price_sma_windows=cast(tuple[int, ...], metadata["price_sma_windows"]),
+        price_feature_order=cast(tuple[str, ...], metadata["price_feature_order"]),
+        volume_sma_windows=cast(
+            tuple[tuple[int, int], ...],
+            metadata["volume_sma_windows"],
+        ),
+        volume_feature_order=cast(
+            tuple[str, ...],
+            metadata["volume_feature_order"],
+        ),
+        topix100_constituent_count=int(metadata["topix100_constituent_count"]),
+        stock_day_count=int(metadata["stock_day_count"]),
+        valid_date_count=int(metadata["valid_date_count"]),
+        event_panel_df=tables["event_panel_df"],
+        ranked_panel_df=tables["ranked_panel_df"],
+        ranking_feature_summary_df=tables["ranking_feature_summary_df"],
+        decile_future_summary_df=tables["decile_future_summary_df"],
+        daily_group_means_df=tables["daily_group_means_df"],
+        global_significance_df=tables["global_significance_df"],
+        pairwise_significance_df=tables["pairwise_significance_df"],
+        price_bucket_daily_means_df=tables["price_bucket_daily_means_df"],
+        price_bucket_summary_df=tables["price_bucket_summary_df"],
+        price_bucket_pairwise_significance_df=tables[
+            "price_bucket_pairwise_significance_df"
+        ],
+        group_hypothesis_df=tables["group_hypothesis_df"],
+        price_volume_split_panel_df=tables["price_volume_split_panel_df"],
+        price_volume_split_daily_means_df=tables[
+            "price_volume_split_daily_means_df"
+        ],
+        price_volume_split_summary_df=tables["price_volume_split_summary_df"],
+        price_volume_split_pairwise_significance_df=tables[
+            "price_volume_split_pairwise_significance_df"
+        ],
+        split_hypothesis_df=tables["split_hypothesis_df"],
+    )
+
+
+def get_topix100_price_vs_sma_rank_future_close_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_research_result_payload(
+    result: Topix100PriceVsSmaRankFutureCloseResearchResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata: dict[str, Any] = {}
+    tables: dict[str, pd.DataFrame] = {}
+    for field in fields(result):
+        value = getattr(result, field.name)
+        if isinstance(value, pd.DataFrame):
+            tables[field.name] = value
+        else:
+            metadata[field.name] = value
+    return metadata, tables
+
+
+def _build_research_bundle_summary_markdown(
+    result: Topix100PriceVsSmaRankFutureCloseResearchResult,
+) -> str:
+    summary_lines = [
+        "# TOPIX100 Price vs SMA Rank / Future Close",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- Price windows: `{', '.join(str(window) for window in result.price_sma_windows)}`",
+        "- Volume lenses: "
+        + ", ".join(
+            f"`{short_window}/{long_window}`"
+            for short_window, long_window in result.volume_sma_windows
+        ),
+        f"- TOPIX100 constituents: `{result.topix100_constituent_count}`",
+        f"- Stock-day rows: `{result.stock_day_count}`",
+        f"- Valid dates: `{result.valid_date_count}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+
+    strongest_bounce = result.split_hypothesis_df[
+        (result.split_hypothesis_df["metric_key"] == "future_return")
+        & (result.split_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.split_hypothesis_df["hypothesis_label"] == "Q10 Low vs Middle High")
+        & result.split_hypothesis_df["mean_difference"].notna()
+    ].copy()
+    if strongest_bounce.empty:
+        summary_lines.append("- No `Q10 Low vs Middle High` rows were available in this run.")
+    else:
+        strongest_row = strongest_bounce.sort_values(
+            "mean_difference", ascending=False
+        ).iloc[0]
+        summary_lines.extend(
+            [
+                "- Strongest `Q10 Low vs Middle High` read on `t_plus_10 / future_return`:",
+                "  "
+                f"`{strongest_row['price_feature']}` x `{strongest_row['volume_feature']}` "
+                f"with mean spread `{float(strongest_row['mean_difference']):+.4f}%`.",
+            ]
+        )
+
+    strongest_q10 = result.split_hypothesis_df[
+        (result.split_hypothesis_df["metric_key"] == "future_return")
+        & (result.split_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.split_hypothesis_df["hypothesis_label"] == "Q10 Low vs Middle Low")
+        & result.split_hypothesis_df["mean_difference"].notna()
+    ].copy()
+    if not strongest_q10.empty:
+        strongest_row = strongest_q10.sort_values(
+            "mean_difference", ascending=False
+        ).iloc[0]
+        summary_lines.append(
+            "  "
+            f"`Q10 Low vs Middle Low` best row was `{strongest_row['price_feature']}` x "
+            f"`{strongest_row['volume_feature']}` at "
+            f"`{float(strongest_row['mean_difference']):+.4f}%`."
+        )
+
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_research_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

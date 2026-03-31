@@ -1,12 +1,12 @@
 # TOPIX100 Price vs SMA Rank / Future Close
 
-TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と price/volume split で将来 `close` / `return` を観察する実験です。volume 条件は既存 SMA20 研究と同じ `volume_sma_20_80` を使います。
+TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と price/volume split で将来 `close` / `return` を観察する実験です。runner-first 導線では `volume_sma_5_20 / 20_80 / 50_150` をまとめて保存し、notebook は bundle viewer として使います。
 
 ## Purpose
 
 - 既存の `price vs SMA20` notebook を、`SMA20 / SMA50 / SMA100` の feature family として比較可能にする。
 - `Q1` を「SMA を大きく上回る銘柄群」、`Q10` を「SMA を大きく下回る銘柄群」として、将来 `t_plus_1 / t_plus_5 / t_plus_10` の decile 構造を確認する。
-- `volume_sma_20_80` high/low split を掛け合わせて、price deviation の極端群に turnover regime が追加の説明力を持つかを見る。
+- `volume_sma_5_20 / 20_80 / 50_150` high/low split を掛け合わせて、price deviation の極端群に turnover regime が追加の説明力を持つかを見る。
 
 ## Scope
 
@@ -16,8 +16,10 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
   - `price_vs_sma_20_gap`
   - `price_vs_sma_50_gap`
   - `price_vs_sma_100_gap`
-- Volume feature:
+- Volume features:
+  - `volume_sma_5_20`
   - `volume_sma_20_80`
+  - `volume_sma_50_150`
 - Horizons:
   - `t_plus_1`
   - `t_plus_5`
@@ -29,16 +31,21 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py`
 - Notebook:
   - `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/src/domains/analytics/research_bundle.py`
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py`
 - Tests:
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/tests/unit/domains/analytics/test_research_bundle.py`
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py`
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py`
   - `apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py`
+  - `apps/bt/tests/unit/scripts/test_run_topix100_price_vs_sma_rank_future_close.py`
 
 ## Latest Baseline
 
@@ -53,21 +60,15 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
 
 ## Reproduction
 
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python - <<'PY'
-from src.shared.config.settings import get_settings
-from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
-    run_topix100_price_vs_sma_rank_future_close_research,
-)
+Runner-first の canonical path:
 
-result = run_topix100_price_vs_sma_rank_future_close_research(
-    get_settings().market_db_path
-)
-print(result.decile_future_summary_df)
-print(result.group_hypothesis_df)
-print(result.split_hypothesis_df)
-PY
+```bash
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py
 ```
+
+この command は `~/.local/share/trading25/research/market-behavior/topix100-price-vs-sma-rank-future-close/<run_id>/`
+へ `manifest.json + results.duckdb + summary.md` を保存します。
 
 Notebook で確認する場合:
 
@@ -75,6 +76,8 @@ Notebook で確認する場合:
 UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
   apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py
 ```
+
+notebook は latest bundle を既定で読みます。fresh analysis は `Mode = Run Fresh Analysis` に切り替えたときだけ実行されます。
 
 ## Next Questions
 
