@@ -9,21 +9,32 @@ returns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from itertools import combinations
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
+)
 from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     COMBINED_BUCKET_LABEL_MAP,
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
     PRIMARY_VOLUME_FEATURE,
+    Topix100PriceVsSmaRankFutureCloseResearchResult,
+    _build_research_result_from_payload as _build_price_vs_sma_result_from_payload,
+    _split_research_result_payload as _split_price_vs_sma_result_payload,
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
     VOLUME_SMA_WINDOW_ORDER,
-    Topix100PriceVsSmaRankFutureCloseResearchResult,
     _sort_frame as _sort_price_frame,
     run_topix100_price_vs_sma_rank_future_close_research,
 )
@@ -57,6 +68,10 @@ Q10_LOW_HYPOTHESIS_LABELS: tuple[
     ("q10_volume_low", "middle_volume_low", "Q10 Low vs Middle Low"),
     ("q10_volume_low", "middle_volume_high", "Q10 Low vs Middle High"),
 )
+TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/topix100-price-vs-sma-q10-bounce"
+)
+_BASE_RESULT_TABLE_PREFIX = "base__"
 
 
 @dataclass(frozen=True)
@@ -628,3 +643,203 @@ def run_topix100_price_vs_sma_q10_bounce_research(
         q10_low_spread_daily_df=q10_low_spread_daily_df,
         q10_low_scorecard_df=q10_low_scorecard_df,
     )
+
+
+def write_topix100_price_vs_sma_q10_bounce_research_bundle(
+    result: Topix100PriceVsSmaQ10BounceResearchResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_q10_bounce_research_result_payload(result)
+    return write_research_bundle(
+        experiment_id=TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_topix100_price_vs_sma_q10_bounce_research",
+        params={
+            "start_date": result.base_result.analysis_start_date,
+            "end_date": result.base_result.analysis_end_date,
+            "lookback_years": result.base_result.lookback_years,
+            "min_constituents_per_day": result.base_result.min_constituents_per_day,
+            "price_features": list(result.price_feature_order),
+            "volume_features": list(result.volume_feature_order),
+        },
+        db_path=result.base_result.db_path,
+        analysis_start_date=result.base_result.analysis_start_date,
+        analysis_end_date=result.base_result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_q10_bounce_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_topix100_price_vs_sma_q10_bounce_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100PriceVsSmaQ10BounceResearchResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_q10_bounce_research_result_from_payload(
+        dict(info.result_metadata),
+        tables,
+    )
+
+
+def get_topix100_price_vs_sma_q10_bounce_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_q10_bounce_research_result_payload(
+    result: Topix100PriceVsSmaQ10BounceResearchResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata: dict[str, Any] = {}
+    tables: dict[str, pd.DataFrame] = {}
+    for field in fields(result):
+        value = getattr(result, field.name)
+        if field.name == "base_result":
+            base_metadata, base_tables = _split_price_vs_sma_result_payload(value)
+            metadata["base_result_metadata"] = base_metadata
+            tables.update(
+                {
+                    f"{_BASE_RESULT_TABLE_PREFIX}{table_name}": dataframe
+                    for table_name, dataframe in base_tables.items()
+                }
+            )
+            continue
+        if isinstance(value, pd.DataFrame):
+            tables[field.name] = value
+        else:
+            metadata[field.name] = value
+    return metadata, tables
+
+
+def _build_q10_bounce_research_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> Topix100PriceVsSmaQ10BounceResearchResult:
+    normalized = dict(metadata)
+    normalized["price_feature_order"] = tuple(
+        str(name) for name in normalized["price_feature_order"]
+    )
+    normalized["volume_feature_order"] = tuple(
+        str(name) for name in normalized["volume_feature_order"]
+    )
+    base_tables = {
+        table_name.removeprefix(_BASE_RESULT_TABLE_PREFIX): dataframe
+        for table_name, dataframe in tables.items()
+        if table_name.startswith(_BASE_RESULT_TABLE_PREFIX)
+    }
+    q10_tables = {
+        table_name: dataframe
+        for table_name, dataframe in tables.items()
+        if not table_name.startswith(_BASE_RESULT_TABLE_PREFIX)
+    }
+    base_result = _build_price_vs_sma_result_from_payload(
+        cast(dict[str, Any], normalized["base_result_metadata"]),
+        base_tables,
+    )
+    return Topix100PriceVsSmaQ10BounceResearchResult(
+        base_result=base_result,
+        price_feature_order=cast(tuple[str, ...], normalized["price_feature_order"]),
+        volume_feature_order=cast(tuple[str, ...], normalized["volume_feature_order"]),
+        q10_middle_volume_split_panel_df=q10_tables["q10_middle_volume_split_panel_df"],
+        q10_middle_volume_split_daily_means_df=q10_tables[
+            "q10_middle_volume_split_daily_means_df"
+        ],
+        q10_middle_volume_split_summary_df=q10_tables["q10_middle_volume_split_summary_df"],
+        q10_middle_volume_split_pairwise_significance_df=q10_tables[
+            "q10_middle_volume_split_pairwise_significance_df"
+        ],
+        q10_low_hypothesis_df=q10_tables["q10_low_hypothesis_df"],
+        q10_low_spread_daily_df=q10_tables["q10_low_spread_daily_df"],
+        q10_low_scorecard_df=q10_tables["q10_low_scorecard_df"],
+    )
+
+
+def _build_q10_bounce_research_bundle_summary_markdown(
+    result: Topix100PriceVsSmaQ10BounceResearchResult,
+) -> str:
+    base = result.base_result
+    summary_lines = [
+        "# TOPIX100 Price vs SMA Q10 Bounce",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{base.source_mode}`",
+        f"- Available range: `{base.available_start_date} -> {base.available_end_date}`",
+        f"- Analysis range: `{base.analysis_start_date} -> {base.analysis_end_date}`",
+        f"- Price features: `{', '.join(result.price_feature_order)}`",
+        f"- Volume features: `{', '.join(result.volume_feature_order)}`",
+        f"- TOPIX100 constituents: `{base.topix100_constituent_count}`",
+        f"- Stock-day rows: `{base.stock_day_count}`",
+        f"- Valid dates: `{base.valid_date_count}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    strongest_rows = result.q10_low_hypothesis_df[
+        (result.q10_low_hypothesis_df["metric_key"] == "future_return")
+        & (result.q10_low_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.q10_low_hypothesis_df["hypothesis_label"] == "Q10 Low vs Middle High")
+        & result.q10_low_hypothesis_df["mean_difference"].notna()
+    ].copy()
+    if strongest_rows.empty:
+        summary_lines.append("- No `Q10 Low vs Middle High` rows were available in this run.")
+    else:
+        strongest_row = strongest_rows.sort_values("mean_difference", ascending=False).iloc[0]
+        summary_lines.extend(
+            [
+                "- Strongest `Q10 Low vs Middle High` read on `t_plus_10 / future_return`:",
+                "  "
+                f"`{strongest_row['price_feature']}` x `{strongest_row['volume_feature']}` "
+                f"at `{float(strongest_row['mean_difference']):+.4f}%`.",
+            ]
+        )
+    scorecard_rows = result.q10_low_scorecard_df[
+        (result.q10_low_scorecard_df["metric_key"] == "future_return")
+        & (result.q10_low_scorecard_df["horizon_key"] == "t_plus_10")
+        & (result.q10_low_scorecard_df["hypothesis_label"] == "Q10 Low vs Q10 High")
+        & result.q10_low_scorecard_df["mean_difference"].notna()
+    ].copy()
+    if not scorecard_rows.empty:
+        strongest_row = scorecard_rows.sort_values("mean_difference", ascending=False).iloc[0]
+        summary_lines.append(
+            "  "
+            f"`Q10 Low vs Q10 High` best row was `{strongest_row['price_feature']}` x "
+            f"`{strongest_row['volume_feature']}` with mean spread "
+            f"`{float(strongest_row['mean_difference']):+.4f}%` and positive share "
+            f"`{float(strongest_row['positive_date_share']):.2%}`."
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_q10_bounce_research_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

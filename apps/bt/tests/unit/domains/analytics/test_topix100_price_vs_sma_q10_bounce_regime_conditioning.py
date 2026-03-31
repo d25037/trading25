@@ -7,7 +7,12 @@ import pytest
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
     DEFAULT_VOLUME_FEATURE,
+    TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID,
+    get_topix100_price_vs_sma_q10_bounce_regime_conditioning_bundle_path_for_run_id,
+    get_topix100_price_vs_sma_q10_bounce_regime_conditioning_latest_bundle_path,
+    load_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle,
     run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research,
+    write_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle,
 )
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
 
@@ -92,3 +97,47 @@ def test_q10_bounce_regime_conditioning_can_target_sma100(
     assert result.price_feature == "price_vs_sma_100_gap"
     assert set(result.split_panel_df["price_feature"]) == {"price_vs_sma_100_gap"}
     assert set(result.split_panel_df["volume_feature"]) == {DEFAULT_VOLUME_FEATURE}
+
+
+def test_q10_bounce_regime_conditioning_research_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+    )
+
+    bundle = write_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_173500_testabcd",
+    )
+    reloaded = (
+        load_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle(
+            bundle.bundle_dir
+        )
+    )
+
+    assert (
+        bundle.experiment_id
+        == TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID
+    )
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix100_price_vs_sma_q10_bounce_regime_conditioning_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix100_price_vs_sma_q10_bounce_regime_conditioning_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.price_feature == result.price_feature
+    assert reloaded.volume_feature == result.volume_feature
+    assert reloaded.topix_close_stats == result.topix_close_stats
+    assert reloaded.nt_ratio_stats == result.nt_ratio_stats

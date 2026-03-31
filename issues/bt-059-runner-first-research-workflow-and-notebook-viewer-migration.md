@@ -70,6 +70,8 @@ parent: null
 - 2026-03-31: `apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py` を追加し、`topix100_price_vs_sma_rank_future_close` を pilot の runner-first 実験として bundle 出力できるようにした。
 - 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py` を viewer-first へ切り替え、latest bundle の読込を既定にし、fresh recompute は `Mode = Run Fresh Analysis` の明示操作時だけ走るようにした。
 - 2026-03-31: `apps/bt/docs/experiments/README.md` と pilot note を runner-first 前提へ更新し、`.codex/skills/bt-marimo-playground/SKILL.md` も viewer-first workflow に更新した。
+- 2026-03-31: `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py` と `run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py` を追加し、`Q10 bounce` と `regime conditioning` も bundle 出力できるようにした。
+- 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py` を viewer-first へ切り替え、latest bundle 読込を既定にした。
 
 ## 補足
 - 現行の experiment note 基盤: `apps/bt/docs/experiments/README.md`

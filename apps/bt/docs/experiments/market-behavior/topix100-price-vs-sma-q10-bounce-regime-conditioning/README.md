@@ -1,6 +1,6 @@
 # TOPIX100 Price vs SMA Q10 Bounce Regime Conditioning
 
-`price / SMA` の `Q10 bounce` 研究に対して、same-day `TOPIX close return` と `NT ratio return` の regime を重ねる実験です。現時点の主対象は `price_vs_sma_50_gap` の `Q10 Low` です。
+`price / SMA` の `Q10 bounce` 研究に対して、same-day `TOPIX close return` と `NT ratio return` の regime を重ねる実験です。runner-first 導線では `SMA50 Q10 Low + volume_sma_5_20` を既定 bundle に保存し、notebook は viewer として使います。
 
 ## Purpose
 
@@ -28,13 +28,17 @@
 
 ## Source Of Truth
 
-- Notebook:
+- Runner:
+  - `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
+- Notebook viewer:
   - `apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`
+  - `apps/bt/src/domains/analytics/research_bundle.py`
 - Tests:
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
+  - `apps/bt/tests/unit/scripts/test_run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
 
 ## Latest Baseline
 
@@ -50,18 +54,8 @@
 ## Reproduction
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python - <<'PY'
-from src.shared.config.settings import get_settings
-from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
-    run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research,
-)
-
-result = run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
-    get_settings().market_db_path
-)
-print(result.regime_hypothesis_df)
-print(result.regime_group_hypothesis_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py
 ```
 
 Notebook で確認する場合:
@@ -70,6 +64,8 @@ Notebook で確認する場合:
 UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
   apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py
 ```
+
+notebook は latest bundle を既定で読みます。fresh analysis は `Mode = Run Fresh Analysis` に切り替えたときだけ実行されます。
 
 ## Next Questions
 

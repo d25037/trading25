@@ -1,6 +1,6 @@
 # TOPIX100 Price vs SMA Q10 Bounce
 
-TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だけを切り出した実験です。`middle` と `q10` を対象に、`volume_sma_20_80` の high/low を掛け合わせて `Q10 Low` がどこまで優位かを見ます。
+TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だけを切り出した実験です。runner-first 導線では選択した `price_feature` / `volume_feature` の組み合わせを bundle に保存し、notebook は bundle viewer として使います。
 
 ## Purpose
 
@@ -20,7 +20,8 @@ TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だ
   - `price_vs_sma_50_gap`
   - `price_vs_sma_100_gap`
 - Volume feature:
-  - `volume_sma_20_80`
+  - default `volume_sma_20_80`
+  - runner では `volume_sma_5_20` / `volume_sma_20_80` / `volume_sma_50_150` を指定可能
 - Horizons:
   - `t_plus_1`
   - `t_plus_5`
@@ -33,14 +34,18 @@ TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だ
 
 ## Source Of Truth
 
-- Notebook:
+- Runner:
+  - `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py`
+- Notebook viewer:
   - `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/src/domains/analytics/research_bundle.py`
 - Tests:
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_q10_bounce.py`
   - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/tests/unit/scripts/test_run_topix100_price_vs_sma_q10_bounce.py`
 
 ## Latest Baseline
 
@@ -56,18 +61,8 @@ TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だ
 ## Reproduction
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python - <<'PY'
-from src.shared.config.settings import get_settings
-from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
-    run_topix100_price_vs_sma_q10_bounce_research,
-)
-
-result = run_topix100_price_vs_sma_q10_bounce_research(
-    get_settings().market_db_path
-)
-print(result.q10_low_scorecard_df)
-print(result.q10_low_hypothesis_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py
 ```
 
 Notebook で確認する場合:
@@ -76,6 +71,8 @@ Notebook で確認する場合:
 UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
   apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py
 ```
+
+notebook は latest bundle を既定で読みます。fresh analysis は `Mode = Run Fresh Analysis` に切り替えたときだけ実行されます。
 
 ## Next Questions
 

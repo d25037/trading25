@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
+    TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
     Q10_MIDDLE_COMBINED_BUCKET_ORDER,
     _aligned_q10_middle_combined_pivot,
     _build_q10_low_hypothesis,
@@ -16,10 +17,14 @@ from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
     _build_q10_middle_volume_pairwise_significance,
     _filter_q10_middle_volume_daily_means,
     _filter_q10_middle_volume_split_panel,
+    get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id,
+    get_topix100_price_vs_sma_q10_bounce_latest_bundle_path,
+    load_topix100_price_vs_sma_q10_bounce_research_bundle,
     _normalize_price_features,
     _normalize_volume_features,
     _summarize_q10_middle_volume_split,
     run_topix100_price_vs_sma_q10_bounce_research,
+    write_topix100_price_vs_sma_q10_bounce_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRIMARY_VOLUME_FEATURE,
@@ -128,6 +133,54 @@ def test_q10_bounce_can_target_volume_sma_5_20(
         "volume_sma_5_20"
     }
     assert set(result.q10_low_scorecard_df["volume_feature"]) == {"volume_sma_5_20"}
+
+
+def test_q10_bounce_research_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_topix100_price_vs_sma_q10_bounce_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+        price_features=["price_vs_sma_50_gap"],
+        volume_features=["volume_sma_5_20"],
+    )
+
+    bundle = write_topix100_price_vs_sma_q10_bounce_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_173000_testabcd",
+    )
+    reloaded = load_topix100_price_vs_sma_q10_bounce_research_bundle(bundle.bundle_dir)
+
+    assert bundle.experiment_id == TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix100_price_vs_sma_q10_bounce_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.price_feature_order == result.price_feature_order
+    assert reloaded.volume_feature_order == result.volume_feature_order
+    assert reloaded.base_result.analysis_start_date == result.base_result.analysis_start_date
+    pd.testing.assert_frame_equal(
+        reloaded.q10_low_hypothesis_df,
+        result.q10_low_hypothesis_df,
+        check_dtype=False,
+    )
+    pd.testing.assert_frame_equal(
+        reloaded.q10_low_scorecard_df,
+        result.q10_low_scorecard_df,
+        check_dtype=False,
+    )
 
 
 @pytest.mark.parametrize(

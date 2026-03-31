@@ -39,12 +39,18 @@ def _(Path, sys):
         sys.path.insert(0, str(project_root))
 
     from src.shared.config.settings import get_settings
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
         PRICE_FEATURE_LABEL_MAP,
+        VOLUME_FEATURE_LABEL_MAP,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
     )
     from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
         Q10_LOW_HYPOTHESIS_LABELS,
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+        get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id,
+        get_topix100_price_vs_sma_q10_bounce_latest_bundle_path,
+        load_topix100_price_vs_sma_q10_bounce_research_bundle,
         run_topix100_price_vs_sma_q10_bounce_research,
     )
 
@@ -52,10 +58,27 @@ def _(Path, sys):
     return (
         PRICE_FEATURE_LABEL_MAP,
         Q10_LOW_HYPOTHESIS_LABELS,
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+        VOLUME_FEATURE_LABEL_MAP,
         default_db_path,
+        get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id,
+        get_topix100_price_vs_sma_q10_bounce_latest_bundle_path,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
+        load_research_bundle_info,
+        load_topix100_price_vs_sma_q10_bounce_research_bundle,
         run_topix100_price_vs_sma_q10_bounce_research,
     )
+
+
+@app.cell
+def _(get_topix100_price_vs_sma_q10_bounce_latest_bundle_path):
+    try:
+        latest_bundle_path = get_topix100_price_vs_sma_q10_bounce_latest_bundle_path()
+    except Exception:
+        latest_bundle_path = None
+    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
+    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
@@ -70,7 +93,7 @@ def _(default_db_path, get_topix100_price_vs_sma_rank_future_close_available_dat
 
 
 @app.cell
-def _(default_db_path, initial_range, mo, pd):
+def _(default_db_path, initial_range, latest_bundle_path_str, latest_run_id, mo, pd):
     available_start_date, available_end_date = initial_range
     default_start_date = available_start_date or ""
     if available_end_date:
@@ -84,6 +107,19 @@ def _(default_db_path, initial_range, mo, pd):
         else:
             default_start_date = candidate
 
+    mode = mo.ui.dropdown(
+        options={
+            "bundle": "Load Existing Bundle",
+            "recompute": "Run Fresh Analysis",
+        },
+        value="bundle",
+        label="Mode",
+    )
+    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
+    bundle_path = mo.ui.text(
+        value=latest_bundle_path_str,
+        label="Bundle Path (optional)",
+    )
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
         value=default_start_date,
@@ -101,19 +137,66 @@ def _(default_db_path, initial_range, mo, pd):
         label="Min Constituents / Day",
     )
 
-    mo.vstack(
+    recompute_controls = mo.vstack(
         [
             db_path,
             mo.hstack([start_date, end_date]),
             mo.hstack([lookback_years, min_constituents_per_day]),
         ]
     )
-    return db_path, end_date, lookback_years, min_constituents_per_day, start_date
+    mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "### Research Runner",
+                        "",
+                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
+                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
+                        "- Canonical runner: `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py`",
+                    ]
+                )
+            ),
+            mo.hstack([mode, run_id]),
+            bundle_path,
+            recompute_controls if mode.value == "recompute" else mo.md(""),
+        ]
+    )
+    return (
+        bundle_path,
+        db_path,
+        end_date,
+        lookback_years,
+        min_constituents_per_day,
+        mode,
+        run_id,
+        start_date,
+    )
 
 
 @app.cell
-def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
+def _(
+    bundle_path,
+    db_path,
+    end_date,
+    get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id,
+    lookback_years,
+    min_constituents_per_day,
+    mode,
+    run_id,
+    start_date,
+):
+    run_id_value = run_id.value.strip()
+    bundle_path_value = bundle_path.value.strip()
+    resolved_bundle_path = bundle_path_value
+    if not resolved_bundle_path and run_id_value:
+        resolved_bundle_path = str(
+            get_topix100_price_vs_sma_q10_bounce_bundle_path_for_run_id(run_id_value)
+        )
     parsed_inputs = {
+        "mode": mode.value,
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolved_bundle_path or None,
         "selected_db_path": db_path.value.strip(),
         "selected_start": start_date.value.strip() or None,
         "selected_end": end_date.value.strip() or None,
@@ -124,33 +207,70 @@ def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
 
 
 @app.cell
-def _(parsed_inputs, run_topix100_price_vs_sma_q10_bounce_research):
+def _(
+    load_research_bundle_info,
+    load_topix100_price_vs_sma_q10_bounce_research_bundle,
+    parsed_inputs,
+    run_topix100_price_vs_sma_q10_bounce_research,
+):
     try:
-        result = run_topix100_price_vs_sma_q10_bounce_research(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            lookback_years=parsed_inputs["lookback_years"],
-            min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
-        )
+        if parsed_inputs["mode"] == "bundle":
+            selected_bundle_path = parsed_inputs["selected_bundle_path"]
+            if not selected_bundle_path:
+                raise ValueError(
+                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
+                )
+            bundle_info = load_research_bundle_info(selected_bundle_path)
+            result = load_topix100_price_vs_sma_q10_bounce_research_bundle(
+                selected_bundle_path
+            )
+        else:
+            bundle_info = None
+            result = run_topix100_price_vs_sma_q10_bounce_research(
+                parsed_inputs["selected_db_path"],
+                start_date=parsed_inputs["selected_start"],
+                end_date=parsed_inputs["selected_end"],
+                lookback_years=parsed_inputs["lookback_years"],
+                min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
+            )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(
+    TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID,
+    bundle_info,
+    error_message,
+    mo,
+    parsed_inputs,
+    result,
+):
     _view = mo.md("")
     if not error_message and result is not None:
         base = result.base_result
         feature_labels = ", ".join(result.price_feature_order)
+        volume_labels = ", ".join(result.volume_feature_order)
         _view = mo.md(
             "\n".join(
                 [
                     "## TOPIX100 Price vs SMA Q10 Bounce Research",
                     "",
+                    f"- Experiment ID: **{TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_RESEARCH_EXPERIMENT_ID}**",
+                    f"- Mode: **{parsed_inputs['mode']}**",
+                    *(
+                        [
+                            f"- Bundle run id: **{bundle_info.run_id}**",
+                            f"- Bundle created at: **{bundle_info.created_at}**",
+                            f"- Bundle path: **{bundle_info.bundle_dir}**",
+                        ]
+                        if bundle_info is not None
+                        else []
+                    ),
                     f"- Source mode: **{base.source_mode}**",
                     f"- Source detail: **{base.source_detail}**",
                     f"- Available range: **{base.available_start_date} -> {base.available_end_date}**",
@@ -160,6 +280,7 @@ def _(error_message, mo, parsed_inputs, result):
                     f"- Stock-day rows after warmup/filter: **{base.stock_day_count}**",
                     f"- Valid dates: **{base.valid_date_count}**",
                     f"- Price features: **{feature_labels}**",
+                    f"- Volume features: **{volume_labels}**",
                     "",
                     "This playground narrows the broader `price / SMA` study to the bounce slice.",
                     "The main question is whether **Q10 Low** beats `Q10 High`, `Middle Low`, and `Middle High`.",
@@ -173,9 +294,17 @@ def _(error_message, mo, parsed_inputs, result):
 
 
 @app.cell
-def _(PRICE_FEATURE_LABEL_MAP, Q10_LOW_HYPOTHESIS_LABELS, error_message, mo, result):
+def _(
+    PRICE_FEATURE_LABEL_MAP,
+    Q10_LOW_HYPOTHESIS_LABELS,
+    VOLUME_FEATURE_LABEL_MAP,
+    error_message,
+    mo,
+    result,
+):
     if error_message or result is None:
         price_feature_view = mo.md("")
+        volume_feature_view = mo.md("")
         horizon_view = mo.md("")
         metric_view = mo.md("")
         hypothesis_view = mo.md("")
@@ -189,6 +318,14 @@ def _(PRICE_FEATURE_LABEL_MAP, Q10_LOW_HYPOTHESIS_LABELS, error_message, mo, res
             if "price_vs_sma_50_gap" in result.price_feature_order
             else result.price_feature_order[0],
             label="Price Feature",
+        )
+        volume_feature_view = mo.ui.dropdown(
+            options={
+                VOLUME_FEATURE_LABEL_MAP[feature]: feature
+                for feature in result.volume_feature_order
+            },
+            value=result.volume_feature_order[0],
+            label="Volume Feature",
         )
         horizon_view = mo.ui.dropdown(
             options={
@@ -214,11 +351,18 @@ def _(PRICE_FEATURE_LABEL_MAP, Q10_LOW_HYPOTHESIS_LABELS, error_message, mo, res
         )
     mo.vstack(
         [
-            mo.hstack([price_feature_view, horizon_view]),
-            mo.hstack([metric_view, hypothesis_view]),
+            mo.hstack([price_feature_view, volume_feature_view]),
+            mo.hstack([horizon_view, metric_view]),
+            mo.hstack([hypothesis_view]),
         ]
     )
-    return hypothesis_view, horizon_view, metric_view, price_feature_view
+    return (
+        hypothesis_view,
+        horizon_view,
+        metric_view,
+        price_feature_view,
+        volume_feature_view,
+    )
 
 
 @app.cell
@@ -239,15 +383,25 @@ def _(error_message, metric_view, mo, result):
 
 
 @app.cell
-def _(error_message, horizon_view, metric_view, mo, price_feature_view, result):
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    price_feature_view,
+    result,
+    volume_feature_view,
+):
     _view = mo.md("")
     if not error_message and result is not None:
         _summary = result.q10_middle_volume_split_summary_df[
             (result.q10_middle_volume_split_summary_df["price_feature"] == price_feature_view.value)
+            & (result.q10_middle_volume_split_summary_df["volume_feature"] == volume_feature_view.value)
             & (result.q10_middle_volume_split_summary_df["horizon_key"] == horizon_view.value)
         ].copy()
         _pairwise = result.q10_middle_volume_split_pairwise_significance_df[
             (result.q10_middle_volume_split_pairwise_significance_df["price_feature"] == price_feature_view.value)
+            & (result.q10_middle_volume_split_pairwise_significance_df["volume_feature"] == volume_feature_view.value)
             & (result.q10_middle_volume_split_pairwise_significance_df["horizon_key"] == horizon_view.value)
             & (result.q10_middle_volume_split_pairwise_significance_df["metric_key"] == metric_view.value)
         ].copy()
@@ -272,17 +426,20 @@ def _(
     mo,
     price_feature_view,
     result,
+    volume_feature_view,
 ):
     _view = mo.md("")
     if not error_message and result is not None:
         _hypothesis = result.q10_low_hypothesis_df[
             (result.q10_low_hypothesis_df["price_feature"] == price_feature_view.value)
+            & (result.q10_low_hypothesis_df["volume_feature"] == volume_feature_view.value)
             & (result.q10_low_hypothesis_df["horizon_key"] == horizon_view.value)
             & (result.q10_low_hypothesis_df["metric_key"] == metric_view.value)
             & (result.q10_low_hypothesis_df["hypothesis_label"] == hypothesis_view.value)
         ].copy()
         _scorecard = result.q10_low_scorecard_df[
             (result.q10_low_scorecard_df["price_feature"] == price_feature_view.value)
+            & (result.q10_low_scorecard_df["volume_feature"] == volume_feature_view.value)
             & (result.q10_low_scorecard_df["horizon_key"] == horizon_view.value)
             & (result.q10_low_scorecard_df["metric_key"] == metric_view.value)
             & (result.q10_low_scorecard_df["hypothesis_label"] == hypothesis_view.value)
@@ -309,10 +466,12 @@ def _(
     plt,
     price_feature_view,
     result,
+    volume_feature_view,
 ):
     if not error_message and result is not None:
         _chart_df = result.q10_low_spread_daily_df[
             (result.q10_low_spread_daily_df["price_feature"] == price_feature_view.value)
+            & (result.q10_low_spread_daily_df["volume_feature"] == volume_feature_view.value)
             & (result.q10_low_spread_daily_df["horizon_key"] == horizon_view.value)
             & (result.q10_low_spread_daily_df["metric_key"] == metric_view.value)
             & (result.q10_low_spread_daily_df["hypothesis_label"] == hypothesis_view.value)

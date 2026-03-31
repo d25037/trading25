@@ -9,8 +9,9 @@ bounce lens.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, fields
 from itertools import combinations
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -18,6 +19,14 @@ import pandas as pd
 from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
     NT_RATIO_BUCKET_ORDER,
     NtRatioReturnStats,
+)
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
     Q10_LOW_HYPOTHESIS_LABELS,
@@ -68,6 +77,9 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
 
 DEFAULT_PRICE_FEATURE = "price_vs_sma_50_gap"
 DEFAULT_VOLUME_FEATURE = "volume_sma_5_20"
+TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning"
+)
 
 
 @dataclass(frozen=True)
@@ -700,3 +712,197 @@ def run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
         regime_group_pairwise_significance_df=regime_group_pairwise_significance_df,
         regime_group_hypothesis_df=regime_group_hypothesis_df,
     )
+
+
+def write_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle(
+    result: Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_regime_conditioning_research_result_payload(
+        result
+    )
+    return write_research_bundle(
+        experiment_id=TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research",
+        params={
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "price_feature": result.price_feature,
+            "volume_feature": result.volume_feature,
+            "sigma_threshold_1": result.sigma_threshold_1,
+            "sigma_threshold_2": result.sigma_threshold_2,
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_regime_conditioning_research_bundle_summary_markdown(
+            result
+        ),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_topix100_price_vs_sma_q10_bounce_regime_conditioning_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_regime_conditioning_research_result_from_payload(
+        dict(info.result_metadata),
+        tables,
+    )
+
+
+def get_topix100_price_vs_sma_q10_bounce_regime_conditioning_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_topix100_price_vs_sma_q10_bounce_regime_conditioning_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        TOPIX100_PRICE_VS_SMA_Q10_BOUNCE_REGIME_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_regime_conditioning_research_result_payload(
+    result: Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata: dict[str, Any] = {}
+    tables: dict[str, pd.DataFrame] = {}
+    for field in fields(result):
+        value = getattr(result, field.name)
+        if isinstance(value, pd.DataFrame):
+            tables[field.name] = value
+            continue
+        if field.name == "topix_close_stats" and value is not None:
+            metadata[field.name] = asdict(value)
+            continue
+        if field.name == "nt_ratio_stats" and value is not None:
+            metadata[field.name] = asdict(value)
+            continue
+        metadata[field.name] = value
+    return metadata, tables
+
+
+def _build_regime_conditioning_research_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult:
+    normalized = dict(metadata)
+    topix_close_stats_payload = normalized.get("topix_close_stats")
+    nt_ratio_stats_payload = normalized.get("nt_ratio_stats")
+    topix_close_stats = (
+        TopixCloseReturnStats(**topix_close_stats_payload)
+        if topix_close_stats_payload
+        else None
+    )
+    nt_ratio_stats = (
+        NtRatioReturnStats(**nt_ratio_stats_payload)
+        if nt_ratio_stats_payload
+        else None
+    )
+    return Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult(
+        db_path=str(normalized["db_path"]),
+        source_mode=str(normalized["source_mode"]),
+        source_detail=str(normalized["source_detail"]),
+        available_start_date=normalized.get("available_start_date"),
+        available_end_date=normalized.get("available_end_date"),
+        analysis_start_date=normalized.get("analysis_start_date"),
+        analysis_end_date=normalized.get("analysis_end_date"),
+        price_feature=str(normalized["price_feature"]),
+        price_feature_label=str(normalized["price_feature_label"]),
+        volume_feature=str(normalized["volume_feature"]),
+        volume_feature_label=str(normalized["volume_feature_label"]),
+        sigma_threshold_1=float(normalized["sigma_threshold_1"]),
+        sigma_threshold_2=float(normalized["sigma_threshold_2"]),
+        universe_constituent_count=int(normalized["universe_constituent_count"]),
+        valid_date_count=int(normalized["valid_date_count"]),
+        topix_close_stats=topix_close_stats,
+        nt_ratio_stats=nt_ratio_stats,
+        regime_market_df=tables["regime_market_df"],
+        regime_day_counts_df=tables["regime_day_counts_df"],
+        regime_group_day_counts_df=tables["regime_group_day_counts_df"],
+        split_panel_df=tables["split_panel_df"],
+        horizon_panel_df=tables["horizon_panel_df"],
+        regime_daily_means_df=tables["regime_daily_means_df"],
+        regime_summary_df=tables["regime_summary_df"],
+        regime_pairwise_significance_df=tables["regime_pairwise_significance_df"],
+        regime_hypothesis_df=tables["regime_hypothesis_df"],
+        regime_group_daily_means_df=tables["regime_group_daily_means_df"],
+        regime_group_summary_df=tables["regime_group_summary_df"],
+        regime_group_pairwise_significance_df=tables[
+            "regime_group_pairwise_significance_df"
+        ],
+        regime_group_hypothesis_df=tables["regime_group_hypothesis_df"],
+    )
+
+
+def _build_regime_conditioning_research_bundle_summary_markdown(
+    result: Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult,
+) -> str:
+    summary_lines = [
+        "# TOPIX100 Price vs SMA Q10 Bounce Regime Conditioning",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- Price feature: `{result.price_feature}`",
+        f"- Volume feature: `{result.volume_feature}`",
+        f"- Sigma thresholds: `{result.sigma_threshold_1}, {result.sigma_threshold_2}`",
+        f"- TOPIX100 constituents: `{result.universe_constituent_count}`",
+        f"- Valid dates: `{result.valid_date_count}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    strongest_rows = result.regime_group_hypothesis_df[
+        (result.regime_group_hypothesis_df["metric_key"] == "future_return")
+        & (result.regime_group_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.regime_group_hypothesis_df["hypothesis_label"] == "Q10 Low vs Middle High")
+        & result.regime_group_hypothesis_df["mean_difference"].notna()
+    ].copy()
+    if strongest_rows.empty:
+        summary_lines.append("- No grouped `Q10 Low vs Middle High` rows were available.")
+    else:
+        strongest_row = strongest_rows.sort_values("mean_difference", ascending=False).iloc[0]
+        summary_lines.extend(
+            [
+                "- Strongest grouped `Q10 Low vs Middle High` read on `t_plus_10 / future_return`:",
+                "  "
+                f"`{strongest_row['regime_type']}` / `{strongest_row['regime_group_key']}` "
+                f"at `{float(strongest_row['mean_difference']):+.4f}%`.",
+            ]
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_regime_conditioning_research_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

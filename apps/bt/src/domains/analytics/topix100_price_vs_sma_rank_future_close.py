@@ -1298,67 +1298,7 @@ def load_topix100_price_vs_sma_rank_future_close_research_bundle(
 ) -> Topix100PriceVsSmaRankFutureCloseResearchResult:
     info = load_research_bundle_info(bundle_path)
     tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    metadata["price_sma_windows"] = tuple(
-        int(window) for window in metadata["price_sma_windows"]
-    )
-    metadata["price_feature_order"] = tuple(
-        str(name) for name in metadata["price_feature_order"]
-    )
-    metadata["volume_sma_windows"] = tuple(
-        (int(short_window), int(long_window))
-        for short_window, long_window in metadata["volume_sma_windows"]
-    )
-    metadata["volume_feature_order"] = tuple(
-        str(name) for name in metadata["volume_feature_order"]
-    )
-    return Topix100PriceVsSmaRankFutureCloseResearchResult(
-        db_path=cast(str, metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=cast(str, metadata["source_detail"]),
-        available_start_date=cast(str | None, metadata["available_start_date"]),
-        available_end_date=cast(str | None, metadata["available_end_date"]),
-        default_start_date=cast(str | None, metadata["default_start_date"]),
-        analysis_start_date=cast(str | None, metadata["analysis_start_date"]),
-        analysis_end_date=cast(str | None, metadata["analysis_end_date"]),
-        lookback_years=int(metadata["lookback_years"]),
-        min_constituents_per_day=int(metadata["min_constituents_per_day"]),
-        price_sma_windows=cast(tuple[int, ...], metadata["price_sma_windows"]),
-        price_feature_order=cast(tuple[str, ...], metadata["price_feature_order"]),
-        volume_sma_windows=cast(
-            tuple[tuple[int, int], ...],
-            metadata["volume_sma_windows"],
-        ),
-        volume_feature_order=cast(
-            tuple[str, ...],
-            metadata["volume_feature_order"],
-        ),
-        topix100_constituent_count=int(metadata["topix100_constituent_count"]),
-        stock_day_count=int(metadata["stock_day_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        event_panel_df=tables["event_panel_df"],
-        ranked_panel_df=tables["ranked_panel_df"],
-        ranking_feature_summary_df=tables["ranking_feature_summary_df"],
-        decile_future_summary_df=tables["decile_future_summary_df"],
-        daily_group_means_df=tables["daily_group_means_df"],
-        global_significance_df=tables["global_significance_df"],
-        pairwise_significance_df=tables["pairwise_significance_df"],
-        price_bucket_daily_means_df=tables["price_bucket_daily_means_df"],
-        price_bucket_summary_df=tables["price_bucket_summary_df"],
-        price_bucket_pairwise_significance_df=tables[
-            "price_bucket_pairwise_significance_df"
-        ],
-        group_hypothesis_df=tables["group_hypothesis_df"],
-        price_volume_split_panel_df=tables["price_volume_split_panel_df"],
-        price_volume_split_daily_means_df=tables[
-            "price_volume_split_daily_means_df"
-        ],
-        price_volume_split_summary_df=tables["price_volume_split_summary_df"],
-        price_volume_split_pairwise_significance_df=tables[
-            "price_volume_split_pairwise_significance_df"
-        ],
-        split_hypothesis_df=tables["split_hypothesis_df"],
-    )
+    return _build_research_result_from_payload(dict(info.result_metadata), tables)
 
 
 def get_topix100_price_vs_sma_rank_future_close_latest_bundle_path(
@@ -1395,6 +1335,80 @@ def _split_research_result_payload(
         else:
             metadata[field.name] = value
     return metadata, tables
+
+
+def _normalize_research_result_metadata(
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(metadata)
+    normalized["price_sma_windows"] = tuple(
+        int(window) for window in normalized["price_sma_windows"]
+    )
+    normalized["price_feature_order"] = tuple(
+        str(name) for name in normalized["price_feature_order"]
+    )
+    normalized["volume_sma_windows"] = tuple(
+        (int(short_window), int(long_window))
+        for short_window, long_window in normalized["volume_sma_windows"]
+    )
+    normalized["volume_feature_order"] = tuple(
+        str(name) for name in normalized["volume_feature_order"]
+    )
+    return normalized
+
+
+def _build_research_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> Topix100PriceVsSmaRankFutureCloseResearchResult:
+    normalized = _normalize_research_result_metadata(metadata)
+    return Topix100PriceVsSmaRankFutureCloseResearchResult(
+        db_path=cast(str, normalized["db_path"]),
+        source_mode=cast(SourceMode, normalized["source_mode"]),
+        source_detail=cast(str, normalized["source_detail"]),
+        available_start_date=cast(str | None, normalized["available_start_date"]),
+        available_end_date=cast(str | None, normalized["available_end_date"]),
+        default_start_date=cast(str | None, normalized["default_start_date"]),
+        analysis_start_date=cast(str | None, normalized["analysis_start_date"]),
+        analysis_end_date=cast(str | None, normalized["analysis_end_date"]),
+        lookback_years=int(normalized["lookback_years"]),
+        min_constituents_per_day=int(normalized["min_constituents_per_day"]),
+        price_sma_windows=cast(tuple[int, ...], normalized["price_sma_windows"]),
+        price_feature_order=cast(tuple[str, ...], normalized["price_feature_order"]),
+        volume_sma_windows=cast(
+            tuple[tuple[int, int], ...],
+            normalized["volume_sma_windows"],
+        ),
+        volume_feature_order=cast(
+            tuple[str, ...],
+            normalized["volume_feature_order"],
+        ),
+        topix100_constituent_count=int(normalized["topix100_constituent_count"]),
+        stock_day_count=int(normalized["stock_day_count"]),
+        valid_date_count=int(normalized["valid_date_count"]),
+        event_panel_df=tables["event_panel_df"],
+        ranked_panel_df=tables["ranked_panel_df"],
+        ranking_feature_summary_df=tables["ranking_feature_summary_df"],
+        decile_future_summary_df=tables["decile_future_summary_df"],
+        daily_group_means_df=tables["daily_group_means_df"],
+        global_significance_df=tables["global_significance_df"],
+        pairwise_significance_df=tables["pairwise_significance_df"],
+        price_bucket_daily_means_df=tables["price_bucket_daily_means_df"],
+        price_bucket_summary_df=tables["price_bucket_summary_df"],
+        price_bucket_pairwise_significance_df=tables[
+            "price_bucket_pairwise_significance_df"
+        ],
+        group_hypothesis_df=tables["group_hypothesis_df"],
+        price_volume_split_panel_df=tables["price_volume_split_panel_df"],
+        price_volume_split_daily_means_df=tables[
+            "price_volume_split_daily_means_df"
+        ],
+        price_volume_split_summary_df=tables["price_volume_split_summary_df"],
+        price_volume_split_pairwise_significance_df=tables[
+            "price_volume_split_pairwise_significance_df"
+        ],
+        split_hypothesis_df=tables["split_hypothesis_df"],
+    )
 
 
 def _build_research_bundle_summary_markdown(
