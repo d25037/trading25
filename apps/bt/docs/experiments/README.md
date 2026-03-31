@@ -25,6 +25,8 @@
   - TOPIX100 の `price / SMA20|50|100` 単独特徴を decile と price/volume split で比較し、continuation か mean-reversion かを観察する実験。
 - [market-behavior/topix100-price-vs-sma-q10-bounce/](./market-behavior/topix100-price-vs-sma-q10-bounce/README.md)
   - `price / SMA` family の `Q10` 側だけを切り出し、`Q10 Low vs ...` の bounce 仮説を feature / horizon ごとに比較する実験。
+- [market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning/](./market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning/README.md)
+  - `SMA50 Q10 Low` bounce を same-day `TOPIX close` / `NT ratio` regime で条件付けし、どの market state で反発が強いかを見る実験。
 - [market-behavior/topix100-sma-ratio-lightgbm/](./market-behavior/topix100-sma-ratio-lightgbm/README.md)
   - TOPIX100 の 6 本の SMA ratio 特徴に対して、hand-crafted composite baseline と LightGBM ranker を walk-forward OOS で比較する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
