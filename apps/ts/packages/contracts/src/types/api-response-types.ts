@@ -59,6 +59,7 @@ export interface MarketRankingResponse {
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 export type Topix100PriceBucket = 'q1' | 'q10' | 'q456' | 'other';
 export type Topix100VolumeBucket = 'high' | 'low' | null;
+export type Topix100RankingMetric = 'price_vs_sma20_gap' | 'price_sma_20_80';
 
 export interface Topix100RankingItem {
   rank: number;
@@ -69,6 +70,7 @@ export interface Topix100RankingItem {
   scaleCategory: string;
   currentPrice: number;
   volume: number;
+  priceVsSma20Gap: number;
   priceSma20_80: number;
   volumeSma20_80: number;
   priceDecile: number;
@@ -78,6 +80,7 @@ export interface Topix100RankingItem {
 
 export interface Topix100RankingResponse {
   date: string;
+  rankingMetric: Topix100RankingMetric;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;

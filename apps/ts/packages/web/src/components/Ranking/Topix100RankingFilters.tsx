@@ -1,7 +1,16 @@
-import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { DateInput } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { RankingParams, Topix100PriceBucketFilter, Topix100VolumeBucketFilter } from '@/types/ranking';
+import type {
+  RankingParams,
+  Topix100PriceBucketFilter,
+  Topix100VolumeBucketFilter,
+} from '@/types/ranking';
+import {
+  getTopix100RankingMetricDescription,
+  resolveTopix100RankingMetric,
+  TOPIX100_RANKING_METRIC_OPTIONS,
+} from './topix100RankingMetric';
 
 const PRICE_BUCKET_OPTIONS: { value: Topix100PriceBucketFilter; label: string }[] = [
   { value: 'all', label: 'All Buckets' },
@@ -25,6 +34,7 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     onChange({ ...params, [key]: value });
   };
+  const metric = resolveTopix100RankingMetric(params.topix100Metric);
 
   return (
     <Surface className="p-4">
@@ -32,12 +42,24 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
         <SectionEyebrow>TOPIX100 Study View</SectionEyebrow>
         <h2 className="text-base font-semibold text-foreground">TOPIX100 Ranking</h2>
         <p className="text-xs text-muted-foreground">
-          Sorted by price SMA 20/80 descending. Filters follow the research buckets: Q1, Q10, Q4-6, and volume high/low
-          splits.
+          Default sort is price / SMA20 gap. Toggle to the legacy price SMA 20/80 view when you want the prior study
+          framing.
         </p>
       </div>
       <div className="space-y-3">
         <DateInput value={params.date} onChange={(value) => updateParam('date', value)} id="topix100-ranking-date" />
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-foreground">Ranking Metric</label>
+          <SegmentedTabs
+            items={TOPIX100_RANKING_METRIC_OPTIONS}
+            value={metric}
+            onChange={(value) => updateParam('topix100Metric', value)}
+            itemClassName="h-9 justify-start rounded-lg px-3 py-1.5 text-xs"
+            className="flex-col"
+          />
+          <p className="text-[11px] text-muted-foreground">{getTopix100RankingMetricDescription(metric)}</p>
+        </div>
 
         <div className="space-y-1.5">
           <label htmlFor="topix100-price-bucket" className="text-xs font-medium text-foreground">

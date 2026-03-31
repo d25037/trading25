@@ -38,6 +38,7 @@ export type {
   SortOrder,
   Topix100PriceBucket,
   Topix100RankingItem,
+  Topix100RankingMetric,
   Topix100RankingParams,
   Topix100RankingResponse,
   Topix100VolumeBucket,

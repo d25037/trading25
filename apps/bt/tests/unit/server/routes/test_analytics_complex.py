@@ -341,6 +341,7 @@ class TestTopix100Ranking:
         assert resp.status_code == 200
         data = resp.json()
         assert "date" in data
+        assert data["rankingMetric"] == "price_vs_sma20_gap"
         assert "itemCount" in data
         assert "items" in data
         assert "lastUpdated" in data
@@ -353,11 +354,18 @@ class TestTopix100Ranking:
             item = data["items"][0]
             assert "rank" in item
             assert "code" in item
+            assert "priceVsSma20Gap" in item
             assert "priceSma20_80" in item
             assert "volumeSma20_80" in item
             assert "priceDecile" in item
             assert "priceBucket" in item
             assert "volumeBucket" in item
+
+    def test_supports_metric_query(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_sma_20_80")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rankingMetric"] == "price_sma_20_80"
 
     def test_422_no_db(self):
         app = create_app()

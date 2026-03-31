@@ -11,6 +11,7 @@ export type {
   RankingType,
   Topix100PriceBucket,
   Topix100RankingItem,
+  Topix100RankingMetric,
   Topix100RankingResponse,
   Topix100VolumeBucket,
 } from '@trading25/contracts/types/api-response-types';
@@ -27,6 +28,7 @@ export interface RankingParams {
   markets?: string;
   lookbackDays?: number;
   periodDays?: number;
+  topix100Metric?: Topix100RankingMetric;
   topix100PriceBucket?: Topix100PriceBucketFilter;
   topix100VolumeBucket?: Topix100VolumeBucketFilter;
 }

@@ -528,11 +528,18 @@ class TestGetTopix100Ranking:
         result = topix100_ranking_service.get_topix100_ranking()
 
         assert result.date == "2024-03-30"
+        assert result.rankingMetric == "price_vs_sma20_gap"
         assert result.itemCount == 20
         assert len(result.items) == 20
-        assert result.items[0].priceSma20_80 >= result.items[1].priceSma20_80
+        assert result.items[0].priceVsSma20Gap >= result.items[1].priceVsSma20Gap
         assert result.items[0].priceBucket == "q1"
         assert result.items[-1].priceBucket == "q10"
+
+    def test_supports_price_sma_20_80_metric(self, topix100_ranking_service):
+        result = topix100_ranking_service.get_topix100_ranking(metric="price_sma_20_80")
+
+        assert result.rankingMetric == "price_sma_20_80"
+        assert result.items[0].priceSma20_80 >= result.items[1].priceSma20_80
 
     def test_assigns_volume_buckets_inside_focus_groups(self, topix100_ranking_service):
         result = topix100_ranking_service.get_topix100_ranking()

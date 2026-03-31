@@ -32,6 +32,7 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     Rankings,
     Topix100RankingItem,
+    Topix100RankingMetric,
     Topix100RankingResponse,
 )
 
@@ -42,6 +43,10 @@ def _now_iso() -> str:
 
 Topix100PriceBucket = Literal["q1", "q10", "q456", "other"]
 Topix100VolumeBucket = Literal["high", "low"]
+_TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
+    "price_vs_sma20_gap": "price_vs_sma20_gap",
+    "price_sma_20_80": "price_sma_20_80",
+}
 
 
 def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
@@ -234,10 +239,14 @@ class RankingService:
     def get_topix100_ranking(
         self,
         date: str | None = None,
+        metric: Topix100RankingMetric = "price_vs_sma20_gap",
     ) -> Topix100RankingResponse:
-        """TOPIX100 の SMA 20/80 snapshot ランキングを返す。"""
+        """TOPIX100 の snapshot ランキングを返す。"""
+        if metric not in _TOPIX100_RANKING_METRIC_SQL:
+            raise ValueError(f"Unsupported TOPIX100 ranking metric: {metric}")
+
         target_date = self._resolve_topix100_ranking_date(date)
-        rows = self._load_topix100_ranking_rows(target_date)
+        rows = self._load_topix100_ranking_rows(target_date, metric)
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
 
@@ -251,6 +260,7 @@ class RankingService:
                 scaleCategory=str(row["scale_category"] or ""),
                 currentPrice=float(row["current_price"]),
                 volume=float(row["volume"]),
+                priceVsSma20Gap=float(row["price_vs_sma20_gap"]),
                 priceSma20_80=float(row["price_sma_20_80"]),
                 volumeSma20_80=float(row["volume_sma_20_80"]),
                 priceDecile=int(row["price_decile"]),
@@ -266,6 +276,7 @@ class RankingService:
 
         return Topix100RankingResponse(
             date=target_date,
+            rankingMetric=metric,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
@@ -409,7 +420,12 @@ class RankingService:
             raise ValueError("No TOPIX100 trading data available in database")
         return str(row["max_date"])
 
-    def _load_topix100_ranking_rows(self, target_date: str) -> list[Mapping[str, Any]]:
+    def _load_topix100_ranking_rows(
+        self,
+        target_date: str,
+        metric: Topix100RankingMetric,
+    ) -> list[Mapping[str, Any]]:
+        metric_column = _TOPIX100_RANKING_METRIC_SQL[metric]
         return self._reader.query(
             f"""
             WITH topix100_stocks AS (
@@ -502,6 +518,7 @@ class RankingService:
                     scale_category,
                     current_price,
                     volume,
+                    current_price / NULLIF(price_sma_20, 0) - 1 AS price_vs_sma20_gap,
                     price_sma_20 / NULLIF(price_sma_80, 0) AS price_sma_20_80,
                     volume_sma_20 / NULLIF(volume_sma_80, 0) AS volume_sma_20_80
                 FROM feature_history
@@ -511,13 +528,13 @@ class RankingService:
                 SELECT
                     *,
                     ROW_NUMBER() OVER (
-                        ORDER BY price_sma_20_80 DESC, code ASC
+                        ORDER BY {metric_column} DESC, code ASC
                     ) AS rank,
                     NTILE(10) OVER (
-                        ORDER BY price_sma_20_80 DESC, code ASC
+                        ORDER BY {metric_column} DESC, code ASC
                     ) AS price_decile
                 FROM current_snapshot
-                WHERE price_sma_20_80 IS NOT NULL AND volume_sma_20_80 IS NOT NULL
+                WHERE {metric_column} IS NOT NULL AND volume_sma_20_80 IS NOT NULL
             ),
             bucketed AS (
                 SELECT
@@ -552,6 +569,7 @@ class RankingService:
                 scale_category,
                 current_price,
                 volume,
+                price_vs_sma20_gap,
                 price_sma_20_80,
                 volume_sma_20_80,
                 price_decile,

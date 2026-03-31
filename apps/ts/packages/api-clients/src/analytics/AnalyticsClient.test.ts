@@ -98,10 +98,11 @@ describe('AnalyticsClient', () => {
 
     await client.getTopix100Ranking({
       date: '2026-03-25',
+      metric: 'price_sma_20_80',
     });
 
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/topix100-ranking?date=2026-03-25'
+      'http://localhost:3002/api/analytics/topix100-ranking?date=2026-03-25&metric=price_sma_20_80'
     );
   });
 

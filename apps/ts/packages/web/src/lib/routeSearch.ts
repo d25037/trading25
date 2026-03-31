@@ -17,6 +17,7 @@ import type {
   RankingDailyView,
   RankingPageTab,
   RankingParams,
+  Topix100RankingMetric,
   Topix100PriceBucketFilter,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
@@ -71,6 +72,7 @@ export interface ScreeningRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTopix100Metric?: Topix100RankingMetric;
   rankingTopix100PriceBucket?: Topix100PriceBucketFilter;
   rankingTopix100VolumeBucket?: Topix100VolumeBucketFilter;
   fundamentalLimit?: number;
@@ -87,6 +89,7 @@ export interface RankingRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTopix100Metric?: Topix100RankingMetric;
   rankingTopix100PriceBucket?: Topix100PriceBucketFilter;
   rankingTopix100VolumeBucket?: Topix100VolumeBucketFilter;
   fundamentalLimit?: number;
@@ -116,6 +119,7 @@ const SCREENING_SUB_TABS: ScreeningSubTab[] = [
 ];
 const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'];
+const TOPIX100_RANKING_METRIC_VALUES: Topix100RankingMetric[] = ['price_vs_sma20_gap', 'price_sma_20_80'];
 const TOPIX100_PRICE_BUCKET_VALUES: Topix100PriceBucketFilter[] = ['all', 'q1', 'q10', 'q456'];
 const TOPIX100_VOLUME_BUCKET_VALUES: Topix100VolumeBucketFilter[] = ['all', 'high', 'low'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
@@ -211,6 +215,10 @@ function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined
 
 function normalizeTopix100PriceBucketFilter(value: unknown): Topix100PriceBucketFilter | undefined {
   return normalizeEnum(normalizeString(value), TOPIX100_PRICE_BUCKET_VALUES);
+}
+
+function normalizeTopix100RankingMetric(value: unknown): Topix100RankingMetric | undefined {
+  return normalizeEnum(normalizeString(value), TOPIX100_RANKING_METRIC_VALUES);
 }
 
 function normalizeTopix100VolumeBucketFilter(value: unknown): Topix100VolumeBucketFilter | undefined {
@@ -428,6 +436,7 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTopix100Metric', normalizeTopix100RankingMetric(search.rankingTopix100Metric));
   assignIfDefined(
     next,
     'rankingTopix100PriceBucket',
@@ -479,6 +488,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
       ['markets', search.rankingMarkets],
       ['lookbackDays', search.rankingLookbackDays],
       ['periodDays', search.rankingPeriodDays],
+      ['topix100Metric', search.rankingTopix100Metric],
       ['topix100PriceBucket', search.rankingTopix100PriceBucket],
       ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
     ]),
@@ -506,6 +516,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
       ['markets', search.rankingMarkets],
       ['lookbackDays', search.rankingLookbackDays],
       ['periodDays', search.rankingPeriodDays],
+      ['topix100Metric', search.rankingTopix100Metric],
       ['topix100PriceBucket', search.rankingTopix100PriceBucket],
       ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
     ]),
@@ -638,6 +649,12 @@ export function serializeScreeningSearch(state: {
   );
   assignIfDefinedAndNotDefault(
     next,
+    'rankingTopix100Metric',
+    state.rankingParams.topix100Metric,
+    DEFAULT_RANKING_PARAMS.topix100Metric
+  );
+  assignIfDefinedAndNotDefault(
+    next,
     'rankingTopix100PriceBucket',
     state.rankingParams.topix100PriceBucket,
     DEFAULT_RANKING_PARAMS.topix100PriceBucket
@@ -689,6 +706,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTopix100Metric', normalizeTopix100RankingMetric(search.rankingTopix100Metric));
   assignIfDefined(
     next,
     'rankingTopix100PriceBucket',
@@ -741,6 +759,12 @@ export function serializeRankingSearch(state: {
     'rankingPeriodDays',
     typeof state.rankingParams.periodDays === 'number' ? state.rankingParams.periodDays : undefined,
     DEFAULT_RANKING_PARAMS.periodDays
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTopix100Metric',
+    state.rankingParams.topix100Metric,
+    DEFAULT_RANKING_PARAMS.topix100Metric
   );
   assignIfDefinedAndNotDefault(
     next,

@@ -67,6 +67,9 @@ class MarketRankingResponse(BaseModel):
     lastUpdated: str
 
 
+Topix100RankingMetric = Literal["price_vs_sma20_gap", "price_sma_20_80"]
+
+
 class Topix100RankingItem(BaseModel):
     """TOPIX100 SMA ranking item."""
 
@@ -78,6 +81,7 @@ class Topix100RankingItem(BaseModel):
     scaleCategory: str
     currentPrice: float
     volume: float
+    priceVsSma20Gap: float
     priceSma20_80: float
     volumeSma20_80: float
     priceDecile: int
@@ -89,6 +93,7 @@ class Topix100RankingResponse(BaseModel):
     """TOPIX100 SMA ranking response."""
 
     date: str
+    rankingMetric: Topix100RankingMetric
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)
     lastUpdated: str

@@ -64,7 +64,7 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
 
 vi.mock('@/hooks/useTopix100Ranking', () => ({
   useTopix100Ranking: () => ({
-    data: { date: '2026-03-25', itemCount: 0, items: [] },
+    data: { date: '2026-03-25', rankingMetric: 'price_vs_sma20_gap', itemCount: 0, items: [] },
     isLoading: false,
     error: null,
   }),
@@ -175,7 +175,7 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'TOPIX100' }));
     view.rerender(<RankingPage />);
 
-    expect(screen.getByText('TOPIX100 SMA ranking')).toBeInTheDocument();
+    expect(screen.getByText('Price / SMA20 Gap')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Ranking Filters')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Ranking Table')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();

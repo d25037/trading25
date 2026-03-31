@@ -294,8 +294,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get TOPIX100 SMA ranking snapshot
-         * @description Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, with volume SMA 20/80 sidecar buckets.
+         * Get TOPIX100 ranking snapshot
+         * @description Get the latest or specified TOPIX100 snapshot ranked by either price / SMA20 gap (default) or price SMA 20/80, with volume SMA 20/80 sidecar buckets.
          */
         get: operations["get_topix100_ranking_api_analytics_topix100_ranking_get"];
         put?: never;
@@ -9738,6 +9738,8 @@ export interface components {
             priceDecile: number;
             /** Pricesma20 80 */
             priceSma20_80: number;
+            /** Pricevssma20Gap */
+            priceVsSma20Gap: number;
             /** Rank */
             rank: number;
             /** Scalecategory */
@@ -9764,6 +9766,11 @@ export interface components {
             items?: components["schemas"]["Topix100RankingItem"][];
             /** Lastupdated */
             lastUpdated: string;
+            /**
+             * Rankingmetric
+             * @enum {string}
+             */
+            rankingMetric: "price_vs_sma20_gap" | "price_sma_20_80";
         };
         /**
          * TopixDataPoint
@@ -11031,6 +11038,7 @@ export interface operations {
         parameters: {
             query?: {
                 date?: string | null;
+                metric?: "price_vs_sma20_gap" | "price_sma_20_80";
             };
             header?: never;
             path?: never;

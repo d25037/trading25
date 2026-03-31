@@ -23,6 +23,10 @@ import {
   Topix100RankingFilters,
   Topix100RankingTable,
 } from '@/components/Ranking';
+import {
+  getTopix100RankingMetricLabel,
+  resolveTopix100RankingMetric,
+} from '@/components/Ranking/topix100RankingMetric';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
@@ -173,8 +177,9 @@ function buildIntroMetaItems(
     ];
   }
   if (activeDailyView === 'topix100') {
+    const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
     return [
-      { label: 'Mode', value: 'TOPIX100 SMA ranking' },
+      { label: 'Mode', value: getTopix100RankingMetricLabel(topix100Metric) },
       { label: 'Universe', value: 'Latest TOPIX100' },
     ];
   }
@@ -197,6 +202,8 @@ function RankingContent({
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
+  const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
+
   if (activeSubTab === 'fundamentalRanking') {
     return (
       <>
@@ -230,6 +237,7 @@ function RankingContent({
         isLoading={topix100RankingQuery.isLoading}
         error={topix100RankingQuery.error}
         onStockClick={onStockClick}
+        rankingMetric={topix100Metric}
         priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
         volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
       />
@@ -259,9 +267,11 @@ export function RankingPage() {
     setFundamentalRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
+  const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking' && activeDailyView !== 'topix100');
   const topix100RankingQuery = useTopix100Ranking(
     rankingParams.date,
+    topix100Metric,
     activeSubTab === 'ranking' && activeDailyView === 'topix100'
   );
   const fundamentalRankingQuery = useFundamentalRanking(
@@ -298,7 +308,8 @@ export function RankingPage() {
             <div className="space-y-1">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                Daily leaders, TOPIX100 SMA buckets, index moves, and forecast-to-actual EPS ratios.
+                Daily leaders, TOPIX100 price / SMA20 gap or SMA 20/80 buckets, index moves, and forecast-to-actual
+                EPS ratios.
               </p>
             </div>
           </div>

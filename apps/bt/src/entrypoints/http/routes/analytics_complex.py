@@ -24,6 +24,7 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFa
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    Topix100RankingMetric,
     Topix100RankingResponse,
 )
 from src.entrypoints.http.schemas.screening import (
@@ -170,17 +171,18 @@ async def get_fundamental_ranking(
 @router.get(
     "/api/analytics/topix100-ranking",
     response_model=Topix100RankingResponse,
-    summary="Get TOPIX100 SMA ranking snapshot",
+    summary="Get TOPIX100 ranking snapshot",
     description=(
-        "Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, "
-        "with volume SMA 20/80 sidecar buckets."
+        "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA20 gap "
+        "(default) or price SMA 20/80, with volume SMA 20/80 sidecar buckets."
     ),
 )
 async def get_topix100_ranking(
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    metric: Topix100RankingMetric = Query("price_vs_sma20_gap"),
 ) -> Topix100RankingResponse:
-    """TOPIX100 の当日 SMA ランキングを取得"""
+    """TOPIX100 の当日ランキングを取得"""
     from src.application.services.ranking_service import RankingService
 
     reader = getattr(request.app.state, "market_reader", None)
@@ -189,7 +191,7 @@ async def get_topix100_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_topix100_ranking(date=date)
+        return service.get_topix100_ranking(date=date, metric=metric)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

@@ -83,6 +83,7 @@ export class AnalyticsClient {
   async getTopix100Ranking(params: Topix100RankingParams = {}): Promise<Topix100RankingResponse> {
     return this.request<Topix100RankingResponse>('/api/analytics/topix100-ranking', undefined, {
       date: params.date,
+      metric: params.metric,
     });
   }
 

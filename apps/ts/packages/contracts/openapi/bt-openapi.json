@@ -14956,6 +14956,10 @@
             "title": "Pricesma20 80",
             "type": "number"
           },
+          "priceVsSma20Gap": {
+            "title": "Pricevssma20Gap",
+            "type": "number"
+          },
           "rank": {
             "title": "Rank",
             "type": "integer"
@@ -15001,6 +15005,7 @@
           "scaleCategory",
           "currentPrice",
           "volume",
+          "priceVsSma20Gap",
           "priceSma20_80",
           "volumeSma20_80",
           "priceDecile",
@@ -15030,10 +15035,19 @@
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
+          },
+          "rankingMetric": {
+            "enum": [
+              "price_vs_sma20_gap",
+              "price_sma_20_80"
+            ],
+            "title": "Rankingmetric",
+            "type": "string"
           }
         },
         "required": [
           "date",
+          "rankingMetric",
           "itemCount",
           "lastUpdated"
         ],
@@ -17369,7 +17383,7 @@
     },
     "/api/analytics/topix100-ranking": {
       "get": {
-        "description": "Get the latest or specified TOPIX100 snapshot ranked by price SMA 20/80, with volume SMA 20/80 sidecar buckets.",
+        "description": "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA20 gap (default) or price SMA 20/80, with volume SMA 20/80 sidecar buckets.",
         "operationId": "get_topix100_ranking_api_analytics_topix100_ranking_get",
         "parameters": [
           {
@@ -17387,6 +17401,20 @@
                 }
               ],
               "title": "Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "metric",
+            "required": false,
+            "schema": {
+              "default": "price_vs_sma20_gap",
+              "enum": [
+                "price_vs_sma20_gap",
+                "price_sma_20_80"
+              ],
+              "title": "Metric",
+              "type": "string"
             }
           }
         ],
@@ -17442,7 +17470,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Get TOPIX100 SMA ranking snapshot",
+        "summary": "Get TOPIX100 ranking snapshot",
         "tags": [
           "Analytics"
         ]
