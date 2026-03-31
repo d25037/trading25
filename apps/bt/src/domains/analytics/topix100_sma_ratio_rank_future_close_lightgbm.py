@@ -34,6 +34,7 @@ from src.domains.analytics.topix_sma_ratio_rank_future_close_support import (
     DISCOVERY_END_DATE,
     HORIZON_ORDER,
     RANKING_FEATURE_LABEL_MAP,
+    RankingFeatureKey,
     RANKING_FEATURE_ORDER,
     VALIDATION_START_DATE,
 )
@@ -51,6 +52,10 @@ DEFAULT_WALKFORWARD_TEST_WINDOW = 126
 DEFAULT_WALKFORWARD_STEP = 126
 MIN_SPLIT_COUNT_FOR_GATE = 6
 POSITIVE_SPLIT_SHARE_GATE = 0.60
+
+
+def _records_from_frame(df: pd.DataFrame) -> list[dict[str, Any]]:
+    return [cast(dict[str, Any], record) for record in df.to_dict(orient="records")]
 
 
 class Topix100SmaRatioLightgbmResearchError(RuntimeError):
@@ -272,12 +277,12 @@ def _build_baseline_selected_ranked_panel(
     base_result: Topix100SmaRatioRankFutureCloseResearchResult,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for row in base_result.selected_composite_df.to_dict(orient="records"):
+    for row in _records_from_frame(base_result.selected_composite_df):
         ranked_panel_df = _build_composite_ranked_panel(
             base_result.event_panel_df,
-            price_feature=str(row["price_feature"]),
+            price_feature=cast(RankingFeatureKey, row["price_feature"]),
             price_direction=str(row["price_direction"]),
-            volume_feature=str(row["volume_feature"]),
+            volume_feature=cast(RankingFeatureKey, row["volume_feature"]),
             volume_direction=str(row["volume_direction"]),
             score_method=str(row["score_method"]),
         )
@@ -568,7 +573,7 @@ def _run_fixed_split_diagnostic(
             kind="stable",
         ).reset_index(drop=True)
         importance_df["importance_rank"] = range(1, len(importance_df) + 1)
-        feature_importance_records.extend(importance_df.to_dict(orient="records"))
+        feature_importance_records.extend(_records_from_frame(importance_df))
 
     ranked_panel_df = _core_sort_frame(
         pd.concat(ranked_frames, ignore_index=True),
@@ -1533,7 +1538,7 @@ def _run_walkforward_research(
                 kind="stable",
             ).reset_index(drop=True)
             importance_df["importance_rank"] = range(1, len(importance_df) + 1)
-            feature_importance_records.extend(importance_df.to_dict(orient="records"))
+            feature_importance_records.extend(_records_from_frame(importance_df))
 
             if baseline_selected_row is None:
                 continue

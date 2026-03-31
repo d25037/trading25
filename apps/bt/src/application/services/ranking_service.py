@@ -33,6 +33,7 @@ from src.entrypoints.http.schemas.ranking import (
     Rankings,
     Topix100RankingItem,
     Topix100RankingMetric,
+    Topix100PriceSmaWindow,
     Topix100RankingResponse,
 )
 
@@ -248,9 +249,14 @@ class RankingService:
             raise ValueError(f"Unsupported TOPIX100 ranking metric: {metric}")
         if sma_window not in _TOPIX100_PRICE_SMA_WINDOWS:
             raise ValueError(f"Unsupported TOPIX100 SMA window: {sma_window}")
+        validated_sma_window = cast(Topix100PriceSmaWindow, sma_window)
 
         target_date = self._resolve_topix100_ranking_date(date)
-        rows = self._load_topix100_ranking_rows(target_date, metric, sma_window)
+        rows = self._load_topix100_ranking_rows(
+            target_date,
+            metric,
+            validated_sma_window,
+        )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
 
@@ -281,7 +287,7 @@ class RankingService:
         return Topix100RankingResponse(
             date=target_date,
             rankingMetric=metric,
-            smaWindow=sma_window,
+            smaWindow=validated_sma_window,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
