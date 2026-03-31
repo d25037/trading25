@@ -4477,7 +4477,7 @@
           "outputPath": {
             "type": "string",
             "description": "Path to created dataset",
-            "example": "/home/user/.local/share/trading25/datasets/prime.db"
+            "example": "~/.local/share/trading25/datasets/prime.db"
           }
         },
         "required": [

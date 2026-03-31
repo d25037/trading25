@@ -39,6 +39,8 @@ jobs:
         working-directory: apps/bt
       - name: Audit codex skills
         run: python scripts/skills/audit_skills.py --strict-legacy
+      - name: Check privacy leaks
+        run: python scripts/check-privacy-leaks.py
       - name: Lint
         run: ./scripts/lint.sh
       - name: Typecheck

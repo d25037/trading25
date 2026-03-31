@@ -19,7 +19,7 @@ parent: bt-049
 - wrapper / notebook / result dataclass の public field を、実態に合う名前へ揃える。
 
 ## 背景
-- [topix100_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py) では `QUARTILE_ORDER`、`feature_quartile` などの名称が 10 decile 実装とずれている。
+- `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py` では `QUARTILE_ORDER`、`feature_quartile` などの名称が 10 decile 実装とずれている。
 - 派生 module や notebook がこの命名を引きずっており、読み手に不要な認知負荷を与えている。
 
 ## 受け入れ条件

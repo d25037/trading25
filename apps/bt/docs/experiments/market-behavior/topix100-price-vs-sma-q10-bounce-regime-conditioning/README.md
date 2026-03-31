@@ -29,12 +29,12 @@
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py)
+  - `apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce_regime_conditioning.py)
-  - [`apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py)
+  - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
+  - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_q10_bounce_regime_conditioning.py)
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
 
 ## Latest Baseline
 

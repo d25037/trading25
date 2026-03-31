@@ -33,11 +33,11 @@
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py)
+  - `apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py)
+  - `apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_1357_nt_ratio_topix_hedge.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_1357_nt_ratio_topix_hedge.py)
+  - `apps/bt/tests/unit/domains/analytics/test_1357_nt_ratio_topix_hedge.py`
 
 ## Latest Baseline
 

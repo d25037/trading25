@@ -19,7 +19,7 @@ parent: bt-049
 - schema 変更や price pattern 変更の追従を 1 箇所で完結させる。
 
 ## 背景
-- [test_topix100_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close.py)、[test_topix100_sma_ratio_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_regime_conditioning.py)、[test_topix100_price_vs_sma20_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py)、[test_topix100_price_vs_sma20_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py) がほぼ同じ builder を持つ。
+- `apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close.py`、`apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_regime_conditioning.py`、`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py`、`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py` がほぼ同じ builder を持つ。
 - `prime_ex_topix500` test も schema 定義を複製している。
 
 ## 受け入れ条件
@@ -34,7 +34,7 @@ parent: bt-049
 - [x] 各 test から重複 builder を削除する。
 
 ## 結果
-- [analytics_market_research_db.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/analytics_market_research_db.py) を追加し、TOPIX100 / PRIME ex TOPIX500 向け market DB builder を共通化した。
+- `apps/bt/tests/unit/analytics_market_research_db.py` を追加し、TOPIX100 / PRIME ex TOPIX500 向け market DB builder を共通化した。
 - rank future close / regime conditioning / prime wrapper の unit test が共通 fixture helper を使うように移行した。
 - 実装は commit `ea69b7c` で反映した。
 

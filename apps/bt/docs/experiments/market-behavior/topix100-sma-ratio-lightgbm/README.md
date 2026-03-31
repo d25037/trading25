@@ -38,13 +38,13 @@ TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py)
+  - `apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py)
-  - [`apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py)
+  - `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py`
+  - `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close_lightgbm.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close_lightgbm.py)
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close.py)
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close_lightgbm.py`
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close.py`
 
 ## Latest Baseline
 

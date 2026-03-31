@@ -27,11 +27,11 @@ TOPIX の寄り付き gap を event day として bucket 化し、個別銘柄�
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/topix_gap_intraday_distribution_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix_gap_intraday_distribution_playground.py)
+  - `apps/bt/notebooks/playground/topix_gap_intraday_distribution_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/topix_gap_intraday_distribution.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix_gap_intraday_distribution.py)
+  - `apps/bt/src/domains/analytics/topix_gap_intraday_distribution.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_topix_gap_intraday_distribution.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix_gap_intraday_distribution.py)
+  - `apps/bt/tests/unit/domains/analytics/test_topix_gap_intraday_distribution.py`
 
 ## Latest Baseline
 
@@ -54,7 +54,7 @@ from src.domains.analytics.topix_gap_intraday_distribution import (
     run_topix_gap_intraday_distribution,
 )
 
-db_path = "/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb"
+db_path = "~/.local/share/trading25/market-timeseries/market.duckdb"
 stats = get_topix_gap_return_stats(db_path, sigma_threshold_1=1.0, sigma_threshold_2=2.0)
 result = run_topix_gap_intraday_distribution(
     db_path,

@@ -28,11 +28,11 @@
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py)
+  - `apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/stock_intraday_overnight_share.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/stock_intraday_overnight_share.py)
+  - `apps/bt/src/domains/analytics/stock_intraday_overnight_share.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_stock_intraday_overnight_share.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_stock_intraday_overnight_share.py)
+  - `apps/bt/tests/unit/domains/analytics/test_stock_intraday_overnight_share.py`
 
 ## Latest Baseline
 
@@ -51,14 +51,14 @@
 ```bash
 uv run --project apps/bt python - <<'PY'
 import sys
-sys.path.insert(0, "/Users/shinjiroaso/dev/trading25/apps/bt")
+sys.path.insert(0, "apps/bt")
 
 from src.domains.analytics.stock_intraday_overnight_share import (
     run_stock_intraday_overnight_share_analysis,
 )
 
 result = run_stock_intraday_overnight_share_analysis(
-    "/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb",
+    "~/.local/share/trading25/market-timeseries/market.duckdb",
     min_session_count=60,
 )
 print(result.group_summary_df)

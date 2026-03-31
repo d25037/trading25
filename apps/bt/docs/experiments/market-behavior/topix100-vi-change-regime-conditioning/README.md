@@ -26,11 +26,11 @@
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py)
+  - `apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/topix100_vi_change_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_vi_change_regime_conditioning.py)
+  - `apps/bt/src/domains/analytics/topix100_vi_change_regime_conditioning.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py)
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py`
 
 ## Reproduction
 

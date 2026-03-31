@@ -30,15 +30,15 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py)
+  - `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py)
-  - [`apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py)
+  - `apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_rank_future_close.py)
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py)
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py)
-  - [`apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py)
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma_rank_future_close.py`
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_rank_future_close.py`
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_price_vs_sma20_regime_conditioning.py`
+  - `apps/bt/tests/unit/domains/analytics/test_topix100_vi_change_regime_conditioning.py`
 
 ## Latest Baseline
 

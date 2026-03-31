@@ -19,8 +19,8 @@ parent: bt-049
 - `price_sma_20_80 x volume_sma_20_80` 版と `price vs 20SMA gap x volume_sma_20_80` 版を、split panel 入力だけ差し替えて使える構造にする。
 
 ## 背景
-- [topix100_sma_ratio_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_regime_conditioning.py) は bucket spec と regime engine が密結合している。
-- [topix100_price_vs_sma20_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_regime_conditioning.py) は現在 thin wrapper だが、shared API が曖昧なまま base module の private helper に依存している。
+- `apps/bt/src/domains/analytics/topix100_sma_ratio_regime_conditioning.py` は bucket spec と regime engine が密結合している。
+- `apps/bt/src/domains/analytics/topix100_price_vs_sma20_regime_conditioning.py` は現在 thin wrapper だが、shared API が曖昧なまま base module の private helper に依存している。
 
 ## 受け入れ条件
 - [x] regime market query / stats / assignment / summary / pairwise / hypothesis を shared module に抽出できる。
@@ -34,8 +34,8 @@ parent: bt-049
 - [x] price-vs-SMA20 wrapper の private helper 依存をなくす。
 
 ## 結果
-- [topix_regime_conditioning_core.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix_regime_conditioning_core.py) を追加し、market regime query、sigma bucket assignment、collapsed regime、summary / pairwise / hypothesis 集計を shared 化した。
-- [topix100_sma_ratio_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_regime_conditioning.py) と [topix100_price_vs_sma20_regime_conditioning.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_regime_conditioning.py) を split panel provider 差分だけに寄せた。
+- `apps/bt/src/domains/analytics/topix_regime_conditioning_core.py` を追加し、market regime query、sigma bucket assignment、collapsed regime、summary / pairwise / hypothesis 集計を shared 化した。
+- `apps/bt/src/domains/analytics/topix100_sma_ratio_regime_conditioning.py` と `apps/bt/src/domains/analytics/topix100_price_vs_sma20_regime_conditioning.py` を split panel provider 差分だけに寄せた。
 - 実装は commit `e35ac22` で反映した。
 
 ## 補足

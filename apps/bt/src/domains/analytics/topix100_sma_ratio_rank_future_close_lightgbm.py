@@ -44,7 +44,7 @@ from src.domains.backtest.core.walkforward import (
 )
 
 LIGHTGBM_RESEARCH_INSTALL_HINT = (
-    "uv sync --project /Users/shinjiroaso/dev/trading25/apps/bt --group research"
+    "uv sync --project apps/bt --group research"
 )
 LIGHTGBM_LIBOMP_INSTALL_HINT = "brew install libomp"
 DEFAULT_WALKFORWARD_TRAIN_WINDOW = 756

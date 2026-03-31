@@ -19,7 +19,7 @@ parent: bt-049
 - `price_sma_*` 版と `price vs 20SMA gap` 版を同じ engine に載せ、差分を feature spec と bucket spec に閉じ込める。
 
 ## 背景
-- [topix100_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py) と [topix100_price_vs_sma20_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py) は、query / warmup / horizon / pairwise / Holm 補正の大半を共有している。
+- `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py` と `apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py` は、query / warmup / horizon / pairwise / Holm 補正の大半を共有している。
 - `prime_ex_topix500` はほぼ preset wrapper であり、universe spec 化の余地が大きい。
 
 ## 受け入れ条件
@@ -35,9 +35,9 @@ parent: bt-049
 - [x] wrapper / notebook / test の import 経路を更新する。
 
 ## 結果
-- [topix_rank_future_close_core.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix_rank_future_close_core.py) を追加し、universe history query、warmup/default dates、horizon panel、Holm/pairwise などの shared helper を集約した。
-- [topix100_price_vs_sma20_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py) を最初の consumer として shared core へ移し、その後 [topix100_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py) も delegate 化した。
-- [prime_ex_topix500_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/prime_ex_topix500_sma_ratio_rank_future_close.py) は preset wrapper として維持した。
+- `apps/bt/src/domains/analytics/topix_rank_future_close_core.py` を追加し、universe history query、warmup/default dates、horizon panel、Holm/pairwise などの shared helper を集約した。
+- `apps/bt/src/domains/analytics/topix100_price_vs_sma20_rank_future_close.py` を最初の consumer として shared core へ移し、その後 `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py` も delegate 化した。
+- `apps/bt/src/domains/analytics/prime_ex_topix500_sma_ratio_rank_future_close.py` は preset wrapper として維持した。
 - 実装は commit `2c8211c` と `4598aa1` で段階反映した。
 
 ## 補足

@@ -36,11 +36,11 @@ parent: null
 - [x] 完了時に analytics module 群の構造整理結果を issue に記録する。
 
 ## 結果
-- `bt-050` で shared rank core [topix_rank_future_close_core.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix_rank_future_close_core.py) を抽出し、rank research 派生を共通 engine に寄せた。
-- `bt-051` で shared regime core [topix_regime_conditioning_core.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix_regime_conditioning_core.py) を抽出し、SMA ratio 版と price-vs-SMA20 版の regime conditioning を共通化した。
-- `bt-052` で [analytics_market_research_db.py](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/analytics_market_research_db.py) を追加し、analytics research 系 test fixture の DuckDB builder 重複を削除した。
+- `bt-050` で shared rank core `apps/bt/src/domains/analytics/topix_rank_future_close_core.py` を抽出し、rank research 派生を共通 engine に寄せた。
+- `bt-051` で shared regime core `apps/bt/src/domains/analytics/topix_regime_conditioning_core.py` を抽出し、SMA ratio 版と price-vs-SMA20 版の regime conditioning を共通化した。
+- `bt-052` で `apps/bt/tests/unit/analytics_market_research_db.py` を追加し、analytics research 系 test fixture の DuckDB builder 重複を削除した。
 - `bt-053` で domain / test / notebook の `quartile` 命名を `decile` へ統一し、wrapper interface と table naming を揃えた。
-- `bt-054` で [topix100_sma_ratio_rank_future_close.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py) と [hedge_1357_nt_ratio_topix.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py) を責務別 helper module に分割した。
+- `bt-054` で `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py` と `apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py` を責務別 helper module に分割した。
 - 横断検証として `ruff check`、analytics research unit test 21 件、関連 marimo notebook check を再実行し、全件通過を確認した。
 
 ## Child Issue 状態

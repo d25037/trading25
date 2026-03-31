@@ -29,11 +29,11 @@ NT 倍率の前日比を event day として z-score bucket 化し、個別銘�
 ## Source Of Truth
 
 - Notebook:
-  - [`apps/bt/notebooks/playground/nt_ratio_change_stock_overnight_distribution_playground.py`](/Users/shinjiroaso/dev/trading25/apps/bt/notebooks/playground/nt_ratio_change_stock_overnight_distribution_playground.py)
+  - `apps/bt/notebooks/playground/nt_ratio_change_stock_overnight_distribution_playground.py`
 - Domain logic:
-  - [`apps/bt/src/domains/analytics/nt_ratio_change_stock_overnight_distribution.py`](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/nt_ratio_change_stock_overnight_distribution.py)
+  - `apps/bt/src/domains/analytics/nt_ratio_change_stock_overnight_distribution.py`
 - Tests:
-  - [`apps/bt/tests/unit/domains/analytics/test_nt_ratio_change_stock_overnight_distribution.py`](/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/domains/analytics/test_nt_ratio_change_stock_overnight_distribution.py)
+  - `apps/bt/tests/unit/domains/analytics/test_nt_ratio_change_stock_overnight_distribution.py`
 
 ## Latest Baseline
 
@@ -56,7 +56,7 @@ from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
 )
 
 result = run_nt_ratio_change_stock_overnight_distribution(
-    "/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb",
+    "~/.local/share/trading25/market-timeseries/market.duckdb",
     sample_size=0,
 )
 print(result.nt_ratio_stats)
