@@ -23,7 +23,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         volume: 1_000_000,
         priceVsSmaGap: 0.12,
         priceSma20_80: 1.23,
-        volumeSma20_80: 1.11,
+        volumeSma5_20: 1.11,
         priceDecile: 1,
         priceBucket: 'q1',
         volumeBucket: 'high',
@@ -39,7 +39,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         volume: 800_000,
         priceVsSmaGap: -0.08,
         priceSma20_80: 0.95,
-        volumeSma20_80: 0.88,
+        volumeSma5_20: 0.88,
         priceDecile: 10,
         priceBucket: 'q10',
         volumeBucket: 'low',
@@ -55,7 +55,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         volume: 2_000_000,
         priceVsSmaGap: 0.01,
         priceSma20_80: 1.01,
-        volumeSma20_80: 1.05,
+        volumeSma5_20: 1.05,
         priceDecile: 5,
         priceBucket: 'q456',
         volumeBucket: 'high',
@@ -71,7 +71,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         volume: 1_500_000,
         priceVsSmaGap: -0.01,
         priceSma20_80: 0.99,
-        volumeSma20_80: 1.02,
+        volumeSma5_20: 1.02,
         priceDecile: 7,
         priceBucket: 'other',
         volumeBucket: null,
@@ -100,7 +100,7 @@ describe('Topix100RankingTable', () => {
 
     expect(screen.getAllByText('Price / SMA50 Gap')).toHaveLength(2);
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
-    expect(screen.getByText('Volume Low first')).toBeInTheDocument();
+    expect(screen.getByText('Volume Low (5/20) first')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
 

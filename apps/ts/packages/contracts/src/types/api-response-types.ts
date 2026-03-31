@@ -73,7 +73,7 @@ export interface Topix100RankingItem {
   volume: number;
   priceVsSmaGap: number;
   priceSma20_80: number;
-  volumeSma20_80: number;
+  volumeSma5_20: number;
   priceDecile: number;
   priceBucket: Topix100PriceBucket;
   volumeBucket: Topix100VolumeBucket;

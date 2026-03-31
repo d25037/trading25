@@ -84,7 +84,7 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
             options={TOPIX100_PRICE_SMA_WINDOW_OPTIONS}
             id="topix100-sma-window"
             label="SMA Window"
-            description="SMA50 baseline. SMA100 broadens oversold; SMA20 shortens the move."
+            description="SMA50 baseline. Volume split uses SMA 5/20. SMA100 broadens oversold; SMA20 shortens the move."
           />
         ) : null}
 

@@ -175,7 +175,7 @@ async def get_fundamental_ranking(
     description=(
         "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap "
         "(default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, "
-        "with volume SMA 20/80 sidecar buckets."
+        "with volume SMA 5/20 sidecar buckets."
     ),
 )
 async def get_topix100_ranking(

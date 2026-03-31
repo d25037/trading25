@@ -3,7 +3,8 @@ TOPIX100 price-vs-SMA rank / future close research analytics.
 
 This module extends the existing close-vs-SMA20 study into a small family of
 single-SMA price features: `(close / sma20) - 1`, `(close / sma50) - 1`, and
-`(close / sma100) - 1`. Volume conditioning remains `volume_sma_20_80`.
+`(close / sma100) - 1`. Volume conditioning can be compared across
+`volume_sma_5_20`, `volume_sma_20_80`, and `volume_sma_50_150`.
 """
 
 from __future__ import annotations
@@ -57,8 +58,8 @@ CombinedBucketKey = Literal[
 ]
 
 PRICE_SMA_WINDOW_ORDER: tuple[int, ...] = (20, 50, 100)
-PRIMARY_VOLUME_FEATURE = "volume_sma_20_80"
-PRIMARY_VOLUME_FEATURE_LABEL = "Volume SMA 20 / 80"
+VOLUME_SMA_WINDOW_ORDER: tuple[tuple[int, int], ...] = ((5, 20), (20, 80), (50, 150))
+PRIMARY_VOLUME_SMA_WINDOW: tuple[int, int] = (20, 80)
 
 PRICE_BUCKET_ORDER: tuple[PriceBucketKey, ...] = ("q1", "middle", "q10")
 PRICE_BUCKET_DECILES: dict[PriceBucketKey, tuple[str, ...]] = {
@@ -73,8 +74,8 @@ PRICE_BUCKET_LABEL_MAP: dict[PriceBucketKey, str] = {
 }
 VOLUME_BUCKET_ORDER: tuple[VolumeBucketKey, ...] = ("volume_high", "volume_low")
 VOLUME_BUCKET_LABEL_MAP: dict[VolumeBucketKey, str] = {
-    "volume_high": "Volume 20 / 80 High Half",
-    "volume_low": "Volume 20 / 80 Low Half",
+    "volume_high": "Volume High Half",
+    "volume_low": "Volume Low Half",
 }
 COMBINED_BUCKET_ORDER: tuple[CombinedBucketKey, ...] = (
     "q1_volume_high",
@@ -115,6 +116,14 @@ def _build_price_feature_label(window: int) -> str:
     return f"Price vs SMA {window} Gap"
 
 
+def _build_volume_feature_name(short_window: int, long_window: int) -> str:
+    return f"volume_sma_{short_window}_{long_window}"
+
+
+def _build_volume_feature_label(short_window: int, long_window: int) -> str:
+    return f"Volume SMA {short_window} / {long_window}"
+
+
 PRICE_FEATURE_ORDER: tuple[str, ...] = tuple(
     _build_price_feature_name(window) for window in PRICE_SMA_WINDOW_ORDER
 )
@@ -122,6 +131,18 @@ PRICE_FEATURE_LABEL_MAP: dict[str, str] = {
     _build_price_feature_name(window): _build_price_feature_label(window)
     for window in PRICE_SMA_WINDOW_ORDER
 }
+VOLUME_FEATURE_ORDER: tuple[str, ...] = tuple(
+    _build_volume_feature_name(short_window, long_window)
+    for short_window, long_window in VOLUME_SMA_WINDOW_ORDER
+)
+VOLUME_FEATURE_LABEL_MAP: dict[str, str] = {
+    _build_volume_feature_name(short_window, long_window): _build_volume_feature_label(
+        short_window, long_window
+    )
+    for short_window, long_window in VOLUME_SMA_WINDOW_ORDER
+}
+PRIMARY_VOLUME_FEATURE = _build_volume_feature_name(*PRIMARY_VOLUME_SMA_WINDOW)
+PRIMARY_VOLUME_FEATURE_LABEL = _build_volume_feature_label(*PRIMARY_VOLUME_SMA_WINDOW)
 
 
 @dataclass(frozen=True)
@@ -138,6 +159,8 @@ class Topix100PriceVsSmaRankFutureCloseResearchResult:
     min_constituents_per_day: int
     price_sma_windows: tuple[int, ...]
     price_feature_order: tuple[str, ...]
+    volume_sma_windows: tuple[tuple[int, int], ...]
+    volume_feature_order: tuple[str, ...]
     topix100_constituent_count: int
     stock_day_count: int
     valid_date_count: int
@@ -179,6 +202,28 @@ def _normalize_price_sma_windows(
     return normalized
 
 
+def _normalize_volume_sma_windows(
+    volume_sma_windows: tuple[tuple[int, int], ...] | list[tuple[int, int]] | None,
+) -> tuple[tuple[int, int], ...]:
+    if volume_sma_windows is None:
+        return (PRIMARY_VOLUME_SMA_WINDOW,)
+    requested = list(
+        dict.fromkeys((int(short_window), int(long_window)) for short_window, long_window in volume_sma_windows)
+    )
+    unsupported = sorted(set(requested) - set(VOLUME_SMA_WINDOW_ORDER))
+    if unsupported:
+        raise ValueError(
+            "Unsupported volume_sma_windows: "
+            f"{unsupported}. Supported windows are {list(VOLUME_SMA_WINDOW_ORDER)}."
+        )
+    normalized = tuple(
+        window for window in VOLUME_SMA_WINDOW_ORDER if window in requested
+    )
+    if not normalized:
+        raise ValueError("volume_sma_windows must include at least one SMA window.")
+    return normalized
+
+
 def _sort_frame(
     df: pd.DataFrame,
     *,
@@ -210,6 +255,10 @@ def _sort_frame(
         sorted_df["_volume_bucket_order"] = sorted_df["volume_bucket"].map(
             {key: index for index, key in enumerate(VOLUME_BUCKET_ORDER, start=1)}
         )
+    if "volume_feature" in sorted_df.columns:
+        sorted_df["_volume_feature_order"] = sorted_df["volume_feature"].map(
+            {key: index for index, key in enumerate(VOLUME_FEATURE_ORDER, start=1)}
+        )
     if "combined_bucket" in sorted_df.columns:
         sorted_df["_combined_bucket_order"] = sorted_df["combined_bucket"].map(
             {key: index for index, key in enumerate(COMBINED_BUCKET_ORDER, start=1)}
@@ -228,6 +277,7 @@ def _sort_frame(
         for column in [
             "horizon_key",
             "metric_key",
+            "_volume_feature_order",
             "_price_bucket_order",
             "_volume_bucket_order",
             "_combined_bucket_order",
@@ -250,6 +300,7 @@ def _sort_frame(
             "_left_price_bucket_order",
             "_right_price_bucket_order",
             "_volume_bucket_order",
+            "_volume_feature_order",
             "_combined_bucket_order",
             "_left_combined_bucket_order",
             "_right_combined_bucket_order",
@@ -275,6 +326,7 @@ def _enrich_event_panel(
     analysis_end_date: str | None,
     min_constituents_per_day: int,
     price_sma_windows: tuple[int, ...],
+    volume_sma_windows: tuple[tuple[int, int], ...],
 ) -> pd.DataFrame:
     if history_df.empty:
         return pd.DataFrame()
@@ -291,9 +343,28 @@ def _enrich_event_panel(
             _safe_ratio(panel["close"], close_sma_cache[window]) - 1.0
         )
 
-    volume_sma_20 = _rolling_mean(panel, column_name="volume", window=20)
-    volume_sma_80 = _rolling_mean(panel, column_name="volume", window=80)
-    panel[PRIMARY_VOLUME_FEATURE] = _safe_ratio(volume_sma_20, volume_sma_80)
+    volume_feature_order = tuple(
+        _build_volume_feature_name(short_window, long_window)
+        for short_window, long_window in volume_sma_windows
+    )
+    volume_sma_cache: dict[int, pd.Series] = {}
+    for short_window, long_window in volume_sma_windows:
+        if short_window not in volume_sma_cache:
+            volume_sma_cache[short_window] = _rolling_mean(
+                panel,
+                column_name="volume",
+                window=short_window,
+            )
+        if long_window not in volume_sma_cache:
+            volume_sma_cache[long_window] = _rolling_mean(
+                panel,
+                column_name="volume",
+                window=long_window,
+            )
+        panel[_build_volume_feature_name(short_window, long_window)] = _safe_ratio(
+            volume_sma_cache[short_window],
+            volume_sma_cache[long_window],
+        )
 
     for horizon_key, horizon_days in _HORIZON_DAY_MAP.items():
         future_close = (
@@ -305,7 +376,7 @@ def _enrich_event_panel(
     required_mask = (
         panel["close"].gt(0)
         & panel[list(price_feature_order)].notna().all(axis=1)
-        & panel[PRIMARY_VOLUME_FEATURE].notna()
+        & panel[list(volume_feature_order)].notna().all(axis=1)
     )
     if analysis_start_date is not None:
         required_mask &= panel["date"] >= analysis_start_date
@@ -619,6 +690,7 @@ def _build_price_volume_split_panel(
     event_panel_df: pd.DataFrame,
     *,
     price_feature_order: tuple[str, ...],
+    volume_feature_order: tuple[str, ...],
 ) -> pd.DataFrame:
     if event_panel_df.empty:
         return pd.DataFrame()
@@ -635,68 +707,73 @@ def _build_price_volume_split_panel(
     ]
     frames: list[pd.DataFrame] = []
     for price_feature in price_feature_order:
-        panel_df = event_panel_df[common_columns].copy()
-        panel_df["ranking_feature"] = price_feature
-        panel_df["ranking_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
-        panel_df["ranking_value"] = event_panel_df[price_feature].astype(float)
-        panel_df["price_rank_desc"] = (
-            panel_df.groupby("date")["ranking_value"]
+        base_panel_df = event_panel_df[common_columns].copy()
+        base_panel_df["ranking_feature"] = price_feature
+        base_panel_df["ranking_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
+        base_panel_df["ranking_value"] = event_panel_df[price_feature].astype(float)
+        base_panel_df["price_rank_desc"] = (
+            base_panel_df.groupby("date")["ranking_value"]
             .rank(method="first", ascending=False)
             .astype(int)
         )
-        panel_df["price_decile_index"] = (
-            ((panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
-            // panel_df["date_constituent_count"]
+        base_panel_df["price_decile_index"] = (
+            ((base_panel_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
+            // base_panel_df["date_constituent_count"]
         ) + 1
-        panel_df["price_decile_index"] = panel_df["price_decile_index"].clip(
+        base_panel_df["price_decile_index"] = base_panel_df["price_decile_index"].clip(
             1, len(DECILE_ORDER)
         )
-        panel_df["price_decile"] = panel_df["price_decile_index"].map(
+        base_panel_df["price_decile"] = base_panel_df["price_decile_index"].map(
             {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
         )
-        panel_df["price_bucket"] = None
+        base_panel_df["price_bucket"] = None
         for bucket_key, bucket_deciles in PRICE_BUCKET_DECILES.items():
-            panel_df.loc[
-                panel_df["price_decile"].isin(bucket_deciles),
+            base_panel_df.loc[
+                base_panel_df["price_decile"].isin(bucket_deciles),
                 "price_bucket",
             ] = bucket_key
-        panel_df = panel_df.dropna(subset=["price_bucket"]).copy()
-        if panel_df.empty:
+        base_panel_df = base_panel_df.dropna(subset=["price_bucket"]).copy()
+        if base_panel_df.empty:
             continue
 
-        panel_df["price_bucket"] = panel_df["price_bucket"].astype(str)
-        panel_df["price_bucket_label"] = panel_df["price_bucket"].map(PRICE_BUCKET_LABEL_MAP)
-        panel_df["price_bucket_size"] = panel_df.groupby(["date", "price_bucket"])[
+        base_panel_df["price_bucket"] = base_panel_df["price_bucket"].astype(str)
+        base_panel_df["price_bucket_label"] = base_panel_df["price_bucket"].map(
+            PRICE_BUCKET_LABEL_MAP
+        )
+        base_panel_df["price_bucket_size"] = base_panel_df.groupby(["date", "price_bucket"])[
             "code"
         ].transform("size")
-        panel_df["volume_rank_desc_within_price_bucket"] = (
-            event_panel_df.loc[panel_df.index]
-            .groupby([panel_df["date"], panel_df["price_bucket"]])[PRIMARY_VOLUME_FEATURE]
-            .rank(method="first", ascending=False)
-            .astype(int)
-        )
-        panel_df["volume_bucket_index"] = (
-            ((panel_df["volume_rank_desc_within_price_bucket"] - 1) * 2)
-            // panel_df["price_bucket_size"]
-        ) + 1
-        panel_df["volume_bucket_index"] = panel_df["volume_bucket_index"].clip(1, 2)
-        panel_df["volume_bucket"] = panel_df["volume_bucket_index"].map(
-            {1: "volume_high", 2: "volume_low"}
-        )
-        panel_df["volume_bucket_label"] = panel_df["volume_bucket"].map(
-            VOLUME_BUCKET_LABEL_MAP
-        )
-        panel_df["combined_bucket"] = (
-            panel_df["price_bucket"] + "_" + panel_df["volume_bucket"]
-        )
-        panel_df["combined_bucket_label"] = panel_df["combined_bucket"].map(
-            COMBINED_BUCKET_LABEL_MAP
-        )
-        panel_df["price_feature"] = price_feature
-        panel_df["price_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
-        panel_df["volume_feature"] = PRIMARY_VOLUME_FEATURE
-        panel_df["volume_feature_label"] = PRIMARY_VOLUME_FEATURE_LABEL
-        frames.append(panel_df.reset_index(drop=True))
+
+        for volume_feature in volume_feature_order:
+            panel_df = base_panel_df.copy()
+            panel_df["volume_rank_desc_within_price_bucket"] = (
+                event_panel_df.loc[panel_df.index]
+                .groupby([panel_df["date"], panel_df["price_bucket"]])[volume_feature]
+                .rank(method="first", ascending=False)
+                .astype(int)
+            )
+            panel_df["volume_bucket_index"] = (
+                ((panel_df["volume_rank_desc_within_price_bucket"] - 1) * 2)
+                // panel_df["price_bucket_size"]
+            ) + 1
+            panel_df["volume_bucket_index"] = panel_df["volume_bucket_index"].clip(1, 2)
+            panel_df["volume_bucket"] = panel_df["volume_bucket_index"].map(
+                {1: "volume_high", 2: "volume_low"}
+            )
+            panel_df["volume_bucket_label"] = panel_df["volume_bucket"].map(
+                VOLUME_BUCKET_LABEL_MAP
+            )
+            panel_df["combined_bucket"] = (
+                panel_df["price_bucket"] + "_" + panel_df["volume_bucket"]
+            )
+            panel_df["combined_bucket_label"] = panel_df["combined_bucket"].map(
+                COMBINED_BUCKET_LABEL_MAP
+            )
+            panel_df["price_feature"] = price_feature
+            panel_df["price_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
+            panel_df["volume_feature"] = volume_feature
+            panel_df["volume_feature_label"] = VOLUME_FEATURE_LABEL_MAP[volume_feature]
+            frames.append(panel_df.reset_index(drop=True))
 
     if not frames:
         return pd.DataFrame()
@@ -832,11 +909,13 @@ def _aligned_combined_bucket_pivot(
     price_volume_daily_means_df: pd.DataFrame,
     *,
     price_feature: str,
+    volume_feature: str,
     horizon_key: HorizonKey,
     value_column: str,
 ) -> pd.DataFrame:
     scoped_df = price_volume_daily_means_df.loc[
         (price_volume_daily_means_df["price_feature"] == price_feature)
+        & (price_volume_daily_means_df["volume_feature"] == volume_feature)
         & (price_volume_daily_means_df["horizon_key"] == horizon_key)
     ]
     if scoped_df.empty:
@@ -854,6 +933,7 @@ def _build_price_volume_pairwise_significance(
     price_volume_daily_means_df: pd.DataFrame,
     *,
     price_feature_order: tuple[str, ...],
+    volume_feature_order: tuple[str, ...],
 ) -> pd.DataFrame:
     if price_volume_daily_means_df.empty:
         return pd.DataFrame()
@@ -864,81 +944,85 @@ def _build_price_volume_pairwise_significance(
         "future_return": "group_mean_future_return",
     }
     for price_feature in price_feature_order:
-        for horizon_key in HORIZON_ORDER:
-            for metric_key in METRIC_ORDER:
-                pivot_df = _aligned_combined_bucket_pivot(
-                    price_volume_daily_means_df,
-                    price_feature=price_feature,
-                    horizon_key=horizon_key,
-                    value_column=metric_columns[cast(Any, metric_key)],
-                )
-                if pivot_df.empty:
+        for volume_feature in volume_feature_order:
+            for horizon_key in HORIZON_ORDER:
+                for metric_key in METRIC_ORDER:
+                    pivot_df = _aligned_combined_bucket_pivot(
+                        price_volume_daily_means_df,
+                        price_feature=price_feature,
+                        volume_feature=volume_feature,
+                        horizon_key=horizon_key,
+                        value_column=metric_columns[cast(Any, metric_key)],
+                    )
+                    if pivot_df.empty:
+                        for left_bucket, right_bucket in combinations(COMBINED_BUCKET_ORDER, 2):
+                            records.append(
+                                {
+                                    "price_feature": price_feature,
+                                    "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
+                                    "volume_feature": volume_feature,
+                                    "volume_feature_label": VOLUME_FEATURE_LABEL_MAP[volume_feature],
+                                    "horizon_key": horizon_key,
+                                    "metric_key": metric_key,
+                                    "left_combined_bucket": left_bucket,
+                                    "left_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[left_bucket],
+                                    "right_combined_bucket": right_bucket,
+                                    "right_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[right_bucket],
+                                    "n_dates": 0,
+                                    "mean_difference": None,
+                                    "paired_t_statistic": None,
+                                    "paired_t_p_value": None,
+                                    "wilcoxon_statistic": None,
+                                    "wilcoxon_p_value": None,
+                                }
+                            )
+                        continue
+
                     for left_bucket, right_bucket in combinations(COMBINED_BUCKET_ORDER, 2):
+                        left = pivot_df[left_bucket].to_numpy(dtype=float)
+                        right = pivot_df[right_bucket].to_numpy(dtype=float)
+                        paired_t_statistic, paired_t_p_value = _safe_paired_t_test(left, right)
+                        wilcoxon_statistic, wilcoxon_p_value = _safe_wilcoxon(left, right)
                         records.append(
                             {
                                 "price_feature": price_feature,
                                 "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
-                                "volume_feature": PRIMARY_VOLUME_FEATURE,
-                                "volume_feature_label": PRIMARY_VOLUME_FEATURE_LABEL,
+                                "volume_feature": volume_feature,
+                                "volume_feature_label": VOLUME_FEATURE_LABEL_MAP[volume_feature],
                                 "horizon_key": horizon_key,
                                 "metric_key": metric_key,
                                 "left_combined_bucket": left_bucket,
                                 "left_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[left_bucket],
                                 "right_combined_bucket": right_bucket,
                                 "right_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[right_bucket],
-                                "n_dates": 0,
-                                "mean_difference": None,
-                                "paired_t_statistic": None,
-                                "paired_t_p_value": None,
-                                "wilcoxon_statistic": None,
-                                "wilcoxon_p_value": None,
+                                "n_dates": int(len(pivot_df)),
+                                "mean_difference": float((left - right).mean()),
+                                "paired_t_statistic": paired_t_statistic,
+                                "paired_t_p_value": paired_t_p_value,
+                                "wilcoxon_statistic": wilcoxon_statistic,
+                                "wilcoxon_p_value": wilcoxon_p_value,
                             }
                         )
-                    continue
-
-                for left_bucket, right_bucket in combinations(COMBINED_BUCKET_ORDER, 2):
-                    left = pivot_df[left_bucket].to_numpy(dtype=float)
-                    right = pivot_df[right_bucket].to_numpy(dtype=float)
-                    paired_t_statistic, paired_t_p_value = _safe_paired_t_test(left, right)
-                    wilcoxon_statistic, wilcoxon_p_value = _safe_wilcoxon(left, right)
-                    records.append(
-                        {
-                            "price_feature": price_feature,
-                            "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
-                            "volume_feature": PRIMARY_VOLUME_FEATURE,
-                            "volume_feature_label": PRIMARY_VOLUME_FEATURE_LABEL,
-                            "horizon_key": horizon_key,
-                            "metric_key": metric_key,
-                            "left_combined_bucket": left_bucket,
-                            "left_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[left_bucket],
-                            "right_combined_bucket": right_bucket,
-                            "right_combined_bucket_label": COMBINED_BUCKET_LABEL_MAP[right_bucket],
-                            "n_dates": int(len(pivot_df)),
-                            "mean_difference": float((left - right).mean()),
-                            "paired_t_statistic": paired_t_statistic,
-                            "paired_t_p_value": paired_t_p_value,
-                            "wilcoxon_statistic": wilcoxon_statistic,
-                            "wilcoxon_p_value": wilcoxon_p_value,
-                        }
-                    )
 
     pairwise_df = pd.DataFrame.from_records(records)
     pairwise_df["paired_t_p_value_holm"] = None
     pairwise_df["wilcoxon_p_value_holm"] = None
     for price_feature in price_feature_order:
-        for horizon_key in HORIZON_ORDER:
-            for metric_key in METRIC_ORDER:
-                mask = (
-                    (pairwise_df["price_feature"] == price_feature)
-                    & (pairwise_df["horizon_key"] == horizon_key)
-                    & (pairwise_df["metric_key"] == metric_key)
-                )
-                pairwise_df.loc[mask, "paired_t_p_value_holm"] = _holm_adjust(
-                    pairwise_df.loc[mask, "paired_t_p_value"].tolist()
-                )
-                pairwise_df.loc[mask, "wilcoxon_p_value_holm"] = _holm_adjust(
-                    pairwise_df.loc[mask, "wilcoxon_p_value"].tolist()
-                )
+        for volume_feature in volume_feature_order:
+            for horizon_key in HORIZON_ORDER:
+                for metric_key in METRIC_ORDER:
+                    mask = (
+                        (pairwise_df["price_feature"] == price_feature)
+                        & (pairwise_df["volume_feature"] == volume_feature)
+                        & (pairwise_df["horizon_key"] == horizon_key)
+                        & (pairwise_df["metric_key"] == metric_key)
+                    )
+                    pairwise_df.loc[mask, "paired_t_p_value_holm"] = _holm_adjust(
+                        pairwise_df.loc[mask, "paired_t_p_value"].tolist()
+                    )
+                    pairwise_df.loc[mask, "wilcoxon_p_value_holm"] = _holm_adjust(
+                        pairwise_df.loc[mask, "wilcoxon_p_value"].tolist()
+                    )
     return _sort_frame(pairwise_df, known_feature_order=price_feature_order)
 
 
@@ -946,67 +1030,74 @@ def _build_split_hypothesis(
     price_volume_pairwise_significance_df: pd.DataFrame,
     *,
     price_feature_order: tuple[str, ...],
+    volume_feature_order: tuple[str, ...],
 ) -> pd.DataFrame:
     if price_volume_pairwise_significance_df.empty:
         return pd.DataFrame()
 
     records: list[dict[str, Any]] = []
     for price_feature in price_feature_order:
-        for horizon_key in HORIZON_ORDER:
-            for metric_key in METRIC_ORDER:
-                scoped_df = price_volume_pairwise_significance_df[
-                    (price_volume_pairwise_significance_df["price_feature"] == price_feature)
-                    & (price_volume_pairwise_significance_df["horizon_key"] == horizon_key)
-                    & (price_volume_pairwise_significance_df["metric_key"] == metric_key)
-                ]
-                for left_bucket, right_bucket, hypothesis_label in SPLIT_HYPOTHESIS_LABELS:
-                    row = scoped_df[
-                        (scoped_df["left_combined_bucket"] == left_bucket)
-                        & (scoped_df["right_combined_bucket"] == right_bucket)
+        for volume_feature in volume_feature_order:
+            for horizon_key in HORIZON_ORDER:
+                for metric_key in METRIC_ORDER:
+                    scoped_df = price_volume_pairwise_significance_df[
+                        (price_volume_pairwise_significance_df["price_feature"] == price_feature)
+                        & (price_volume_pairwise_significance_df["volume_feature"] == volume_feature)
+                        & (price_volume_pairwise_significance_df["horizon_key"] == horizon_key)
+                        & (price_volume_pairwise_significance_df["metric_key"] == metric_key)
                     ]
-                    sign = 1.0
-                    if row.empty:
+                    for left_bucket, right_bucket, hypothesis_label in SPLIT_HYPOTHESIS_LABELS:
                         row = scoped_df[
-                            (scoped_df["left_combined_bucket"] == right_bucket)
-                            & (scoped_df["right_combined_bucket"] == left_bucket)
+                            (scoped_df["left_combined_bucket"] == left_bucket)
+                            & (scoped_df["right_combined_bucket"] == right_bucket)
                         ]
-                        sign = -1.0
-                    if row.empty:
+                        sign = 1.0
+                        if row.empty:
+                            row = scoped_df[
+                                (scoped_df["left_combined_bucket"] == right_bucket)
+                                & (scoped_df["right_combined_bucket"] == left_bucket)
+                            ]
+                            sign = -1.0
+                        if row.empty:
+                            records.append(
+                                {
+                                    "price_feature": price_feature,
+                                    "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
+                                    "volume_feature": volume_feature,
+                                    "volume_feature_label": VOLUME_FEATURE_LABEL_MAP[volume_feature],
+                                    "horizon_key": horizon_key,
+                                    "metric_key": metric_key,
+                                    "hypothesis_label": hypothesis_label,
+                                    "left_combined_bucket": left_bucket,
+                                    "right_combined_bucket": right_bucket,
+                                    "mean_difference": None,
+                                    "paired_t_p_value_holm": None,
+                                    "wilcoxon_p_value_holm": None,
+                                }
+                            )
+                            continue
+                        pairwise_row = row.iloc[0]
+                        mean_difference = pairwise_row["mean_difference"]
                         records.append(
                             {
                                 "price_feature": price_feature,
                                 "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
+                                "volume_feature": volume_feature,
+                                "volume_feature_label": VOLUME_FEATURE_LABEL_MAP[volume_feature],
                                 "horizon_key": horizon_key,
                                 "metric_key": metric_key,
                                 "hypothesis_label": hypothesis_label,
                                 "left_combined_bucket": left_bucket,
                                 "right_combined_bucket": right_bucket,
-                                "mean_difference": None,
-                                "paired_t_p_value_holm": None,
-                                "wilcoxon_p_value_holm": None,
+                                "mean_difference": (
+                                    None
+                                    if mean_difference is None or pd.isna(mean_difference)
+                                    else sign * float(mean_difference)
+                                ),
+                                "paired_t_p_value_holm": pairwise_row["paired_t_p_value_holm"],
+                                "wilcoxon_p_value_holm": pairwise_row["wilcoxon_p_value_holm"],
                             }
                         )
-                        continue
-                    pairwise_row = row.iloc[0]
-                    mean_difference = pairwise_row["mean_difference"]
-                    records.append(
-                        {
-                            "price_feature": price_feature,
-                            "price_feature_label": PRICE_FEATURE_LABEL_MAP[price_feature],
-                            "horizon_key": horizon_key,
-                            "metric_key": metric_key,
-                            "hypothesis_label": hypothesis_label,
-                            "left_combined_bucket": left_bucket,
-                            "right_combined_bucket": right_bucket,
-                            "mean_difference": (
-                                None
-                                if mean_difference is None or pd.isna(mean_difference)
-                                else sign * float(mean_difference)
-                            ),
-                            "paired_t_p_value_holm": pairwise_row["paired_t_p_value_holm"],
-                            "wilcoxon_p_value_holm": pairwise_row["wilcoxon_p_value_holm"],
-                        }
-                    )
     return _sort_frame(pd.DataFrame.from_records(records), known_feature_order=price_feature_order)
 
 
@@ -1018,6 +1109,7 @@ def run_topix100_price_vs_sma_rank_future_close_research(
     lookback_years: int = _DEFAULT_LOOKBACK_YEARS,
     min_constituents_per_day: int = _DEFAULT_TOPIX100_MIN_CONSTITUENTS_PER_DAY,
     price_sma_windows: tuple[int, ...] | list[int] | None = None,
+    volume_sma_windows: tuple[tuple[int, int], ...] | list[tuple[int, int]] | None = None,
 ) -> Topix100PriceVsSmaRankFutureCloseResearchResult:
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
@@ -1031,8 +1123,13 @@ def run_topix100_price_vs_sma_rank_future_close_research(
         history_df = _query_topix100_stock_history(conn, end_date=end_date)
 
     normalized_price_sma_windows = _normalize_price_sma_windows(price_sma_windows)
+    normalized_volume_sma_windows = _normalize_volume_sma_windows(volume_sma_windows)
     price_feature_order = tuple(
         _build_price_feature_name(window) for window in normalized_price_sma_windows
+    )
+    volume_feature_order = tuple(
+        _build_volume_feature_name(short_window, long_window)
+        for short_window, long_window in normalized_volume_sma_windows
     )
 
     event_panel_df = _enrich_event_panel(
@@ -1041,6 +1138,7 @@ def run_topix100_price_vs_sma_rank_future_close_research(
         analysis_end_date=end_date,
         min_constituents_per_day=min_constituents_per_day,
         price_sma_windows=normalized_price_sma_windows,
+        volume_sma_windows=normalized_volume_sma_windows,
     )
     ranked_panel_df = _build_ranked_panel(
         event_panel_df,
@@ -1066,6 +1164,7 @@ def run_topix100_price_vs_sma_rank_future_close_research(
     price_volume_split_panel_df = _build_price_volume_split_panel(
         event_panel_df,
         price_feature_order=price_feature_order,
+        volume_feature_order=volume_feature_order,
     )
     price_volume_horizon_panel_df = _build_price_volume_horizon_panel(
         price_volume_split_panel_df,
@@ -1079,6 +1178,7 @@ def run_topix100_price_vs_sma_rank_future_close_research(
         _build_price_volume_pairwise_significance(
             price_volume_split_daily_means_df,
             price_feature_order=price_feature_order,
+            volume_feature_order=volume_feature_order,
         )
     )
 
@@ -1100,6 +1200,8 @@ def run_topix100_price_vs_sma_rank_future_close_research(
         min_constituents_per_day=min_constituents_per_day,
         price_sma_windows=normalized_price_sma_windows,
         price_feature_order=price_feature_order,
+        volume_sma_windows=normalized_volume_sma_windows,
+        volume_feature_order=volume_feature_order,
         topix100_constituent_count=int(history_df["code"].nunique()),
         stock_day_count=int(len(event_panel_df)),
         valid_date_count=int(event_panel_df["date"].nunique()) if not event_panel_df.empty else 0,
@@ -1142,5 +1244,6 @@ def run_topix100_price_vs_sma_rank_future_close_research(
         split_hypothesis_df=_build_split_hypothesis(
             price_volume_split_pairwise_significance_df,
             price_feature_order=price_feature_order,
+            volume_feature_order=volume_feature_order,
         ),
     )

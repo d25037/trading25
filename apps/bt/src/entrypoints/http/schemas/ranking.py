@@ -84,7 +84,7 @@ class Topix100RankingItem(BaseModel):
     volume: float
     priceVsSmaGap: float
     priceSma20_80: float
-    volumeSma20_80: float
+    volumeSma5_20: float
     priceDecile: int
     priceBucket: Literal["q1", "q10", "q456", "other"]
     volumeBucket: Literal["high", "low"] | None = None

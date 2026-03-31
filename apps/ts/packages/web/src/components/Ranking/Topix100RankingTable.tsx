@@ -51,7 +51,7 @@ function bucketToneClass(priceBucket: Topix100RankingItem['priceBucket']): strin
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Volume Low first'];
+    return ['Q10 = below SMA', 'Volume Low (5/20) first'];
   }
 
   return ['Legacy comparison'];
@@ -112,7 +112,7 @@ export function Topix100RankingTable({
                 <th className="w-28 px-2 py-1.5 text-right">{metricLabel}</th>
                 <th className="w-24 px-2 py-1.5 text-left">Bucket</th>
                 <th className="w-20 px-2 py-1.5 text-left">Vol Split</th>
-                <th className="w-28 px-2 py-1.5 text-right">Volume SMA 20/80</th>
+                <th className="w-28 px-2 py-1.5 text-right">Volume SMA 5/20</th>
                 <th className="w-24 px-2 py-1.5 text-right">Price</th>
                 <th className="w-24 px-2 py-1.5 text-left">Sector</th>
                 <th className="w-24 px-2 py-1.5 text-right">Volume</th>
@@ -141,7 +141,7 @@ export function Topix100RankingTable({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-muted-foreground">{item.volumeBucket ?? '-'}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma20_80)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
                   <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">

@@ -43,7 +43,9 @@ def _(Path, sys):
         PRICE_FEATURE_LABEL_MAP,
         PRICE_FEATURE_ORDER,
         PRIMARY_VOLUME_FEATURE,
-        PRIMARY_VOLUME_FEATURE_LABEL,
+        VOLUME_FEATURE_LABEL_MAP,
+        VOLUME_FEATURE_ORDER,
+        VOLUME_SMA_WINDOW_ORDER,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
         run_topix100_price_vs_sma_rank_future_close_research,
     )
@@ -53,7 +55,9 @@ def _(Path, sys):
         PRICE_FEATURE_LABEL_MAP,
         PRICE_FEATURE_ORDER,
         PRIMARY_VOLUME_FEATURE,
-        PRIMARY_VOLUME_FEATURE_LABEL,
+        VOLUME_FEATURE_LABEL_MAP,
+        VOLUME_FEATURE_ORDER,
+        VOLUME_SMA_WINDOW_ORDER,
         default_db_path,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
         run_topix100_price_vs_sma_rank_future_close_research,
@@ -129,7 +133,11 @@ def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
 
 
 @app.cell
-def _(parsed_inputs, run_topix100_price_vs_sma_rank_future_close_research):
+def _(
+    VOLUME_SMA_WINDOW_ORDER,
+    parsed_inputs,
+    run_topix100_price_vs_sma_rank_future_close_research,
+):
     try:
         result = run_topix100_price_vs_sma_rank_future_close_research(
             parsed_inputs["selected_db_path"],
@@ -137,6 +145,7 @@ def _(parsed_inputs, run_topix100_price_vs_sma_rank_future_close_research):
             end_date=parsed_inputs["selected_end"],
             lookback_years=parsed_inputs["lookback_years"],
             min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
+            volume_sma_windows=VOLUME_SMA_WINDOW_ORDER,
         )
         error_message = None
     except Exception as exc:
@@ -149,7 +158,8 @@ def _(parsed_inputs, run_topix100_price_vs_sma_rank_future_close_research):
 def _(
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
-    PRIMARY_VOLUME_FEATURE_LABEL,
+    VOLUME_FEATURE_LABEL_MAP,
+    VOLUME_FEATURE_ORDER,
     error_message,
     mo,
     parsed_inputs,
@@ -160,6 +170,10 @@ def _(
         _labels = [
             f"`{feature}` = **{PRICE_FEATURE_LABEL_MAP[feature]}**"
             for feature in PRICE_FEATURE_ORDER
+        ]
+        _volume_labels = [
+            f"`{feature}` = **{VOLUME_FEATURE_LABEL_MAP[feature]}**"
+            for feature in VOLUME_FEATURE_ORDER
         ]
         _view = mo.md(
             "\n".join(
@@ -178,7 +192,10 @@ def _(
                     "Price features:",
                     *[f"- {_label}" for _label in _labels],
                     "",
-                    f"Volume split is fixed to **{PRIMARY_VOLUME_FEATURE_LABEL}** high / low halves inside each price bucket.",
+                    "Volume lenses:",
+                    *[f"- {_label}" for _label in _volume_labels],
+                    "",
+                    "Within each price bucket, names are split into high / low halves by the selected volume lens.",
                 ]
             )
         )
@@ -189,16 +206,37 @@ def _(
 
 
 @app.cell
-def _(PRICE_FEATURE_LABEL_MAP, PRICE_FEATURE_ORDER, error_message, mo, result):
+def _(
+    PRICE_FEATURE_LABEL_MAP,
+    PRICE_FEATURE_ORDER,
+    PRIMARY_VOLUME_FEATURE,
+    VOLUME_FEATURE_LABEL_MAP,
+    VOLUME_FEATURE_ORDER,
+    error_message,
+    mo,
+    result,
+):
     if error_message or result is None:
         price_feature_view = mo.md("")
+        volume_feature_view = mo.md("")
         horizon_view = mo.md("")
         metric_view = mo.md("")
     else:
         price_feature_view = mo.ui.dropdown(
-            options={feature: PRICE_FEATURE_LABEL_MAP[feature] for feature in PRICE_FEATURE_ORDER},
+            options={
+                feature: PRICE_FEATURE_LABEL_MAP[feature]
+                for feature in PRICE_FEATURE_ORDER
+            },
             value="price_vs_sma_50_gap",
             label="Price Feature",
+        )
+        volume_feature_view = mo.ui.dropdown(
+            options={
+                feature: VOLUME_FEATURE_LABEL_MAP[feature]
+                for feature in VOLUME_FEATURE_ORDER
+            },
+            value=PRIMARY_VOLUME_FEATURE,
+            label="Volume Lens",
         )
         horizon_view = mo.ui.dropdown(
             options={
@@ -217,8 +255,8 @@ def _(PRICE_FEATURE_LABEL_MAP, PRICE_FEATURE_ORDER, error_message, mo, result):
             value="future_return",
             label="Metric",
         )
-    mo.hstack([price_feature_view, horizon_view, metric_view])
-    return horizon_view, metric_view, price_feature_view
+    mo.hstack([price_feature_view, volume_feature_view, horizon_view, metric_view])
+    return horizon_view, metric_view, price_feature_view, volume_feature_view
 
 
 @app.cell
@@ -299,20 +337,78 @@ def _(error_message, horizon_view, metric_view, mo, price_feature_view, result):
 
 
 @app.cell
-def _(error_message, horizon_view, metric_view, mo, price_feature_view, result):
+def _(
+    VOLUME_FEATURE_LABEL_MAP,
+    VOLUME_FEATURE_ORDER,
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    pd,
+    price_feature_view,
+    result,
+):
+    _view = mo.md("")
+    if not error_message and result is not None:
+        _comparison_df = result.split_hypothesis_df[
+            (result.split_hypothesis_df["price_feature"] == price_feature_view.value)
+            & (result.split_hypothesis_df["horizon_key"] == horizon_view.value)
+            & (result.split_hypothesis_df["metric_key"] == metric_view.value)
+        ].copy()
+        _comparison_df["volume_feature"] = pd.Categorical(
+            _comparison_df["volume_feature"],
+            categories=list(VOLUME_FEATURE_ORDER),
+            ordered=True,
+        )
+        _comparison_df = _comparison_df.sort_values(
+            ["volume_feature", "hypothesis_label"]
+        ).reset_index(drop=True)
+        _comparison_df["volume_feature"] = _comparison_df["volume_feature"].astype(str)
+        _comparison_df["volume_feature_label"] = _comparison_df["volume_feature"].map(
+            VOLUME_FEATURE_LABEL_MAP
+        )
+        _view = mo.vstack(
+            [
+                mo.md("### Volume Lens Comparison"),
+                mo.Html(_comparison_df.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    horizon_view,
+    metric_view,
+    mo,
+    price_feature_view,
+    result,
+    volume_feature_view,
+):
     _view = mo.md("")
     if not error_message and result is not None:
         _summary_df = result.price_volume_split_summary_df[
             (result.price_volume_split_summary_df["price_feature"] == price_feature_view.value)
+            & (
+                result.price_volume_split_summary_df["volume_feature"]
+                == volume_feature_view.value
+            )
             & (result.price_volume_split_summary_df["horizon_key"] == horizon_view.value)
         ].copy()
         _hypothesis_df = result.split_hypothesis_df[
             (result.split_hypothesis_df["price_feature"] == price_feature_view.value)
+            & (result.split_hypothesis_df["volume_feature"] == volume_feature_view.value)
             & (result.split_hypothesis_df["horizon_key"] == horizon_view.value)
             & (result.split_hypothesis_df["metric_key"] == metric_view.value)
         ].copy()
         _pairwise_df = result.price_volume_split_pairwise_significance_df[
             (result.price_volume_split_pairwise_significance_df["price_feature"] == price_feature_view.value)
+            & (
+                result.price_volume_split_pairwise_significance_df["volume_feature"]
+                == volume_feature_view.value
+            )
             & (result.price_volume_split_pairwise_significance_df["horizon_key"] == horizon_view.value)
             & (result.price_volume_split_pairwise_significance_df["metric_key"] == metric_view.value)
             & (

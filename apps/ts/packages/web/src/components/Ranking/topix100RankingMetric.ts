@@ -43,5 +43,5 @@ export function getTopix100RankingMetricDescription(
     return 'Legacy SMA 20/80 comparison view.';
   }
 
-  return `SMA${smaWindow} baseline. Q10 = below SMA; Volume Low first.`;
+  return `SMA${smaWindow} baseline. Q10 = below SMA; Volume Low (5/20) first.`;
 }

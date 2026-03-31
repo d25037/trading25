@@ -357,7 +357,7 @@ class TestTopix100Ranking:
             assert "code" in item
             assert "priceVsSmaGap" in item
             assert "priceSma20_80" in item
-            assert "volumeSma20_80" in item
+            assert "volumeSma5_20" in item
             assert "priceDecile" in item
             assert "priceBucket" in item
             assert "volumeBucket" in item

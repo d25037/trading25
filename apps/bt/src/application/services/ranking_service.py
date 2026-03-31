@@ -49,6 +49,8 @@ _TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
     "price_sma_20_80": "price_sma_20_80",
 }
 _TOPIX100_PRICE_SMA_WINDOWS: frozenset[int] = frozenset({20, 50, 100})
+_TOPIX100_VOLUME_SHORT_WINDOW = 5
+_TOPIX100_VOLUME_LONG_WINDOW = 20
 
 
 def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
@@ -272,7 +274,7 @@ class RankingService:
                 volume=float(row["volume"]),
                 priceVsSmaGap=float(row["price_vs_sma_gap"]),
                 priceSma20_80=float(row["price_sma_20_80"]),
-                volumeSma20_80=float(row["volume_sma_20_80"]),
+                volumeSma5_20=float(row["volume_sma_5_20"]),
                 priceDecile=int(row["price_decile"]),
                 priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
                 volumeBucket=(
@@ -438,7 +440,11 @@ class RankingService:
         sma_window: int,
     ) -> list[Mapping[str, Any]]:
         metric_column = _TOPIX100_RANKING_METRIC_SQL[metric]
-        required_history_rows = max(int(sma_window), 80)
+        required_price_history_rows = 80 if metric == "price_sma_20_80" else int(sma_window)
+        required_history_rows = max(
+            required_price_history_rows,
+            _TOPIX100_VOLUME_LONG_WINDOW,
+        )
         return self._reader.query(
             f"""
             WITH topix100_stocks AS (
@@ -517,13 +523,13 @@ class RankingService:
                     AVG(sd.volume) OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
-                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
-                    ) AS volume_sma_20,
+                        ROWS BETWEEN 4 PRECEDING AND CURRENT ROW
+                    ) AS volume_sma_5,
                     AVG(sd.volume) OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
-                        ROWS BETWEEN 79 PRECEDING AND CURRENT ROW
-                    ) AS volume_sma_80,
+                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                    ) AS volume_sma_20,
                     ROW_NUMBER() OVER (
                         PARTITION BY sd.normalized_code
                         ORDER BY sd.date
@@ -542,7 +548,7 @@ class RankingService:
                     volume,
                     current_price / NULLIF(price_sma_{int(sma_window)}, 0) - 1 AS price_vs_sma_gap,
                     price_sma_20 / NULLIF(price_sma_80, 0) AS price_sma_20_80,
-                    volume_sma_20 / NULLIF(volume_sma_80, 0) AS volume_sma_20_80
+                    volume_sma_5 / NULLIF(volume_sma_20, 0) AS volume_sma_5_20
                 FROM feature_history
                 WHERE date = ? AND history_row_number >= {required_history_rows}
             ),
@@ -556,7 +562,7 @@ class RankingService:
                         ORDER BY {metric_column} DESC, code ASC
                     ) AS price_decile
                 FROM current_snapshot
-                WHERE {metric_column} IS NOT NULL AND volume_sma_20_80 IS NOT NULL
+                WHERE {metric_column} IS NOT NULL AND volume_sma_5_20 IS NOT NULL
             ),
             bucketed AS (
                 SELECT
@@ -576,7 +582,7 @@ class RankingService:
                         WHEN price_bucket IN ('q1', 'q10', 'q456')
                         THEN NTILE(2) OVER (
                             PARTITION BY price_bucket
-                            ORDER BY volume_sma_20_80 DESC, code ASC
+                            ORDER BY volume_sma_5_20 DESC, code ASC
                         )
                         ELSE NULL
                     END AS volume_half_rank
@@ -593,7 +599,7 @@ class RankingService:
                 volume,
                 price_vs_sma_gap,
                 price_sma_20_80,
-                volume_sma_20_80,
+                volume_sma_5_20,
                 price_decile,
                 price_bucket,
                 CASE

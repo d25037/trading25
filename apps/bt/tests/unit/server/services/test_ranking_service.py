@@ -533,6 +533,7 @@ class TestGetTopix100Ranking:
         assert result.itemCount == 20
         assert len(result.items) == 20
         assert result.items[0].priceVsSmaGap >= result.items[1].priceVsSmaGap
+        assert result.items[0].volumeSma5_20 >= result.items[1].volumeSma5_20
         assert result.items[0].priceBucket == "q1"
         assert result.items[-1].priceBucket == "q10"
 

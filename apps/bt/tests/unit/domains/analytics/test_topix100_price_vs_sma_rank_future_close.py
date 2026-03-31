@@ -7,6 +7,10 @@ import pytest
 from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
+    PRIMARY_VOLUME_FEATURE,
+    PRIMARY_VOLUME_SMA_WINDOW,
+    VOLUME_FEATURE_ORDER,
+    VOLUME_SMA_WINDOW_ORDER,
     get_topix100_price_vs_sma_rank_future_close_available_date_range,
     run_topix100_price_vs_sma_rank_future_close_research,
 )
@@ -44,9 +48,14 @@ def test_available_date_range_and_price_feature_family_are_returned(
     assert result.stock_day_count > 0
     assert result.price_sma_windows == PRICE_SMA_WINDOW_ORDER
     assert result.price_feature_order == PRICE_FEATURE_ORDER
+    assert result.volume_sma_windows == (PRIMARY_VOLUME_SMA_WINDOW,)
+    assert result.volume_feature_order == (PRIMARY_VOLUME_FEATURE,)
     assert set(result.ranked_panel_df["ranking_feature"].unique().tolist()) == set(
         PRICE_FEATURE_ORDER
     )
+    assert set(result.price_volume_split_summary_df["volume_feature"].unique().tolist()) == {
+        PRIMARY_VOLUME_FEATURE
+    }
 
 
 def test_deciles_and_price_volume_split_tables_are_built_for_all_price_features(
@@ -126,3 +135,38 @@ def test_hypothesis_tables_contain_expected_labels_for_selected_feature(
         "Q10 Low vs Middle Low",
         "Q10 Low vs Middle High",
     }
+
+
+def test_multiple_volume_lenses_are_compared_when_requested(
+    analytics_db_path: str,
+) -> None:
+    result = run_topix100_price_vs_sma_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+        volume_sma_windows=VOLUME_SMA_WINDOW_ORDER,
+    )
+
+    assert result.volume_sma_windows == VOLUME_SMA_WINDOW_ORDER
+    assert result.volume_feature_order == VOLUME_FEATURE_ORDER
+    assert set(result.price_volume_split_summary_df["volume_feature"].unique().tolist()) == set(
+        VOLUME_FEATURE_ORDER
+    )
+    assert set(result.split_hypothesis_df["volume_feature"].unique().tolist()) == set(
+        VOLUME_FEATURE_ORDER
+    )
+
+    target_rows = result.split_hypothesis_df[
+        (result.split_hypothesis_df["price_feature"] == "price_vs_sma_50_gap")
+        & (result.split_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.split_hypothesis_df["metric_key"] == "future_return")
+        & (
+            result.split_hypothesis_df["hypothesis_label"].isin(
+                ["Q10 Low vs Middle Low", "Q10 Low vs Middle High"]
+            )
+        )
+    ].copy()
+
+    assert set(target_rows["volume_feature"].unique().tolist()) == set(
+        VOLUME_FEATURE_ORDER
+    )
+    assert len(target_rows) == len(VOLUME_FEATURE_ORDER) * 2
