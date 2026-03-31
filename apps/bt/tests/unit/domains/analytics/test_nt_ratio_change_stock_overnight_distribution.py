@@ -11,9 +11,14 @@ import pytest
 
 from src.domains.analytics import topix_close_stock_overnight_distribution as topix_analysis_module
 from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
+    NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
     format_nt_ratio_bucket_label,
+    get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id,
+    get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path,
     get_nt_ratio_available_date_range,
+    load_nt_ratio_change_stock_overnight_distribution_research_bundle,
     run_nt_ratio_change_stock_overnight_distribution,
+    write_nt_ratio_change_stock_overnight_distribution_research_bundle,
 )
 
 
@@ -257,6 +262,52 @@ def test_sampling_is_deterministic(analytics_db_path: str) -> None:
     pdt.assert_frame_equal(
         first.samples_df.reset_index(drop=True),
         second.samples_df.reset_index(drop=True),
+    )
+
+
+def test_nt_ratio_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_nt_ratio_change_stock_overnight_distribution(
+        analytics_db_path,
+        selected_groups=["PRIME", "TOPIX100"],
+        sample_size=5,
+        clip_percentiles=(5.0, 95.0),
+    )
+
+    bundle = write_nt_ratio_change_stock_overnight_distribution_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_180000_testabcd",
+    )
+    reloaded = load_nt_ratio_change_stock_overnight_distribution_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.sample_size == 5
+    assert reloaded.clip_percentiles == (5.0, 95.0)
+    assert reloaded.selected_groups == result.selected_groups
+    assert reloaded.nt_ratio_stats == result.nt_ratio_stats
+    pdt.assert_frame_equal(
+        reloaded.summary_df,
+        result.summary_df,
+        check_dtype=False,
     )
 
 

@@ -9,12 +9,21 @@ for notebook visualization.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import pandas as pd
 
 from src.domains.analytics.deterministic_sampling import select_deterministic_samples
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     STOCK_GROUP_ORDER as _STOCK_GROUP_ORDER,
     StockGroup,
@@ -42,6 +51,9 @@ NT_RATIO_BUCKET_ORDER: tuple[NtRatioBucketKey, ...] = (
 )
 STOCK_GROUP_ORDER: tuple[StockGroup, ...] = _STOCK_GROUP_ORDER
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
+NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/nt-ratio-change-stock-overnight-distribution"
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +87,8 @@ class NtRatioChangeStockOvernightDistributionResult:
     sigma_threshold_2: float
     nt_ratio_stats: NtRatioReturnStats | None
     selected_groups: tuple[StockGroup, ...]
+    sample_size: int
+    clip_percentiles: tuple[float, float]
     excluded_nt_ratio_days_without_prev_ratio: int
     excluded_nt_ratio_days_without_next_session: int
     day_counts_df: pd.DataFrame
@@ -83,6 +97,37 @@ class NtRatioChangeStockOvernightDistributionResult:
     clipped_samples_df: pd.DataFrame
     clip_bounds_df: pd.DataFrame
     daily_group_returns_df: pd.DataFrame
+
+
+def _serialize_nt_ratio_stats(
+    stats: NtRatioReturnStats | None,
+) -> dict[str, Any] | None:
+    if stats is None:
+        return None
+    return {field.name: getattr(stats, field.name) for field in fields(NtRatioReturnStats)}
+
+
+def _deserialize_nt_ratio_stats(
+    payload: dict[str, Any] | None,
+) -> NtRatioReturnStats | None:
+    if payload is None:
+        return None
+    return NtRatioReturnStats(
+        sample_count=int(payload["sample_count"]),
+        mean_return=float(payload["mean_return"]),
+        std_return=float(payload["std_return"]),
+        sigma_threshold_1=float(payload["sigma_threshold_1"]),
+        sigma_threshold_2=float(payload["sigma_threshold_2"]),
+        lower_threshold_2=float(payload["lower_threshold_2"]),
+        lower_threshold_1=float(payload["lower_threshold_1"]),
+        upper_threshold_1=float(payload["upper_threshold_1"]),
+        upper_threshold_2=float(payload["upper_threshold_2"]),
+        min_return=cast(float | None, payload.get("min_return")),
+        q25_return=cast(float | None, payload.get("q25_return")),
+        median_return=cast(float | None, payload.get("median_return")),
+        q75_return=cast(float | None, payload.get("q75_return")),
+        max_return=cast(float | None, payload.get("max_return")),
+    )
 
 
 def _format_sigma(value: float) -> str:
@@ -955,6 +1000,8 @@ def run_nt_ratio_change_stock_overnight_distribution(
         sigma_threshold_2=sigma_threshold_2,
         nt_ratio_stats=nt_ratio_stats,
         selected_groups=validated_groups,
+        sample_size=sample_size,
+        clip_percentiles=clip_percentiles,
         excluded_nt_ratio_days_without_prev_ratio=excluded_without_prev_ratio,
         excluded_nt_ratio_days_without_next_session=excluded_without_next_session,
         day_counts_df=day_counts_df,
@@ -964,3 +1011,197 @@ def run_nt_ratio_change_stock_overnight_distribution(
         clip_bounds_df=clip_bounds_df,
         daily_group_returns_df=daily_group_returns_df,
     )
+
+
+def write_nt_ratio_change_stock_overnight_distribution_research_bundle(
+    result: NtRatioChangeStockOvernightDistributionResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_result_payload(result)
+    return write_research_bundle(
+        experiment_id=NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_nt_ratio_change_stock_overnight_distribution",
+        params={
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "sigma_threshold_1": result.sigma_threshold_1,
+            "sigma_threshold_2": result.sigma_threshold_2,
+            "selected_groups": list(result.selected_groups),
+            "sample_size": result.sample_size,
+            "clip_percentiles": list(result.clip_percentiles),
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_nt_ratio_change_stock_overnight_distribution_research_bundle(
+    bundle_path: str | Path,
+) -> NtRatioChangeStockOvernightDistributionResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_result_from_payload(dict(info.result_metadata), tables)
+
+
+def get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_result_payload(
+    result: NtRatioChangeStockOvernightDistributionResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata = {
+        "db_path": result.db_path,
+        "source_mode": result.source_mode,
+        "source_detail": result.source_detail,
+        "available_start_date": result.available_start_date,
+        "available_end_date": result.available_end_date,
+        "analysis_start_date": result.analysis_start_date,
+        "analysis_end_date": result.analysis_end_date,
+        "sigma_threshold_1": result.sigma_threshold_1,
+        "sigma_threshold_2": result.sigma_threshold_2,
+        "nt_ratio_stats": _serialize_nt_ratio_stats(result.nt_ratio_stats),
+        "selected_groups": list(result.selected_groups),
+        "sample_size": result.sample_size,
+        "clip_percentiles": list(result.clip_percentiles),
+        "excluded_nt_ratio_days_without_prev_ratio": result.excluded_nt_ratio_days_without_prev_ratio,
+        "excluded_nt_ratio_days_without_next_session": result.excluded_nt_ratio_days_without_next_session,
+    }
+    tables = {
+        "day_counts_df": result.day_counts_df,
+        "summary_df": result.summary_df,
+        "samples_df": result.samples_df,
+        "clipped_samples_df": result.clipped_samples_df,
+        "clip_bounds_df": result.clip_bounds_df,
+        "daily_group_returns_df": result.daily_group_returns_df,
+    }
+    return metadata, tables
+
+
+def _build_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> NtRatioChangeStockOvernightDistributionResult:
+    return NtRatioChangeStockOvernightDistributionResult(
+        db_path=str(metadata["db_path"]),
+        source_mode=cast(SourceMode, metadata["source_mode"]),
+        source_detail=str(metadata["source_detail"]),
+        available_start_date=cast(str | None, metadata.get("available_start_date")),
+        available_end_date=cast(str | None, metadata.get("available_end_date")),
+        analysis_start_date=cast(str | None, metadata.get("analysis_start_date")),
+        analysis_end_date=cast(str | None, metadata.get("analysis_end_date")),
+        sigma_threshold_1=float(metadata["sigma_threshold_1"]),
+        sigma_threshold_2=float(metadata["sigma_threshold_2"]),
+        nt_ratio_stats=_deserialize_nt_ratio_stats(
+            cast(dict[str, Any] | None, metadata.get("nt_ratio_stats"))
+        ),
+        selected_groups=cast(
+            tuple[StockGroup, ...],
+            tuple(str(value) for value in metadata["selected_groups"]),
+        ),
+        sample_size=int(metadata["sample_size"]),
+        clip_percentiles=(
+            float(cast(list[Any], metadata["clip_percentiles"])[0]),
+            float(cast(list[Any], metadata["clip_percentiles"])[1]),
+        ),
+        excluded_nt_ratio_days_without_prev_ratio=int(
+            metadata["excluded_nt_ratio_days_without_prev_ratio"]
+        ),
+        excluded_nt_ratio_days_without_next_session=int(
+            metadata["excluded_nt_ratio_days_without_next_session"]
+        ),
+        day_counts_df=tables["day_counts_df"],
+        summary_df=tables["summary_df"],
+        samples_df=tables["samples_df"],
+        clipped_samples_df=tables["clipped_samples_df"],
+        clip_bounds_df=tables["clip_bounds_df"],
+        daily_group_returns_df=tables["daily_group_returns_df"],
+    )
+
+
+def _build_research_bundle_summary_markdown(
+    result: NtRatioChangeStockOvernightDistributionResult,
+) -> str:
+    summary_lines = [
+        "# NT Ratio Change / Stock Overnight Distribution",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- Sigma thresholds: `{result.sigma_threshold_1:g}σ / {result.sigma_threshold_2:g}σ`",
+        f"- Selected groups: `{', '.join(result.selected_groups)}`",
+        f"- Excluded NT days without previous ratio: `{result.excluded_nt_ratio_days_without_prev_ratio}`",
+        f"- Excluded NT days without next session: `{result.excluded_nt_ratio_days_without_next_session}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    stats = result.nt_ratio_stats
+    if stats is None:
+        summary_lines.append("- No analyzable NT ratio rows were available in this run.")
+    else:
+        strongest = result.summary_df[
+            result.summary_df["mean_overnight_return"].notna()
+        ].copy()
+        summary_lines.extend(
+            [
+                f"- NT ratio sample count: `{stats.sample_count}`",
+                f"- Mean / std: `{stats.mean_return * 100:+.4f}% / {stats.std_return * 100:.4f}%`",
+            ]
+        )
+        if strongest.empty:
+            summary_lines.append("- Group summary was empty after filtering.")
+        else:
+            strongest_row = strongest.sort_values(
+                "mean_overnight_return",
+                ascending=False,
+            ).iloc[0]
+            summary_lines.append(
+                "- Highest mean overnight return bucket was "
+                f"`{strongest_row['stock_group']}` x "
+                f"`{strongest_row['nt_ratio_bucket_label']}` at "
+                f"`{float(strongest_row['mean_overnight_return']) * 100:+.4f}%`."
+            )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

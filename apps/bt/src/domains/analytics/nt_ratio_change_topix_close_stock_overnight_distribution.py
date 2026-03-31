@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import pandas as pd
@@ -18,18 +19,31 @@ from src.domains.analytics.deterministic_sampling import select_deterministic_sa
 from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
     NT_RATIO_BUCKET_ORDER,
     NtRatioReturnStats,
+    _deserialize_nt_ratio_stats,
     _nt_ratio_available_date_range,
     _query_nt_ratio_stats,
+    _serialize_nt_ratio_stats,
     format_nt_ratio_bucket_label,
+)
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
 )
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     CLOSE_BUCKET_ORDER,
     STOCK_GROUP_ORDER as _STOCK_GROUP_ORDER,
     CloseBucketKey,
     StockGroup,
+    TopixCloseReturnStats,
+    _deserialize_topix_close_return_stats,
     _date_where_clause,
     _normalize_code_sql,
     _open_analysis_connection,
+    _serialize_topix_close_return_stats,
     _validate_selected_groups,
     format_close_bucket_label,
 )
@@ -45,6 +59,9 @@ SourceMode = Literal["live", "snapshot"]
 
 STOCK_GROUP_ORDER: tuple[StockGroup, ...] = _STOCK_GROUP_ORDER
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
+NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/nt-ratio-change-topix-close-stock-overnight-distribution"
+)
 
 
 @dataclass(frozen=True)
@@ -61,7 +78,10 @@ class NtRatioChangeTopixCloseStockOvernightDistributionResult:
     topix_close_threshold_1: float
     topix_close_threshold_2: float
     nt_ratio_stats: NtRatioReturnStats | None
+    topix_close_stats: TopixCloseReturnStats | None
     selected_groups: tuple[StockGroup, ...]
+    sample_size: int
+    clip_percentiles: tuple[float, float]
     excluded_nt_ratio_days_without_prev_ratio: int
     excluded_topix_days_without_prev_close: int
     excluded_joint_days_without_next_session: int
@@ -872,6 +892,7 @@ def run_nt_ratio_change_topix_close_stock_overnight_distribution(
     sigma_threshold_2: float = 2.0,
     topix_close_threshold_1: float = 0.01,
     topix_close_threshold_2: float = 0.02,
+    topix_close_stats: TopixCloseReturnStats | None = None,
     selected_groups: Sequence[str] | None = None,
     sample_size: int = 2000,
     clip_percentiles: tuple[float, float] = (1.0, 99.0),
@@ -1097,7 +1118,10 @@ def run_nt_ratio_change_topix_close_stock_overnight_distribution(
         topix_close_threshold_1=topix_close_threshold_1,
         topix_close_threshold_2=topix_close_threshold_2,
         nt_ratio_stats=nt_ratio_stats,
+        topix_close_stats=topix_close_stats,
         selected_groups=validated_groups,
+        sample_size=sample_size,
+        clip_percentiles=clip_percentiles,
         excluded_nt_ratio_days_without_prev_ratio=excluded_without_prev_nt_ratio,
         excluded_topix_days_without_prev_close=excluded_without_prev_topix_close,
         excluded_joint_days_without_next_session=excluded_without_next_session,
@@ -1108,3 +1132,209 @@ def run_nt_ratio_change_topix_close_stock_overnight_distribution(
         clip_bounds_df=clip_bounds_df,
         daily_group_returns_df=daily_group_returns_df,
     )
+
+
+def write_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle(
+    result: NtRatioChangeTopixCloseStockOvernightDistributionResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_result_payload(result)
+    return write_research_bundle(
+        experiment_id=NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_nt_ratio_change_topix_close_stock_overnight_distribution",
+        params={
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "sigma_threshold_1": result.sigma_threshold_1,
+            "sigma_threshold_2": result.sigma_threshold_2,
+            "topix_close_threshold_1": result.topix_close_threshold_1,
+            "topix_close_threshold_2": result.topix_close_threshold_2,
+            "selected_groups": list(result.selected_groups),
+            "sample_size": result.sample_size,
+            "clip_percentiles": list(result.clip_percentiles),
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle(
+    bundle_path: str | Path,
+) -> NtRatioChangeTopixCloseStockOvernightDistributionResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_result_from_payload(dict(info.result_metadata), tables)
+
+
+def get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_result_payload(
+    result: NtRatioChangeTopixCloseStockOvernightDistributionResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata = {
+        "db_path": result.db_path,
+        "source_mode": result.source_mode,
+        "source_detail": result.source_detail,
+        "available_start_date": result.available_start_date,
+        "available_end_date": result.available_end_date,
+        "analysis_start_date": result.analysis_start_date,
+        "analysis_end_date": result.analysis_end_date,
+        "sigma_threshold_1": result.sigma_threshold_1,
+        "sigma_threshold_2": result.sigma_threshold_2,
+        "topix_close_threshold_1": result.topix_close_threshold_1,
+        "topix_close_threshold_2": result.topix_close_threshold_2,
+        "nt_ratio_stats": _serialize_nt_ratio_stats(result.nt_ratio_stats),
+        "topix_close_stats": _serialize_topix_close_return_stats(
+            result.topix_close_stats
+        ),
+        "selected_groups": list(result.selected_groups),
+        "sample_size": result.sample_size,
+        "clip_percentiles": list(result.clip_percentiles),
+        "excluded_nt_ratio_days_without_prev_ratio": result.excluded_nt_ratio_days_without_prev_ratio,
+        "excluded_topix_days_without_prev_close": result.excluded_topix_days_without_prev_close,
+        "excluded_joint_days_without_next_session": result.excluded_joint_days_without_next_session,
+    }
+    tables = {
+        "joint_day_counts_df": result.joint_day_counts_df,
+        "summary_df": result.summary_df,
+        "samples_df": result.samples_df,
+        "clipped_samples_df": result.clipped_samples_df,
+        "clip_bounds_df": result.clip_bounds_df,
+        "daily_group_returns_df": result.daily_group_returns_df,
+    }
+    return metadata, tables
+
+
+def _build_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> NtRatioChangeTopixCloseStockOvernightDistributionResult:
+    return NtRatioChangeTopixCloseStockOvernightDistributionResult(
+        db_path=str(metadata["db_path"]),
+        source_mode=cast(SourceMode, metadata["source_mode"]),
+        source_detail=str(metadata["source_detail"]),
+        available_start_date=cast(str | None, metadata.get("available_start_date")),
+        available_end_date=cast(str | None, metadata.get("available_end_date")),
+        analysis_start_date=cast(str | None, metadata.get("analysis_start_date")),
+        analysis_end_date=cast(str | None, metadata.get("analysis_end_date")),
+        sigma_threshold_1=float(metadata["sigma_threshold_1"]),
+        sigma_threshold_2=float(metadata["sigma_threshold_2"]),
+        topix_close_threshold_1=float(metadata["topix_close_threshold_1"]),
+        topix_close_threshold_2=float(metadata["topix_close_threshold_2"]),
+        nt_ratio_stats=_deserialize_nt_ratio_stats(
+            cast(dict[str, Any] | None, metadata.get("nt_ratio_stats"))
+        ),
+        topix_close_stats=_deserialize_topix_close_return_stats(
+            cast(dict[str, Any] | None, metadata.get("topix_close_stats"))
+        ),
+        selected_groups=cast(
+            tuple[StockGroup, ...],
+            tuple(str(value) for value in metadata["selected_groups"]),
+        ),
+        sample_size=int(metadata["sample_size"]),
+        clip_percentiles=(
+            float(cast(list[Any], metadata["clip_percentiles"])[0]),
+            float(cast(list[Any], metadata["clip_percentiles"])[1]),
+        ),
+        excluded_nt_ratio_days_without_prev_ratio=int(
+            metadata["excluded_nt_ratio_days_without_prev_ratio"]
+        ),
+        excluded_topix_days_without_prev_close=int(
+            metadata["excluded_topix_days_without_prev_close"]
+        ),
+        excluded_joint_days_without_next_session=int(
+            metadata["excluded_joint_days_without_next_session"]
+        ),
+        joint_day_counts_df=tables["joint_day_counts_df"],
+        summary_df=tables["summary_df"],
+        samples_df=tables["samples_df"],
+        clipped_samples_df=tables["clipped_samples_df"],
+        clip_bounds_df=tables["clip_bounds_df"],
+        daily_group_returns_df=tables["daily_group_returns_df"],
+    )
+
+
+def _build_research_bundle_summary_markdown(
+    result: NtRatioChangeTopixCloseStockOvernightDistributionResult,
+) -> str:
+    summary_lines = [
+        "# NT Ratio Change x TOPIX Close / Stock Overnight Distribution",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- NT sigma thresholds: `{result.sigma_threshold_1:g}σ / {result.sigma_threshold_2:g}σ`",
+        f"- TOPIX close thresholds: `{result.topix_close_threshold_1 * 100:.4f}% / {result.topix_close_threshold_2 * 100:.4f}%`",
+        f"- Selected groups: `{', '.join(result.selected_groups)}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    if result.nt_ratio_stats is not None:
+        summary_lines.append(
+            f"- NT ratio sample count: `{result.nt_ratio_stats.sample_count}`"
+        )
+    if result.topix_close_stats is not None:
+        summary_lines.append(
+            f"- TOPIX close sample count: `{result.topix_close_stats.sample_count}`"
+        )
+    strongest = result.summary_df[result.summary_df["mean_overnight_return"].notna()].copy()
+    if strongest.empty:
+        summary_lines.append("- Group summary was empty after filtering.")
+    else:
+        strongest_row = strongest.sort_values(
+            "mean_overnight_return",
+            ascending=False,
+        ).iloc[0]
+        summary_lines.append(
+            "- Highest mean overnight return joint bucket was "
+            f"`{strongest_row['stock_group']}` x "
+            f"`{strongest_row['nt_ratio_bucket_label']}` x "
+            f"`{strongest_row['topix_close_bucket_label']}` at "
+            f"`{float(strongest_row['mean_overnight_return']) * 100:+.4f}%`."
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

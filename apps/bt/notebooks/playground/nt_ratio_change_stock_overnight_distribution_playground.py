@@ -39,19 +39,42 @@ def _(Path, sys):
         sys.path.insert(0, str(_project_root))
 
     from src.shared.config.settings import get_settings
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
+        NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
         STOCK_GROUP_ORDER,
+        get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id,
+        get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path,
         get_nt_ratio_available_date_range,
+        load_nt_ratio_change_stock_overnight_distribution_research_bundle,
         run_nt_ratio_change_stock_overnight_distribution,
     )
 
     default_db_path = get_settings().market_db_path
     return (
+        NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
         STOCK_GROUP_ORDER,
         default_db_path,
+        get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id,
+        get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path,
         get_nt_ratio_available_date_range,
+        load_nt_ratio_change_stock_overnight_distribution_research_bundle,
+        load_research_bundle_info,
         run_nt_ratio_change_stock_overnight_distribution,
     )
+
+
+@app.cell
+def _(get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path):
+    try:
+        latest_bundle_path = (
+            get_nt_ratio_change_stock_overnight_distribution_latest_bundle_path()
+        )
+    except Exception:
+        latest_bundle_path = None
+    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
+    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
@@ -64,9 +87,29 @@ def _(default_db_path, get_nt_ratio_available_date_range):
 
 
 @app.cell
-def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
+def _(
+    STOCK_GROUP_ORDER,
+    default_db_path,
+    initial_range,
+    latest_bundle_path_str,
+    latest_run_id,
+    mo,
+):
     _available_start_date, _available_end_date = initial_range
 
+    mode = mo.ui.dropdown(
+        options={
+            "bundle": "Load Existing Bundle",
+            "recompute": "Run Fresh Analysis",
+        },
+        value="bundle",
+        label="Mode",
+    )
+    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
+    bundle_path = mo.ui.text(
+        value=latest_bundle_path_str,
+        label="Bundle Path (optional)",
+    )
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
         value=_available_start_date or "",
@@ -115,7 +158,7 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         label="Clip Upper Percentile",
     )
 
-    mo.vstack(
+    recompute_controls = mo.vstack(
         [
             db_path,
             mo.hstack([start_date, end_date]),
@@ -124,11 +167,32 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
             mo.hstack([sample_size, clip_lower, clip_upper]),
         ]
     )
+    mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "### Research Runner",
+                        "",
+                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
+                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
+                        "- Canonical runner: `apps/bt/scripts/research/run_nt_ratio_change_stock_overnight_distribution.py`",
+                    ]
+                )
+            ),
+            mo.hstack([mode, run_id]),
+            bundle_path,
+            recompute_controls if mode.value == "recompute" else mo.md(""),
+        ]
+    )
     return (
+        bundle_path,
         clip_lower,
         clip_upper,
         db_path,
         end_date,
+        mode,
+        run_id,
         sample_size,
         selected_groups,
         sigma_threshold_1,
@@ -140,10 +204,14 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
 @app.cell
 def _(
     STOCK_GROUP_ORDER,
+    bundle_path,
     clip_lower,
     clip_upper,
     db_path,
     end_date,
+    get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id,
+    mode,
+    run_id,
     sample_size,
     selected_groups,
     sigma_threshold_1,
@@ -158,7 +226,19 @@ def _(
     if not _requested_groups:
         _requested_groups = list(STOCK_GROUP_ORDER)
 
+    run_id_value = run_id.value.strip()
+    bundle_path_value = bundle_path.value.strip()
+    resolved_bundle_path = bundle_path_value
+    if not resolved_bundle_path and run_id_value:
+        resolved_bundle_path = str(
+            get_nt_ratio_change_stock_overnight_distribution_bundle_path_for_run_id(
+                run_id_value
+            )
+        )
     parsed_inputs = {
+        "mode": mode.value,
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolved_bundle_path or None,
         "requested_groups": _requested_groups,
         "selected_clip": (float(clip_lower.value), float(clip_upper.value)),
         "selected_db_path": db_path.value.strip(),
@@ -174,24 +254,42 @@ def _(
 
 
 @app.cell
-def _(parsed_inputs, run_nt_ratio_change_stock_overnight_distribution):
+def _(
+    load_nt_ratio_change_stock_overnight_distribution_research_bundle,
+    load_research_bundle_info,
+    parsed_inputs,
+    run_nt_ratio_change_stock_overnight_distribution,
+):
     try:
-        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        result = run_nt_ratio_change_stock_overnight_distribution(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            sigma_threshold_1=_sigma_threshold_1,
-            sigma_threshold_2=_sigma_threshold_2,
-            selected_groups=parsed_inputs["requested_groups"],
-            sample_size=parsed_inputs["selected_sample_size"],
-            clip_percentiles=parsed_inputs["selected_clip"],
-        )
+        if parsed_inputs["mode"] == "bundle":
+            selected_bundle_path = parsed_inputs["selected_bundle_path"]
+            if not selected_bundle_path:
+                raise ValueError(
+                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
+                )
+            bundle_info = load_research_bundle_info(selected_bundle_path)
+            result = load_nt_ratio_change_stock_overnight_distribution_research_bundle(
+                selected_bundle_path
+            )
+        else:
+            bundle_info = None
+            _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
+            result = run_nt_ratio_change_stock_overnight_distribution(
+                parsed_inputs["selected_db_path"],
+                start_date=parsed_inputs["selected_start"],
+                end_date=parsed_inputs["selected_end"],
+                sigma_threshold_1=_sigma_threshold_1,
+                sigma_threshold_2=_sigma_threshold_2,
+                selected_groups=parsed_inputs["requested_groups"],
+                sample_size=parsed_inputs["selected_sample_size"],
+                clip_percentiles=parsed_inputs["selected_clip"],
+            )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -204,11 +302,15 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(
+    NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+    bundle_info,
+    error_message,
+    mo,
+    result,
+):
     _summary_view = mo.md("")
     if not error_message and result is not None:
-        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        _selected_clip = parsed_inputs["selected_clip"]
         _stats = result.nt_ratio_stats
         _stats_lines = [
             "- NT ratio return stats: **no analyzable rows in range**",
@@ -217,10 +319,16 @@ def _(error_message, mo, parsed_inputs, result):
             _stats_lines = [
                 f"- NT ratio return sample count: **{_stats.sample_count}**",
                 f"- Mean / Std: **{_stats.mean_return * 100:.4f}% / {_stats.std_return * 100:.4f}%**",
-                f"- Bucket boundaries: **μ-{_sigma_threshold_2:g}σ = {_stats.lower_threshold_2 * 100:.4f}%**, **μ-{_sigma_threshold_1:g}σ = {_stats.lower_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_1:g}σ = {_stats.upper_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_2:g}σ = {_stats.upper_threshold_2 * 100:.4f}%**",
+                f"- Bucket boundaries: **μ-{result.sigma_threshold_2:g}σ = {_stats.lower_threshold_2 * 100:.4f}%**, **μ-{result.sigma_threshold_1:g}σ = {_stats.lower_threshold_1 * 100:.4f}%**, **μ+{result.sigma_threshold_1:g}σ = {_stats.upper_threshold_1 * 100:.4f}%**, **μ+{result.sigma_threshold_2:g}σ = {_stats.upper_threshold_2 * 100:.4f}%**",
                 f"- Min / Q25 / Median / Q75 / Max: **{_stats.min_return * 100:.4f}% / {_stats.q25_return * 100:.4f}% / {_stats.median_return * 100:.4f}% / {_stats.q75_return * 100:.4f}% / {_stats.max_return * 100:.4f}%**",
             ]
 
+        _bundle_lines = []
+        if bundle_info is not None:
+            _bundle_lines = [
+                f"- Experiment: **{NT_RATIO_CHANGE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID}**",
+                f"- Bundle run: **{bundle_info.run_id}**",
+            ]
         _summary_view = mo.md(
             "\n".join(
                 [
@@ -230,16 +338,18 @@ def _(error_message, mo, parsed_inputs, result):
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
                     f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
-                    f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
-                    f"- Sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
-                    f"- Sample size per group/bucket: **{parsed_inputs['selected_sample_size']}**",
-                    f"- Plot clip: **{_selected_clip[0]:.1f}% -> {_selected_clip[1]:.1f}%**",
+                    f"- Selected groups: **{', '.join(result.selected_groups)}**",
+                    f"- Sigma thresholds: **{result.sigma_threshold_1:g}σ / {result.sigma_threshold_2:g}σ**",
+                    f"- Sample size per group/bucket: **{result.sample_size}**",
+                    f"- Plot clip: **{result.clip_percentiles[0]:.1f}% -> {result.clip_percentiles[1]:.1f}%**",
                     f"- Excluded NT ratio days without previous ratio: **{result.excluded_nt_ratio_days_without_prev_ratio}**",
                     f"- Excluded NT ratio days without next session: **{result.excluded_nt_ratio_days_without_next_session}**",
                     "- Event definition: **nt_ratio = N225_UNDERPX close / TOPIX close**",
                     "- Event definition: **nt_ratio_return = (nt_ratio - prev_nt_ratio) / prev_nt_ratio**",
                     "- Trade definition: **stock overnight_return = (next_open - event_close) / event_close**",
                     "",
+                    *_bundle_lines,
+                    *([""] if _bundle_lines else []),
                     *_stats_lines,
                 ]
             )
