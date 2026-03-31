@@ -53,11 +53,15 @@ done
 
 coverage_dir="$(mktemp -d "/tmp/trading25-prepush-coverage.XXXXXX")"
 bt_server_pid=""
+secret_scan_dir=""
 
 cleanup() {
   if [[ -n "${bt_server_pid}" ]] && kill -0 "${bt_server_pid}" >/dev/null 2>&1; then
     kill "${bt_server_pid}" >/dev/null 2>&1 || true
     wait "${bt_server_pid}" 2>/dev/null || true
+  fi
+  if [[ -n "${secret_scan_dir}" && -d "${secret_scan_dir}" ]]; then
+    rm -rf "${secret_scan_dir}"
   fi
   rm -rf "${coverage_dir}"
 }
@@ -118,9 +122,11 @@ run_security_suite() {
   run_step \
     "dependency-audit:pip" \
     bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv run --locked --with pip-audit pip-audit --ignore-vuln CVE-2026-4539"
+  secret_scan_dir="$(mktemp -d "/tmp/trading25-prepush-gitleaks.XXXXXX")"
+  git -C "${repo_root}" archive --format=tar HEAD | tar -xf - -C "${secret_scan_dir}"
   run_step \
     "secret-scan" \
-    docker run --rm -v "${repo_root}:/repo" ghcr.io/gitleaks/gitleaks:v8.25.1 \
+    docker run --rm -v "${secret_scan_dir}:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.25.1 \
       detect --source="/repo" --no-git --redact --verbose
 }
 
