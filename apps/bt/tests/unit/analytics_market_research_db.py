@@ -85,6 +85,7 @@ def build_topix100_research_market_db(
     *,
     include_regimes: bool = False,
     include_vi: bool = False,
+    extra_topix100_constituents: int = 0,
     start_date: str = "2023-01-02",
     periods: int = 220,
 ) -> str:
@@ -109,6 +110,25 @@ def build_topix100_research_market_db(
         ("1234", "Kappa", "KAPPA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
         ("4321", "Outside", "OUTSIDE", "0111", "プライム", "1", "A", "1", "A", "-", "2000-01-01", None, None),
     ]
+    for index in range(extra_topix100_constituents):
+        code = f"{2001 + index}"
+        stocks.append(
+            (
+                code,
+                f"Extra {index + 1}",
+                f"EXTRA {index + 1}",
+                "0111",
+                "プライム",
+                "1",
+                "A",
+                "1",
+                "A",
+                "TOPIX Large70",
+                "2000-01-01",
+                None,
+                None,
+            )
+        )
     conn.executemany(
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         stocks,
@@ -128,6 +148,14 @@ def build_topix100_research_market_db(
         "1234": (100.0, -0.0030, 1000.0, -0.0020),
         "4321": (50.0, 0.0002, 1500.0, 0.0003),
     }
+    for index in range(extra_topix100_constituents):
+        code = f"{2001 + index}"
+        specs[code] = (
+            95.0 - (index * 4.0),
+            -0.0032 - (index * 0.00005),
+            950.0 - (index * 35.0),
+            -0.0018 - (index * 0.00003),
+        )
 
     stock_rows: list[tuple[str, str, float, float, float, float, int, float, None]] = []
     for code, (base_close, close_growth, base_volume, volume_growth) in specs.items():
