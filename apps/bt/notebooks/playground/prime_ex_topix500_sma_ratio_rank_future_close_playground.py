@@ -37,10 +37,14 @@ def _(Path, sys):
         sys.path.insert(0, str(_project_root))
 
     from src.shared.config.settings import get_settings
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.prime_ex_topix500_sma_ratio_rank_future_close import (
         HORIZON_ORDER,
         METRIC_ORDER,
+        get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id,
         get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range,
+        get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path,
+        load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle,
         run_prime_ex_topix500_sma_ratio_rank_future_close_research,
     )
 
@@ -49,9 +53,26 @@ def _(Path, sys):
         HORIZON_ORDER,
         METRIC_ORDER,
         default_db_path,
+        get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id,
         get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range,
+        get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path,
+        load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle,
+        load_research_bundle_info,
         run_prime_ex_topix500_sma_ratio_rank_future_close_research,
     )
+
+
+@app.cell
+def _(get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path):
+    try:
+        latest_bundle_path = (
+            get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path()
+        )
+    except Exception:
+        latest_bundle_path = None
+    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
+    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
@@ -69,7 +90,7 @@ def _(
 
 
 @app.cell
-def _(default_db_path, initial_range, mo, pd):
+def _(default_db_path, initial_range, latest_bundle_path_str, latest_run_id, mo, pd):
     available_start_date, available_end_date = initial_range
     default_start_date = available_start_date or ""
     if available_end_date:
@@ -80,6 +101,13 @@ def _(default_db_path, initial_range, mo, pd):
         ).strftime("%Y-%m-%d")
         default_start_date = max(available_start_date or candidate, candidate)
 
+    mode = mo.ui.dropdown(
+        options={"bundle": "Load Existing Bundle", "recompute": "Run Fresh Analysis"},
+        value="bundle",
+        label="Mode",
+    )
+    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
+    bundle_path = mo.ui.text(value=latest_bundle_path_str, label="Bundle Path (optional)")
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
         value=default_start_date,
@@ -97,19 +125,68 @@ def _(default_db_path, initial_range, mo, pd):
         label="Min Constituents / Day",
     )
 
-    mo.vstack(
+    recompute_controls = mo.vstack(
         [
             db_path,
             mo.hstack([start_date, end_date]),
             mo.hstack([lookback_years, min_constituents_per_day]),
         ]
     )
-    return db_path, end_date, lookback_years, min_constituents_per_day, start_date
+    mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "### Research Runner",
+                        "",
+                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
+                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
+                        "- Canonical runner: `apps/bt/scripts/research/run_prime_ex_topix500_sma_ratio_rank_future_close.py`",
+                    ]
+                )
+            ),
+            mo.hstack([mode, run_id]),
+            bundle_path,
+            recompute_controls if mode.value == "recompute" else mo.md(""),
+        ]
+    )
+    return (
+        bundle_path,
+        db_path,
+        end_date,
+        lookback_years,
+        min_constituents_per_day,
+        mode,
+        run_id,
+        start_date,
+    )
 
 
 @app.cell
-def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
+def _(
+    bundle_path,
+    db_path,
+    end_date,
+    get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id,
+    lookback_years,
+    min_constituents_per_day,
+    mode,
+    run_id,
+    start_date,
+):
+    run_id_value = run_id.value.strip()
+    bundle_path_value = bundle_path.value.strip()
+    resolved_bundle_path = bundle_path_value
+    if not resolved_bundle_path and run_id_value:
+        resolved_bundle_path = str(
+            get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id(
+                run_id_value
+            )
+        )
     parsed_inputs = {
+        "mode": mode.value,
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolved_bundle_path or None,
         "selected_db_path": db_path.value.strip(),
         "selected_start": start_date.value.strip() or None,
         "selected_end": end_date.value.strip() or None,
@@ -120,20 +197,38 @@ def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
 
 
 @app.cell
-def _(parsed_inputs, run_prime_ex_topix500_sma_ratio_rank_future_close_research):
+def _(
+    load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle,
+    load_research_bundle_info,
+    parsed_inputs,
+    run_prime_ex_topix500_sma_ratio_rank_future_close_research,
+):
     try:
-        result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            lookback_years=parsed_inputs["lookback_years"],
-            min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
-        )
+        if parsed_inputs["mode"] == "bundle":
+            selected_bundle_path = parsed_inputs["selected_bundle_path"]
+            if not selected_bundle_path:
+                raise ValueError(
+                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
+                )
+            bundle_info = load_research_bundle_info(selected_bundle_path)
+            result = load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
+                selected_bundle_path
+            )
+        else:
+            bundle_info = None
+            result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
+                parsed_inputs["selected_db_path"],
+                start_date=parsed_inputs["selected_start"],
+                end_date=parsed_inputs["selected_end"],
+                lookback_years=parsed_inputs["lookback_years"],
+                min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
+            )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -167,7 +262,7 @@ def _(HORIZON_ORDER, METRIC_ORDER, error_message, mo):
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(bundle_info, error_message, mo, parsed_inputs, result):
     summary_view = mo.md("")
     if not error_message and result is not None:
         summary_view = mo.md(
@@ -175,6 +270,16 @@ def _(error_message, mo, parsed_inputs, result):
                 [
                     "## PRIME ex TOPIX500 SMA Ratio Rank / Future Close Research",
                     "",
+                    f"- Mode: **{parsed_inputs['mode']}**",
+                    *(
+                        [
+                            f"- Bundle run id: **{bundle_info.run_id}**",
+                            f"- Bundle created at: **{bundle_info.created_at}**",
+                            f"- Bundle path: **{bundle_info.bundle_dir}**",
+                        ]
+                        if bundle_info is not None
+                        else []
+                    ),
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Universe: **{result.universe_label}**",

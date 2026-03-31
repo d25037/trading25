@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from tests.unit.analytics_market_research_db import (
     build_prime_ex_topix500_research_market_db,
 )
 from src.domains.analytics.prime_ex_topix500_sma_ratio_rank_future_close import (
+    PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+    get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id,
     get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range,
+    get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path,
+    load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle,
     run_prime_ex_topix500_sma_ratio_rank_future_close_research,
+    write_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle,
 )
 
 
@@ -68,3 +74,43 @@ def test_prime_ex_topix500_excludes_topix500_and_standard_codes(
         "1011",
         "1012",
     ]
+
+
+def test_prime_ex_topix500_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=12,
+    )
+
+    bundle = write_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_181500_testabcd",
+    )
+    reloaded = load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID
+    assert (
+        get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.universe_key == result.universe_key
+    pd.testing.assert_frame_equal(
+        reloaded.q10_low_hypothesis_df,
+        result.q10_low_hypothesis_df,
+        check_dtype=False,
+    )

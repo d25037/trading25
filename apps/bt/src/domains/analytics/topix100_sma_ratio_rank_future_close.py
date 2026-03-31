@@ -8,10 +8,20 @@ research helpers to neighboring internal modules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
     _open_analysis_connection,
@@ -79,9 +89,24 @@ __all__ = [
     "Topix100SmaRatioRankFutureCloseResearchResult",
     "get_topix100_sma_ratio_rank_future_close_available_date_range",
     "get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range",
+    "get_topix100_sma_ratio_rank_future_close_latest_bundle_path",
+    "get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id",
+    "write_topix100_sma_ratio_rank_future_close_research_bundle",
+    "load_topix100_sma_ratio_rank_future_close_research_bundle",
+    "get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path",
+    "get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id",
+    "write_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle",
+    "load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle",
     "run_topix100_sma_ratio_rank_future_close_research",
     "run_prime_ex_topix500_sma_ratio_rank_future_close_research",
 ]
+
+TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/topix100-sma-ratio-rank-future-close"
+)
+PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/prime-ex-topix500-sma-ratio-rank-future-close"
+)
 
 
 @dataclass(frozen=True)
@@ -571,3 +596,282 @@ def run_prime_ex_topix500_sma_ratio_rank_future_close_research(
         lookback_years=lookback_years,
         min_constituents_per_day=min_constituents_per_day,
     )
+
+
+def write_topix100_sma_ratio_rank_future_close_research_bundle(
+    result: Topix100SmaRatioRankFutureCloseResearchResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    return _write_sma_ratio_rank_future_close_research_bundle(
+        result,
+        experiment_id=TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def write_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
+    result: Topix100SmaRatioRankFutureCloseResearchResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    return _write_sma_ratio_rank_future_close_research_bundle(
+        result,
+        experiment_id=PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_topix100_sma_ratio_rank_future_close_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100SmaRatioRankFutureCloseResearchResult:
+    return _load_sma_ratio_rank_future_close_research_bundle(bundle_path)
+
+
+def load_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100SmaRatioRankFutureCloseResearchResult:
+    return _load_sma_ratio_rank_future_close_research_bundle(bundle_path)
+
+
+def get_topix100_sma_ratio_rank_future_close_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_prime_ex_topix500_sma_ratio_rank_future_close_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def get_prime_ex_topix500_sma_ratio_rank_future_close_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        PRIME_EX_TOPIX500_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _write_sma_ratio_rank_future_close_research_bundle(
+    result: Topix100SmaRatioRankFutureCloseResearchResult,
+    *,
+    experiment_id: str,
+    output_root: str | Path | None,
+    run_id: str | None,
+    notes: str | None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_sma_ratio_rank_research_result_payload(result)
+    return write_research_bundle(
+        experiment_id=experiment_id,
+        module=__name__,
+        function="_run_sma_ratio_rank_future_close_research",
+        params={
+            "universe_key": result.universe_key,
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "lookback_years": result.lookback_years,
+            "min_constituents_per_day": result.min_constituents_per_day,
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_sma_ratio_rank_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def _load_sma_ratio_rank_future_close_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100SmaRatioRankFutureCloseResearchResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_sma_ratio_rank_research_result_from_payload(
+        dict(info.result_metadata),
+        tables,
+    )
+
+
+def _split_sma_ratio_rank_research_result_payload(
+    result: Topix100SmaRatioRankFutureCloseResearchResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata: dict[str, Any] = {}
+    tables: dict[str, pd.DataFrame] = {}
+    for field in fields(result):
+        value = getattr(result, field.name)
+        if isinstance(value, pd.DataFrame):
+            tables[field.name] = value
+        else:
+            metadata[field.name] = value
+    return metadata, tables
+
+
+def _build_sma_ratio_rank_research_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> Topix100SmaRatioRankFutureCloseResearchResult:
+    return Topix100SmaRatioRankFutureCloseResearchResult(
+        db_path=str(metadata["db_path"]),
+        source_mode=cast(SourceMode, metadata["source_mode"]),
+        source_detail=str(metadata["source_detail"]),
+        universe_key=cast(UniverseKey, metadata["universe_key"]),
+        universe_label=str(metadata["universe_label"]),
+        available_start_date=metadata.get("available_start_date"),
+        available_end_date=metadata.get("available_end_date"),
+        default_start_date=metadata.get("default_start_date"),
+        analysis_start_date=metadata.get("analysis_start_date"),
+        analysis_end_date=metadata.get("analysis_end_date"),
+        lookback_years=int(metadata["lookback_years"]),
+        min_constituents_per_day=int(metadata["min_constituents_per_day"]),
+        universe_constituent_count=int(metadata["universe_constituent_count"]),
+        topix100_constituent_count=int(metadata["topix100_constituent_count"]),
+        stock_day_count=int(metadata["stock_day_count"]),
+        ranked_event_count=int(metadata["ranked_event_count"]),
+        valid_date_count=int(metadata["valid_date_count"]),
+        discovery_end_date=str(metadata["discovery_end_date"]),
+        validation_start_date=str(metadata["validation_start_date"]),
+        event_panel_df=tables["event_panel_df"],
+        ranked_panel_df=tables["ranked_panel_df"],
+        ranking_feature_summary_df=tables["ranking_feature_summary_df"],
+        decile_future_summary_df=tables["decile_future_summary_df"],
+        daily_group_means_df=tables["daily_group_means_df"],
+        global_significance_df=tables["global_significance_df"],
+        pairwise_significance_df=tables["pairwise_significance_df"],
+        extreme_vs_middle_summary_df=tables["extreme_vs_middle_summary_df"],
+        extreme_vs_middle_daily_means_df=tables["extreme_vs_middle_daily_means_df"],
+        extreme_vs_middle_significance_df=tables["extreme_vs_middle_significance_df"],
+        nested_volume_split_panel_df=tables["nested_volume_split_panel_df"],
+        nested_volume_split_summary_df=tables["nested_volume_split_summary_df"],
+        nested_volume_split_daily_means_df=tables["nested_volume_split_daily_means_df"],
+        nested_volume_split_global_significance_df=tables[
+            "nested_volume_split_global_significance_df"
+        ],
+        nested_volume_split_pairwise_significance_df=tables[
+            "nested_volume_split_pairwise_significance_df"
+        ],
+        nested_volume_split_interaction_df=tables["nested_volume_split_interaction_df"],
+        q1_q10_volume_split_panel_df=tables["q1_q10_volume_split_panel_df"],
+        q1_q10_volume_split_summary_df=tables["q1_q10_volume_split_summary_df"],
+        q1_q10_volume_split_daily_means_df=tables["q1_q10_volume_split_daily_means_df"],
+        q1_q10_volume_split_global_significance_df=tables[
+            "q1_q10_volume_split_global_significance_df"
+        ],
+        q1_q10_volume_split_pairwise_significance_df=tables[
+            "q1_q10_volume_split_pairwise_significance_df"
+        ],
+        q1_q10_volume_split_interaction_df=tables["q1_q10_volume_split_interaction_df"],
+        q10_middle_volume_split_panel_df=tables["q10_middle_volume_split_panel_df"],
+        q10_middle_volume_split_summary_df=tables["q10_middle_volume_split_summary_df"],
+        q10_middle_volume_split_daily_means_df=tables[
+            "q10_middle_volume_split_daily_means_df"
+        ],
+        q10_middle_volume_split_pairwise_significance_df=tables[
+            "q10_middle_volume_split_pairwise_significance_df"
+        ],
+        q10_low_hypothesis_df=tables["q10_low_hypothesis_df"],
+        feature_selection_df=tables["feature_selection_df"],
+        selected_feature_df=tables["selected_feature_df"],
+        composite_candidate_df=tables["composite_candidate_df"],
+        selected_composite_df=tables["selected_composite_df"],
+        selected_composite_ranking_summary_df=tables[
+            "selected_composite_ranking_summary_df"
+        ],
+        selected_composite_future_summary_df=tables[
+            "selected_composite_future_summary_df"
+        ],
+        selected_composite_daily_group_means_df=tables[
+            "selected_composite_daily_group_means_df"
+        ],
+        selected_composite_global_significance_df=tables[
+            "selected_composite_global_significance_df"
+        ],
+        selected_composite_pairwise_significance_df=tables[
+            "selected_composite_pairwise_significance_df"
+        ],
+    )
+
+
+def _build_sma_ratio_rank_research_bundle_summary_markdown(
+    result: Topix100SmaRatioRankFutureCloseResearchResult,
+) -> str:
+    summary_lines = [
+        f"# {result.universe_label} SMA Ratio Rank / Future Close",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- Universe: `{result.universe_label}`",
+        f"- Constituents: `{result.universe_constituent_count}`",
+        f"- Stock-day rows: `{result.stock_day_count}`",
+        f"- Ranked events: `{result.ranked_event_count}`",
+        f"- Valid dates: `{result.valid_date_count}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    strongest_rows = result.q10_low_hypothesis_df[
+        (result.q10_low_hypothesis_df["metric_key"] == "future_return")
+        & (result.q10_low_hypothesis_df["horizon_key"] == "t_plus_10")
+        & (result.q10_low_hypothesis_df["hypothesis_label"] == "Q10 Low vs Middle High")
+        & result.q10_low_hypothesis_df["mean_difference"].notna()
+    ].copy()
+    if strongest_rows.empty:
+        summary_lines.append("- No `Q10 Low vs Middle High` rows were available in this run.")
+    else:
+        strongest_row = strongest_rows.sort_values("mean_difference", ascending=False).iloc[0]
+        summary_lines.append(
+            "- Strongest `Q10 Low vs Middle High` read on `t_plus_10 / future_return`: "
+            f"`{strongest_row['ranking_feature']}` at "
+            f"`{float(strongest_row['mean_difference']):+.4f}%`."
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_sma_ratio_rank_research_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)

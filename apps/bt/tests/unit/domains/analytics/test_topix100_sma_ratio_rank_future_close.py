@@ -8,8 +8,13 @@ import pytest
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
     RANKING_FEATURE_ORDER,
+    TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID,
+    get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id,
     get_topix100_sma_ratio_rank_future_close_available_date_range,
+    get_topix100_sma_ratio_rank_future_close_latest_bundle_path,
+    load_topix100_sma_ratio_rank_future_close_research_bundle,
     run_topix100_sma_ratio_rank_future_close_research,
+    write_topix100_sma_ratio_rank_future_close_research_bundle,
 )
 
 
@@ -269,3 +274,50 @@ def test_significance_tables_detect_ratio_rank_difference(
     assert pairwise_row["mean_difference"] > 0
     assert pairwise_row["paired_t_p_value_holm"] < 0.05
     assert pairwise_row["wilcoxon_p_value_holm"] < 0.05
+
+
+def test_sma_ratio_research_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_topix100_sma_ratio_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+    )
+
+    bundle = write_topix100_sma_ratio_rank_future_close_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_181000_testabcd",
+    )
+    reloaded = load_topix100_sma_ratio_rank_future_close_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == TOPIX100_SMA_RATIO_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix100_sma_ratio_rank_future_close_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.analysis_start_date == result.analysis_start_date
+    assert reloaded.analysis_end_date == result.analysis_end_date
+    pd.testing.assert_frame_equal(
+        reloaded.decile_future_summary_df,
+        result.decile_future_summary_df,
+        check_dtype=False,
+    )
+    pd.testing.assert_frame_equal(
+        reloaded.selected_composite_df,
+        result.selected_composite_df,
+        check_dtype=False,
+    )

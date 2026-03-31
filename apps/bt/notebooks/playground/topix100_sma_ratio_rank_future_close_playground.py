@@ -38,12 +38,16 @@ def _(Path, sys):
     if str(_project_root) not in sys.path:
         sys.path.insert(0, str(_project_root))
 
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.shared.config.settings import get_settings
     from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
         DECILE_ORDER,
         HORIZON_ORDER,
         RANKING_FEATURE_ORDER,
+        get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id,
         get_topix100_sma_ratio_rank_future_close_available_date_range,
+        get_topix100_sma_ratio_rank_future_close_latest_bundle_path,
+        load_topix100_sma_ratio_rank_future_close_research_bundle,
         run_topix100_sma_ratio_rank_future_close_research,
     )
     from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm import (
@@ -58,10 +62,25 @@ def _(Path, sys):
         RANKING_FEATURE_ORDER,
         default_db_path,
         format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
+        get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id,
         get_topix100_sma_ratio_rank_future_close_available_date_range,
+        get_topix100_sma_ratio_rank_future_close_latest_bundle_path,
+        load_research_bundle_info,
+        load_topix100_sma_ratio_rank_future_close_research_bundle,
         run_topix100_sma_ratio_rank_future_close_lightgbm_research,
         run_topix100_sma_ratio_rank_future_close_research,
     )
+
+
+@app.cell
+def _(get_topix100_sma_ratio_rank_future_close_latest_bundle_path):
+    try:
+        latest_bundle_path = get_topix100_sma_ratio_rank_future_close_latest_bundle_path()
+    except Exception:
+        latest_bundle_path = None
+    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
+    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
@@ -79,7 +98,7 @@ def _(
 
 
 @app.cell
-def _(default_db_path, initial_range, mo, pd):
+def _(default_db_path, initial_range, latest_bundle_path_str, latest_run_id, mo, pd):
     _available_start_date, _available_end_date = initial_range
     _default_start_date = _available_start_date or ""
     if _available_end_date:
@@ -93,6 +112,21 @@ def _(default_db_path, initial_range, mo, pd):
         else:
             _default_start_date = _candidate
 
+    mode = mo.ui.dropdown(
+        options={"bundle": "Load Existing Bundle", "recompute": "Run Fresh Analysis"},
+        value="bundle",
+        label="Mode",
+    )
+    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
+    bundle_path = mo.ui.text(
+        value=latest_bundle_path_str,
+        label="Bundle Path (optional)",
+    )
+    run_lightgbm = mo.ui.dropdown(
+        options={"off": "Skip LightGBM", "on": "Run LightGBM"},
+        value="off",
+        label="LightGBM",
+    )
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
         value=_default_start_date,
@@ -115,49 +149,114 @@ def _(default_db_path, initial_range, mo, pd):
         label="Min Constituents / Day",
     )
 
-    mo.vstack(
+    recompute_controls = mo.vstack(
         [
             db_path,
             mo.hstack([start_date, end_date]),
             mo.hstack([lookback_years, min_constituents_per_day]),
         ]
     )
+    mo.vstack(
+        [
+            mo.md(
+                "\n".join(
+                    [
+                        "### Research Runner",
+                        "",
+                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
+                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
+                        "- LightGBM is opt-in and stays off by default.",
+                        "- Canonical runner: `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close.py`",
+                    ]
+                )
+            ),
+            mo.hstack([mode, run_id, run_lightgbm]),
+            bundle_path,
+            recompute_controls if mode.value == "recompute" else mo.md(""),
+        ]
+    )
     return (
+        bundle_path,
         db_path,
         end_date,
         lookback_years,
         min_constituents_per_day,
+        mode,
+        run_id,
+        run_lightgbm,
         start_date,
     )
 
 
 @app.cell
-def _(db_path, end_date, lookback_years, min_constituents_per_day, start_date):
+def _(
+    bundle_path,
+    db_path,
+    end_date,
+    get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id,
+    lookback_years,
+    min_constituents_per_day,
+    mode,
+    run_id,
+    run_lightgbm,
+    start_date,
+):
+    run_id_value = run_id.value.strip()
+    bundle_path_value = bundle_path.value.strip()
+    resolved_bundle_path = bundle_path_value
+    if not resolved_bundle_path and run_id_value:
+        resolved_bundle_path = str(
+            get_topix100_sma_ratio_rank_future_close_bundle_path_for_run_id(
+                run_id_value
+            )
+        )
     parsed_inputs = {
+        "mode": mode.value,
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolved_bundle_path or None,
         "selected_db_path": db_path.value.strip(),
         "selected_start": start_date.value.strip() or None,
         "selected_end": end_date.value.strip() or None,
         "lookback_years": int(lookback_years.value),
         "min_constituents_per_day": int(min_constituents_per_day.value),
+        "run_lightgbm": run_lightgbm.value == "on",
     }
     return (parsed_inputs,)
 
 
 @app.cell
-def _(parsed_inputs, run_topix100_sma_ratio_rank_future_close_research):
+def _(
+    load_research_bundle_info,
+    load_topix100_sma_ratio_rank_future_close_research_bundle,
+    parsed_inputs,
+    run_topix100_sma_ratio_rank_future_close_research,
+):
     try:
-        result = run_topix100_sma_ratio_rank_future_close_research(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            lookback_years=parsed_inputs["lookback_years"],
-            min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
-        )
+        if parsed_inputs["mode"] == "bundle":
+            selected_bundle_path = parsed_inputs["selected_bundle_path"]
+            if not selected_bundle_path:
+                raise ValueError(
+                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
+                )
+            bundle_info = load_research_bundle_info(selected_bundle_path)
+            result = load_topix100_sma_ratio_rank_future_close_research_bundle(
+                selected_bundle_path
+            )
+        else:
+            bundle_info = None
+            result = run_topix100_sma_ratio_rank_future_close_research(
+                parsed_inputs["selected_db_path"],
+                start_date=parsed_inputs["selected_start"],
+                end_date=parsed_inputs["selected_end"],
+                lookback_years=parsed_inputs["lookback_years"],
+                min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
+            )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -172,10 +271,11 @@ def _(error_message, mo):
 @app.cell
 def _(
     format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
+    parsed_inputs,
     result,
     run_topix100_sma_ratio_rank_future_close_lightgbm_research,
 ):
-    if result is None:
+    if result is None or not parsed_inputs["run_lightgbm"]:
         lightgbm_result = None
         lightgbm_error_message = None
     else:
@@ -242,7 +342,7 @@ def _(DECILE_ORDER, HORIZON_ORDER, RANKING_FEATURE_ORDER, error_message, mo, res
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(bundle_info, error_message, mo, parsed_inputs, result):
     _summary_view = mo.md("")
     if not error_message and result is not None:
         _summary_view = mo.md(
@@ -250,6 +350,16 @@ def _(error_message, mo, parsed_inputs, result):
                 [
                     "## TOPIX100 SMA Ratio Rank / Future Close Research",
                     "",
+                    f"- Mode: **{parsed_inputs['mode']}**",
+                    *(
+                        [
+                            f"- Bundle run id: **{bundle_info.run_id}**",
+                            f"- Bundle created at: **{bundle_info.created_at}**",
+                            f"- Bundle path: **{bundle_info.bundle_dir}**",
+                        ]
+                        if bundle_info is not None
+                        else []
+                    ),
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
@@ -260,6 +370,7 @@ def _(error_message, mo, parsed_inputs, result):
                     f"- Ranked events (`stock-day x 6 features`): **{result.ranked_event_count}**",
                     f"- Valid dates: **{result.valid_date_count}**",
                     f"- Discovery / validation split: **<= {result.discovery_end_date} / >= {result.validation_start_date}**",
+                    f"- LightGBM: **{'enabled' if parsed_inputs['run_lightgbm'] else 'disabled'}**",
                     "",
                     "`Q1` is the highest SMA-ratio decile and `Q10` is the lowest for the selected ranking feature.",
                     "`future_close` is provided as requested, but `future_return` is the cleaner interpretation.",

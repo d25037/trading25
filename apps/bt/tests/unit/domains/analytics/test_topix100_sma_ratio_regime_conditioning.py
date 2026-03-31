@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
 from src.domains.analytics.topix100_sma_ratio_regime_conditioning import (
+    TOPIX100_SMA_RATIO_REGIME_RESEARCH_EXPERIMENT_ID,
+    get_topix100_sma_ratio_regime_conditioning_bundle_path_for_run_id,
+    get_topix100_sma_ratio_regime_conditioning_latest_bundle_path,
+    load_topix100_sma_ratio_regime_conditioning_research_bundle,
     run_topix100_sma_ratio_regime_conditioning_research,
+    write_topix100_sma_ratio_regime_conditioning_research_bundle,
 )
 
 
@@ -75,3 +81,47 @@ def test_regime_conditioning_hypothesis_table_contains_expected_labels(
         & (result.regime_group_hypothesis_df["metric_key"] == "future_return")
     ]
     assert set(collapsed["hypothesis_label"]) == set(hypothesis["hypothesis_label"])
+
+
+def test_regime_conditioning_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_topix100_sma_ratio_regime_conditioning_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+    )
+
+    bundle = write_topix100_sma_ratio_regime_conditioning_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_182000_testabcd",
+    )
+    reloaded = load_topix100_sma_ratio_regime_conditioning_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == TOPIX100_SMA_RATIO_REGIME_RESEARCH_EXPERIMENT_ID
+    assert (
+        get_topix100_sma_ratio_regime_conditioning_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix100_sma_ratio_regime_conditioning_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    pd.testing.assert_frame_equal(
+        reloaded.regime_summary_df,
+        result.regime_summary_df,
+        check_dtype=False,
+    )
+    pd.testing.assert_frame_equal(
+        reloaded.regime_group_hypothesis_df,
+        result.regime_group_hypothesis_df,
+        check_dtype=False,
+    )
