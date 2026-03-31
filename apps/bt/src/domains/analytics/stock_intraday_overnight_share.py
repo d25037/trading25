@@ -19,6 +19,15 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_research_bundle_info,
+    load_research_bundle_tables,
+    write_research_bundle,
+)
+
 StockGroup = Literal[
     "TOPIX100",
     "TOPIX500",
@@ -81,6 +90,9 @@ _DAILY_GROUP_SHARE_COLUMNS: tuple[str, ...] = (
     "total_abs_log_return_sum",
     "intraday_share",
     "overnight_share",
+)
+STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/stock-intraday-overnight-share"
 )
 
 
@@ -779,3 +791,155 @@ def run_stock_intraday_overnight_share_analysis(
         group_summary_df=group_summary_df,
         daily_group_shares_df=daily_group_shares_df,
     )
+
+
+def write_stock_intraday_overnight_share_research_bundle(
+    result: StockIntradayOvernightShareResult,
+    *,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_result_payload(result)
+    return write_research_bundle(
+        experiment_id=STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_stock_intraday_overnight_share_analysis",
+        params={
+            "start_date": result.analysis_start_date,
+            "end_date": result.analysis_end_date,
+            "selected_groups": list(result.selected_groups),
+            "min_session_count": result.min_session_count,
+        },
+        db_path=result.db_path,
+        analysis_start_date=result.analysis_start_date,
+        analysis_end_date=result.analysis_end_date,
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=_build_research_bundle_summary_markdown(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_stock_intraday_overnight_share_research_bundle(
+    bundle_path: str | Path,
+) -> StockIntradayOvernightShareResult:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path)
+    return _build_result_from_payload(dict(info.result_metadata), tables)
+
+
+def get_stock_intraday_overnight_share_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_stock_intraday_overnight_share_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
+    )
+
+
+def _split_result_payload(
+    result: StockIntradayOvernightShareResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata = {
+        "db_path": result.db_path,
+        "source_mode": result.source_mode,
+        "source_detail": result.source_detail,
+        "available_start_date": result.available_start_date,
+        "available_end_date": result.available_end_date,
+        "analysis_start_date": result.analysis_start_date,
+        "analysis_end_date": result.analysis_end_date,
+        "selected_groups": list(result.selected_groups),
+        "min_session_count": result.min_session_count,
+    }
+    tables = {
+        "stock_metrics_df": result.stock_metrics_df,
+        "group_summary_df": result.group_summary_df,
+        "daily_group_shares_df": result.daily_group_shares_df,
+    }
+    return metadata, tables
+
+
+def _build_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> StockIntradayOvernightShareResult:
+    return StockIntradayOvernightShareResult(
+        db_path=str(metadata["db_path"]),
+        source_mode=cast(SourceMode, metadata["source_mode"]),
+        source_detail=str(metadata["source_detail"]),
+        available_start_date=cast(str | None, metadata.get("available_start_date")),
+        available_end_date=cast(str | None, metadata.get("available_end_date")),
+        analysis_start_date=cast(str | None, metadata.get("analysis_start_date")),
+        analysis_end_date=cast(str | None, metadata.get("analysis_end_date")),
+        selected_groups=cast(
+            tuple[StockGroup, ...],
+            tuple(str(value) for value in metadata["selected_groups"]),
+        ),
+        min_session_count=int(metadata["min_session_count"]),
+        stock_metrics_df=tables["stock_metrics_df"],
+        group_summary_df=tables["group_summary_df"],
+        daily_group_shares_df=tables["daily_group_shares_df"],
+    )
+
+
+def _build_research_bundle_summary_markdown(
+    result: StockIntradayOvernightShareResult,
+) -> str:
+    summary_lines = [
+        "# Stock Intraday / Overnight Share",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{result.source_mode}`",
+        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
+        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
+        f"- Selected groups: `{', '.join(result.selected_groups)}`",
+        f"- Minimum sessions per stock: `{result.min_session_count}`",
+        f"- Included stock rows: `{len(result.stock_metrics_df)}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+    strongest = result.group_summary_df[
+        result.group_summary_df["mean_overnight_share"].notna()
+    ].copy()
+    if strongest.empty:
+        summary_lines.append("- Group summary was empty after filtering.")
+    else:
+        strongest_row = strongest.sort_values(
+            "mean_overnight_share",
+            ascending=False,
+        ).iloc[0]
+        summary_lines.append(
+            "- Highest mean overnight share group was "
+            f"`{strongest_row['stock_group']}` at "
+            f"`{float(strongest_row['mean_overnight_share']) * 100:.2f}%`."
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            *[
+                f"- `{table_name}`"
+                for table_name in _split_result_payload(result)[1].keys()
+            ],
+        ]
+    )
+    return "\n".join(summary_lines)
