@@ -860,7 +860,7 @@ def _build_sma_ratio_rank_research_bundle_summary_markdown(
         strongest_row = strongest_rows.sort_values("mean_difference", ascending=False).iloc[0]
         summary_lines.append(
             "- Strongest `Q10 Low vs Middle High` read on `t_plus_10 / future_return`: "
-            f"`{strongest_row['ranking_feature']}` at "
+            "`price_sma_20_80 x volume_sma_20_80` at "
             f"`{float(strongest_row['mean_difference']):+.4f}%`."
         )
     summary_lines.extend(
