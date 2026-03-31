@@ -85,6 +85,8 @@ def build_topix100_research_market_db(
     *,
     include_regimes: bool = False,
     include_vi: bool = False,
+    start_date: str = "2023-01-02",
+    periods: int = 220,
 ) -> str:
     conn = duckdb.connect(str(db_path))
     _create_stock_tables(conn)
@@ -112,7 +114,7 @@ def build_topix100_research_market_db(
         stocks,
     )
 
-    dates = pd.bdate_range("2023-01-02", periods=220)
+    dates = pd.bdate_range(start_date, periods=periods)
     specs = {
         "1111": (1000.0, 0.0045, 10000.0, 0.0030),
         "2222": (900.0, 0.0035, 9000.0, 0.0025),

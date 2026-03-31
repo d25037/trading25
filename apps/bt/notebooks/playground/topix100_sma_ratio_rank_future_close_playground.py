@@ -46,6 +46,10 @@ def _(Path, sys):
         get_topix100_sma_ratio_rank_future_close_available_date_range,
         run_topix100_sma_ratio_rank_future_close_research,
     )
+    from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm import (
+        format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
+        run_topix100_sma_ratio_rank_future_close_lightgbm_research,
+    )
 
     default_db_path = get_settings().market_db_path
     return (
@@ -53,7 +57,9 @@ def _(Path, sys):
         HORIZON_ORDER,
         RANKING_FEATURE_ORDER,
         default_db_path,
+        format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
         get_topix100_sma_ratio_rank_future_close_available_date_range,
+        run_topix100_sma_ratio_rank_future_close_lightgbm_research,
         run_topix100_sma_ratio_rank_future_close_research,
     )
 
@@ -160,6 +166,49 @@ def _(error_message, mo):
     if error_message:
         _error_view = mo.md(f"## Input Error\n\n`{error_message}`")
     _error_view
+    return
+
+
+@app.cell
+def _(
+    format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
+    result,
+    run_topix100_sma_ratio_rank_future_close_lightgbm_research,
+):
+    if result is None:
+        lightgbm_result = None
+        lightgbm_error_message = None
+    else:
+        try:
+            lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
+                result
+            )
+            lightgbm_error_message = None
+        except Exception as exc:
+            lightgbm_result = None
+            lightgbm_error_message = (
+                format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error(
+                    exc
+                )
+            )
+    return lightgbm_error_message, lightgbm_result
+
+
+@app.cell
+def _(error_message, lightgbm_error_message, mo, result):
+    _note = mo.md("")
+    if not error_message and result is not None and lightgbm_error_message:
+        _note = mo.md(
+            "\n".join(
+                [
+                    "## LightGBM Research Note",
+                    "",
+                    f"- `{lightgbm_error_message}`",
+                    "- Baseline notebook sections remain available below.",
+                ]
+            )
+        )
+    _note
     return
 
 
@@ -393,6 +442,231 @@ def _(error_message, mo, plt, result, selection_horizon_view):
             _fig.tight_layout()
             _chart = _fig
     _chart
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    lightgbm_error_message,
+    lightgbm_result,
+    mo,
+    selection_horizon_view,
+):
+    _view = mo.md("")
+    if (
+        not error_message
+        and not lightgbm_error_message
+        and lightgbm_result is not None
+    ):
+        _walkforward = lightgbm_result.walkforward
+        _config = _walkforward.split_config_df.copy()
+        _model = _walkforward.selected_model_df[
+            _walkforward.selected_model_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _gate = _walkforward.exploratory_gate_df[
+            _walkforward.exploratory_gate_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _comparison = _walkforward.comparison_summary_df[
+            _walkforward.comparison_summary_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("## Walk-Forward LightGBM vs Baseline"),
+                mo.md("### Split Config"),
+                mo.Html(_config.round(6).to_html(index=False)),
+                mo.md("### LightGBM OOS Model Summary"),
+                mo.Html(_model.round(6).to_html(index=False)),
+                mo.md("### Exploratory Gate"),
+                mo.Html(_gate.round(6).to_html(index=False)),
+                mo.md("### Baseline vs LightGBM OOS"),
+                mo.Html(_comparison.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    lightgbm_error_message,
+    lightgbm_result,
+    mo,
+    selection_horizon_view,
+):
+    _view = mo.md("")
+    if (
+        not error_message
+        and not lightgbm_error_message
+        and lightgbm_result is not None
+    ):
+        _walkforward = lightgbm_result.walkforward
+        _coverage = _walkforward.split_coverage_df[
+            _walkforward.split_coverage_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _selected_features = _walkforward.baseline_selected_feature_df[
+            _walkforward.baseline_selected_feature_df["horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _selected_composites = _walkforward.baseline_selected_composite_df[
+            _walkforward.baseline_selected_composite_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _view = mo.vstack(
+            [
+                mo.md("### Split Coverage"),
+                mo.Html(_coverage.round(6).to_html(index=False)),
+                mo.md("### Split-Selected Baseline Features"),
+                mo.Html(_selected_features.round(6).to_html(index=False)),
+                mo.md("### Split-Selected Baseline Composite"),
+                mo.Html(_selected_composites.round(6).to_html(index=False)),
+            ]
+        )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    lightgbm_error_message,
+    lightgbm_result,
+    metric_view,
+    mo,
+    selection_horizon_view,
+):
+    _view = mo.md("")
+    if (
+        not error_message
+        and not lightgbm_error_message
+        and lightgbm_result is not None
+    ):
+        _walkforward = lightgbm_result.walkforward
+        _selected = _walkforward.selected_model_df[
+            _walkforward.selected_model_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        if not _selected.empty:
+            _ranking_feature = _selected.iloc[0]["ranking_feature"]
+            _ranking_summary = _walkforward.ranking_feature_summary_df[
+                _walkforward.ranking_feature_summary_df["ranking_feature"]
+                == _ranking_feature
+            ].copy()
+            _future_summary = _walkforward.decile_future_summary_df[
+                _walkforward.decile_future_summary_df["ranking_feature"]
+                == _ranking_feature
+            ].copy()
+            _view = mo.vstack(
+                [
+                    mo.md("### Walk-Forward LightGBM Deciles"),
+                    mo.Html(_ranking_summary.round(6).to_html(index=False)),
+                    mo.md("### Walk-Forward LightGBM Future Summary"),
+                    mo.Html(_future_summary.round(6).to_html(index=False)),
+                ]
+            )
+    _view
+    return
+
+
+@app.cell
+def _(
+    error_message,
+    lightgbm_error_message,
+    lightgbm_result,
+    metric_view,
+    mo,
+    plt,
+    selection_horizon_view,
+):
+    _view = mo.md("")
+    if (
+        not error_message
+        and not lightgbm_error_message
+        and lightgbm_result is not None
+    ):
+        _walkforward = lightgbm_result.walkforward
+        _selected = _walkforward.selected_model_df[
+            _walkforward.selected_model_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _diagnostic_block = mo.md("")
+        if not _selected.empty:
+            _ranking_feature = _selected.iloc[0]["ranking_feature"]
+            _global = _walkforward.global_significance_df[
+                (_walkforward.global_significance_df["ranking_feature"] == _ranking_feature)
+                & (_walkforward.global_significance_df["metric_key"] == metric_view.value)
+                & (_walkforward.global_significance_df["horizon_key"] == selection_horizon_view.value)
+            ].copy()
+            _pairwise = _walkforward.pairwise_significance_df[
+                (_walkforward.pairwise_significance_df["ranking_feature"] == _ranking_feature)
+                & (_walkforward.pairwise_significance_df["metric_key"] == metric_view.value)
+                & (_walkforward.pairwise_significance_df["horizon_key"] == selection_horizon_view.value)
+                & (_walkforward.pairwise_significance_df["left_decile"] == "Q1")
+                & (_walkforward.pairwise_significance_df["right_decile"] == "Q10")
+            ].copy()
+            _diagnostic_parts = [
+                mo.md("### Walk-Forward LightGBM Significance"),
+                mo.Html(_global.round(6).to_html(index=False)),
+                mo.md("### Walk-Forward LightGBM Pairwise (Q1 vs Q10)"),
+                mo.Html(_pairwise.round(6).to_html(index=False)),
+            ]
+            if lightgbm_result.diagnostic is not None:
+                _fixed_comparison = lightgbm_result.diagnostic.comparison_summary_df[
+                    lightgbm_result.diagnostic.comparison_summary_df[
+                        "selected_horizon_key"
+                    ]
+                    == selection_horizon_view.value
+                ].copy()
+                _diagnostic_parts.extend(
+                    [
+                        mo.md("### Fixed-Split Diagnostic"),
+                        mo.Html(_fixed_comparison.round(6).to_html(index=False)),
+                    ]
+                )
+            elif lightgbm_result.diagnostic_error_message:
+                _diagnostic_parts.extend(
+                    [
+                        mo.md("### Fixed-Split Diagnostic"),
+                        mo.md(f"- `{lightgbm_result.diagnostic_error_message}`"),
+                    ]
+                )
+            _diagnostic_block = mo.vstack(_diagnostic_parts)
+        _split_spread = _walkforward.split_spread_df[
+            _walkforward.split_spread_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _importance = _walkforward.feature_importance_df[
+            _walkforward.feature_importance_df["selected_horizon_key"]
+            == selection_horizon_view.value
+        ].copy()
+        _fig, _ax = plt.subplots(figsize=(10, 4.5))
+        _ax.barh(
+            _importance["feature_label"].tolist()[::-1],
+            _importance["mean_importance_gain"].tolist()[::-1],
+            color="#2563eb",
+        )
+        _ax.set_title(
+            f"Walk-Forward Mean Gain Importance ({selection_horizon_view.value})"
+        )
+        _ax.set_xlabel("Mean Gain Importance")
+        _ax.grid(axis="x", alpha=0.2)
+        _fig.tight_layout()
+        _view = mo.vstack(
+            [
+                _diagnostic_block,
+                mo.md("### Split-by-Split OOS Spread"),
+                mo.Html(_split_spread.round(6).to_html(index=False)),
+                mo.md("### Mean Gain Importance"),
+                mo.Html(_importance.round(6).to_html(index=False)),
+                _fig,
+            ]
+        )
+    _view
     return
 
 

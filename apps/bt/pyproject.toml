@@ -49,6 +49,9 @@ dev = [
     "respx>=0.21.0",
     "mypy>=1.8.0",
 ]
+research = [
+    "lightgbm>=4.0.0",
+]
 nautilus = [
     "nautilus-trader>=1.221.0",
 ]
