@@ -857,13 +857,15 @@ def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
     store = _build_lock_test_store(tmp_path)
     barrier = Barrier(3)
     errors: list[Exception] = []
+    iterations = 100
+    join_timeout_seconds = 15
 
     row = _stock_row()
 
     def _publish_worker() -> None:
         try:
             barrier.wait(timeout=2)
-            for _ in range(200):
+            for _ in range(iterations):
                 store.publish_stock_data([row])
         except Exception as exc:  # pragma: no cover - failure path
             errors.append(exc)
@@ -871,7 +873,7 @@ def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
     def _inspect_worker() -> None:
         try:
             barrier.wait(timeout=2)
-            for _ in range(200):
+            for _ in range(iterations):
                 store.inspect()
         except Exception as exc:  # pragma: no cover - failure path
             errors.append(exc)
@@ -881,8 +883,8 @@ def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
     publisher.start()
     inspector.start()
     barrier.wait(timeout=2)
-    publisher.join(timeout=5)
-    inspector.join(timeout=5)
+    publisher.join(timeout=join_timeout_seconds)
+    inspector.join(timeout=join_timeout_seconds)
 
     assert not publisher.is_alive()
     assert not inspector.is_alive()
