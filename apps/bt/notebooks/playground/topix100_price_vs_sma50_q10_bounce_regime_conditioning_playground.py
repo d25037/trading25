@@ -39,17 +39,21 @@ def _(Path, sys):
     from src.shared.config.settings import get_settings
     from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
         DEFAULT_PRICE_FEATURE,
+        DEFAULT_VOLUME_FEATURE,
         run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research,
     )
     from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
         PRICE_FEATURE_LABEL_MAP,
+        VOLUME_FEATURE_LABEL_MAP,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
     )
 
     default_db_path = get_settings().market_db_path
     return (
         DEFAULT_PRICE_FEATURE,
+        DEFAULT_VOLUME_FEATURE,
         PRICE_FEATURE_LABEL_MAP,
+        VOLUME_FEATURE_LABEL_MAP,
         default_db_path,
         get_topix100_price_vs_sma_rank_future_close_available_date_range,
         run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research,
@@ -123,6 +127,7 @@ def _(default_db_path, initial_range, mo, pd):
 @app.cell
 def _(
     DEFAULT_PRICE_FEATURE,
+    DEFAULT_VOLUME_FEATURE,
     db_path,
     end_date,
     lookback_years,
@@ -138,6 +143,7 @@ def _(
         "lookback_years": int(lookback_years.value),
         "min_constituents_per_day": int(min_constituents_per_day.value),
         "price_feature": DEFAULT_PRICE_FEATURE,
+        "volume_feature": DEFAULT_VOLUME_FEATURE,
         "sigma_threshold_1": float(sigma_threshold_1.value),
         "sigma_threshold_2": float(sigma_threshold_2.value),
     }
@@ -154,6 +160,7 @@ def _(parsed_inputs, run_topix100_price_vs_sma_q10_bounce_regime_conditioning_re
             lookback_years=parsed_inputs["lookback_years"],
             min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
             price_feature=parsed_inputs["price_feature"],
+            volume_feature=parsed_inputs["volume_feature"],
             sigma_threshold_1=parsed_inputs["sigma_threshold_1"],
             sigma_threshold_2=parsed_inputs["sigma_threshold_2"],
         )
@@ -165,7 +172,14 @@ def _(parsed_inputs, run_topix100_price_vs_sma_q10_bounce_regime_conditioning_re
 
 
 @app.cell
-def _(PRICE_FEATURE_LABEL_MAP, error_message, mo, parsed_inputs, result):
+def _(
+    PRICE_FEATURE_LABEL_MAP,
+    VOLUME_FEATURE_LABEL_MAP,
+    error_message,
+    mo,
+    parsed_inputs,
+    result,
+):
     _view = mo.md("")
     if not error_message and result is not None:
         _view = mo.md(
@@ -174,6 +188,7 @@ def _(PRICE_FEATURE_LABEL_MAP, error_message, mo, parsed_inputs, result):
                     "## TOPIX100 SMA50 Q10 Bounce Regime Conditioning",
                     "",
                     f"- Price feature: **{PRICE_FEATURE_LABEL_MAP[parsed_inputs['price_feature']]}**",
+                    f"- Volume feature: **{VOLUME_FEATURE_LABEL_MAP[parsed_inputs['volume_feature']]}**",
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
@@ -181,8 +196,8 @@ def _(PRICE_FEATURE_LABEL_MAP, error_message, mo, parsed_inputs, result):
                     f"- Latest TOPIX100 constituent count: **{result.universe_constituent_count}**",
                     f"- Valid dates: **{result.valid_date_count}**",
                     "",
-                    "This notebook conditions the `Q10 / Middle` bounce slice on same-day `TOPIX close` and `NT ratio` regimes.",
-                    "The main question is whether `Q10 Low` strengthens in specific market states.",
+                    "This notebook conditions the `SMA50 Q10 Low + volume SMA 5/20 low` bounce slice on same-day `TOPIX close` and `NT ratio` regimes.",
+                    "The main question is whether that thinner bounce setup strengthens in specific market states.",
                 ]
             )
         )

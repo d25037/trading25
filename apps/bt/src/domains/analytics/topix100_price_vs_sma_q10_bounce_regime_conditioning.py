@@ -2,8 +2,9 @@
 TOPIX100 price-vs-SMA Q10 bounce regime conditioning research analytics.
 
 This module conditions the `q10 / middle` bounce slice on same-day TOPIX close
-return and NT-ratio return regimes. The default target is `price_vs_sma_50_gap`,
-which was the strongest Q10 bounce feature in the prior study.
+return and NT-ratio return regimes. The default target is
+`price_vs_sma_50_gap x volume_sma_5_20`, which is the current preferred
+bounce lens.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     COMBINED_BUCKET_LABEL_MAP,
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
+    VOLUME_FEATURE_LABEL_MAP,
+    VOLUME_FEATURE_ORDER,
 )
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     TopixCloseReturnStats,
@@ -64,6 +67,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
 )
 
 DEFAULT_PRICE_FEATURE = "price_vs_sma_50_gap"
+DEFAULT_VOLUME_FEATURE = "volume_sma_5_20"
 
 
 @dataclass(frozen=True)
@@ -77,6 +81,8 @@ class Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult:
     analysis_end_date: str | None
     price_feature: str
     price_feature_label: str
+    volume_feature: str
+    volume_feature_label: str
     sigma_threshold_1: float
     sigma_threshold_2: float
     universe_constituent_count: int
@@ -108,16 +114,28 @@ def _normalize_price_feature(price_feature: str) -> str:
     return normalized
 
 
+def _normalize_volume_feature(volume_feature: str) -> str:
+    normalized = str(volume_feature)
+    if normalized not in VOLUME_FEATURE_ORDER:
+        raise ValueError(
+            f"Unsupported volume_feature: {normalized}. "
+            f"Supported features are {list(VOLUME_FEATURE_ORDER)}."
+        )
+    return normalized
+
+
 def _filter_split_panel(
     base_result: Topix100PriceVsSmaQ10BounceResearchResult,
     *,
     price_feature: str,
+    volume_feature: str,
 ) -> pd.DataFrame:
     split_panel_df = base_result.q10_middle_volume_split_panel_df
     if split_panel_df.empty:
         return pd.DataFrame()
     filtered = split_panel_df.loc[
-        split_panel_df["price_feature"] == price_feature
+        (split_panel_df["price_feature"] == price_feature)
+        & (split_panel_df["volume_feature"] == volume_feature)
     ].copy()
     return _sort_regime_frame(filtered)
 
@@ -583,6 +601,7 @@ def run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
     lookback_years: int = 10,
     min_constituents_per_day: int = 80,
     price_feature: str = DEFAULT_PRICE_FEATURE,
+    volume_feature: str = DEFAULT_VOLUME_FEATURE,
     sigma_threshold_1: float = DEFAULT_SIGMA_THRESHOLD_1,
     sigma_threshold_2: float = DEFAULT_SIGMA_THRESHOLD_2,
 ) -> Topix100PriceVsSmaQ10BounceRegimeConditioningResearchResult:
@@ -592,6 +611,7 @@ def run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
         raise ValueError("sigma_threshold_2 must be greater than sigma_threshold_1")
 
     normalized_price_feature = _normalize_price_feature(price_feature)
+    normalized_volume_feature = _normalize_volume_feature(volume_feature)
     base_result = run_topix100_price_vs_sma_q10_bounce_research(
         db_path,
         start_date=start_date,
@@ -599,10 +619,12 @@ def run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
         lookback_years=lookback_years,
         min_constituents_per_day=min_constituents_per_day,
         price_features=[normalized_price_feature],
+        volume_features=[normalized_volume_feature],
     )
     split_panel_df = _filter_split_panel(
         base_result,
         price_feature=normalized_price_feature,
+        volume_feature=normalized_volume_feature,
     )
     horizon_panel_df = _build_horizon_panel(split_panel_df)
 
@@ -656,6 +678,8 @@ def run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research(
         analysis_end_date=base_panel.analysis_end_date,
         price_feature=normalized_price_feature,
         price_feature_label=PRICE_FEATURE_LABEL_MAP[normalized_price_feature],
+        volume_feature=normalized_volume_feature,
+        volume_feature_label=VOLUME_FEATURE_LABEL_MAP[normalized_volume_feature],
         sigma_threshold_1=sigma_threshold_1,
         sigma_threshold_2=sigma_threshold_2,
         universe_constituent_count=base_panel.topix100_constituent_count,

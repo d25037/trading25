@@ -6,6 +6,7 @@ import pytest
 
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
+    DEFAULT_VOLUME_FEATURE,
     run_topix100_price_vs_sma_q10_bounce_regime_conditioning_research,
 )
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
@@ -30,6 +31,7 @@ def test_q10_bounce_regime_conditioning_tables_are_returned(
 
     assert result.analysis_end_date == "2023-11-03"
     assert result.price_feature == DEFAULT_PRICE_FEATURE
+    assert result.volume_feature == DEFAULT_VOLUME_FEATURE
     assert result.topix_close_stats is not None
     assert result.nt_ratio_stats is not None
     assert set(result.regime_day_counts_df["regime_type"]) == {
@@ -47,6 +49,7 @@ def test_q10_bounce_regime_conditioning_tables_are_returned(
         "q10_volume_high",
         "q10_volume_low",
     }.issubset(set(result.regime_summary_df["combined_bucket"]))
+    assert set(result.split_panel_df["volume_feature"]) == {DEFAULT_VOLUME_FEATURE}
 
 
 def test_q10_bounce_regime_conditioning_hypothesis_labels_are_expected(
@@ -88,3 +91,4 @@ def test_q10_bounce_regime_conditioning_can_target_sma100(
 
     assert result.price_feature == "price_vs_sma_100_gap"
     assert set(result.split_panel_df["price_feature"]) == {"price_vs_sma_100_gap"}
+    assert set(result.split_panel_df["volume_feature"]) == {DEFAULT_VOLUME_FEATURE}
