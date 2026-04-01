@@ -6,7 +6,7 @@ priority: high
 labels: [bt, research, workflow, reproducibility, notebook, skills]
 project: bt
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-01
 depends_on: []
 blocks: []
 parent: null
@@ -72,10 +72,14 @@ parent: null
 - 2026-03-31: `apps/bt/docs/experiments/README.md` と pilot note を runner-first 前提へ更新し、`.codex/skills/bt-marimo-playground/SKILL.md` も viewer-first workflow に更新した。
 - 2026-03-31: `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py` と `run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py` を追加し、`Q10 bounce` と `regime conditioning` も bundle 出力できるようにした。
 - 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py` を viewer-first へ切り替え、latest bundle 読込を既定にした。
+- 2026-04-01: `topix100_sma_ratio_rank_future_close` / `prime_ex_topix500_sma_ratio_rank_future_close` / `topix100_sma_ratio_regime_conditioning` / `topix100_vi_change_regime_conditioning` / `topix100_price_vs_sma20_regime_conditioning` を runner-first / viewer-first に移行した。
+- 2026-04-01: `nt_ratio_change_stock_overnight_distribution` / `topix_close_stock_overnight_distribution` / `nt_ratio_change_topix_close_stock_overnight_distribution` / `stock_intraday_overnight_share` / `topix_gap_intraday_distribution` / `hedge_1357_nt_ratio_topix` を runner-first / viewer-first に移行した。
+- 2026-04-01: synthetic playground だった `risk_adjusted_return_playground` も `risk_adjusted_return_research.py` と `run_risk_adjusted_return_research.py` を追加して viewer-first に統一した。
+- 2026-04-01: real runner 実行で `topix-gap-intraday-distribution` / `hedge-1357-nt-ratio-topix` / `risk-adjusted-return-playground` の bundle 生成を `/tmp/trading25-research-pilot` で確認した。
 
 ## 補足
 - 現行の experiment note 基盤: `apps/bt/docs/experiments/README.md`
 - 代表研究の note 例: `apps/bt/docs/experiments/market-behavior/topix100-sma-ratio-lightgbm/README.md`
 - notebook は廃止ではなく、`optional viewer` に役割変更する。
 - local skill の更新は必要。少なくとも `bt-marimo-playground` は現行の前提を変える必要がある。
-- 次の展開対象は `topix100_price_vs_sma_q10_bounce` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning` の runner-first 化。
+- 現在の playground は全件 viewer-first 化済み。今後は新規研究追加時に `domain -> runner -> bundle -> optional notebook viewer` を既定とする。

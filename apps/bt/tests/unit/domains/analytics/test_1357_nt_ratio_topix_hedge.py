@@ -11,10 +11,15 @@ import pytest
 
 from src.domains.analytics import topix_close_stock_overnight_distribution as topix_analysis_module
 from src.domains.analytics.hedge_1357_nt_ratio_topix import (
+    HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID,
     _bucket_nt_ratio_return,
     _bucket_topix_close_return,
     _expected_shortfall,
+    get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id,
+    get_1357_nt_ratio_topix_hedge_latest_bundle_path,
+    load_1357_nt_ratio_topix_hedge_research_bundle,
     run_1357_nt_ratio_topix_hedge_research,
+    write_1357_nt_ratio_topix_hedge_research_bundle,
 )
 
 
@@ -464,6 +469,47 @@ def test_proxy_returns_and_hedge_metrics_are_consistent(
     )
     assert not result.etf_strategy_split_comparison_df.empty
     assert not result.annual_rule_summary_df.empty
+
+
+def test_hedge_bundle_roundtrip(
+    analytics_db: tuple[str, SyntheticSeries],
+    tmp_path: Path,
+) -> None:
+    db_path, _ = analytics_db
+    result = run_1357_nt_ratio_topix_hedge_research(
+        db_path,
+        selected_groups=["TOPIX100", "TOPIX500"],
+        fixed_weights=[0.2, 0.4],
+    )
+
+    bundle = write_1357_nt_ratio_topix_hedge_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260401_121500_testabcd",
+    )
+    reloaded = load_1357_nt_ratio_topix_hedge_research_bundle(bundle.bundle_dir)
+
+    assert bundle.experiment_id == HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_1357_nt_ratio_topix_hedge_latest_bundle_path(output_root=tmp_path)
+        == bundle.bundle_dir
+    )
+    assert reloaded.topix_close_stats == result.topix_close_stats
+    assert reloaded.nt_ratio_stats == result.nt_ratio_stats
+    assert reloaded.fixed_weights == (0.2, 0.4)
+    pdt.assert_frame_equal(
+        reloaded.hedge_metrics_df,
+        result.hedge_metrics_df,
+        check_dtype=False,
+    )
 
 
 def test_snapshot_fallback_preserves_results(

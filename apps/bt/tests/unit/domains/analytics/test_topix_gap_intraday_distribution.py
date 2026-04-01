@@ -10,10 +10,15 @@ import pytest
 
 from src.domains.analytics import topix_gap_intraday_distribution as analysis_module
 from src.domains.analytics.topix_gap_intraday_distribution import (
+    TOPIX_GAP_INTRADAY_RESEARCH_EXPERIMENT_ID,
     format_gap_bucket_label,
+    get_topix_gap_intraday_distribution_bundle_path_for_run_id,
+    get_topix_gap_intraday_distribution_latest_bundle_path,
     get_topix_available_date_range,
     get_topix_gap_return_stats,
+    load_topix_gap_intraday_distribution_research_bundle,
     run_topix_gap_intraday_distribution,
+    write_topix_gap_intraday_distribution_research_bundle,
 )
 
 
@@ -400,6 +405,57 @@ def test_get_topix_gap_return_stats_returns_none_when_no_rows(
     )
 
     assert stats is None
+
+
+def test_topix_gap_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    gap_return_stats = get_topix_gap_return_stats(
+        analytics_db_path,
+        sigma_threshold_1=1.0,
+        sigma_threshold_2=2.0,
+    )
+    assert gap_return_stats is not None
+
+    result = run_topix_gap_intraday_distribution(
+        analytics_db_path,
+        gap_threshold_1=gap_return_stats.threshold_1,
+        gap_threshold_2=gap_return_stats.threshold_2,
+        gap_return_stats=gap_return_stats,
+        selected_groups=["PRIME", "TOPIX100"],
+        sample_size=5,
+        clip_percentiles=(5.0, 95.0),
+    )
+
+    bundle = write_topix_gap_intraday_distribution_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260401_120000_testabcd",
+    )
+    reloaded = load_topix_gap_intraday_distribution_research_bundle(bundle.bundle_dir)
+
+    assert bundle.experiment_id == TOPIX_GAP_INTRADAY_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix_gap_intraday_distribution_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix_gap_intraday_distribution_latest_bundle_path(output_root=tmp_path)
+        == bundle.bundle_dir
+    )
+    assert reloaded.gap_return_stats == gap_return_stats
+    assert reloaded.sample_size == 5
+    assert reloaded.clip_percentiles == (5.0, 95.0)
+    pdt.assert_frame_equal(
+        reloaded.summary_df,
+        result.summary_df,
+        check_dtype=False,
+    )
 
 
 def test_lock_contention_falls_back_to_snapshot(analytics_db_path: str, monkeypatch: pytest.MonkeyPatch) -> None:
