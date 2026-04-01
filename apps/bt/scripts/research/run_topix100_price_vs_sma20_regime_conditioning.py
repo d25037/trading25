@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
-import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
-from src.domains.analytics.topix100_price_vs_sma20_regime_conditioning import (
+_BT_ROOT = Path(__file__).resolve().parents[2]
+_BT_ROOT_STR = str(_BT_ROOT)
+if _BT_ROOT_STR not in sys.path:
+    sys.path.insert(0, _BT_ROOT_STR)
+
+from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
+from src.domains.analytics.topix100_price_vs_sma20_regime_conditioning import (  # noqa: E402
     run_topix100_price_vs_sma20_regime_conditioning_research,
     write_topix100_price_vs_sma20_regime_conditioning_research_bundle,
 )
-from src.shared.config.settings import get_settings
+from src.shared.config.settings import get_settings  # noqa: E402
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -28,9 +34,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-constituents-per-day", type=int, default=80)
     parser.add_argument("--sigma-threshold-1", type=float, default=1.0)
     parser.add_argument("--sigma-threshold-2", type=float, default=2.0)
-    parser.add_argument("--output-root")
-    parser.add_argument("--run-id")
-    parser.add_argument("--notes")
+    add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
 
@@ -51,15 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_id=args.run_id,
         notes=args.notes,
     )
-    payload = {
-        "experimentId": bundle.experiment_id,
-        "runId": bundle.run_id,
-        "bundlePath": str(bundle.bundle_dir),
-        "manifestPath": str(bundle.manifest_path),
-        "resultsDbPath": str(bundle.results_db_path),
-        "summaryPath": str(bundle.summary_path),
-    }
-    print(json.dumps(payload, ensure_ascii=True, indent=2))
+    emit_bundle_payload(bundle)
     return 0
 
 

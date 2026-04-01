@@ -6,7 +6,7 @@
 
 - 実験ロジックの SoT は `apps/bt/src/domains/analytics/` に置く。
 - 再現可能な実行導線の SoT は `apps/bt/scripts/research/` に置く。
-- notebook は `apps/bt/notebooks/playground/` の viewer-first surface とし、fresh run は明示操作でのみ許可する。
+- notebook は `apps/bt/notebooks/playground/` の viewer-only surface とし、新規 run は runner script からのみ行う。
 - 長く残す知見は `apps/bt/docs/experiments/` に集約する。
 - 各実験は `README.md` を canonical note、`baseline-YYYY-MM-DD.md` を時点固定の結果メモとして残す。
 - runner-first 実験は `~/.local/share/trading25/research/<experiment>/<run_id>/` に `manifest.json + results.duckdb + summary.md` を保存する。

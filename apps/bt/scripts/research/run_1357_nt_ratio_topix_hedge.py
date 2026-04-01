@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -19,6 +18,7 @@ def _ensure_bt_root_on_path() -> Path:
 
 _BT_ROOT = _ensure_bt_root_on_path()
 
+from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
 from src.domains.analytics.hedge_1357_nt_ratio_topix import (  # noqa: E402
     run_1357_nt_ratio_topix_hedge_research,
     write_1357_nt_ratio_topix_hedge_research_bundle,
@@ -74,21 +74,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="0.1,0.2,0.3,0.4,0.5",
         help="Comma-separated fixed hedge weights.",
     )
-    parser.add_argument(
-        "--output-root",
-        default=None,
-        help="Optional override for the research bundle root directory.",
-    )
-    parser.add_argument(
-        "--run-id",
-        default=None,
-        help="Optional explicit run id. Defaults to a timestamp + git short SHA.",
-    )
-    parser.add_argument(
-        "--notes",
-        default=None,
-        help="Optional free-form note stored in manifest.json.",
-    )
+    add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
 
@@ -109,20 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=args.run_id,
         notes=args.notes,
     )
-    print(
-        json.dumps(
-            {
-                "experimentId": bundle.experiment_id,
-                "runId": bundle.run_id,
-                "bundlePath": str(bundle.bundle_dir),
-                "manifestPath": str(bundle.manifest_path),
-                "resultsDbPath": str(bundle.results_db_path),
-                "summaryPath": str(bundle.summary_path),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    emit_bundle_payload(bundle)
     return 0
 
 

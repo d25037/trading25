@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -19,6 +18,7 @@ def _ensure_bt_root_on_path() -> Path:
 
 _BT_ROOT = _ensure_bt_root_on_path()
 
+from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
 from src.domains.analytics.risk_adjusted_return_research import (  # noqa: E402
     run_risk_adjusted_return_research,
     write_risk_adjusted_return_research_bundle,
@@ -36,9 +36,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ratio-type", choices=("sharpe", "sortino"), default="sortino")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n-days", type=int, default=504)
-    parser.add_argument("--output-root", default=None)
-    parser.add_argument("--run-id", default=None)
-    parser.add_argument("--notes", default=None)
+    add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
 
@@ -56,20 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=args.run_id,
         notes=args.notes,
     )
-    print(
-        json.dumps(
-            {
-                "experimentId": bundle.experiment_id,
-                "runId": bundle.run_id,
-                "bundlePath": str(bundle.bundle_dir),
-                "manifestPath": str(bundle.manifest_path),
-                "resultsDbPath": str(bundle.results_db_path),
-                "summaryPath": str(bundle.summary_path),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    emit_bundle_payload(bundle)
     return 0
 
 

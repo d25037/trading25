@@ -26,109 +26,73 @@ def _():
 
 @app.cell
 def _(Path, sys):
-    project_root = Path.cwd()
-    if project_root.name == "playground":
-        project_root = project_root.parent.parent
-    elif project_root.name == "notebooks":
-        project_root = project_root.parent
+    from src.shared.research_notebook_viewer import (
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
+        get_latest_bundle_defaults,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
+    )
 
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
+    project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
     from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.risk_adjusted_return_research import (
         RISK_ADJUSTED_RETURN_RESEARCH_EXPERIMENT_ID,
         get_risk_adjusted_return_bundle_path_for_run_id,
         get_risk_adjusted_return_latest_bundle_path,
         load_risk_adjusted_return_research_bundle,
-        run_risk_adjusted_return_research,
     )
 
     return (
         RISK_ADJUSTED_RETURN_RESEARCH_EXPERIMENT_ID,
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
         get_risk_adjusted_return_bundle_path_for_run_id,
+        get_latest_bundle_defaults,
         get_risk_adjusted_return_latest_bundle_path,
         load_research_bundle_info,
+        load_bundle_selection,
         load_risk_adjusted_return_research_bundle,
-        run_risk_adjusted_return_research,
+        project_root,
+        resolve_selected_bundle_path,
     )
 
 
 @app.cell
-def _(get_risk_adjusted_return_latest_bundle_path):
-    try:
-        latest_bundle_path = get_risk_adjusted_return_latest_bundle_path()
-    except Exception:
-        latest_bundle_path = None
-    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
-    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+def _(get_latest_bundle_defaults, get_risk_adjusted_return_latest_bundle_path):
+    latest_bundle_path_str, latest_run_id = get_latest_bundle_defaults(
+        get_risk_adjusted_return_latest_bundle_path
+    )
     return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
-def _(latest_bundle_path_str, latest_run_id, mo):
-    mode = mo.ui.dropdown(
-        options={"bundle": "Load Existing Bundle", "recompute": "Run Fresh Analysis"},
-        value="bundle",
-        label="Mode",
+def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id=latest_run_id,
+        latest_bundle_path_str=latest_bundle_path_str,
+        runner_path="apps/bt/scripts/research/run_risk_adjusted_return_research.py",
     )
-    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
-    bundle_path = mo.ui.text(value=latest_bundle_path_str, label="Bundle Path (optional)")
-    lookback = mo.ui.slider(20, 180, value=60, step=5, label="Lookback Period")
-    ratio_type = mo.ui.dropdown(
-        options=["sortino", "sharpe"],
-        value="sortino",
-        label="Ratio Type",
-    )
-    seed = mo.ui.number(value=42, start=0, stop=999999, step=1, label="Seed")
-    n_days = mo.ui.slider(252, 1260, value=504, step=21, label="Days")
-    recompute_controls = mo.vstack([lookback, ratio_type, seed, n_days])
-    mo.vstack(
-        [
-            mo.md(
-                "\n".join(
-                    [
-                        "### Research Runner",
-                        "",
-                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
-                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
-                        "- Canonical runner: `apps/bt/scripts/research/run_risk_adjusted_return_research.py`",
-                    ]
-                )
-            ),
-            mo.hstack([mode, run_id]),
-            bundle_path,
-            recompute_controls if mode.value == "recompute" else mo.md(""),
-        ]
-    )
-    return bundle_path, lookback, mode, n_days, ratio_type, run_id, seed
+    controls_view
+    return bundle_path, run_id
 
 
 @app.cell
 def _(
     bundle_path,
     get_risk_adjusted_return_bundle_path_for_run_id,
-    lookback,
-    mode,
-    n_days,
-    ratio_type,
     run_id,
-    seed,
+    resolve_selected_bundle_path,
 ):
     run_id_value = run_id.value.strip()
-    bundle_path_value = bundle_path.value.strip()
-    resolved_bundle_path = bundle_path_value
-    if not resolved_bundle_path and run_id_value:
-        resolved_bundle_path = str(
-            get_risk_adjusted_return_bundle_path_for_run_id(run_id_value)
-        )
     parsed_inputs = {
-        "mode": mode.value,
-        "selected_bundle_path": resolved_bundle_path or None,
-        "lookback_period": int(lookback.value),
-        "ratio_type": ratio_type.value,
-        "seed": int(seed.value),
-        "n_days": int(n_days.value),
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolve_selected_bundle_path(
+            bundle_path.value,
+            run_id_value,
+            get_risk_adjusted_return_bundle_path_for_run_id,
+        ),
     }
     return (parsed_inputs,)
 
@@ -136,27 +100,16 @@ def _(
 @app.cell
 def _(
     load_research_bundle_info,
+    load_bundle_selection,
     load_risk_adjusted_return_research_bundle,
     parsed_inputs,
-    run_risk_adjusted_return_research,
 ):
     try:
-        if parsed_inputs["mode"] == "bundle":
-            selected_bundle_path = parsed_inputs["selected_bundle_path"]
-            if not selected_bundle_path:
-                raise ValueError(
-                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
-                )
-            bundle_info = load_research_bundle_info(selected_bundle_path)
-            result = load_risk_adjusted_return_research_bundle(selected_bundle_path)
-        else:
-            bundle_info = None
-            result = run_risk_adjusted_return_research(
-                lookback_period=parsed_inputs["lookback_period"],
-                ratio_type=parsed_inputs["ratio_type"],
-                seed=parsed_inputs["seed"],
-                n_days=parsed_inputs["n_days"],
-            )
+        bundle_info, result = load_bundle_selection(
+            selected_bundle_path=parsed_inputs["selected_bundle_path"],
+            load_research_bundle_info=load_research_bundle_info,
+            load_research_bundle=load_risk_adjusted_return_research_bundle,
+        )
         error_message = None
     except Exception as exc:
         bundle_info = None
