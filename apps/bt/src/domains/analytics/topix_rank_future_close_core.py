@@ -136,6 +136,9 @@ def _query_universe_stock_history(
             SELECT
                 date,
                 {normalized_code_sql} AS normalized_code,
+                CAST(open AS DOUBLE) AS open,
+                CAST(high AS DOUBLE) AS high,
+                CAST(low AS DOUBLE) AS low,
                 CAST(close AS DOUBLE) AS close,
                 CAST(volume AS DOUBLE) AS volume,
                 ROW_NUMBER() OVER (
@@ -152,6 +155,9 @@ def _query_universe_stock_history(
             SELECT
                 date,
                 normalized_code,
+                open,
+                high,
+                low,
                 close,
                 volume
             FROM stock_rows_raw
@@ -161,6 +167,9 @@ def _query_universe_stock_history(
             s.normalized_code AS code,
             s.company_name,
             r.date,
+            r.open,
+            r.high,
+            r.low,
             r.close,
             r.volume
         FROM stock_rows r
@@ -473,24 +482,21 @@ def _summarize_ranking_features(
     if ranked_panel_df.empty:
         return pd.DataFrame()
 
-    summary_df = (
-        ranked_panel_df.groupby(
-            [
-                "ranking_feature",
-                "ranking_feature_label",
-                "feature_decile",
-                "feature_decile_label",
-            ],
-            as_index=False,
-        )
-        .agg(
-            sample_count=("code", "size"),
-            date_count=("date", "nunique"),
-            mean_ranking_value=("ranking_value", "mean"),
-            median_ranking_value=("ranking_value", "median"),
-            mean_event_close=("close", "mean"),
-            median_event_close=("close", "median"),
-        )
+    summary_df = ranked_panel_df.groupby(
+        [
+            "ranking_feature",
+            "ranking_feature_label",
+            "feature_decile",
+            "feature_decile_label",
+        ],
+        as_index=False,
+    ).agg(
+        sample_count=("code", "size"),
+        date_count=("date", "nunique"),
+        mean_ranking_value=("ranking_value", "mean"),
+        median_ranking_value=("ranking_value", "median"),
+        mean_event_close=("close", "mean"),
+        median_event_close=("close", "median"),
     )
     return _sort_frame(summary_df, known_feature_order=known_feature_order)
 
@@ -503,29 +509,26 @@ def _summarize_future_targets(
     if horizon_panel_df.empty:
         return pd.DataFrame()
 
-    summary_df = (
-        horizon_panel_df.groupby(
-            [
-                "ranking_feature",
-                "ranking_feature_label",
-                "horizon_key",
-                "horizon_days",
-                "feature_decile",
-                "feature_decile_label",
-            ],
-            as_index=False,
-        )
-        .agg(
-            sample_count=("code", "size"),
-            date_count=("date", "nunique"),
-            mean_ranking_value=("ranking_value", "mean"),
-            mean_event_close=("close", "mean"),
-            mean_future_close=("future_close", "mean"),
-            median_future_close=("future_close", "median"),
-            mean_future_return=("future_return", "mean"),
-            median_future_return=("future_return", "median"),
-            std_future_return=("future_return", "std"),
-        )
+    summary_df = horizon_panel_df.groupby(
+        [
+            "ranking_feature",
+            "ranking_feature_label",
+            "horizon_key",
+            "horizon_days",
+            "feature_decile",
+            "feature_decile_label",
+        ],
+        as_index=False,
+    ).agg(
+        sample_count=("code", "size"),
+        date_count=("date", "nunique"),
+        mean_ranking_value=("ranking_value", "mean"),
+        mean_event_close=("close", "mean"),
+        mean_future_close=("future_close", "mean"),
+        median_future_close=("future_close", "median"),
+        mean_future_return=("future_return", "mean"),
+        median_future_return=("future_return", "median"),
+        std_future_return=("future_return", "std"),
     )
     return _sort_frame(summary_df, known_feature_order=known_feature_order)
 
@@ -538,27 +541,24 @@ def _build_daily_group_means(
     if horizon_panel_df.empty:
         return pd.DataFrame()
 
-    daily_group_means_df = (
-        horizon_panel_df.groupby(
-            [
-                "ranking_feature",
-                "ranking_feature_label",
-                "horizon_key",
-                "horizon_days",
-                "date",
-                "feature_decile",
-                "feature_decile_label",
-            ],
-            as_index=False,
-        )
-        .agg(
-            group_sample_count=("code", "size"),
-            group_mean_ranking_value=("ranking_value", "mean"),
-            group_mean_event_close=("close", "mean"),
-            group_mean_future_close=("future_close", "mean"),
-            group_mean_future_return=("future_return", "mean"),
-            group_median_future_return=("future_return", "median"),
-        )
+    daily_group_means_df = horizon_panel_df.groupby(
+        [
+            "ranking_feature",
+            "ranking_feature_label",
+            "horizon_key",
+            "horizon_days",
+            "date",
+            "feature_decile",
+            "feature_decile_label",
+        ],
+        as_index=False,
+    ).agg(
+        group_sample_count=("code", "size"),
+        group_mean_ranking_value=("ranking_value", "mean"),
+        group_mean_event_close=("close", "mean"),
+        group_mean_future_close=("future_close", "mean"),
+        group_mean_future_return=("future_return", "mean"),
+        group_median_future_return=("future_return", "median"),
     )
     return _sort_frame(daily_group_means_df, known_feature_order=known_feature_order)
 
@@ -664,7 +664,10 @@ def _build_global_significance(
     *,
     known_feature_order: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    if daily_group_means_df.empty or "ranking_feature" not in daily_group_means_df.columns:
+    if (
+        daily_group_means_df.empty
+        or "ranking_feature" not in daily_group_means_df.columns
+    ):
         return pd.DataFrame()
 
     records: list[dict[str, Any]] = []
@@ -709,7 +712,9 @@ def _build_global_significance(
                     )
                     continue
 
-                samples = [pivot_df[decile].to_numpy(dtype=float) for decile in DECILE_ORDER]
+                samples = [
+                    pivot_df[decile].to_numpy(dtype=float) for decile in DECILE_ORDER
+                ]
                 friedman_statistic, friedman_p_value = _safe_friedman(samples)
                 kruskal_statistic, kruskal_p_value = _safe_kruskal(samples)
                 q1_mean = float(samples[0].mean())
@@ -738,7 +743,9 @@ def _build_global_significance(
                         "kruskal_p_value": kruskal_p_value,
                     }
                 )
-    return _sort_frame(pd.DataFrame.from_records(records), known_feature_order=known_feature_order)
+    return _sort_frame(
+        pd.DataFrame.from_records(records), known_feature_order=known_feature_order
+    )
 
 
 def _build_pairwise_significance(
@@ -746,7 +753,10 @@ def _build_pairwise_significance(
     *,
     known_feature_order: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    if daily_group_means_df.empty or "ranking_feature" not in daily_group_means_df.columns:
+    if (
+        daily_group_means_df.empty
+        or "ranking_feature" not in daily_group_means_df.columns
+    ):
         return pd.DataFrame()
     records: list[dict[str, Any]] = []
     metric_columns = {
@@ -794,7 +804,9 @@ def _build_pairwise_significance(
                 for left_decile, right_decile in combinations(DECILE_ORDER, 2):
                     left = pivot_df[left_decile].to_numpy(dtype=float)
                     right = pivot_df[right_decile].to_numpy(dtype=float)
-                    paired_t_statistic, paired_t_p_value = _safe_paired_t_test(left, right)
+                    paired_t_statistic, paired_t_p_value = _safe_paired_t_test(
+                        left, right
+                    )
                     wilcoxon_statistic, wilcoxon_p_value = _safe_wilcoxon(left, right)
                     records.append(
                         {

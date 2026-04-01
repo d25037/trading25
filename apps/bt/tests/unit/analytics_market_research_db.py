@@ -88,6 +88,8 @@ def build_topix100_research_market_db(
     extra_topix100_constituents: int = 0,
     start_date: str = "2023-01-02",
     periods: int = 220,
+    spec_overrides: dict[str, tuple[float, float, float, float]] | None = None,
+    range_scale_by_code: dict[str, float] | None = None,
 ) -> str:
     conn = duckdb.connect(str(db_path))
     _create_stock_tables(conn)
@@ -97,18 +99,186 @@ def build_topix100_research_market_db(
         _create_options_225_table(conn)
 
     stocks = [
-        ("1111", "Alpha", "ALPHA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Core30", "2000-01-01", None, None),
-        ("11110", "Alpha Duplicate", "ALPHA DUP", "0111", "プライム", "1", "A", "1", "A", "TOPIX Core30", "2000-01-01", None, None),
-        ("2222", "Beta", "BETA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Core30", "2000-01-01", None, None),
-        ("3333", "Gamma", "GAMMA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Core30", "2000-01-01", None, None),
-        ("4444", "Delta", "DELTA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("5555", "Epsilon", "EPSILON", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("6666", "Zeta", "ZETA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("7777", "Eta", "ETA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("8888", "Theta", "THETA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("9999", "Iota", "IOTA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("1234", "Kappa", "KAPPA", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
-        ("4321", "Outside", "OUTSIDE", "0111", "プライム", "1", "A", "1", "A", "-", "2000-01-01", None, None),
+        (
+            "1111",
+            "Alpha",
+            "ALPHA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Core30",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "11110",
+            "Alpha Duplicate",
+            "ALPHA DUP",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Core30",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "2222",
+            "Beta",
+            "BETA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Core30",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "3333",
+            "Gamma",
+            "GAMMA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Core30",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "4444",
+            "Delta",
+            "DELTA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "5555",
+            "Epsilon",
+            "EPSILON",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "6666",
+            "Zeta",
+            "ZETA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "7777",
+            "Eta",
+            "ETA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "8888",
+            "Theta",
+            "THETA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "9999",
+            "Iota",
+            "IOTA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "1234",
+            "Kappa",
+            "KAPPA",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "TOPIX Large70",
+            "2000-01-01",
+            None,
+            None,
+        ),
+        (
+            "4321",
+            "Outside",
+            "OUTSIDE",
+            "0111",
+            "プライム",
+            "1",
+            "A",
+            "1",
+            "A",
+            "-",
+            "2000-01-01",
+            None,
+            None,
+        ),
     ]
     for index in range(extra_topix100_constituents):
         code = f"{2001 + index}"
@@ -156,9 +326,14 @@ def build_topix100_research_market_db(
             950.0 - (index * 35.0),
             -0.0018 - (index * 0.00003),
         )
+    if spec_overrides:
+        specs.update(spec_overrides)
 
     stock_rows: list[tuple[str, str, float, float, float, float, int, float, None]] = []
     for code, (base_close, close_growth, base_volume, volume_growth) in specs.items():
+        range_scale = 1.0
+        if range_scale_by_code is not None:
+            range_scale = float(range_scale_by_code.get(code, 1.0))
         for index, date in enumerate(dates):
             close = base_close * ((1.0 + close_growth) ** index)
             volume = int(round(base_volume * ((1.0 + volume_growth) ** index)))
@@ -166,9 +341,9 @@ def build_topix100_research_market_db(
                 (
                     code,
                     date.strftime("%Y-%m-%d"),
-                    close * 0.995,
-                    close * 1.01,
-                    close * 0.99,
+                    close * (1.0 - (0.005 * range_scale)),
+                    close * (1.0 + (0.01 * range_scale)),
+                    close * (1.0 - (0.01 * range_scale)),
                     close,
                     volume,
                     1.0,
@@ -176,7 +351,9 @@ def build_topix100_research_market_db(
                 )
             )
 
-    duplicate_rows: list[tuple[str, str, float, float, float, float, int, float, None]] = []
+    duplicate_rows: list[
+        tuple[str, str, float, float, float, float, int, float, None]
+    ] = []
     for index, date in enumerate(dates):
         close = 200.0 * ((1.0 + 0.0002) ** index)
         volume = int(round(1000.0 * ((1.0 + 0.0001) ** index)))
@@ -249,7 +426,9 @@ def build_prime_ex_topix500_research_market_db(db_path: Path) -> str:
     _create_stock_tables(conn)
 
     prime_ex_codes = [f"{1001 + idx}" for idx in range(12)]
-    stocks: list[tuple[str, str, str, str, str, str, str, str, str, str, str, None, None]] = []
+    stocks: list[
+        tuple[str, str, str, str, str, str, str, str, str, str, str, None, None]
+    ] = []
     for idx, code in enumerate(prime_ex_codes, start=1):
         stocks.append(
             (
@@ -347,7 +526,9 @@ def build_prime_ex_topix500_research_market_db(db_path: Path) -> str:
                 )
             )
 
-    duplicate_rows: list[tuple[str, str, float, float, float, float, int, float, None]] = []
+    duplicate_rows: list[
+        tuple[str, str, float, float, float, float, int, float, None]
+    ] = []
     for day_idx, date in enumerate(dates):
         close = 300.0 * ((1.0 + 0.0002) ** day_idx)
         volume = int(round(1800.0 * ((1.0 + 0.0001) ** day_idx)))
@@ -365,8 +546,13 @@ def build_prime_ex_topix500_research_market_db(db_path: Path) -> str:
             )
         )
 
-    excluded_rows: list[tuple[str, str, float, float, float, float, int, float, None]] = []
-    for code, base_close, base_volume in (("9001", 500.0, 3000.0), ("9002", 450.0, 2500.0)):
+    excluded_rows: list[
+        tuple[str, str, float, float, float, float, int, float, None]
+    ] = []
+    for code, base_close, base_volume in (
+        ("9001", 500.0, 3000.0),
+        ("9002", 450.0, 2500.0),
+    ):
         for day_idx, date in enumerate(dates):
             close = base_close * ((1.0 + 0.0003) ** day_idx)
             volume = int(round(base_volume * ((1.0 + 0.0002) ** day_idx)))
