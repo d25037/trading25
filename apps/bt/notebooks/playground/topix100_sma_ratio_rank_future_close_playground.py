@@ -34,6 +34,7 @@ def _(Path, sys):
         ensure_bt_project_root_on_path,
         get_latest_bundle_defaults,
         load_bundle_selection,
+        resolve_selected_bundle_path,
     )
 
     _project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
@@ -58,6 +59,7 @@ def _(Path, sys):
         load_research_bundle_info,
         load_bundle_selection,
         load_topix100_sma_ratio_rank_future_close_research_bundle,
+        resolve_selected_bundle_path,
     )
 
 
