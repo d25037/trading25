@@ -11,8 +11,16 @@ import pytest
 
 from src.domains.analytics import topix_close_stock_overnight_distribution as topix_analysis_module
 from src.domains.analytics.nt_ratio_change_topix_close_stock_overnight_distribution import (
+    NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+    get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
     get_nt_ratio_change_topix_close_available_date_range,
+    get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path,
+    load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
     run_nt_ratio_change_topix_close_stock_overnight_distribution,
+    write_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
+)
+from src.domains.analytics.topix_close_stock_overnight_distribution import (
+    get_topix_close_return_stats,
 )
 
 
@@ -288,6 +296,64 @@ def test_sampling_is_deterministic(analytics_db_path: str) -> None:
     pdt.assert_frame_equal(
         first.samples_df.reset_index(drop=True),
         second.samples_df.reset_index(drop=True),
+    )
+
+
+def test_joint_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    topix_close_stats = get_topix_close_return_stats(
+        analytics_db_path,
+        sigma_threshold_1=1.0,
+        sigma_threshold_2=2.0,
+    )
+    assert topix_close_stats is not None
+
+    result = run_nt_ratio_change_topix_close_stock_overnight_distribution(
+        analytics_db_path,
+        selected_groups=["PRIME", "TOPIX100"],
+        topix_close_threshold_1=topix_close_stats.threshold_1,
+        topix_close_threshold_2=topix_close_stats.threshold_2,
+        topix_close_stats=topix_close_stats,
+        sample_size=5,
+        clip_percentiles=(5.0, 95.0),
+    )
+
+    bundle = write_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_180200_testabcd",
+    )
+    reloaded = load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert (
+        bundle.experiment_id
+        == NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID
+    )
+    assert bundle.summary_path.exists()
+    assert (
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.topix_close_stats == topix_close_stats
+    assert reloaded.sample_size == 5
+    assert reloaded.clip_percentiles == (5.0, 95.0)
+    pdt.assert_frame_equal(
+        reloaded.summary_df,
+        result.summary_df,
+        check_dtype=False,
     )
 
 

@@ -10,10 +10,15 @@ import pytest
 
 from src.domains.analytics import topix_close_stock_overnight_distribution as analysis_module
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
+    TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
     format_close_bucket_label,
+    get_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
+    get_topix_close_stock_overnight_distribution_latest_bundle_path,
     get_topix_available_date_range,
     get_topix_close_return_stats,
+    load_topix_close_stock_overnight_distribution_research_bundle,
     run_topix_close_stock_overnight_distribution,
+    write_topix_close_stock_overnight_distribution_research_bundle,
 )
 
 
@@ -246,6 +251,61 @@ def test_daily_group_returns_are_returned(analytics_db_path: str) -> None:
         (-1.0 / 12.0 - 1.0 / 27.0) / 2.0
     )
     assert day_2_topix500["day_up_ratio"] == pytest.approx(0.0)
+
+
+def test_topix_close_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    close_return_stats = get_topix_close_return_stats(
+        analytics_db_path,
+        sigma_threshold_1=1.0,
+        sigma_threshold_2=2.0,
+    )
+    assert close_return_stats is not None
+
+    result = run_topix_close_stock_overnight_distribution(
+        analytics_db_path,
+        close_threshold_1=close_return_stats.threshold_1,
+        close_threshold_2=close_return_stats.threshold_2,
+        close_return_stats=close_return_stats,
+        selected_groups=["PRIME", "TOPIX100"],
+        sample_size=5,
+        clip_percentiles=(5.0, 95.0),
+    )
+
+    bundle = write_topix_close_stock_overnight_distribution_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_180100_testabcd",
+    )
+    reloaded = load_topix_close_stock_overnight_distribution_research_bundle(
+        bundle.bundle_dir
+    )
+
+    assert bundle.experiment_id == TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_topix_close_stock_overnight_distribution_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_topix_close_stock_overnight_distribution_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.close_return_stats == close_return_stats
+    assert reloaded.sample_size == 5
+    assert reloaded.clip_percentiles == (5.0, 95.0)
+    pdt.assert_frame_equal(
+        reloaded.summary_df,
+        result.summary_df,
+        check_dtype=False,
+    )
 
 
 def test_selected_date_range_filters_results(analytics_db_path: str) -> None:

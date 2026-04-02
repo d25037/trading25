@@ -1,12 +1,12 @@
 ---
 id: bt-059
 title: "runner-first 研究フローへ移行し notebook を viewer に下げる"
-status: in-progress
+status: done
 priority: high
 labels: [bt, research, workflow, reproducibility, notebook, skills]
 project: bt
 created: 2026-03-31
-updated: 2026-03-31
+updated: 2026-04-01
 depends_on: []
 blocks: []
 parent: null
@@ -29,7 +29,7 @@ parent: null
 - [x] 研究実行の主導線が notebook ではなく `runner script` に移っている。
 - [x] 各研究 run が artifact bundle として保存され、`manifest + tables + summary` を後から再読できる。
 - [x] `docs/experiments` の baseline note が run bundle と結びつく。
-- [x] notebook は bundle を読む viewer-first 構成に移行し、新規計算は明示操作でのみ走る。
+- [x] notebook は bundle を読む viewer-only 構成に移行し、新規計算は runner script に集約されている。
 - [x] workflow 変更に合わせて関連 skill が更新されている。
 
 ## 実施内容
@@ -57,25 +57,31 @@ parent: null
 - [x] pilot として少なくとも 1 本の既存研究を runner-first 化する。
   - 候補: `topix100_price_vs_sma_rank_future_close`
 - [x] `docs/experiments` の `README.md` と対象実験 note に、bundle/run_id ベースの再現手順を追記する。
-- [x] notebook を viewer-first に改修する。
+- [x] notebook を viewer-only に改修する。
   - 初期入力は `run_id` または `bundle_path`
   - 再計算は明示操作のみ
   - bundle があれば notebook なしでも研究結果が追える
 - [x] skill を更新する。
-  - `.codex/skills/bt-marimo-playground/SKILL.md` を notebook-first ではなく viewer-first 運用へ更新
+  - `.codex/skills/bt-marimo-playground/SKILL.md` を notebook-first ではなく viewer-only 運用へ更新
   - 必要なら `runner-first research` 用の新 skill を追加
 
 ## 結果
 - 2026-03-31: `apps/bt/src/domains/analytics/research_bundle.py` を追加し、`manifest.json + results.duckdb + summary.md` を保存・再読する research bundle 基盤を追加した。
 - 2026-03-31: `apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py` を追加し、`topix100_price_vs_sma_rank_future_close` を pilot の runner-first 実験として bundle 出力できるようにした。
-- 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py` を viewer-first へ切り替え、latest bundle の読込を既定にし、fresh recompute は `Mode = Run Fresh Analysis` の明示操作時だけ走るようにした。
-- 2026-03-31: `apps/bt/docs/experiments/README.md` と pilot note を runner-first 前提へ更新し、`.codex/skills/bt-marimo-playground/SKILL.md` も viewer-first workflow に更新した。
+- 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py` を viewer-only へ切り替え、latest bundle の読込を既定にした。
+- 2026-03-31: `apps/bt/docs/experiments/README.md` と pilot note を runner-first 前提へ更新し、`.codex/skills/bt-marimo-playground/SKILL.md` も viewer-only workflow に更新した。
 - 2026-03-31: `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py` と `run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py` を追加し、`Q10 bounce` と `regime conditioning` も bundle 出力できるようにした。
-- 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py` を viewer-first へ切り替え、latest bundle 読込を既定にした。
+- 2026-03-31: `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py` を viewer-only へ切り替え、latest bundle 読込を既定にした。
+- 2026-04-01: `topix100_sma_ratio_rank_future_close` / `prime_ex_topix500_sma_ratio_rank_future_close` / `topix100_sma_ratio_regime_conditioning` / `topix100_vi_change_regime_conditioning` / `topix100_price_vs_sma20_regime_conditioning` を runner-first / viewer-only に移行した。
+- 2026-04-01: `nt_ratio_change_stock_overnight_distribution` / `topix_close_stock_overnight_distribution` / `nt_ratio_change_topix_close_stock_overnight_distribution` / `stock_intraday_overnight_share` / `topix_gap_intraday_distribution` / `hedge_1357_nt_ratio_topix` を runner-first / viewer-only に移行した。
+- 2026-04-01: synthetic playground だった `risk_adjusted_return_playground` も `risk_adjusted_return_research.py` と `run_risk_adjusted_return_research.py` を追加して viewer-only に統一した。
+- 2026-04-01: runner script の `bundle output args / JSON payload` を `apps/bt/scripts/research/common.py` に寄せ、notebook 側の `Mode / recompute` 重複を削除した。
+- 2026-04-01: real runner 実行で `topix-gap-intraday-distribution` / `hedge-1357-nt-ratio-topix` / `risk-adjusted-return-playground` の bundle 生成を `/tmp/trading25-research-pilot` で確認した。
+- 2026-04-01: `apps/bt/src/shared/research_notebook_viewer.py` を追加して notebook 側の viewer UI を共通化し、playground 群を `viewer-only` に揃えた。これにより `bt-059` の受け入れ条件をすべて満たしたため、本 issue を完了とした。
 
 ## 補足
 - 現行の experiment note 基盤: `apps/bt/docs/experiments/README.md`
 - 代表研究の note 例: `apps/bt/docs/experiments/market-behavior/topix100-sma-ratio-lightgbm/README.md`
 - notebook は廃止ではなく、`optional viewer` に役割変更する。
 - local skill の更新は必要。少なくとも `bt-marimo-playground` は現行の前提を変える必要がある。
-- 次の展開対象は `topix100_price_vs_sma_q10_bounce` と `topix100_price_vs_sma50_q10_bounce_regime_conditioning` の runner-first 化。
+- 現在の playground は全件 viewer-only 化済み。今後は新規研究追加時に `domain -> runner -> bundle -> optional notebook viewer` を既定とする。

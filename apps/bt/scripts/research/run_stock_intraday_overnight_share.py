@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runner-first entrypoint for TOPIX100 price-vs-SMA Q10 bounce research."""
+"""Runner-first entrypoint for stock intraday / overnight share research."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ def _ensure_bt_root_on_path() -> Path:
 _BT_ROOT = _ensure_bt_root_on_path()
 
 from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
-from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (  # noqa: E402
-    run_topix100_price_vs_sma_q10_bounce_research,
-    write_topix100_price_vs_sma_q10_bounce_research_bundle,
+from src.domains.analytics.stock_intraday_overnight_share import (  # noqa: E402
+    run_stock_intraday_overnight_share_analysis,
+    write_stock_intraday_overnight_share_research_bundle,
 )
 from src.shared.config.settings import get_settings  # noqa: E402
 
@@ -36,7 +36,7 @@ def _parse_csv_list(value: str | None) -> list[str] | None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run TOPIX100 price-vs-SMA Q10 bounce research and persist a "
+            "Run stock intraday / overnight share research and persist a "
             "reproducible artifact bundle under ~/.local/share/trading25/research/."
         )
     )
@@ -48,26 +48,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--start-date", default=None, help="Analysis start date (YYYY-MM-DD).")
     parser.add_argument("--end-date", default=None, help="Analysis end date (YYYY-MM-DD).")
     parser.add_argument(
-        "--lookback-years",
-        type=int,
-        default=10,
-        help="Default lookback years when --start-date is omitted.",
-    )
-    parser.add_argument(
-        "--min-constituents-per-day",
-        type=int,
-        default=80,
-        help="Minimum TOPIX100 constituents required per day after warmup.",
-    )
-    parser.add_argument(
-        "--price-features",
+        "--selected-groups",
         default=None,
-        help="Optional comma-separated price feature keys.",
+        help="Optional comma-separated stock group keys.",
     )
     parser.add_argument(
-        "--volume-features",
-        default=None,
-        help="Optional comma-separated volume feature keys.",
+        "--min-session-count",
+        type=int,
+        default=60,
+        help="Minimum analyzable sessions per stock.",
     )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
@@ -75,16 +64,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    result = run_topix100_price_vs_sma_q10_bounce_research(
+    result = run_stock_intraday_overnight_share_analysis(
         args.db_path,
         start_date=args.start_date,
         end_date=args.end_date,
-        lookback_years=args.lookback_years,
-        min_constituents_per_day=args.min_constituents_per_day,
-        price_features=_parse_csv_list(args.price_features),
-        volume_features=_parse_csv_list(args.volume_features),
+        selected_groups=_parse_csv_list(args.selected_groups),
+        min_session_count=args.min_session_count,
     )
-    bundle = write_topix100_price_vs_sma_q10_bounce_research_bundle(
+    bundle = write_stock_intraday_overnight_share_research_bundle(
         result,
         output_root=args.output_root,
         run_id=args.run_id,

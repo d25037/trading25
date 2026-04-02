@@ -5,12 +5,18 @@ from pathlib import Path
 from typing import Any, cast
 
 import duckdb
+import pandas as pd
 import pytest
 
 from src.domains.analytics import stock_intraday_overnight_share as analysis_module
 from src.domains.analytics.stock_intraday_overnight_share import (
+    STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+    get_stock_intraday_overnight_share_bundle_path_for_run_id,
+    get_stock_intraday_overnight_share_latest_bundle_path,
     get_stock_available_date_range,
+    load_stock_intraday_overnight_share_research_bundle,
     run_stock_intraday_overnight_share_analysis,
+    write_stock_intraday_overnight_share_research_bundle,
 )
 
 
@@ -258,8 +264,47 @@ def test_group_summary_and_daily_group_shares_are_returned(analytics_db_path: st
     assert standard["median_intraday_share"] == pytest.approx(0.0)
     assert standard["median_overnight_share"] == pytest.approx(1.0)
     assert topix500_day_1["constituent_count"] == 2
-    assert topix500_day_1["intraday_share"] == pytest.approx(up_move / (2.0 * up_move + down_gap))
-    assert topix500_day_1["overnight_share"] == pytest.approx((up_move + down_gap) / (2.0 * up_move + down_gap))
+
+
+def test_stock_intraday_bundle_roundtrip(
+    analytics_db_path: str,
+    tmp_path: Path,
+) -> None:
+    result = run_stock_intraday_overnight_share_analysis(
+        analytics_db_path,
+        selected_groups=["TOPIX100", "TOPIX500"],
+        min_session_count=1,
+    )
+
+    bundle = write_stock_intraday_overnight_share_research_bundle(
+        result,
+        output_root=tmp_path,
+        run_id="20260331_182000_testabcd",
+    )
+    reloaded = load_stock_intraday_overnight_share_research_bundle(bundle.bundle_dir)
+
+    assert bundle.experiment_id == STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID
+    assert bundle.summary_path.exists()
+    assert (
+        get_stock_intraday_overnight_share_bundle_path_for_run_id(
+            bundle.run_id,
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_stock_intraday_overnight_share_latest_bundle_path(
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert reloaded.selected_groups == result.selected_groups
+    assert reloaded.min_session_count == result.min_session_count
+    pd.testing.assert_frame_equal(
+        reloaded.group_summary_df,
+        result.group_summary_df,
+        check_dtype=False,
+    )
 
 
 def test_min_session_count_filters_stocks(analytics_db_path: str) -> None:

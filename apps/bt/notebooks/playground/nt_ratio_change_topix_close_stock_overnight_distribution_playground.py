@@ -29,242 +29,110 @@ def _():
 
 @app.cell
 def _(Path, sys):
-    _project_root = Path.cwd()
-    if _project_root.name == "playground":
-        _project_root = _project_root.parent.parent
-    elif _project_root.name == "notebooks":
-        _project_root = _project_root.parent
+    from src.shared.research_notebook_viewer import (
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
+        get_latest_bundle_defaults,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
+    )
 
-    if str(_project_root) not in sys.path:
-        sys.path.insert(0, str(_project_root))
-
-    from src.shared.config.settings import get_settings
+    _project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.nt_ratio_change_topix_close_stock_overnight_distribution import (
-        STOCK_GROUP_ORDER,
-        get_nt_ratio_change_topix_close_available_date_range,
-        run_nt_ratio_change_topix_close_stock_overnight_distribution,
-    )
-    from src.domains.analytics.topix_close_stock_overnight_distribution import (
-        get_topix_close_return_stats,
+        NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path,
+        load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
     )
 
-    default_db_path = get_settings().market_db_path
     return (
-        STOCK_GROUP_ORDER,
-        default_db_path,
-        get_nt_ratio_change_topix_close_available_date_range,
-        get_topix_close_return_stats,
-        run_nt_ratio_change_topix_close_stock_overnight_distribution,
+        NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+        build_bundle_viewer_controls,
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
+        get_latest_bundle_defaults,
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path,
+        load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
+        load_research_bundle_info,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
     )
 
 
 @app.cell
-def _(default_db_path, get_nt_ratio_change_topix_close_available_date_range):
-    try:
-        initial_range = get_nt_ratio_change_topix_close_available_date_range(
-            default_db_path
-        )
-    except Exception:
-        initial_range = (None, None)
-    return (initial_range,)
+def _(get_latest_bundle_defaults, get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path):
+    latest_bundle_path_str, latest_run_id = get_latest_bundle_defaults(
+        get_nt_ratio_change_topix_close_stock_overnight_distribution_latest_bundle_path
+    )
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
-def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
-    _available_start_date, _available_end_date = initial_range
-
-    db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
-    start_date = mo.ui.text(
-        value=_available_start_date or "",
-        label="Event Start Date (YYYY-MM-DD)",
+def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id=latest_run_id,
+        latest_bundle_path_str=latest_bundle_path_str,
+        runner_path="apps/bt/scripts/research/run_nt_ratio_change_topix_close_stock_overnight_distribution.py",
     )
-    end_date = mo.ui.text(
-        value=_available_end_date or "",
-        label="Event End Date (YYYY-MM-DD)",
-    )
-    selected_groups = mo.ui.text(
-        value=", ".join(STOCK_GROUP_ORDER),
-        label="Groups (comma separated)",
-    )
-    sigma_threshold_1 = mo.ui.number(
-        value=1.0,
-        start=0.1,
-        stop=10.0,
-        step=0.1,
-        label="NT Sigma Threshold 1",
-    )
-    sigma_threshold_2 = mo.ui.number(
-        value=2.0,
-        start=0.2,
-        stop=20.0,
-        step=0.1,
-        label="NT Sigma Threshold 2",
-    )
-    topix_sigma_threshold_1 = mo.ui.number(
-        value=1.0,
-        start=0.1,
-        stop=10.0,
-        step=0.1,
-        label="TOPIX Close Sigma Threshold 1",
-    )
-    topix_sigma_threshold_2 = mo.ui.number(
-        value=2.0,
-        start=0.2,
-        stop=20.0,
-        step=0.1,
-        label="TOPIX Close Sigma Threshold 2",
-    )
-    sample_size = mo.ui.number(
-        value=1000,
-        start=0,
-        step=100,
-        label="Sample Size Per Group/Joint Bucket",
-    )
-    clip_lower = mo.ui.number(
-        value=1.0,
-        start=0.0,
-        stop=49.0,
-        step=0.5,
-        label="Clip Lower Percentile",
-    )
-    clip_upper = mo.ui.number(
-        value=99.0,
-        start=51.0,
-        stop=100.0,
-        step=0.5,
-        label="Clip Upper Percentile",
-    )
-
-    mo.vstack(
-        [
-            db_path,
-            mo.hstack([start_date, end_date]),
-            selected_groups,
-            mo.hstack([sigma_threshold_1, sigma_threshold_2]),
-            mo.hstack([topix_sigma_threshold_1, topix_sigma_threshold_2]),
-            mo.hstack([sample_size, clip_lower, clip_upper]),
-        ]
-    )
-    return (
-        clip_lower,
-        clip_upper,
-        db_path,
-        end_date,
-        sample_size,
-        selected_groups,
-        sigma_threshold_1,
-        sigma_threshold_2,
-        start_date,
-        topix_sigma_threshold_1,
-        topix_sigma_threshold_2,
-    )
+    controls_view
+    return bundle_path, run_id
 
 
 @app.cell
 def _(
-    STOCK_GROUP_ORDER,
-    clip_lower,
-    clip_upper,
-    db_path,
-    end_date,
-    sample_size,
-    selected_groups,
-    sigma_threshold_1,
-    sigma_threshold_2,
-    start_date,
-    topix_sigma_threshold_1,
-    topix_sigma_threshold_2,
+    bundle_path,
+    get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
+    run_id,
+    resolve_selected_bundle_path,
 ):
-    _requested_groups = [
-        value.strip()
-        for value in selected_groups.value.split(",")
-        if value.strip()
-    ]
-    if not _requested_groups:
-        _requested_groups = list(STOCK_GROUP_ORDER)
-
+    run_id_value = run_id.value.strip()
     parsed_inputs = {
-        "requested_groups": _requested_groups,
-        "selected_clip": (float(clip_lower.value), float(clip_upper.value)),
-        "selected_db_path": db_path.value.strip(),
-        "selected_end": end_date.value.strip() or None,
-        "selected_sample_size": int(sample_size.value),
-        "selected_start": start_date.value.strip() or None,
-        "sigma_thresholds": (
-            float(sigma_threshold_1.value),
-            float(sigma_threshold_2.value),
-        ),
-        "topix_sigma_thresholds": (
-            float(topix_sigma_threshold_1.value),
-            float(topix_sigma_threshold_2.value),
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolve_selected_bundle_path(
+            bundle_path.value,
+            run_id_value,
+            get_nt_ratio_change_topix_close_stock_overnight_distribution_bundle_path_for_run_id,
         ),
     }
     return (parsed_inputs,)
 
 
 @app.cell
-def _(mo, parsed_inputs):
-    _options = {group: group for group in parsed_inputs["requested_groups"]}
-    _first_group = parsed_inputs["requested_groups"][0]
-    focus_group = mo.ui.dropdown(
-        options=_options,
-        value=_first_group,
-        label="Focus Group For Distribution",
-    )
+def _(error_message, mo, result):
+    if error_message or result is None:
+        focus_group = mo.md("")
+    else:
+        _options = {group: group for group in result.selected_groups}
+        _first_group = result.selected_groups[0]
+        focus_group = mo.ui.dropdown(
+            options=_options,
+            value=_first_group,
+            label="Focus Group For Distribution",
+        )
     focus_group
     return (focus_group,)
 
 
 @app.cell
-def _(get_topix_close_return_stats, parsed_inputs):
-    try:
-        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs[
-            "topix_sigma_thresholds"
-        ]
-        topix_close_stats = get_topix_close_return_stats(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            sigma_threshold_1=_sigma_threshold_1,
-            sigma_threshold_2=_sigma_threshold_2,
-        )
-        topix_stats_error_message = None
-    except Exception as exc:
-        topix_close_stats = None
-        topix_stats_error_message = str(exc)
-    return topix_close_stats, topix_stats_error_message
-
-
-@app.cell
 def _(
+    load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
+    load_research_bundle_info,
+    load_bundle_selection,
     parsed_inputs,
-    run_nt_ratio_change_topix_close_stock_overnight_distribution,
-    topix_close_stats,
-    topix_stats_error_message,
 ):
     try:
-        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        if topix_stats_error_message:
-            raise ValueError(topix_stats_error_message)
-        if topix_close_stats is None:
-            raise ValueError("No analyzable TOPIX close rows in selected range.")
-        result = run_nt_ratio_change_topix_close_stock_overnight_distribution(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            sigma_threshold_1=_sigma_threshold_1,
-            sigma_threshold_2=_sigma_threshold_2,
-            topix_close_threshold_1=topix_close_stats.threshold_1,
-            topix_close_threshold_2=topix_close_stats.threshold_2,
-            selected_groups=parsed_inputs["requested_groups"],
-            sample_size=parsed_inputs["selected_sample_size"],
-            clip_percentiles=parsed_inputs["selected_clip"],
+        bundle_info, result = load_bundle_selection(
+            selected_bundle_path=parsed_inputs["selected_bundle_path"],
+            load_research_bundle_info=load_research_bundle_info,
+            load_research_bundle=load_nt_ratio_change_topix_close_stock_overnight_distribution_research_bundle,
         )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -323,16 +191,17 @@ def build_matrix(
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result, topix_close_stats):
+def _(
+    NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
+    bundle_info,
+    error_message,
+    mo,
+    result,
+):
     _summary_view = mo.md("")
     if not error_message and result is not None:
-        _sigma_threshold_1, _sigma_threshold_2 = parsed_inputs["sigma_thresholds"]
-        _topix_sigma_threshold_1, _topix_sigma_threshold_2 = parsed_inputs[
-            "topix_sigma_thresholds"
-        ]
-        _selected_clip = parsed_inputs["selected_clip"]
         _nt_stats = result.nt_ratio_stats
-        _topix_stats = topix_close_stats
+        _topix_stats = result.topix_close_stats
         _nt_stats_lines = [
             "- NT ratio return stats: **no analyzable rows in range**",
         ]
@@ -340,7 +209,7 @@ def _(error_message, mo, parsed_inputs, result, topix_close_stats):
             _nt_stats_lines = [
                 f"- NT ratio return sample count: **{_nt_stats.sample_count}**",
                 f"- Mean / Std: **{_nt_stats.mean_return * 100:.4f}% / {_nt_stats.std_return * 100:.4f}%**",
-                f"- NT bucket boundaries: **μ-{_sigma_threshold_2:g}σ = {_nt_stats.lower_threshold_2 * 100:.4f}%**, **μ-{_sigma_threshold_1:g}σ = {_nt_stats.lower_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_1:g}σ = {_nt_stats.upper_threshold_1 * 100:.4f}%**, **μ+{_sigma_threshold_2:g}σ = {_nt_stats.upper_threshold_2 * 100:.4f}%**",
+                f"- NT bucket boundaries: **μ-{result.sigma_threshold_2:g}σ = {_nt_stats.lower_threshold_2 * 100:.4f}%**, **μ-{result.sigma_threshold_1:g}σ = {_nt_stats.lower_threshold_1 * 100:.4f}%**, **μ+{result.sigma_threshold_1:g}σ = {_nt_stats.upper_threshold_1 * 100:.4f}%**, **μ+{result.sigma_threshold_2:g}σ = {_nt_stats.upper_threshold_2 * 100:.4f}%**",
                 f"- Min / Q25 / Median / Q75 / Max: **{_nt_stats.min_return * 100:.4f}% / {_nt_stats.q25_return * 100:.4f}% / {_nt_stats.median_return * 100:.4f}% / {_nt_stats.q75_return * 100:.4f}% / {_nt_stats.max_return * 100:.4f}%**",
             ]
         _topix_stats_lines = [
@@ -350,9 +219,15 @@ def _(error_message, mo, parsed_inputs, result, topix_close_stats):
             _topix_stats_lines = [
                 f"- TOPIX close return sample count: **{_topix_stats.sample_count}**",
                 f"- Mean / Std: **{_topix_stats.mean_return * 100:.4f}% / {_topix_stats.std_return * 100:.4f}%**",
-                f"- TOPIX sigma thresholds: **{_topix_sigma_threshold_1:g}σ / {_topix_sigma_threshold_2:g}σ**",
+                f"- TOPIX sigma thresholds: **{_topix_stats.sigma_threshold_1:g}σ / {_topix_stats.sigma_threshold_2:g}σ**",
                 f"- TOPIX derived thresholds: **{_topix_stats.threshold_1 * 100:.4f}% / {_topix_stats.threshold_2 * 100:.4f}%**",
                 f"- Min / Q25 / Median / Q75 / Max: **{_topix_stats.min_return * 100:.4f}% / {_topix_stats.q25_return * 100:.4f}% / {_topix_stats.median_return * 100:.4f}% / {_topix_stats.q75_return * 100:.4f}% / {_topix_stats.max_return * 100:.4f}%**",
+            ]
+        _bundle_lines = []
+        if bundle_info is not None:
+            _bundle_lines = [
+                f"- Experiment: **{NT_RATIO_CHANGE_TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID}**",
+                f"- Bundle run: **{bundle_info.run_id}**",
             ]
 
         _summary_view = mo.md(
@@ -364,10 +239,10 @@ def _(error_message, mo, parsed_inputs, result, topix_close_stats):
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
                     f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
-                    f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
-                    f"- NT sigma thresholds: **{_sigma_threshold_1:g}σ / {_sigma_threshold_2:g}σ**",
-                    f"- Sample size per group/joint bucket: **{parsed_inputs['selected_sample_size']}**",
-                    f"- Plot clip: **{_selected_clip[0]:.1f}% -> {_selected_clip[1]:.1f}%**",
+                    f"- Selected groups: **{', '.join(result.selected_groups)}**",
+                    f"- NT sigma thresholds: **{result.sigma_threshold_1:g}σ / {result.sigma_threshold_2:g}σ**",
+                    f"- Sample size per group/joint bucket: **{result.sample_size}**",
+                    f"- Plot clip: **{result.clip_percentiles[0]:.1f}% -> {result.clip_percentiles[1]:.1f}%**",
                     f"- Excluded NT ratio days without previous ratio: **{result.excluded_nt_ratio_days_without_prev_ratio}**",
                     f"- Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**",
                     f"- Excluded joint days without next session: **{result.excluded_joint_days_without_next_session}**",
@@ -376,6 +251,8 @@ def _(error_message, mo, parsed_inputs, result, topix_close_stats):
                     "- Event definition: **topix_close_return = (topix_close - prev_topix_close) / prev_topix_close**",
                     "- Trade definition: **stock overnight_return = (next_open - event_close) / event_close**",
                     "",
+                    *_bundle_lines,
+                    *([""] if _bundle_lines else []),
                     *_nt_stats_lines,
                     "",
                     *_topix_stats_lines,
@@ -387,7 +264,7 @@ def _(error_message, mo, parsed_inputs, result, topix_close_stats):
 
 
 @app.cell
-def _(error_message, mo, pd, result, topix_close_stats):
+def _(error_message, mo, pd, result):
     _stats_table = mo.md("")
     if not error_message and result is not None:
         _views = []
@@ -422,20 +299,21 @@ def _(error_message, mo, pd, result, topix_close_stats):
                     ),
                 ]
             )
-        if topix_close_stats is not None:
+        if result.topix_close_stats is not None:
+            _topix_close_stats = result.topix_close_stats
             _topix_stats_df = pd.DataFrame(
                 [
                     {
-                        "sample_count": topix_close_stats.sample_count,
-                        "mean_return": topix_close_stats.mean_return,
-                        "std_return": topix_close_stats.std_return,
-                        "threshold_1": topix_close_stats.threshold_1,
-                        "threshold_2": topix_close_stats.threshold_2,
-                        "min_return": topix_close_stats.min_return,
-                        "q25_return": topix_close_stats.q25_return,
-                        "median_return": topix_close_stats.median_return,
-                        "q75_return": topix_close_stats.q75_return,
-                        "max_return": topix_close_stats.max_return,
+                        "sample_count": _topix_close_stats.sample_count,
+                        "mean_return": _topix_close_stats.mean_return,
+                        "std_return": _topix_close_stats.std_return,
+                        "threshold_1": _topix_close_stats.threshold_1,
+                        "threshold_2": _topix_close_stats.threshold_2,
+                        "min_return": _topix_close_stats.min_return,
+                        "q25_return": _topix_close_stats.q25_return,
+                        "median_return": _topix_close_stats.median_return,
+                        "q75_return": _topix_close_stats.q75_return,
+                        "max_return": _topix_close_stats.max_return,
                     }
                 ]
             )

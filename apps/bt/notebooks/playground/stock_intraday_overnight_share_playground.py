@@ -29,56 +29,56 @@ def _():
 
 @app.cell
 def _(Path, sys):
-    _project_root = Path.cwd()
-    if _project_root.name == "playground":
-        _project_root = _project_root.parent.parent
-    elif _project_root.name == "notebooks":
-        _project_root = _project_root.parent
+    from src.shared.research_notebook_viewer import (
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
+        get_latest_bundle_defaults,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
+    )
 
-    if str(_project_root) not in sys.path:
-        sys.path.insert(0, str(_project_root))
-
-    from src.shared.config.settings import get_settings
+    _project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.stock_intraday_overnight_share import (
-        STOCK_GROUP_ORDER,
-        get_stock_available_date_range,
-        run_stock_intraday_overnight_share_analysis,
+        STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+        get_stock_intraday_overnight_share_bundle_path_for_run_id,
+        get_stock_intraday_overnight_share_latest_bundle_path,
+        load_stock_intraday_overnight_share_research_bundle,
     )
 
-    default_db_path = get_settings().market_db_path
     return (
-        STOCK_GROUP_ORDER,
-        default_db_path,
-        get_stock_available_date_range,
-        run_stock_intraday_overnight_share_analysis,
+        STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+        build_bundle_viewer_controls,
+        get_stock_intraday_overnight_share_bundle_path_for_run_id,
+        get_latest_bundle_defaults,
+        get_stock_intraday_overnight_share_latest_bundle_path,
+        load_research_bundle_info,
+        load_bundle_selection,
+        load_stock_intraday_overnight_share_research_bundle,
+        resolve_selected_bundle_path,
     )
 
 
 @app.cell
-def _(default_db_path, get_stock_available_date_range):
-    try:
-        initial_range = get_stock_available_date_range(default_db_path)
-    except Exception:
-        initial_range = (None, None)
-    return (initial_range,)
+def _(get_latest_bundle_defaults, get_stock_intraday_overnight_share_latest_bundle_path):
+    latest_bundle_path_str, latest_run_id = get_latest_bundle_defaults(
+        get_stock_intraday_overnight_share_latest_bundle_path
+    )
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
-def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
-    _available_start_date, _available_end_date = initial_range
-
-    db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
-    start_date = mo.ui.text(
-        value=_available_start_date or "",
-        label="Event Start Date (YYYY-MM-DD)",
-    )
-    end_date = mo.ui.text(
-        value=_available_end_date or "",
-        label="Event End Date (YYYY-MM-DD)",
-    )
-    selected_groups = mo.ui.text(
-        value=", ".join(STOCK_GROUP_ORDER),
-        label="Groups (comma separated)",
+def _(
+    build_bundle_viewer_controls,
+    latest_bundle_path_str,
+    latest_run_id,
+    mo,
+):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id=latest_run_id,
+        latest_bundle_path_str=latest_bundle_path_str,
+        runner_path="apps/bt/scripts/research/run_stock_intraday_overnight_share.py",
     )
     min_session_count = mo.ui.number(
         value=60,
@@ -108,62 +108,51 @@ def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
         value="Overnight Share",
         label="Focus Group Ranking Metric",
     )
-
     mo.vstack(
         [
-            db_path,
-            mo.hstack([start_date, end_date]),
-            selected_groups,
+            controls_view,
             mo.hstack([min_session_count, top_n]),
             rolling_window,
             focus_metric,
         ]
     )
     return (
-        db_path,
-        end_date,
+        bundle_path,
         focus_metric,
         min_session_count,
+        run_id,
         rolling_window,
-        selected_groups,
-        start_date,
         top_n,
     )
 
 
 @app.cell
 def _(
-    STOCK_GROUP_ORDER,
-    db_path,
-    end_date,
+    bundle_path,
     focus_metric,
+    get_stock_intraday_overnight_share_bundle_path_for_run_id,
     min_session_count,
+    run_id,
     rolling_window,
-    selected_groups,
-    start_date,
     top_n,
+    resolve_selected_bundle_path,
 ):
     _focus_metric_map = {
         "Overnight Share": "overnight_share",
         "Intraday Share": "intraday_share",
         "Total Abs Move": "total_abs_log_return_sum",
     }
-    _requested_groups = [
-        value.strip()
-        for value in selected_groups.value.split(",")
-        if value.strip()
-    ]
-    if not _requested_groups:
-        _requested_groups = list(STOCK_GROUP_ORDER)
-
+    run_id_value = run_id.value.strip()
     parsed_inputs = {
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolve_selected_bundle_path(
+            bundle_path.value,
+            run_id_value,
+            get_stock_intraday_overnight_share_bundle_path_for_run_id,
+        ),
         "focus_metric": _focus_metric_map[focus_metric.value],
         "min_session_count": int(min_session_count.value),
-        "requested_groups": _requested_groups,
         "rolling_window": int(rolling_window.value),
-        "selected_db_path": db_path.value.strip(),
-        "selected_end": end_date.value.strip() or None,
-        "selected_start": start_date.value.strip() or None,
         "top_n": int(top_n.value),
         "focus_metric_label": focus_metric.value,
     }
@@ -171,33 +160,40 @@ def _(
 
 
 @app.cell
-def _(mo, parsed_inputs):
-    _options = {group: group for group in parsed_inputs["requested_groups"]}
-    _first_group = parsed_inputs["requested_groups"][0]
-    focus_group = mo.ui.dropdown(
-        options=_options,
-        value=_first_group,
-        label="Focus Group",
-    )
+def _(error_message, mo, result):
+    if error_message or result is None:
+        focus_group = mo.md("")
+    else:
+        _options = {group: group for group in result.selected_groups}
+        _first_group = result.selected_groups[0]
+        focus_group = mo.ui.dropdown(
+            options=_options,
+            value=_first_group,
+            label="Focus Group",
+        )
     focus_group
     return (focus_group,)
 
 
 @app.cell
-def _(parsed_inputs, run_stock_intraday_overnight_share_analysis):
+def _(
+    load_research_bundle_info,
+    load_bundle_selection,
+    load_stock_intraday_overnight_share_research_bundle,
+    parsed_inputs,
+):
     try:
-        result = run_stock_intraday_overnight_share_analysis(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            selected_groups=parsed_inputs["requested_groups"],
-            min_session_count=parsed_inputs["min_session_count"],
+        bundle_info, result = load_bundle_selection(
+            selected_bundle_path=parsed_inputs["selected_bundle_path"],
+            load_research_bundle_info=load_research_bundle_info,
+            load_research_bundle=load_stock_intraday_overnight_share_research_bundle,
         )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -210,10 +206,23 @@ def _(error_message, mo):
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(
+    STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID,
+    bundle_info,
+    error_message,
+    mo,
+    result,
+):
     _summary_view = mo.md("")
     if not error_message and result is not None:
         _total_stocks = int(result.stock_metrics_df["code"].nunique())
+        _bundle_lines = []
+        if bundle_info is not None:
+            _bundle_lines = [
+                f"- Experiment: **{STOCK_INTRADAY_OVERNIGHT_SHARE_RESEARCH_EXPERIMENT_ID}**",
+                f"- Bundle run: **{bundle_info.run_id}**",
+                "",
+            ]
         _summary_view = mo.md(
             "\n".join(
                 [
@@ -229,8 +238,10 @@ def _(error_message, mo, parsed_inputs, result):
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
                     f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
                     f"- Selected groups: **{', '.join(result.selected_groups)}**",
-                    f"- Minimum sessions per stock: **{parsed_inputs['min_session_count']}**",
+                    f"- Minimum sessions per stock: **{result.min_session_count}**",
                     f"- Included stocks after filter: **{_total_stocks}**",
+                    "",
+                    *_bundle_lines,
                 ]
             )
         )

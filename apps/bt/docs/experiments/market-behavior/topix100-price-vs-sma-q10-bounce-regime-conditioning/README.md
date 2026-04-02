@@ -65,7 +65,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
   apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py
 ```
 
-notebook は latest bundle を既定で読みます。fresh analysis は `Mode = Run Fresh Analysis` に切り替えたときだけ実行されます。
+notebook は latest bundle を既定で読みます。新規 run は notebook ではなく runner script から実行します。
 
 ## Next Questions
 

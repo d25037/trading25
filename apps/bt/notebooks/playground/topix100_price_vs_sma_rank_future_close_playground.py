@@ -29,16 +29,15 @@ def _():
 
 @app.cell
 def _(Path, sys):
-    project_root = Path.cwd()
-    if project_root.name == "playground":
-        project_root = project_root.parent.parent
-    elif project_root.name == "notebooks":
-        project_root = project_root.parent
+    from src.shared.research_notebook_viewer import (
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
+        get_latest_bundle_defaults,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
+    )
 
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
-    from src.shared.config.settings import get_settings
+    project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
     from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
         PRICE_FEATURE_LABEL_MAP,
@@ -49,176 +48,65 @@ def _(Path, sys):
         VOLUME_FEATURE_ORDER,
         VOLUME_SMA_WINDOW_ORDER,
         get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id,
-        get_topix100_price_vs_sma_rank_future_close_available_date_range,
         get_topix100_price_vs_sma_rank_future_close_latest_bundle_path,
         load_topix100_price_vs_sma_rank_future_close_research_bundle,
-        run_topix100_price_vs_sma_rank_future_close_research,
     )
 
-    default_db_path = get_settings().market_db_path
     return (
         PRICE_FEATURE_LABEL_MAP,
         PRICE_FEATURE_ORDER,
         PRIMARY_VOLUME_FEATURE,
         TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID,
+        build_bundle_viewer_controls,
         VOLUME_FEATURE_LABEL_MAP,
         VOLUME_FEATURE_ORDER,
         VOLUME_SMA_WINDOW_ORDER,
-        default_db_path,
+        get_latest_bundle_defaults,
         get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id,
-        get_topix100_price_vs_sma_rank_future_close_available_date_range,
         get_topix100_price_vs_sma_rank_future_close_latest_bundle_path,
         load_research_bundle_info,
+        load_bundle_selection,
         load_topix100_price_vs_sma_rank_future_close_research_bundle,
-        run_topix100_price_vs_sma_rank_future_close_research,
+        project_root,
+        resolve_selected_bundle_path,
     )
 
 
 @app.cell
-def _(get_topix100_price_vs_sma_rank_future_close_latest_bundle_path):
-    try:
-        latest_bundle_path = (
-            get_topix100_price_vs_sma_rank_future_close_latest_bundle_path()
-        )
-    except Exception:
-        latest_bundle_path = None
-    latest_run_id = latest_bundle_path.name if latest_bundle_path else ""
-    latest_bundle_path_str = str(latest_bundle_path) if latest_bundle_path else ""
+def _(get_latest_bundle_defaults, get_topix100_price_vs_sma_rank_future_close_latest_bundle_path):
+    latest_bundle_path_str, latest_run_id = get_latest_bundle_defaults(
+        get_topix100_price_vs_sma_rank_future_close_latest_bundle_path
+    )
     return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
-def _(default_db_path, get_topix100_price_vs_sma_rank_future_close_available_date_range):
-    try:
-        initial_range = get_topix100_price_vs_sma_rank_future_close_available_date_range(
-            default_db_path
-        )
-    except Exception:
-        initial_range = (None, None)
-    return (initial_range,)
-
-
-@app.cell
-def _(
-    default_db_path,
-    initial_range,
-    latest_bundle_path_str,
-    latest_run_id,
-    mo,
-    pd,
-):
-    available_start_date, available_end_date = initial_range
-    default_start_date = available_start_date or ""
-    if available_end_date:
-        candidate = (
-            pd.Timestamp(available_end_date)
-            - pd.DateOffset(years=10)
-            + pd.Timedelta(days=1)
-        ).strftime("%Y-%m-%d")
-        if available_start_date:
-            default_start_date = max(available_start_date, candidate)
-        else:
-            default_start_date = candidate
-
-    mode = mo.ui.dropdown(
-        options={
-            "bundle": "Load Existing Bundle",
-            "recompute": "Run Fresh Analysis",
-        },
-        value="bundle",
-        label="Mode",
-    )
-    run_id = mo.ui.text(value=latest_run_id, label="Run ID")
-    bundle_path = mo.ui.text(
-        value=latest_bundle_path_str,
-        label="Bundle Path (optional)",
-    )
-    db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
-    start_date = mo.ui.text(
-        value=default_start_date,
-        label="Analysis Start Date (YYYY-MM-DD)",
-    )
-    end_date = mo.ui.text(
-        value=available_end_date or "",
-        label="Analysis End Date (YYYY-MM-DD)",
-    )
-    lookback_years = mo.ui.number(value=10, start=1, step=1, label="Lookback Years")
-    min_constituents_per_day = mo.ui.number(
-        value=80,
-        start=4,
-        step=1,
-        label="Min Constituents / Day",
-    )
-
-    recompute_controls = mo.vstack(
-        [
-            db_path,
-            mo.hstack([start_date, end_date]),
-            mo.hstack([lookback_years, min_constituents_per_day]),
-        ]
-    )
-    controls_view = mo.vstack(
-        [
-            mo.md(
-                "\n".join(
-                    [
-                        "### Research Runner",
-                        "",
-                        "- Default path is **viewer-first**: load an existing bundle by `Run ID` or `Bundle Path`.",
-                        "- Fresh analysis only runs when `Mode = Run Fresh Analysis`.",
-                        "- Canonical runner: `apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py`",
-                    ]
-                )
-            ),
-            mo.hstack([mode, run_id]),
-            bundle_path,
-            recompute_controls if mode.value == "recompute" else mo.md(""),
-        ]
+def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id=latest_run_id,
+        latest_bundle_path_str=latest_bundle_path_str,
+        runner_path="apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py",
     )
     controls_view
-    return (
-        bundle_path,
-        db_path,
-        end_date,
-        lookback_years,
-        min_constituents_per_day,
-        mode,
-        run_id,
-        start_date,
-    )
+    return bundle_path, run_id
 
 
 @app.cell
 def _(
     bundle_path,
-    end_date,
     get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id,
-    lookback_years,
-    min_constituents_per_day,
-    mode,
     run_id,
-    start_date,
-    db_path,
+    resolve_selected_bundle_path,
 ):
     run_id_value = run_id.value.strip()
-    bundle_path_value = bundle_path.value.strip()
-    resolved_bundle_path = bundle_path_value
-    if not resolved_bundle_path and run_id_value:
-        resolved_bundle_path = str(
-            get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id(
-                run_id_value
-            )
-        )
-
     parsed_inputs = {
-        "mode": mode.value,
         "run_id": run_id_value or None,
-        "selected_bundle_path": resolved_bundle_path or None,
-        "selected_db_path": db_path.value.strip(),
-        "selected_start": start_date.value.strip() or None,
-        "selected_end": end_date.value.strip() or None,
-        "lookback_years": int(lookback_years.value),
-        "min_constituents_per_day": int(min_constituents_per_day.value),
+        "selected_bundle_path": resolve_selected_bundle_path(
+            bundle_path.value,
+            run_id_value,
+            get_topix100_price_vs_sma_rank_future_close_bundle_path_for_run_id,
+        ),
     }
     return (parsed_inputs,)
 
@@ -226,32 +114,16 @@ def _(
 @app.cell
 def _(
     load_research_bundle_info,
+    load_bundle_selection,
     load_topix100_price_vs_sma_rank_future_close_research_bundle,
-    VOLUME_SMA_WINDOW_ORDER,
     parsed_inputs,
-    run_topix100_price_vs_sma_rank_future_close_research,
 ):
     try:
-        if parsed_inputs["mode"] == "bundle":
-            selected_bundle_path = parsed_inputs["selected_bundle_path"]
-            if not selected_bundle_path:
-                raise ValueError(
-                    "Set a bundle path or run id, or switch Mode to Run Fresh Analysis."
-                )
-            bundle_info = load_research_bundle_info(selected_bundle_path)
-            result = load_topix100_price_vs_sma_rank_future_close_research_bundle(
-                selected_bundle_path
-            )
-        else:
-            bundle_info = None
-            result = run_topix100_price_vs_sma_rank_future_close_research(
-                parsed_inputs["selected_db_path"],
-                start_date=parsed_inputs["selected_start"],
-                end_date=parsed_inputs["selected_end"],
-                lookback_years=parsed_inputs["lookback_years"],
-                min_constituents_per_day=parsed_inputs["min_constituents_per_day"],
-                volume_sma_windows=VOLUME_SMA_WINDOW_ORDER,
-            )
+        bundle_info, result = load_bundle_selection(
+            selected_bundle_path=parsed_inputs["selected_bundle_path"],
+            load_research_bundle_info=load_research_bundle_info,
+            load_research_bundle=load_topix100_price_vs_sma_rank_future_close_research_bundle,
+        )
         error_message = None
     except Exception as exc:
         bundle_info = None
@@ -289,7 +161,6 @@ def _(
                     "## TOPIX100 Price vs SMA Rank Research",
                     "",
                     f"- Experiment ID: **{TOPIX100_PRICE_VS_SMA_RESEARCH_EXPERIMENT_ID}**",
-                    f"- Mode: **{parsed_inputs['mode']}**",
                     *(
                         [
                             f"- Bundle run id: **{bundle_info.run_id}**",
@@ -302,7 +173,6 @@ def _(
                     f"- Source mode: **{result.source_mode}**",
                     f"- Source detail: **{result.source_detail}**",
                     f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
-                    f"- Requested range: **{parsed_inputs['selected_start'] or result.default_start_date} -> {parsed_inputs['selected_end'] or result.available_end_date}**",
                     f"- Effective analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
                     f"- Latest TOPIX100 constituent count: **{result.topix100_constituent_count}**",
                     f"- Stock-day rows after SMA warmup/filter: **{result.stock_day_count}**",

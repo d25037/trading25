@@ -29,153 +29,100 @@ def _():
 
 @app.cell
 def _(Path, sys):
-    _project_root = Path.cwd()
-    if _project_root.name == "playground":
-        _project_root = _project_root.parent.parent
-    elif _project_root.name == "notebooks":
-        _project_root = _project_root.parent
+    from src.shared.research_notebook_viewer import (
+        build_bundle_viewer_controls,
+        ensure_bt_project_root_on_path,
+        get_latest_bundle_defaults,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
+    )
 
-    if str(_project_root) not in sys.path:
-        sys.path.insert(0, str(_project_root))
-
-    from src.shared.config.settings import get_settings
+    _project_root = ensure_bt_project_root_on_path(Path.cwd(), sys.path)
+    from src.domains.analytics.research_bundle import load_research_bundle_info
     from src.domains.analytics.hedge_1357_nt_ratio_topix import (
+        HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID,
         RULE_ORDER,
         STOCK_GROUP_ORDER,
         TARGET_ORDER,
-        get_1357_nt_ratio_topix_available_date_range,
-        run_1357_nt_ratio_topix_hedge_research,
+        get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id,
+        get_1357_nt_ratio_topix_hedge_latest_bundle_path,
+        load_1357_nt_ratio_topix_hedge_research_bundle,
     )
 
-    default_db_path = get_settings().market_db_path
     return (
+        HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID,
         RULE_ORDER,
         STOCK_GROUP_ORDER,
         TARGET_ORDER,
-        default_db_path,
-        get_1357_nt_ratio_topix_available_date_range,
-        run_1357_nt_ratio_topix_hedge_research,
+        build_bundle_viewer_controls,
+        get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id,
+        get_latest_bundle_defaults,
+        get_1357_nt_ratio_topix_hedge_latest_bundle_path,
+        load_1357_nt_ratio_topix_hedge_research_bundle,
+        load_research_bundle_info,
+        load_bundle_selection,
+        resolve_selected_bundle_path,
     )
 
 
 @app.cell
-def _(default_db_path, get_1357_nt_ratio_topix_available_date_range):
-    try:
-        initial_range = get_1357_nt_ratio_topix_available_date_range(default_db_path)
-    except Exception:
-        initial_range = (None, None)
-    return (initial_range,)
+def _(get_1357_nt_ratio_topix_hedge_latest_bundle_path, get_latest_bundle_defaults):
+    latest_bundle_path_str, latest_run_id = get_latest_bundle_defaults(
+        get_1357_nt_ratio_topix_hedge_latest_bundle_path
+    )
+    return latest_bundle_path_str, latest_run_id
 
 
 @app.cell
-def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
-    _available_start_date, _available_end_date = initial_range
-
-    db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
-    start_date = mo.ui.text(
-        value=_available_start_date or "",
-        label="Event Start Date (YYYY-MM-DD)",
+def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id=latest_run_id,
+        latest_bundle_path_str=latest_bundle_path_str,
+        runner_path="apps/bt/scripts/research/run_1357_nt_ratio_topix_hedge.py",
     )
-    end_date = mo.ui.text(
-        value=_available_end_date or "",
-        label="Event End Date (YYYY-MM-DD)",
-    )
-    selected_groups = mo.ui.text(
-        value=", ".join(STOCK_GROUP_ORDER),
-        label="Groups (comma separated)",
-    )
-    sigma_threshold_1 = mo.ui.number(
-        value=1.0,
-        start=0.1,
-        stop=10.0,
-        step=0.1,
-        label="Sigma Threshold 1",
-    )
-    sigma_threshold_2 = mo.ui.number(
-        value=2.0,
-        start=0.2,
-        stop=20.0,
-        step=0.1,
-        label="Sigma Threshold 2",
-    )
-    fixed_weights = mo.ui.text(
-        value="0.1, 0.2, 0.3, 0.4, 0.5",
-        label="Fixed Hedge Weights",
-    )
-
-    mo.vstack(
-        [
-            db_path,
-            mo.hstack([start_date, end_date]),
-            selected_groups,
-            mo.hstack([sigma_threshold_1, sigma_threshold_2]),
-            fixed_weights,
-        ]
-    )
-    return (
-        db_path,
-        end_date,
-        fixed_weights,
-        selected_groups,
-        sigma_threshold_1,
-        sigma_threshold_2,
-        start_date,
-    )
+    controls_view
+    return bundle_path, run_id
 
 
 @app.cell
 def _(
-    STOCK_GROUP_ORDER,
-    db_path,
-    end_date,
-    fixed_weights,
-    selected_groups,
-    sigma_threshold_1,
-    sigma_threshold_2,
-    start_date,
+    bundle_path,
+    get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id,
+    run_id,
+    resolve_selected_bundle_path,
 ):
-    _requested_groups = [
-        value.strip()
-        for value in selected_groups.value.split(",")
-        if value.strip()
-    ]
-    if not _requested_groups:
-        _requested_groups = list(STOCK_GROUP_ORDER)
-
-    _parsed_weights = [
-        float(value.strip())
-        for value in fixed_weights.value.split(",")
-        if value.strip()
-    ]
+    run_id_value = run_id.value.strip()
     parsed_inputs = {
-        "requested_groups": _requested_groups,
-        "selected_db_path": db_path.value.strip(),
-        "selected_end": end_date.value.strip() or None,
-        "selected_start": start_date.value.strip() or None,
-        "sigma_threshold_1": float(sigma_threshold_1.value),
-        "sigma_threshold_2": float(sigma_threshold_2.value),
-        "fixed_weights": _parsed_weights,
+        "run_id": run_id_value or None,
+        "selected_bundle_path": resolve_selected_bundle_path(
+            bundle_path.value,
+            run_id_value,
+            get_1357_nt_ratio_topix_hedge_bundle_path_for_run_id,
+        ),
     }
     return (parsed_inputs,)
 
 
 @app.cell
-def _(parsed_inputs, run_1357_nt_ratio_topix_hedge_research):
+def _(
+    load_1357_nt_ratio_topix_hedge_research_bundle,
+    load_research_bundle_info,
+    load_bundle_selection,
+    parsed_inputs,
+):
     try:
-        result = run_1357_nt_ratio_topix_hedge_research(
-            parsed_inputs["selected_db_path"],
-            start_date=parsed_inputs["selected_start"],
-            end_date=parsed_inputs["selected_end"],
-            sigma_threshold_1=parsed_inputs["sigma_threshold_1"],
-            sigma_threshold_2=parsed_inputs["sigma_threshold_2"],
-            selected_groups=parsed_inputs["requested_groups"],
-            fixed_weights=parsed_inputs["fixed_weights"],
+        bundle_info, result = load_bundle_selection(
+            selected_bundle_path=parsed_inputs["selected_bundle_path"],
+            load_research_bundle_info=load_research_bundle_info,
+            load_research_bundle=load_1357_nt_ratio_topix_hedge_research_bundle,
         )
         error_message = None
     except Exception as exc:
+        bundle_info = None
         result = None
         error_message = str(exc)
-    return error_message, result
+    return bundle_info, error_message, result
 
 
 @app.cell
@@ -250,7 +197,13 @@ def build_matrix(
 
 
 @app.cell
-def _(error_message, mo, parsed_inputs, result):
+def _(
+    HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID,
+    bundle_info,
+    error_message,
+    mo,
+    result,
+):
     _summary_view = mo.md("")
     if not error_message and result is not None:
         _topix_stats = result.topix_close_stats
@@ -263,8 +216,8 @@ def _(error_message, mo, parsed_inputs, result):
             f"- Available range: **{result.available_start_date} -> {result.available_end_date}**",
             f"- Analysis range: **{result.analysis_start_date} -> {result.analysis_end_date}**",
             f"- Discovery / Validation split: **<= {result.discovery_end_date} / >= {result.validation_start_date}**",
-            f"- Selected groups: **{', '.join(parsed_inputs['requested_groups'])}**",
-            f"- Fixed weights: **{', '.join(f'{value:.2f}' for value in parsed_inputs['fixed_weights'])}**",
+            f"- Selected groups: **{', '.join(result.selected_groups)}**",
+            f"- Fixed weights: **{', '.join(f'{value:.2f}' for value in result.fixed_weights)}**",
             (
                 f"- MACD trend rule: **{result.macd_basis} "
                 f"({result.macd_fast_period}/{result.macd_slow_period}/{result.macd_signal_period}) "
@@ -274,6 +227,13 @@ def _(error_message, mo, parsed_inputs, result):
             "- Notes: **3d/5d drawdown metrics are event-indexed diagnostics with overlapping windows, not tradable path-equity curves.**",
             "- Notes: **Turnover and leveraged ETF decay are diagnostic warnings, not modeled costs.**",
         ]
+        if bundle_info is not None:
+            _summary_lines.extend(
+                [
+                    f"- Experiment: **{HEDGE_1357_NT_RATIO_TOPIX_RESEARCH_EXPERIMENT_ID}**",
+                    f"- Bundle run: **{bundle_info.run_id}**",
+                ]
+            )
         if _topix_stats is not None:
             _summary_lines.extend(
                 [
