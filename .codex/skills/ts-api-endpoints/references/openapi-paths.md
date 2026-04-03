@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **131**
+Total paths: **132**
 
 ## /api/analytics
 
@@ -21,6 +21,7 @@ Total paths: **131**
 | `/api/analytics/screening/jobs/{job_id}/stream` | `GET` |
 | `/api/analytics/screening/result/{job_id}` | `GET` |
 | `/api/analytics/sector-stocks` | `GET` |
+| `/api/analytics/stocks/{symbol}/cost-structure` | `GET` |
 | `/api/analytics/stocks/{symbol}/margin-pressure` | `GET` |
 | `/api/analytics/stocks/{symbol}/margin-ratio` | `GET` |
 | `/api/analytics/topix100-ranking` | `GET` |

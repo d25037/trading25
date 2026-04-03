@@ -26,9 +26,16 @@ const mockChartStore = {
     showTradingValueMA: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
+    showCostStructurePanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+    fundamentalsPanelOrder: [
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -312,13 +319,7 @@ describe('page scroll chart interaction options', () => {
 
   it('renders RiskAdjustedReturnChart without a latest value pill when data is empty', () => {
     render(
-      <RiskAdjustedReturnChart
-        data={[]}
-        lookbackPeriod={60}
-        ratioType="sortino"
-        threshold={1}
-        condition="above"
-      />
+      <RiskAdjustedReturnChart data={[]} lookbackPeriod={60} ratioType="sortino" threshold={1} condition="above" />
     );
 
     expect(screen.queryByText('0.00')).not.toBeInTheDocument();

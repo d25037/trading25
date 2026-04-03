@@ -22,6 +22,12 @@ from src.entrypoints.http.schemas.analytics_margin import (
 )
 from src.entrypoints.http.schemas.analytics_common import DataProvenance, ResponseDiagnostics
 from src.entrypoints.http.schemas.analytics_roe import ROEMetadata, ROEResponse, ROEResultItem, ROESummary
+from src.entrypoints.http.schemas.cost_structure import (
+    CostStructureDateRange,
+    CostStructurePoint,
+    CostStructureRegressionSummary,
+    CostStructureResponse,
+)
 from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
@@ -205,6 +211,51 @@ def _make_margin_ratio_response(empty: bool = False) -> MarginVolumeRatioRespons
     )
 
 
+def _make_cost_structure_response(symbol: str = "7203") -> CostStructureResponse:
+    point = CostStructurePoint(
+        periodEnd="2025-05-09",
+        disclosedDate="2025-05-09",
+        fiscalYear="2025",
+        analysisPeriodType="4Q",
+        sales=1500.0,
+        operatingProfit=180.0,
+        operatingMargin=12.0,
+        isDerived=True,
+    )
+    return CostStructureResponse(
+        symbol=symbol,
+        companyName="Toyota Motor",
+        points=[
+            CostStructurePoint(
+                periodEnd="2024-08-09",
+                disclosedDate="2024-08-09",
+                fiscalYear="2025",
+                analysisPeriodType="1Q",
+                sales=1000.0,
+                operatingProfit=100.0,
+                operatingMargin=10.0,
+                isDerived=False,
+            ),
+            point,
+        ],
+        latestPoint=point,
+        regression=CostStructureRegressionSummary(
+            sampleCount=4,
+            slope=0.43,
+            intercept=-54.59,
+            rSquared=0.939,
+            contributionMarginRatio=0.43,
+            variableCostRatio=0.57,
+            fixedCost=54.59,
+            breakEvenSales=126.95,
+        ),
+        dateRange=CostStructureDateRange(**{"from": "2024-08-09", "to": "2025-05-09"}),
+        lastUpdated="2025-05-10T00:00:00Z",
+        provenance=DataProvenance(source_kind="market", loaded_domains=["statements", "stocks"]),
+        diagnostics=ResponseDiagnostics(),
+    )
+
+
 class TestAnalyticsRouteHelpers:
     def test_get_executor_recreates_when_shutdown(self) -> None:
         with patch.object(analytics_market, "_executor", SimpleNamespace(_shutdown=True)):
@@ -222,6 +273,12 @@ class TestAnalyticsRouteHelpers:
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
         with pytest.raises(HTTPException) as exc:
             analytics_market._get_margin_service(cast(Any, request))
+        assert exc.value.status_code == 422
+
+    def test_get_market_reader_not_initialized(self) -> None:
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
+        with pytest.raises(HTTPException) as exc:
+            analytics_market._get_market_reader(cast(Any, request))
         assert exc.value.status_code == 422
 
 
@@ -312,3 +369,85 @@ class TestMarginRoutes:
 
         resp = client.get("/api/analytics/stocks/7203/margin-ratio")
         assert resp.status_code == 404
+
+
+class TestCostStructureRoute:
+    @patch("src.entrypoints.http.routes.analytics_market._get_market_reader")
+    @patch("src.entrypoints.http.routes.analytics_market.CostStructureAnalysisService")
+    def test_get_cost_structure_success(
+        self,
+        mock_service_cls: MagicMock,
+        mock_get_reader: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_get_reader.return_value = MagicMock()
+        service = MagicMock()
+        service.analyze_stock.return_value = _make_cost_structure_response()
+        mock_service_cls.return_value = service
+
+        resp = client.get("/api/analytics/stocks/7203/cost-structure")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["symbol"] == "7203"
+        assert data["regression"]["sampleCount"] == 4
+        service.analyze_stock.assert_called_once_with("7203", view="recent", window_quarters=12)
+
+    @patch("src.entrypoints.http.routes.analytics_market._get_market_reader")
+    @patch("src.entrypoints.http.routes.analytics_market.CostStructureAnalysisService")
+    def test_get_cost_structure_forwards_query_params(
+        self,
+        mock_service_cls: MagicMock,
+        mock_get_reader: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_get_reader.return_value = MagicMock()
+        service = MagicMock()
+        service.analyze_stock.return_value = _make_cost_structure_response()
+        mock_service_cls.return_value = service
+
+        resp = client.get(
+            "/api/analytics/stocks/7203/cost-structure",
+            params={"view": "same_quarter", "windowQuarters": 20},
+        )
+
+        assert resp.status_code == 200
+        service.analyze_stock.assert_called_once_with("7203", view="same_quarter", window_quarters=20)
+
+    @patch("src.entrypoints.http.routes.analytics_market._get_market_reader")
+    @patch("src.entrypoints.http.routes.analytics_market.CostStructureAnalysisService")
+    def test_get_cost_structure_not_found(
+        self,
+        mock_service_cls: MagicMock,
+        mock_get_reader: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_get_reader.return_value = MagicMock()
+        service = MagicMock()
+        service.analyze_stock.side_effect = ValueError("Stock not found: 9999")
+        mock_service_cls.return_value = service
+
+        resp = client.get("/api/analytics/stocks/9999/cost-structure")
+
+        assert resp.status_code == 404
+        assert "9999" in resp.json()["message"]
+
+    @patch("src.entrypoints.http.routes.analytics_market._get_market_reader")
+    @patch("src.entrypoints.http.routes.analytics_market.CostStructureAnalysisService")
+    def test_get_cost_structure_insufficient_data(
+        self,
+        mock_service_cls: MagicMock,
+        mock_get_reader: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_get_reader.return_value = MagicMock()
+        service = MagicMock()
+        service.analyze_stock.side_effect = ValueError(
+            "Insufficient usable data: 2 normalized points (minimum 3)"
+        )
+        mock_service_cls.return_value = service
+
+        resp = client.get("/api/analytics/stocks/7203/cost-structure")
+
+        assert resp.status_code == 422
+        assert "minimum 3" in resp.json()["message"]

@@ -1642,6 +1642,226 @@
         "title": "CompiledStrategyIR",
         "type": "object"
       },
+      "CostStructureDateRange": {
+        "description": "Date range used in cost structure analysis.",
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "CostStructureDateRange",
+        "type": "object"
+      },
+      "CostStructurePoint": {
+        "description": "Single cost structure analysis point.",
+        "properties": {
+          "analysisPeriodType": {
+            "description": "Analysis period type (single-quarter normalized or fiscal-year cumulative)",
+            "enum": [
+              "1Q",
+              "2Q",
+              "3Q",
+              "4Q",
+              "FY"
+            ],
+            "title": "Analysisperiodtype",
+            "type": "string"
+          },
+          "disclosedDate": {
+            "description": "Disclosure date (YYYY-MM-DD)",
+            "title": "Discloseddate",
+            "type": "string"
+          },
+          "fiscalYear": {
+            "description": "Inferred fiscal year label",
+            "title": "Fiscalyear",
+            "type": "string"
+          },
+          "isDerived": {
+            "description": "Whether point was derived from cumulative diff",
+            "title": "Isderived",
+            "type": "boolean"
+          },
+          "operatingMargin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operating margin (%)",
+            "title": "Operatingmargin"
+          },
+          "operatingProfit": {
+            "description": "Analysis operating profit value (millions JPY)",
+            "title": "Operatingprofit",
+            "type": "number"
+          },
+          "periodEnd": {
+            "description": "Source period end surrogate date (YYYY-MM-DD)",
+            "title": "Periodend",
+            "type": "string"
+          },
+          "sales": {
+            "description": "Analysis sales value (millions JPY)",
+            "title": "Sales",
+            "type": "number"
+          }
+        },
+        "required": [
+          "periodEnd",
+          "disclosedDate",
+          "fiscalYear",
+          "analysisPeriodType",
+          "sales",
+          "operatingProfit",
+          "isDerived"
+        ],
+        "title": "CostStructurePoint",
+        "type": "object"
+      },
+      "CostStructureRegressionSummary": {
+        "description": "Regression summary for cost structure analysis.",
+        "properties": {
+          "breakEvenSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated break-even sales (millions JPY)",
+            "title": "Breakevensales"
+          },
+          "contributionMarginRatio": {
+            "description": "Contribution margin ratio from slope",
+            "title": "Contributionmarginratio",
+            "type": "number"
+          },
+          "fixedCost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated fixed cost (millions JPY)",
+            "title": "Fixedcost"
+          },
+          "intercept": {
+            "description": "Regression intercept",
+            "title": "Intercept",
+            "type": "number"
+          },
+          "rSquared": {
+            "description": "Coefficient of determination (0-1)",
+            "title": "Rsquared",
+            "type": "number"
+          },
+          "sampleCount": {
+            "description": "Number of normalized points used for regression",
+            "title": "Samplecount",
+            "type": "integer"
+          },
+          "slope": {
+            "description": "Regression slope",
+            "title": "Slope",
+            "type": "number"
+          },
+          "variableCostRatio": {
+            "description": "Variable cost ratio (= 1 - slope)",
+            "title": "Variablecostratio",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sampleCount",
+          "slope",
+          "intercept",
+          "rSquared",
+          "contributionMarginRatio",
+          "variableCostRatio"
+        ],
+        "title": "CostStructureRegressionSummary",
+        "type": "object"
+      },
+      "CostStructureResponse": {
+        "description": "Cost structure analysis response.",
+        "properties": {
+          "companyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Company name",
+            "title": "Companyname"
+          },
+          "dateRange": {
+            "$ref": "#/components/schemas/CostStructureDateRange"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
+          "lastUpdated": {
+            "description": "Last updated timestamp (ISO 8601)",
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "latestPoint": {
+            "$ref": "#/components/schemas/CostStructurePoint",
+            "description": "Most recent normalized point"
+          },
+          "points": {
+            "description": "Analysis points for the selected view",
+            "items": {
+              "$ref": "#/components/schemas/CostStructurePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
+          "regression": {
+            "$ref": "#/components/schemas/CostStructureRegressionSummary"
+          },
+          "symbol": {
+            "description": "Stock code",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "points",
+          "latestPoint",
+          "regression",
+          "dateRange",
+          "lastUpdated",
+          "provenance"
+        ],
+        "title": "CostStructureResponse",
+        "type": "object"
+      },
       "CreateSyncJobResponse": {
         "properties": {
           "estimatedApiCalls": {
@@ -17230,6 +17450,111 @@
         "summary": "セクター別銘柄データ取得",
         "tags": [
           "Chart"
+        ]
+      }
+    },
+    "/api/analytics/stocks/{symbol}/cost-structure": {
+      "get": {
+        "description": "Normalize cumulative quarterly statements into single-quarter points and run sales-vs-operating-profit regression for cost structure analysis.",
+        "operationId": "get_cost_structure_api_analytics_stocks__symbol__cost_structure_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Analysis view: recent quarters, same-quarter seasonality, FY-only, or all history",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "recent",
+              "description": "Analysis view: recent quarters, same-quarter seasonality, FY-only, or all history",
+              "enum": [
+                "recent",
+                "same_quarter",
+                "fiscal_year_only",
+                "all"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Number of recent normalized quarters to use when view=recent",
+            "in": "query",
+            "name": "windowQuarters",
+            "required": false,
+            "schema": {
+              "default": 12,
+              "description": "Number of recent normalized quarters to use when view=recent",
+              "maximum": 40,
+              "minimum": 4,
+              "title": "Windowquarters",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostStructureResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Analyze cost structure from sales and operating profit",
+        "tags": [
+          "Analytics"
         ]
       }
     },

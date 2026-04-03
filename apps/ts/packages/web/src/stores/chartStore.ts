@@ -19,11 +19,17 @@ import { CHART_STORE_STORAGE_KEY } from '@/lib/persistedState';
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
 export type RiskAdjustedReturnCondition = 'above' | 'below';
-export type FundamentalsPanelId = 'fundamentals' | 'fundamentalsHistory' | 'marginPressure' | 'factorRegression';
+export type FundamentalsPanelId =
+  | 'fundamentals'
+  | 'fundamentalsHistory'
+  | 'costStructure'
+  | 'marginPressure'
+  | 'factorRegression';
 
 export const DEFAULT_FUNDAMENTALS_PANEL_ORDER: FundamentalsPanelId[] = [
   'fundamentals',
   'fundamentalsHistory',
+  'costStructure',
   'marginPressure',
   'factorRegression',
 ];
@@ -77,6 +83,7 @@ export interface ChartSettings {
   showRiskAdjustedReturnChart: boolean;
   showFundamentalsPanel: boolean;
   showFundamentalsHistoryPanel: boolean;
+  showCostStructurePanel: boolean;
   showMarginPressurePanel: boolean;
   showFactorRegressionPanel: boolean;
   fundamentalsPanelOrder: FundamentalsPanelId[];
@@ -173,6 +180,7 @@ export const defaultSettings: ChartSettings = {
   showRiskAdjustedReturnChart: false,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
+  showCostStructurePanel: true,
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
   fundamentalsPanelOrder: [...DEFAULT_FUNDAMENTALS_PANEL_ORDER],
@@ -264,6 +272,7 @@ function isValidFundamentalsPanelId(value: unknown): value is FundamentalsPanelI
   return (
     value === 'fundamentals' ||
     value === 'fundamentalsHistory' ||
+    value === 'costStructure' ||
     value === 'marginPressure' ||
     value === 'factorRegression'
   );
@@ -406,6 +415,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
       partial.showFundamentalsHistoryPanel,
       defaultSettings.showFundamentalsHistoryPanel
     ),
+    showCostStructurePanel: normalizeBoolean(partial.showCostStructurePanel, defaultSettings.showCostStructurePanel),
     showMarginPressurePanel: normalizeBoolean(partial.showMarginPressurePanel, defaultSettings.showMarginPressurePanel),
     showFactorRegressionPanel: normalizeBoolean(
       partial.showFactorRegressionPanel,

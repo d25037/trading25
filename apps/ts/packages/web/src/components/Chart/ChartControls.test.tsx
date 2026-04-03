@@ -50,9 +50,16 @@ const mockChartStore = {
     showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
+    showCostStructurePanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+    fundamentalsPanelOrder: [
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -145,11 +152,13 @@ describe('ChartControls', () => {
     mockOnSelectSymbol.mockReset();
     mockChartStore.settings.showFundamentalsPanel = true;
     mockChartStore.settings.showFundamentalsHistoryPanel = true;
+    mockChartStore.settings.showCostStructurePanel = true;
     mockChartStore.settings.showMarginPressurePanel = true;
     mockChartStore.settings.showFactorRegressionPanel = true;
     mockChartStore.settings.fundamentalsPanelOrder = [
       'fundamentals',
       'fundamentalsHistory',
+      'costStructure',
       'marginPressure',
       'factorRegression',
     ];
@@ -285,8 +294,26 @@ describe('ChartControls', () => {
     await user.click(firstDownButton);
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
-      fundamentalsPanelOrder: ['fundamentalsHistory', 'fundamentals', 'marginPressure', 'factorRegression'],
+      fundamentalsPanelOrder: [
+        'fundamentalsHistory',
+        'fundamentals',
+        'costStructure',
+        'marginPressure',
+        'factorRegression',
+      ],
     });
+  });
+
+  it('opens panel layout dialog and toggles cost structure panel visibility', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    await user.click(screen.getByRole('switch', { name: /^Cost Structure$/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showCostStructurePanel: false });
   });
 
   it('guards against stale panel-layout reorder actions', async () => {
@@ -309,6 +336,7 @@ describe('ChartControls', () => {
     mockChartStore.settings.fundamentalsPanelOrder = [
       'fundamentals',
       'fundamentalsHistory',
+      'costStructure',
       'marginPressure',
       'factorRegression',
     ];
@@ -319,6 +347,7 @@ describe('ChartControls', () => {
     mockChartStore.settings.fundamentalsPanelOrder = [
       'fundamentals',
       undefined as unknown as 'fundamentalsHistory',
+      'costStructure',
       'marginPressure',
       'factorRegression',
     ];

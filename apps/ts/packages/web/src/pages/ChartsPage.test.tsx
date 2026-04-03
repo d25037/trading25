@@ -25,6 +25,7 @@ const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
+const mockCostStructurePanelProps = vi.fn<(props: unknown) => void>();
 const mockChartsRouteState = {
   selectedSymbol: '7203' as string | null,
   strategyName: null as string | null,
@@ -96,9 +97,16 @@ const mockSettings = {
   showRiskAdjustedReturnChart: true,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
+  showCostStructurePanel: true,
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
-  fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+  fundamentalsPanelOrder: [
+    'fundamentals',
+    'fundamentalsHistory',
+    'costStructure',
+    'marginPressure',
+    'factorRegression',
+  ],
   fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
   fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
   fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -157,6 +165,13 @@ vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
   FundamentalsHistoryPanel: (props: unknown) => {
     mockFundamentalsHistoryPanelProps(props);
     return <div>FY History Panel</div>;
+  },
+}));
+
+vi.mock('@/components/Chart/CostStructurePanel', () => ({
+  CostStructurePanel: (props: unknown) => {
+    mockCostStructurePanelProps(props);
+    return <div>Cost Structure Panel</div>;
   },
 }));
 
@@ -245,6 +260,7 @@ describe('ChartsPage', () => {
     mockUseFundamentals.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
+    mockCostStructurePanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
     mockChartsRouteState.selectedSymbol = '7203';
     mockChartsRouteState.strategyName = null;
@@ -257,9 +273,16 @@ describe('ChartsPage', () => {
     mockSettings.showRiskAdjustedReturnChart = true;
     mockSettings.showFundamentalsPanel = true;
     mockSettings.showFundamentalsHistoryPanel = true;
+    mockSettings.showCostStructurePanel = true;
     mockSettings.showMarginPressurePanel = true;
     mockSettings.showFactorRegressionPanel = true;
-    mockSettings.fundamentalsPanelOrder = ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'];
+    mockSettings.fundamentalsPanelOrder = [
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ];
     mockSettings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
     mockSettings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
     mockSettings.fundamentalsHistoryMetricOrder = [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER];
@@ -459,6 +482,7 @@ describe('ChartsPage', () => {
     expect(screen.getByText('Trading Value MA')).toBeInTheDocument();
     expect(screen.getByText('Fundamentals Panel')).toBeInTheDocument();
     expect(screen.getByText('FY History Panel')).toBeInTheDocument();
+    expect(screen.getByText('Cost Structure Panel')).toBeInTheDocument();
     expect(screen.getByText('Factor Regression Panel')).toBeInTheDocument();
     expect(screen.getAllByText('Margin Pressure Chart')).toHaveLength(3);
     expect(screen.getByText('Test Co')).toBeInTheDocument();
@@ -474,6 +498,10 @@ describe('ChartsPage', () => {
       enabled: false,
       metricOrder: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
       metricVisibility: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+    });
+    expect(mockCostStructurePanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
     });
   });
 
@@ -571,6 +599,7 @@ describe('ChartsPage', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-indicators', 'compute', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-signals', 'compute', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fundamentals', 'v2', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['cost-structure', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-margin', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['stock-info', '7203'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
@@ -620,6 +649,7 @@ describe('ChartsPage', () => {
   it('hides panel sections and disables related queries when panel flags are off', () => {
     mockSettings.showFundamentalsPanel = false;
     mockSettings.showFundamentalsHistoryPanel = false;
+    mockSettings.showCostStructurePanel = false;
     mockSettings.showMarginPressurePanel = false;
     mockSettings.showFactorRegressionPanel = false;
 
@@ -648,6 +678,7 @@ describe('ChartsPage', () => {
 
     expect(screen.queryByText('Fundamentals Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cost Structure Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('Factor Regression Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('信用圧力指標')).not.toBeInTheDocument();
     expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
@@ -658,7 +689,7 @@ describe('ChartsPage', () => {
     expect(mockFactorRegressionPanelProps).not.toHaveBeenCalled();
   });
 
-  it('renders FY, margin pressure, and factor sections in the expected order', () => {
+  it('renders FY, cost structure, margin pressure, and factor sections in the expected order', () => {
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
         daily: {
@@ -683,16 +714,24 @@ describe('ChartsPage', () => {
     renderChartsPage();
 
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
+    const costStructureHeading = screen.getByRole('heading', { name: 'Cost Structure Analysis' });
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
     const factorHeading = screen.getByRole('heading', { name: 'Factor Regression Analysis' });
 
-    expect(fyHeading.compareDocumentPosition(marginHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(fyHeading.compareDocumentPosition(costStructureHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(costStructureHeading.compareDocumentPosition(marginHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(marginHeading.compareDocumentPosition(factorHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(screen.queryByRole('heading', { name: 'FY推移（過去5期）' })).not.toBeInTheDocument();
   });
 
   it('renders panel sections based on configured order', () => {
-    mockSettings.fundamentalsPanelOrder = ['marginPressure', 'fundamentalsHistory', 'factorRegression', 'fundamentals'];
+    mockSettings.fundamentalsPanelOrder = [
+      'marginPressure',
+      'fundamentalsHistory',
+      'factorRegression',
+      'costStructure',
+      'fundamentals',
+    ];
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
         daily: {
@@ -719,11 +758,15 @@ describe('ChartsPage', () => {
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
     const factorHeading = screen.getByRole('heading', { name: 'Factor Regression Analysis' });
+    const costStructureHeading = screen.getByRole('heading', { name: 'Cost Structure Analysis' });
     const fundamentalsHeading = screen.getByRole('heading', { name: 'Fundamental Analysis' });
 
     expect(marginHeading.compareDocumentPosition(fyHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(fyHeading.compareDocumentPosition(factorHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(factorHeading.compareDocumentPosition(fundamentalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(factorHeading.compareDocumentPosition(costStructureHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(
+      costStructureHeading.compareDocumentPosition(fundamentalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0);
   });
 
   it('normalizes trading value period before passing to fundamentals hooks/components', () => {
@@ -1004,6 +1047,10 @@ describe('ChartsPage', () => {
       enabled: false,
       tradingValuePeriod: 15,
     });
+    expect(mockCostStructurePanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
+    });
     expect(mockFactorRegressionPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       symbol: '7203',
       enabled: false,
@@ -1024,6 +1071,12 @@ describe('ChartsPage', () => {
         symbol: '7203',
         enabled: true,
         tradingValuePeriod: 15,
+      });
+    });
+    await waitFor(() => {
+      expect(mockCostStructurePanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+        symbol: '7203',
+        enabled: true,
       });
     });
     await waitFor(() => {

@@ -48,6 +48,7 @@ const VISIBLE_BAR_OPTIONS = [
 type PanelVisibilitySettingKey =
   | 'showFundamentalsPanel'
   | 'showFundamentalsHistoryPanel'
+  | 'showCostStructurePanel'
   | 'showMarginPressurePanel'
   | 'showFactorRegressionPanel';
 
@@ -56,7 +57,7 @@ interface PanelVisibilityToggle {
   label: string;
   settingKey: PanelVisibilitySettingKey;
   panelId: FundamentalsPanelId;
-  linkPanel: SignalLinkedPanel;
+  linkPanel?: SignalLinkedPanel;
 }
 
 const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
@@ -73,6 +74,12 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     settingKey: 'showFundamentalsHistoryPanel',
     panelId: 'fundamentalsHistory',
     linkPanel: 'fundamentalsHistory',
+  },
+  {
+    id: 'show-cost-structure-panel',
+    label: 'Cost Structure',
+    settingKey: 'showCostStructurePanel',
+    panelId: 'costStructure',
   },
   {
     id: 'show-margin-pressure-panel',
@@ -386,7 +393,10 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                 value={settings.visibleBars.toString()}
                 onValueChange={(value) => updateSettings({ visibleBars: Number.parseInt(value, 10) })}
               >
-                <SelectTrigger id={visibleBarsId} className="h-8 border-border/50 bg-transparent text-xs focus:border-primary/50">
+                <SelectTrigger
+                  id={visibleBarsId}
+                  className="h-8 border-border/50 bg-transparent text-xs focus:border-primary/50"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
@@ -406,10 +416,13 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
           <div className="space-y-2">
             {settings.fundamentalsPanelOrder.map((panelId, index) => {
               const toggle = PANEL_TOGGLE_BY_ID[panelId];
-              const panelMeta = getPanelSignalMeta(toggle.linkPanel);
+              const panelMeta = toggle.linkPanel ? getPanelSignalMeta(toggle.linkPanel) : undefined;
               const isVisible = settings[toggle.settingKey];
               return (
-                <div key={panelId} className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5">
+                <div
+                  key={panelId}
+                  className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Order {index + 1}</p>
@@ -469,7 +482,10 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
               const isVisible = settings.fundamentalsMetricVisibility[metricId];
               const switchId = `fundamental-metric-${metricId}`;
               return (
-                <div key={metricId} className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5">
+                <div
+                  key={metricId}
+                  className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Order {index + 1}</p>
@@ -526,7 +542,10 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
               const isVisible = settings.fundamentalsHistoryMetricVisibility[metricId];
               const switchId = `fundamentals-history-metric-${metricId}`;
               return (
-                <div key={metricId} className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5">
+                <div
+                  key={metricId}
+                  className="space-y-2 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Order {index + 1}</p>

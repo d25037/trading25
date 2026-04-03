@@ -157,6 +157,16 @@ describe('AnalyticsClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
       'http://localhost:3002/api/analytics/portfolio-factor-regression/42?lookbackDays=252'
     );
+
+    await client.getCostStructureAnalysis({ symbol: '7203' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/stocks/7203/cost-structure'
+    );
+
+    await client.getCostStructureAnalysis({ symbol: '7203', view: 'same_quarter', windowQuarters: 20 });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/stocks/7203/cost-structure?view=same_quarter&windowQuarters=20'
+    );
   });
 
   test('getROE builds query parameters', async () => {
@@ -182,6 +192,11 @@ describe('AnalyticsClient', () => {
 
     await client.getFactorRegression({ symbol: '7203/TEST' });
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/analytics/factor-regression/7203%2FTEST');
+
+    await client.getCostStructureAnalysis({ symbol: '7203/TEST' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/stocks/7203%2FTEST/cost-structure'
+    );
   });
 
   test('supports config object constructor', async () => {

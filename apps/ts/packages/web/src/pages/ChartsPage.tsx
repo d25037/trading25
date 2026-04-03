@@ -3,6 +3,7 @@ import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/t
 import { AlertCircle, BookOpen, Loader2, RotateCcw, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
+import { CostStructurePanel } from '@/components/Chart/CostStructurePanel';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
 import { FundamentalsHistoryPanel } from '@/components/Chart/FundamentalsHistoryPanel';
 import { FundamentalsPanel } from '@/components/Chart/FundamentalsPanel';
@@ -132,7 +133,7 @@ function formatMarketLabel(stockInfo: StockInfoResponse | undefined): string {
   }
 
   const rawMarketCode = stockInfo.marketCode?.trim() ?? '';
-  const canonicalLabel = rawMarketCode ? MARKET_CODE_LABELS[rawMarketCode.toLowerCase()] ?? '' : '';
+  const canonicalLabel = rawMarketCode ? (MARKET_CODE_LABELS[rawMarketCode.toLowerCase()] ?? '') : '';
   return canonicalLabel || stockInfo.marketName?.trim() || rawMarketCode || '-';
 }
 
@@ -331,6 +332,7 @@ function invalidateSelectedSymbolQueries(queryClient: ReturnType<typeof useQuery
     queryClient.invalidateQueries({ queryKey: ['bt-indicators', 'compute', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['bt-signals', 'compute', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['fundamentals', 'v2', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: ['cost-structure', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: ['bt-margin', selectedSymbol] }),
     queryClient.invalidateQueries({ queryKey: stockInfoKeys.detail(selectedSymbol) }),
     queryClient.invalidateQueries({ queryKey: ['db-stats'] }),
@@ -342,6 +344,7 @@ function resolveFundamentalPanelVisibility(settings: ChartSettings): Record<Fund
   return {
     fundamentals: settings.showFundamentalsPanel,
     fundamentalsHistory: settings.showFundamentalsHistoryPanel,
+    costStructure: settings.showCostStructurePanel,
     marginPressure: settings.showMarginPressurePanel,
     factorRegression: settings.showFactorRegressionPanel,
   };
@@ -355,6 +358,7 @@ function renderOrderedPanelSection({
   tradingValuePeriod,
   fundamentalsPanelSection,
   fundamentalsHistorySection,
+  costStructureSection,
   marginSection,
   factorSection,
   marginPressureData,
@@ -368,6 +372,7 @@ function renderOrderedPanelSection({
   tradingValuePeriod: number;
   fundamentalsPanelSection: LazySectionState;
   fundamentalsHistorySection: LazySectionState;
+  costStructureSection: LazySectionState;
   marginSection: LazySectionState;
   factorSection: LazySectionState;
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
@@ -415,6 +420,24 @@ function renderOrderedPanelSection({
                   enabled={fundamentalsHistorySection.isVisible}
                   metricOrder={settings.fundamentalsHistoryMetricOrder}
                   metricVisibility={settings.fundamentalsHistoryMetricVisibility}
+                />
+              </ErrorBoundary>
+            </div>
+          </Surface>
+        </div>
+      );
+    case 'costStructure':
+      return (
+        <div key={panelId} ref={costStructureSection.sectionRef} className="h-[46rem] lg:h-[32rem]">
+          <Surface className="h-full overflow-hidden">
+            <div className="border-b border-border/60 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Cost Structure Analysis</h3>
+            </div>
+            <div className="h-[calc(100%-3.75rem)] p-4">
+              <ErrorBoundary>
+                <CostStructurePanel
+                  symbol={selectedSymbol}
+                  enabled={settings.showCostStructurePanel && costStructureSection.isVisible}
                 />
               </ErrorBoundary>
             </div>
@@ -631,7 +654,9 @@ function ChartHeader({
                 <SectionEyebrow>Selected Symbol</SectionEyebrow>
                 <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">
                   {selectedSymbol}
-                  {stockInfo?.companyName && <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>}
+                  {stockInfo?.companyName && (
+                    <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>
+                  )}
                   {settings.relativeMode && <span className="font-medium text-muted-foreground"> / TOPIX</span>}
                 </h2>
               </div>
@@ -646,7 +671,12 @@ function ChartHeader({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <Button variant="outline" size="sm" onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)} title="四季報を開く">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
+              title="四季報を開く"
+            >
               <BookOpen className="mr-1 h-4 w-4" />
               四季報
             </Button>
@@ -720,6 +750,7 @@ function ChartsPanelsContent({
   tradingValuePeriod,
   fundamentalsPanelSection,
   fundamentalsHistorySection,
+  costStructureSection,
   marginSection,
   factorSection,
   marginPressureData,
@@ -735,6 +766,7 @@ function ChartsPanelsContent({
   tradingValuePeriod: number;
   fundamentalsPanelSection: LazySectionState;
   fundamentalsHistorySection: LazySectionState;
+  costStructureSection: LazySectionState;
   marginSection: LazySectionState;
   factorSection: LazySectionState;
   marginPressureData: MarginPressureIndicatorsResponse | undefined;
@@ -756,9 +788,7 @@ function ChartsPanelsContent({
               data={chartData[settings.displayTimeframe]?.candlestickData || []}
               atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
               nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
-              bollingerBands={
-                chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined
-              }
+              bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
               vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
               signalMarkers={signalMarkers?.[settings.displayTimeframe]}
             />
@@ -830,6 +860,7 @@ function ChartsPanelsContent({
             tradingValuePeriod,
             fundamentalsPanelSection,
             fundamentalsHistorySection,
+            costStructureSection,
             marginSection,
             factorSection,
             marginPressureData,
@@ -847,6 +878,7 @@ export function ChartsPage() {
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
+  const costStructureSection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
   const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useChartsRouteState();
 
@@ -965,6 +997,7 @@ export function ChartsPage() {
             tradingValuePeriod={tradingValuePeriod}
             fundamentalsPanelSection={fundamentalsPanelSection}
             fundamentalsHistorySection={fundamentalsHistorySection}
+            costStructureSection={costStructureSection}
             marginSection={marginSection}
             factorSection={factorSection}
             marginPressureData={marginPressureData}

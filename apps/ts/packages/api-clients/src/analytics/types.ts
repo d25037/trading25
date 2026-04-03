@@ -138,6 +138,54 @@ export interface MarginVolumeRatioParams {
   symbol: string;
 }
 
+export type CostStructureAnalysisPeriodType = '1Q' | '2Q' | '3Q' | '4Q' | 'FY';
+export type CostStructureAnalysisView = 'recent' | 'same_quarter' | 'fiscal_year_only' | 'all';
+
+export interface CostStructureAnalysisParams {
+  symbol: string;
+  view?: CostStructureAnalysisView;
+  windowQuarters?: number;
+}
+
+export interface CostStructureDateRange {
+  from: string;
+  to: string;
+}
+
+export interface CostStructurePoint {
+  analysisPeriodType: CostStructureAnalysisPeriodType;
+  disclosedDate: string;
+  fiscalYear: string;
+  isDerived: boolean;
+  operatingMargin?: number | null;
+  operatingProfit: number;
+  periodEnd: string;
+  sales: number;
+}
+
+export interface CostStructureRegressionSummary {
+  breakEvenSales?: number | null;
+  contributionMarginRatio: number;
+  fixedCost?: number | null;
+  intercept: number;
+  rSquared: number;
+  sampleCount: number;
+  slope: number;
+  variableCostRatio: number;
+}
+
+export interface CostStructureResponse {
+  symbol: string;
+  companyName?: string | null;
+  lastUpdated: string;
+  dateRange: CostStructureDateRange;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
+  points: CostStructurePoint[];
+  latestPoint: CostStructurePoint;
+  regression: CostStructureRegressionSummary;
+}
+
 export interface SectorStocksParams {
   sector33Name?: string;
   sector17Name?: string;

@@ -1,6 +1,8 @@
 import { buildUrl, type QueryParams, requestJson } from '../base/http-client.js';
 import type {
   AnalyticsClientConfig,
+  CostStructureAnalysisParams,
+  CostStructureResponse,
   FactorRegressionParams,
   FactorRegressionResponse,
   FundamentalRankingParams,
@@ -103,6 +105,17 @@ export class AnalyticsClient {
 
   async getMarginVolumeRatio<T>(params: MarginVolumeRatioParams): Promise<T> {
     return this.request<T>(`/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-ratio`);
+  }
+
+  async getCostStructureAnalysis(params: CostStructureAnalysisParams): Promise<CostStructureResponse> {
+    return this.request<CostStructureResponse>(
+      `/api/analytics/stocks/${encodeURIComponent(params.symbol)}/cost-structure`,
+      undefined,
+      {
+        view: params.view,
+        windowQuarters: params.windowQuarters,
+      }
+    );
   }
 
   async getSectorStocks<T>(params: SectorStocksParams = {}): Promise<T> {

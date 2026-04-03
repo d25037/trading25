@@ -252,6 +252,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/stocks/{symbol}/cost-structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analyze cost structure from sales and operating profit
+         * @description Normalize cumulative quarterly statements into single-quarter points and run sales-vs-operating-profit regression for cost structure analysis.
+         */
+        get: operations["get_cost_structure_api_analytics_stocks__symbol__cost_structure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/stocks/{symbol}/margin-pressure": {
         parameters: {
             query?: never;
@@ -3487,6 +3507,141 @@ export interface components {
              * @description Compiled timeframe
              */
             timeframe: string;
+        };
+        /**
+         * CostStructureDateRange
+         * @description Date range used in cost structure analysis.
+         */
+        CostStructureDateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * CostStructurePoint
+         * @description Single cost structure analysis point.
+         */
+        CostStructurePoint: {
+            /**
+             * Analysisperiodtype
+             * @description Analysis period type (single-quarter normalized or fiscal-year cumulative)
+             * @enum {string}
+             */
+            analysisPeriodType: "1Q" | "2Q" | "3Q" | "4Q" | "FY";
+            /**
+             * Discloseddate
+             * @description Disclosure date (YYYY-MM-DD)
+             */
+            disclosedDate: string;
+            /**
+             * Fiscalyear
+             * @description Inferred fiscal year label
+             */
+            fiscalYear: string;
+            /**
+             * Isderived
+             * @description Whether point was derived from cumulative diff
+             */
+            isDerived: boolean;
+            /**
+             * Operatingmargin
+             * @description Operating margin (%)
+             */
+            operatingMargin?: number | null;
+            /**
+             * Operatingprofit
+             * @description Analysis operating profit value (millions JPY)
+             */
+            operatingProfit: number;
+            /**
+             * Periodend
+             * @description Source period end surrogate date (YYYY-MM-DD)
+             */
+            periodEnd: string;
+            /**
+             * Sales
+             * @description Analysis sales value (millions JPY)
+             */
+            sales: number;
+        };
+        /**
+         * CostStructureRegressionSummary
+         * @description Regression summary for cost structure analysis.
+         */
+        CostStructureRegressionSummary: {
+            /**
+             * Breakevensales
+             * @description Estimated break-even sales (millions JPY)
+             */
+            breakEvenSales?: number | null;
+            /**
+             * Contributionmarginratio
+             * @description Contribution margin ratio from slope
+             */
+            contributionMarginRatio: number;
+            /**
+             * Fixedcost
+             * @description Estimated fixed cost (millions JPY)
+             */
+            fixedCost?: number | null;
+            /**
+             * Intercept
+             * @description Regression intercept
+             */
+            intercept: number;
+            /**
+             * Rsquared
+             * @description Coefficient of determination (0-1)
+             */
+            rSquared: number;
+            /**
+             * Samplecount
+             * @description Number of normalized points used for regression
+             */
+            sampleCount: number;
+            /**
+             * Slope
+             * @description Regression slope
+             */
+            slope: number;
+            /**
+             * Variablecostratio
+             * @description Variable cost ratio (= 1 - slope)
+             */
+            variableCostRatio: number;
+        };
+        /**
+         * CostStructureResponse
+         * @description Cost structure analysis response.
+         */
+        CostStructureResponse: {
+            /**
+             * Companyname
+             * @description Company name
+             */
+            companyName?: string | null;
+            dateRange: components["schemas"]["CostStructureDateRange"];
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
+            /**
+             * Lastupdated
+             * @description Last updated timestamp (ISO 8601)
+             */
+            lastUpdated: string;
+            /** @description Most recent normalized point */
+            latestPoint: components["schemas"]["CostStructurePoint"];
+            /**
+             * Points
+             * @description Analysis points for the selected view
+             */
+            points: components["schemas"]["CostStructurePoint"][];
+            provenance: components["schemas"]["DataProvenance"];
+            regression: components["schemas"]["CostStructureRegressionSummary"];
+            /**
+             * Symbol
+             * @description Stock code
+             */
+            symbol: string;
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -10880,6 +11035,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SectorStocksResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_cost_structure_api_analytics_stocks__symbol__cost_structure_get: {
+        parameters: {
+            query?: {
+                /** @description Analysis view: recent quarters, same-quarter seasonality, FY-only, or all history */
+                view?: "recent" | "same_quarter" | "fiscal_year_only" | "all";
+                /** @description Number of recent normalized quarters to use when view=recent */
+                windowQuarters?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostStructureResponse"];
                 };
             };
             /** @description Bad Request */

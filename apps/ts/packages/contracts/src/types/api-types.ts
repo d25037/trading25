@@ -317,6 +317,84 @@ export interface ApiFundamentalsResponse {
   diagnostics: ResponseDiagnostics;
 }
 
+// ===== COST STRUCTURE ANALYSIS =====
+
+export type ApiCostStructureAnalysisPeriodType = '1Q' | '2Q' | '3Q' | '4Q' | 'FY';
+
+/**
+ * Date range used in cost structure analysis.
+ */
+export interface ApiCostStructureDateRange {
+  /** Start date */
+  from: string;
+  /** End date */
+  to: string;
+}
+
+/**
+ * Single cost structure analysis point.
+ */
+export interface ApiCostStructurePoint {
+  /** Analysis period type */
+  analysisPeriodType: ApiCostStructureAnalysisPeriodType;
+  /** Disclosure date (YYYY-MM-DD) */
+  disclosedDate: string;
+  /** Fiscal year label */
+  fiscalYear: string;
+  /** Whether the point was derived from cumulative diff */
+  isDerived: boolean;
+  /** Operating margin (%) */
+  operatingMargin?: number | null;
+  /** Analysis operating profit value (millions JPY) */
+  operatingProfit: number;
+  /** Source period-end surrogate date (YYYY-MM-DD) */
+  periodEnd: string;
+  /** Analysis sales value (millions JPY) */
+  sales: number;
+}
+
+/**
+ * Regression summary for cost structure analysis.
+ */
+export interface ApiCostStructureRegressionSummary {
+  /** Estimated break-even sales (millions JPY) */
+  breakEvenSales?: number | null;
+  /** Contribution margin ratio from slope */
+  contributionMarginRatio: number;
+  /** Estimated fixed cost (millions JPY) */
+  fixedCost?: number | null;
+  /** Regression intercept */
+  intercept: number;
+  /** Coefficient of determination (0-1) */
+  rSquared: number;
+  /** Number of normalized points used for regression */
+  sampleCount: number;
+  /** Regression slope */
+  slope: number;
+  /** Variable cost ratio (= 1 - slope) */
+  variableCostRatio: number;
+}
+
+/**
+ * Cost structure analysis response.
+ */
+export interface ApiCostStructureResponse {
+  /** Stock code */
+  symbol: string;
+  /** Company name */
+  companyName?: string | null;
+  dateRange: ApiCostStructureDateRange;
+  /** Last updated timestamp */
+  lastUpdated: string;
+  /** Most recent normalized point */
+  latestPoint: ApiCostStructurePoint;
+  /** Normalized single-quarter analysis points */
+  points: ApiCostStructurePoint[];
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
+  regression: ApiCostStructureRegressionSummary;
+}
+
 // ===== FACTOR REGRESSION ANALYSIS =====
 
 /**

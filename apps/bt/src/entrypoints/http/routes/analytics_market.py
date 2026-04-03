@@ -1,7 +1,7 @@
 """
 Analytics Routes (market.duckdb SoT)
 
-ROE、margin-pressure、margin-ratio、fundamentals の検算系エンドポイント。
+ROE、margin-pressure、margin-ratio、fundamentals、cost-structure の検算系エンドポイント。
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from src.application.services.cost_structure_analysis_service import CostStructureAnalysisService
 from src.application.services.fundamentals_service import fundamentals_service
 from src.application.services.margin_analytics_service import MarginAnalyticsService
 from src.application.services.roe_service import ROEService
@@ -19,11 +20,13 @@ from src.entrypoints.http.schemas.analytics_margin import (
     MarginPressureIndicatorsResponse,
     MarginVolumeRatioResponse,
 )
+from src.entrypoints.http.schemas.cost_structure import CostStructureResponse
 from src.entrypoints.http.schemas.analytics_roe import ROEResponse
 from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -49,6 +52,13 @@ def _get_margin_service(request: Request) -> MarginAnalyticsService:
     if service is None:
         raise HTTPException(status_code=422, detail="Margin analytics service not initialized")
     return service
+
+
+def _get_market_reader(request: Request) -> MarketDbReader:
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+    return reader
 
 
 @router.get("/roe", response_model=ROEResponse)
@@ -161,3 +171,43 @@ async def get_fundamentals(
             detail=f"No financial statements found for stock {symbol}",
         )
     return result
+
+
+@router.get(
+    "/stocks/{symbol}/cost-structure",
+    response_model=CostStructureResponse,
+    summary="Analyze cost structure from sales and operating profit",
+    description=(
+        "Normalize cumulative quarterly statements into single-quarter points and run "
+        "sales-vs-operating-profit regression for cost structure analysis."
+    ),
+)
+async def get_cost_structure(
+    request: Request,
+    symbol: str,
+    view: Literal["recent", "same_quarter", "fiscal_year_only", "all"] = Query(
+        "recent",
+        description="Analysis view: recent quarters, same-quarter seasonality, FY-only, or all history",
+    ),
+    windowQuarters: int = Query(
+        12,
+        ge=4,
+        le=40,
+        description="Number of recent normalized quarters to use when view=recent",
+    ),
+) -> CostStructureResponse:
+    service = CostStructureAnalysisService(_get_market_reader(request))
+    try:
+        return service.analyze_stock(symbol, view=view, window_quarters=windowQuarters)
+    except ValueError as e:
+        message = str(e)
+        if "not found" in message.lower():
+            raise HTTPException(status_code=404, detail=message) from e
+        if "insufficient usable data" in message.lower():
+            raise HTTPException(status_code=422, detail=message) from e
+        raise HTTPException(status_code=400, detail=message) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze cost structure: {e}",
+        ) from e
