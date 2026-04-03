@@ -9,6 +9,7 @@ import type {
 import {
   getTopix100RankingMetricLabel,
   getTopix100RankingMetricDescription,
+  getTopix100PriceBucketLabel,
   resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
   TOPIX100_PRICE_SMA_WINDOW_OPTIONS,
@@ -16,10 +17,10 @@ import {
 } from './topix100RankingMetric';
 
 const PRICE_BUCKET_OPTIONS: { value: Topix100PriceBucketFilter; label: string }[] = [
-  { value: 'all', label: 'All Buckets' },
-  { value: 'q10', label: 'Q10 Below SMA' },
-  { value: 'q456', label: 'Q4-6 Middle' },
-  { value: 'q1', label: 'Q1 Above SMA' },
+  { value: 'all', label: getTopix100PriceBucketLabel('all') },
+  { value: 'q10', label: getTopix100PriceBucketLabel('q10') },
+  { value: 'q234', label: getTopix100PriceBucketLabel('q234') },
+  { value: 'q1', label: getTopix100PriceBucketLabel('q1') },
 ];
 
 const VOLUME_BUCKET_OPTIONS: { value: Topix100VolumeBucketFilter; label: string }[] = [

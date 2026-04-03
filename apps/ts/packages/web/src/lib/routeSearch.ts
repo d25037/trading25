@@ -125,7 +125,7 @@ const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'
 const LEGACY_TOPIX100_RANKING_METRIC = 'price_vs_sma20_gap';
 const TOPIX100_RANKING_METRIC_VALUES: Topix100RankingMetric[] = ['price_vs_sma_gap', 'price_sma_20_80'];
 const TOPIX100_PRICE_SMA_WINDOW_VALUES: Topix100PriceSmaWindow[] = [20, 50, 100];
-const TOPIX100_PRICE_BUCKET_VALUES: Topix100PriceBucketFilter[] = ['all', 'q1', 'q10', 'q456'];
+const TOPIX100_PRICE_BUCKET_VALUES: Topix100PriceBucketFilter[] = ['all', 'q1', 'q10', 'q234'];
 const TOPIX100_VOLUME_BUCKET_VALUES: Topix100VolumeBucketFilter[] = ['all', 'high', 'low'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = [
@@ -219,7 +219,11 @@ function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined
 }
 
 function normalizeTopix100PriceBucketFilter(value: unknown): Topix100PriceBucketFilter | undefined {
-  return normalizeEnum(normalizeString(value), TOPIX100_PRICE_BUCKET_VALUES);
+  const normalized = normalizeString(value);
+  if (normalized === 'q456') {
+    return 'q234';
+  }
+  return normalizeEnum(normalized, TOPIX100_PRICE_BUCKET_VALUES);
 }
 
 function normalizeTopix100RankingMetric(value: unknown): Topix100RankingMetric | undefined {

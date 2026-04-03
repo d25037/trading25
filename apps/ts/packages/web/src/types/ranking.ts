@@ -22,7 +22,7 @@ export type { Topix100RankingMetric } from '@trading25/contracts/types/api-respo
 
 export type RankingPageTab = 'ranking' | 'fundamentalRanking';
 export type RankingDailyView = 'stocks' | 'indices' | 'topix100';
-export type Topix100PriceBucketFilter = 'all' | 'q1' | 'q10' | 'q456';
+export type Topix100PriceBucketFilter = 'all' | 'q1' | 'q10' | 'q234';
 export type Topix100VolumeBucketFilter = 'all' | 'high' | 'low';
 
 // Frontend-specific types

@@ -558,12 +558,12 @@ class TestGetTopix100Ranking:
 
         q1_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q1"}
         q10_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q10"}
-        q456_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q456"}
+        q234_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q234"}
         other_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "other"}
 
         assert q1_buckets == {"high", "low"}
         assert q10_buckets == {"high", "low"}
-        assert q456_buckets == {"high", "low"}
+        assert q234_buckets == {"high", "low"}
         assert other_buckets == {None}
 
     def test_with_date(self, topix100_ranking_service):

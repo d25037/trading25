@@ -56,8 +56,8 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         priceVsSmaGap: 0.01,
         priceSma20_80: 1.01,
         volumeSma5_20: 1.05,
-        priceDecile: 5,
-        priceBucket: 'q456',
+        priceDecile: 3,
+        priceBucket: 'q234',
         volumeBucket: 'high',
       },
       {
@@ -100,9 +100,11 @@ describe('Topix100RankingTable', () => {
 
     expect(screen.getAllByText('Price / SMA50 Gap')).toHaveLength(2);
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
+    expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
     expect(screen.getByText('Volume Low (5/20) first')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
+    expect(screen.getByText('Q2-4 Trough')).toBeInTheDocument();
 
     await user.click(screen.getByText('7203'));
     expect(onStockClick).toHaveBeenCalledWith('7203');

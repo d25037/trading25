@@ -45,7 +45,9 @@ describe('Topix100RankingFilters', () => {
     expect(screen.getByText('TOPIX100 SMA Divergence')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
-      screen.getByText('Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Volume Low (5/20) first.')
+      screen.getByText(
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first.'
+      )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();
   });

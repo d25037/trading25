@@ -57,7 +57,7 @@ export interface MarketRankingResponse {
 }
 
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
-export type Topix100PriceBucket = 'q1' | 'q10' | 'q456' | 'other';
+export type Topix100PriceBucket = 'q1' | 'q10' | 'q234' | 'other';
 export type Topix100VolumeBucket = 'high' | 'low' | null;
 export type Topix100RankingMetric = 'price_vs_sma_gap' | 'price_sma_20_80';
 export type Topix100PriceSmaWindow = 20 | 50 | 100;

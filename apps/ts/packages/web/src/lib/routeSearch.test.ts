@@ -184,6 +184,16 @@ describe('routeSearch', () => {
     });
   });
 
+  it('migrates legacy q456 topix100 bucket urls to q234', () => {
+    const search = validateRankingSearch({
+      rankingTopix100PriceBucket: 'q456',
+    });
+
+    expect(search).toEqual({
+      rankingTopix100PriceBucket: 'q234',
+    });
+  });
+
   it('roundtrips ranking route state and maps screening ranking tabs', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'fundamentalRanking',

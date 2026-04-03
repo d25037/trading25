@@ -9,7 +9,7 @@ import type {
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import { formatPriceJPY, formatRate, formatVolume, formatVolumeRatio } from '@/utils/formatters';
-import { getTopix100RankingMetricLabel } from './topix100RankingMetric';
+import { getTopix100PriceBucketLabel, getTopix100RankingMetricLabel } from './topix100RankingMetric';
 
 interface Topix100RankingTableProps {
   data: Topix100RankingResponse | undefined;
@@ -42,7 +42,7 @@ function bucketToneClass(priceBucket: Topix100RankingItem['priceBucket']): strin
       return 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300';
     case 'q10':
       return 'bg-amber-500/12 text-amber-700 dark:text-amber-300';
-    case 'q456':
+    case 'q234':
       return 'bg-sky-500/12 text-sky-700 dark:text-sky-300';
     default:
       return 'bg-muted text-muted-foreground';
@@ -51,7 +51,7 @@ function bucketToneClass(priceBucket: Topix100RankingItem['priceBucket']): strin
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Volume Low (5/20) first'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume Low (5/20) first'];
   }
 
   return ['Legacy comparison'];
@@ -135,9 +135,9 @@ export function Topix100RankingTable({
                   </td>
                   <td className="px-2 py-1.5">
                     <span
-                      className={`rounded-full px-2 py-1 text-[11px] font-medium uppercase ${bucketToneClass(item.priceBucket)}`}
+                      className={`rounded-full px-2 py-1 text-[11px] font-medium ${bucketToneClass(item.priceBucket)}`}
                     >
-                      {item.priceBucket}
+                      {getTopix100PriceBucketLabel(item.priceBucket)}
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-muted-foreground">{item.volumeBucket ?? '-'}</td>

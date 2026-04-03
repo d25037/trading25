@@ -1,4 +1,9 @@
-import type { Topix100PriceSmaWindow, Topix100RankingMetric } from '@/types/ranking';
+import type {
+  Topix100PriceBucket,
+  Topix100PriceBucketFilter,
+  Topix100PriceSmaWindow,
+  Topix100RankingMetric,
+} from '@/types/ranking';
 
 export const DEFAULT_TOPIX100_RANKING_METRIC: Topix100RankingMetric = 'price_vs_sma_gap';
 export const DEFAULT_TOPIX100_PRICE_SMA_WINDOW: Topix100PriceSmaWindow = 50;
@@ -43,5 +48,22 @@ export function getTopix100RankingMetricDescription(
     return 'Legacy SMA 20/80 comparison view.';
   }
 
-  return `SMA${smaWindow} baseline. Q10 = below SMA; Volume Low (5/20) first.`;
+  return `SMA${smaWindow} baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first.`;
+}
+
+export function getTopix100PriceBucketLabel(
+  priceBucket: Topix100PriceBucket | Topix100PriceBucketFilter
+): string {
+  switch (priceBucket) {
+    case 'all':
+      return 'All Buckets';
+    case 'q10':
+      return 'Q10 Below SMA';
+    case 'q234':
+      return 'Q2-4 Trough';
+    case 'q1':
+      return 'Q1 Above SMA';
+    default:
+      return 'Other';
+  }
 }

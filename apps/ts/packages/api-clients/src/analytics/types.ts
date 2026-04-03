@@ -88,7 +88,7 @@ export interface MarketRankingParams {
   periodDays?: number;
 }
 
-export type Topix100PriceBucket = 'q1' | 'q10' | 'q456' | 'other';
+export type Topix100PriceBucket = 'q1' | 'q10' | 'q234' | 'other';
 export type Topix100VolumeBucket = 'high' | 'low' | null;
 
 export interface Topix100RankingItem {

@@ -42,7 +42,7 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-Topix100PriceBucket = Literal["q1", "q10", "q456", "other"]
+Topix100PriceBucket = Literal["q1", "q10", "q234", "other"]
 Topix100VolumeBucket = Literal["high", "low"]
 _TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
     "price_vs_sma_gap": "price_vs_sma_gap",
@@ -570,7 +570,7 @@ class RankingService:
                     CASE
                         WHEN price_decile = 1 THEN 'q1'
                         WHEN price_decile = 10 THEN 'q10'
-                        WHEN price_decile IN (4, 5, 6) THEN 'q456'
+                        WHEN price_decile IN (2, 3, 4) THEN 'q234'
                         ELSE 'other'
                     END AS price_bucket
                 FROM price_ranked
@@ -579,7 +579,7 @@ class RankingService:
                 SELECT
                     *,
                     CASE
-                        WHEN price_bucket IN ('q1', 'q10', 'q456')
+                        WHEN price_bucket IN ('q1', 'q10', 'q234')
                         THEN NTILE(2) OVER (
                             PARTITION BY price_bucket
                             ORDER BY volume_sma_5_20 DESC, code ASC

@@ -9888,7 +9888,7 @@ export interface components {
              * Pricebucket
              * @enum {string}
              */
-            priceBucket: "q1" | "q10" | "q456" | "other";
+            priceBucket: "q1" | "q10" | "q234" | "other";
             /** Pricedecile */
             priceDecile: number;
             /** Pricesma20 80 */
