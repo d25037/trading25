@@ -107,6 +107,19 @@ const catalogItems = [
     hasStructuredSummary: true,
   },
   {
+    experimentId: 'market-behavior/topix100-short-side-streak-3-53-scan',
+    runId: '20260406_171500_shortscan01',
+    title: 'TOPIX100 Short Side Streak 3/53 Scan',
+    objective: 'Scan the weakest short-side setup and the best strongest-vs-weakest pair trade under the transferred streak 3/53 state model.',
+    headline: 'The weak side shifts away from the original Q2-Q4 hypothesis once streak state is added.',
+    createdAt: '2026-04-06T17:15:00+00:00',
+    analysisStartDate: '2016-01-01',
+    analysisEndDate: '2026-03-31',
+    gitCommit: '8314486a',
+    tags: ['TOPIX100', 'short-side', 'pair-trade'],
+    hasStructuredSummary: true,
+  },
+  {
     experimentId: 'market-behavior/topix-close-return-streaks',
     runId: '20260405_120000_beta0001',
     title: 'TOPIX Close Return Streaks',
@@ -155,6 +168,7 @@ describe('ResearchPage', () => {
     expect(screen.getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Q10 Bounce x Streak 3/53 Conditioning')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Strongest Setup vs Q10 Threshold')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Short Side Streak 3/53 Scan')).toBeInTheDocument();
     expect(screen.getByText('Start With The Latest High-Signal Bundle')).toBeInTheDocument();
     expect(screen.getByText('More Published Analyses')).toBeInTheDocument();
     expect(screen.getAllByText('TOPIX Streak Extreme Mode').length).toBeGreaterThan(0);
