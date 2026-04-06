@@ -170,8 +170,10 @@ def test_q10_bounce_streak_353_conditioning_returns_scorecard(
     assert not result.state_bucket_summary_df.empty
     assert not result.state_hypothesis_df.empty
     assert not result.state_scorecard_df.empty
+    assert not result.validation_q10_state_matrix_df.empty
     assert "q10_low_pairwise_edge_mean" in result.state_scorecard_df.columns
     assert "q10_low_is_best_bucket" in result.state_scorecard_df.columns
+    assert "future_return_5d" in result.validation_q10_state_matrix_df.columns
     best_validation_row = result.state_scorecard_df[
         (result.state_scorecard_df["sample_split"] == "validation")
         & (result.state_scorecard_df["horizon_days"] == 1)
@@ -228,6 +230,11 @@ def test_q10_bounce_streak_353_conditioning_bundle_roundtrip(
         result.state_scorecard_df,
         check_dtype=False,
     )
+    pdt.assert_frame_equal(
+        reloaded.validation_q10_state_matrix_df,
+        result.validation_q10_state_matrix_df,
+        check_dtype=False,
+    )
 
 
 def test_published_summary_emphasizes_conditioned_read(monkeypatch) -> None:
@@ -252,3 +259,9 @@ def test_published_summary_emphasizes_conditioned_read(monkeypatch) -> None:
     assert summary["selectedParameters"][2]["value"] == "3 streaks"
     assert "Long Bearish / Short Bearish" in summary["resultHeadline"]
     assert any("clear avoid state" in bullet.lower() for bullet in summary["resultBullets"])
+    assert any("Within `Q10" in bullet and "Volume Low`" in bullet for bullet in summary["resultBullets"])
+    assert any("Within `Q10" in bullet and "Volume High`" in bullet for bullet in summary["resultBullets"])
+    assert any(
+        highlight["name"] == "validation_q10_state_matrix_df"
+        for highlight in summary["tableHighlights"]
+    )

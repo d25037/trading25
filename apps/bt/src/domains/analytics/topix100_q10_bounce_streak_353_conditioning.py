@@ -97,6 +97,7 @@ class Topix100Q10BounceStreak353ConditioningResearchResult:
     state_bucket_pairwise_significance_df: pd.DataFrame
     state_hypothesis_df: pd.DataFrame
     state_scorecard_df: pd.DataFrame
+    validation_q10_state_matrix_df: pd.DataFrame
 
 
 def run_topix100_q10_bounce_streak_353_conditioning_research(
@@ -172,6 +173,9 @@ def run_topix100_q10_bounce_streak_353_conditioning_research(
         state_bucket_summary_df,
         state_hypothesis_df,
     )
+    validation_q10_state_matrix_df = _build_validation_q10_state_matrix_df(
+        state_bucket_summary_df
+    )
 
     analysis_start_date = (
         str(state_bucket_horizon_panel_df["date"].min())
@@ -210,6 +214,7 @@ def run_topix100_q10_bounce_streak_353_conditioning_research(
         state_bucket_pairwise_significance_df=state_bucket_pairwise_significance_df,
         state_hypothesis_df=state_hypothesis_df,
         state_scorecard_df=state_scorecard_df,
+        validation_q10_state_matrix_df=validation_q10_state_matrix_df,
     )
 
 
@@ -265,6 +270,7 @@ def write_topix100_q10_bounce_streak_353_conditioning_research_bundle(
             "state_bucket_pairwise_significance_df": result.state_bucket_pairwise_significance_df,
             "state_hypothesis_df": result.state_hypothesis_df,
             "state_scorecard_df": result.state_scorecard_df,
+            "validation_q10_state_matrix_df": result.validation_q10_state_matrix_df,
         },
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
@@ -310,6 +316,7 @@ def load_topix100_q10_bounce_streak_353_conditioning_research_bundle(
         ],
         state_hypothesis_df=tables["state_hypothesis_df"],
         state_scorecard_df=tables["state_scorecard_df"],
+        validation_q10_state_matrix_df=tables["validation_q10_state_matrix_df"],
     )
 
 
@@ -781,6 +788,56 @@ def _build_state_execution_summary_df(scorecard_df: pd.DataFrame) -> pd.DataFram
     return _sort_interaction_frame(summary_df)
 
 
+def _build_validation_q10_state_matrix_df(
+    state_bucket_summary_df: pd.DataFrame,
+) -> pd.DataFrame:
+    scoped_df = state_bucket_summary_df[
+        (state_bucket_summary_df["sample_split"] == "validation")
+        & state_bucket_summary_df["combined_bucket"].isin(("q10_volume_low", "q10_volume_high"))
+    ].copy()
+    if scoped_df.empty:
+        return pd.DataFrame()
+
+    group_columns = [
+        "combined_bucket",
+        "combined_bucket_label",
+        "state_key",
+        "state_label",
+        "long_mode",
+        "short_mode",
+    ]
+    aggregated_df = (
+        scoped_df.groupby(group_columns, observed=True, as_index=False)
+        .agg(
+            avg_future_return=("mean_future_return", "mean"),
+            avg_hit_rate_positive=("hit_rate_positive", "mean"),
+            avg_date_count=("date_count", "mean"),
+            horizons_covered=("horizon_days", "nunique"),
+        )
+    )
+
+    for horizon_days in (1, 5, 10):
+        horizon_df = scoped_df[scoped_df["horizon_days"] == horizon_days].copy()
+        if horizon_df.empty:
+            continue
+        renamed_df = horizon_df[group_columns + ["mean_future_return"]].rename(
+            columns={"mean_future_return": f"future_return_{horizon_days}d"}
+        )
+        aggregated_df = aggregated_df.merge(
+            renamed_df,
+            on=group_columns,
+            how="left",
+            validate="one_to_one",
+        )
+
+    aggregated_df["bucket_rank"] = (
+        aggregated_df.groupby("combined_bucket", observed=True)["avg_future_return"]
+        .rank(method="dense", ascending=False)
+        .astype(int)
+    )
+    return _sort_interaction_frame(aggregated_df)
+
+
 def _sort_interaction_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -845,6 +902,7 @@ def _build_research_bundle_summary_markdown(
     validation_state_summary_df = _build_state_execution_summary_df(
         validation_scorecard_df
     )
+    validation_q10_state_matrix_df = result.validation_q10_state_matrix_df.copy()
     best_state_row = _select_best_execution_state_row(validation_state_summary_df)
     secondary_state_row = _select_secondary_execution_state_row(
         validation_state_summary_df,
@@ -936,6 +994,41 @@ def _build_research_bundle_summary_markdown(
                 f"(average pairwise edge `{_format_return(float(best_row['q10_low_pairwise_edge_mean']))}`)."
             )
 
+    lines.extend(["", "## Validation Q10 State Matrix", ""])
+    q10_low_order_line = _format_q10_bucket_order_line(
+        validation_q10_state_matrix_df,
+        combined_bucket="q10_volume_low",
+    )
+    q10_high_order_line = _format_q10_bucket_order_line(
+        validation_q10_state_matrix_df,
+        combined_bucket="q10_volume_high",
+    )
+    short_bearish_volume_line = _format_short_bearish_volume_split_line(
+        validation_q10_state_matrix_df
+    )
+    short_bullish_caution_line = _format_short_bullish_caution_line(
+        validation_q10_state_matrix_df
+    )
+    if all(
+        line is None
+        for line in (
+            q10_low_order_line,
+            q10_high_order_line,
+            short_bearish_volume_line,
+            short_bullish_caution_line,
+        )
+    ):
+        lines.append("- No validation Q10 matrix rows were available.")
+    else:
+        for line in (
+            q10_low_order_line,
+            q10_high_order_line,
+            short_bearish_volume_line,
+            short_bullish_caution_line,
+        ):
+            if line is not None:
+                lines.append(f"- {line}")
+
     lines.extend(["", "## Validation Directed Hypotheses", ""])
     if validation_hypothesis_df.empty:
         lines.append("- No validation hypothesis rows were available.")
@@ -974,6 +1067,7 @@ def _build_research_bundle_summary_markdown(
             "- `state_bucket_pairwise_significance_df`",
             "- `state_hypothesis_df`",
             "- `state_scorecard_df`",
+            "- `validation_q10_state_matrix_df`",
         ]
     )
     return "\n".join(lines)
@@ -991,6 +1085,7 @@ def _build_published_summary_payload(
     validation_state_summary_df = _build_state_execution_summary_df(
         validation_scorecard_df
     )
+    validation_q10_state_matrix_df = result.validation_q10_state_matrix_df.copy()
 
     strongest_scorecard_row = _select_best_scorecard_row(validation_scorecard_df)
     strongest_hypothesis_row = _select_best_hypothesis_row(validation_hypothesis_df)
@@ -1083,6 +1178,31 @@ def _build_published_summary_payload(
             }
         )
 
+    q10_low_order_line = _format_q10_bucket_order_line(
+        validation_q10_state_matrix_df,
+        combined_bucket="q10_volume_low",
+    )
+    q10_high_order_line = _format_q10_bucket_order_line(
+        validation_q10_state_matrix_df,
+        combined_bucket="q10_volume_high",
+    )
+    if q10_low_order_line is not None:
+        result_bullets.append(q10_low_order_line)
+    if q10_high_order_line is not None:
+        result_bullets.append(q10_high_order_line)
+
+    short_bearish_volume_line = _format_short_bearish_volume_split_line(
+        validation_q10_state_matrix_df
+    )
+    if short_bearish_volume_line is not None:
+        result_bullets.append(short_bearish_volume_line)
+
+    short_bullish_caution_line = _format_short_bullish_caution_line(
+        validation_q10_state_matrix_df
+    )
+    if short_bullish_caution_line is not None:
+        result_bullets.append(short_bullish_caution_line)
+
     headline = (
         "The fusion works as an execution filter, not as a broad overlay: `Q10 Low` is strongest in `Long Bearish / Short Bearish`, still usable in `Long Bullish / Short Bearish`, and clearly weak in `Long Bullish / Short Bullish`."
     )
@@ -1103,6 +1223,8 @@ def _build_published_summary_payload(
         "considerations": [
             "This fusion is useful exactly because the roles are separate: `state` decides when the bounce setup is worth trusting, and `bucket` decides which names to prefer inside that state.",
             "The key discriminator is the short streak mode. Both `short bearish` states keep the bounce setup alive, while `short bullish` either weakens it materially or inverts it.",
+            "Inside the Q10 bucket itself, `volume low` is the better expression of the bounce in the two `short bearish` states. `Q10 x Volume High` stays positive there, but it is consistently weaker than `Q10 x Volume Low`.",
+            "Be careful with apparently strong cells that come from tiny support. In validation, `Long Bullish / Short Bullish` inside `Q10 x Volume High` only had about two usable dates, so it should not be treated as a real edge.",
             "Even with the lower `min names = 3` threshold, this is still a sparse corner of the universe. Read it as a directional execution filter first, then verify it with a constrained backtest on the strongest state-bucket combinations.",
         ],
         "selectedParameters": [
@@ -1123,6 +1245,11 @@ def _build_published_summary_payload(
                 "description": "Best state for `q10_volume_low` and its spread against the other buckets.",
             },
             {
+                "name": "validation_q10_state_matrix_df",
+                "label": "Validation Q10 state matrix",
+                "description": "Q10 Volume Low / High broken down by long-short streak state with 1/5/10d reads.",
+            },
+            {
                 "name": "state_hypothesis_df",
                 "label": "Directed hypothesis table",
                 "description": "Q10 Low vs Q10 High / Middle Low / Middle High inside each state.",
@@ -1133,7 +1260,125 @@ def _build_published_summary_payload(
                 "description": "Date-balanced bucket means for every streak state.",
             },
         ],
-    }
+}
+
+
+def _select_q10_matrix_row(
+    matrix_df: pd.DataFrame,
+    *,
+    combined_bucket: str,
+    state_key: str,
+) -> pd.Series | None:
+    if matrix_df.empty:
+        return None
+    scoped_df = matrix_df[
+        (matrix_df["combined_bucket"].astype(str) == combined_bucket)
+        & (matrix_df["state_key"].astype(str) == state_key)
+    ].copy()
+    if scoped_df.empty:
+        return None
+    return scoped_df.iloc[0]
+
+
+def _format_q10_bucket_order_line(
+    matrix_df: pd.DataFrame,
+    *,
+    combined_bucket: str,
+) -> str | None:
+    scoped_df = matrix_df[matrix_df["combined_bucket"].astype(str) == combined_bucket].copy()
+    if scoped_df.empty:
+        return None
+    ordered_df = scoped_df.sort_values(
+        ["bucket_rank", "avg_future_return", "state_key"],
+        ascending=[True, False, True],
+        kind="stable",
+    )
+    bucket_label = str(ordered_df["combined_bucket_label"].iloc[0])
+    fragments = [
+        f"`{row['state_label']}` {_format_return(float(row['avg_future_return']))}"
+        for _, row in ordered_df.iterrows()
+    ]
+    return f"Within `{bucket_label}`, the state ordering was {' > '.join(fragments)}."
+
+
+def _format_short_bearish_volume_split_line(matrix_df: pd.DataFrame) -> str | None:
+    long_bearish_low = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_low",
+        state_key="long_bearish__short_bearish",
+    )
+    long_bearish_high = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_high",
+        state_key="long_bearish__short_bearish",
+    )
+    long_bullish_low = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_low",
+        state_key="long_bullish__short_bearish",
+    )
+    long_bullish_high = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_high",
+        state_key="long_bullish__short_bearish",
+    )
+    if any(
+        row is None
+        for row in (
+            long_bearish_low,
+            long_bearish_high,
+            long_bullish_low,
+            long_bullish_high,
+        )
+    ):
+        return None
+    return (
+        "`short bearish` was also where the volume split mattered most: under "
+        f"`Long Bearish / Short Bearish`, `Q10 x Volume Low` averaged "
+        f"{_format_return(float(long_bearish_low['avg_future_return']))} versus "
+        f"`Q10 x Volume High` {_format_return(float(long_bearish_high['avg_future_return']))}; "
+        f"under `Long Bullish / Short Bearish`, the same comparison was "
+        f"{_format_return(float(long_bullish_low['avg_future_return']))} versus "
+        f"{_format_return(float(long_bullish_high['avg_future_return']))}."
+    )
+
+
+def _format_short_bullish_caution_line(matrix_df: pd.DataFrame) -> str | None:
+    long_bearish_low = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_low",
+        state_key="long_bearish__short_bullish",
+    )
+    long_bearish_high = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_high",
+        state_key="long_bearish__short_bullish",
+    )
+    long_bullish_low = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_low",
+        state_key="long_bullish__short_bullish",
+    )
+    long_bullish_high = _select_q10_matrix_row(
+        matrix_df,
+        combined_bucket="q10_volume_high",
+        state_key="long_bullish__short_bullish",
+    )
+    if any(
+        row is None
+        for row in (
+            long_bearish_low,
+            long_bearish_high,
+            long_bullish_low,
+            long_bullish_high,
+        )
+    ):
+        return None
+    return (
+        "`short bullish` weakened the whole setup. `Long Bearish / Short Bullish` stayed negative at 1d/5d in both Q10 volume buckets and only recovered by 10d in `Q10 x Volume Low`, while `Long Bullish / Short Bullish` was clearly poor in `Q10 x Volume Low` "
+        f"({_format_return(float(long_bullish_low['avg_future_return']))} average). `Q10 x Volume High` looked better there, but it only carried about "
+        f"{float(long_bullish_high['avg_date_count']):.0f} validation dates, so it is not reliable."
+    )
 
 
 def _select_best_scorecard_row(scorecard_df: pd.DataFrame) -> pd.Series | None:
