@@ -1363,9 +1363,10 @@ def _build_published_summary_payload(
     if segment_row is not None:
         spread = float(segment_row["mean_return_separation"])
         result_bullets.append(
-            "Validation mode segments were short but separable: bullish "
+            "The raw daily mode did separate very short segments: bullish "
             f"{_format_return(float(segment_row['bullish_mean_segment_return']))} vs bearish "
-            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}."
+            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}, "
+            f"but the selected X={result.selected_window_days} already implies almost no standalone memory."
         )
         highlights.append(
             {
@@ -1380,9 +1381,10 @@ def _build_published_summary_payload(
             bullish_20d["mean_future_return"]
         )
         result_bullets.append(
-            "As a forward signal, bearish still outperformed bullish on validation 20-day returns: "
+            "As a standalone forward signal the naming inverted: validation 20-day bearish still outperformed bullish at "
             f"{_format_return(float(bearish_20d['mean_future_return']))} vs "
-            f"{_format_return(float(bullish_20d['mean_future_return']))}."
+            f"{_format_return(float(bullish_20d['mean_future_return']))}, "
+            "so the raw bullish/bearish label is better read as shock direction than as trend direction."
         )
         highlights.append(
             {
@@ -1394,12 +1396,20 @@ def _build_published_summary_payload(
         )
     if best_state_5d is not None and worst_state_5d is not None:
         result_bullets.append(
-            "The 4-state matrix was more interpretable than the raw mode: best validation 5-day state was "
-            f"{str(best_state_5d['state_label'])} at {_format_return(float(best_state_5d['mean_future_return']))}, "
-            f"while the weakest was {str(worst_state_5d['state_label'])} at "
+            "The usable edge appeared only after splitting the short shock by the longer regime: "
+            f"{str(best_state_5d['state_label'])} was strongest on validation 5-day returns at "
+            f"{_format_return(float(best_state_5d['mean_future_return']))}, while "
+            f"{str(worst_state_5d['state_label'])} was weakest at "
             f"{_format_return(float(worst_state_5d['mean_future_return']))}."
         )
-
+        highlights.append(
+            {
+                "label": "Best 5d state",
+                "value": str(best_state_5d["state_label"]),
+                "tone": "accent",
+                "detail": _format_return(float(best_state_5d["mean_future_return"])),
+            }
+        )
     return {
         "title": "TOPIX Extreme Close-to-Close Mode",
         "tags": ["TOPIX", "mode", "multi-timeframe", "daily"],
@@ -1413,14 +1423,14 @@ def _build_published_summary_payload(
             "Build a 4-state matrix from short and long windows to see whether large and small regimes interact.",
         ],
         "resultHeadline": (
-            f"The standalone mode picked a very short memory at X={result.selected_window_days}, "
-            "and the cleaner interpretation came from the short/long 4-state matrix rather than the raw label."
+            f"X={result.selected_window_days} shows the raw daily-shock mode has almost no durable memory; "
+            "the real information appeared only after conditioning the short shock on the longer regime."
         ),
         "resultBullets": result_bullets,
         "considerations": [
-            "The selected X is in trading days and remains short, so this behaves more like a shock classifier than a durable trend filter.",
-            "Forward returns still show mean reversion; the raw bullish/bearish naming should not be interpreted as trend-following by default.",
-            "The 4-state matrix is more promising because it separates large-scale regime from short-term shock timing.",
+            "This is not a good standalone trend-following label. The raw bullish/bearish output mostly tells you which side of the recent shock was larger.",
+            "The practical read is relative, not absolute: a short-term bearish shock inside a longer bullish regime behaves more like a pullback setup, while a short-term bullish shock inside a longer bearish regime behaves more like a relief bounce.",
+            "If you want one takeaway from the normal daily version, it is better as a regime annotation or multi-timeframe filter than as the primary execution trigger.",
         ],
         "selectedParameters": [
             {"label": "Selected X", "value": f"{result.selected_window_days} days"},

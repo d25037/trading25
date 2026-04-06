@@ -13,6 +13,13 @@ import { serializeResearchSearch } from '@/lib/routeSearch';
 import type { ResearchCatalogItem } from '@/types/research';
 import { cn } from '@/lib/utils';
 
+const CURATED_TOPIX_MODE_EXPERIMENTS = [
+  'market-behavior/topix-extreme-mode-mean-reversion-comparison',
+  'market-behavior/topix-extreme-close-to-close-mode',
+  'market-behavior/topix-streak-extreme-mode',
+  'market-behavior/topix-streak-multi-timeframe-mode',
+] as const;
+
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
   const parsed = new Date(value);
@@ -33,6 +40,13 @@ function matchesQuery(item: ResearchCatalogItem, query: string): boolean {
     .join(' ')
     .toLowerCase();
   return haystack.includes(query);
+}
+
+function collectCuratedStudies(items: ResearchCatalogItem[]): ResearchCatalogItem[] {
+  const itemMap = new Map(items.map((item) => [item.experimentId, item]));
+  return CURATED_TOPIX_MODE_EXPERIMENTS.map((experimentId) => itemMap.get(experimentId)).filter(
+    (item): item is ResearchCatalogItem => Boolean(item)
+  );
 }
 
 function ResearchCard({
@@ -145,8 +159,14 @@ export function ResearchPage() {
       }),
     [activeTag, deferredQuery, items]
   );
-  const featuredItem = filteredItems[0] ?? null;
-  const remainingItems = featuredItem ? filteredItems.slice(1) : filteredItems;
+  const curatedItems = useMemo(() => collectCuratedStudies(filteredItems), [filteredItems]);
+  const curatedExperimentIds = useMemo(() => new Set(curatedItems.map((item) => item.experimentId)), [curatedItems]);
+  const libraryCandidates = useMemo(
+    () => filteredItems.filter((item) => !curatedExperimentIds.has(item.experimentId)),
+    [curatedExperimentIds, filteredItems]
+  );
+  const featuredItem = libraryCandidates[0] ?? null;
+  const remainingItems = featuredItem ? libraryCandidates.slice(1) : libraryCandidates;
 
   const metaItems = [
     { label: 'Published Experiments', value: String(items.length) },
@@ -260,6 +280,21 @@ export function ResearchPage() {
           </Surface>
         ) : (
           <div className="space-y-6">
+            {curatedItems.length > 0 ? (
+              <section className="space-y-3">
+                <SectionHeading
+                  eyebrow="Curated"
+                  title="TOPIX Mode Studies"
+                  description="These four studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, and the direct mean-reversion comparison."
+                />
+                <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
+                  {curatedItems.map((item) => (
+                    <ResearchCard key={item.experimentId} item={item} onOpen={openDetail} />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             {featuredItem ? (
               <section className="space-y-3">
                 <SectionHeading

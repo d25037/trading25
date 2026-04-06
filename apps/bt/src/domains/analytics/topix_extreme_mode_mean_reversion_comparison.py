@@ -845,6 +845,9 @@ def _build_published_summary_payload(
             f"with mean return {_format_return(float(best_long_on_bearish['mean_return']))} "
             f"and win rate {float(best_long_on_bearish['win_rate']):.1%}."
         )
+        result_bullets.append(
+            "The comparison therefore changes the deployment decision: use the streak definition when you need an actionable mean-reversion trigger, and keep the normal daily definition mainly as contextual regime language."
+        )
 
     highlights = [
         {
@@ -886,13 +889,13 @@ def _build_published_summary_payload(
             "Rank validation performance by hold period and model to see which definition is more usable for mean reversion.",
         ],
         "resultHeadline": (
-            "For bearish-buy mean reversion, the streak model was consistently stronger than the normal daily model across the tested hold periods."
+            "If the goal is tradable TOPIX mean reversion, the streak model should be the default and the normal daily mode should be treated as context."
         ),
         "resultBullets": result_bullets,
         "considerations": [
-            "These are simplified trade rules with next-open entry and no transaction costs or slippage.",
-            "The strongest edge appears on bearish-buy signals; bullish-short behavior is much less stable.",
-            "The comparison is most useful as model selection guidance before building a fuller backtest or portfolio rule.",
+            "The conclusion is deliberately asymmetric. The useful side is bearish-buy mean reversion; bullish-short is too unstable to promote as a symmetric counterpart.",
+            "In other words: streak mode is the execution model, normal daily mode is the interpretation model. The daily version still helps explain pullback versus relief-bounce states, but it is not the better standalone trigger.",
+            "These are simplified next-open entry tests with no transaction costs or slippage, so the exact hold-day winner still needs a fuller strategy backtest before production use.",
         ],
         "selectedParameters": [
             {"label": "Normal X", "value": f"{result.selected_normal_window_days} days"},

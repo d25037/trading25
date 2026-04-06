@@ -907,9 +907,10 @@ def _build_published_summary_payload(
     if segment_row is not None:
         spread = float(segment_row["mean_return_separation"])
         result_bullets.append(
-            "Validation mode segments separated clearly: bullish "
+            "Streak aggregation made the regime label much cleaner than the daily version: bullish "
             f"{_format_return(float(segment_row['bullish_mean_segment_return']))} vs bearish "
-            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}."
+            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}, "
+            f"with the chosen X reacting to only {result.selected_window_streaks} composite candles."
         )
         highlights.append(
             {
@@ -924,9 +925,10 @@ def _build_published_summary_payload(
             bullish_20d["mean_future_return"]
         )
         result_bullets.append(
-            "Forward returns inverted the mode labels: validation 20-day bearish "
+            "That extra clarity still resolved into exhaustion, not continuation: validation 20-day bearish "
             f"{_format_return(float(bearish_20d['mean_future_return']))} vs bullish "
-            f"{_format_return(float(bullish_20d['mean_future_return']))}."
+            f"{_format_return(float(bullish_20d['mean_future_return']))}, "
+            "so the streak label is strongest when read as overextension."
         )
         highlights.append(
             {
@@ -936,10 +938,13 @@ def _build_published_summary_payload(
                 "detail": "bearish minus bullish forward return",
             }
         )
+        result_bullets.append(
+            "If you force a trading interpretation, the bearish streak state is the actionable side: it identifies composite down moves that are already mature enough to fade."
+        )
 
     result_headline = (
-        f"Dominant streak-candle mode picked X={result.selected_window_streaks} and separated "
-        "TOPIX segments well, but the forward edge was still mean-reverting."
+        f"Streak-candle mode at X={result.selected_window_streaks} was the cleanest descriptive regime label, "
+        "but it became more useful as an exhaustion detector than as a persistence signal."
     )
 
     return {
@@ -957,9 +962,9 @@ def _build_published_summary_payload(
         "resultHeadline": result_headline,
         "resultBullets": result_bullets,
         "considerations": [
-            "The mode itself is a strong descriptive label, but forward returns still favor mean reversion over trend following.",
-            "X is counted in streak candles, not trading days, so live interpretation depends on how long each streak lasts.",
-            "Longer streak windows remain useful as context, but the standalone selected X is still short-memory.",
+            "This is the better regime description of the two TOPIX mode definitions, but it is still not a trend-following signal. It labels when a composite move has become extreme.",
+            "The most defensible practical use is asymmetric: treat bearish streak mode as a long mean-reversion candidate and treat bullish streak mode as mostly descriptive unless another short thesis supports it.",
+            "X is counted in streak candles rather than trading days, so live decay is irregular. A streak can last one day or many days, which means execution should be paired with hold-time rules rather than with a static regime narrative.",
         ],
         "selectedParameters": [
             {"label": "Selected X", "value": f"{result.selected_window_streaks} streaks"},
