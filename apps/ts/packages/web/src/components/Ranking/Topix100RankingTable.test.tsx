@@ -9,7 +9,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
     date: '2026-03-30',
     rankingMetric: metric,
     smaWindow: 50,
-    itemCount: 3,
+    shortWindowStreaks: 3,
+    longWindowStreaks: 53,
+    itemCount: 4,
     lastUpdated: '2026-03-30T00:00:00Z',
     items: [
       {
@@ -27,6 +29,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         priceDecile: 1,
         priceBucket: 'q1',
         volumeBucket: 'high',
+        streakShortMode: 'bullish',
+        streakLongMode: 'bullish',
+        streakStateKey: 'long_bullish__short_bullish',
+        streakStateLabel: 'Long Bullish / Short Bullish',
       },
       {
         rank: 2,
@@ -43,6 +49,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         priceDecile: 10,
         priceBucket: 'q10',
         volumeBucket: 'low',
+        streakShortMode: 'bearish',
+        streakLongMode: 'bearish',
+        streakStateKey: 'long_bearish__short_bearish',
+        streakStateLabel: 'Long Bearish / Short Bearish',
       },
       {
         rank: 3,
@@ -59,6 +69,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         priceDecile: 3,
         priceBucket: 'q234',
         volumeBucket: 'high',
+        streakShortMode: 'bullish',
+        streakLongMode: 'bearish',
+        streakStateKey: 'long_bearish__short_bullish',
+        streakStateLabel: 'Long Bearish / Short Bullish',
       },
       {
         rank: 4,
@@ -75,6 +89,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         priceDecile: 7,
         priceBucket: 'other',
         volumeBucket: null,
+        streakShortMode: null,
+        streakLongMode: null,
+        streakStateKey: null,
+        streakStateLabel: null,
       },
     ],
   };
@@ -95,6 +113,8 @@ describe('Topix100RankingTable', () => {
         rankingSmaWindow={50}
         priceBucketFilter="all"
         volumeBucketFilter="all"
+        shortModeFilter="all"
+        longModeFilter="all"
       />
     );
 
@@ -102,9 +122,12 @@ describe('Topix100RankingTable', () => {
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
     expect(screen.getByText('Volume Low (5/20) first')).toBeInTheDocument();
+    expect(screen.getByText('Streak 3/53 overlay')).toBeInTheDocument();
+    expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 Trough')).toBeInTheDocument();
+    expect(screen.getAllByText('Bullish').length).toBeGreaterThan(0);
 
     await user.click(screen.getByText('7203'));
     expect(onStockClick).toHaveBeenCalledWith('7203');
@@ -121,12 +144,35 @@ describe('Topix100RankingTable', () => {
         rankingSmaWindow={50}
         priceBucketFilter="q10"
         volumeBucketFilter="low"
+        shortModeFilter="bearish"
+        longModeFilter="bearish"
       />
     );
 
     expect(screen.getAllByText('Price SMA 20/80')).toHaveLength(2);
     expect(screen.getByText('Legacy comparison')).toBeInTheDocument();
     expect(screen.getByText('0.95x')).toBeInTheDocument();
+    expect(screen.getByText('Sony')).toBeInTheDocument();
+    expect(screen.queryByText('Toyota')).not.toBeInTheDocument();
+    expect(screen.queryByText('NTT')).not.toBeInTheDocument();
+  });
+
+  it('filters by the streak short and long state', () => {
+    render(
+      <Topix100RankingTable
+        data={createResponse('price_vs_sma_gap')}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        rankingMetric="price_vs_sma_gap"
+        rankingSmaWindow={50}
+        priceBucketFilter="all"
+        volumeBucketFilter="all"
+        shortModeFilter="bearish"
+        longModeFilter="bearish"
+      />
+    );
+
     expect(screen.getByText('Sony')).toBeInTheDocument();
     expect(screen.queryByText('Toyota')).not.toBeInTheDocument();
     expect(screen.queryByText('NTT')).not.toBeInTheDocument();
@@ -143,6 +189,8 @@ describe('Topix100RankingTable', () => {
         rankingSmaWindow={50}
         priceBucketFilter="q1"
         volumeBucketFilter="low"
+        shortModeFilter="all"
+        longModeFilter="all"
       />
     );
 

@@ -6,10 +6,15 @@ import type {
   Topix100RankingItem,
   Topix100RankingMetric,
   Topix100RankingResponse,
+  Topix100StreakModeFilter,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import { formatPriceJPY, formatRate, formatVolume, formatVolumeRatio } from '@/utils/formatters';
-import { getTopix100PriceBucketLabel, getTopix100RankingMetricLabel } from './topix100RankingMetric';
+import {
+  getTopix100PriceBucketLabel,
+  getTopix100RankingMetricLabel,
+  getTopix100StreakModeLabel,
+} from './topix100RankingMetric';
 
 interface Topix100RankingTableProps {
   data: Topix100RankingResponse | undefined;
@@ -20,17 +25,27 @@ interface Topix100RankingTableProps {
   rankingSmaWindow: Topix100PriceSmaWindow;
   priceBucketFilter: Topix100PriceBucketFilter;
   volumeBucketFilter: Topix100VolumeBucketFilter;
+  shortModeFilter: Topix100StreakModeFilter;
+  longModeFilter: Topix100StreakModeFilter;
 }
 
 function matchesFilters(
   item: Topix100RankingItem,
   priceBucketFilter: Topix100PriceBucketFilter,
-  volumeBucketFilter: Topix100VolumeBucketFilter
+  volumeBucketFilter: Topix100VolumeBucketFilter,
+  shortModeFilter: Topix100StreakModeFilter,
+  longModeFilter: Topix100StreakModeFilter
 ): boolean {
   if (priceBucketFilter !== 'all' && item.priceBucket !== priceBucketFilter) {
     return false;
   }
   if (volumeBucketFilter !== 'all' && item.volumeBucket !== volumeBucketFilter) {
+    return false;
+  }
+  if (shortModeFilter !== 'all' && item.streakShortMode !== shortModeFilter) {
+    return false;
+  }
+  if (longModeFilter !== 'all' && item.streakLongMode !== longModeFilter) {
     return false;
   }
   return true;
@@ -49,12 +64,22 @@ function bucketToneClass(priceBucket: Topix100RankingItem['priceBucket']): strin
   }
 }
 
+function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): string {
+  if (mode === 'bullish') {
+    return 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300';
+  }
+  if (mode === 'bearish') {
+    return 'bg-rose-500/12 text-rose-700 dark:text-rose-300';
+  }
+  return 'bg-muted text-muted-foreground';
+}
+
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume Low (5/20) first'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume Low (5/20) first', 'Streak 3/53 overlay'];
   }
 
-  return ['Legacy comparison'];
+  return ['Legacy comparison', 'Streak 3/53 overlay'];
 }
 
 export function Topix100RankingTable({
@@ -66,8 +91,12 @@ export function Topix100RankingTable({
   rankingSmaWindow,
   priceBucketFilter,
   volumeBucketFilter,
+  shortModeFilter,
+  longModeFilter,
 }: Topix100RankingTableProps) {
-  const items = (data?.items ?? []).filter((item) => matchesFilters(item, priceBucketFilter, volumeBucketFilter));
+  const items = (data?.items ?? []).filter((item) =>
+    matchesFilters(item, priceBucketFilter, volumeBucketFilter, shortModeFilter, longModeFilter)
+  );
   const effectiveMetric = data?.rankingMetric ?? rankingMetric;
   const effectiveSmaWindow = data?.smaWindow ?? rankingSmaWindow;
   const metricLabel = getTopix100RankingMetricLabel(effectiveMetric, effectiveSmaWindow);
@@ -89,6 +118,9 @@ export function Topix100RankingTable({
             {studyReadItems.map((item) => (
               <span key={item}>{item}</span>
             ))}
+            <span>
+              State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
+            </span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>
@@ -112,6 +144,8 @@ export function Topix100RankingTable({
                 <th className="w-28 px-2 py-1.5 text-right">{metricLabel}</th>
                 <th className="w-24 px-2 py-1.5 text-left">Bucket</th>
                 <th className="w-20 px-2 py-1.5 text-left">Vol Split</th>
+                <th className="w-20 px-2 py-1.5 text-left">Short</th>
+                <th className="w-20 px-2 py-1.5 text-left">Long</th>
                 <th className="w-28 px-2 py-1.5 text-right">Volume SMA 5/20</th>
                 <th className="w-24 px-2 py-1.5 text-right">Price</th>
                 <th className="w-24 px-2 py-1.5 text-left">Sector</th>
@@ -141,6 +175,20 @@ export function Topix100RankingTable({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-muted-foreground">{item.volumeBucket ?? '-'}</td>
+                  <td className="px-2 py-1.5">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${streakModeToneClass(item.streakShortMode)}`}
+                    >
+                      {item.streakShortMode ? getTopix100StreakModeLabel(item.streakShortMode) : '-'}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${streakModeToneClass(item.streakLongMode)}`}
+                    >
+                      {item.streakLongMode ? getTopix100StreakModeLabel(item.streakLongMode) : '-'}
+                    </span>
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
                   <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>

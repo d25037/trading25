@@ -10057,6 +10057,14 @@ export interface components {
             scaleCategory: string;
             /** Sector33Name */
             sector33Name: string;
+            /** Streaklongmode */
+            streakLongMode?: ("bullish" | "bearish") | null;
+            /** Streakshortmode */
+            streakShortMode?: ("bullish" | "bearish") | null;
+            /** Streakstatekey */
+            streakStateKey?: string | null;
+            /** Streakstatelabel */
+            streakStateLabel?: string | null;
             /** Volume */
             volume: number;
             /** Volumebucket */
@@ -10077,11 +10085,15 @@ export interface components {
             items?: components["schemas"]["Topix100RankingItem"][];
             /** Lastupdated */
             lastUpdated: string;
+            /** Longwindowstreaks */
+            longWindowStreaks: number;
             /**
              * Rankingmetric
              * @enum {string}
              */
             rankingMetric: "price_vs_sma_gap" | "price_sma_20_80";
+            /** Shortwindowstreaks */
+            shortWindowStreaks: number;
             /**
              * Smawindow
              * @enum {integer}

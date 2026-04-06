@@ -182,7 +182,7 @@ function buildIntroMetaItems(
     const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
     return [
       { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      { label: 'Read', value: 'Q10 below SMA / Q2-4 trough' },
+      { label: 'Read', value: 'Q10 below SMA / 3-53 streak state' },
     ];
   }
   return [
@@ -244,6 +244,8 @@ function RankingContent({
         rankingSmaWindow={topix100SmaWindow}
         priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
         volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
+        shortModeFilter={rankingParams.topix100ShortMode ?? 'all'}
+        longModeFilter={rankingParams.topix100LongMode ?? 'all'}
       />
     );
   }

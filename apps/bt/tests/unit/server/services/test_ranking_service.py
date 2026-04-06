@@ -530,12 +530,17 @@ class TestGetTopix100Ranking:
         assert result.date == "2024-03-30"
         assert result.rankingMetric == "price_vs_sma_gap"
         assert result.smaWindow == 50
+        assert result.shortWindowStreaks == 3
+        assert result.longWindowStreaks == 53
         assert result.itemCount == 20
         assert len(result.items) == 20
         assert result.items[0].priceVsSmaGap >= result.items[1].priceVsSmaGap
         assert result.items[0].volumeSma5_20 >= result.items[1].volumeSma5_20
         assert result.items[0].priceBucket == "q1"
         assert result.items[-1].priceBucket == "q10"
+        assert hasattr(result.items[0], "streakShortMode")
+        assert hasattr(result.items[0], "streakLongMode")
+        assert hasattr(result.items[0], "streakStateLabel")
 
     def test_supports_price_sma_20_80_metric(self, topix100_ranking_service):
         result = topix100_ranking_service.get_topix100_ranking(metric="price_sma_20_80")

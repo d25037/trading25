@@ -90,6 +90,7 @@ export interface MarketRankingParams {
 
 export type Topix100PriceBucket = 'q1' | 'q10' | 'q234' | 'other';
 export type Topix100VolumeBucket = 'high' | 'low' | null;
+export type Topix100StreakMode = 'bullish' | 'bearish';
 
 export interface Topix100RankingItem {
   rank: number;
@@ -106,12 +107,18 @@ export interface Topix100RankingItem {
   priceDecile: number;
   priceBucket: Topix100PriceBucket;
   volumeBucket: Topix100VolumeBucket;
+  streakShortMode?: Topix100StreakMode | null;
+  streakLongMode?: Topix100StreakMode | null;
+  streakStateKey?: string | null;
+  streakStateLabel?: string | null;
 }
 
 export interface Topix100RankingResponse {
   date: string;
   rankingMetric: Topix100RankingMetric;
   smaWindow: Topix100PriceSmaWindow;
+  shortWindowStreaks: number;
+  longWindowStreaks: number;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;

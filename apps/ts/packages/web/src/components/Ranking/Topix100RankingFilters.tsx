@@ -4,12 +4,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type {
   RankingParams,
   Topix100PriceBucketFilter,
+  Topix100StreakModeFilter,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import {
   getTopix100RankingMetricLabel,
   getTopix100RankingMetricDescription,
   getTopix100PriceBucketLabel,
+  getTopix100StreakModeLabel,
   resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
   TOPIX100_PRICE_SMA_WINDOW_OPTIONS,
@@ -29,6 +31,12 @@ const VOLUME_BUCKET_OPTIONS: { value: Topix100VolumeBucketFilter; label: string 
   { value: 'high', label: 'Volume High' },
 ];
 
+const STREAK_MODE_OPTIONS: { value: Topix100StreakModeFilter; label: string }[] = [
+  { value: 'all', label: getTopix100StreakModeLabel('all') },
+  { value: 'bearish', label: getTopix100StreakModeLabel('bearish') },
+  { value: 'bullish', label: getTopix100StreakModeLabel('bullish') },
+];
+
 interface Topix100RankingFiltersProps {
   params: RankingParams;
   onChange: (params: RankingParams) => void;
@@ -43,7 +51,7 @@ function buildStudyDescription(
   const metricDescription = getTopix100RankingMetricDescription(resolvedMetric, resolvedSmaWindow);
 
   if (resolvedMetric === 'price_vs_sma_gap') {
-    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription}`;
+    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} Overlay the fixed streak 3/53 short and long states on top.`;
   }
 
   return metricDescription;
@@ -123,6 +131,48 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
             </SelectTrigger>
             <SelectContent>
               {VOLUME_BUCKET_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor="topix100-short-mode" className="text-xs font-medium text-foreground">
+            Short State
+          </label>
+          <Select
+            value={params.topix100ShortMode ?? 'all'}
+            onValueChange={(value) => updateParam('topix100ShortMode', value as Topix100StreakModeFilter)}
+          >
+            <SelectTrigger id="topix100-short-mode" className="h-9 text-xs" aria-label="Short State">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STREAK_MODE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="text-xs">
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor="topix100-long-mode" className="text-xs font-medium text-foreground">
+            Long State
+          </label>
+          <Select
+            value={params.topix100LongMode ?? 'all'}
+            onValueChange={(value) => updateParam('topix100LongMode', value as Topix100StreakModeFilter)}
+          >
+            <SelectTrigger id="topix100-long-mode" className="h-9 text-xs" aria-label="Long State">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STREAK_MODE_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="text-xs">
                   {option.label}
                 </SelectItem>

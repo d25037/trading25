@@ -343,6 +343,8 @@ class TestTopix100Ranking:
         assert "date" in data
         assert data["rankingMetric"] == "price_vs_sma_gap"
         assert data["smaWindow"] == 50
+        assert data["shortWindowStreaks"] == 3
+        assert data["longWindowStreaks"] == 53
         assert "itemCount" in data
         assert "items" in data
         assert "lastUpdated" in data
@@ -361,6 +363,9 @@ class TestTopix100Ranking:
             assert "priceDecile" in item
             assert "priceBucket" in item
             assert "volumeBucket" in item
+            assert "streakShortMode" in item
+            assert "streakLongMode" in item
+            assert "streakStateLabel" in item
 
     def test_supports_metric_query(self, analytics_client):
         resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_sma_20_80")

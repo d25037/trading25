@@ -10,6 +10,7 @@ import pytest
 from src.domains.analytics.topix100_streak_353_transfer import (
     TOPIX100_STREAK_353_TRANSFER_RESEARCH_EXPERIMENT_ID,
     _build_published_summary_payload,
+    build_topix100_streak_state_snapshot_df,
     get_topix100_streak_353_transfer_bundle_path_for_run_id,
     get_topix100_streak_353_transfer_latest_bundle_path,
     load_topix100_streak_353_transfer_research_bundle,
@@ -235,6 +236,32 @@ def test_topix100_streak_353_transfer_returns_state_summaries(
     ]
     assert full_states.nunique() >= 2
     assert validation_states["state_key"].nunique() >= 2
+
+
+def test_topix100_streak_state_snapshot_returns_latest_state_per_stock(
+    analytics_db_path: str,
+) -> None:
+    conn = duckdb.connect(analytics_db_path, read_only=True)
+    history_df = conn.execute(
+        """
+        SELECT
+            s.code,
+            s.company_name,
+            sd.date,
+            sd.close
+        FROM stock_data sd
+        JOIN stocks s ON s.code = sd.code
+        ORDER BY s.code, sd.date
+        """
+    ).fetchdf()
+    conn.close()
+
+    snapshot_df = build_topix100_streak_state_snapshot_df(history_df)
+
+    assert not snapshot_df.empty
+    assert set(snapshot_df["short_mode"].unique()).issubset({"bullish", "bearish"})
+    assert set(snapshot_df["long_mode"].unique()).issubset({"bullish", "bearish"})
+    assert snapshot_df["state_label"].str.contains("Long ").all()
 
 
 def test_topix100_streak_353_transfer_bundle_roundtrip(

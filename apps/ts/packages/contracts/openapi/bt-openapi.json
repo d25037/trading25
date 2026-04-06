@@ -15542,6 +15542,58 @@
             "title": "Sector33Name",
             "type": "string"
           },
+          "streakLongMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bullish",
+                  "bearish"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streaklongmode"
+          },
+          "streakShortMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "bullish",
+                  "bearish"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streakshortmode"
+          },
+          "streakStateKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streakstatekey"
+          },
+          "streakStateLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streakstatelabel"
+          },
           "volume": {
             "title": "Volume",
             "type": "number"
@@ -15606,6 +15658,10 @@
             "title": "Lastupdated",
             "type": "string"
           },
+          "longWindowStreaks": {
+            "title": "Longwindowstreaks",
+            "type": "integer"
+          },
           "rankingMetric": {
             "enum": [
               "price_vs_sma_gap",
@@ -15613,6 +15669,10 @@
             ],
             "title": "Rankingmetric",
             "type": "string"
+          },
+          "shortWindowStreaks": {
+            "title": "Shortwindowstreaks",
+            "type": "integer"
           },
           "smaWindow": {
             "enum": [
@@ -15628,6 +15688,8 @@
           "date",
           "rankingMetric",
           "smaWindow",
+          "shortWindowStreaks",
+          "longWindowStreaks",
           "itemCount",
           "lastUpdated"
         ],

@@ -15,6 +15,7 @@ export type {
   Topix100PriceSmaWindow,
   Topix100RankingItem,
   Topix100RankingResponse,
+  Topix100StreakMode,
   Topix100VolumeBucket,
 } from '@trading25/contracts/types/api-response-types';
 
@@ -24,6 +25,7 @@ export type RankingPageTab = 'ranking' | 'fundamentalRanking';
 export type RankingDailyView = 'stocks' | 'indices' | 'topix100';
 export type Topix100PriceBucketFilter = 'all' | 'q1' | 'q10' | 'q234';
 export type Topix100VolumeBucketFilter = 'all' | 'high' | 'low';
+export type Topix100StreakModeFilter = 'all' | 'bullish' | 'bearish';
 
 // Frontend-specific types
 export interface RankingParams {
@@ -36,4 +38,6 @@ export interface RankingParams {
   topix100SmaWindow?: Topix100PriceSmaWindow;
   topix100PriceBucket?: Topix100PriceBucketFilter;
   topix100VolumeBucket?: Topix100VolumeBucketFilter;
+  topix100ShortMode?: Topix100StreakModeFilter;
+  topix100LongMode?: Topix100StreakModeFilter;
 }
