@@ -30,6 +30,12 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_SHORT_WINDOW_STREAKS,
     build_topix100_streak_state_snapshot_df,
 )
+from src.domains.analytics.topix100_streak_353_signal_score import (
+    TOPIX100_STREAK_353_LONG_SCORE_HORIZON_DAYS,
+    TOPIX100_STREAK_353_SHORT_SCORE_HORIZON_DAYS,
+    load_topix100_streak_353_signal_scorecard,
+    score_topix100_streak_353_signal,
+)
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
     FundamentalRankingItem,
@@ -171,6 +177,22 @@ def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem
     )
 
 
+def _build_optional_desc_ranks(
+    items: list[Topix100RankingItem],
+    field_name: str,
+) -> dict[str, int]:
+    scoped = [
+        (item.code, getattr(item, field_name))
+        for item in items
+        if getattr(item, field_name) is not None
+    ]
+    scoped.sort(key=lambda pair: (cast(float, pair[1]), pair[0]), reverse=True)
+    return {
+        code: rank
+        for rank, (code, _value) in enumerate(scoped, start=1)
+    }
+
+
 class RankingService:
     """マーケットランキングサービス"""
 
@@ -271,49 +293,84 @@ class RankingService:
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
         state_snapshot_map = self._load_topix100_state_snapshot_map(target_date)
+        scorecard = load_topix100_streak_353_signal_scorecard()
 
-        items = [
-            Topix100RankingItem(
-                rank=int(row["rank"]),
-                code=str(row["code"]),
-                companyName=str(row["company_name"]),
-                marketCode=str(row["market_code"]),
-                sector33Name=str(row["sector_33_name"]),
-                scaleCategory=str(row["scale_category"] or ""),
-                currentPrice=float(row["current_price"]),
-                volume=float(row["volume"]),
-                priceVsSmaGap=float(row["price_vs_sma_gap"]),
-                priceSma20_80=float(row["price_sma_20_80"]),
-                volumeSma5_20=float(row["volume_sma_5_20"]),
-                priceDecile=int(row["price_decile"]),
-                priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
-                volumeBucket=(
-                    cast(Topix100VolumeBucket, row["volume_bucket"])
-                    if row["volume_bucket"] is not None
+        items = []
+        for row in rows:
+            code = str(row["code"])
+            state_snapshot = state_snapshot_map.get(code)
+            signal_score = score_topix100_streak_353_signal(
+                price_decile=int(row["price_decile"]) if row["price_decile"] is not None else None,
+                volume_bucket=str(row["volume_bucket"]).replace("volume_", "")
+                if row["volume_bucket"] is not None
+                else None,
+                short_mode=(
+                    str(state_snapshot["short_mode"])
+                    if state_snapshot is not None
                     else None
                 ),
-                streakShortMode=(
-                    cast(Literal["bullish", "bearish"], state_snapshot_map[str(row["code"])]["short_mode"])
-                    if str(row["code"]) in state_snapshot_map
+                long_mode=(
+                    str(state_snapshot["long_mode"])
+                    if state_snapshot is not None
                     else None
                 ),
-                streakLongMode=(
-                    cast(Literal["bullish", "bearish"], state_snapshot_map[str(row["code"])]["long_mode"])
-                    if str(row["code"]) in state_snapshot_map
-                    else None
-                ),
-                streakStateKey=(
-                    str(state_snapshot_map[str(row["code"])]["state_key"])
-                    if str(row["code"]) in state_snapshot_map
-                    else None
-                ),
-                streakStateLabel=(
-                    str(state_snapshot_map[str(row["code"])]["state_label"])
-                    if str(row["code"]) in state_snapshot_map
-                    else None
-                ),
+                scorecard=scorecard,
             )
-            for row in rows
+            items.append(
+                Topix100RankingItem(
+                    rank=int(row["rank"]),
+                    code=code,
+                    companyName=str(row["company_name"]),
+                    marketCode=str(row["market_code"]),
+                    sector33Name=str(row["sector_33_name"]),
+                    scaleCategory=str(row["scale_category"] or ""),
+                    currentPrice=float(row["current_price"]),
+                    volume=float(row["volume"]),
+                    priceVsSmaGap=float(row["price_vs_sma_gap"]),
+                    priceSma20_80=float(row["price_sma_20_80"]),
+                    volumeSma5_20=float(row["volume_sma_5_20"]),
+                    priceDecile=int(row["price_decile"]),
+                    priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
+                    volumeBucket=(
+                        cast(Topix100VolumeBucket, str(row["volume_bucket"]).replace("volume_", ""))
+                        if row["volume_bucket"] is not None
+                        else None
+                    ),
+                    streakShortMode=(
+                        cast(Literal["bullish", "bearish"], state_snapshot["short_mode"])
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakLongMode=(
+                        cast(Literal["bullish", "bearish"], state_snapshot["long_mode"])
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakStateKey=(
+                        str(state_snapshot["state_key"])
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakStateLabel=(
+                        str(state_snapshot["state_label"])
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    longScore5d=signal_score.long_score_5d,
+                    shortScore1d=signal_score.short_score_1d,
+                )
+            )
+
+        long_ranks = _build_optional_desc_ranks(items, "longScore5d")
+        short_ranks = _build_optional_desc_ranks(items, "shortScore1d")
+        items = [
+            item.model_copy(
+                update={
+                    "longScore5dRank": long_ranks.get(item.code),
+                    "shortScore1dRank": short_ranks.get(item.code),
+                }
+            )
+            for item in items
         ]
 
         return Topix100RankingResponse(
@@ -322,6 +379,9 @@ class RankingService:
             smaWindow=validated_sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            longScoreHorizonDays=TOPIX100_STREAK_353_LONG_SCORE_HORIZON_DAYS,
+            shortScoreHorizonDays=TOPIX100_STREAK_353_SHORT_SCORE_HORIZON_DAYS,
+            scoreSourceRunId=scorecard.run_id if scorecard is not None else None,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
@@ -610,14 +670,10 @@ class RankingService:
             volume_ranked AS (
                 SELECT
                     *,
-                    CASE
-                        WHEN price_bucket IN ('q1', 'q10', 'q234')
-                        THEN NTILE(2) OVER (
-                            PARTITION BY price_bucket
-                            ORDER BY volume_sma_5_20 DESC, code ASC
-                        )
-                        ELSE NULL
-                    END AS volume_half_rank
+                    NTILE(2) OVER (
+                        PARTITION BY price_decile
+                        ORDER BY volume_sma_5_20 DESC, code ASC
+                    ) AS volume_half_rank
                 FROM bucketed
             )
             SELECT
@@ -635,8 +691,8 @@ class RankingService:
                 price_decile,
                 price_bucket,
                 CASE
-                    WHEN volume_half_rank = 1 THEN 'high'
-                    WHEN volume_half_rank = 2 THEN 'low'
+                    WHEN volume_half_rank = 1 THEN 'volume_high'
+                    WHEN volume_half_rank = 2 THEN 'volume_low'
                     ELSE NULL
                 END AS volume_bucket
             FROM volume_ranked
@@ -711,7 +767,8 @@ class RankingService:
 
         snapshot_map: dict[str, dict[str, Any]] = {}
         for row in snapshot_df.to_dict(orient="records"):
-            snapshot_map[str(row["code"])] = row
+            normalized_row = {str(key): value for key, value in row.items()}
+            snapshot_map[str(normalized_row["code"])] = normalized_row
         return snapshot_map
 
     def _load_fundamental_stock_rows(

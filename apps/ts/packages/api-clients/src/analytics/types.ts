@@ -111,6 +111,10 @@ export interface Topix100RankingItem {
   streakLongMode?: Topix100StreakMode | null;
   streakStateKey?: string | null;
   streakStateLabel?: string | null;
+  longScore5d?: number | null;
+  shortScore1d?: number | null;
+  longScore5dRank?: number | null;
+  shortScore1dRank?: number | null;
 }
 
 export interface Topix100RankingResponse {
@@ -119,6 +123,9 @@ export interface Topix100RankingResponse {
   smaWindow: Topix100PriceSmaWindow;
   shortWindowStreaks: number;
   longWindowStreaks: number;
+  longScoreHorizonDays: number;
+  shortScoreHorizonDays: number;
+  scoreSourceRunId?: string | null;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;

@@ -11,6 +11,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
     smaWindow: 50,
     shortWindowStreaks: 3,
     longWindowStreaks: 53,
+    longScoreHorizonDays: 5,
+    shortScoreHorizonDays: 1,
+    scoreSourceRunId: '20260406_180623_c0eb7f87',
     itemCount: 4,
     lastUpdated: '2026-03-30T00:00:00Z',
     items: [
@@ -33,6 +36,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bullish',
         streakStateKey: 'long_bullish__short_bullish',
         streakStateLabel: 'Long Bullish / Short Bullish',
+        longScore5d: 0.0124,
+        shortScore1d: 0.0031,
+        longScore5dRank: 2,
+        shortScore1dRank: 3,
       },
       {
         rank: 2,
@@ -53,6 +60,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bearish',
         streakStateKey: 'long_bearish__short_bearish',
         streakStateLabel: 'Long Bearish / Short Bearish',
+        longScore5d: 0.0215,
+        shortScore1d: 0.002,
+        longScore5dRank: 1,
+        shortScore1dRank: 4,
       },
       {
         rank: 3,
@@ -73,6 +84,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bearish',
         streakStateKey: 'long_bearish__short_bullish',
         streakStateLabel: 'Long Bearish / Short Bullish',
+        longScore5d: 0.0048,
+        shortScore1d: 0.0041,
+        longScore5dRank: 3,
+        shortScore1dRank: 1,
       },
       {
         rank: 4,
@@ -93,6 +108,10 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: null,
         streakStateKey: null,
         streakStateLabel: null,
+        longScore5d: null,
+        shortScore1d: null,
+        longScore5dRank: null,
+        shortScore1dRank: null,
       },
     ],
   };
@@ -121,10 +140,12 @@ describe('Topix100RankingTable', () => {
     expect(screen.getAllByText('Price / SMA50 Gap')).toHaveLength(2);
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
-    expect(screen.getByText('Volume Low (5/20) first')).toBeInTheDocument();
+    expect(screen.getByText('Volume split by decile')).toBeInTheDocument();
     expect(screen.getByText('Streak 3/53 overlay')).toBeInTheDocument();
     expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
+    expect(screen.getByText('Score = 5d long / 1d short')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
+    expect(screen.getByText('+2.15%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 Trough')).toBeInTheDocument();
     expect(screen.getAllByText('Bullish').length).toBeGreaterThan(0);

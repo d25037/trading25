@@ -93,6 +93,10 @@ class Topix100RankingItem(BaseModel):
     streakLongMode: Topix100StreakMode | None = None
     streakStateKey: str | None = None
     streakStateLabel: str | None = None
+    longScore5d: float | None = None
+    shortScore1d: float | None = None
+    longScore5dRank: int | None = None
+    shortScore1dRank: int | None = None
 
 
 class Topix100RankingResponse(BaseModel):
@@ -103,6 +107,9 @@ class Topix100RankingResponse(BaseModel):
     smaWindow: Topix100PriceSmaWindow
     shortWindowStreaks: int
     longWindowStreaks: int
+    longScoreHorizonDays: int = 5
+    shortScoreHorizonDays: int = 1
+    scoreSourceRunId: str | None = None
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)
     lastUpdated: str

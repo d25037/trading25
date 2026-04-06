@@ -48,7 +48,7 @@ describe('Topix100RankingFilters', () => {
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
       screen.getByText(
-        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. Overlay the fixed streak 3/53 short and long states on top.'
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. Overlay the fixed streak 3/53 short and long states plus the 5d long / 1d short lookup score.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();

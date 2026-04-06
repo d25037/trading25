@@ -15504,6 +15504,28 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "longScore5d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longscore5D"
+          },
+          "longScore5dRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longscore5Drank"
+          },
           "marketCode": {
             "title": "Marketcode",
             "type": "string"
@@ -15541,6 +15563,28 @@
           "sector33Name": {
             "title": "Sector33Name",
             "type": "string"
+          },
+          "shortScore1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortscore1D"
+          },
+          "shortScore1dRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortscore1Drank"
           },
           "streakLongMode": {
             "anyOf": [
@@ -15658,6 +15702,11 @@
             "title": "Lastupdated",
             "type": "string"
           },
+          "longScoreHorizonDays": {
+            "default": 5,
+            "title": "Longscorehorizondays",
+            "type": "integer"
+          },
           "longWindowStreaks": {
             "title": "Longwindowstreaks",
             "type": "integer"
@@ -15669,6 +15718,22 @@
             ],
             "title": "Rankingmetric",
             "type": "string"
+          },
+          "scoreSourceRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresourcerunid"
+          },
+          "shortScoreHorizonDays": {
+            "default": 1,
+            "title": "Shortscorehorizondays",
+            "type": "integer"
           },
           "shortWindowStreaks": {
             "title": "Shortwindowstreaks",

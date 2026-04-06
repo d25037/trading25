@@ -182,7 +182,7 @@ function buildIntroMetaItems(
     const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
     return [
       { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      { label: 'Read', value: 'Q10 below SMA / 3-53 streak state' },
+      { label: 'Read', value: '3-53 streak state + 5d long / 1d short score' },
     ];
   }
   return [

@@ -76,10 +76,17 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume Low (5/20) first', 'Streak 3/53 overlay'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume split by decile', 'Streak 3/53 overlay'];
   }
 
   return ['Legacy comparison', 'Streak 3/53 overlay'];
+}
+
+function formatScore(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '-';
+  }
+  return formatRate(value);
 }
 
 export function Topix100RankingTable({
@@ -121,6 +128,9 @@ export function Topix100RankingTable({
             <span>
               State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
             </span>
+            <span>
+              Score = {data?.longScoreHorizonDays ?? 5}d long / {data?.shortScoreHorizonDays ?? 1}d short
+            </span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>
@@ -146,6 +156,8 @@ export function Topix100RankingTable({
                 <th className="w-20 px-2 py-1.5 text-left">Vol Split</th>
                 <th className="w-20 px-2 py-1.5 text-left">Short</th>
                 <th className="w-20 px-2 py-1.5 text-left">Long</th>
+                <th className="w-24 px-2 py-1.5 text-right">L5d</th>
+                <th className="w-24 px-2 py-1.5 text-right">S1d</th>
                 <th className="w-28 px-2 py-1.5 text-right">Volume SMA 5/20</th>
                 <th className="w-24 px-2 py-1.5 text-right">Price</th>
                 <th className="w-24 px-2 py-1.5 text-left">Sector</th>
@@ -188,6 +200,18 @@ export function Topix100RankingTable({
                     >
                       {item.streakLongMode ? getTopix100StreakModeLabel(item.streakLongMode) : '-'}
                     </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {item.longScore5dRank ? (
+                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.longScore5dRank}</span>
+                    ) : null}
+                    {formatScore(item.longScore5d)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {item.shortScore1dRank ? (
+                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.shortScore1dRank}</span>
+                    ) : null}
+                    {formatScore(item.shortScore1d)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>

@@ -51,7 +51,7 @@ function buildStudyDescription(
   const metricDescription = getTopix100RankingMetricDescription(resolvedMetric, resolvedSmaWindow);
 
   if (resolvedMetric === 'price_vs_sma_gap') {
-    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} Overlay the fixed streak 3/53 short and long states on top.`;
+    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} Overlay the fixed streak 3/53 short and long states plus the 5d long / 1d short lookup score.`;
   }
 
   return metricDescription;

@@ -64,7 +64,18 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
 
 vi.mock('@/hooks/useTopix100Ranking', () => ({
   useTopix100Ranking: () => ({
-    data: { date: '2026-03-25', rankingMetric: 'price_vs_sma_gap', smaWindow: 50, itemCount: 0, items: [] },
+    data: {
+      date: '2026-03-25',
+      rankingMetric: 'price_vs_sma_gap',
+      smaWindow: 50,
+      shortWindowStreaks: 3,
+      longWindowStreaks: 53,
+      longScoreHorizonDays: 5,
+      shortScoreHorizonDays: 1,
+      scoreSourceRunId: '20260406_180623_c0eb7f87',
+      itemCount: 0,
+      items: [],
+    },
     isLoading: false,
     error: null,
   }),

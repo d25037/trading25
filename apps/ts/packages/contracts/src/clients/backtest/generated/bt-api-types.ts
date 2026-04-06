@@ -10038,6 +10038,10 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /** Longscore5D */
+            longScore5d?: number | null;
+            /** Longscore5Drank */
+            longScore5dRank?: number | null;
             /** Marketcode */
             marketCode: string;
             /**
@@ -10057,6 +10061,10 @@ export interface components {
             scaleCategory: string;
             /** Sector33Name */
             sector33Name: string;
+            /** Shortscore1D */
+            shortScore1d?: number | null;
+            /** Shortscore1Drank */
+            shortScore1dRank?: number | null;
             /** Streaklongmode */
             streakLongMode?: ("bullish" | "bearish") | null;
             /** Streakshortmode */
@@ -10085,6 +10093,11 @@ export interface components {
             items?: components["schemas"]["Topix100RankingItem"][];
             /** Lastupdated */
             lastUpdated: string;
+            /**
+             * Longscorehorizondays
+             * @default 5
+             */
+            longScoreHorizonDays: number;
             /** Longwindowstreaks */
             longWindowStreaks: number;
             /**
@@ -10092,6 +10105,13 @@ export interface components {
              * @enum {string}
              */
             rankingMetric: "price_vs_sma_gap" | "price_sma_20_80";
+            /** Scoresourcerunid */
+            scoreSourceRunId?: string | null;
+            /**
+             * Shortscorehorizondays
+             * @default 1
+             */
+            shortScoreHorizonDays: number;
             /** Shortwindowstreaks */
             shortWindowStreaks: number;
             /**
