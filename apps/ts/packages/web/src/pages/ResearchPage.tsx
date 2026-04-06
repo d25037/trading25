@@ -20,6 +20,7 @@ const CURATED_TOPIX_MODE_EXPERIMENTS = [
   'market-behavior/topix-streak-multi-timeframe-mode',
   'market-behavior/topix100-streak-3-53-transfer',
   'market-behavior/topix100-q10-bounce-streak-3-53-conditioning',
+  'market-behavior/topix100-strongest-setup-q10-threshold',
 ] as const;
 
 function formatTimestamp(value?: string | null): string {

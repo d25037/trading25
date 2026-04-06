@@ -94,6 +94,19 @@ const catalogItems = [
     hasStructuredSummary: true,
   },
   {
+    experimentId: 'market-behavior/topix100-strongest-setup-q10-threshold',
+    runId: '20260406_160500_threshold01',
+    title: 'TOPIX100 Strongest Setup vs Q10 Threshold',
+    objective: 'Measure whether the strongest setup matters more than raw Q10 membership and how wide the lower-tail band can become.',
+    headline: 'The strongest setup still beats non-strong Q10 alternatives even outside pure Q10.',
+    createdAt: '2026-04-06T16:05:00+00:00',
+    analysisStartDate: '2016-01-01',
+    analysisEndDate: '2026-03-31',
+    gitCommit: 'e678c0a5',
+    tags: ['TOPIX100', 'threshold', 'streaks'],
+    hasStructuredSummary: true,
+  },
+  {
     experimentId: 'market-behavior/topix-close-return-streaks',
     runId: '20260405_120000_beta0001',
     title: 'TOPIX Close Return Streaks',
@@ -141,6 +154,7 @@ describe('ResearchPage', () => {
     expect(screen.getByText('TOPIX Streak Multi-Timeframe Mode')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Q10 Bounce x Streak 3/53 Conditioning')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Strongest Setup vs Q10 Threshold')).toBeInTheDocument();
     expect(screen.getByText('Start With The Latest High-Signal Bundle')).toBeInTheDocument();
     expect(screen.getByText('More Published Analyses')).toBeInTheDocument();
     expect(screen.getAllByText('TOPIX Streak Extreme Mode').length).toBeGreaterThan(0);
