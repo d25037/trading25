@@ -1,29 +1,31 @@
-export type ResearchHighlightTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 
-export interface ResearchLabelValue {
-  label: string;
-  value: string;
-}
+export type ResearchHighlightTone = components['schemas']['ResearchHighlight']['tone'];
 
-export interface ResearchHighlight {
-  label: string;
-  value: string;
+export type ApiResearchLabelValue = components['schemas']['ResearchLabelValue'];
+export type ApiResearchHighlight = components['schemas']['ResearchHighlight'];
+export type ApiResearchTableHighlight = components['schemas']['ResearchTableHighlight'];
+export type ApiPublishedResearchSummary = components['schemas']['PublishedResearchSummary'];
+export type ApiResearchCatalogItem = components['schemas']['ResearchCatalogItem'];
+export type ApiResearchRunReference = components['schemas']['ResearchRunReference'];
+export type ApiResearchCatalogResponse = components['schemas']['ResearchCatalogResponse'];
+export type ApiResearchDetailResponse = components['schemas']['ResearchDetailResponse'];
+
+export type ResearchLabelValue = ApiResearchLabelValue;
+
+export interface ResearchHighlight extends Omit<ApiResearchHighlight, 'tone'> {
   tone: ResearchHighlightTone;
-  detail?: string | null;
 }
 
-export interface ResearchTableHighlight {
-  name: string;
-  label: string;
-  description?: string | null;
-}
+export type ResearchTableHighlight = ApiResearchTableHighlight;
 
-export interface PublishedResearchSummary {
-  title: string;
+export interface PublishedResearchSummary
+  extends Omit<
+    ApiPublishedResearchSummary,
+    'tags' | 'method' | 'resultBullets' | 'considerations' | 'selectedParameters' | 'highlights' | 'tableHighlights'
+  > {
   tags: string[];
-  purpose: string;
   method: string[];
-  resultHeadline?: string | null;
   resultBullets: string[];
   considerations: string[];
   selectedParameters: ResearchLabelValue[];
@@ -31,35 +33,19 @@ export interface PublishedResearchSummary {
   tableHighlights: ResearchTableHighlight[];
 }
 
-export interface ResearchCatalogItem {
-  experimentId: string;
-  runId: string;
-  title: string;
-  objective?: string | null;
-  headline?: string | null;
-  createdAt: string;
-  analysisStartDate?: string | null;
-  analysisEndDate?: string | null;
-  gitCommit?: string | null;
+export interface ResearchCatalogItem extends Omit<ApiResearchCatalogItem, 'tags'> {
   tags: string[];
-  hasStructuredSummary: boolean;
 }
 
-export interface ResearchRunReference {
-  runId: string;
-  createdAt: string;
-  isLatest: boolean;
-}
+export type ResearchRunReference = ApiResearchRunReference;
 
-export interface ResearchCatalogResponse {
+export interface ResearchCatalogResponse extends Omit<ApiResearchCatalogResponse, 'items'> {
   items: ResearchCatalogItem[];
-  lastUpdated: string;
 }
 
-export interface ResearchDetailResponse {
-  item: ResearchCatalogItem;
-  summary?: PublishedResearchSummary | null;
-  summaryMarkdown: string;
+export interface ResearchDetailResponse
+  extends Omit<ApiResearchDetailResponse, 'summary' | 'outputTables' | 'availableRuns' | 'resultMetadata'> {
+  summary: PublishedResearchSummary | null;
   outputTables: string[];
   availableRuns: ResearchRunReference[];
   resultMetadata: Record<string, unknown>;

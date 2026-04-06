@@ -106,19 +106,13 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
   );
 }
 
-function DetailMetrics({
-  highlights,
-  layout = 'grid',
-}: {
-  highlights: ResearchHighlight[];
-  layout?: 'grid' | 'stack';
-}) {
+function DetailMetrics({ highlights }: { highlights: ResearchHighlight[] }) {
   if (highlights.length === 0) {
     return null;
   }
 
   return (
-    <div className={cn('grid gap-3', layout === 'grid' ? 'sm:grid-cols-2 lg:grid-cols-1' : 'grid-cols-1')}>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
       {highlights.slice(0, 3).map((highlight) => (
         <CompactMetric
           key={highlight.label}

@@ -7,6 +7,10 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query
 
 from src.application.services.research_catalog_service import (
+    PublishedResearchSummaryData,
+    ResearchCatalogEntry,
+    ResearchPublication,
+    ResearchRunReference as ResearchRunReferenceData,
     get_research_publication,
     list_latest_research_publications,
 )
@@ -24,6 +28,76 @@ from src.entrypoints.http.schemas.research import (
 router = APIRouter(tags=["Analytics"])
 
 
+def _to_catalog_item(entry: ResearchCatalogEntry) -> ResearchCatalogItem:
+    return ResearchCatalogItem(
+        experimentId=entry.experiment_id,
+        runId=entry.run_id,
+        title=entry.title,
+        objective=entry.objective,
+        headline=entry.headline,
+        createdAt=entry.created_at,
+        analysisStartDate=entry.analysis_start_date,
+        analysisEndDate=entry.analysis_end_date,
+        gitCommit=entry.git_commit,
+        tags=list(entry.tags),
+        hasStructuredSummary=entry.has_structured_summary,
+    )
+
+
+def _to_summary(summary: PublishedResearchSummaryData | None) -> PublishedResearchSummary | None:
+    if summary is None:
+        return None
+    return PublishedResearchSummary(
+        title=summary.title,
+        tags=list(summary.tags),
+        purpose=summary.purpose,
+        method=list(summary.method),
+        resultHeadline=summary.result_headline,
+        resultBullets=list(summary.result_bullets),
+        considerations=list(summary.considerations),
+        selectedParameters=[
+            ResearchLabelValue(label=item.label, value=item.value)
+            for item in summary.selected_parameters
+        ],
+        highlights=[
+            ResearchHighlight(
+                label=item.label,
+                value=item.value,
+                tone=item.tone,
+                detail=item.detail,
+            )
+            for item in summary.highlights
+        ],
+        tableHighlights=[
+            ResearchTableHighlight(
+                name=item.name,
+                label=item.label,
+                description=item.description,
+            )
+            for item in summary.table_highlights
+        ],
+    )
+
+
+def _to_run_reference(item: ResearchRunReferenceData) -> ResearchRunReference:
+    return ResearchRunReference(
+        runId=item.run_id,
+        createdAt=item.created_at,
+        isLatest=item.is_latest,
+    )
+
+
+def _to_detail_response(publication: ResearchPublication) -> ResearchDetailResponse:
+    return ResearchDetailResponse(
+        item=_to_catalog_item(publication.item),
+        summary=_to_summary(publication.summary),
+        summaryMarkdown=publication.summary_markdown,
+        outputTables=list(publication.output_tables),
+        availableRuns=[_to_run_reference(item) for item in publication.available_runs],
+        resultMetadata=publication.result_metadata,
+    )
+
+
 @router.get(
     "/api/analytics/research",
     response_model=ResearchCatalogResponse,
@@ -34,22 +108,7 @@ router = APIRouter(tags=["Analytics"])
     ),
 )
 async def list_research_catalog() -> ResearchCatalogResponse:
-    items = [
-        ResearchCatalogItem(
-            experimentId=item.experiment_id,
-            runId=item.run_id,
-            title=item.title,
-            objective=item.objective,
-            headline=item.headline,
-            createdAt=item.created_at,
-            analysisStartDate=item.analysis_start_date,
-            analysisEndDate=item.analysis_end_date,
-            gitCommit=item.git_commit,
-            tags=list(item.tags),
-            hasStructuredSummary=item.has_structured_summary,
-        )
-        for item in list_latest_research_publications()
-    ]
+    items = [_to_catalog_item(item) for item in list_latest_research_publications()]
     return ResearchCatalogResponse(
         items=items,
         lastUpdated=datetime.now(UTC).isoformat(),
@@ -74,64 +133,4 @@ async def get_research_detail(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
-    summary = publication.summary
-    return ResearchDetailResponse(
-        item=ResearchCatalogItem(
-            experimentId=publication.item.experiment_id,
-            runId=publication.item.run_id,
-            title=publication.item.title,
-            objective=publication.item.objective,
-            headline=publication.item.headline,
-            createdAt=publication.item.created_at,
-            analysisStartDate=publication.item.analysis_start_date,
-            analysisEndDate=publication.item.analysis_end_date,
-            gitCommit=publication.item.git_commit,
-            tags=list(publication.item.tags),
-            hasStructuredSummary=publication.item.has_structured_summary,
-        ),
-        summary=(
-            PublishedResearchSummary(
-                title=summary.title,
-                tags=list(summary.tags),
-                purpose=summary.purpose,
-                method=list(summary.method),
-                resultHeadline=summary.result_headline,
-                resultBullets=list(summary.result_bullets),
-                considerations=list(summary.considerations),
-                selectedParameters=[
-                    ResearchLabelValue(label=item.label, value=item.value)
-                    for item in summary.selected_parameters
-                ],
-                highlights=[
-                    ResearchHighlight(
-                        label=item.label,
-                        value=item.value,
-                        tone=item.tone,
-                        detail=item.detail,
-                    )
-                    for item in summary.highlights
-                ],
-                tableHighlights=[
-                    ResearchTableHighlight(
-                        name=item.name,
-                        label=item.label,
-                        description=item.description,
-                    )
-                    for item in summary.table_highlights
-                ],
-            )
-            if summary is not None
-            else None
-        ),
-        summaryMarkdown=publication.summary_markdown,
-        outputTables=list(publication.output_tables),
-        availableRuns=[
-            ResearchRunReference(
-                runId=item.run_id,
-                createdAt=item.created_at,
-                isLatest=item.is_latest,
-            )
-            for item in publication.available_runs
-        ],
-        resultMetadata=publication.result_metadata,
-    )
+    return _to_detail_response(publication)
