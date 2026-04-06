@@ -18,6 +18,8 @@ const CURATED_TOPIX_MODE_EXPERIMENTS = [
   'market-behavior/topix-extreme-close-to-close-mode',
   'market-behavior/topix-streak-extreme-mode',
   'market-behavior/topix-streak-multi-timeframe-mode',
+  'market-behavior/topix100-streak-3-53-transfer',
+  'market-behavior/topix100-q10-bounce-streak-3-53-conditioning',
 ] as const;
 
 function formatTimestamp(value?: string | null): string {
@@ -285,7 +287,7 @@ export function ResearchPage() {
                 <SectionHeading
                   eyebrow="Curated"
                   title="TOPIX Mode Studies"
-                  description="These four studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, and the direct mean-reversion comparison."
+                  description="These studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, the direct mean-reversion comparison, the TOPIX100 transfer read, and the TOPIX100 bucket fusion read."
                 />
                 <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
                   {curatedItems.map((item) => (

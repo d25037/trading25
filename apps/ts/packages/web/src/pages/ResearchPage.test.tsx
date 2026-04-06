@@ -68,6 +68,32 @@ const catalogItems = [
     hasStructuredSummary: true,
   },
   {
+    experimentId: 'market-behavior/topix100-streak-3-53-transfer',
+    runId: '20260406_133000_transfer01',
+    title: 'TOPIX100 Streak 3/53 Transfer Study',
+    objective: 'Apply the fixed TOPIX 3/53 streak pair to TOPIX100 constituents.',
+    headline: 'A stock-level transfer test for the TOPIX-learned streak hierarchy.',
+    createdAt: '2026-04-06T13:30:00+00:00',
+    analysisStartDate: '2016-01-01',
+    analysisEndDate: '2026-03-31',
+    gitCommit: '75c7a09b',
+    tags: ['TOPIX100', 'streaks', 'multi-timeframe'],
+    hasStructuredSummary: true,
+  },
+  {
+    experimentId: 'market-behavior/topix100-q10-bounce-streak-3-53-conditioning',
+    runId: '20260406_143500_fusion0001',
+    title: 'TOPIX100 Q10 Bounce x Streak 3/53 Conditioning',
+    objective: 'Fuse the TOPIX100 bounce bucket lens with the fixed streak 3/53 state model.',
+    headline: 'Use streak state as the execution filter for the Q10 bounce bucket.',
+    createdAt: '2026-04-06T14:35:00+00:00',
+    analysisStartDate: '2016-01-01',
+    analysisEndDate: '2026-03-31',
+    gitCommit: '75c7a09b',
+    tags: ['TOPIX100', 'bucket', 'streaks'],
+    hasStructuredSummary: true,
+  },
+  {
     experimentId: 'market-behavior/topix-close-return-streaks',
     runId: '20260405_120000_beta0001',
     title: 'TOPIX Close Return Streaks',
@@ -113,6 +139,8 @@ describe('ResearchPage', () => {
     expect(screen.getByText('TOPIX Extreme Mode Mean-Reversion Comparison')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Streak Multi-Timeframe Mode')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Q10 Bounce x Streak 3/53 Conditioning')).toBeInTheDocument();
     expect(screen.getByText('Start With The Latest High-Signal Bundle')).toBeInTheDocument();
     expect(screen.getByText('More Published Analyses')).toBeInTheDocument();
     expect(screen.getAllByText('TOPIX Streak Extreme Mode').length).toBeGreaterThan(0);
