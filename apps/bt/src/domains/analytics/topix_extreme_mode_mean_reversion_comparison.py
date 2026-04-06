@@ -258,6 +258,7 @@ def write_topix_extreme_mode_mean_reversion_comparison_bundle(
             "validation_leaderboard_df": result.validation_leaderboard_df,
         },
         summary_markdown=_build_research_bundle_summary_markdown(result),
+        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -809,6 +810,153 @@ def _build_research_bundle_summary_markdown(
         ]
     )
     return "\n".join(lines)
+
+
+def _build_published_summary_payload(
+    result: TopixExtremeModeMeanReversionComparisonResult,
+) -> dict[str, object]:
+    validation_df = result.backtest_summary_df[
+        result.backtest_summary_df["sample_split"] == "validation"
+    ].copy()
+    long_on_bearish_df = validation_df[
+        validation_df["strategy"] == "long_on_bearish"
+    ].copy()
+    best_long_on_bearish = _select_strategy_leader(
+        result.validation_leaderboard_df,
+        strategy="long_on_bearish",
+    )
+    comparison_rows = _collect_hold_comparison_rows(
+        long_on_bearish_df,
+        hold_days=result.hold_days,
+    )
+
+    result_bullets = [
+        (
+            f"{int(row['hold_days'])}d hold: normal "
+            f"{_format_return(float(row['normal_mean_return']))} vs streak "
+            f"{_format_return(float(row['streak_mean_return']))}"
+        )
+        for row in comparison_rows
+    ]
+    if best_long_on_bearish is not None:
+        result_bullets.append(
+            "The best validation mean-reversion setup was "
+            f"{str(best_long_on_bearish['model'])} on a {int(best_long_on_bearish['hold_days'])}-day hold, "
+            f"with mean return {_format_return(float(best_long_on_bearish['mean_return']))} "
+            f"and win rate {float(best_long_on_bearish['win_rate']):.1%}."
+        )
+
+    highlights = [
+        {
+            "label": "Normal X",
+            "value": f"{result.selected_normal_window_days} days",
+            "tone": "neutral",
+            "detail": "selected on discovery",
+        },
+        {
+            "label": "Streak X",
+            "value": f"{result.selected_streak_window_streaks} streaks",
+            "tone": "accent",
+            "detail": "selected on discovery",
+        },
+    ]
+    if best_long_on_bearish is not None:
+        highlights.append(
+            {
+                "label": "Best mean-reversion setup",
+                "value": (
+                    f"{str(best_long_on_bearish['model'])} / "
+                    f"{int(best_long_on_bearish['hold_days'])}d"
+                ),
+                "tone": "success" if str(best_long_on_bearish["model"]) == "streak" else "warning",
+                "detail": _format_return(float(best_long_on_bearish["mean_return"])),
+            }
+        )
+
+    return {
+        "title": "TOPIX Extreme Mode Mean-Reversion Comparison",
+        "tags": ["TOPIX", "comparison", "mean-reversion", "streaks"],
+        "purpose": (
+            "Compare the original daily extreme-mode definition against the streak-candle version under the same "
+            "next-open to N-day-close execution assumptions."
+        ),
+        "method": [
+            "Run the normal daily-shock mode and the streak-candle mode over the same common date range.",
+            "Convert each model into simple bearish-buy and bullish-short trade signals with overlapping trades suppressed.",
+            "Rank validation performance by hold period and model to see which definition is more usable for mean reversion.",
+        ],
+        "resultHeadline": (
+            "For bearish-buy mean reversion, the streak model was consistently stronger than the normal daily model across the tested hold periods."
+        ),
+        "resultBullets": result_bullets,
+        "considerations": [
+            "These are simplified trade rules with next-open entry and no transaction costs or slippage.",
+            "The strongest edge appears on bearish-buy signals; bullish-short behavior is much less stable.",
+            "The comparison is most useful as model selection guidance before building a fuller backtest or portfolio rule.",
+        ],
+        "selectedParameters": [
+            {"label": "Normal X", "value": f"{result.selected_normal_window_days} days"},
+            {"label": "Streak X", "value": f"{result.selected_streak_window_streaks} streaks"},
+            {"label": "Hold days", "value": _format_int_sequence(result.hold_days)},
+            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
+        ],
+        "highlights": highlights,
+        "tableHighlights": [
+            {
+                "name": "backtest_summary_df",
+                "label": "Backtest summary",
+                "description": "Mean return, win rate, and compound return by model, strategy, and hold period.",
+            },
+            {
+                "name": "validation_leaderboard_df",
+                "label": "Validation leaderboard",
+                "description": "Best model and hold-period combinations per strategy.",
+            },
+            {
+                "name": "signal_summary_df",
+                "label": "Signal coverage",
+                "description": "How often each model produces bullish or bearish signals on each split.",
+            },
+        ],
+    }
+
+
+def _collect_hold_comparison_rows(
+    long_on_bearish_df: pd.DataFrame,
+    *,
+    hold_days: Sequence[int],
+) -> list[dict[str, float | int]]:
+    rows: list[dict[str, float | int]] = []
+    for holding_days in hold_days:
+        hold_df = long_on_bearish_df[long_on_bearish_df["hold_days"] == holding_days]
+        if hold_df.empty:
+            continue
+        normal_row = hold_df[hold_df["model"] == "normal"]
+        streak_row = hold_df[hold_df["model"] == "streak"]
+        if normal_row.empty or streak_row.empty:
+            continue
+        rows.append(
+            {
+                "hold_days": int(holding_days),
+                "normal_mean_return": float(normal_row.iloc[0]["mean_return"]),
+                "streak_mean_return": float(streak_row.iloc[0]["mean_return"]),
+            }
+        )
+    return rows
+
+
+def _select_strategy_leader(
+    leaderboard_df: pd.DataFrame,
+    *,
+    strategy: str,
+) -> pd.Series | None:
+    strategy_df = leaderboard_df[
+        (leaderboard_df["strategy"] == strategy)
+        & (leaderboard_df["validation_rank"] == 1)
+    ]
+    if strategy_df.empty:
+        return None
+    return strategy_df.iloc[0]
 
 
 def _format_int_sequence(values: Sequence[int]) -> str:

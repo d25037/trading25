@@ -14,6 +14,7 @@ import {
   serializeIndicesSearch,
   serializeOptions225Search,
   serializePortfolioSearch,
+  serializeResearchSearch,
   serializeRankingSearch,
   serializeScreeningSearch,
   validateBacktestSearch,
@@ -21,6 +22,7 @@ import {
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
+  validateResearchSearch,
   validateRankingSearch,
   validateScreeningSearch,
 } from './routeSearch';
@@ -50,6 +52,10 @@ describe('routeSearch', () => {
   it('validates and serializes charts/portfolio search params', () => {
     expect(validateChartsSearch({ symbol: ' 7203 ' })).toEqual({ symbol: '7203' });
     expect(validateIndicesSearch({ code: ' topix ' })).toEqual({ code: 'topix' });
+    expect(validateResearchSearch({ experimentId: ' market/a ', runId: ' 20260405 ' })).toEqual({
+      experimentId: 'market/a',
+      runId: '20260405',
+    });
     expect(validateIndicesSearch({ code: '   ' })).toEqual({});
     expect(validatePortfolioSearch({ tab: 'watchlists', portfolioId: '3', watchlistId: 'bad' })).toEqual({
       tab: 'watchlists',
@@ -59,6 +65,9 @@ describe('routeSearch', () => {
       watchlistId: 9,
     });
     expect(serializeIndicesSearch('   ')).toEqual({});
+    expect(serializeResearchSearch({ experimentId: ' market/a ', runId: '   ' })).toEqual({
+      experimentId: 'market/a',
+    });
     expect(extractLegacyChartsSearch({ selectedSymbol: '6758' })).toEqual({ symbol: '6758' });
     expect(
       extractLegacyPortfolioSearch({

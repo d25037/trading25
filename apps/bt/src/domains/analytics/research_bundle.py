@@ -18,6 +18,7 @@ from src.shared.paths.resolver import get_data_dir
 MANIFEST_FILENAME = "manifest.json"
 RESULTS_DB_FILENAME = "results.duckdb"
 SUMMARY_FILENAME = "summary.md"
+PUBLISHED_SUMMARY_FILENAME = "summary.json"
 DEFAULT_RESEARCH_ROOT_NAME = "research"
 
 
@@ -42,6 +43,7 @@ class ResearchBundleInfo:
     manifest_path: Path
     results_db_path: Path
     summary_path: Path
+    published_summary_path: Path
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -84,6 +86,7 @@ class ResearchBundleInfo:
             manifest_path=bundle_dir / MANIFEST_FILENAME,
             results_db_path=bundle_dir / RESULTS_DB_FILENAME,
             summary_path=bundle_dir / SUMMARY_FILENAME,
+            published_summary_path=bundle_dir / PUBLISHED_SUMMARY_FILENAME,
         )
 
 
@@ -151,6 +154,7 @@ def write_research_bundle(
     result_metadata: dict[str, Any],
     result_tables: dict[str, pd.DataFrame],
     summary_markdown: str,
+    published_summary: dict[str, Any] | None = None,
     output_root: str | Path | None = None,
     run_id: str | None = None,
     notes: str | None = None,
@@ -185,6 +189,7 @@ def write_research_bundle(
         manifest_path=bundle_dir / MANIFEST_FILENAME,
         results_db_path=bundle_dir / RESULTS_DB_FILENAME,
         summary_path=bundle_dir / SUMMARY_FILENAME,
+        published_summary_path=bundle_dir / PUBLISHED_SUMMARY_FILENAME,
     )
     _write_results_db(info.results_db_path, result_tables)
     info.manifest_path.write_text(
@@ -192,6 +197,16 @@ def write_research_bundle(
         encoding="utf-8",
     )
     info.summary_path.write_text(summary_markdown, encoding="utf-8")
+    if published_summary is not None:
+        info.published_summary_path.write_text(
+            json.dumps(
+                _sanitize_json_payload(published_summary),
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+            ),
+            encoding="utf-8",
+        )
     return info
 
 
@@ -224,11 +239,47 @@ def load_research_bundle_tables(
     return tables
 
 
+def load_research_bundle_published_summary(
+    bundle_path: str | Path,
+) -> dict[str, Any] | None:
+    info = load_research_bundle_info(bundle_path)
+    if not info.published_summary_path.exists():
+        return None
+    payload = json.loads(info.published_summary_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(
+            "Research bundle published summary must be a JSON object: "
+            f"{info.published_summary_path}"
+        )
+    return payload
+
+
+def list_research_bundle_infos(
+    *,
+    output_root: str | Path | None = None,
+) -> tuple[ResearchBundleInfo, ...]:
+    research_root = get_research_root_dir(output_root)
+    if not research_root.exists():
+        return ()
+
+    manifests = sorted(
+        research_root.rglob(MANIFEST_FILENAME),
+        key=lambda path: (path.stat().st_mtime_ns, str(path)),
+        reverse=True,
+    )
+    return tuple(load_research_bundle_info(path.parent) for path in manifests)
+
+
 def _resolve_bundle_dir(bundle_path: str | Path) -> Path:
     path = Path(bundle_path).expanduser()
     if path.is_dir():
         return path
-    if path.name in {MANIFEST_FILENAME, RESULTS_DB_FILENAME, SUMMARY_FILENAME}:
+    if path.name in {
+        MANIFEST_FILENAME,
+        RESULTS_DB_FILENAME,
+        SUMMARY_FILENAME,
+        PUBLISHED_SUMMARY_FILENAME,
+    }:
         return path.parent
     raise FileNotFoundError(
         "Research bundle path must point to a bundle directory or one of its "

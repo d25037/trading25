@@ -42,6 +42,11 @@ export interface IndicesRouteSearch {
   code?: string;
 }
 
+export interface ResearchRouteSearch {
+  experimentId?: string;
+  runId?: string;
+}
+
 export interface Options225RouteSearch {
   date?: string;
   putCall?: Options225PutCallFilter;
@@ -360,9 +365,38 @@ export function validateIndicesSearch(search: Record<string, unknown>): IndicesR
   return code ? { code } : {};
 }
 
+export function validateResearchSearch(search: Record<string, unknown>): ResearchRouteSearch {
+  const experimentId = normalizeString(search.experimentId);
+  const runId = normalizeString(search.runId);
+  const next: ResearchRouteSearch = {};
+  if (experimentId) {
+    next.experimentId = experimentId;
+  }
+  if (runId) {
+    next.runId = runId;
+  }
+  return next;
+}
+
 export function serializeIndicesSearch(code: string | null | undefined): IndicesRouteSearch {
   const normalizedCode = normalizeString(code);
   return normalizedCode ? { code: normalizedCode } : {};
+}
+
+export function serializeResearchSearch(params: {
+  experimentId?: string | null;
+  runId?: string | null;
+}): ResearchRouteSearch {
+  const experimentId = normalizeString(params.experimentId);
+  const runId = normalizeString(params.runId);
+  const next: ResearchRouteSearch = {};
+  if (experimentId) {
+    next.experimentId = experimentId;
+  }
+  if (runId) {
+    next.runId = runId;
+  }
+  return next;
 }
 
 export function validateOptions225Search(search: Record<string, unknown>): Options225RouteSearch {

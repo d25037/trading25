@@ -101,6 +101,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List published analytics research bundles
+         * @description List the latest available research bundle per experiment. Structured `summary.json` payloads are returned when available.
+         */
+        get: operations["list_research_catalog_api_analytics_research_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/research/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a published analytics research bundle
+         * @description Fetch the latest run or a specific run for a research experiment, including the structured summary, raw markdown summary, and available runs.
+         */
+        get: operations["get_research_detail_api_analytics_research_detail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/roe": {
         parameters: {
             query?: never;
@@ -7323,6 +7363,29 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** PublishedResearchSummary */
+        PublishedResearchSummary: {
+            /** Considerations */
+            considerations?: string[];
+            /** Highlights */
+            highlights?: components["schemas"]["ResearchHighlight"][];
+            /** Method */
+            method?: string[];
+            /** Purpose */
+            purpose: string;
+            /** Resultbullets */
+            resultBullets?: string[];
+            /** Resultheadline */
+            resultHeadline?: string | null;
+            /** Selectedparameters */
+            selectedParameters?: components["schemas"]["ResearchLabelValue"][];
+            /** Tablehighlights */
+            tableHighlights?: components["schemas"]["ResearchTableHighlight"][];
+            /** Tags */
+            tags?: string[];
+            /** Title */
+            title: string;
+        };
         /**
          * RankingItem
          * @description ランキング項目
@@ -7542,6 +7605,99 @@ export interface components {
              * @enum {string}
              */
             handle_zero_division: "skip" | "zero" | "null";
+        };
+        /** ResearchCatalogItem */
+        ResearchCatalogItem: {
+            /** Analysisenddate */
+            analysisEndDate?: string | null;
+            /** Analysisstartdate */
+            analysisStartDate?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Experimentid */
+            experimentId: string;
+            /** Gitcommit */
+            gitCommit?: string | null;
+            /**
+             * Hasstructuredsummary
+             * @default false
+             */
+            hasStructuredSummary: boolean;
+            /** Headline */
+            headline?: string | null;
+            /** Objective */
+            objective?: string | null;
+            /** Runid */
+            runId: string;
+            /** Tags */
+            tags?: string[];
+            /** Title */
+            title: string;
+        };
+        /** ResearchCatalogResponse */
+        ResearchCatalogResponse: {
+            /** Items */
+            items?: components["schemas"]["ResearchCatalogItem"][];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /** ResearchDetailResponse */
+        ResearchDetailResponse: {
+            /** Availableruns */
+            availableRuns?: components["schemas"]["ResearchRunReference"][];
+            item: components["schemas"]["ResearchCatalogItem"];
+            /** Outputtables */
+            outputTables?: string[];
+            /** Resultmetadata */
+            resultMetadata?: {
+                [key: string]: unknown;
+            };
+            summary?: components["schemas"]["PublishedResearchSummary"] | null;
+            /** Summarymarkdown */
+            summaryMarkdown: string;
+        };
+        /** ResearchHighlight */
+        ResearchHighlight: {
+            /** Detail */
+            detail?: string | null;
+            /** Label */
+            label: string;
+            /**
+             * Tone
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "accent" | "success" | "warning" | "danger";
+            /** Value */
+            value: string;
+        };
+        /** ResearchLabelValue */
+        ResearchLabelValue: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /** ResearchRunReference */
+        ResearchRunReference: {
+            /** Createdat */
+            createdAt: string;
+            /**
+             * Islatest
+             * @default false
+             */
+            isLatest: boolean;
+            /** Runid */
+            runId: string;
+        };
+        /** ResearchTableHighlight */
+        ResearchTableHighlight: {
+            /** Description */
+            description?: string | null;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
         };
         /**
          * ResponseDiagnostics
@@ -10556,6 +10712,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketRankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_research_catalog_api_analytics_research_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchCatalogResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_research_detail_api_analytics_research_detail_get: {
+        parameters: {
+            query: {
+                experimentId: string;
+                runId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchDetailResponse"];
                 };
             };
             /** @description Bad Request */

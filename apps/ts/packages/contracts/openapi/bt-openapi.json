@@ -9564,6 +9564,84 @@
         "title": "PortfolioUpdateRequest",
         "type": "object"
       },
+      "PublishedResearchSummary": {
+        "properties": {
+          "considerations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Considerations",
+            "type": "array"
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchHighlight"
+            },
+            "title": "Highlights",
+            "type": "array"
+          },
+          "method": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Method",
+            "type": "array"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "resultBullets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Resultbullets",
+            "type": "array"
+          },
+          "resultHeadline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resultheadline"
+          },
+          "selectedParameters": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchLabelValue"
+            },
+            "title": "Selectedparameters",
+            "type": "array"
+          },
+          "tableHighlights": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchTableHighlight"
+            },
+            "title": "Tablehighlights",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "purpose"
+        ],
+        "title": "PublishedResearchSummary",
+        "type": "object"
+      },
       "RankingItem": {
         "description": "ランキング項目",
         "properties": {
@@ -10399,6 +10477,278 @@
           }
         },
         "title": "RelativeOHLCOptions",
+        "type": "object"
+      },
+      "ResearchCatalogItem": {
+        "properties": {
+          "analysisEndDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysisenddate"
+          },
+          "analysisStartDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysisstartdate"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "experimentId": {
+            "title": "Experimentid",
+            "type": "string"
+          },
+          "gitCommit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gitcommit"
+          },
+          "hasStructuredSummary": {
+            "default": false,
+            "title": "Hasstructuredsummary",
+            "type": "boolean"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Objective"
+          },
+          "runId": {
+            "title": "Runid",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "experimentId",
+          "runId",
+          "title",
+          "createdAt"
+        ],
+        "title": "ResearchCatalogItem",
+        "type": "object"
+      },
+      "ResearchCatalogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchCatalogItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lastUpdated"
+        ],
+        "title": "ResearchCatalogResponse",
+        "type": "object"
+      },
+      "ResearchDetailResponse": {
+        "properties": {
+          "availableRuns": {
+            "items": {
+              "$ref": "#/components/schemas/ResearchRunReference"
+            },
+            "title": "Availableruns",
+            "type": "array"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ResearchCatalogItem"
+          },
+          "outputTables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Outputtables",
+            "type": "array"
+          },
+          "resultMetadata": {
+            "additionalProperties": true,
+            "title": "Resultmetadata",
+            "type": "object"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishedResearchSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summaryMarkdown": {
+            "title": "Summarymarkdown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "summaryMarkdown"
+        ],
+        "title": "ResearchDetailResponse",
+        "type": "object"
+      },
+      "ResearchHighlight": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "enum": [
+              "neutral",
+              "accent",
+              "success",
+              "warning",
+              "danger"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "ResearchHighlight",
+        "type": "object"
+      },
+      "ResearchLabelValue": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "ResearchLabelValue",
+        "type": "object"
+      },
+      "ResearchRunReference": {
+        "properties": {
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "isLatest": {
+            "default": false,
+            "title": "Islatest",
+            "type": "boolean"
+          },
+          "runId": {
+            "title": "Runid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "createdAt"
+        ],
+        "title": "ResearchRunReference",
+        "type": "object"
+      },
+      "ResearchTableHighlight": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "ResearchTableHighlight",
         "type": "object"
       },
       "ResponseDiagnostics": {
@@ -16708,6 +17058,149 @@
           }
         },
         "summary": "Get market rankings",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/research": {
+      "get": {
+        "description": "List the latest available research bundle per experiment. Structured `summary.json` payloads are returned when available.",
+        "operationId": "list_research_catalog_api_analytics_research_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List published analytics research bundles",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/research/detail": {
+      "get": {
+        "description": "Fetch the latest run or a specific run for a research experiment, including the structured summary, raw markdown summary, and available runs.",
+        "operationId": "get_research_detail_api_analytics_research_detail_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "experimentId",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Experimentid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "runId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Runid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a published analytics research bundle",
         "tags": [
           "Analytics"
         ]

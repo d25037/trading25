@@ -265,6 +265,7 @@ def write_topix_streak_extreme_mode_research_bundle(
             "selected_window_streak_df": result.selected_window_streak_df,
         },
         summary_markdown=_build_research_bundle_summary_markdown(result),
+        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -874,6 +875,127 @@ def _build_research_bundle_summary_markdown(
         ]
     )
     return "\n".join(lines)
+
+
+def _build_published_summary_payload(
+    result: TopixStreakExtremeModeResearchResult,
+) -> dict[str, Any]:
+    selected_validation = result.selected_window_comparison_df[
+        result.selected_window_comparison_df["sample_split"] == "validation"
+    ].copy()
+    validation_forward_rows = result.mode_summary_df[
+        (result.mode_summary_df["sample_split"] == "validation")
+        & (result.mode_summary_df["window_streaks"] == result.selected_window_streaks)
+    ].copy()
+    forward_20d = validation_forward_rows[
+        validation_forward_rows["horizon_days"] == 20
+    ].copy()
+
+    segment_row = selected_validation.iloc[0] if not selected_validation.empty else None
+    bullish_20d = _lookup_mode_forward_row(forward_20d, mode="bullish")
+    bearish_20d = _lookup_mode_forward_row(forward_20d, mode="bearish")
+
+    result_bullets: list[str] = []
+    highlights: list[dict[str, str]] = [
+        {
+            "label": "Selected X",
+            "value": f"{result.selected_window_streaks} streaks",
+            "tone": "accent",
+            "detail": "best discovery composite score",
+        }
+    ]
+    if segment_row is not None:
+        spread = float(segment_row["mean_return_separation"])
+        result_bullets.append(
+            "Validation mode segments separated clearly: bullish "
+            f"{_format_return(float(segment_row['bullish_mean_segment_return']))} vs bearish "
+            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}."
+        )
+        highlights.append(
+            {
+                "label": "Segment spread",
+                "value": _format_return(spread),
+                "tone": "success" if spread >= 0 else "danger",
+                "detail": f"validation, directional accuracy {float(segment_row['directional_accuracy']):.1%}",
+            }
+        )
+    if bullish_20d is not None and bearish_20d is not None:
+        reversion_spread = float(bearish_20d["mean_future_return"]) - float(
+            bullish_20d["mean_future_return"]
+        )
+        result_bullets.append(
+            "Forward returns inverted the mode labels: validation 20-day bearish "
+            f"{_format_return(float(bearish_20d['mean_future_return']))} vs bullish "
+            f"{_format_return(float(bullish_20d['mean_future_return']))}."
+        )
+        highlights.append(
+            {
+                "label": "20d reversion spread",
+                "value": _format_return(reversion_spread),
+                "tone": "warning",
+                "detail": "bearish minus bullish forward return",
+            }
+        )
+
+    result_headline = (
+        f"Dominant streak-candle mode picked X={result.selected_window_streaks} and separated "
+        "TOPIX segments well, but the forward edge was still mean-reverting."
+    )
+
+    return {
+        "title": "TOPIX Streak Extreme Mode",
+        "tags": ["TOPIX", "mode", "streaks", "mean-reversion"],
+        "purpose": (
+            "Build a bullish or bearish regime from synthesized streak candles, using the largest "
+            "absolute streak inside the latest X streaks as the dominant mode signal."
+        ),
+        "method": [
+            "Merge consecutive positive or negative close-to-close moves into one streak candle.",
+            "For each candidate X, classify the current streak by the largest absolute streak return in the trailing X streaks.",
+            "Score X on discovery by how cleanly bullish and bearish mode segments separate, then inspect forward returns on validation.",
+        ],
+        "resultHeadline": result_headline,
+        "resultBullets": result_bullets,
+        "considerations": [
+            "The mode itself is a strong descriptive label, but forward returns still favor mean reversion over trend following.",
+            "X is counted in streak candles, not trading days, so live interpretation depends on how long each streak lasts.",
+            "Longer streak windows remain useful as context, but the standalone selected X is still short-memory.",
+        ],
+        "selectedParameters": [
+            {"label": "Selected X", "value": f"{result.selected_window_streaks} streaks"},
+            {"label": "Candidate windows", "value": _format_int_sequence(result.candidate_windows)},
+            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
+        ],
+        "highlights": highlights,
+        "tableHighlights": [
+            {
+                "name": "selected_window_comparison_df",
+                "label": "Selected-window segment comparison",
+                "description": "Bullish vs bearish segment behavior for the chosen X.",
+            },
+            {
+                "name": "mode_summary_df",
+                "label": "Forward return summary",
+                "description": "1/5/10/20-day returns after the chosen mode assignment.",
+            },
+            {
+                "name": "window_score_df",
+                "label": "X selection leaderboard",
+                "description": "Discovery ranking over candidate streak windows.",
+            },
+        ],
+    }
+
+
+def _lookup_mode_forward_row(
+    summary_df: pd.DataFrame,
+    *,
+    mode: str,
+) -> pd.Series | None:
+    mode_df = summary_df[summary_df["mode"] == mode]
+    if mode_df.empty:
+        return None
+    return mode_df.iloc[0]
 
 
 def _format_int_sequence(values: Sequence[int]) -> str:

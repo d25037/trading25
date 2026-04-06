@@ -295,6 +295,7 @@ def write_topix_extreme_close_to_close_mode_research_bundle(
             ),
         },
         summary_markdown=_build_research_bundle_summary_markdown(result),
+        published_summary=_build_published_summary_payload(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -1318,6 +1319,160 @@ def _build_research_bundle_summary_markdown(
         ]
     )
     return "\n".join(lines)
+
+
+def _build_published_summary_payload(
+    result: TopixExtremeCloseToCloseModeResearchResult,
+) -> dict[str, Any]:
+    selected_validation = result.selected_window_comparison_df[
+        result.selected_window_comparison_df["sample_split"] == "validation"
+    ].copy()
+    validation_forward_rows = result.mode_summary_df[
+        (result.mode_summary_df["sample_split"] == "validation")
+        & (result.mode_summary_df["window_days"] == result.selected_window_days)
+    ].copy()
+    forward_20d = validation_forward_rows[
+        validation_forward_rows["horizon_days"] == 20
+    ].copy()
+    validation_state_forward_5d = result.multi_timeframe_state_summary_df[
+        (result.multi_timeframe_state_summary_df["sample_split"] == "validation")
+        & (result.multi_timeframe_state_summary_df["horizon_days"] == 5)
+    ].copy()
+
+    segment_row = selected_validation.iloc[0] if not selected_validation.empty else None
+    bullish_20d = _lookup_mode_forward_row(forward_20d, mode="bullish")
+    bearish_20d = _lookup_mode_forward_row(forward_20d, mode="bearish")
+    best_state_5d = _select_state_forward_row(validation_state_forward_5d, largest=True)
+    worst_state_5d = _select_state_forward_row(validation_state_forward_5d, largest=False)
+
+    result_bullets: list[str] = []
+    highlights: list[dict[str, str]] = [
+        {
+            "label": "Selected X",
+            "value": f"{result.selected_window_days} days",
+            "tone": "accent",
+            "detail": "best discovery composite score",
+        },
+        {
+            "label": "Short / long pair",
+            "value": f"{result.selected_short_window_days} / {result.selected_long_window_days}",
+            "tone": "neutral",
+            "detail": "multi-timeframe conditioning windows",
+        },
+    ]
+    if segment_row is not None:
+        spread = float(segment_row["mean_return_separation"])
+        result_bullets.append(
+            "Validation mode segments were short but separable: bullish "
+            f"{_format_return(float(segment_row['bullish_mean_segment_return']))} vs bearish "
+            f"{_format_return(float(segment_row['bearish_mean_segment_return']))}."
+        )
+        highlights.append(
+            {
+                "label": "Segment spread",
+                "value": _format_return(spread),
+                "tone": "success" if spread >= 0 else "danger",
+                "detail": f"validation, directional accuracy {float(segment_row['directional_accuracy']):.1%}",
+            }
+        )
+    if bullish_20d is not None and bearish_20d is not None:
+        reversion_spread = float(bearish_20d["mean_future_return"]) - float(
+            bullish_20d["mean_future_return"]
+        )
+        result_bullets.append(
+            "As a forward signal, bearish still outperformed bullish on validation 20-day returns: "
+            f"{_format_return(float(bearish_20d['mean_future_return']))} vs "
+            f"{_format_return(float(bullish_20d['mean_future_return']))}."
+        )
+        highlights.append(
+            {
+                "label": "20d reversion spread",
+                "value": _format_return(reversion_spread),
+                "tone": "warning",
+                "detail": "bearish minus bullish forward return",
+            }
+        )
+    if best_state_5d is not None and worst_state_5d is not None:
+        result_bullets.append(
+            "The 4-state matrix was more interpretable than the raw mode: best validation 5-day state was "
+            f"{str(best_state_5d['state_label'])} at {_format_return(float(best_state_5d['mean_future_return']))}, "
+            f"while the weakest was {str(worst_state_5d['state_label'])} at "
+            f"{_format_return(float(worst_state_5d['mean_future_return']))}."
+        )
+
+    return {
+        "title": "TOPIX Extreme Close-to-Close Mode",
+        "tags": ["TOPIX", "mode", "multi-timeframe", "daily"],
+        "purpose": (
+            "Assign a bullish or bearish mode from the largest absolute close-to-close shock inside the latest X trading days, "
+            "then test whether that regime is more useful alone or as part of a short/long window combination."
+        ),
+        "method": [
+            "For each day, find the largest absolute close-to-close move inside a trailing X-day window and take its sign as the mode.",
+            "Select X on the discovery split using mode-segment separation, then evaluate validation forward returns.",
+            "Build a 4-state matrix from short and long windows to see whether large and small regimes interact.",
+        ],
+        "resultHeadline": (
+            f"The standalone mode picked a very short memory at X={result.selected_window_days}, "
+            "and the cleaner interpretation came from the short/long 4-state matrix rather than the raw label."
+        ),
+        "resultBullets": result_bullets,
+        "considerations": [
+            "The selected X is in trading days and remains short, so this behaves more like a shock classifier than a durable trend filter.",
+            "Forward returns still show mean reversion; the raw bullish/bearish naming should not be interpreted as trend-following by default.",
+            "The 4-state matrix is more promising because it separates large-scale regime from short-term shock timing.",
+        ],
+        "selectedParameters": [
+            {"label": "Selected X", "value": f"{result.selected_window_days} days"},
+            {"label": "Short X", "value": f"{result.selected_short_window_days} days"},
+            {"label": "Long X", "value": f"{result.selected_long_window_days} days"},
+            {"label": "Validation split", "value": f"{result.validation_ratio:.0%}"},
+        ],
+        "highlights": highlights,
+        "tableHighlights": [
+            {
+                "name": "selected_window_comparison_df",
+                "label": "Raw mode segment comparison",
+                "description": "Bullish vs bearish segment behavior for the chosen X.",
+            },
+            {
+                "name": "multi_timeframe_state_summary_df",
+                "label": "4-state forward summary",
+                "description": "Forward returns for long/short mode combinations.",
+            },
+            {
+                "name": "multi_timeframe_state_segment_summary_df",
+                "label": "4-state segment summary",
+                "description": "Average segment move and duration for each long/short state.",
+            },
+        ],
+    }
+
+
+def _lookup_mode_forward_row(
+    summary_df: pd.DataFrame,
+    *,
+    mode: str,
+) -> pd.Series | None:
+    mode_df = summary_df[summary_df["mode"] == mode]
+    if mode_df.empty:
+        return None
+    return mode_df.iloc[0]
+
+
+def _select_state_forward_row(
+    summary_df: pd.DataFrame,
+    *,
+    largest: bool,
+) -> pd.Series | None:
+    if summary_df.empty:
+        return None
+    ordered = summary_df.sort_values(
+        ["mean_future_return", "day_count", "state_key"],
+        ascending=[not largest, False, True],
+        kind="stable",
+    )
+    return ordered.iloc[0]
 
 
 def _format_int_sequence(values: Sequence[int]) -> str:

@@ -10,7 +10,9 @@ from src.domains.analytics.research_bundle import (
     build_research_run_id,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
+    list_research_bundle_infos,
     load_research_bundle_info,
+    load_research_bundle_published_summary,
     load_research_bundle_tables,
     write_research_bundle,
 )
@@ -35,21 +37,33 @@ def test_research_bundle_write_and_load_roundtrip(tmp_path: Path) -> None:
             ),
         },
         summary_markdown="# Example\n",
+        published_summary={
+            "title": "Example",
+            "purpose": "Example purpose.",
+            "selectedParameters": [{"label": "Window", "value": "20,50"}],
+        },
         output_root=tmp_path,
         run_id="20260331_120000_test1234",
     )
 
     loaded_info = load_research_bundle_info(bundle.bundle_dir)
     loaded_tables = load_research_bundle_tables(bundle.bundle_dir)
+    published_summary = load_research_bundle_published_summary(bundle.bundle_dir)
 
     assert bundle.manifest_path.exists()
     assert bundle.results_db_path.exists()
     assert bundle.summary_path.exists()
+    assert bundle.published_summary_path.exists()
     assert loaded_info.experiment_id == "unit-test/example"
     assert loaded_info.run_id == "20260331_120000_test1234"
     assert loaded_info.result_metadata["source_mode"] == "snapshot"
     assert list(loaded_tables) == ["summary_df", "detail_df"]
     assert loaded_tables["summary_df"].iloc[0]["feature"] == "alpha"
+    assert published_summary == {
+        "title": "Example",
+        "purpose": "Example purpose.",
+        "selectedParameters": [{"label": "Window", "value": "20,50"}],
+    }
 
 
 def test_find_latest_research_bundle_path_prefers_latest_mtime(tmp_path: Path) -> None:
@@ -143,3 +157,41 @@ def test_research_bundle_auto_run_id_avoids_same_second_collisions(
     assert isinstance(first_bundle, ResearchBundleInfo)
     assert first_bundle.run_id == base_run_id
     assert second_bundle.run_id == f"{base_run_id}_02"
+
+
+def test_list_research_bundle_infos_returns_all_manifests(tmp_path: Path) -> None:
+    write_research_bundle(
+        experiment_id="unit-test/example-a",
+        module="tests.example",
+        function="run_example",
+        params={},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date=None,
+        analysis_end_date=None,
+        result_metadata={},
+        result_tables={"summary_df": pd.DataFrame([{"value": 1}])},
+        summary_markdown="# First\n",
+        output_root=tmp_path,
+        run_id="20260331_120000_first000",
+    )
+    write_research_bundle(
+        experiment_id="unit-test/example-b",
+        module="tests.example",
+        function="run_example",
+        params={},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date=None,
+        analysis_end_date=None,
+        result_metadata={},
+        result_tables={"summary_df": pd.DataFrame([{"value": 2}])},
+        summary_markdown="# Second\n",
+        output_root=tmp_path,
+        run_id="20260331_120100_second00",
+    )
+
+    infos = list_research_bundle_infos(output_root=tmp_path)
+
+    assert [info.experiment_id for info in infos] == [
+        "unit-test/example-b",
+        "unit-test/example-a",
+    ]
