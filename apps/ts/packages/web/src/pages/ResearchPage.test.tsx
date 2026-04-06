@@ -120,6 +120,19 @@ const catalogItems = [
     hasStructuredSummary: true,
   },
   {
+    experimentId: 'market-behavior/topix100-streak-3-53-multivariate-priority',
+    runId: '20260406_181500_priority01',
+    title: 'TOPIX100 Streak 3/53 Multivariate Priority',
+    objective: 'Quantify how much bucket, volume, short mode, and long mode each matter on the long and short side.',
+    headline: 'Treat information itself as the variable and rank what is worth knowing first.',
+    createdAt: '2026-04-06T18:15:00+00:00',
+    analysisStartDate: '2016-01-01',
+    analysisEndDate: '2026-03-31',
+    gitCommit: 'c0eb7f87',
+    tags: ['TOPIX100', 'multivariate', 'feature-priority'],
+    hasStructuredSummary: true,
+  },
+  {
     experimentId: 'market-behavior/topix-close-return-streaks',
     runId: '20260405_120000_beta0001',
     title: 'TOPIX Close Return Streaks',
@@ -169,6 +182,7 @@ describe('ResearchPage', () => {
     expect(screen.getByText('TOPIX100 Q10 Bounce x Streak 3/53 Conditioning')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Strongest Setup vs Q10 Threshold')).toBeInTheDocument();
     expect(screen.getByText('TOPIX100 Short Side Streak 3/53 Scan')).toBeInTheDocument();
+    expect(screen.getByText('TOPIX100 Streak 3/53 Multivariate Priority')).toBeInTheDocument();
     expect(screen.getByText('Start With The Latest High-Signal Bundle')).toBeInTheDocument();
     expect(screen.getByText('More Published Analyses')).toBeInTheDocument();
     expect(screen.getAllByText('TOPIX Streak Extreme Mode').length).toBeGreaterThan(0);
