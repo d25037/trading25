@@ -177,6 +177,7 @@ jobs:
         env:
           CI_DEPS_READY: "1"
           BT_COVERAGE_DATA_FILE: ".coverage.unit"
+          BT_UNIT_TEST_SHARDS: "3"
       - name: Upload bt coverage artifact (unit)
         if: success()
         uses: actions/upload-artifact@v7
