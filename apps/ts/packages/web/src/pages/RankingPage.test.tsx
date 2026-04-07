@@ -72,6 +72,7 @@ vi.mock('@/hooks/useTopix100Ranking', () => ({
       longWindowStreaks: 53,
       longScoreHorizonDays: 5,
       shortScoreHorizonDays: 1,
+      intradayScoreTarget: 'next_session_open_close',
       scoreSourceRunId: '20260406_180623_c0eb7f87',
       itemCount: 0,
       items: [],
