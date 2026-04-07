@@ -34,7 +34,7 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   topix100VolumeBucket: 'all',
   topix100ShortMode: 'all',
   topix100LongMode: 'all',
-  topix100SortBy: 'rank',
+  topix100SortBy: 'intradayLongRank',
   topix100SortOrder: 'asc',
 };
 

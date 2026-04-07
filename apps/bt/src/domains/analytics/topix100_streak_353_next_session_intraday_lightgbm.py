@@ -17,6 +17,7 @@ The intended use is a daily ranking strategy:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -27,6 +28,7 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
+    load_research_bundle_info,
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
@@ -41,6 +43,7 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
     VOLUME_SMA_WINDOW_ORDER,
+    _enrich_event_panel,
     run_topix100_price_vs_sma_rank_future_close_research,
 )
 from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
@@ -53,22 +56,31 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
     _build_lightgbm_params,
     _build_model_matrix,
     _build_price_feature_frame,
+    _build_scoring_snapshot_df,
     _format_int_sequence,
     _format_return,
     _load_lightgbm_regressor_cls,
+    _predict_lightgbm_snapshot_scores,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
     Topix100Streak353TransferResearchResult,
+    _build_state_event_df,
     run_topix100_streak_353_transfer_research,
 )
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_VALIDATION_RATIO,
     _normalize_positive_int_sequence,
 )
-from src.domains.analytics.topix_close_stock_overnight_distribution import SourceMode
-from src.domains.analytics.topix_rank_future_close_core import DECILE_ORDER
+from src.domains.analytics.topix_close_stock_overnight_distribution import (
+    SourceMode,
+    _open_analysis_connection,
+)
+from src.domains.analytics.topix_rank_future_close_core import (
+    DECILE_ORDER,
+    _query_topix100_stock_history,
+)
 
 DEFAULT_TOP_K_VALUES: tuple[int, ...] = (1, 3, 5, 10, 20)
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID = (
@@ -142,6 +154,28 @@ class Topix100Streak353NextSessionIntradayLightgbmResearchResult:
     validation_model_comparison_df: pd.DataFrame
     validation_score_decile_df: pd.DataFrame
     feature_importance_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class Topix100Streak353NextSessionIntradayLightgbmSnapshotRow:
+    code: str
+    company_name: str
+    date: str
+    short_mode: str | None
+    long_mode: str | None
+    state_key: str | None
+    state_label: str | None
+    intraday_score: float | None
+
+
+@dataclass(frozen=True)
+class Topix100Streak353NextSessionIntradayLightgbmSnapshot:
+    score_source_run_id: str | None
+    price_feature: str
+    volume_feature: str
+    short_window_streaks: int
+    long_window_streaks: int
+    rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow]
 
 
 def _missing_lightgbm_message() -> str:
@@ -326,7 +360,22 @@ def _build_feature_panel_df(
     price_feature: str,
     volume_feature: str,
 ) -> pd.DataFrame:
-    if event_panel_df.empty or state_result.state_event_df.empty:
+    return _build_feature_panel_from_state_event_df(
+        event_panel_df=event_panel_df,
+        state_event_df=state_result.state_event_df,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+    )
+
+
+def _build_feature_panel_from_state_event_df(
+    *,
+    event_panel_df: pd.DataFrame,
+    state_event_df: pd.DataFrame,
+    price_feature: str,
+    volume_feature: str,
+) -> pd.DataFrame:
+    if event_panel_df.empty or state_event_df.empty:
         raise ValueError("Base price/state inputs were empty")
 
     price_df = _build_price_feature_frame(
@@ -357,13 +406,11 @@ def _build_feature_panel_df(
         "state_key",
         "state_label",
     ]
-    missing_state_columns = [
-        column for column in state_columns if column not in state_result.state_event_df.columns
-    ]
+    missing_state_columns = [column for column in state_columns if column not in state_event_df.columns]
     if missing_state_columns:
         raise ValueError(f"Missing state event columns: {missing_state_columns}")
 
-    state_df = state_result.state_event_df[state_columns].copy()
+    state_df = state_event_df[state_columns].copy()
     state_df = state_df.rename(columns={"segment_end_date": "date"})
     state_df["date"] = state_df["date"].astype(str)
     state_df["code"] = state_df["code"].astype(str).str.zfill(4)
@@ -409,6 +456,213 @@ def _build_feature_panel_df(
         ["sample_split", "date", "code"],
         kind="stable",
     ).reset_index(drop=True)
+
+
+def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+    db_path: str,
+    *,
+    target_date: str,
+    price_feature: str = DEFAULT_PRICE_FEATURE,
+    volume_feature: str = DEFAULT_VOLUME_FEATURE,
+    short_window_streaks: int = DEFAULT_SHORT_WINDOW_STREAKS,
+    long_window_streaks: int = DEFAULT_LONG_WINDOW_STREAKS,
+    connection: Any | None = None,
+) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
+    if connection is not None:
+        return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+            db_path,
+            target_date,
+            price_feature,
+            volume_feature,
+            short_window_streaks,
+            long_window_streaks,
+            connection=connection,
+        )
+    return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
+        db_path,
+        target_date,
+        price_feature,
+        volume_feature,
+        short_window_streaks,
+        long_window_streaks,
+    )
+
+
+@lru_cache(maxsize=8)
+def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
+    db_path: str,
+    target_date: str,
+    price_feature: str,
+    volume_feature: str,
+    short_window_streaks: int,
+    long_window_streaks: int,
+) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
+    return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+        db_path,
+        target_date,
+        price_feature,
+        volume_feature,
+        short_window_streaks,
+        long_window_streaks,
+    )
+
+
+def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+    db_path: str,
+    target_date: str,
+    price_feature: str,
+    volume_feature: str,
+    short_window_streaks: int,
+    long_window_streaks: int,
+    *,
+    connection: Any | None = None,
+) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
+    if price_feature not in PRICE_FEATURE_LABEL_MAP:
+        raise ValueError(f"Unsupported price_feature: {price_feature}")
+    if volume_feature not in VOLUME_FEATURE_LABEL_MAP:
+        raise ValueError(f"Unsupported volume_feature: {volume_feature}")
+    if short_window_streaks >= long_window_streaks:
+        raise ValueError("short_window_streaks must be smaller than long_window_streaks")
+
+    bundle_path = get_topix100_streak_353_next_session_intraday_lightgbm_latest_bundle_path()
+    score_source_run_id = (
+        load_research_bundle_info(bundle_path).run_id if bundle_path is not None else None
+    )
+    price_feature_to_window = {
+        feature: window
+        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
+    }
+    volume_feature_to_window = {
+        feature: window
+        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
+    }
+
+    if connection is None:
+        with _open_analysis_connection(db_path) as ctx:
+            history_df = _query_topix100_stock_history(
+                ctx.connection,
+                end_date=target_date,
+            )
+    else:
+        history_df = _query_topix100_stock_history(
+            connection,
+            end_date=target_date,
+        )
+    if history_df.empty:
+        return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+            score_source_run_id=score_source_run_id,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+            rows_by_code={},
+        )
+
+    event_panel_df = _enrich_event_panel(
+        history_df,
+        analysis_start_date=None,
+        analysis_end_date=target_date,
+        min_constituents_per_day=1,
+        price_sma_windows=(price_feature_to_window[price_feature],),
+        volume_sma_windows=(volume_feature_to_window[volume_feature],),
+    )
+    if event_panel_df.empty:
+        return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+            score_source_run_id=score_source_run_id,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+            rows_by_code={},
+        )
+
+    try:
+        state_event_df = _build_state_event_df(
+            history_df,
+            future_horizons=(1,),
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+        )
+        state_event_df = state_event_df.copy()
+        state_event_df["sample_split"] = "training"
+        training_feature_panel_df = _build_feature_panel_from_state_event_df(
+            event_panel_df=event_panel_df,
+            state_event_df=state_event_df,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+        )
+        snapshot_df = _build_scoring_snapshot_df(
+            event_panel_df=event_panel_df,
+            history_df=history_df,
+            target_date=target_date,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+        )
+    except ValueError:
+        return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+            score_source_run_id=score_source_run_id,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+            rows_by_code={},
+        )
+    if snapshot_df.empty:
+        return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+            score_source_run_id=score_source_run_id,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+            rows_by_code={},
+        )
+
+    regressor_cls = _load_lightgbm_regressor_cls()
+    categories = _build_category_lookup(training_feature_panel_df)
+    feature_columns = [
+        *DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
+        price_feature,
+        volume_feature,
+        *DEFAULT_CONTINUOUS_FEATURE_SUFFIXES,
+    ]
+    intraday_scores = _predict_lightgbm_snapshot_scores(
+        training_feature_panel_df=training_feature_panel_df,
+        snapshot_df=snapshot_df,
+        target_column="next_session_intraday_return",
+        regressor_cls=regressor_cls,
+        feature_columns=feature_columns,
+        categorical_feature_columns=DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
+        categories=categories,
+    )
+
+    rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow] = {}
+    for row in snapshot_df.to_dict(orient="records"):
+        normalized_row = {str(key): value for key, value in row.items()}
+        code = str(normalized_row["code"])
+        score_value = intraday_scores.get(code)
+        rows_by_code[code] = Topix100Streak353NextSessionIntradayLightgbmSnapshotRow(
+            code=code,
+            company_name=str(normalized_row["company_name"]),
+            date=str(normalized_row["date"]),
+            short_mode=cast(str | None, normalized_row.get("short_mode")),
+            long_mode=cast(str | None, normalized_row.get("long_mode")),
+            state_key=cast(str | None, normalized_row.get("state_key")),
+            state_label=cast(str | None, normalized_row.get("state_label")),
+            intraday_score=(
+                float(score_value) if score_value is not None and pd.notna(score_value) else None
+            ),
+        )
+
+    return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+        score_source_run_id=score_source_run_id,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+        rows_by_code=rows_by_code,
+    )
 
 
 def _build_baseline_selector_value_key(

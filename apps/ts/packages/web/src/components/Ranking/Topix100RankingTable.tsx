@@ -67,10 +67,10 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume split by decile', 'Stage-2 LightGBM score'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume split by decile', 'Next-session intraday score'];
   }
 
-  return ['Legacy comparison', 'Stage-2 score = SMA50 / Vol 5/20'];
+  return ['Legacy comparison', 'Intraday score = SMA50 / Vol 5/20'];
 }
 
 function formatScore(value: number | null | undefined): string {
@@ -88,6 +88,8 @@ function getDefaultSortOrder(sortBy: Topix100RankingSortKey): SortOrder {
     case 'volumeBucket':
     case 'streakShortMode':
     case 'streakLongMode':
+    case 'intradayLongRank':
+    case 'intradayShortRank':
     case 'sector33Name':
       return 'asc';
     default:
@@ -160,10 +162,12 @@ function compareItems(
       return compareNullableStrings(left.streakShortMode, right.streakShortMode, sortOrder);
     case 'streakLongMode':
       return compareNullableStrings(left.streakLongMode, right.streakLongMode, sortOrder);
-    case 'longScore5d':
-      return compareNullableNumbers(left.longScore5d, right.longScore5d, sortOrder);
-    case 'shortScore1d':
-      return compareNullableNumbers(left.shortScore1d, right.shortScore1d, sortOrder);
+    case 'intradayScore':
+      return compareNullableNumbers(left.intradayScore, right.intradayScore, sortOrder);
+    case 'intradayLongRank':
+      return compareNullableNumbers(left.intradayLongRank, right.intradayLongRank, sortOrder);
+    case 'intradayShortRank':
+      return compareNullableNumbers(left.intradayShortRank, right.intradayShortRank, sortOrder);
     case 'volumeSma5_20':
       return compareNullableNumbers(left.volumeSma5_20, right.volumeSma5_20, sortOrder);
     case 'currentPrice':
@@ -284,9 +288,7 @@ export function Topix100RankingTable({
             <span>
               State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
             </span>
-            <span>
-              Score = Stage-2 LightGBM ({data?.longScoreHorizonDays ?? 5}d long / {data?.shortScoreHorizonDays ?? 1}d short)
-            </span>
+            <span>Score = Next-session open → close LightGBM</span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>
@@ -363,8 +365,8 @@ export function Topix100RankingTable({
                   className="w-20 px-2 py-1.5 text-left"
                 />
                 <SortableHeader
-                  label="L5d"
-                  sortKey="longScore5d"
+                  label="ID Score"
+                  sortKey="intradayScore"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -372,12 +374,21 @@ export function Topix100RankingTable({
                   buttonClassName="justify-end"
                 />
                 <SortableHeader
-                  label="S1d"
-                  sortKey="shortScore1d"
+                  label="L Rank"
+                  sortKey="intradayLongRank"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
-                  className="w-24 px-2 py-1.5 text-right"
+                  className="w-20 px-2 py-1.5 text-right"
+                  buttonClassName="justify-end"
+                />
+                <SortableHeader
+                  label="S Rank"
+                  sortKey="intradayShortRank"
+                  activeSortBy={sortBy}
+                  activeSortOrder={sortOrder}
+                  onSortChange={onSortChange}
+                  className="w-20 px-2 py-1.5 text-right"
                   buttonClassName="justify-end"
                 />
                 <SortableHeader
@@ -448,16 +459,13 @@ export function Topix100RankingTable({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.longScore5dRank ? (
-                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.longScore5dRank}</span>
-                    ) : null}
-                    {formatScore(item.longScore5d)}
+                    {formatScore(item.intradayScore)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.shortScore1dRank ? (
-                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.shortScore1dRank}</span>
-                    ) : null}
-                    {formatScore(item.shortScore1d)}
+                    {item.intradayLongRank ? `#${item.intradayLongRank}` : '-'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {item.intradayShortRank ? `#${item.intradayShortRank}` : '-'}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>

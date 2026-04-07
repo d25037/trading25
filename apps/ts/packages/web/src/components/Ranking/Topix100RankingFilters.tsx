@@ -51,10 +51,10 @@ function buildStudyDescription(
   const metricDescription = getTopix100RankingMetricDescription(resolvedMetric, resolvedSmaWindow);
 
   if (resolvedMetric === 'price_vs_sma_gap') {
-    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} Overlay the fixed streak 3/53 short and long states plus the stage-2 LightGBM score for 5d long / 1d short selection.`;
+    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} Overlay the fixed streak 3/53 short and long states plus the next-session intraday LightGBM score for open-to-close selection.`;
   }
 
-  return `${metricDescription} Stage-2 score stays on the streak 3/53 + SMA50 / volume 5/20 LightGBM read.`;
+  return `${metricDescription} The score layer now uses the next-session intraday LightGBM read on the same streak 3/53 + SMA50 / volume 5/20 feature family.`;
 }
 
 export function Topix100RankingFilters({ params, onChange }: Topix100RankingFiltersProps) {

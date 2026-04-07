@@ -14,6 +14,7 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
     longWindowStreaks: 53,
     longScoreHorizonDays: 5,
     shortScoreHorizonDays: 1,
+    intradayScoreTarget: 'next_session_open_close',
     scoreSourceRunId: '20260406_180623_c0eb7f87',
     itemCount: 4,
     lastUpdated: '2026-03-30T00:00:00Z',
@@ -37,10 +38,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bullish',
         streakStateKey: 'long_bullish__short_bullish',
         streakStateLabel: 'Long Bullish / Short Bullish',
-        longScore5d: 0.0124,
-        shortScore1d: 0.0031,
-        longScore5dRank: 2,
-        shortScore1dRank: 3,
+        intradayScore: -0.0032,
+        intradayLongRank: 3,
+        intradayShortRank: 2,
       },
       {
         rank: 2,
@@ -61,10 +61,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bearish',
         streakStateKey: 'long_bearish__short_bearish',
         streakStateLabel: 'Long Bearish / Short Bearish',
-        longScore5d: 0.0215,
-        shortScore1d: 0.002,
-        longScore5dRank: 1,
-        shortScore1dRank: 4,
+        intradayScore: 0.0125,
+        intradayLongRank: 1,
+        intradayShortRank: 4,
       },
       {
         rank: 3,
@@ -85,10 +84,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: 'bearish',
         streakStateKey: 'long_bearish__short_bullish',
         streakStateLabel: 'Long Bearish / Short Bullish',
-        longScore5d: 0.0048,
-        shortScore1d: 0.0041,
-        longScore5dRank: 3,
-        shortScore1dRank: 1,
+        intradayScore: 0.0041,
+        intradayLongRank: 2,
+        intradayShortRank: 3,
       },
       {
         rank: 4,
@@ -109,10 +107,9 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         streakLongMode: null,
         streakStateKey: null,
         streakStateLabel: null,
-        longScore5d: null,
-        shortScore1d: null,
-        longScore5dRank: null,
-        shortScore1dRank: null,
+        intradayScore: null,
+        intradayLongRank: null,
+        intradayShortRank: null,
       },
     ],
   };
@@ -145,11 +142,11 @@ describe('Topix100RankingTable', () => {
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
     expect(screen.getByText('Volume split by decile')).toBeInTheDocument();
-    expect(screen.getByText('Stage-2 LightGBM score')).toBeInTheDocument();
+    expect(screen.getByText('Next-session intraday score')).toBeInTheDocument();
     expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
-    expect(screen.getByText('Score = Stage-2 LightGBM (5d long / 1d short)')).toBeInTheDocument();
+    expect(screen.getByText('Score = Next-session open → close LightGBM')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
-    expect(screen.getByText('+2.15%')).toBeInTheDocument();
+    expect(screen.getByText('+1.25%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
     expect(screen.queryByText('Q2-4 Trough')).not.toBeInTheDocument();
     expect(screen.getAllByText('Bullish').length).toBeGreaterThan(0);
@@ -179,7 +176,7 @@ describe('Topix100RankingTable', () => {
 
     expect(screen.getAllByText('Price SMA 20/80')).toHaveLength(2);
     expect(screen.getByText('Legacy comparison')).toBeInTheDocument();
-    expect(screen.getByText('Stage-2 score = SMA50 / Vol 5/20')).toBeInTheDocument();
+    expect(screen.getByText('Intraday score = SMA50 / Vol 5/20')).toBeInTheDocument();
     expect(screen.getByText('0.95x')).toBeInTheDocument();
     expect(screen.getByText('Sony')).toBeInTheDocument();
     expect(screen.queryByText('Toyota')).not.toBeInTheDocument();
@@ -266,10 +263,10 @@ describe('Topix100RankingTable', () => {
     const rowsBefore = screen.getAllByRole('row').slice(1);
     expect(rowsBefore[0]).toHaveTextContent('7203');
 
-    await user.click(screen.getByRole('button', { name: /L5d/i }));
+    await user.click(screen.getByRole('button', { name: /ID Score/i }));
 
     const rowsAfter = screen.getAllByRole('row').slice(1);
     expect(rowsAfter[0]).toHaveTextContent('6758');
-    expect(rowsAfter[1]).toHaveTextContent('7203');
+    expect(rowsAfter[1]).toHaveTextContent('9432');
   });
 });
