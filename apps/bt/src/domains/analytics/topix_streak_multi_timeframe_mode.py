@@ -466,18 +466,20 @@ def _build_pair_score_df(
                     float(ordered_grouped["mean_future_return"].iloc[0])
                     - float(ordered_grouped["mean_future_return"].iloc[-1])
                 )
-                for rank_position, row in enumerate(
-                    ordered_grouped.to_dict(orient="records"),
+                for rank_position, state_row in enumerate(
+                    ordered_grouped.itertuples(index=False),
                     start=1,
                 ):
                     horizon_rank_rows.append(
                         {
                             "horizon_days": int(horizon),
                             "rank_position": rank_position,
-                            "state_key": str(row["state_key"]),
-                            "state_label": str(row["state_label"]),
-                            "mean_future_return": float(row["mean_future_return"]),
-                            "day_count": int(row["day_count"]),
+                            "state_key": str(state_row.state_key),
+                            "state_label": str(state_row.state_label),
+                            "mean_future_return": _as_float_scalar(
+                                state_row.mean_future_return
+                            ),
+                            "day_count": _as_int_scalar(state_row.day_count),
                         }
                     )
 
@@ -561,14 +563,20 @@ def _build_pair_score_df(
     )
     rank_lookup = {
         (
-            int(row["short_window_streaks"]),
-            int(row["long_window_streaks"]),
-        ): index + 1
-        for index, row in ranked_df.iterrows()
+            int(cast(dict[str, Any], row)["short_window_streaks"]),
+            int(cast(dict[str, Any], row)["long_window_streaks"]),
+        ): rank_position
+        for rank_position, row in enumerate(
+            ranked_df.to_dict(orient="records"),
+            start=1,
+        )
     }
     pair_score_df["selection_rank"] = [
         rank_lookup.get(
-            (int(row["short_window_streaks"]), int(row["long_window_streaks"])),
+            (
+                int(cast(dict[str, Any], row)["short_window_streaks"]),
+                int(cast(dict[str, Any], row)["long_window_streaks"]),
+            ),
             pd.NA,
         )
         for row in pair_score_df.to_dict(orient="records")
@@ -1171,3 +1179,11 @@ def _select_state_row(
         kind="stable",
     )
     return horizon_df.iloc[0]
+
+
+def _as_float_scalar(value: Any) -> float:
+    return float(cast(Any, value))
+
+
+def _as_int_scalar(value: Any) -> int:
+    return int(cast(Any, value))

@@ -26,9 +26,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_dataclass_research_bundle,
+    write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce import (
     Q10_LOW_HYPOTHESIS_LABELS,
@@ -68,6 +67,15 @@ TOPIX100_Q10_BOUNCE_STREAK_353_CONDITIONING_EXPERIMENT_ID = (
     "market-behavior/topix100-q10-bounce-streak-3-53-conditioning"
 )
 _SPLIT_ORDER: tuple[str, ...] = ("full", "discovery", "validation")
+_RESULT_TABLE_NAMES: tuple[str, ...] = (
+    "state_bucket_horizon_panel_df",
+    "state_bucket_daily_means_df",
+    "state_bucket_summary_df",
+    "state_bucket_pairwise_significance_df",
+    "state_hypothesis_df",
+    "state_scorecard_df",
+    "validation_q10_state_matrix_df",
+)
 
 
 @dataclass(frozen=True)
@@ -225,7 +233,7 @@ def write_topix100_q10_bounce_streak_353_conditioning_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_research_bundle(
+    return write_dataclass_research_bundle(
         experiment_id=TOPIX100_Q10_BOUNCE_STREAK_353_CONDITIONING_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_q10_bounce_streak_353_conditioning_research",
@@ -239,39 +247,8 @@ def write_topix100_q10_bounce_streak_353_conditioning_research_bundle(
             "validation_ratio": result.validation_ratio,
             "min_constituents_per_bucket_state_date": result.min_constituents_per_bucket_state_date,
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata={
-            "db_path": result.db_path,
-            "source_mode": result.source_mode,
-            "source_detail": result.source_detail,
-            "available_start_date": result.available_start_date,
-            "available_end_date": result.available_end_date,
-            "analysis_start_date": result.analysis_start_date,
-            "analysis_end_date": result.analysis_end_date,
-            "price_feature": result.price_feature,
-            "price_feature_label": result.price_feature_label,
-            "volume_feature": result.volume_feature,
-            "volume_feature_label": result.volume_feature_label,
-            "short_window_streaks": result.short_window_streaks,
-            "long_window_streaks": result.long_window_streaks,
-            "validation_ratio": result.validation_ratio,
-            "min_constituents_per_bucket_state_date": result.min_constituents_per_bucket_state_date,
-            "universe_constituent_count": result.universe_constituent_count,
-            "covered_constituent_count": result.covered_constituent_count,
-            "joined_event_count": result.joined_event_count,
-            "valid_date_count": result.valid_date_count,
-        },
-        result_tables={
-            "state_bucket_horizon_panel_df": result.state_bucket_horizon_panel_df,
-            "state_bucket_daily_means_df": result.state_bucket_daily_means_df,
-            "state_bucket_summary_df": result.state_bucket_summary_df,
-            "state_bucket_pairwise_significance_df": result.state_bucket_pairwise_significance_df,
-            "state_hypothesis_df": result.state_hypothesis_df,
-            "state_scorecard_df": result.state_scorecard_df,
-            "validation_q10_state_matrix_df": result.validation_q10_state_matrix_df,
-        },
+        result=result,
+        table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
         output_root=output_root,
@@ -283,40 +260,10 @@ def write_topix100_q10_bounce_streak_353_conditioning_research_bundle(
 def load_topix100_q10_bounce_streak_353_conditioning_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100Q10BounceStreak353ConditioningResearchResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    return Topix100Q10BounceStreak353ConditioningResearchResult(
-        db_path=str(metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=str(metadata["source_detail"]),
-        available_start_date=metadata.get("available_start_date"),
-        available_end_date=metadata.get("available_end_date"),
-        analysis_start_date=metadata.get("analysis_start_date"),
-        analysis_end_date=metadata.get("analysis_end_date"),
-        price_feature=str(metadata["price_feature"]),
-        price_feature_label=str(metadata["price_feature_label"]),
-        volume_feature=str(metadata["volume_feature"]),
-        volume_feature_label=str(metadata["volume_feature_label"]),
-        short_window_streaks=int(metadata["short_window_streaks"]),
-        long_window_streaks=int(metadata["long_window_streaks"]),
-        validation_ratio=float(metadata["validation_ratio"]),
-        min_constituents_per_bucket_state_date=int(
-            metadata["min_constituents_per_bucket_state_date"]
-        ),
-        universe_constituent_count=int(metadata["universe_constituent_count"]),
-        covered_constituent_count=int(metadata["covered_constituent_count"]),
-        joined_event_count=int(metadata["joined_event_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        state_bucket_horizon_panel_df=tables["state_bucket_horizon_panel_df"],
-        state_bucket_daily_means_df=tables["state_bucket_daily_means_df"],
-        state_bucket_summary_df=tables["state_bucket_summary_df"],
-        state_bucket_pairwise_significance_df=tables[
-            "state_bucket_pairwise_significance_df"
-        ],
-        state_hypothesis_df=tables["state_hypothesis_df"],
-        state_scorecard_df=tables["state_scorecard_df"],
-        validation_q10_state_matrix_df=tables["validation_q10_state_matrix_df"],
+    return load_dataclass_research_bundle(
+        bundle_path,
+        result_type=Topix100Q10BounceStreak353ConditioningResearchResult,
+        table_field_names=_RESULT_TABLE_NAMES,
     )
 
 
@@ -571,10 +518,14 @@ def _build_state_bucket_pairwise_significance_df(
                     & (pairwise_df["horizon_key"].astype(str) == horizon_key)
                 )
                 pairwise_df.loc[mask, "paired_t_p_value_holm"] = _holm_adjust(
-                    pairwise_df.loc[mask, "paired_t_p_value"].tolist()
+                    _coerce_optional_float_list(
+                        cast(pd.Series, pairwise_df.loc[mask, "paired_t_p_value"])
+                    )
                 )
                 pairwise_df.loc[mask, "wilcoxon_p_value_holm"] = _holm_adjust(
-                    pairwise_df.loc[mask, "wilcoxon_p_value"].tolist()
+                    _coerce_optional_float_list(
+                        cast(pd.Series, pairwise_df.loc[mask, "wilcoxon_p_value"])
+                    )
                 )
 
     return _sort_interaction_frame(pairwise_df)
@@ -1332,6 +1283,10 @@ def _format_short_bearish_volume_split_line(matrix_df: pd.DataFrame) -> str | No
         )
     ):
         return None
+    long_bearish_low = cast(pd.Series, long_bearish_low)
+    long_bearish_high = cast(pd.Series, long_bearish_high)
+    long_bullish_low = cast(pd.Series, long_bullish_low)
+    long_bullish_high = cast(pd.Series, long_bullish_high)
     return (
         "`short bearish` was also where the volume split mattered most: under "
         f"`Long Bearish / Short Bearish`, `Q10 x Volume Low` averaged "
@@ -1374,6 +1329,10 @@ def _format_short_bullish_caution_line(matrix_df: pd.DataFrame) -> str | None:
         )
     ):
         return None
+    long_bearish_low = cast(pd.Series, long_bearish_low)
+    long_bearish_high = cast(pd.Series, long_bearish_high)
+    long_bullish_low = cast(pd.Series, long_bullish_low)
+    long_bullish_high = cast(pd.Series, long_bullish_high)
     return (
         "`short bullish` weakened the whole setup. `Long Bearish / Short Bullish` stayed negative at 1d/5d in both Q10 volume buckets and only recovered by 10d in `Q10 x Volume Low`, while `Long Bullish / Short Bullish` was clearly poor in `Q10 x Volume Low` "
         f"({_format_return(float(long_bullish_low['avg_future_return']))} average). `Q10 x Volume High` looked better there, but it only carried about "
@@ -1473,3 +1432,13 @@ def _select_avoid_execution_state_row(state_summary_df: pd.DataFrame) -> pd.Seri
         kind="stable",
     )
     return sorted_df.iloc[0]
+
+
+def _coerce_optional_float_list(values: pd.Series) -> list[float | None]:
+    coerced: list[float | None] = []
+    for value in values.tolist():
+        if value is None or pd.isna(value):
+            coerced.append(None)
+        else:
+            coerced.append(float(value))
+    return coerced

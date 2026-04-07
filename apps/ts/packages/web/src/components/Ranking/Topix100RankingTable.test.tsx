@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Topix100RankingResponse } from '@/types/ranking';
+import type { SortOrder, Topix100RankingResponse, Topix100RankingSortKey } from '@/types/ranking';
 import { Topix100RankingTable } from './Topix100RankingTable';
 
 function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix100RankingResponse {
@@ -134,6 +135,9 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="all"
         shortModeFilter="all"
         longModeFilter="all"
+        sortBy="rank"
+        sortOrder="asc"
+        onSortChange={vi.fn()}
       />
     );
 
@@ -141,13 +145,13 @@ describe('Topix100RankingTable', () => {
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
     expect(screen.getByText('Volume split by decile')).toBeInTheDocument();
-    expect(screen.getByText('Streak 3/53 overlay')).toBeInTheDocument();
+    expect(screen.getByText('Stage-2 LightGBM score')).toBeInTheDocument();
     expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
-    expect(screen.getByText('Score = 5d long / 1d short')).toBeInTheDocument();
+    expect(screen.getByText('Score = Stage-2 LightGBM (5d long / 1d short)')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('+2.15%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
-    expect(screen.getByText('Q2-4 Trough')).toBeInTheDocument();
+    expect(screen.queryByText('Q2-4 Trough')).not.toBeInTheDocument();
     expect(screen.getAllByText('Bullish').length).toBeGreaterThan(0);
 
     await user.click(screen.getByText('7203'));
@@ -167,11 +171,15 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="low"
         shortModeFilter="bearish"
         longModeFilter="bearish"
+        sortBy="rank"
+        sortOrder="asc"
+        onSortChange={vi.fn()}
       />
     );
 
     expect(screen.getAllByText('Price SMA 20/80')).toHaveLength(2);
     expect(screen.getByText('Legacy comparison')).toBeInTheDocument();
+    expect(screen.getByText('Stage-2 score = SMA50 / Vol 5/20')).toBeInTheDocument();
     expect(screen.getByText('0.95x')).toBeInTheDocument();
     expect(screen.getByText('Sony')).toBeInTheDocument();
     expect(screen.queryByText('Toyota')).not.toBeInTheDocument();
@@ -191,6 +199,9 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="all"
         shortModeFilter="bearish"
         longModeFilter="bearish"
+        sortBy="rank"
+        sortOrder="asc"
+        onSortChange={vi.fn()}
       />
     );
 
@@ -212,9 +223,53 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="low"
         shortModeFilter="all"
         longModeFilter="all"
+        sortBy="rank"
+        sortOrder="asc"
+        onSortChange={vi.fn()}
       />
     );
 
     expect(screen.getByText('No TOPIX100 ranking data available')).toBeInTheDocument();
+  });
+
+  it('sorts rows when a column header is clicked', async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [sortBy, setSortBy] = useState<Topix100RankingSortKey>('rank');
+      const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
+      return (
+        <Topix100RankingTable
+          data={createResponse('price_vs_sma_gap')}
+          isLoading={false}
+          error={null}
+          onStockClick={vi.fn()}
+          rankingMetric="price_vs_sma_gap"
+          rankingSmaWindow={50}
+          priceBucketFilter="all"
+          volumeBucketFilter="all"
+          shortModeFilter="all"
+          longModeFilter="all"
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onSortChange={(nextSortBy, nextSortOrder) => {
+            setSortBy(nextSortBy);
+            setSortOrder(nextSortOrder);
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    const rowsBefore = screen.getAllByRole('row').slice(1);
+    expect(rowsBefore[0]).toHaveTextContent('7203');
+
+    await user.click(screen.getByRole('button', { name: /L5d/i }));
+
+    const rowsAfter = screen.getAllByRole('row').slice(1);
+    expect(rowsAfter[0]).toHaveTextContent('6758');
+    expect(rowsAfter[1]).toHaveTextContent('7203');
   });
 });

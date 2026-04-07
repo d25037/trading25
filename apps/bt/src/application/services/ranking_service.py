@@ -11,8 +11,6 @@ from datetime import UTC, datetime
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
-import pandas as pd
-
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_code_alias import resolve_market_codes
 from src.domains.analytics.fundamental_ranking import (
@@ -28,13 +26,11 @@ from src.domains.analytics.fundamental_ranking import (
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
-    build_topix100_streak_state_snapshot_df,
 )
-from src.domains.analytics.topix100_streak_353_signal_score import (
-    TOPIX100_STREAK_353_LONG_SCORE_HORIZON_DAYS,
-    TOPIX100_STREAK_353_SHORT_SCORE_HORIZON_DAYS,
-    load_topix100_streak_353_signal_scorecard,
-    score_topix100_streak_353_signal,
+from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
+    TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_LONG_SCORE_HORIZON_DAYS,
+    TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_SHORT_SCORE_HORIZON_DAYS,
+    score_topix100_streak_353_signal_lightgbm_snapshot,
 )
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
@@ -292,30 +288,18 @@ class RankingService:
         )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
-        state_snapshot_map = self._load_topix100_state_snapshot_map(target_date)
-        scorecard = load_topix100_streak_353_signal_scorecard()
+        score_snapshot = score_topix100_streak_353_signal_lightgbm_snapshot(
+            self._reader.db_path,
+            target_date=target_date,
+            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            connection=self._reader.conn,
+        )
 
         items = []
         for row in rows:
             code = str(row["code"])
-            state_snapshot = state_snapshot_map.get(code)
-            signal_score = score_topix100_streak_353_signal(
-                price_decile=int(row["price_decile"]) if row["price_decile"] is not None else None,
-                volume_bucket=str(row["volume_bucket"]).replace("volume_", "")
-                if row["volume_bucket"] is not None
-                else None,
-                short_mode=(
-                    str(state_snapshot["short_mode"])
-                    if state_snapshot is not None
-                    else None
-                ),
-                long_mode=(
-                    str(state_snapshot["long_mode"])
-                    if state_snapshot is not None
-                    else None
-                ),
-                scorecard=scorecard,
-            )
+            state_snapshot = score_snapshot.rows_by_code.get(code)
             items.append(
                 Topix100RankingItem(
                     rank=int(row["rank"]),
@@ -337,27 +321,35 @@ class RankingService:
                         else None
                     ),
                     streakShortMode=(
-                        cast(Literal["bullish", "bearish"], state_snapshot["short_mode"])
+                        cast(Literal["bullish", "bearish"], state_snapshot.short_mode)
                         if state_snapshot is not None
                         else None
                     ),
                     streakLongMode=(
-                        cast(Literal["bullish", "bearish"], state_snapshot["long_mode"])
+                        cast(Literal["bullish", "bearish"], state_snapshot.long_mode)
                         if state_snapshot is not None
                         else None
                     ),
                     streakStateKey=(
-                        str(state_snapshot["state_key"])
+                        state_snapshot.state_key
                         if state_snapshot is not None
                         else None
                     ),
                     streakStateLabel=(
-                        str(state_snapshot["state_label"])
+                        state_snapshot.state_label
                         if state_snapshot is not None
                         else None
                     ),
-                    longScore5d=signal_score.long_score_5d,
-                    shortScore1d=signal_score.short_score_1d,
+                    longScore5d=(
+                        state_snapshot.long_score_5d
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    shortScore1d=(
+                        state_snapshot.short_score_1d
+                        if state_snapshot is not None
+                        else None
+                    ),
                 )
             )
 
@@ -379,9 +371,9 @@ class RankingService:
             smaWindow=validated_sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
-            longScoreHorizonDays=TOPIX100_STREAK_353_LONG_SCORE_HORIZON_DAYS,
-            shortScoreHorizonDays=TOPIX100_STREAK_353_SHORT_SCORE_HORIZON_DAYS,
-            scoreSourceRunId=scorecard.run_id if scorecard is not None else None,
+            longScoreHorizonDays=TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_LONG_SCORE_HORIZON_DAYS,
+            shortScoreHorizonDays=TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_SHORT_SCORE_HORIZON_DAYS,
+            scoreSourceRunId=score_snapshot.score_source_run_id,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
@@ -700,76 +692,6 @@ class RankingService:
             """,
             (*_TOPIX100_SCALE_CATEGORIES, target_date, target_date),
         )
-
-    def _load_topix100_state_snapshot_map(
-        self,
-        target_date: str,
-    ) -> dict[str, dict[str, Any]]:
-        rows = self._reader.query(
-            f"""
-            WITH topix100_stocks AS (
-                SELECT
-                    code,
-                    company_name,
-                    normalized_code
-                FROM (
-                    SELECT
-                        code,
-                        company_name,
-                        {_normalized_code_sql("code")} AS normalized_code,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {_normalized_code_sql("code")}
-                            ORDER BY {_prefer_4digit_order_sql("code")}
-                        ) AS rn
-                    FROM stocks
-                    WHERE coalesce(scale_category, '') IN (?, ?)
-                )
-                WHERE rn = 1
-            ),
-            stock_data_dedup AS (
-                SELECT normalized_code, date, close
-                FROM (
-                    SELECT
-                        {_normalized_code_sql("code")} AS normalized_code,
-                        date,
-                        close,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {_normalized_code_sql("code")}, date
-                            ORDER BY {_prefer_4digit_order_sql("code")}
-                        ) AS rn
-                    FROM stock_data
-                    WHERE date <= ?
-                )
-                WHERE rn = 1
-            )
-            SELECT
-                s.code,
-                s.company_name,
-                sd.date,
-                sd.close
-            FROM stock_data_dedup sd
-            JOIN topix100_stocks s ON s.normalized_code = sd.normalized_code
-            ORDER BY s.code, sd.date
-            """,
-            (*_TOPIX100_SCALE_CATEGORIES, target_date),
-        )
-        if not rows:
-            return {}
-
-        history_df = pd.DataFrame.from_records([dict(row) for row in rows])
-        snapshot_df = build_topix100_streak_state_snapshot_df(
-            history_df,
-            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
-            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
-        )
-        if snapshot_df.empty:
-            return {}
-
-        snapshot_map: dict[str, dict[str, Any]] = {}
-        for row in snapshot_df.to_dict(orient="records"):
-            normalized_row = {str(key): value for key, value in row.items()}
-            snapshot_map[str(normalized_row["code"])] = normalized_row
-        return snapshot_map
 
     def _load_fundamental_stock_rows(
         self,

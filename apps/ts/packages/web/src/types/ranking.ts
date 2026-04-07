@@ -3,13 +3,18 @@
  * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
-import type { Topix100PriceSmaWindow, Topix100RankingMetric } from '@trading25/contracts/types/api-response-types';
+import type {
+  SortOrder,
+  Topix100PriceSmaWindow,
+  Topix100RankingMetric,
+} from '@trading25/contracts/types/api-response-types';
 
 export type {
   IndexPerformanceItem,
   MarketRankingResponse,
   RankingItem,
   Rankings,
+  SortOrder,
   RankingType,
   Topix100PriceBucket,
   Topix100PriceSmaWindow,
@@ -26,6 +31,20 @@ export type RankingDailyView = 'stocks' | 'indices' | 'topix100';
 export type Topix100PriceBucketFilter = 'all' | 'q1' | 'q10' | 'q234';
 export type Topix100VolumeBucketFilter = 'all' | 'high' | 'low';
 export type Topix100StreakModeFilter = 'all' | 'bullish' | 'bearish';
+export type Topix100RankingSortKey =
+  | 'rank'
+  | 'code'
+  | 'companyName'
+  | 'metric'
+  | 'volumeBucket'
+  | 'streakShortMode'
+  | 'streakLongMode'
+  | 'longScore5d'
+  | 'shortScore1d'
+  | 'volumeSma5_20'
+  | 'currentPrice'
+  | 'sector33Name'
+  | 'volume';
 
 // Frontend-specific types
 export interface RankingParams {
@@ -40,4 +59,6 @@ export interface RankingParams {
   topix100VolumeBucket?: Topix100VolumeBucketFilter;
   topix100ShortMode?: Topix100StreakModeFilter;
   topix100LongMode?: Topix100StreakModeFilter;
+  topix100SortBy?: Topix100RankingSortKey;
+  topix100SortOrder?: SortOrder;
 }

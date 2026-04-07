@@ -26,9 +26,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_dataclass_research_bundle,
+    write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
@@ -38,6 +37,7 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
+    VolumeBucketKey,
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
     VOLUME_BUCKET_LABEL_MAP,
@@ -68,6 +68,13 @@ TOPIX100_STRONGEST_SETUP_Q10_THRESHOLD_EXPERIMENT_ID = (
     "market-behavior/topix100-strongest-setup-q10-threshold"
 )
 _SPLIT_ORDER: tuple[str, ...] = ("full", "discovery", "validation")
+_RESULT_TABLE_NAMES: tuple[str, ...] = (
+    "state_decile_horizon_panel_df",
+    "strongest_setup_decile_summary_df",
+    "strongest_setup_lower_tail_band_summary_df",
+    "q10_non_strong_reference_df",
+    "band_vs_q10_reference_scorecard_df",
+)
 
 
 @dataclass(frozen=True)
@@ -241,7 +248,7 @@ def write_topix100_strongest_setup_q10_threshold_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_research_bundle(
+    return write_dataclass_research_bundle(
         experiment_id=TOPIX100_STRONGEST_SETUP_Q10_THRESHOLD_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_strongest_setup_q10_threshold_research",
@@ -257,41 +264,8 @@ def write_topix100_strongest_setup_q10_threshold_research_bundle(
             "strongest_state_key": result.strongest_state_key,
             "strongest_volume_bucket": result.strongest_volume_bucket,
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata={
-            "db_path": result.db_path,
-            "source_mode": result.source_mode,
-            "source_detail": result.source_detail,
-            "available_start_date": result.available_start_date,
-            "available_end_date": result.available_end_date,
-            "analysis_start_date": result.analysis_start_date,
-            "analysis_end_date": result.analysis_end_date,
-            "price_feature": result.price_feature,
-            "price_feature_label": result.price_feature_label,
-            "volume_feature": result.volume_feature,
-            "volume_feature_label": result.volume_feature_label,
-            "short_window_streaks": result.short_window_streaks,
-            "long_window_streaks": result.long_window_streaks,
-            "future_horizons": list(result.future_horizons),
-            "validation_ratio": result.validation_ratio,
-            "strongest_state_key": result.strongest_state_key,
-            "strongest_state_label": result.strongest_state_label,
-            "strongest_volume_bucket": result.strongest_volume_bucket,
-            "strongest_volume_bucket_label": result.strongest_volume_bucket_label,
-            "universe_constituent_count": result.universe_constituent_count,
-            "covered_constituent_count": result.covered_constituent_count,
-            "joined_event_count": result.joined_event_count,
-            "valid_date_count": result.valid_date_count,
-        },
-        result_tables={
-            "state_decile_horizon_panel_df": result.state_decile_horizon_panel_df,
-            "strongest_setup_decile_summary_df": result.strongest_setup_decile_summary_df,
-            "strongest_setup_lower_tail_band_summary_df": result.strongest_setup_lower_tail_band_summary_df,
-            "q10_non_strong_reference_df": result.q10_non_strong_reference_df,
-            "band_vs_q10_reference_scorecard_df": result.band_vs_q10_reference_scorecard_df,
-        },
+        result=result,
+        table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
         output_root=output_root,
@@ -303,42 +277,10 @@ def write_topix100_strongest_setup_q10_threshold_research_bundle(
 def load_topix100_strongest_setup_q10_threshold_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100StrongestSetupQ10ThresholdResearchResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    return Topix100StrongestSetupQ10ThresholdResearchResult(
-        db_path=str(metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=str(metadata["source_detail"]),
-        available_start_date=metadata.get("available_start_date"),
-        available_end_date=metadata.get("available_end_date"),
-        analysis_start_date=metadata.get("analysis_start_date"),
-        analysis_end_date=metadata.get("analysis_end_date"),
-        price_feature=str(metadata["price_feature"]),
-        price_feature_label=str(metadata["price_feature_label"]),
-        volume_feature=str(metadata["volume_feature"]),
-        volume_feature_label=str(metadata["volume_feature_label"]),
-        short_window_streaks=int(metadata["short_window_streaks"]),
-        long_window_streaks=int(metadata["long_window_streaks"]),
-        future_horizons=tuple(int(value) for value in metadata["future_horizons"]),
-        validation_ratio=float(metadata["validation_ratio"]),
-        strongest_state_key=str(metadata["strongest_state_key"]),
-        strongest_state_label=str(metadata["strongest_state_label"]),
-        strongest_volume_bucket=str(metadata["strongest_volume_bucket"]),
-        strongest_volume_bucket_label=str(metadata["strongest_volume_bucket_label"]),
-        universe_constituent_count=int(metadata["universe_constituent_count"]),
-        covered_constituent_count=int(metadata["covered_constituent_count"]),
-        joined_event_count=int(metadata["joined_event_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        state_decile_horizon_panel_df=tables["state_decile_horizon_panel_df"],
-        strongest_setup_decile_summary_df=tables["strongest_setup_decile_summary_df"],
-        strongest_setup_lower_tail_band_summary_df=tables[
-            "strongest_setup_lower_tail_band_summary_df"
-        ],
-        q10_non_strong_reference_df=tables["q10_non_strong_reference_df"],
-        band_vs_q10_reference_scorecard_df=tables[
-            "band_vs_q10_reference_scorecard_df"
-        ],
+    return load_dataclass_research_bundle(
+        bundle_path,
+        result_type=Topix100StrongestSetupQ10ThresholdResearchResult,
+        table_field_names=_RESULT_TABLE_NAMES,
     )
 
 
@@ -514,7 +456,9 @@ def _build_wide_horizon_summary(
     for keys, group in grouped:
         if not isinstance(keys, tuple):
             keys = (keys,)
-        record = {column: value for column, value in zip(group_columns, keys, strict=True)}
+        record: dict[str, Any] = {
+            column: value for column, value in zip(group_columns, keys, strict=True)
+        }
         base_horizon = future_horizons[0]
         record["setup_count"] = int((group["horizon_days"] == base_horizon).sum())
         record["date_count"] = int(group["date"].nunique())
@@ -932,7 +876,7 @@ def _build_research_bundle_summary_markdown(
     else:
         lines.append(
             "- "
-            f"Best non-strong `Q10` reference: `{reference_row['state_label']} x {VOLUME_BUCKET_LABEL_MAP[str(reference_row['volume_bucket'])]}` "
+            f"Best non-strong `Q10` reference: `{reference_row['state_label']} x {_format_volume_bucket_label(reference_row['volume_bucket'])}` "
             f"with `5d {_format_return(float(reference_row['avg_return_5d']))}` and "
             f"`10d {_format_return(float(reference_row['avg_return_10d']))}`."
         )
@@ -1023,7 +967,7 @@ def _build_published_summary_payload(
 
     if reference_row is not None:
         result_bullets.append(
-            f"The best non-strong `Q10` reference was `{reference_row['state_label']} x {VOLUME_BUCKET_LABEL_MAP[str(reference_row['volume_bucket'])]}`, with `5d {_format_return(float(reference_row['avg_return_5d']))}` and `10d {_format_return(float(reference_row['avg_return_10d']))}`."
+            f"The best non-strong `Q10` reference was `{reference_row['state_label']} x {_format_volume_bucket_label(reference_row['volume_bucket'])}`, with `5d {_format_return(float(reference_row['avg_return_5d']))}` and `10d {_format_return(float(reference_row['avg_return_10d']))}`."
         )
         highlights.append(
             {
@@ -1156,6 +1100,13 @@ def _as_float_or_none(value: Any) -> float | None:
     if value is None or pd.isna(value):
         return None
     return float(value)
+
+
+def _format_volume_bucket_label(value: Any) -> str:
+    volume_key = str(value)
+    if volume_key in VOLUME_BUCKET_LABEL_MAP:
+        return VOLUME_BUCKET_LABEL_MAP[cast(VolumeBucketKey, volume_key)]
+    return volume_key
 
 
 def _safe_scalar_ratio(numerator: float | None, denominator: float | None) -> float | None:

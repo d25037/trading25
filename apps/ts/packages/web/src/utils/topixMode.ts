@@ -147,31 +147,34 @@ export function buildTopixMultiTimeframeModeAnalysis(
     const longMode: TopixMode = longDominant.returnValue >= 0 ? 'bullish' : 'bearish'
     const stateKey = buildTopixModeStateKey(longMode, shortMode)
 
-    shortModeSpanStreakCount = shortMode === previousShortMode ? shortModeSpanStreakCount + 1 : 1
-    longModeSpanStreakCount = longMode === previousLongMode ? longModeSpanStreakCount + 1 : 1
-    stateSegmentLength = stateKey === previousStateKey ? stateSegmentLength + 1 : 1
-
-    points.push({
-      date: currentStreak.endDate,
-      segmentStartDate: currentStreak.startDate,
-      segmentEndDate: currentStreak.endDate,
-      segmentDayCount: currentStreak.segmentDayCount,
-      segmentReturn: currentStreak.segmentReturn,
-      baseStreakMode: currentStreak.baseStreakMode,
+    const nextCounts = resolveModeSpanCounts({
       shortMode,
       longMode,
-      shortDominantSegmentReturn: shortDominant.returnValue,
-      longDominantSegmentReturn: longDominant.returnValue,
-      shortDominantSegmentEndDate: shortDominant.segmentEndDate,
-      longDominantSegmentEndDate: longDominant.segmentEndDate,
-      shortDominantSegmentDayCount: shortDominant.segmentDayCount,
-      longDominantSegmentDayCount: longDominant.segmentDayCount,
+      stateKey,
+      previousShortMode,
+      previousLongMode,
+      previousStateKey,
       shortModeSpanStreakCount,
       longModeSpanStreakCount,
-      stateKey,
-      stateLabel: formatTopixModeStateLabel(stateKey),
       stateSegmentLength,
     })
+    shortModeSpanStreakCount = nextCounts.shortModeSpanStreakCount
+    longModeSpanStreakCount = nextCounts.longModeSpanStreakCount
+    stateSegmentLength = nextCounts.stateSegmentLength
+
+    points.push(
+      createModePoint({
+        currentStreak,
+        shortMode,
+        longMode,
+        stateKey,
+        shortDominant,
+        longDominant,
+        shortModeSpanStreakCount,
+        longModeSpanStreakCount,
+        stateSegmentLength,
+      })
+    )
 
     previousShortMode = shortMode
     previousLongMode = longMode
@@ -185,6 +188,78 @@ export function buildTopixMultiTimeframeModeAnalysis(
     streakCount: streakCandles.length,
     points,
     currentPoint: points.at(-1) ?? null,
+  }
+}
+
+function resolveModeSpanCounts({
+  shortMode,
+  longMode,
+  stateKey,
+  previousShortMode,
+  previousLongMode,
+  previousStateKey,
+  shortModeSpanStreakCount,
+  longModeSpanStreakCount,
+  stateSegmentLength,
+}: {
+  shortMode: TopixMode
+  longMode: TopixMode
+  stateKey: TopixModeStateKey
+  previousShortMode: TopixMode | null
+  previousLongMode: TopixMode | null
+  previousStateKey: TopixModeStateKey | null
+  shortModeSpanStreakCount: number
+  longModeSpanStreakCount: number
+  stateSegmentLength: number
+}) {
+  return {
+    shortModeSpanStreakCount: shortMode === previousShortMode ? shortModeSpanStreakCount + 1 : 1,
+    longModeSpanStreakCount: longMode === previousLongMode ? longModeSpanStreakCount + 1 : 1,
+    stateSegmentLength: stateKey === previousStateKey ? stateSegmentLength + 1 : 1,
+  }
+}
+
+function createModePoint({
+  currentStreak,
+  shortMode,
+  longMode,
+  stateKey,
+  shortDominant,
+  longDominant,
+  shortModeSpanStreakCount,
+  longModeSpanStreakCount,
+  stateSegmentLength,
+}: {
+  currentStreak: TopixStreakCandle
+  shortMode: TopixMode
+  longMode: TopixMode
+  stateKey: TopixModeStateKey
+  shortDominant: { returnValue: number; segmentEndDate: string; segmentDayCount: number }
+  longDominant: { returnValue: number; segmentEndDate: string; segmentDayCount: number }
+  shortModeSpanStreakCount: number
+  longModeSpanStreakCount: number
+  stateSegmentLength: number
+}): TopixModePoint {
+  return {
+    date: currentStreak.endDate,
+    segmentStartDate: currentStreak.startDate,
+    segmentEndDate: currentStreak.endDate,
+    segmentDayCount: currentStreak.segmentDayCount,
+    segmentReturn: currentStreak.segmentReturn,
+    baseStreakMode: currentStreak.baseStreakMode,
+    shortMode,
+    longMode,
+    shortDominantSegmentReturn: shortDominant.returnValue,
+    longDominantSegmentReturn: longDominant.returnValue,
+    shortDominantSegmentEndDate: shortDominant.segmentEndDate,
+    longDominantSegmentEndDate: longDominant.segmentEndDate,
+    shortDominantSegmentDayCount: shortDominant.segmentDayCount,
+    longDominantSegmentDayCount: longDominant.segmentDayCount,
+    shortModeSpanStreakCount,
+    longModeSpanStreakCount,
+    stateKey,
+    stateLabel: formatTopixModeStateLabel(stateKey),
+    stateSegmentLength,
   }
 }
 

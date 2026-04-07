@@ -608,8 +608,8 @@ def _build_segment_summary_df(
                     "segment_id",
                     lambda values, frame=split_df: float(
                         (
-                            frame.loc[values.index, "synthetic_high"]
-                            / frame.loc[values.index, "synthetic_low"]
+                            frame.loc[values.index, "synthetic_high"].astype(float)
+                            / frame.loc[values.index, "synthetic_low"].astype(float)
                             - 1.0
                         ).mean()
                     ),

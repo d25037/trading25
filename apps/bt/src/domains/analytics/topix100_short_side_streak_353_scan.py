@@ -27,9 +27,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_dataclass_research_bundle,
+    write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
@@ -80,6 +79,14 @@ TOPIX100_SHORT_SIDE_STREAK_353_SCAN_EXPERIMENT_ID = (
     "market-behavior/topix100-short-side-streak-3-53-scan"
 )
 _SPLIT_ORDER: tuple[str, ...] = ("full", "discovery", "validation")
+_RESULT_TABLE_NAMES: tuple[str, ...] = (
+    "state_decile_horizon_panel_df",
+    "state_band_horizon_summary_df",
+    "short_candidate_scorecard_df",
+    "pair_trade_scorecard_df",
+    "validation_focus_matrix_df",
+    "validation_bull_bull_adjacent_pair_df",
+)
 
 
 @dataclass(frozen=True)
@@ -276,7 +283,7 @@ def write_topix100_short_side_streak_353_scan_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_research_bundle(
+    return write_dataclass_research_bundle(
         experiment_id=TOPIX100_SHORT_SIDE_STREAK_353_SCAN_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_short_side_streak_353_scan_research",
@@ -296,46 +303,8 @@ def write_topix100_short_side_streak_353_scan_research_bundle(
             "min_validation_date_count": result.min_validation_date_count,
             "min_pair_overlap_dates": result.min_pair_overlap_dates,
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata={
-            "db_path": result.db_path,
-            "source_mode": result.source_mode,
-            "source_detail": result.source_detail,
-            "available_start_date": result.available_start_date,
-            "available_end_date": result.available_end_date,
-            "analysis_start_date": result.analysis_start_date,
-            "analysis_end_date": result.analysis_end_date,
-            "price_feature": result.price_feature,
-            "price_feature_label": result.price_feature_label,
-            "volume_feature": result.volume_feature,
-            "volume_feature_label": result.volume_feature_label,
-            "short_window_streaks": result.short_window_streaks,
-            "long_window_streaks": result.long_window_streaks,
-            "future_horizons": list(result.future_horizons),
-            "validation_ratio": result.validation_ratio,
-            "strongest_lower_decile": result.strongest_lower_decile,
-            "strongest_upper_decile": result.strongest_upper_decile,
-            "strongest_state_key": result.strongest_state_key,
-            "strongest_state_label": result.strongest_state_label,
-            "strongest_volume_bucket": result.strongest_volume_bucket,
-            "strongest_volume_bucket_label": result.strongest_volume_bucket_label,
-            "min_validation_date_count": result.min_validation_date_count,
-            "min_pair_overlap_dates": result.min_pair_overlap_dates,
-            "universe_constituent_count": result.universe_constituent_count,
-            "covered_constituent_count": result.covered_constituent_count,
-            "joined_event_count": result.joined_event_count,
-            "valid_date_count": result.valid_date_count,
-        },
-        result_tables={
-            "state_decile_horizon_panel_df": result.state_decile_horizon_panel_df,
-            "state_band_horizon_summary_df": result.state_band_horizon_summary_df,
-            "short_candidate_scorecard_df": result.short_candidate_scorecard_df,
-            "pair_trade_scorecard_df": result.pair_trade_scorecard_df,
-            "validation_focus_matrix_df": result.validation_focus_matrix_df,
-            "validation_bull_bull_adjacent_pair_df": result.validation_bull_bull_adjacent_pair_df,
-        },
+        result=result,
+        table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
         output_root=output_root,
@@ -347,43 +316,10 @@ def write_topix100_short_side_streak_353_scan_research_bundle(
 def load_topix100_short_side_streak_353_scan_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100ShortSideStreak353ScanResearchResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    return Topix100ShortSideStreak353ScanResearchResult(
-        db_path=str(metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=str(metadata["source_detail"]),
-        available_start_date=metadata.get("available_start_date"),
-        available_end_date=metadata.get("available_end_date"),
-        analysis_start_date=metadata.get("analysis_start_date"),
-        analysis_end_date=metadata.get("analysis_end_date"),
-        price_feature=str(metadata["price_feature"]),
-        price_feature_label=str(metadata["price_feature_label"]),
-        volume_feature=str(metadata["volume_feature"]),
-        volume_feature_label=str(metadata["volume_feature_label"]),
-        short_window_streaks=int(metadata["short_window_streaks"]),
-        long_window_streaks=int(metadata["long_window_streaks"]),
-        future_horizons=tuple(int(value) for value in metadata["future_horizons"]),
-        validation_ratio=float(metadata["validation_ratio"]),
-        strongest_lower_decile=int(metadata["strongest_lower_decile"]),
-        strongest_upper_decile=int(metadata["strongest_upper_decile"]),
-        strongest_state_key=str(metadata["strongest_state_key"]),
-        strongest_state_label=str(metadata["strongest_state_label"]),
-        strongest_volume_bucket=str(metadata["strongest_volume_bucket"]),
-        strongest_volume_bucket_label=str(metadata["strongest_volume_bucket_label"]),
-        min_validation_date_count=int(metadata["min_validation_date_count"]),
-        min_pair_overlap_dates=int(metadata["min_pair_overlap_dates"]),
-        universe_constituent_count=int(metadata["universe_constituent_count"]),
-        covered_constituent_count=int(metadata["covered_constituent_count"]),
-        joined_event_count=int(metadata["joined_event_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        state_decile_horizon_panel_df=tables["state_decile_horizon_panel_df"],
-        state_band_horizon_summary_df=tables["state_band_horizon_summary_df"],
-        short_candidate_scorecard_df=tables["short_candidate_scorecard_df"],
-        pair_trade_scorecard_df=tables["pair_trade_scorecard_df"],
-        validation_focus_matrix_df=tables["validation_focus_matrix_df"],
-        validation_bull_bull_adjacent_pair_df=tables["validation_bull_bull_adjacent_pair_df"],
+    return load_dataclass_research_bundle(
+        bundle_path,
+        result_type=Topix100ShortSideStreak353ScanResearchResult,
+        table_field_names=_RESULT_TABLE_NAMES,
     )
 
 
@@ -463,10 +399,14 @@ def _build_state_band_horizon_summary_df(panel_df: pd.DataFrame) -> pd.DataFrame
             .reset_index()
         )
         summary_df.insert(1, "band_label", band_row.band_label)
-        summary_df.insert(2, "lower_decile", int(band_row.lower_decile))
-        summary_df.insert(3, "upper_decile", int(band_row.upper_decile))
-        summary_df.insert(4, "band_decile_count", int(band_row.band_decile_count))
-        summary_df.insert(5, "tail_share", float(band_row.tail_share))
+        summary_df.insert(2, "lower_decile", _as_int(cast(Any, band_row.lower_decile)))
+        summary_df.insert(3, "upper_decile", _as_int(cast(Any, band_row.upper_decile)))
+        summary_df.insert(
+            4,
+            "band_decile_count",
+            _as_int(cast(Any, band_row.band_decile_count)),
+        )
+        summary_df.insert(5, "tail_share", _as_float(cast(Any, band_row.tail_share)))
         frames.append(summary_df)
 
     if not frames:
@@ -502,7 +442,9 @@ def _build_short_candidate_scorecard_df(
     for keys, group in grouped:
         if not isinstance(keys, tuple):
             keys = (keys,)
-        record = {column: value for column, value in zip(group_columns, keys, strict=True)}
+        record: dict[str, Any] = {
+            column: value for column, value in zip(group_columns, keys, strict=True)
+        }
         for horizon in future_horizons:
             horizon_df = group[group["horizon_days"] == horizon]
             record[f"sample_count_{horizon}d"] = (
@@ -616,10 +558,14 @@ def _build_pair_trade_scorecard_df(
             .reset_index()
         )
         daily_df.insert(1, "band_label", band_row.band_label)
-        daily_df.insert(2, "lower_decile", int(band_row.lower_decile))
-        daily_df.insert(3, "upper_decile", int(band_row.upper_decile))
-        daily_df.insert(4, "band_decile_count", int(band_row.band_decile_count))
-        daily_df.insert(5, "tail_share", float(band_row.tail_share))
+        daily_df.insert(2, "lower_decile", _as_int(cast(Any, band_row.lower_decile)))
+        daily_df.insert(3, "upper_decile", _as_int(cast(Any, band_row.upper_decile)))
+        daily_df.insert(
+            4,
+            "band_decile_count",
+            _as_int(cast(Any, band_row.band_decile_count)),
+        )
+        daily_df.insert(5, "tail_share", _as_float(cast(Any, band_row.tail_share)))
         candidate_frames.append(daily_df)
 
     if not candidate_frames:
@@ -659,7 +605,7 @@ def _build_pair_trade_scorecard_df(
     for keys, group in grouped:
         if not isinstance(keys, tuple):
             keys = (keys,)
-        record = {
+        record: dict[str, Any] = {
             column: value for column, value in zip(score_group_columns, keys, strict=True)
         }
         for horizon in future_horizons:
@@ -1315,12 +1261,30 @@ def _mean_nullable(values: list[float | None]) -> float | None:
 
 
 def _as_float_or_none(value: object) -> float | None:
-    if value is None or pd.isna(value):
+    if value is None:
         return None
-    return float(value)
+    if bool(pd.isna(cast(Any, value))):
+        return None
+    return float(cast(Any, value))
 
 
 def _as_int_or_none(value: object) -> int | None:
-    if value is None or pd.isna(value):
+    if value is None:
         return None
-    return int(value)
+    if bool(pd.isna(cast(Any, value))):
+        return None
+    return int(cast(Any, value))
+
+
+def _as_float(value: object) -> float:
+    coerced = _as_float_or_none(value)
+    if coerced is None:
+        raise ValueError("Expected numeric float value")
+    return coerced
+
+
+def _as_int(value: object) -> int:
+    coerced = _as_int_or_none(value)
+    if coerced is None:
+        raise ValueError("Expected numeric int value")
+    return coerced

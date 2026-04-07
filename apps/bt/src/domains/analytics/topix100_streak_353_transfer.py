@@ -19,9 +19,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_dataclass_research_bundle,
+    write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_FUTURE_HORIZONS,
@@ -61,6 +60,15 @@ TOPIX100_STREAK_353_TRANSFER_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-transfer"
 )
 _SPLIT_ORDER: tuple[str, ...] = ("full", "discovery", "validation")
+_RESULT_TABLE_NAMES: tuple[str, ...] = (
+    "state_event_df",
+    "state_horizon_event_df",
+    "state_event_summary_df",
+    "state_date_panel_df",
+    "state_date_summary_df",
+    "stock_state_mean_df",
+    "state_stock_consistency_df",
+)
 
 _STATE_SNAPSHOT_COLUMNS: tuple[str, ...] = (
     "code",
@@ -69,6 +77,8 @@ _STATE_SNAPSHOT_COLUMNS: tuple[str, ...] = (
     "segment_id",
     "current_streak_mode",
     "current_streak_day_count",
+    "current_streak_segment_return",
+    "current_streak_segment_abs_return",
     "short_mode",
     "long_mode",
     "state_key",
@@ -232,7 +242,7 @@ def write_topix100_streak_353_transfer_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_research_bundle(
+    return write_dataclass_research_bundle(
         experiment_id=TOPIX100_STREAK_353_TRANSFER_RESEARCH_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_streak_353_transfer_research",
@@ -246,37 +256,8 @@ def write_topix100_streak_353_transfer_research_bundle(
             "min_stock_events_per_state": result.min_stock_events_per_state,
             "min_constituents_per_date_state": result.min_constituents_per_date_state,
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata={
-            "db_path": result.db_path,
-            "source_mode": result.source_mode,
-            "source_detail": result.source_detail,
-            "available_start_date": result.available_start_date,
-            "available_end_date": result.available_end_date,
-            "analysis_start_date": result.analysis_start_date,
-            "analysis_end_date": result.analysis_end_date,
-            "short_window_streaks": result.short_window_streaks,
-            "long_window_streaks": result.long_window_streaks,
-            "future_horizons": list(result.future_horizons),
-            "validation_ratio": result.validation_ratio,
-            "min_stock_events_per_state": result.min_stock_events_per_state,
-            "min_constituents_per_date_state": result.min_constituents_per_date_state,
-            "topix100_constituent_count": result.topix100_constituent_count,
-            "covered_constituent_count": result.covered_constituent_count,
-            "valid_event_count": result.valid_event_count,
-            "valid_date_count": result.valid_date_count,
-        },
-        result_tables={
-            "state_event_df": result.state_event_df,
-            "state_horizon_event_df": result.state_horizon_event_df,
-            "state_event_summary_df": result.state_event_summary_df,
-            "state_date_panel_df": result.state_date_panel_df,
-            "state_date_summary_df": result.state_date_summary_df,
-            "stock_state_mean_df": result.stock_state_mean_df,
-            "state_stock_consistency_df": result.state_stock_consistency_df,
-        },
+        result=result,
+        table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
         output_root=output_root,
@@ -288,36 +269,10 @@ def write_topix100_streak_353_transfer_research_bundle(
 def load_topix100_streak_353_transfer_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100Streak353TransferResearchResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    return Topix100Streak353TransferResearchResult(
-        db_path=str(metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=str(metadata["source_detail"]),
-        available_start_date=metadata.get("available_start_date"),
-        available_end_date=metadata.get("available_end_date"),
-        analysis_start_date=metadata.get("analysis_start_date"),
-        analysis_end_date=metadata.get("analysis_end_date"),
-        short_window_streaks=int(metadata["short_window_streaks"]),
-        long_window_streaks=int(metadata["long_window_streaks"]),
-        future_horizons=tuple(int(value) for value in metadata["future_horizons"]),
-        validation_ratio=float(metadata["validation_ratio"]),
-        min_stock_events_per_state=int(metadata["min_stock_events_per_state"]),
-        min_constituents_per_date_state=int(
-            metadata["min_constituents_per_date_state"]
-        ),
-        topix100_constituent_count=int(metadata["topix100_constituent_count"]),
-        covered_constituent_count=int(metadata["covered_constituent_count"]),
-        valid_event_count=int(metadata["valid_event_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        state_event_df=tables["state_event_df"],
-        state_horizon_event_df=tables["state_horizon_event_df"],
-        state_event_summary_df=tables["state_event_summary_df"],
-        state_date_panel_df=tables["state_date_panel_df"],
-        state_date_summary_df=tables["state_date_summary_df"],
-        stock_state_mean_df=tables["stock_state_mean_df"],
-        state_stock_consistency_df=tables["state_stock_consistency_df"],
+    return load_dataclass_research_bundle(
+        bundle_path,
+        result_type=Topix100Streak353TransferResearchResult,
+        table_field_names=_RESULT_TABLE_NAMES,
     )
 
 
@@ -492,6 +447,8 @@ def _build_stock_state_snapshot_row(
         "segment_id": int(latest_segment["segment_id"]),
         "current_streak_mode": str(latest_segment["mode"]),
         "current_streak_day_count": int(latest_segment["segment_day_count"]),
+        "current_streak_segment_return": float(latest_segment["segment_return"]),
+        "current_streak_segment_abs_return": abs(float(latest_segment["segment_return"])),
         "short_mode": short_mode,
         "long_mode": long_mode,
         "state_key": state_key,

@@ -666,7 +666,7 @@ def _summarize_trade_frame(trade_df: pd.DataFrame) -> dict[str, object]:
         "win_rate": float((trade_returns > 0.0).mean()),
         "mean_return": float(trade_returns.mean()),
         "median_return": float(trade_returns.median()),
-        "compound_return": float((1.0 + trade_returns).prod() - 1.0),
+        "compound_return": float(math.prod((1.0 + trade_returns).tolist()) - 1.0),
     }
 
 

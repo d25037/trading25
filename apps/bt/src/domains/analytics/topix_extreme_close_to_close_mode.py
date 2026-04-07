@@ -733,7 +733,7 @@ def _build_window_score_df(
                 int(row["window_days"]),
                 str(row["mode"]),
             )
-        ] = row
+        ] = cast(dict[str, Any], row)
 
     score_rows: list[dict[str, Any]] = []
     for split_name in WINDOW_SCORE_SPLIT_ORDER:
@@ -833,13 +833,19 @@ def _build_window_score_df(
         .reset_index(drop=True)
     )
     rank_lookup = {
-        int(row["window_days"]): index + 1
-        for index, row in discovery_rank_df.iterrows()
+        int(cast(dict[str, Any], row)["window_days"]): rank_position
+        for rank_position, row in enumerate(
+            discovery_rank_df.to_dict(orient="records"),
+            start=1,
+        )
     }
     selection_rank_values = []
     for row in window_score_df.to_dict(orient="records"):
         if str(row["sample_split"]) == "discovery":
-            selection_rank_values.append(rank_lookup.get(int(row["window_days"]), pd.NA))
+            row_record = cast(dict[str, Any], row)
+            selection_rank_values.append(
+                rank_lookup.get(int(row_record["window_days"]), pd.NA)
+            )
         else:
             selection_rank_values.append(pd.NA)
     window_score_df["selection_rank"] = selection_rank_values

@@ -54,6 +54,30 @@ function collectCuratedStudies(items: ResearchCatalogItem[]): ResearchCatalogIte
   );
 }
 
+function buildCatalogViewModel(
+  items: ResearchCatalogItem[],
+  activeTag: 'all' | string,
+  deferredQuery: string
+) {
+  const filteredItems = items.filter((item) => {
+    if (activeTag !== 'all' && !item.tags.includes(activeTag)) {
+      return false;
+    }
+    return matchesQuery(item, deferredQuery);
+  });
+  const curatedItems = collectCuratedStudies(filteredItems);
+  const curatedExperimentIds = new Set(curatedItems.map((item) => item.experimentId));
+  const libraryCandidates = filteredItems.filter((item) => !curatedExperimentIds.has(item.experimentId));
+  const featuredItem = libraryCandidates[0] ?? null;
+
+  return {
+    filteredItems,
+    curatedItems,
+    featuredItem,
+    remainingItems: featuredItem ? libraryCandidates.slice(1) : libraryCandidates,
+  };
+}
+
 function ResearchCard({
   item,
   featured = false,
@@ -145,6 +169,105 @@ function ResearchCard({
   );
 }
 
+function ResearchCatalogContent({
+  isLoading,
+  errorMessage,
+  filteredItems,
+  curatedItems,
+  featuredItem,
+  remainingItems,
+  onOpen,
+}: {
+  isLoading: boolean
+  errorMessage: string | null
+  filteredItems: ResearchCatalogItem[]
+  curatedItems: ResearchCatalogItem[]
+  featuredItem: ResearchCatalogItem | null
+  remainingItems: ResearchCatalogItem[]
+  onOpen: (item: ResearchCatalogItem) => void
+}) {
+  if (isLoading) {
+    return (
+      <Surface className="flex min-h-[24rem] items-center justify-center rounded-[30px]">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading research catalog...
+        </div>
+      </Surface>
+    )
+  }
+
+  if (errorMessage) {
+    return (
+      <Surface className="rounded-[30px] px-6 py-6">
+        <p className="text-sm font-semibold text-foreground">Catalog load failed</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
+      </Surface>
+    )
+  }
+
+  if (filteredItems.length === 0) {
+    return (
+      <Surface className="rounded-[30px] px-6 py-10 text-center">
+        <div className="mx-auto flex max-w-xl flex-col items-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-border/70 bg-[var(--app-surface-muted)]">
+            <FileSearch className="h-5 w-5 text-primary" />
+          </div>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">No matching analyses</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Adjust the search or tag filter. The catalog is now designed to scale by narrowing first, then opening detail.
+          </p>
+        </div>
+      </Surface>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {curatedItems.length > 0 ? (
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Curated"
+            title="TOPIX Mode Studies"
+            description="These studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, the direct mean-reversion comparison, the TOPIX100 transfer read, and the TOPIX100 bucket fusion read."
+          />
+          <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
+            {curatedItems.map((item) => (
+              <ResearchCard key={item.experimentId} item={item} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {featuredItem ? (
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Featured"
+            title="Start With The Latest High-Signal Bundle"
+            description="The newest matching bundle gets the widest treatment so the catalog still reads clearly as it grows."
+          />
+          <ResearchCard item={featuredItem} featured onOpen={onOpen} />
+        </section>
+      ) : null}
+
+      {remainingItems.length > 0 ? (
+        <section className="space-y-3">
+          <SectionHeading
+            eyebrow="Library"
+            title="More Published Analyses"
+            description="Everything below keeps the same open flow, but in a denser discovery grid."
+          />
+          <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]">
+            {remainingItems.map((item) => (
+              <ResearchCard key={item.experimentId} item={item} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
 export function ResearchPage() {
   const navigate = useNavigate();
   const catalogQuery = useResearchCatalog();
@@ -154,24 +277,10 @@ export function ResearchPage() {
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const availableTags = useMemo(() => buildTagList(items), [items]);
-  const filteredItems = useMemo(
-    () =>
-      items.filter((item) => {
-        if (activeTag !== 'all' && !item.tags.includes(activeTag)) {
-          return false;
-        }
-        return matchesQuery(item, deferredQuery);
-      }),
+  const { filteredItems, curatedItems, featuredItem, remainingItems } = useMemo(
+    () => buildCatalogViewModel(items, activeTag, deferredQuery),
     [activeTag, deferredQuery, items]
   );
-  const curatedItems = useMemo(() => collectCuratedStudies(filteredItems), [filteredItems]);
-  const curatedExperimentIds = useMemo(() => new Set(curatedItems.map((item) => item.experimentId)), [curatedItems]);
-  const libraryCandidates = useMemo(
-    () => filteredItems.filter((item) => !curatedExperimentIds.has(item.experimentId)),
-    [curatedExperimentIds, filteredItems]
-  );
-  const featuredItem = libraryCandidates[0] ?? null;
-  const remainingItems = featuredItem ? libraryCandidates.slice(1) : libraryCandidates;
 
   const metaItems = [
     { label: 'Published Experiments', value: String(items.length) },
@@ -259,74 +368,15 @@ export function ResearchPage() {
           </div>
         </Surface>
 
-        {catalogQuery.isLoading ? (
-          <Surface className="flex min-h-[24rem] items-center justify-center rounded-[30px]">
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading research catalog...
-            </div>
-          </Surface>
-        ) : catalogQuery.error ? (
-          <Surface className="rounded-[30px] px-6 py-6">
-            <p className="text-sm font-semibold text-foreground">Catalog load failed</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{catalogQuery.error.message}</p>
-          </Surface>
-        ) : filteredItems.length === 0 ? (
-          <Surface className="rounded-[30px] px-6 py-10 text-center">
-            <div className="mx-auto flex max-w-xl flex-col items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-border/70 bg-[var(--app-surface-muted)]">
-                <FileSearch className="h-5 w-5 text-primary" />
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight text-foreground">No matching analyses</h2>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Adjust the search or tag filter. The catalog is now designed to scale by narrowing first, then opening detail.
-              </p>
-            </div>
-          </Surface>
-        ) : (
-          <div className="space-y-6">
-            {curatedItems.length > 0 ? (
-              <section className="space-y-3">
-                <SectionHeading
-                  eyebrow="Curated"
-                  title="TOPIX Mode Studies"
-                  description="These studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, the direct mean-reversion comparison, the TOPIX100 transfer read, and the TOPIX100 bucket fusion read."
-                />
-                <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
-                  {curatedItems.map((item) => (
-                    <ResearchCard key={item.experimentId} item={item} onOpen={openDetail} />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {featuredItem ? (
-              <section className="space-y-3">
-                <SectionHeading
-                  eyebrow="Featured"
-                  title="Start With The Latest High-Signal Bundle"
-                  description="The newest matching bundle gets the widest treatment so the catalog still reads clearly as it grows."
-                />
-                <ResearchCard item={featuredItem} featured onOpen={openDetail} />
-              </section>
-            ) : null}
-
-            {remainingItems.length > 0 ? (
-              <section className="space-y-3">
-                <SectionHeading
-                  eyebrow="Library"
-                  title="More Published Analyses"
-                  description="Everything below keeps the same open flow, but in a denser discovery grid."
-                />
-                <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]">
-                  {remainingItems.map((item) => (
-                    <ResearchCard key={item.experimentId} item={item} onOpen={openDetail} />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-          </div>
-        )}
+        <ResearchCatalogContent
+          isLoading={catalogQuery.isLoading}
+          errorMessage={catalogQuery.error?.message ?? null}
+          filteredItems={filteredItems}
+          curatedItems={curatedItems}
+          featuredItem={featuredItem}
+          remainingItems={remainingItems}
+          onOpen={openDetail}
+        />
       </div>
     </div>
   );

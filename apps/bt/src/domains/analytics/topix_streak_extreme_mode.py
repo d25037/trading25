@@ -131,7 +131,7 @@ def run_topix_streak_extreme_mode_research(
         future_horizons=resolved_horizons,
         validation_ratio=validation_ratio,
     )
-    streak_all_df, streak_segment_df = _build_streak_tables(
+    _, streak_segment_df = _build_streak_tables(
         prepared_topix_df,
         future_horizons=resolved_horizons,
     )
@@ -569,7 +569,7 @@ def _build_window_score_df(
     for row in segment_summary_df.to_dict(orient="records"):
         summary_lookup[
             (str(row["sample_split"]), int(row["window_streaks"]), str(row["mode"]))
-        ] = row
+        ] = cast(dict[str, Any], row)
 
     score_rows: list[dict[str, Any]] = []
     for split_name in WINDOW_SCORE_SPLIT_ORDER:
@@ -668,14 +668,18 @@ def _build_window_score_df(
         .reset_index(drop=True)
     )
     rank_lookup = {
-        int(row["window_streaks"]): index + 1
-        for index, row in discovery_rank_df.iterrows()
+        int(cast(dict[str, Any], row)["window_streaks"]): rank_position
+        for rank_position, row in enumerate(
+            discovery_rank_df.to_dict(orient="records"),
+            start=1,
+        )
     }
     selection_rank_values = []
     for row in window_score_df.to_dict(orient="records"):
         if str(row["sample_split"]) == "discovery":
+            row_record = cast(dict[str, Any], row)
             selection_rank_values.append(
-                rank_lookup.get(int(row["window_streaks"]), pd.NA)
+                rank_lookup.get(int(row_record["window_streaks"]), pd.NA)
             )
         else:
             selection_rank_values.append(pd.NA)

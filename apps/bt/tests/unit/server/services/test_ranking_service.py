@@ -3,7 +3,6 @@ Ranking Service Unit Tests
 """
 
 from datetime import date as calendar_date, timedelta
-from pathlib import Path
 
 import duckdb
 
@@ -20,9 +19,9 @@ from src.domains.analytics.fundamental_ranking import (
     normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
 )
-from src.domains.analytics.topix100_streak_353_signal_score import (
-    Topix100Streak353SignalScorecard,
-    _LookupRow,
+from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
+    Topix100Streak353SignalScoreLightgbmSnapshot,
+    Topix100Streak353SignalScoreLightgbmSnapshotRow,
 )
 from src.application.services.ranking_service import (
     RankingService,
@@ -401,127 +400,44 @@ def topix100_ranking_service(tmp_path):
     reader.close()
 
 
-def _build_test_signal_scorecard() -> Topix100Streak353SignalScorecard:
-    rows_by_subset = {
-        "universe": {
-            "universe": _LookupRow(
-                subset_key="universe",
-                selector_value_key="universe",
-                avg_return_1d=0.001,
-                avg_return_5d=0.005,
-                date_count_1d=100,
-                date_count_5d=100,
-            )
-        },
-        "short_mode": {
-            "bullish": _LookupRow("short_mode", "bullish", -0.002, 0.001, 80, 80),
-            "bearish": _LookupRow("short_mode", "bearish", 0.004, 0.009, 80, 80),
-        },
-        "bucket+short_mode": {
-            "Q1|bullish": _LookupRow("bucket+short_mode", "Q1|bullish", -0.003, 0.002, 60, 60),
-            "Q1|bearish": _LookupRow("bucket+short_mode", "Q1|bearish", 0.006, 0.015, 60, 60),
-            "Q10|bearish": _LookupRow("bucket+short_mode", "Q10|bearish", 0.005, 0.008, 60, 60),
-        },
-        "bucket+short_mode+long_mode": {
-            "Q1|bearish|bearish": _LookupRow(
-                "bucket+short_mode+long_mode",
-                "Q1|bearish|bearish",
-                0.006,
-                0.018,
-                50,
-                50,
-            ),
-            "Q10|bearish|bearish": _LookupRow(
-                "bucket+short_mode+long_mode",
-                "Q10|bearish|bearish",
-                0.005,
-                0.011,
-                50,
-                50,
-            ),
-        },
-        "volume+short_mode": {
-            "volume_high|bullish": _LookupRow(
-                "volume+short_mode",
-                "volume_high|bullish",
-                -0.004,
-                0.002,
-                60,
-                60,
-            ),
-            "volume_low|bearish": _LookupRow(
-                "volume+short_mode",
-                "volume_low|bearish",
-                0.005,
-                0.010,
-                60,
-                60,
-            ),
-        },
-        "volume+short_mode+long_mode": {
-            "volume_high|bullish|bullish": _LookupRow(
-                "volume+short_mode+long_mode",
-                "volume_high|bullish|bullish",
-                -0.005,
-                0.001,
-                50,
-                50,
-            ),
-            "volume_low|bearish|bearish": _LookupRow(
-                "volume+short_mode+long_mode",
-                "volume_low|bearish|bearish",
-                0.006,
-                0.013,
-                50,
-                50,
-            ),
-        },
-        "bucket+volume+short_mode+long_mode": {
-            "Q1|volume_high|bullish|bullish": _LookupRow(
-                "bucket+volume+short_mode+long_mode",
-                "Q1|volume_high|bullish|bullish",
-                -0.006,
-                0.000,
-                40,
-                40,
-            ),
-            "Q10|volume_low|bearish|bearish": _LookupRow(
-                "bucket+volume+short_mode+long_mode",
-                "Q10|volume_low|bearish|bearish",
-                0.007,
-                0.014,
-                40,
-                40,
-            ),
-        },
-    }
-    return Topix100Streak353SignalScorecard(
-        run_id="test-run",
-        bundle_path=Path("/tmp/test-run"),
-        universe_long_score_5d=0.005,
-        universe_short_score_1d=-0.001,
-        rows_by_subset=rows_by_subset,
-    )
-
-
-def _build_test_state_snapshot_map() -> dict[str, dict[str, str]]:
-    snapshot_map: dict[str, dict[str, str]] = {}
+def _build_test_signal_snapshot() -> Topix100Streak353SignalScoreLightgbmSnapshot:
+    rows_by_code: dict[str, Topix100Streak353SignalScoreLightgbmSnapshotRow] = {}
     for offset, code in enumerate(range(1001, 1021), start=1):
         if offset % 4 == 1:
             long_mode, short_mode = "bullish", "bullish"
+            long_score, short_score = 0.001, 0.006
         elif offset % 4 == 2:
             long_mode, short_mode = "bearish", "bearish"
+            long_score, short_score = 0.014, 0.003
         elif offset % 4 == 3:
             long_mode, short_mode = "bullish", "bearish"
+            long_score, short_score = 0.009, 0.004
         else:
             long_mode, short_mode = "bearish", "bullish"
-        snapshot_map[str(code)] = {
-            "short_mode": short_mode,
-            "long_mode": long_mode,
-            "state_key": f"long_{long_mode}__short_{short_mode}",
-            "state_label": f"Long {long_mode.title()} / Short {short_mode.title()}",
-        }
-    return snapshot_map
+            long_score, short_score = 0.004, 0.011
+        long_score += offset * 0.0001
+        short_score += (21 - offset) * 0.0001
+        rows_by_code[str(code)] = Topix100Streak353SignalScoreLightgbmSnapshotRow(
+            code=str(code),
+            company_name=f"Stock {offset}",
+            date="2024-03-30",
+            short_mode=short_mode,
+            long_mode=long_mode,
+            state_key=f"long_{long_mode}__short_{short_mode}",
+            state_label=f"Long {long_mode.title()} / Short {short_mode.title()}",
+            long_score_5d=long_score,
+            short_score_1d=short_score,
+        )
+    return Topix100Streak353SignalScoreLightgbmSnapshot(
+        score_source_run_id="test-run",
+        price_feature="price_vs_sma_50_gap",
+        volume_feature="volume_sma_5_20",
+        short_window_streaks=3,
+        long_window_streaks=53,
+        long_target_horizon_days=5,
+        short_target_horizon_days=1,
+        rows_by_code=rows_by_code,
+    )
 
 
 class TestGetRankings:
@@ -654,13 +570,8 @@ class TestGetRankings:
 class TestGetTopix100Ranking:
     def test_default_shape(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking()
 
@@ -688,13 +599,8 @@ class TestGetTopix100Ranking:
 
     def test_supports_price_sma_20_80_metric(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking(metric="price_sma_20_80")
 
@@ -703,13 +609,8 @@ class TestGetTopix100Ranking:
 
     def test_supports_configurable_price_vs_sma_window(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking(
             metric="price_vs_sma_gap",
@@ -722,13 +623,8 @@ class TestGetTopix100Ranking:
 
     def test_assigns_volume_buckets_for_every_decile(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking()
 
@@ -744,13 +640,8 @@ class TestGetTopix100Ranking:
 
     def test_assigns_score_ranks(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking()
 
@@ -770,13 +661,8 @@ class TestGetTopix100Ranking:
 
     def test_with_date(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.load_topix100_streak_353_signal_scorecard",
-            _build_test_signal_scorecard,
-        )
-        monkeypatch.setattr(
-            RankingService,
-            "_load_topix100_state_snapshot_map",
-            lambda self, _target_date: _build_test_state_snapshot_map(),
+            "src.application.services.ranking_service.score_topix100_streak_353_signal_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
         )
         result = topix100_ranking_service.get_topix100_ranking(date="2024-03-29")
 

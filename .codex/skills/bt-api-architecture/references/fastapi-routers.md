@@ -2,7 +2,7 @@
 
 Generated from `apps/bt/src/entrypoints/http/app.py`. Do not edit manually.
 
-Total include_router calls: **20**
+Total include_router calls: **21**
 
 | Order | Router | Line |
 |---|---|---|
@@ -21,8 +21,9 @@ Total include_router calls: **20**
 | 13 | `market_data.router` | `366` |
 | 14 | `chart.router` | `367` |
 | 15 | `analytics_complex.router` | `368` |
-| 16 | `db.router` | `369` |
-| 17 | `dataset_data.router` | `370` |
-| 18 | `dataset.router` | `371` |
-| 19 | `portfolio.router` | `372` |
-| 20 | `watchlist.router` | `373` |
+| 16 | `analytics_research.router` | `369` |
+| 17 | `db.router` | `370` |
+| 18 | `dataset_data.router` | `371` |
+| 19 | `dataset.router` | `372` |
+| 20 | `portfolio.router` | `373` |
+| 21 | `watchlist.router` | `374` |

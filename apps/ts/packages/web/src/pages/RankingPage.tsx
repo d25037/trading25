@@ -68,6 +68,7 @@ interface RankingContentProps {
   activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
+  setRankingParams: (params: RankingParams) => void;
   rankingQuery: ReturnType<typeof useRanking>;
   topix100RankingQuery: ReturnType<typeof useTopix100Ranking>;
   fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
@@ -182,7 +183,7 @@ function buildIntroMetaItems(
     const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
     return [
       { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      { label: 'Read', value: '3-53 streak state + 5d long / 1d short score' },
+      { label: 'Read', value: '3-53 streak state + stage-2 LightGBM score' },
     ];
   }
   return [
@@ -198,6 +199,7 @@ function RankingContent({
   activeSubTab,
   activeDailyView,
   rankingParams,
+  setRankingParams,
   rankingQuery,
   topix100RankingQuery,
   fundamentalRankingQuery,
@@ -246,6 +248,15 @@ function RankingContent({
         volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
         shortModeFilter={rankingParams.topix100ShortMode ?? 'all'}
         longModeFilter={rankingParams.topix100LongMode ?? 'all'}
+        sortBy={rankingParams.topix100SortBy ?? 'rank'}
+        sortOrder={rankingParams.topix100SortOrder ?? 'asc'}
+        onSortChange={(sortBy, sortOrder) =>
+          setRankingParams({
+            ...rankingParams,
+            topix100SortBy: sortBy,
+            topix100SortOrder: sortOrder,
+          })
+        }
       />
     );
   }
@@ -343,6 +354,7 @@ export function RankingPage() {
             activeSubTab={activeSubTab}
             activeDailyView={activeDailyView}
             rankingParams={rankingParams}
+            setRankingParams={setRankingParams}
             rankingQuery={rankingQuery}
             topix100RankingQuery={topix100RankingQuery}
             fundamentalRankingQuery={fundamentalRankingQuery}

@@ -34,6 +34,8 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   topix100VolumeBucket: 'all',
   topix100ShortMode: 'all',
   topix100LongMode: 'all',
+  topix100SortBy: 'rank',
+  topix100SortOrder: 'asc',
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {

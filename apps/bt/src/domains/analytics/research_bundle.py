@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import math
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from types import UnionType
+from typing import Any, Iterable, Literal, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import duckdb
 import pandas as pd
@@ -20,6 +21,7 @@ RESULTS_DB_FILENAME = "results.duckdb"
 SUMMARY_FILENAME = "summary.md"
 PUBLISHED_SUMMARY_FILENAME = "summary.json"
 DEFAULT_RESEARCH_ROOT_NAME = "research"
+BundleResultT = TypeVar("BundleResultT")
 
 
 @dataclass(frozen=True)
@@ -210,6 +212,46 @@ def write_research_bundle(
     return info
 
 
+def write_dataclass_research_bundle(
+    *,
+    experiment_id: str,
+    module: str,
+    function: str,
+    params: dict[str, Any],
+    result: Any,
+    table_field_names: Iterable[str],
+    summary_markdown: str,
+    published_summary: dict[str, Any] | None = None,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = _split_dataclass_bundle_payload(
+        result,
+        table_field_names=table_field_names,
+    )
+    return write_research_bundle(
+        experiment_id=experiment_id,
+        module=module,
+        function=function,
+        params=params,
+        db_path=str(result_metadata["db_path"]),
+        analysis_start_date=_coerce_optional_str(
+            result_metadata.get("analysis_start_date")
+        ),
+        analysis_end_date=_coerce_optional_str(
+            result_metadata.get("analysis_end_date")
+        ),
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=summary_markdown,
+        published_summary=published_summary,
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
 def load_research_bundle_info(bundle_path: str | Path) -> ResearchBundleInfo:
     bundle_dir = _resolve_bundle_dir(bundle_path)
     manifest_path = bundle_dir / MANIFEST_FILENAME
@@ -252,6 +294,38 @@ def load_research_bundle_published_summary(
             f"{info.published_summary_path}"
         )
     return payload
+
+
+def load_dataclass_research_bundle(
+    bundle_path: str | Path,
+    *,
+    result_type: type[BundleResultT],
+    table_field_names: Iterable[str],
+) -> BundleResultT:
+    if not is_dataclass(result_type):
+        raise TypeError("result_type must be a dataclass type")
+
+    table_names = tuple(table_field_names)
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path, table_names=table_names)
+    metadata = dict(info.result_metadata)
+    type_hints = get_type_hints(result_type)
+    table_name_set = set(table_names)
+
+    kwargs: dict[str, Any] = {}
+    for field in fields(result_type):
+        if field.name in table_name_set:
+            kwargs[field.name] = tables[field.name]
+            continue
+        if field.name not in metadata:
+            raise KeyError(
+                f"Research bundle metadata was missing required field '{field.name}'"
+            )
+        kwargs[field.name] = _coerce_bundle_metadata_value(
+            metadata[field.name],
+            type_hints.get(field.name, Any),
+        )
+    return result_type(**kwargs)
 
 
 def list_research_bundle_infos(
@@ -352,6 +426,99 @@ def _sanitize_json_payload(value: Any) -> Any:
         return str(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
+    return value
+
+
+def _split_dataclass_bundle_payload(
+    result: Any,
+    *,
+    table_field_names: Iterable[str],
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    if not is_dataclass(result):
+        raise TypeError("result must be a dataclass instance")
+
+    table_name_set = set(table_field_names)
+    metadata: dict[str, Any] = {}
+    tables: dict[str, pd.DataFrame] = {}
+
+    for field in fields(result):
+        value = getattr(result, field.name)
+        if field.name in table_name_set:
+            if not isinstance(value, pd.DataFrame):
+                raise TypeError(
+                    "Research bundle table fields must be pandas DataFrames: "
+                    f"{field.name}"
+                )
+            tables[field.name] = value
+            continue
+        metadata[field.name] = _sanitize_json_payload(value)
+
+    missing_table_names = table_name_set - set(tables)
+    if missing_table_names:
+        missing = ", ".join(sorted(missing_table_names))
+        raise KeyError(f"Research bundle table fields were missing: {missing}")
+    if "db_path" not in metadata:
+        raise KeyError("Research bundle dataclass result must define db_path")
+    return metadata, tables
+
+
+def _coerce_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _coerce_bundle_metadata_value(value: Any, annotation: Any) -> Any:
+    if annotation is Any:
+        return value
+    if value is None:
+        return None
+
+    origin = get_origin(annotation)
+    if origin in (list, tuple):
+        args = get_args(annotation)
+        if origin is list:
+            element_type = args[0] if args else Any
+            return [
+                _coerce_bundle_metadata_value(element, element_type)
+                for element in value
+            ]
+        if len(args) == 2 and args[1] is Ellipsis:
+            return tuple(
+                _coerce_bundle_metadata_value(element, args[0])
+                for element in value
+            )
+        return tuple(
+            _coerce_bundle_metadata_value(element, args[index])
+            for index, element in enumerate(value)
+        )
+    if origin is dict:
+        key_type, value_type = get_args(annotation) or (Any, Any)
+        return {
+            _coerce_bundle_metadata_value(key, key_type): _coerce_bundle_metadata_value(
+                nested_value,
+                value_type,
+            )
+            for key, nested_value in dict(value).items()
+        }
+    if origin in (UnionType, Union):
+        non_none_args = [
+            option for option in get_args(annotation) if option is not type(None)
+        ]
+        if len(non_none_args) == 1:
+            return _coerce_bundle_metadata_value(value, non_none_args[0])
+        return value
+    if origin is Literal:
+        literal_args = get_args(annotation)
+        if not literal_args:
+            return value
+        base_type = type(literal_args[0])
+        return base_type(value)
+
+    if annotation in (str, int, float, bool):
+        return annotation(value)
+    if annotation is Path:
+        return Path(value)
     return value
 
 

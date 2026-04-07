@@ -60,15 +60,16 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
 
   return (
     <div className="space-y-4">
-      {blocks.map((block, index) => {
+      {blocks.map((block) => {
         const lines = block.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
         if (lines.length === 0) {
           return null;
         }
         const firstLine = lines[0] ?? '';
+        const blockKey = `block:${block}`;
         if (lines.every((line) => line.startsWith('- '))) {
           return (
-            <ul key={index} className="space-y-2 text-sm leading-6 text-foreground">
+            <ul key={blockKey} className="space-y-2 text-sm leading-6 text-foreground">
               {lines.map((line) => (
                 <li key={line} className="rounded-2xl border border-border/60 bg-[var(--app-surface-muted)] px-4 py-3">
                   {line.slice(2)}
@@ -79,7 +80,7 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
         }
         if (firstLine.startsWith('## ')) {
           return (
-            <div key={index} className="space-y-2">
+            <div key={blockKey} className="space-y-2">
               <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 {firstLine.slice(3)}
               </h3>
@@ -91,13 +92,13 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
         }
         if (firstLine.startsWith('# ')) {
           return (
-            <h2 key={index} className="text-xl font-semibold tracking-tight text-foreground">
+            <h2 key={blockKey} className="text-xl font-semibold tracking-tight text-foreground">
               {firstLine.slice(2)}
             </h2>
           );
         }
         return (
-          <p key={index} className="text-sm leading-6 text-foreground">
+          <p key={blockKey} className="text-sm leading-6 text-foreground">
             {lines.join(' ')}
           </p>
         );
@@ -144,8 +145,8 @@ function ReadingSectionBlock({
     >
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{section.title}</p>
       <div className="mt-3 space-y-3">
-        {section.items.map((item, index) => (
-          <p key={`${section.title}-${index}`} className="text-sm leading-6 text-foreground">
+        {section.items.map((item) => (
+          <p key={`${section.title}:${item}`} className="text-sm leading-6 text-foreground">
             {item}
           </p>
         ))}

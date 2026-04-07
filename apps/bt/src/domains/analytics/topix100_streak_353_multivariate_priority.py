@@ -31,9 +31,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_dataclass_research_bundle,
+    write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
@@ -43,6 +42,7 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
+    VolumeBucketKey,
     VOLUME_BUCKET_LABEL_MAP,
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
@@ -94,6 +94,16 @@ _MODE_VALUE_LABEL_MAP: dict[str, str] = {
     "bearish": "Bearish",
 }
 _PRIMARY_HORIZON_WEIGHT_ORDER: tuple[int, ...] = DEFAULT_FUTURE_HORIZONS
+_RESULT_TABLE_NAMES: tuple[str, ...] = (
+    "state_decile_horizon_panel_df",
+    "subset_daily_panel_df",
+    "subset_candidate_scorecard_df",
+    "subset_rule_scorecard_df",
+    "feature_priority_df",
+    "feature_leave_one_out_df",
+    "full_feature_setup_df",
+    "validation_extreme_bucket_comparison_df",
+)
 
 
 @dataclass(frozen=True)
@@ -270,7 +280,7 @@ def write_topix100_streak_353_multivariate_priority_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_research_bundle(
+    return write_dataclass_research_bundle(
         experiment_id=TOPIX100_STREAK_353_MULTIVARIATE_PRIORITY_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_streak_353_multivariate_priority_research",
@@ -286,42 +296,8 @@ def write_topix100_streak_353_multivariate_priority_research_bundle(
             "min_discovery_date_count": result.min_discovery_date_count,
             "min_validation_date_count": result.min_validation_date_count,
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata={
-            "db_path": result.db_path,
-            "source_mode": result.source_mode,
-            "source_detail": result.source_detail,
-            "available_start_date": result.available_start_date,
-            "available_end_date": result.available_end_date,
-            "analysis_start_date": result.analysis_start_date,
-            "analysis_end_date": result.analysis_end_date,
-            "price_feature": result.price_feature,
-            "price_feature_label": result.price_feature_label,
-            "volume_feature": result.volume_feature,
-            "volume_feature_label": result.volume_feature_label,
-            "short_window_streaks": result.short_window_streaks,
-            "long_window_streaks": result.long_window_streaks,
-            "future_horizons": list(result.future_horizons),
-            "validation_ratio": result.validation_ratio,
-            "min_discovery_date_count": result.min_discovery_date_count,
-            "min_validation_date_count": result.min_validation_date_count,
-            "universe_constituent_count": result.universe_constituent_count,
-            "covered_constituent_count": result.covered_constituent_count,
-            "joined_event_count": result.joined_event_count,
-            "valid_date_count": result.valid_date_count,
-        },
-        result_tables={
-            "state_decile_horizon_panel_df": result.state_decile_horizon_panel_df,
-            "subset_daily_panel_df": result.subset_daily_panel_df,
-            "subset_candidate_scorecard_df": result.subset_candidate_scorecard_df,
-            "subset_rule_scorecard_df": result.subset_rule_scorecard_df,
-            "feature_priority_df": result.feature_priority_df,
-            "feature_leave_one_out_df": result.feature_leave_one_out_df,
-            "full_feature_setup_df": result.full_feature_setup_df,
-            "validation_extreme_bucket_comparison_df": result.validation_extreme_bucket_comparison_df,
-        },
+        result=result,
+        table_field_names=_RESULT_TABLE_NAMES,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary_payload(result),
         output_root=output_root,
@@ -333,41 +309,10 @@ def write_topix100_streak_353_multivariate_priority_research_bundle(
 def load_topix100_streak_353_multivariate_priority_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100Streak353MultivariatePriorityResearchResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    metadata = dict(info.result_metadata)
-    return Topix100Streak353MultivariatePriorityResearchResult(
-        db_path=str(metadata["db_path"]),
-        source_mode=cast(SourceMode, metadata["source_mode"]),
-        source_detail=str(metadata["source_detail"]),
-        available_start_date=metadata.get("available_start_date"),
-        available_end_date=metadata.get("available_end_date"),
-        analysis_start_date=metadata.get("analysis_start_date"),
-        analysis_end_date=metadata.get("analysis_end_date"),
-        price_feature=str(metadata["price_feature"]),
-        price_feature_label=str(metadata["price_feature_label"]),
-        volume_feature=str(metadata["volume_feature"]),
-        volume_feature_label=str(metadata["volume_feature_label"]),
-        short_window_streaks=int(metadata["short_window_streaks"]),
-        long_window_streaks=int(metadata["long_window_streaks"]),
-        future_horizons=tuple(int(value) for value in metadata["future_horizons"]),
-        validation_ratio=float(metadata["validation_ratio"]),
-        min_discovery_date_count=int(metadata["min_discovery_date_count"]),
-        min_validation_date_count=int(metadata["min_validation_date_count"]),
-        universe_constituent_count=int(metadata["universe_constituent_count"]),
-        covered_constituent_count=int(metadata["covered_constituent_count"]),
-        joined_event_count=int(metadata["joined_event_count"]),
-        valid_date_count=int(metadata["valid_date_count"]),
-        state_decile_horizon_panel_df=tables["state_decile_horizon_panel_df"],
-        subset_daily_panel_df=tables["subset_daily_panel_df"],
-        subset_candidate_scorecard_df=tables["subset_candidate_scorecard_df"],
-        subset_rule_scorecard_df=tables["subset_rule_scorecard_df"],
-        feature_priority_df=tables["feature_priority_df"],
-        feature_leave_one_out_df=tables["feature_leave_one_out_df"],
-        full_feature_setup_df=tables["full_feature_setup_df"],
-        validation_extreme_bucket_comparison_df=tables[
-            "validation_extreme_bucket_comparison_df"
-        ],
+    return load_dataclass_research_bundle(
+        bundle_path,
+        result_type=Topix100Streak353MultivariatePriorityResearchResult,
+        table_field_names=_RESULT_TABLE_NAMES,
     )
 
 
@@ -474,8 +419,7 @@ def _build_subset_candidate_scorecard_df(
     summary_rows: list[dict[str, Any]] = []
     grouped = subset_daily_panel_df.groupby(group_columns + ["horizon_days"], observed=True, sort=False)
     for keys, scoped_df in grouped:
-        if not isinstance(keys, tuple):
-            keys = (keys,)
+        keys = cast(tuple[Any, ...], keys if isinstance(keys, tuple) else (keys,))
         (
             sample_split,
             subset_key,
@@ -531,7 +475,7 @@ def _build_subset_candidate_scorecard_df(
     for keys, scoped_df in grouped_wide:
         if not isinstance(keys, tuple):
             keys = (keys,)
-        record = {
+        record: dict[str, Any] = {
             column: value for column, value in zip(wide_group_columns, keys, strict=True)
         }
         long_scores: list[float] = []
@@ -1167,7 +1111,10 @@ def _format_feature_value(feature: str, value: Any) -> str:
     if feature == "bucket":
         return str(value)
     if feature == "volume":
-        return str(VOLUME_BUCKET_LABEL_MAP.get(str(value), value))
+        volume_key = str(value)
+        if volume_key in VOLUME_BUCKET_LABEL_MAP:
+            return VOLUME_BUCKET_LABEL_MAP[cast(VolumeBucketKey, volume_key)]
+        return volume_key
     if feature in {"short_mode", "long_mode"}:
         prefix = "Short" if feature == "short_mode" else "Long"
         mode_label = _MODE_VALUE_LABEL_MAP.get(str(value), str(value).title())

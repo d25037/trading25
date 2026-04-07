@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 import pytest
@@ -11,11 +13,26 @@ from src.domains.analytics.research_bundle import (
     find_latest_research_bundle_path,
     get_research_bundle_dir,
     list_research_bundle_infos,
+    load_dataclass_research_bundle,
     load_research_bundle_info,
     load_research_bundle_published_summary,
     load_research_bundle_tables,
+    write_dataclass_research_bundle,
     write_research_bundle,
 )
+
+
+@dataclass(frozen=True)
+class _ExampleDataclassResult:
+    db_path: str
+    source_mode: Literal["snapshot", "live"]
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    future_horizons: tuple[int, ...]
+    top_k_values: tuple[int, ...]
+    row_count: int
+    summary_df: pd.DataFrame
+    detail_df: pd.DataFrame
 
 
 def test_research_bundle_write_and_load_roundtrip(tmp_path: Path) -> None:
@@ -195,3 +212,42 @@ def test_list_research_bundle_infos_returns_all_manifests(tmp_path: Path) -> Non
         "unit-test/example-b",
         "unit-test/example-a",
     ]
+
+
+def test_dataclass_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
+    result = _ExampleDataclassResult(
+        db_path=str(tmp_path / "market.duckdb"),
+        source_mode="snapshot",
+        analysis_start_date="2024-01-01",
+        analysis_end_date="2024-12-31",
+        future_horizons=(1, 5, 10),
+        top_k_values=(5, 10),
+        row_count=2,
+        summary_df=pd.DataFrame([{"metric": "alpha", "value": 1.0}]),
+        detail_df=pd.DataFrame([{"date": "2024-01-05", "code": "1111"}]),
+    )
+
+    bundle = write_dataclass_research_bundle(
+        experiment_id="unit-test/dataclass-example",
+        module="tests.example",
+        function="run_dataclass_example",
+        params={"top_k_values": [5, 10]},
+        result=result,
+        table_field_names=("summary_df", "detail_df"),
+        summary_markdown="# Dataclass Example\n",
+        output_root=tmp_path,
+        run_id="20260406_220000_adapter00",
+    )
+    loaded = load_dataclass_research_bundle(
+        bundle.bundle_dir,
+        result_type=_ExampleDataclassResult,
+        table_field_names=("summary_df", "detail_df"),
+    )
+
+    assert loaded.db_path == result.db_path
+    assert loaded.source_mode == "snapshot"
+    assert loaded.future_horizons == (1, 5, 10)
+    assert loaded.top_k_values == (5, 10)
+    assert loaded.row_count == 2
+    assert loaded.summary_df.equals(result.summary_df)
+    assert loaded.detail_df.equals(result.detail_df)

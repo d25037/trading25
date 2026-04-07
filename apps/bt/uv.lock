@@ -2203,6 +2203,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "lightgbm" },
     { name = "loguru" },
     { name = "marimo" },
     { name = "numpy" },
@@ -2236,15 +2237,13 @@ dev = [
 nautilus = [
     { name = "nautilus-trader" },
 ]
-research = [
-    { name = "lightgbm" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "duckdb", specifier = ">=1.1.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "lightgbm", specifier = ">=4.0.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "marimo", specifier = ">=0.10.0" },
     { name = "numpy", specifier = ">=1.20.0" },
@@ -2276,7 +2275,7 @@ dev = [
     { name = "ruff", specifier = ">=0.12.11" },
 ]
 nautilus = [{ name = "nautilus-trader", specifier = ">=1.221.0" }]
-research = [{ name = "lightgbm", specifier = ">=4.0.0" }]
+research = []
 
 [[package]]
 name = "traitlets"

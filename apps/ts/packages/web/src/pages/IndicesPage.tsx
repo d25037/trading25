@@ -343,6 +343,7 @@ function TopixModeRibbon({
       </div>
       <div
         aria-label={`${label} ribbon`}
+        role="img"
         className="mt-3 grid h-3 gap-px overflow-hidden rounded-full bg-border/50"
         style={{ gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))` }}
       >

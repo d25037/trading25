@@ -48,7 +48,7 @@ describe('Topix100RankingFilters', () => {
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
       screen.getByText(
-        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. Overlay the fixed streak 3/53 short and long states plus the 5d long / 1d short lookup score.'
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. Overlay the fixed streak 3/53 short and long states plus the stage-2 LightGBM score for 5d long / 1d short selection.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();
@@ -68,7 +68,9 @@ describe('Topix100RankingFilters', () => {
       />
     );
 
-    expect(screen.getByText('Legacy SMA 20/80 comparison view.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Legacy SMA 20/80 comparison view. Stage-2 score stays on the streak 3/53 + SMA50 / volume 5/20 LightGBM read.')
+    ).toBeInTheDocument();
     expect(screen.queryByText('SMA Window')).not.toBeInTheDocument();
   });
 

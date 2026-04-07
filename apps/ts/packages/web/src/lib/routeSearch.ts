@@ -18,6 +18,7 @@ import type {
   RankingPageTab,
   RankingParams,
   Topix100PriceSmaWindow,
+  Topix100RankingSortKey,
   Topix100RankingMetric,
   Topix100PriceBucketFilter,
   Topix100VolumeBucketFilter,
@@ -85,6 +86,8 @@ export interface ScreeningRouteSearch {
   rankingTopix100VolumeBucket?: Topix100VolumeBucketFilter;
   rankingTopix100ShortMode?: Topix100StreakModeFilter;
   rankingTopix100LongMode?: Topix100StreakModeFilter;
+  rankingTopix100SortBy?: Topix100RankingSortKey;
+  rankingTopix100SortOrder?: SortOrder;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -105,6 +108,8 @@ export interface RankingRouteSearch {
   rankingTopix100VolumeBucket?: Topix100VolumeBucketFilter;
   rankingTopix100ShortMode?: Topix100StreakModeFilter;
   rankingTopix100LongMode?: Topix100StreakModeFilter;
+  rankingTopix100SortBy?: Topix100RankingSortKey;
+  rankingTopix100SortOrder?: SortOrder;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -138,6 +143,21 @@ const TOPIX100_PRICE_SMA_WINDOW_VALUES: Topix100PriceSmaWindow[] = [20, 50, 100]
 const TOPIX100_PRICE_BUCKET_VALUES: Topix100PriceBucketFilter[] = ['all', 'q1', 'q10', 'q234'];
 const TOPIX100_VOLUME_BUCKET_VALUES: Topix100VolumeBucketFilter[] = ['all', 'high', 'low'];
 const TOPIX100_STREAK_MODE_VALUES: Topix100StreakModeFilter[] = ['all', 'bullish', 'bearish'];
+const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
+  'rank',
+  'code',
+  'companyName',
+  'metric',
+  'volumeBucket',
+  'streakShortMode',
+  'streakLongMode',
+  'longScore5d',
+  'shortScore1d',
+  'volumeSma5_20',
+  'currentPrice',
+  'sector33Name',
+  'volume',
+];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = [
   'runner',
@@ -258,6 +278,10 @@ function normalizeTopix100VolumeBucketFilter(value: unknown): Topix100VolumeBuck
 
 function normalizeTopix100StreakModeFilter(value: unknown): Topix100StreakModeFilter | undefined {
   return normalizeEnum(normalizeString(value), TOPIX100_STREAK_MODE_VALUES);
+}
+
+function normalizeTopix100RankingSortKey(value: unknown): Topix100RankingSortKey | undefined {
+  return normalizeEnum(normalizeString(value), TOPIX100_RANKING_SORT_KEY_VALUES);
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {
@@ -547,6 +571,8 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
     'rankingTopix100LongMode',
     normalizeTopix100StreakModeFilter(search.rankingTopix100LongMode)
   );
+  assignIfDefined(next, 'rankingTopix100SortBy', normalizeTopix100RankingSortKey(search.rankingTopix100SortBy));
+  assignIfDefined(next, 'rankingTopix100SortOrder', normalizeEnum(search.rankingTopix100SortOrder, SORT_ORDER_VALUES));
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -594,6 +620,8 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
       ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
       ['topix100ShortMode', search.rankingTopix100ShortMode],
       ['topix100LongMode', search.rankingTopix100LongMode],
+      ['topix100SortBy', search.rankingTopix100SortBy],
+      ['topix100SortOrder', search.rankingTopix100SortOrder],
     ]),
     fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
       ['limit', search.fundamentalLimit],
@@ -625,6 +653,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
       ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
       ['topix100ShortMode', search.rankingTopix100ShortMode],
       ['topix100LongMode', search.rankingTopix100LongMode],
+      ['topix100SortBy', search.rankingTopix100SortBy],
+      ['topix100SortOrder', search.rankingTopix100SortOrder],
     ]),
     fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
       ['limit', search.fundamentalLimit],
@@ -789,6 +819,18 @@ export function serializeScreeningSearch(state: {
     state.rankingParams.topix100LongMode,
     DEFAULT_RANKING_PARAMS.topix100LongMode
   );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTopix100SortBy',
+    state.rankingParams.topix100SortBy,
+    DEFAULT_RANKING_PARAMS.topix100SortBy
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTopix100SortOrder',
+    state.rankingParams.topix100SortOrder,
+    DEFAULT_RANKING_PARAMS.topix100SortOrder
+  );
 
   assignIfDefinedAndNotDefault(
     next,
@@ -856,6 +898,8 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
     'rankingTopix100LongMode',
     normalizeTopix100StreakModeFilter(search.rankingTopix100LongMode)
   );
+  assignIfDefined(next, 'rankingTopix100SortBy', normalizeTopix100RankingSortKey(search.rankingTopix100SortBy));
+  assignIfDefined(next, 'rankingTopix100SortOrder', normalizeEnum(search.rankingTopix100SortOrder, SORT_ORDER_VALUES));
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -934,6 +978,18 @@ export function serializeRankingSearch(state: {
     'rankingTopix100LongMode',
     state.rankingParams.topix100LongMode,
     DEFAULT_RANKING_PARAMS.topix100LongMode
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTopix100SortBy',
+    state.rankingParams.topix100SortBy,
+    DEFAULT_RANKING_PARAMS.topix100SortBy
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTopix100SortOrder',
+    state.rankingParams.topix100SortOrder,
+    DEFAULT_RANKING_PARAMS.topix100SortOrder
   );
 
   assignIfDefinedAndNotDefault(
