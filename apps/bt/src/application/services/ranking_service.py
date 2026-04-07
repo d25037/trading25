@@ -23,6 +23,14 @@ from src.domains.analytics.fundamental_ranking import (
     resolve_fy_cycle_key as _resolve_fy_cycle_key,
     to_nullable_float as _to_nullable_float,
 )
+from src.domains.analytics.topix100_streak_353_transfer import (
+    DEFAULT_LONG_WINDOW_STREAKS,
+    DEFAULT_SHORT_WINDOW_STREAKS,
+)
+from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+    score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
+)
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
     FundamentalRankingItem,
@@ -51,6 +59,8 @@ _TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
 _TOPIX100_PRICE_SMA_WINDOWS: frozenset[int] = frozenset({20, 50, 100})
 _TOPIX100_VOLUME_SHORT_WINDOW = 5
 _TOPIX100_VOLUME_LONG_WINDOW = 20
+_TOPIX100_SHORT_WINDOW_STREAKS = DEFAULT_SHORT_WINDOW_STREAKS
+_TOPIX100_LONG_WINDOW_STREAKS = DEFAULT_LONG_WINDOW_STREAKS
 
 
 def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
@@ -162,6 +172,22 @@ def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem
     )
 
 
+def _build_optional_desc_ranks(
+    items: list[Topix100RankingItem],
+    field_name: str,
+) -> dict[str, int]:
+    scoped = [
+        (item.code, getattr(item, field_name))
+        for item in items
+        if getattr(item, field_name) is not None
+    ]
+    scoped.sort(key=lambda pair: (cast(float, pair[1]), pair[0]), reverse=True)
+    return {
+        code: rank
+        for rank, (code, _value) in enumerate(scoped, start=1)
+    }
+
+
 class RankingService:
     """マーケットランキングサービス"""
 
@@ -261,35 +287,92 @@ class RankingService:
         )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
+        score_snapshot = score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+            self._reader.db_path,
+            target_date=target_date,
+            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+            connection=self._reader.conn,
+        )
 
-        items = [
-            Topix100RankingItem(
-                rank=int(row["rank"]),
-                code=str(row["code"]),
-                companyName=str(row["company_name"]),
-                marketCode=str(row["market_code"]),
-                sector33Name=str(row["sector_33_name"]),
-                scaleCategory=str(row["scale_category"] or ""),
-                currentPrice=float(row["current_price"]),
-                volume=float(row["volume"]),
-                priceVsSmaGap=float(row["price_vs_sma_gap"]),
-                priceSma20_80=float(row["price_sma_20_80"]),
-                volumeSma5_20=float(row["volume_sma_5_20"]),
-                priceDecile=int(row["price_decile"]),
-                priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
-                volumeBucket=(
-                    cast(Topix100VolumeBucket, row["volume_bucket"])
-                    if row["volume_bucket"] is not None
-                    else None
-                ),
+        items = []
+        for row in rows:
+            code = str(row["code"])
+            state_snapshot = score_snapshot.rows_by_code.get(code)
+            items.append(
+                Topix100RankingItem(
+                    rank=int(row["rank"]),
+                    code=code,
+                    companyName=str(row["company_name"]),
+                    marketCode=str(row["market_code"]),
+                    sector33Name=str(row["sector_33_name"]),
+                    scaleCategory=str(row["scale_category"] or ""),
+                    currentPrice=float(row["current_price"]),
+                    volume=float(row["volume"]),
+                    priceVsSmaGap=float(row["price_vs_sma_gap"]),
+                    priceSma20_80=float(row["price_sma_20_80"]),
+                    volumeSma5_20=float(row["volume_sma_5_20"]),
+                    priceDecile=int(row["price_decile"]),
+                    priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
+                    volumeBucket=(
+                        cast(Topix100VolumeBucket, str(row["volume_bucket"]).replace("volume_", ""))
+                        if row["volume_bucket"] is not None
+                        else None
+                    ),
+                    streakShortMode=(
+                        cast(Literal["bullish", "bearish"], state_snapshot.short_mode)
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakLongMode=(
+                        cast(Literal["bullish", "bearish"], state_snapshot.long_mode)
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakStateKey=(
+                        state_snapshot.state_key
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    streakStateLabel=(
+                        state_snapshot.state_label
+                        if state_snapshot is not None
+                        else None
+                    ),
+                    intradayScore=(state_snapshot.intraday_score if state_snapshot is not None else None),
+                )
             )
-            for row in rows
+
+        intraday_long_ranks = _build_optional_desc_ranks(items, "intradayScore")
+        intraday_short_ranks = _build_optional_desc_ranks(
+            [
+                item.model_copy(
+                    update={
+                        "intradayScore": (-item.intradayScore if item.intradayScore is not None else None),
+                    }
+                )
+                for item in items
+            ],
+            "intradayScore",
+        )
+        items = [
+            item.model_copy(
+                update={
+                    "intradayLongRank": intraday_long_ranks.get(item.code),
+                    "intradayShortRank": intraday_short_ranks.get(item.code),
+                }
+            )
+            for item in items
         ]
 
         return Topix100RankingResponse(
             date=target_date,
             rankingMetric=metric,
             smaWindow=validated_sma_window,
+            shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+            longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            scoreSourceRunId=score_snapshot.score_source_run_id,
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
@@ -578,14 +661,10 @@ class RankingService:
             volume_ranked AS (
                 SELECT
                     *,
-                    CASE
-                        WHEN price_bucket IN ('q1', 'q10', 'q234')
-                        THEN NTILE(2) OVER (
-                            PARTITION BY price_bucket
-                            ORDER BY volume_sma_5_20 DESC, code ASC
-                        )
-                        ELSE NULL
-                    END AS volume_half_rank
+                    NTILE(2) OVER (
+                        PARTITION BY price_decile
+                        ORDER BY volume_sma_5_20 DESC, code ASC
+                    ) AS volume_half_rank
                 FROM bucketed
             )
             SELECT
@@ -603,8 +682,8 @@ class RankingService:
                 price_decile,
                 price_bucket,
                 CASE
-                    WHEN volume_half_rank = 1 THEN 'high'
-                    WHEN volume_half_rank = 2 THEN 'low'
+                    WHEN volume_half_rank = 1 THEN 'volume_high'
+                    WHEN volume_half_rank = 2 THEN 'volume_low'
                     ELSE NULL
                 END AS volume_bucket
             FROM volume_ranked

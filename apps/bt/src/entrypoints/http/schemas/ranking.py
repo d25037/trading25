@@ -69,6 +69,7 @@ class MarketRankingResponse(BaseModel):
 
 Topix100RankingMetric = Literal["price_vs_sma_gap", "price_sma_20_80"]
 Topix100PriceSmaWindow = Literal[20, 50, 100]
+Topix100StreakMode = Literal["bullish", "bearish"]
 
 
 class Topix100RankingItem(BaseModel):
@@ -88,6 +89,17 @@ class Topix100RankingItem(BaseModel):
     priceDecile: int
     priceBucket: Literal["q1", "q10", "q234", "other"]
     volumeBucket: Literal["high", "low"] | None = None
+    streakShortMode: Topix100StreakMode | None = None
+    streakLongMode: Topix100StreakMode | None = None
+    streakStateKey: str | None = None
+    streakStateLabel: str | None = None
+    longScore5d: float | None = None
+    shortScore1d: float | None = None
+    longScore5dRank: int | None = None
+    shortScore1dRank: int | None = None
+    intradayScore: float | None = None
+    intradayLongRank: int | None = None
+    intradayShortRank: int | None = None
 
 
 class Topix100RankingResponse(BaseModel):
@@ -96,6 +108,12 @@ class Topix100RankingResponse(BaseModel):
     date: str
     rankingMetric: Topix100RankingMetric
     smaWindow: Topix100PriceSmaWindow
+    shortWindowStreaks: int
+    longWindowStreaks: int
+    longScoreHorizonDays: int = 5
+    shortScoreHorizonDays: int = 1
+    intradayScoreTarget: Literal["next_session_open_close"] = "next_session_open_close"
+    scoreSourceRunId: str | None = None
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)
     lastUpdated: str

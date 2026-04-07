@@ -61,6 +61,7 @@ export type Topix100PriceBucket = 'q1' | 'q10' | 'q234' | 'other';
 export type Topix100VolumeBucket = 'high' | 'low' | null;
 export type Topix100RankingMetric = 'price_vs_sma_gap' | 'price_sma_20_80';
 export type Topix100PriceSmaWindow = 20 | 50 | 100;
+export type Topix100StreakMode = 'bullish' | 'bearish';
 
 export interface Topix100RankingItem {
   rank: number;
@@ -77,12 +78,29 @@ export interface Topix100RankingItem {
   priceDecile: number;
   priceBucket: Topix100PriceBucket;
   volumeBucket: Topix100VolumeBucket;
+  streakShortMode?: Topix100StreakMode | null;
+  streakLongMode?: Topix100StreakMode | null;
+  streakStateKey?: string | null;
+  streakStateLabel?: string | null;
+  longScore5d?: number | null;
+  shortScore1d?: number | null;
+  longScore5dRank?: number | null;
+  shortScore1dRank?: number | null;
+  intradayScore?: number | null;
+  intradayLongRank?: number | null;
+  intradayShortRank?: number | null;
 }
 
 export interface Topix100RankingResponse {
   date: string;
   rankingMetric: Topix100RankingMetric;
   smaWindow: Topix100PriceSmaWindow;
+  shortWindowStreaks: number;
+  longWindowStreaks: number;
+  longScoreHorizonDays: number;
+  shortScoreHorizonDays: number;
+  intradayScoreTarget: 'next_session_open_close';
+  scoreSourceRunId?: string | null;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;

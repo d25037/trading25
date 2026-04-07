@@ -1,0 +1,169 @@
+"""Run TOPIX extreme-mode mean-reversion comparison and persist a research bundle."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Sequence
+
+_BT_ROOT = Path(__file__).resolve().parents[2]
+_BT_ROOT_STR = str(_BT_ROOT)
+if _BT_ROOT_STR not in sys.path:
+    sys.path.insert(0, _BT_ROOT_STR)
+
+from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
+from src.domains.analytics.topix_extreme_mode_mean_reversion_comparison import (  # noqa: E402
+    DEFAULT_HOLD_DAYS,
+    run_topix_extreme_mode_mean_reversion_comparison_research,
+    write_topix_extreme_mode_mean_reversion_comparison_bundle,
+)
+from src.domains.analytics.topix_extreme_close_to_close_mode import (  # noqa: E402
+    DEFAULT_CANDIDATE_WINDOWS as DEFAULT_NORMAL_CANDIDATE_WINDOWS,
+    DEFAULT_FUTURE_HORIZONS,
+    DEFAULT_MIN_MODE_DAYS,
+    DEFAULT_VALIDATION_RATIO,
+)
+from src.domains.analytics.topix_streak_extreme_mode import (  # noqa: E402
+    DEFAULT_CANDIDATE_WINDOWS as DEFAULT_STREAK_CANDIDATE_WINDOWS,
+    DEFAULT_MIN_MODE_CANDLES,
+)
+from src.shared.config.settings import get_settings  # noqa: E402
+
+DEFAULT_NORMAL_WINDOW_SPEC = (
+    f"{DEFAULT_NORMAL_CANDIDATE_WINDOWS[0]}:{DEFAULT_NORMAL_CANDIDATE_WINDOWS[-1]}"
+)
+DEFAULT_STREAK_WINDOW_SPEC = (
+    f"{DEFAULT_STREAK_CANDIDATE_WINDOWS[0]}:{DEFAULT_STREAK_CANDIDATE_WINDOWS[-1]}"
+)
+DEFAULT_FUTURE_HORIZON_SPEC = ",".join(str(value) for value in DEFAULT_FUTURE_HORIZONS)
+DEFAULT_HOLD_DAY_SPEC = ",".join(str(value) for value in DEFAULT_HOLD_DAYS)
+
+
+def _parse_positive_int_sequence(raw: str) -> tuple[int, ...]:
+    values: set[int] = set()
+    for token in raw.split(","):
+        stripped = token.strip()
+        if not stripped:
+            continue
+        if ":" in stripped:
+            parts = [part.strip() for part in stripped.split(":")]
+            if len(parts) not in (2, 3):
+                raise argparse.ArgumentTypeError(
+                    f"Invalid range token: {stripped!r}. Expected start:end or start:end:step."
+                )
+            try:
+                start = int(parts[0])
+                end = int(parts[1])
+                step = int(parts[2]) if len(parts) == 3 else 1
+            except ValueError as exc:
+                raise argparse.ArgumentTypeError(
+                    f"Invalid integer in range token: {stripped!r}"
+                ) from exc
+            if start <= 0 or end <= 0 or step <= 0 or end < start:
+                raise argparse.ArgumentTypeError(
+                    f"Invalid positive range token: {stripped!r}"
+                )
+            values.update(range(start, end + 1, step))
+            continue
+        try:
+            value = int(stripped)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                f"Invalid integer token: {stripped!r}"
+            ) from exc
+        if value <= 0:
+            raise argparse.ArgumentTypeError(
+                f"Values must be positive integers: {stripped!r}"
+            )
+        values.add(value)
+
+    if not values:
+        raise argparse.ArgumentTypeError("Provide at least one positive integer")
+    return tuple(sorted(values))
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run reproducible simple mean-reversion backtests comparing the "
+            "normal and streak TOPIX extreme modes."
+        )
+    )
+    parser.add_argument("--db-path", default=str(get_settings().market_db_path))
+    parser.add_argument("--start-date")
+    parser.add_argument("--end-date")
+    parser.add_argument(
+        "--normal-candidate-windows",
+        default=DEFAULT_NORMAL_WINDOW_SPEC,
+        help="Comma-separated integers and/or inclusive trading-day ranges for the normal mode.",
+    )
+    parser.add_argument(
+        "--streak-candidate-windows",
+        default=DEFAULT_STREAK_WINDOW_SPEC,
+        help="Comma-separated integers and/or inclusive streak-candle ranges for the streak mode.",
+    )
+    parser.add_argument(
+        "--future-horizons",
+        default=DEFAULT_FUTURE_HORIZON_SPEC,
+        help="Comma-separated future horizons used when selecting both modes.",
+    )
+    parser.add_argument(
+        "--hold-days",
+        default=DEFAULT_HOLD_DAY_SPEC,
+        help="Comma-separated hold durations for the simple backtests. Example: 1,5,10,20.",
+    )
+    parser.add_argument(
+        "--validation-ratio",
+        type=float,
+        default=DEFAULT_VALIDATION_RATIO,
+    )
+    parser.add_argument(
+        "--min-normal-mode-days",
+        type=int,
+        default=DEFAULT_MIN_MODE_DAYS,
+    )
+    parser.add_argument(
+        "--min-streak-mode-candles",
+        type=int,
+        default=DEFAULT_MIN_MODE_CANDLES,
+    )
+    add_bundle_output_arguments(parser)
+    args = parser.parse_args(argv)
+    args.normal_candidate_windows = _parse_positive_int_sequence(
+        args.normal_candidate_windows
+    )
+    args.streak_candidate_windows = _parse_positive_int_sequence(
+        args.streak_candidate_windows
+    )
+    args.future_horizons = _parse_positive_int_sequence(args.future_horizons)
+    args.hold_days = _parse_positive_int_sequence(args.hold_days)
+    return args
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    result = run_topix_extreme_mode_mean_reversion_comparison_research(
+        args.db_path,
+        start_date=args.start_date,
+        end_date=args.end_date,
+        normal_candidate_windows=args.normal_candidate_windows,
+        streak_candidate_windows=args.streak_candidate_windows,
+        future_horizons=args.future_horizons,
+        hold_days=args.hold_days,
+        validation_ratio=args.validation_ratio,
+        min_normal_mode_days=args.min_normal_mode_days,
+        min_streak_mode_candles=args.min_streak_mode_candles,
+    )
+    bundle = write_topix_extreme_mode_mean_reversion_comparison_bundle(
+        result,
+        output_root=Path(args.output_root) if args.output_root else None,
+        run_id=args.run_id,
+        notes=args.notes,
+    )
+    emit_bundle_payload(bundle)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

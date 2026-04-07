@@ -19,6 +19,10 @@ from src.domains.analytics.fundamental_ranking import (
     normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
 )
+from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    Topix100Streak353NextSessionIntradayLightgbmSnapshot,
+    Topix100Streak353NextSessionIntradayLightgbmSnapshotRow,
+)
 from src.application.services.ranking_service import (
     RankingService,
     _build_market_filter,
@@ -396,6 +400,42 @@ def topix100_ranking_service(tmp_path):
     reader.close()
 
 
+def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
+    rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow] = {}
+    for offset, code in enumerate(range(1001, 1021), start=1):
+        if offset % 4 == 1:
+            long_mode, short_mode = "bullish", "bullish"
+            intraday_score = -0.004
+        elif offset % 4 == 2:
+            long_mode, short_mode = "bearish", "bearish"
+            intraday_score = 0.013
+        elif offset % 4 == 3:
+            long_mode, short_mode = "bullish", "bearish"
+            intraday_score = 0.008
+        else:
+            long_mode, short_mode = "bearish", "bullish"
+            intraday_score = -0.01
+        intraday_score += (11 - offset) * 0.0002
+        rows_by_code[str(code)] = Topix100Streak353NextSessionIntradayLightgbmSnapshotRow(
+            code=str(code),
+            company_name=f"Stock {offset}",
+            date="2024-03-30",
+            short_mode=short_mode,
+            long_mode=long_mode,
+            state_key=f"long_{long_mode}__short_{short_mode}",
+            state_label=f"Long {long_mode.title()} / Short {short_mode.title()}",
+            intraday_score=intraday_score,
+        )
+    return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+        score_source_run_id="test-run",
+        price_feature="price_vs_sma_50_gap",
+        volume_feature="volume_sma_5_20",
+        short_window_streaks=3,
+        long_window_streaks=53,
+        rows_by_code=rows_by_code,
+    )
+
+
 class TestGetRankings:
     def test_default(self, service):
         result = service.get_rankings()
@@ -524,26 +564,66 @@ class TestGetRankings:
 
 
 class TestGetTopix100Ranking:
-    def test_default_shape(self, topix100_ranking_service):
+    def test_runtime_scoring_uses_decile_only_categorical_features(
+        self, topix100_ranking_service, monkeypatch
+    ):
+        captured_kwargs: dict[str, object] = {}
+
+        def _score_stub(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return _build_test_signal_snapshot()
+
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            _score_stub,
+        )
+
+        topix100_ranking_service.get_topix100_ranking()
+
+        assert captured_kwargs["categorical_feature_columns"] == ("decile",)
+
+    def test_default_shape(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
         result = topix100_ranking_service.get_topix100_ranking()
 
         assert result.date == "2024-03-30"
         assert result.rankingMetric == "price_vs_sma_gap"
         assert result.smaWindow == 50
+        assert result.shortWindowStreaks == 3
+        assert result.longWindowStreaks == 53
+        assert result.intradayScoreTarget == "next_session_open_close"
+        assert result.scoreSourceRunId == "test-run"
         assert result.itemCount == 20
         assert len(result.items) == 20
         assert result.items[0].priceVsSmaGap >= result.items[1].priceVsSmaGap
         assert result.items[0].volumeSma5_20 >= result.items[1].volumeSma5_20
         assert result.items[0].priceBucket == "q1"
         assert result.items[-1].priceBucket == "q10"
+        assert hasattr(result.items[0], "streakShortMode")
+        assert hasattr(result.items[0], "streakLongMode")
+        assert hasattr(result.items[0], "streakStateLabel")
+        assert hasattr(result.items[0], "intradayScore")
+        assert hasattr(result.items[0], "intradayLongRank")
+        assert hasattr(result.items[0], "intradayShortRank")
 
-    def test_supports_price_sma_20_80_metric(self, topix100_ranking_service):
+    def test_supports_price_sma_20_80_metric(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
         result = topix100_ranking_service.get_topix100_ranking(metric="price_sma_20_80")
 
         assert result.rankingMetric == "price_sma_20_80"
         assert result.items[0].priceSma20_80 >= result.items[1].priceSma20_80
 
-    def test_supports_configurable_price_vs_sma_window(self, topix100_ranking_service):
+    def test_supports_configurable_price_vs_sma_window(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
         result = topix100_ranking_service.get_topix100_ranking(
             metric="price_vs_sma_gap",
             sma_window=20,
@@ -553,7 +633,11 @@ class TestGetTopix100Ranking:
         assert result.smaWindow == 20
         assert result.items[0].priceVsSmaGap >= result.items[1].priceVsSmaGap
 
-    def test_assigns_volume_buckets_inside_focus_groups(self, topix100_ranking_service):
+    def test_assigns_volume_buckets_for_every_decile(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
         result = topix100_ranking_service.get_topix100_ranking()
 
         q1_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q1"}
@@ -564,9 +648,33 @@ class TestGetTopix100Ranking:
         assert q1_buckets == {"high", "low"}
         assert q10_buckets == {"high", "low"}
         assert q234_buckets == {"high", "low"}
-        assert other_buckets == {None}
+        assert other_buckets == {"high", "low"}
 
-    def test_with_date(self, topix100_ranking_service):
+    def test_assigns_score_ranks(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
+        result = topix100_ranking_service.get_topix100_ranking()
+
+        ranked_long = sorted(
+            [item for item in result.items if item.intradayScore is not None],
+            key=lambda item: item.intradayScore,
+            reverse=True,
+        )
+        ranked_short = sorted(
+            [item for item in result.items if item.intradayScore is not None],
+            key=lambda item: item.intradayScore,
+        )
+
+        assert ranked_long[0].intradayLongRank == 1
+        assert ranked_short[0].intradayShortRank == 1
+
+    def test_with_date(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_signal_snapshot(),
+        )
         result = topix100_ranking_service.get_topix100_ranking(date="2024-03-29")
 
         assert result.date == "2024-03-29"

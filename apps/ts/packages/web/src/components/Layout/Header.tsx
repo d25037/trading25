@@ -1,5 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { BarChart3, Briefcase, Database, FlaskConical, LineChart, TrendingUp } from 'lucide-react';
+import { BarChart3, Briefcase, Database, FileSearch, FlaskConical, LineChart, TrendingUp } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -7,6 +7,7 @@ const navigationItems = [
   { path: '/charts', label: 'Charts', icon: LineChart },
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/indices', label: 'Indices', icon: TrendingUp },
+  { path: '/research', label: 'Research', icon: FileSearch },
   { path: '/options-225', label: 'N225 Options', icon: LineChart },
   { path: '/screening', label: 'Screening', icon: BarChart3 },
   { path: '/ranking', label: 'Ranking', icon: BarChart3 },
@@ -43,7 +44,10 @@ export function Header() {
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto border-l border-border/70 pl-4">
             {navigationItems.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.path || (item.path === '/market-db' && pathname === '/settings');
+              const isActive =
+                pathname === item.path ||
+                pathname.startsWith(`${item.path}/`) ||
+                (item.path === '/market-db' && pathname === '/settings');
 
               return (
                 <button

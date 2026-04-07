@@ -11,6 +11,17 @@ import { type SectorStockItem, useSectorStocks } from '@/hooks/useSectorStocks';
 import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
 import type { IndexItem } from '@/types/indices';
+import { formatDateShort, formatPercentage } from '@/utils/formatters';
+import {
+  buildTopixMultiTimeframeModeAnalysis,
+  getTopixModeStateCopy,
+  TOPIX_MODE_LONG_WINDOW_STREAKS,
+  TOPIX_MODE_RECENT_POINT_LIMIT,
+  TOPIX_MODE_SHORT_WINDOW_STREAKS,
+  type TopixMode,
+  type TopixModeAnalysis,
+  type TopixModePoint,
+} from '@/utils/topixMode';
 
 type SortField = 'tradingValue' | 'changePercentage' | 'code';
 type SortOrder = 'asc' | 'desc';
@@ -32,12 +43,30 @@ const DEFAULT_SYNTHETIC_DESCRIPTION = 'UnderPx derived daily reference series';
 
 const NIKKEI_PARENT_INDEX_CODE = 'N225_UNDERPX';
 const NIKKEI_VI_INDEX_CODE = 'N225_VI';
+const TOPIX_PRIMARY_INDEX_CODES = new Set(['1321', 'TOPIX']);
 
 const MARKET_LABELS: Record<string, string> = {
   prime: 'P',
   standard: 'S',
   growth: 'G',
 };
+
+const TOPIX_MODE_TONE_CLASSES: Record<TopixMode, string> = {
+  bullish: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  bearish: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+};
+
+const TOPIX_MODE_BAR_CLASSES: Record<TopixMode, string> = {
+  bullish: 'bg-emerald-500/85',
+  bearish: 'bg-rose-500/80',
+};
+
+const TOPIX_STATE_TONE_CLASSES = {
+  long_bullish__short_bullish: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  long_bullish__short_bearish: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  long_bearish__short_bullish: 'border-orange-500/25 bg-orange-500/10 text-orange-700 dark:text-orange-300',
+  long_bearish__short_bearish: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+} as const;
 
 function formatNumber(value: number | undefined): string {
   if (value === undefined || value === null) return '-';
@@ -175,6 +204,236 @@ function CompactMetaStrip({
         </div>
       ))}
     </dl>
+  );
+}
+
+function isTopixPrimaryIndex(code: string | null | undefined, name: string | null | undefined): boolean {
+  if (code && TOPIX_PRIMARY_INDEX_CODES.has(code.toUpperCase())) {
+    return true;
+  }
+  return name?.toUpperCase() === 'TOPIX';
+}
+
+function formatModeLabel(mode: TopixMode): string {
+  return mode === 'bullish' ? 'Bullish' : 'Bearish';
+}
+
+function ModePill({ mode }: { mode: TopixMode }) {
+  const isBullish = mode === 'bullish';
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]',
+        TOPIX_MODE_TONE_CLASSES[mode]
+      )}
+    >
+      {isBullish ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+      {formatModeLabel(mode)}
+    </span>
+  );
+}
+
+function TopixStatePill({ point }: { point: TopixModePoint }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]',
+        TOPIX_STATE_TONE_CLASSES[point.stateKey]
+      )}
+    >
+      {point.stateLabel}
+    </span>
+  );
+}
+
+function TopixModeMetricCard({
+  label,
+  windowStreaks,
+  mode,
+  dominantReturn,
+  dominantEventDate,
+  dominantSegmentDayCount,
+  modeSpanStreakCount,
+}: {
+  label: string;
+  windowStreaks: number;
+  mode: TopixMode;
+  dominantReturn: number;
+  dominantEventDate: string;
+  dominantSegmentDayCount: number;
+  modeSpanStreakCount: number;
+}) {
+  return (
+    <article className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+          <p className="text-sm font-semibold text-foreground">Dominant streak over {windowStreaks} streaks</p>
+        </div>
+        <ModePill mode={mode} />
+      </div>
+      <p className="mt-3 text-xl font-semibold tracking-tight text-foreground tabular-nums">
+        {formatPercentage(dominantReturn * 100)}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Shock ended {formatDateShort(dominantEventDate)} · dominant streak {dominantSegmentDayCount}d
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">Mode span {modeSpanStreakCount} streaks</p>
+    </article>
+  );
+}
+
+function TopixStateCard({ point }: { point: TopixModePoint }) {
+  const stateCopy = getTopixModeStateCopy(point.stateKey);
+
+  return (
+    <article className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Current Lens</p>
+          <p className="text-sm font-semibold text-foreground">{stateCopy.toneLabel}</p>
+        </div>
+        <TopixStatePill point={point} />
+      </div>
+      <p className="mt-3 text-xs font-medium text-foreground">4-state segment {point.stateSegmentLength} streaks</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{stateCopy.description}</p>
+    </article>
+  );
+}
+
+function TopixModeRibbon({
+  label,
+  points,
+  currentMode,
+  currentDominantReturn,
+  currentDominantEventDate,
+  currentModeSpanStreakCount,
+  currentDominantSegmentDayCount,
+  modeSelector,
+}: {
+  label: string;
+  points: readonly TopixModePoint[];
+  currentMode: TopixMode;
+  currentDominantReturn: number;
+  currentDominantEventDate: string;
+  currentModeSpanStreakCount: number;
+  currentDominantSegmentDayCount: number;
+  modeSelector: (point: TopixModePoint) => TopixMode;
+}) {
+  const firstDate = points[0]?.date;
+  const lastDate = points.at(-1)?.date;
+
+  return (
+    <div className="rounded-2xl border border-border/70 bg-background/80 px-3 py-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground">
+            {firstDate ? formatDateShort(firstDate) : '-'} to {lastDate ? formatDateShort(lastDate) : '-'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <ModePill mode={currentMode} />
+          <span className="tabular-nums">{formatPercentage(currentDominantReturn * 100)}</span>
+          <span>Shock ended {formatDateShort(currentDominantEventDate)}</span>
+          <span>Dominant streak {currentDominantSegmentDayCount}d</span>
+          <span>Mode span {currentModeSpanStreakCount} streaks</span>
+        </div>
+      </div>
+      <div
+        aria-label={`${label} ribbon`}
+        role="img"
+        className="mt-3 grid h-3 gap-px overflow-hidden rounded-full bg-border/50"
+        style={{ gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))` }}
+      >
+        {points.map((point) => {
+          const mode = modeSelector(point);
+          return <span key={`${label}-${point.date}`} className={cn('h-full w-full', TOPIX_MODE_BAR_CLASSES[mode])} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TopixModePanel({ analysis }: { analysis: TopixModeAnalysis | null }) {
+  const currentPoint = analysis?.currentPoint ?? null;
+  if (!analysis || !currentPoint) {
+    return null;
+  }
+
+  const recentPoints = analysis.points.slice(-TOPIX_MODE_RECENT_POINT_LIMIT);
+
+  return (
+    <div
+      className="border-b border-border/70 px-4 py-4"
+      style={{
+        backgroundImage:
+          'radial-gradient(circle at top left, rgba(16,185,129,0.08), transparent 32%), radial-gradient(circle at bottom right, rgba(244,63,94,0.08), transparent 34%)',
+      }}
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-2">
+            <SectionEyebrow>TOPIX Streak Mode</SectionEyebrow>
+            <div className="flex flex-wrap items-center gap-2">
+              <TopixStatePill point={currentPoint} />
+              <div className="rounded-full border border-border/70 bg-background/85 px-3 py-1 text-xs text-muted-foreground">
+                Long X={analysis.longWindowStreaks} streaks / Short X={analysis.shortWindowStreaks} streaks
+              </div>
+            </div>
+            <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
+              Sign of the largest absolute synthesized streak candle inside the trailing streak window. The ribbons
+              below show the latest {recentPoints.length} comparable TOPIX streak candles.
+            </p>
+          </div>
+          <div className="grid gap-2 lg:grid-cols-3">
+            <TopixModeMetricCard
+              label="Long Mode"
+              windowStreaks={analysis.longWindowStreaks}
+              mode={currentPoint.longMode}
+              dominantReturn={currentPoint.longDominantSegmentReturn}
+              dominantEventDate={currentPoint.longDominantSegmentEndDate}
+              dominantSegmentDayCount={currentPoint.longDominantSegmentDayCount}
+              modeSpanStreakCount={currentPoint.longModeSpanStreakCount}
+            />
+            <TopixModeMetricCard
+              label="Short Mode"
+              windowStreaks={analysis.shortWindowStreaks}
+              mode={currentPoint.shortMode}
+              dominantReturn={currentPoint.shortDominantSegmentReturn}
+              dominantEventDate={currentPoint.shortDominantSegmentEndDate}
+              dominantSegmentDayCount={currentPoint.shortDominantSegmentDayCount}
+              modeSpanStreakCount={currentPoint.shortModeSpanStreakCount}
+            />
+            <TopixStateCard point={currentPoint} />
+          </div>
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <TopixModeRibbon
+            label={`Long regime (${analysis.longWindowStreaks} streaks)`}
+            points={recentPoints}
+            currentMode={currentPoint.longMode}
+            currentDominantReturn={currentPoint.longDominantSegmentReturn}
+            currentDominantEventDate={currentPoint.longDominantSegmentEndDate}
+            currentModeSpanStreakCount={currentPoint.longModeSpanStreakCount}
+            currentDominantSegmentDayCount={currentPoint.longDominantSegmentDayCount}
+            modeSelector={(point) => point.longMode}
+          />
+          <TopixModeRibbon
+            label={`Short regime (${analysis.shortWindowStreaks} streaks)`}
+            points={recentPoints}
+            currentMode={currentPoint.shortMode}
+            currentDominantReturn={currentPoint.shortDominantSegmentReturn}
+            currentDominantEventDate={currentPoint.shortDominantSegmentEndDate}
+            currentModeSpanStreakCount={currentPoint.shortModeSpanStreakCount}
+            currentDominantSegmentDayCount={currentPoint.shortDominantSegmentDayCount}
+            modeSelector={(point) => point.shortMode}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -695,6 +954,22 @@ function LoadedIndexChart({
   const chartTypeLabel = isSyntheticIndex ? 'Line reference' : 'OHLC bars';
   const categoryLabel = resolveIndexChartCategoryLabel(indexInfo);
   const syntheticDescription = resolveSyntheticDescription(isSyntheticIndex, code);
+  const showTopixModePanel = isTopixPrimaryIndex(code, data.name) && !isSyntheticIndex;
+  const topixModeAnalysis = useMemo(() => {
+    if (!showTopixModePanel) {
+      return null;
+    }
+    return buildTopixMultiTimeframeModeAnalysis(
+      data.data.map((point) => ({
+        date: point.date,
+        close: point.close,
+      })),
+      {
+        shortWindowStreaks: TOPIX_MODE_SHORT_WINDOW_STREAKS,
+        longWindowStreaks: TOPIX_MODE_LONG_WINDOW_STREAKS,
+      }
+    );
+  }, [data.data, showTopixModePanel]);
 
   return (
     <div className="space-y-3" style={workspaceStyle}>
@@ -724,6 +999,8 @@ function LoadedIndexChart({
             </div>
           </div>
         </div>
+
+        <TopixModePanel analysis={topixModeAnalysis} />
 
         <div className="border-b border-border/70 px-4 py-3">
           <SectionEyebrow>Chart</SectionEyebrow>

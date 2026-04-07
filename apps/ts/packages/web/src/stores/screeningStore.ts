@@ -32,6 +32,10 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   topix100SmaWindow: 50,
   topix100PriceBucket: 'all',
   topix100VolumeBucket: 'all',
+  topix100ShortMode: 'all',
+  topix100LongMode: 'all',
+  topix100SortBy: 'intradayScore',
+  topix100SortOrder: 'desc',
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
