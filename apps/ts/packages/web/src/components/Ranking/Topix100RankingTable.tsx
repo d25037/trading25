@@ -207,7 +207,7 @@ function renderSortMark(active: boolean, sortOrder: SortOrder): string {
 
 function SortableHeader({
   label,
-  sortKey,
+  columnKey,
   activeSortBy,
   activeSortOrder,
   onSortChange,
@@ -215,15 +215,15 @@ function SortableHeader({
   buttonClassName,
 }: {
   label: string;
-  sortKey: Topix100RankingSortKey;
+  columnKey: Topix100RankingSortKey;
   activeSortBy: Topix100RankingSortKey;
   activeSortOrder: SortOrder;
   onSortChange: (sortBy: Topix100RankingSortKey, sortOrder: SortOrder) => void;
   className: string;
   buttonClassName?: string;
 }) {
-  const isActive = activeSortBy === sortKey;
-  const nextOrder = resolveNextSortOrder(activeSortBy, activeSortOrder, sortKey);
+  const isActive = activeSortBy === columnKey;
+  const nextOrder = resolveNextSortOrder(activeSortBy, activeSortOrder, columnKey);
 
   return (
     <th
@@ -233,7 +233,7 @@ function SortableHeader({
       <button
         type="button"
         className={`inline-flex w-full items-center gap-1 text-current transition-colors hover:text-foreground ${buttonClassName ?? 'justify-start'}`}
-        onClick={() => onSortChange(sortKey, nextOrder)}
+        onClick={() => onSortChange(columnKey, nextOrder)}
       >
         <span>{label}</span>
         <span aria-hidden="true" className="text-[10px] text-muted-foreground">
@@ -308,7 +308,7 @@ export function Topix100RankingTable({
                 <th className="w-12 px-2 py-1.5 text-center text-muted-foreground">#</th>
                 <SortableHeader
                   label="Code"
-                  sortKey="code"
+                  columnKey="code"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -316,7 +316,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Company"
-                  sortKey="companyName"
+                  columnKey="companyName"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -324,7 +324,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label={metricLabel}
-                  sortKey="metric"
+                  columnKey="metric"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -333,7 +333,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Vol Split"
-                  sortKey="volumeBucket"
+                  columnKey="volumeBucket"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -341,7 +341,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Short"
-                  sortKey="streakShortMode"
+                  columnKey="streakShortMode"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -349,7 +349,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Long"
-                  sortKey="streakLongMode"
+                  columnKey="streakLongMode"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -357,7 +357,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="ID Score"
-                  sortKey="intradayScore"
+                  columnKey="intradayScore"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -366,7 +366,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Volume SMA 5/20"
-                  sortKey="volumeSma5_20"
+                  columnKey="volumeSma5_20"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -375,7 +375,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Price"
-                  sortKey="currentPrice"
+                  columnKey="currentPrice"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -384,7 +384,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Sector"
-                  sortKey="sector33Name"
+                  columnKey="sector33Name"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -392,7 +392,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Volume"
-                  sortKey="volume"
+                  columnKey="volume"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
