@@ -67,10 +67,10 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume split by decile', 'Next-session intraday score'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Decile-only score', 'Volume/state = context'];
   }
 
-  return ['Legacy comparison', 'Intraday score = SMA50 / Vol 5/20'];
+  return ['Legacy comparison', 'Decile-only intraday score'];
 }
 
 function formatScore(value: number | null | undefined): string {
@@ -287,7 +287,7 @@ export function Topix100RankingTable({
             <span>
               State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
             </span>
-            <span>Score = Next-session open → close LightGBM</span>
+            <span>Score = Next-session open → close LightGBM (decile-only)</span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>

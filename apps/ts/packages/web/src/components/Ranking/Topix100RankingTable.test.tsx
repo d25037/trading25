@@ -141,10 +141,10 @@ describe('Topix100RankingTable', () => {
     expect(screen.getAllByText('Price / SMA50 Gap')).toHaveLength(2);
     expect(screen.getByText('Q10 = below SMA')).toBeInTheDocument();
     expect(screen.getByText('Q2-4 = trough')).toBeInTheDocument();
-    expect(screen.getByText('Volume split by decile')).toBeInTheDocument();
-    expect(screen.getByText('Next-session intraday score')).toBeInTheDocument();
+    expect(screen.getByText('Decile-only score')).toBeInTheDocument();
+    expect(screen.getByText('Volume/state = context')).toBeInTheDocument();
     expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
-    expect(screen.getByText('Score = Next-session open → close LightGBM')).toBeInTheDocument();
+    expect(screen.getByText('Score = Next-session open → close LightGBM (decile-only)')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('+1.25%')).toBeInTheDocument();
     expect(screen.getByText('Toyota')).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('Topix100RankingTable', () => {
 
     expect(screen.getAllByText('Price SMA 20/80')).toHaveLength(2);
     expect(screen.getByText('Legacy comparison')).toBeInTheDocument();
-    expect(screen.getByText('Intraday score = SMA50 / Vol 5/20')).toBeInTheDocument();
+    expect(screen.getByText('Decile-only intraday score')).toBeInTheDocument();
     expect(screen.getByText('0.95x')).toBeInTheDocument();
     expect(screen.getByText('Sony')).toBeInTheDocument();
     expect(screen.queryByText('Toyota')).not.toBeInTheDocument();

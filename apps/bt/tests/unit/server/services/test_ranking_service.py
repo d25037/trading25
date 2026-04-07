@@ -564,6 +564,24 @@ class TestGetRankings:
 
 
 class TestGetTopix100Ranking:
+    def test_runtime_scoring_uses_decile_only_categorical_features(
+        self, topix100_ranking_service, monkeypatch
+    ):
+        captured_kwargs: dict[str, object] = {}
+
+        def _score_stub(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return _build_test_signal_snapshot()
+
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
+            _score_stub,
+        )
+
+        topix100_ranking_service.get_topix100_ranking()
+
+        assert captured_kwargs["categorical_feature_columns"] == ("decile",)
+
     def test_default_shape(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
             "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",

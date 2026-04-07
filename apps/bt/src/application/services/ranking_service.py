@@ -28,6 +28,7 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_SHORT_WINDOW_STREAKS,
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
 from src.entrypoints.http.schemas.ranking import (
@@ -291,6 +292,7 @@ class RankingService:
             target_date=target_date,
             short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
             connection=self._reader.conn,
         )
 

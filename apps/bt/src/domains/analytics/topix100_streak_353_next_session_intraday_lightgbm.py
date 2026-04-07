@@ -86,6 +86,10 @@ DEFAULT_TOP_K_VALUES: tuple[int, ...] = (1, 3, 5, 10, 20)
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm"
 )
+TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID = (
+    "market-behavior/topix100-streak-3-53-next-session-intraday-discrete-ablation-walkforward"
+)
+DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = ("decile",)
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "feature_panel_df",
     "baseline_lookup_df",
@@ -466,6 +470,7 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     volume_feature: str = DEFAULT_VOLUME_FEATURE,
     short_window_streaks: int = DEFAULT_SHORT_WINDOW_STREAKS,
     long_window_streaks: int = DEFAULT_LONG_WINDOW_STREAKS,
+    categorical_feature_columns: tuple[str, ...] = DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     connection: Any | None = None,
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
     if connection is not None:
@@ -476,6 +481,7 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             volume_feature,
             short_window_streaks,
             long_window_streaks,
+            categorical_feature_columns,
             connection=connection,
         )
     return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
@@ -485,6 +491,7 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         volume_feature,
         short_window_streaks,
         long_window_streaks,
+        categorical_feature_columns,
     )
 
 
@@ -496,6 +503,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
     volume_feature: str,
     short_window_streaks: int,
     long_window_streaks: int,
+    categorical_feature_columns: tuple[str, ...],
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
     return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         db_path,
@@ -504,7 +512,22 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
         volume_feature,
         short_window_streaks,
         long_window_streaks,
+        categorical_feature_columns,
     )
+
+
+def _resolve_snapshot_score_source_run_id(
+    categorical_feature_columns: tuple[str, ...],
+) -> str | None:
+    experiment_id = (
+        TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID
+        if categorical_feature_columns == DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS
+        else TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID
+    )
+    bundle_path = find_latest_research_bundle_path(experiment_id)
+    if bundle_path is None:
+        return None
+    return load_research_bundle_info(bundle_path).run_id
 
 
 def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
@@ -514,6 +537,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     volume_feature: str,
     short_window_streaks: int,
     long_window_streaks: int,
+    categorical_feature_columns: tuple[str, ...],
     *,
     connection: Any | None = None,
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
@@ -524,9 +548,8 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     if short_window_streaks >= long_window_streaks:
         raise ValueError("short_window_streaks must be smaller than long_window_streaks")
 
-    bundle_path = get_topix100_streak_353_next_session_intraday_lightgbm_latest_bundle_path()
-    score_source_run_id = (
-        load_research_bundle_info(bundle_path).run_id if bundle_path is not None else None
+    score_source_run_id = _resolve_snapshot_score_source_run_id(
+        categorical_feature_columns
     )
     price_feature_to_window = {
         feature: window
@@ -622,7 +645,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     regressor_cls = _load_lightgbm_regressor_cls()
     categories = _build_category_lookup(training_feature_panel_df)
     feature_columns = [
-        *DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
+        *categorical_feature_columns,
         price_feature,
         volume_feature,
         *DEFAULT_CONTINUOUS_FEATURE_SUFFIXES,
@@ -633,7 +656,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         target_column="next_session_intraday_return",
         regressor_cls=regressor_cls,
         feature_columns=feature_columns,
-        categorical_feature_columns=DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
+        categorical_feature_columns=categorical_feature_columns,
         categories=categories,
     )
 

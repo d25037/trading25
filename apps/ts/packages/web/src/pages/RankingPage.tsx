@@ -183,7 +183,7 @@ function buildIntroMetaItems(
     const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
     return [
       { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      { label: 'Read', value: '3-53 streak state + next-session intraday LightGBM score' },
+      { label: 'Read', value: 'Decile-only intraday LightGBM score' },
     ];
   }
   return [
