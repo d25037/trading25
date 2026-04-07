@@ -97,6 +97,9 @@ class Topix100RankingItem(BaseModel):
     shortScore1d: float | None = None
     longScore5dRank: int | None = None
     shortScore1dRank: int | None = None
+    intradayScore: float | None = None
+    intradayLongRank: int | None = None
+    intradayShortRank: int | None = None
 
 
 class Topix100RankingResponse(BaseModel):
@@ -109,6 +112,7 @@ class Topix100RankingResponse(BaseModel):
     longWindowStreaks: int
     longScoreHorizonDays: int = 5
     shortScoreHorizonDays: int = 1
+    intradayScoreTarget: Literal["next_session_open_close"] = "next_session_open_close"
     scoreSourceRunId: str | None = None
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)

@@ -15504,6 +15504,39 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "intradayLongRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intradaylongrank"
+          },
+          "intradayScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intradayscore"
+          },
+          "intradayShortRank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intradayshortrank"
+          },
           "longScore5d": {
             "anyOf": [
               {
@@ -15685,6 +15718,12 @@
         "properties": {
           "date": {
             "title": "Date",
+            "type": "string"
+          },
+          "intradayScoreTarget": {
+            "const": "next_session_open_close",
+            "default": "next_session_open_close",
+            "title": "Intradayscoretarget",
             "type": "string"
           },
           "itemCount": {

@@ -151,8 +151,9 @@ const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
   'volumeBucket',
   'streakShortMode',
   'streakLongMode',
-  'longScore5d',
-  'shortScore1d',
+  'intradayScore',
+  'intradayLongRank',
+  'intradayShortRank',
   'volumeSma5_20',
   'currentPrice',
   'sector33Name',
@@ -281,7 +282,14 @@ function normalizeTopix100StreakModeFilter(value: unknown): Topix100StreakModeFi
 }
 
 function normalizeTopix100RankingSortKey(value: unknown): Topix100RankingSortKey | undefined {
-  return normalizeEnum(normalizeString(value), TOPIX100_RANKING_SORT_KEY_VALUES);
+  const normalized = normalizeString(value);
+  if (normalized === 'longScore5d') {
+    return 'intradayLongRank';
+  }
+  if (normalized === 'shortScore1d') {
+    return 'intradayShortRank';
+  }
+  return normalizeEnum(normalized, TOPIX100_RANKING_SORT_KEY_VALUES);
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {

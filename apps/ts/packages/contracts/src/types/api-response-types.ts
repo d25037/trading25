@@ -86,6 +86,9 @@ export interface Topix100RankingItem {
   shortScore1d?: number | null;
   longScore5dRank?: number | null;
   shortScore1dRank?: number | null;
+  intradayScore?: number | null;
+  intradayLongRank?: number | null;
+  intradayShortRank?: number | null;
 }
 
 export interface Topix100RankingResponse {
@@ -96,6 +99,7 @@ export interface Topix100RankingResponse {
   longWindowStreaks: number;
   longScoreHorizonDays: number;
   shortScoreHorizonDays: number;
+  intradayScoreTarget: 'next_session_open_close';
   scoreSourceRunId?: string | null;
   itemCount: number;
   items: Topix100RankingItem[];
