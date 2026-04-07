@@ -7,7 +7,7 @@ React 19 financial trading application with Vite, Tailwind CSS v4, and lightweig
 - **Frontend**: React 19 + TypeScript + Vite
 - **Logger**: Browser-specific (separate from Node.js)
 - **Styling**: Tailwind CSS v4 + Radix UI + shadcn/ui
-- **Charts**: lightweight-charts for OHLC/margin
+- **Symbol Workbench**: lightweight-charts for OHLC/margin
 - **Editor**: Monaco Editor for YAML strategy editing
 - **State**: Zustand + TanStack Query
 - **API**: HTTP requests to `/api/*` (proxied to FastAPI port 3002)
@@ -33,7 +33,7 @@ src/
 ├── components/Lab/         # Lab: generate, evolve, optimize, improve (SSE progress)
 ├── components/Editor/      # Monaco YAML editor
 ├── components/ui/          # shadcn/ui components
-├── pages/                  # ChartsPage, ScreeningPage, RankingPage, BacktestPage
+├── pages/                  # SymbolWorkbenchPage, ScreeningPage, RankingPage, BacktestPage
 ├── stores/                 # Zustand state (chartStore, screeningStore, backtestStore)
 ├── hooks/                  # useStockData, useBtIndicators, useBtMarginIndicators, useBtSignals, useFundamentals, useBacktest, useLab
 ├── constants/              # Signal reference data

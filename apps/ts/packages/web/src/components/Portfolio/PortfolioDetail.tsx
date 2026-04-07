@@ -120,7 +120,8 @@ function PortfolioHeader({ portfolio, currentValue, totalPnL, onPortfolioDeleted
           <div className="space-y-1">
             <h2 className="text-2xl font-semibold tracking-tight text-foreground">{portfolio.name}</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              {portfolio.description || 'Review positions, compare them with the benchmark, and jump into charts fast.'}
+              {portfolio.description ||
+                'Review positions, compare them with the benchmark, and jump into the symbol workbench fast.'}
             </p>
           </div>
         </div>
@@ -360,7 +361,7 @@ export function PortfolioDetail({ portfolio, isLoading, error, onPortfolioDelete
   const holdingPerformanceMap = createHoldingPerformanceMap(performanceData?.holdings);
 
   const handleNavigateToChart = (code: string) => {
-    void navigate({ to: '/charts', search: { symbol: code } });
+    void navigate({ to: '/symbol-workbench', search: { symbol: code } });
   };
 
   if (!portfolio && !isLoading && !error) {

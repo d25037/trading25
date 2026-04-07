@@ -22,7 +22,7 @@ import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
-import { useChartsRouteState, useMigrateChartsRouteState } from '@/hooks/usePageRouteState';
+import { useSymbolWorkbenchRouteState, useMigrateSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
 import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -651,7 +651,7 @@ function ChartHeader({
                 <TrendingUp className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <SectionEyebrow>Selected Symbol</SectionEyebrow>
+                <SectionEyebrow>Symbol Workbench</SectionEyebrow>
                 <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">
                   {selectedSymbol}
                   {stockInfo?.companyName && (
@@ -740,7 +740,7 @@ function ChartHeader({
   );
 }
 
-function ChartsPanelsContent({
+function SymbolWorkbenchPanelsContent({
   settings,
   selectedSymbol,
   chartData,
@@ -872,15 +872,15 @@ function ChartsPanelsContent({
   );
 }
 
-export function ChartsPage() {
-  useMigrateChartsRouteState();
+export function SymbolWorkbenchPage() {
+  useMigrateSymbolWorkbenchRouteState();
   const queryClient = useQueryClient();
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
   const costStructureSection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
-  const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useChartsRouteState();
+  const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useSymbolWorkbenchRouteState();
 
   const { chartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
     selectedSymbol,
@@ -905,7 +905,7 @@ export function ChartsPage() {
   const showEmptyState = shouldRenderEmptyState(isLoading, error, selectedSymbol);
   const showChartPanels = shouldRenderChartPanels(isLoading, error, selectedSymbol, chartData);
 
-  logger.debug('ChartsPage render', {
+  logger.debug('SymbolWorkbenchPage render', {
     selectedSymbol,
     isLoading,
     error: error?.message,
@@ -958,6 +958,7 @@ export function ChartsPage() {
 
   return (
     <SplitLayout className="min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:flex-row lg:items-stretch lg:overflow-hidden">
+      <h1 className="sr-only">Symbol Workbench</h1>
       <SplitSidebar className="w-full lg:w-[18rem]">
         <Surface className="h-full min-h-0 overflow-hidden">
           <ErrorBoundary>
@@ -987,7 +988,7 @@ export function ChartsPage() {
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
         {showEmptyState && <EmptyState />}
         {showChartPanels && (
-          <ChartsPanelsContent
+          <SymbolWorkbenchPanelsContent
             settings={settings}
             selectedSymbol={selectedSymbol}
             chartData={chartData}

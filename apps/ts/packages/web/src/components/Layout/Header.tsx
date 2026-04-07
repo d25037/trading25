@@ -22,7 +22,7 @@ interface NavigationItem {
 }
 
 const navigationItems: NavigationItem[] = [
-  { path: '/charts', label: 'Charts', icon: LineChart },
+  { path: '/symbol-workbench', label: 'Symbol Workbench', icon: LineChart },
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/indices', label: 'Indices', icon: TrendingUp },
   { path: '/research', label: 'Research', icon: FileSearch },
@@ -33,7 +33,14 @@ const navigationItems: NavigationItem[] = [
   { path: '/market-db', label: 'Market DB', icon: Database },
 ];
 
-const primaryNavigationPaths = new Set(['/charts', '/portfolio', '/indices', '/screening', '/ranking', '/backtest']);
+const primaryNavigationPaths = new Set([
+  '/symbol-workbench',
+  '/portfolio',
+  '/indices',
+  '/screening',
+  '/ranking',
+  '/backtest',
+]);
 const moreMenuId = 'global-header-overflow-nav';
 
 const primaryNavigationItems = navigationItems.filter((item) => primaryNavigationPaths.has(item.path));
@@ -99,7 +106,7 @@ export function Header() {
       <div className="mx-auto flex h-16 w-full max-w-[1180px] items-center gap-2 px-3 sm:px-4 lg:px-5">
         <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
           <Link
-            to="/charts"
+            to="/symbol-workbench"
             className="app-interactive flex shrink-0 items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-[var(--app-surface-muted)]"
           >
             <div className="app-panel-emphasis flex h-9 w-9 items-center justify-center rounded-xl text-primary shadow-none">

@@ -86,7 +86,7 @@ describe('WatchlistDetail', () => {
 
     await user.click(screen.getByRole('button', { name: 'View chart for Toyota Motor' }));
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
   });
 
   it('submits add stock dialog with trimmed values', async () => {

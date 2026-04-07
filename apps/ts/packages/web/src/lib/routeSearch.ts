@@ -28,7 +28,7 @@ import type { ScreeningParams } from '@/types/screening';
 
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
 
-export interface ChartsRouteSearch {
+export interface SymbolWorkbenchRouteSearch {
   symbol?: string;
   strategy?: string;
   matchedDate?: string;
@@ -344,26 +344,26 @@ function normalizeTopix100MetricWindowPair(
   return { metric, smaWindow };
 }
 
-export function validateChartsSearch(search: Record<string, unknown>): ChartsRouteSearch {
+export function validateSymbolWorkbenchSearch(search: Record<string, unknown>): SymbolWorkbenchRouteSearch {
   const symbol = normalizeString(search.symbol);
   const strategy = normalizeString(search.strategy);
   const matchedDate = normalizeString(search.matchedDate);
-  const next: ChartsRouteSearch = {};
+  const next: SymbolWorkbenchRouteSearch = {};
   if (symbol) next.symbol = symbol;
   if (strategy) next.strategy = strategy;
   if (matchedDate) next.matchedDate = matchedDate;
   return next;
 }
 
-export function serializeChartsSearch(params: {
+export function serializeSymbolWorkbenchSearch(params: {
   symbol?: string | null;
   strategy?: string | null;
   matchedDate?: string | null;
-}): ChartsRouteSearch {
+}): SymbolWorkbenchRouteSearch {
   const normalizedSymbol = normalizeString(params.symbol);
   const normalizedStrategy = normalizeString(params.strategy);
   const normalizedMatchedDate = normalizeString(params.matchedDate);
-  const next: ChartsRouteSearch = {};
+  const next: SymbolWorkbenchRouteSearch = {};
   if (normalizedSymbol) next.symbol = normalizedSymbol;
   if (normalizedStrategy) next.strategy = normalizedStrategy;
   if (normalizedMatchedDate) next.matchedDate = normalizedMatchedDate;
@@ -1106,8 +1106,8 @@ export function prunePersistedStoreFields(storage: Storage, key: string, fields:
   }
 }
 
-export function extractLegacyChartsSearch(state: Record<string, unknown>): ChartsRouteSearch {
-  return serializeChartsSearch({
+export function extractLegacySymbolWorkbenchSearch(state: Record<string, unknown>): SymbolWorkbenchRouteSearch {
+  return serializeSymbolWorkbenchSearch({
     symbol: typeof state.selectedSymbol === 'string' ? state.selectedSymbol : null,
   });
 }

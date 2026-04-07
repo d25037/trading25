@@ -8,7 +8,7 @@ import {
 } from '@/lib/persistedState';
 import {
   extractLegacyBacktestSearch,
-  extractLegacyChartsSearch,
+  extractLegacySymbolWorkbenchSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
   extractLegacyScreeningSearch,
@@ -19,23 +19,25 @@ import {
   readPersistedStoreState,
   type ScreeningRouteSearch,
   serializeBacktestSearch,
-  serializeChartsSearch,
+  serializeSymbolWorkbenchSearch,
   serializeIndicesSearch,
   serializePortfolioSearch,
   serializeRankingSearch,
   serializeScreeningSearch,
   validateBacktestSearch,
-  validateChartsSearch,
+  validateSymbolWorkbenchSearch,
   validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
 } from '@/lib/routeSearch';
-import { backtestRoute, chartsRoute, indicesRoute, portfolioRoute, rankingRoute, screeningRoute } from '@/router';
+import { backtestRoute, symbolWorkbenchRoute, indicesRoute, portfolioRoute, rankingRoute, screeningRoute } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
+
+const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
 
 function useLegacySearchMigration<TSearch extends object>(params: {
   storageType: 'local' | 'session';
@@ -83,14 +85,14 @@ function coerceRouteString(value: unknown): string | null {
   return null;
 }
 
-export function useChartsRouteState(): {
+export function useSymbolWorkbenchRouteState(): {
   selectedSymbol: string | null;
   strategyName: string | null;
   matchedDate: string | null;
   setSelectedSymbol: (symbol: string | null, options?: { replace?: boolean }) => void;
 } {
   const navigate = useNavigate();
-  const search = chartsRoute.useSearch();
+  const search = symbolWorkbenchRoute.useSearch();
   const selectedSymbol = coerceRouteString(search.symbol);
   const strategyName = coerceRouteString(search.strategy);
   const matchedDate = coerceRouteString(search.matchedDate);
@@ -98,19 +100,19 @@ export function useChartsRouteState(): {
   const setSelectedSymbol = useCallback(
     (symbol: string | null, options?: { replace?: boolean }) => {
       void navigate({
-        to: '/charts',
+        to: SYMBOL_WORKBENCH_PATH,
         replace: options?.replace ?? false,
         search: (current: Record<string, unknown>) => {
-          const currentSearch = validateChartsSearch(current);
+          const currentSearch = validateSymbolWorkbenchSearch(current);
           const nextSymbol = typeof symbol === 'string' ? symbol.trim() || null : null;
 
           if (nextSymbol == null) {
-            return serializeChartsSearch({ symbol: null, strategy: null, matchedDate: null });
+            return serializeSymbolWorkbenchSearch({ symbol: null, strategy: null, matchedDate: null });
           }
 
           const preserveMatchedDate = currentSearch.symbol === nextSymbol ? (currentSearch.matchedDate ?? null) : null;
 
-          return serializeChartsSearch({
+          return serializeSymbolWorkbenchSearch({
             symbol: nextSymbol,
             strategy: currentSearch.strategy ?? null,
             matchedDate: preserveMatchedDate,
@@ -124,15 +126,15 @@ export function useChartsRouteState(): {
   return { selectedSymbol, strategyName, matchedDate, setSelectedSymbol };
 }
 
-export function useMigrateChartsRouteState(): void {
-  const search = chartsRoute.useSearch();
+export function useMigrateSymbolWorkbenchRouteState(): void {
+  const search = symbolWorkbenchRoute.useSearch();
   useLegacySearchMigration({
     storageType: 'local',
     storageKey: CHART_STORE_STORAGE_KEY,
     pruneFields: ['selectedSymbol'],
     hasManagedSearchValues: Boolean(search.symbol) || Boolean(search.strategy) || Boolean(search.matchedDate),
-    extractLegacySearch: extractLegacyChartsSearch,
-    to: '/charts',
+    extractLegacySearch: extractLegacySymbolWorkbenchSearch,
+    to: SYMBOL_WORKBENCH_PATH,
   });
 }
 

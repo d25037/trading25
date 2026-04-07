@@ -660,7 +660,7 @@ export function ScreeningPage() {
   const handleStockClick = useCallback(
     (code: string, strategy?: string, matchedDate?: string) => {
       void navigate({
-        to: '/charts',
+        to: '/symbol-workbench',
         search: {
           symbol: code,
           ...(strategy ? { strategy } : {}),

@@ -8,8 +8,8 @@ vi.mock('@/components/Layout/MainLayout', () => ({
   MainLayout: ({ children }: { children: ReactNode }) => <div data-testid="main-layout">{children}</div>,
 }));
 
-vi.mock('@/pages/ChartsPage', () => ({
-  ChartsPage: () => <h1>Charts Page</h1>,
+vi.mock('@/pages/SymbolWorkbenchPage', () => ({
+  SymbolWorkbenchPage: () => <h1>Symbol Workbench Page</h1>,
 }));
 
 vi.mock('@/pages/PortfolioPage', () => ({
@@ -55,13 +55,13 @@ describe('router', () => {
     cleanup();
   });
 
-  it('redirects root path to /charts', async () => {
+  it('redirects root path to /symbol-workbench', async () => {
     renderRouterAt('/');
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/charts');
+      expect(window.location.pathname).toBe('/symbol-workbench');
     });
-    expect(screen.getByRole('heading', { name: 'Charts Page' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Symbol Workbench Page' })).toBeInTheDocument();
   });
 
   it('shows migration guidance for legacy ?tab= query links', async () => {
@@ -99,6 +99,18 @@ describe('router', () => {
     expect(window.location.pathname).toBe('/');
     expect(window.location.search).toBe('?tab=unknown');
     expect(screen.getByText('Requested URL:')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
+  });
+
+  it('does not offer a suggested route for removed charts legacy tabs', async () => {
+    renderRouterAt('/?tab=charts');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
+    });
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?tab=charts');
     expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
   });
 

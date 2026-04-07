@@ -302,7 +302,7 @@ export function RankingPage() {
   const handleStockClick = useCallback(
     (code: string) => {
       void navigate({
-        to: '/charts',
+        to: '/symbol-workbench',
         search: { symbol: code },
       });
     },

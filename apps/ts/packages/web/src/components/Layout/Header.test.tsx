@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Header } from './Header';
 
-let pathname = '/charts';
+let pathname = '/symbol-workbench';
 
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
@@ -41,14 +41,14 @@ vi.mock('@/components/ui/theme-toggle', () => ({
 
 describe('Header', () => {
   beforeEach(() => {
-    pathname = '/charts';
+    pathname = '/symbol-workbench';
   });
 
   it('renders logo, primary navigation items, and overflow navigation trigger', () => {
     render(<Header />);
 
     expect(screen.getByText('Trading25')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Charts' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Symbol Workbench' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Portfolio' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Screening' })).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe('Header', () => {
     render(<Header />);
 
     expect(screen.getByRole('link', { name: 'Screening' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Charts' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Symbol Workbench' })).not.toHaveAttribute('aria-current');
   });
 
   it('shows overflow current route on the more navigation trigger', async () => {

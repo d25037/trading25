@@ -360,7 +360,7 @@ function WatchlistDetailContent({
   }, [pricesData]);
 
   const handleNavigateToChart = (code: string) => {
-    void navigate({ to: '/charts', search: { symbol: code } });
+    void navigate({ to: '/symbol-workbench', search: { symbol: code } });
   };
   const memoCount = watchlist.items.filter((item) => item.memo?.trim()).length;
 
@@ -373,7 +373,8 @@ function WatchlistDetailContent({
             <div className="space-y-1">
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">{watchlist.name}</h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
-                {watchlist.description || 'Keep monitored names close, then jump straight into prices and charts.'}
+                {watchlist.description ||
+                  'Keep monitored names close, then jump straight into prices and the symbol workbench.'}
               </p>
             </div>
           </div>

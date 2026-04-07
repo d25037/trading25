@@ -1120,7 +1120,7 @@ export function IndicesPage() {
 
   const handleStockClick = useCallback(
     (code: string) => {
-      void navigate({ to: '/charts', search: { symbol: code } });
+      void navigate({ to: '/symbol-workbench', search: { symbol: code } });
     },
     [navigate]
   );

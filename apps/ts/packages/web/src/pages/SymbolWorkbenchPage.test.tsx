@@ -15,7 +15,7 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
 import { logger } from '@/utils/logger';
-import { ChartsPage } from './ChartsPage';
+import { SymbolWorkbenchPage } from './SymbolWorkbenchPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
 const mockUseBtMarginIndicators = vi.fn();
@@ -26,7 +26,7 @@ const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
 const mockCostStructurePanelProps = vi.fn<(props: unknown) => void>();
-const mockChartsRouteState = {
+const mockSymbolWorkbenchRouteState = {
   selectedSymbol: '7203' as string | null,
   strategyName: null as string | null,
   matchedDate: null as string | null,
@@ -38,8 +38,8 @@ vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
 }));
 
 vi.mock('@/hooks/usePageRouteState', () => ({
-  useChartsRouteState: () => mockChartsRouteState,
-  useMigrateChartsRouteState: () => {},
+  useSymbolWorkbenchRouteState: () => mockSymbolWorkbenchRouteState,
+  useMigrateSymbolWorkbenchRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useBtMarginIndicators', () => ({
@@ -191,15 +191,15 @@ vi.mock('@/components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-function renderChartsPage() {
+function renderSymbolWorkbenchPage() {
   const { queryClient, wrapper } = createTestWrapper();
   return {
     queryClient,
-    ...render(<ChartsPage />, { wrapper }),
+    ...render(<SymbolWorkbenchPage />, { wrapper }),
   };
 }
 
-describe('ChartsPage', () => {
+describe('SymbolWorkbenchPage', () => {
   class MockIntersectionObserver {
     static instances: MockIntersectionObserver[] = [];
 
@@ -262,10 +262,10 @@ describe('ChartsPage', () => {
     mockFundamentalsHistoryPanelProps.mockReset();
     mockCostStructurePanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
-    mockChartsRouteState.selectedSymbol = '7203';
-    mockChartsRouteState.strategyName = null;
-    mockChartsRouteState.matchedDate = null;
-    mockChartsRouteState.setSelectedSymbol.mockReset();
+    mockSymbolWorkbenchRouteState.selectedSymbol = '7203';
+    mockSymbolWorkbenchRouteState.strategyName = null;
+    mockSymbolWorkbenchRouteState.matchedDate = null;
+    mockSymbolWorkbenchRouteState.setSelectedSymbol.mockReset();
 
     mockSettings.showPPOChart = true;
     mockSettings.showVolumeComparison = true;
@@ -318,7 +318,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
     expect(screen.getByText(/Loading chart data/i)).toBeInTheDocument();
   });
 
@@ -336,7 +336,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
     expect(screen.getByText(/Unable to load chart data/i)).toBeInTheDocument();
     expect(screen.getByText('Boom')).toBeInTheDocument();
   });
@@ -356,7 +356,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
     expect(screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)).toBeInTheDocument();
@@ -378,7 +378,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)).toBeInTheDocument();
     expect(screen.queryByText(/Relative mode requires local TOPIX data/i)).not.toBeInTheDocument();
@@ -400,7 +400,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
     expect(screen.getByText(/Relative mode requires local TOPIX data/i)).toBeInTheDocument();
@@ -409,7 +409,7 @@ describe('ChartsPage', () => {
 
   it('renders empty state when no symbol selected', () => {
     const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
-    mockChartsRouteState.selectedSymbol = null;
+    mockSymbolWorkbenchRouteState.selectedSymbol = null;
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
       isLoading: false,
@@ -423,7 +423,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '7203' }));
     expect(debugSpy).toHaveBeenCalledWith('Symbol selected from popular list', { symbol: '7203' });
@@ -444,7 +444,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
     expect(screen.getByText('An unexpected error occurred while fetching market data')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Try Again/i }));
     expect(reloadSpy).toHaveBeenCalledOnce();
@@ -472,7 +472,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
     expect(screen.getByText('Stock Chart')).toBeInTheDocument();
@@ -507,8 +507,8 @@ describe('ChartsPage', () => {
 
   it('passes screening verification context into chart rendering and symbol changes', async () => {
     const user = userEvent.setup();
-    mockChartsRouteState.strategyName = 'production/demo';
-    mockChartsRouteState.matchedDate = '2026-03-14';
+    mockSymbolWorkbenchRouteState.strategyName = 'production/demo';
+    mockSymbolWorkbenchRouteState.matchedDate = '2026-03-14';
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
         daily: {
@@ -534,7 +534,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', 'production/demo');
     expect(screen.getByText('production/demo (strategy)')).toBeInTheDocument();
@@ -542,7 +542,7 @@ describe('ChartsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select 6758' }));
 
-    expect(mockChartsRouteState.setSelectedSymbol).toHaveBeenCalledWith('6758');
+    expect(mockSymbolWorkbenchRouteState.setSelectedSymbol).toHaveBeenCalledWith('6758');
   });
 
   it('refreshes the selected symbol and invalidates related chart queries', async () => {
@@ -580,7 +580,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    const { queryClient } = renderChartsPage();
+    const { queryClient } = renderSymbolWorkbenchPage();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     await user.click(screen.getByRole('button', { name: /Stock Refresh/i }));
@@ -633,7 +633,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
     await user.click(screen.getByRole('button', { name: /Stock Refresh/i }));
 
     expect(mutate).toHaveBeenCalledWith(
@@ -674,7 +674,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.queryByText('Fundamentals Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
@@ -711,7 +711,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
     const costStructureHeading = screen.getByRole('heading', { name: 'Cost Structure Analysis' });
@@ -753,7 +753,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
@@ -792,7 +792,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 1 });
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -845,7 +845,7 @@ describe('ChartsPage', () => {
     });
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     const section = screen.getByTestId('fundamentals-panel-section');
     const visibleCount = countVisibleFundamentalMetrics(
@@ -877,7 +877,7 @@ describe('ChartsPage', () => {
       isLoading: true,
       error: null,
     });
-    const { rerender } = renderChartsPage();
+    const { rerender } = renderSymbolWorkbenchPage();
     expect(screen.getByText('Loading...')).toBeInTheDocument();
 
     mockUseBtMarginIndicators.mockReturnValue({
@@ -885,7 +885,7 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: new Error('boom'),
     });
-    rerender(<ChartsPage />);
+    rerender(<SymbolWorkbenchPage />);
     expect(screen.getByText('Failed to load margin pressure data')).toBeInTheDocument();
   });
 
@@ -925,7 +925,7 @@ describe('ChartsPage', () => {
       })
     );
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     act(() => {
       MockIntersectionObserver.triggerAll(true);
@@ -985,7 +985,7 @@ describe('ChartsPage', () => {
       },
     });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(screen.getByText('市場')).toBeInTheDocument();
     expect(screen.getByText('ETF/ETN')).toBeInTheDocument();
@@ -1009,7 +1009,7 @@ describe('ChartsPage', () => {
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     await waitFor(() => {
       expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
@@ -1038,7 +1038,7 @@ describe('ChartsPage', () => {
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    renderChartsPage();
+    renderSymbolWorkbenchPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
@@ -1104,7 +1104,7 @@ describe('ChartsPage', () => {
     mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    const { rerender } = renderChartsPage();
+    const { rerender } = renderSymbolWorkbenchPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: false });
     expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
@@ -1124,7 +1124,7 @@ describe('ChartsPage', () => {
       selectedSymbol: '7203',
     };
 
-    rerender(<ChartsPage />);
+    rerender(<SymbolWorkbenchPage />);
     expect(MockIntersectionObserver.instances.length).toBeGreaterThan(0);
 
     act(() => {

@@ -4,7 +4,7 @@ import {
   getRankingStateFromScreeningSearch,
   serializeRankingSearch,
   validateBacktestSearch,
-  validateChartsSearch,
+  validateSymbolWorkbenchSearch,
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
@@ -13,7 +13,7 @@ import {
   validateScreeningSearch,
 } from '@/lib/routeSearch';
 import { BacktestPage } from '@/pages/BacktestPage';
-import { ChartsPage } from '@/pages/ChartsPage';
+import { SymbolWorkbenchPage } from '@/pages/SymbolWorkbenchPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { IndicesPage } from '@/pages/IndicesPage';
 import { N225OptionsPage } from '@/pages/N225OptionsPage';
@@ -24,8 +24,9 @@ import { ResearchPage } from '@/pages/ResearchPage';
 import { ScreeningPage } from '@/pages/ScreeningPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
+const CANONICAL_SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
+
 const LEGACY_TAB_ROUTE_MAP = {
-  charts: '/charts',
   portfolio: '/portfolio',
   indices: '/indices',
   screening: '/screening',
@@ -65,17 +66,17 @@ const indexRoute = createRoute({
   },
   beforeLoad: ({ search }) => {
     if (!search.tab) {
-      throw redirect({ to: '/charts' });
+      throw redirect({ to: CANONICAL_SYMBOL_WORKBENCH_PATH });
     }
   },
   component: LegacyTabMigrationPage,
 });
 
-export const chartsRoute = createRoute({
+export const symbolWorkbenchRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/charts',
-  validateSearch: validateChartsSearch,
-  component: ChartsPage,
+  path: CANONICAL_SYMBOL_WORKBENCH_PATH,
+  validateSearch: validateSymbolWorkbenchSearch,
+  component: SymbolWorkbenchPage,
 });
 
 export const portfolioRoute = createRoute({
@@ -168,7 +169,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  chartsRoute,
+  symbolWorkbenchRoute,
   portfolioRoute,
   indicesRoute,
   researchRoute,
@@ -203,8 +204,8 @@ function LegacyTabMigrationPage() {
             Open suggested route ({suggestedPath})
           </Link>
         ) : null}
-        <Link to="/charts" className="rounded-md border px-4 py-2 text-sm">
-          Go to /charts
+        <Link to={CANONICAL_SYMBOL_WORKBENCH_PATH} className="rounded-md border px-4 py-2 text-sm">
+          Go to {CANONICAL_SYMBOL_WORKBENCH_PATH}
         </Link>
       </div>
     </div>

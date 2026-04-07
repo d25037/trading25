@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import {
   useBacktestRouteState,
-  useChartsRouteState,
+  useSymbolWorkbenchRouteState,
   useIndicesRouteState,
   useMigrateBacktestRouteState,
-  useMigrateChartsRouteState,
+  useMigrateSymbolWorkbenchRouteState,
   useMigrateIndicesRouteState,
   useMigratePortfolioRouteState,
   useMigrateScreeningRouteState,
@@ -16,12 +16,12 @@ import {
 } from './usePageRouteState';
 
 type RouteSearchState = Record<
-  'charts' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest',
+  'symbolWorkbench' | 'portfolio' | 'indices' | 'screening' | 'ranking' | 'backtest',
   Record<string, unknown>
 >;
 
 const routeSearchState: RouteSearchState = {
-  charts: {},
+  symbolWorkbench: {},
   portfolio: {},
   indices: {},
   screening: {},
@@ -31,7 +31,7 @@ const routeSearchState: RouteSearchState = {
 
 const routeKeyByPath = {
   '/backtest': 'backtest',
-  '/charts': 'charts',
+  '/symbol-workbench': 'symbolWorkbench',
   '/indices': 'indices',
   '/portfolio': 'portfolio',
   '/ranking': 'ranking',
@@ -57,7 +57,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/router', () => ({
   backtestRoute: { useSearch: () => routeSearchState.backtest },
-  chartsRoute: { useSearch: () => routeSearchState.charts },
+  symbolWorkbenchRoute: { useSearch: () => routeSearchState.symbolWorkbench },
   indicesRoute: { useSearch: () => routeSearchState.indices },
   portfolioRoute: { useSearch: () => routeSearchState.portfolio },
   rankingRoute: { useSearch: () => routeSearchState.ranking },
@@ -65,7 +65,7 @@ vi.mock('@/router', () => ({
 }));
 
 function resetRouteSearchState(): void {
-  routeSearchState.charts = {};
+  routeSearchState.symbolWorkbench = {};
   routeSearchState.portfolio = {};
   routeSearchState.indices = {};
   routeSearchState.screening = {};
@@ -80,26 +80,26 @@ describe('usePageRouteState', () => {
     window.sessionStorage.clear();
     mockNavigate.mockClear();
   });
-  it('reads and updates chart and indices route state', () => {
-    routeSearchState.charts = { symbol: '7203' };
+  it('reads and updates symbol workbench and indices route state', () => {
+    routeSearchState.symbolWorkbench = { symbol: '7203' };
     routeSearchState.indices = { code: 'topix' };
 
-    const chartsHook = renderHook(() => useChartsRouteState());
+    const symbolWorkbenchHook = renderHook(() => useSymbolWorkbenchRouteState());
     const indicesHook = renderHook(() => useIndicesRouteState());
 
-    expect(chartsHook.result.current.selectedSymbol).toBe('7203');
+    expect(symbolWorkbenchHook.result.current.selectedSymbol).toBe('7203');
     expect(indicesHook.result.current.selectedIndexCode).toBe('topix');
 
     act(() => {
-      chartsHook.result.current.setSelectedSymbol(' 6758 ', { replace: true });
+      symbolWorkbenchHook.result.current.setSelectedSymbol(' 6758 ', { replace: true });
       indicesHook.result.current.setSelectedIndexCode(' nk225 ', { replace: true });
     });
 
-    expect(routeSearchState.charts).toEqual({ symbol: '6758' });
+    expect(routeSearchState.symbolWorkbench).toEqual({ symbol: '6758' });
     expect(routeSearchState.indices).toEqual({ code: 'nk225' });
     expect(mockNavigate).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ to: '/charts', replace: true, search: expect.any(Function) })
+      expect.objectContaining({ to: '/symbol-workbench', replace: true, search: expect.any(Function) })
     );
     expect(mockNavigate).toHaveBeenNthCalledWith(
       2,
@@ -107,49 +107,49 @@ describe('usePageRouteState', () => {
     );
   });
 
-  it('coerces numeric charts route values to strings', () => {
-    routeSearchState.charts = { symbol: 7203, strategy: 1234, matchedDate: 20260324 };
+  it('coerces numeric symbol workbench route values to strings', () => {
+    routeSearchState.symbolWorkbench = { symbol: 7203, strategy: 1234, matchedDate: 20260324 };
 
-    const { result } = renderHook(() => useChartsRouteState());
+    const { result } = renderHook(() => useSymbolWorkbenchRouteState());
 
     expect(result.current.selectedSymbol).toBe('7203');
     expect(result.current.strategyName).toBe('1234');
     expect(result.current.matchedDate).toBe('20260324');
   });
 
-  it('preserves strategy context and drops matched date when charts symbol changes', () => {
-    routeSearchState.charts = {
+  it('preserves strategy context and drops matched date when symbol workbench symbol changes', () => {
+    routeSearchState.symbolWorkbench = {
       symbol: '7203',
       strategy: 'production/demo',
       matchedDate: '2026-03-14',
     };
 
-    const { result } = renderHook(() => useChartsRouteState());
+    const { result } = renderHook(() => useSymbolWorkbenchRouteState());
 
     act(() => {
       result.current.setSelectedSymbol('6758');
     });
 
-    expect(routeSearchState.charts).toEqual({
+    expect(routeSearchState.symbolWorkbench).toEqual({
       symbol: '6758',
       strategy: 'production/demo',
     });
   });
 
-  it('clears strategy context when charts symbol is cleared', () => {
-    routeSearchState.charts = {
+  it('clears strategy context when symbol workbench symbol is cleared', () => {
+    routeSearchState.symbolWorkbench = {
       symbol: '7203',
       strategy: 'production/demo',
       matchedDate: '2026-03-14',
     };
 
-    const { result } = renderHook(() => useChartsRouteState());
+    const { result } = renderHook(() => useSymbolWorkbenchRouteState());
 
     act(() => {
       result.current.setSelectedSymbol(null);
     });
 
-    expect(routeSearchState.charts).toEqual({});
+    expect(routeSearchState.symbolWorkbench).toEqual({});
   });
 
   it('preserves portfolio state across sequential updates', () => {
@@ -241,7 +241,7 @@ describe('usePageRouteState', () => {
     });
   });
 
-  it('migrates charts and indices persisted state into route search', async () => {
+  it('migrates symbol workbench and indices persisted state into route search', async () => {
     window.localStorage.setItem(
       'trading25-chart-store',
       JSON.stringify({
@@ -262,11 +262,11 @@ describe('usePageRouteState', () => {
       })
     );
 
-    renderHook(() => useMigrateChartsRouteState());
+    renderHook(() => useMigrateSymbolWorkbenchRouteState());
     renderHook(() => useMigrateIndicesRouteState());
 
     await waitFor(() => {
-      expect(routeSearchState.charts).toEqual({ symbol: '7203' });
+      expect(routeSearchState.symbolWorkbench).toEqual({ symbol: '7203' });
       expect(routeSearchState.indices).toEqual({ code: 'topix' });
     });
 

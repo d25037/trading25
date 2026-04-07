@@ -445,7 +445,7 @@ describe('ScreeningPage', () => {
     render(<ScreeningPage />);
 
     await user.click(screen.getByText('Screening Row'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
   });
 
   it('re-resolves completed screening result from the active job id', () => {

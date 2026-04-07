@@ -155,12 +155,12 @@ describe('RankingPage', () => {
     expect(screen.getByText('Fundamental Ranking Summary')).toBeInTheDocument();
   });
 
-  it('navigates to charts when a ranking row is selected', async () => {
+  it('navigates to the symbol workbench when a ranking row is selected', async () => {
     const user = userEvent.setup();
     render(<RankingPage />);
 
     await user.click(screen.getByText('Ranking Row'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '6758' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '6758' } });
   });
 
   it('switches daily ranking to indices view', async () => {
@@ -202,12 +202,12 @@ describe('RankingPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: 'TOPIX' } });
   });
 
-  it('navigates to charts when a TOPIX100 row is selected', async () => {
+  it('navigates to the symbol workbench when a TOPIX100 row is selected', async () => {
     const user = userEvent.setup();
     mockRouteState.activeDailyView = 'topix100';
     render(<RankingPage />);
 
     await user.click(screen.getByText('TOPIX100 Ranking Table'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
   });
 });

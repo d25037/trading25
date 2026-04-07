@@ -128,7 +128,7 @@ describe('PortfolioDetail', () => {
 
     await user.click(screen.getByRole('button', { name: 'View chart for 7203 Toyota Motor' }));
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
   });
 
   it('renders performance sections when performance data is available', async () => {
