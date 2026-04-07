@@ -8,6 +8,7 @@ import {
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
+  validateResearchSearch,
   validateRankingSearch,
   validateScreeningSearch,
 } from '@/lib/routeSearch';
@@ -17,7 +18,9 @@ import { HistoryPage } from '@/pages/HistoryPage';
 import { IndicesPage } from '@/pages/IndicesPage';
 import { N225OptionsPage } from '@/pages/N225OptionsPage';
 import { PortfolioPage } from '@/pages/PortfolioPage';
+import { ResearchDetailPage } from '@/pages/ResearchDetailPage';
 import { RankingPage } from '@/pages/RankingPage';
+import { ResearchPage } from '@/pages/ResearchPage';
 import { ScreeningPage } from '@/pages/ScreeningPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
@@ -89,6 +92,24 @@ export const indicesRoute = createRoute({
   component: IndicesPage,
 });
 
+export const researchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/research',
+  component: ResearchPage,
+});
+
+export const researchDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/research/detail',
+  validateSearch: validateResearchSearch,
+  beforeLoad: ({ search }) => {
+    if (!search.experimentId) {
+      throw redirect({ to: '/research' });
+    }
+  },
+  component: ResearchDetailPage,
+});
+
 export const options225Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/options-225',
@@ -150,6 +171,8 @@ const routeTree = rootRoute.addChildren([
   chartsRoute,
   portfolioRoute,
   indicesRoute,
+  researchRoute,
+  researchDetailRoute,
   options225Route,
   screeningRoute,
   rankingRoute,

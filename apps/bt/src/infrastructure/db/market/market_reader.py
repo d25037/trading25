@@ -96,6 +96,10 @@ class MarketDbReader:
     def conn(self) -> Any:
         return self._get_thread_connection()
 
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
     def close(self) -> None:
         with self._conn_lock:
             conns = list(self._conns.values())

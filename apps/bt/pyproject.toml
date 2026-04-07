@@ -8,6 +8,7 @@ dependencies = [
     "vectorbt>=0.26.0",
     "pandas>=2.0.0",
     "numpy>=1.20.0",
+    "lightgbm>=4.0.0",
     "typer>=0.9.0",
     "rich>=13.0.0",
     "loguru>=0.7.0",
@@ -50,7 +51,6 @@ dev = [
     "mypy>=1.8.0",
 ]
 research = [
-    "lightgbm>=4.0.0",
 ]
 nautilus = [
     "nautilus-trader>=1.221.0",

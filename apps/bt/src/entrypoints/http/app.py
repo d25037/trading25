@@ -24,7 +24,7 @@ from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddlewa
 from src.entrypoints.http.error_utils import extract_http_exception_detail
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
-from src.entrypoints.http.routes import analytics_complex, analytics_market, chart, jquants_proxy, market_data
+from src.entrypoints.http.routes import analytics_complex, analytics_market, analytics_research, chart, jquants_proxy, market_data
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -366,6 +366,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(market_data.router)
     app.include_router(chart.router)
     app.include_router(analytics_complex.router)
+    app.include_router(analytics_research.router)
     app.include_router(db.router)
     app.include_router(dataset_data.router)
     app.include_router(dataset.router)

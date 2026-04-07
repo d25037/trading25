@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **132**
+Total paths: **134**
 
 ## /api/analytics
 
@@ -13,6 +13,8 @@ Total paths: **132**
 | `/api/analytics/fundamentals/{symbol}` | `GET` |
 | `/api/analytics/portfolio-factor-regression/{portfolioId}` | `GET` |
 | `/api/analytics/ranking` | `GET` |
+| `/api/analytics/research` | `GET` |
+| `/api/analytics/research/detail` | `GET` |
 | `/api/analytics/roe` | `GET` |
 | `/api/analytics/screening` | `GET` |
 | `/api/analytics/screening/jobs` | `POST` |

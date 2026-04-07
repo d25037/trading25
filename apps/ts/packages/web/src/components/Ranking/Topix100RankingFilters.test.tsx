@@ -37,6 +37,8 @@ describe('Topix100RankingFilters', () => {
     topix100SmaWindow: 50,
     topix100PriceBucket: 'all',
     topix100VolumeBucket: 'all',
+    topix100ShortMode: 'all',
+    topix100LongMode: 'all',
   };
 
   it('renders the default metric mode when params are omitted', () => {
@@ -46,10 +48,12 @@ describe('Topix100RankingFilters', () => {
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
       screen.getByText(
-        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first.'
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. The production score is now decile-only on the discrete side; streak 3/53 states and volume split stay visible as context filters around the next-session intraday LightGBM read.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();
+    expect(screen.getByText('Short State')).toBeInTheDocument();
+    expect(screen.getByText('Long State')).toBeInTheDocument();
   });
 
   it('renders the legacy metric copy without the sma window control', () => {
@@ -64,7 +68,11 @@ describe('Topix100RankingFilters', () => {
       />
     );
 
-    expect(screen.getByText('Legacy SMA 20/80 comparison view.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Legacy SMA 20/80 comparison view. The score layer now uses the next-session intraday LightGBM read with decile-only discrete conditioning on top of the same SMA50 / volume 5/20 feature family.'
+      )
+    ).toBeInTheDocument();
     expect(screen.queryByText('SMA Window')).not.toBeInTheDocument();
   });
 
@@ -103,6 +111,20 @@ describe('Topix100RankingFilters', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       topix100VolumeBucket: 'low',
+    });
+
+    await user.click(screen.getByRole('combobox', { name: 'Short State' }));
+    await user.click(screen.getByRole('option', { name: 'Bearish' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      topix100ShortMode: 'bearish',
+    });
+
+    await user.click(screen.getByRole('combobox', { name: 'Long State' }));
+    await user.click(screen.getByRole('option', { name: 'Bullish' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      topix100LongMode: 'bullish',
     });
   });
 });
