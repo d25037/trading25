@@ -82,7 +82,6 @@ function formatScore(value: number | null | undefined): string {
 
 function getDefaultSortOrder(sortBy: Topix100RankingSortKey): SortOrder {
   switch (sortBy) {
-    case 'rank':
     case 'code':
     case 'companyName':
     case 'volumeBucket':
@@ -306,15 +305,7 @@ export function Topix100RankingTable({
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
               <tr>
-                <SortableHeader
-                  label="Rank"
-                  sortKey="rank"
-                  activeSortBy={sortBy}
-                  activeSortOrder={sortOrder}
-                  onSortChange={onSortChange}
-                  className="w-16 px-2 py-1.5 text-center"
-                  buttonClassName="justify-center"
-                />
+                <th className="w-12 px-2 py-1.5 text-center text-muted-foreground">#</th>
                 <SortableHeader
                   label="Code"
                   sortKey="code"
@@ -374,24 +365,6 @@ export function Topix100RankingTable({
                   buttonClassName="justify-end"
                 />
                 <SortableHeader
-                  label="L Rank"
-                  sortKey="intradayLongRank"
-                  activeSortBy={sortBy}
-                  activeSortOrder={sortOrder}
-                  onSortChange={onSortChange}
-                  className="w-20 px-2 py-1.5 text-right"
-                  buttonClassName="justify-end"
-                />
-                <SortableHeader
-                  label="S Rank"
-                  sortKey="intradayShortRank"
-                  activeSortBy={sortBy}
-                  activeSortOrder={sortOrder}
-                  onSortChange={onSortChange}
-                  className="w-20 px-2 py-1.5 text-right"
-                  buttonClassName="justify-end"
-                />
-                <SortableHeader
                   label="Volume SMA 5/20"
                   sortKey="volumeSma5_20"
                   activeSortBy={sortBy}
@@ -429,13 +402,13 @@ export function Topix100RankingTable({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {items.map((item, index) => (
                 <tr
                   key={item.code}
                   className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
                   onClick={() => onStockClick(item.code)}
                 >
-                  <td className="px-2 py-1.5 text-center font-medium tabular-nums">{item.rank}</td>
+                  <td className="px-2 py-1.5 text-center font-medium tabular-nums">{index + 1}</td>
                   <td className="px-2 py-1.5 font-medium">{item.code}</td>
                   <td className="max-w-[220px] truncate px-2 py-1.5">{item.companyName}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
@@ -460,12 +433,6 @@ export function Topix100RankingTable({
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
                     {formatScore(item.intradayScore)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.intradayLongRank ? `#${item.intradayLongRank}` : '-'}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.intradayShortRank ? `#${item.intradayShortRank}` : '-'}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>

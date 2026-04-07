@@ -132,7 +132,7 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="all"
         shortModeFilter="all"
         longModeFilter="all"
-        sortBy="rank"
+        sortBy="intradayScore"
         sortOrder="asc"
         onSortChange={vi.fn()}
       />
@@ -168,7 +168,7 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="low"
         shortModeFilter="bearish"
         longModeFilter="bearish"
-        sortBy="rank"
+        sortBy="intradayScore"
         sortOrder="asc"
         onSortChange={vi.fn()}
       />
@@ -220,7 +220,7 @@ describe('Topix100RankingTable', () => {
         volumeBucketFilter="low"
         shortModeFilter="all"
         longModeFilter="all"
-        sortBy="rank"
+        sortBy="intradayScore"
         sortOrder="asc"
         onSortChange={vi.fn()}
       />
@@ -233,8 +233,8 @@ describe('Topix100RankingTable', () => {
     const user = userEvent.setup();
 
     function Harness() {
-      const [sortBy, setSortBy] = useState<Topix100RankingSortKey>('rank');
-      const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+      const [sortBy, setSortBy] = useState<Topix100RankingSortKey>('intradayScore');
+      const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
       return (
         <Topix100RankingTable
@@ -261,12 +261,13 @@ describe('Topix100RankingTable', () => {
     render(<Harness />);
 
     const rowsBefore = screen.getAllByRole('row').slice(1);
-    expect(rowsBefore[0]).toHaveTextContent('7203');
+    expect(rowsBefore[0]).toHaveTextContent('6758');
 
     await user.click(screen.getByRole('button', { name: /ID Score/i }));
 
     const rowsAfter = screen.getAllByRole('row').slice(1);
-    expect(rowsAfter[0]).toHaveTextContent('6758');
+    expect(rowsAfter[0]).toHaveTextContent('7203');
     expect(rowsAfter[1]).toHaveTextContent('9432');
+    expect(rowsAfter[2]).toHaveTextContent('6758');
   });
 });

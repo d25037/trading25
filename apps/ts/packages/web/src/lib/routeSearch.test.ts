@@ -172,7 +172,7 @@ describe('routeSearch', () => {
       rankingTopix100VolumeBucket: 'low',
       rankingTopix100ShortMode: 'bearish',
       rankingTopix100LongMode: 'bullish',
-      rankingTopix100SortOrder: 'desc',
+      rankingTopix100SortBy: 'intradayLongRank',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
@@ -242,7 +242,6 @@ describe('routeSearch', () => {
       rankingTopix100ShortMode: 'bullish',
       rankingTopix100LongMode: 'bearish',
       rankingTopix100SortBy: 'intradayShortRank',
-      rankingTopix100SortOrder: 'desc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
