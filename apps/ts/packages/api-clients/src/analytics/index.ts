@@ -49,5 +49,6 @@ export type {
   Topix100RankingMetric,
   Topix100RankingParams,
   Topix100RankingResponse,
+  Topix100StreakMode,
   Topix100VolumeBucket,
 } from './types.js';

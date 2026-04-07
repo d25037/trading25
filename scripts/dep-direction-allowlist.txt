@@ -27,6 +27,8 @@ apps/ts/packages/contracts/src/clients/backtest/generated/type-compatibility-che
 apps/ts/packages/web/src/components/Lab/LabResultSection.tsx
 apps/ts/packages/web/src/hooks/useBtOHLCV.ts
 apps/ts/packages/web/src/types/backtest.ts
+# PR #research-ui: research web types wrap bt OpenAPI schemas for published analytics views
+apps/ts/packages/web/src/types/research.ts
 
 # Vite proxy config (localhost:3002 reference)
 apps/ts/packages/web/vite.config.ts

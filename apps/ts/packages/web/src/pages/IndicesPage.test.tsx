@@ -98,6 +98,43 @@ const makeTopixIndexData = () => ({
   name: 'TOPIX',
 });
 
+const makeTopixModeIndexData = () => {
+  const returns: number[] = Array.from({ length: 60 }, (_, index) => (index % 2 === 0 ? 0.002 : -0.002));
+  returns[10] = 0.03;
+  returns[58] = 0.004;
+  returns[59] = -0.05;
+
+  let close = 1000;
+  const data = [
+    {
+      date: '2026-01-01',
+      open: close,
+      high: close,
+      low: close,
+      close,
+    },
+  ];
+
+  for (const [index, dailyReturn] of returns.entries()) {
+    const nextClose = close * (1 + dailyReturn);
+    const date = new Date(Date.UTC(2026, 0, index + 2)).toISOString().slice(0, 10);
+    data.push({
+      date,
+      open: close,
+      high: Math.max(close, nextClose),
+      low: Math.min(close, nextClose),
+      close: nextClose,
+    });
+    close = nextClose;
+  }
+
+  return {
+    data,
+    code: '1321',
+    name: 'TOPIX',
+  };
+};
+
 const makeSyntheticIndexData = () => ({
   data: [
     {
@@ -254,6 +291,38 @@ describe('IndicesPage', () => {
     selectedIndexCode = '1321';
     rerender(<IndicesPage />);
     expect(await screen.findByText('Price Chart (1 data points)')).toBeInTheDocument();
+  });
+
+  it('renders the TOPIX multi-timeframe mode panel when enough history is available', () => {
+    selectedIndexCode = '1321';
+
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockImplementation((code: string | null) => {
+      if (code === '1321') {
+        return {
+          data: makeTopixModeIndexData(),
+          isLoading: false,
+          error: null,
+        };
+      }
+      return {
+        data: null,
+        isLoading: false,
+        error: null,
+      };
+    });
+
+    render(<IndicesPage />);
+
+    expect(screen.getByText('TOPIX Streak Mode')).toBeInTheDocument();
+    expect(screen.getByText('Long X=53 streaks / Short X=3 streaks')).toBeInTheDocument();
+    expect(screen.getByText('Mean-reversion sweet spot')).toBeInTheDocument();
+    expect(screen.getByLabelText('Long regime (53 streaks) ribbon')).toBeInTheDocument();
+    expect(screen.getByLabelText('Short regime (3 streaks) ribbon')).toBeInTheDocument();
   });
 
   it('handles keyboard navigation and wraps selection', () => {
