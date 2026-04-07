@@ -12,6 +12,37 @@ bt_python="${repo_root}/apps/bt/.venv/bin/python"
 test_targets=("$@")
 pytest_args=("${test_targets[@]}")
 
+if [[ -n "${BT_PYTEST_SKIP_ENV:-}" ]]; then
+  if [[ ! -x "${bt_python}" ]]; then
+    echo "[apps/bt] BT_PYTEST_SKIP_ENV=1 requires an existing project venv." >&2
+    exit 1
+  fi
+
+  log_command() {
+    printf "[apps/bt] "
+    printf "%q " "$@"
+    printf "\n"
+  }
+
+  if [[ -n "${BT_COVERAGE_DATA_FILE:-}" ]]; then
+    log_command coverage run "--data-file=${BT_COVERAGE_DATA_FILE}" -m pytest "${pytest_args[@]}"
+    (
+      cd "${bt_root}"
+      "${bt_python}" -m coverage run \
+        --data-file="${BT_COVERAGE_DATA_FILE}" \
+        -m pytest \
+        "${pytest_args[@]}"
+    )
+  else
+    log_command pytest "${pytest_args[@]}"
+    (
+      cd "${bt_root}"
+      "${bt_python}" -m pytest "${pytest_args[@]}"
+    )
+  fi
+  exit 0
+fi
+
 if [[ -n "${BT_PYTEST_MARKEXPR:-}" ]]; then
   pytest_args+=("-m" "${BT_PYTEST_MARKEXPR}")
 elif [[ "${BT_PYTEST_FAST:-0}" == "1" ]]; then

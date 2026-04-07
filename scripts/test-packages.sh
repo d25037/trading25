@@ -17,6 +17,8 @@ run_bt_unit_shards() {
   local coverage_dir
   coverage_dir="$(mktemp -d "${TMPDIR:-/tmp}/bt-unit-shards.XXXXXX")"
 
+  BT_SKIP_UV=1 BT_REQUIRE_DEPS=1 "${repo_root}/scripts/bt-env.sh"
+
   local -a shard_names=("analytics" "server" "core")
   local -a shard_analytics=(
     tests/unit/domains
@@ -74,6 +76,7 @@ run_bt_unit_shards() {
     esac
 
     (
+      export BT_PYTEST_SKIP_ENV=1
       export BT_COVERAGE_DATA_FILE="${coverage_file}"
       echo "[apps/bt] shard ${shard_name} -> ${shard_args[*]}"
       "${repo_root}/scripts/bt-pytest.sh" "${shard_args[@]}"
