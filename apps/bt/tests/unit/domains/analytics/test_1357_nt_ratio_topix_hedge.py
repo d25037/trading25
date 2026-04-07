@@ -295,16 +295,34 @@ def _build_market_db(db_path: Path) -> tuple[str, SyntheticSeries]:
 _NIKKEI_SYNTHETIC_INDEX_CODE = "N225_UNDERPX"
 
 
-@pytest.fixture
-def analytics_db(tmp_path: Path) -> tuple[str, SyntheticSeries]:
-    return _build_market_db(tmp_path / "market.duckdb")
+@pytest.fixture(scope="module")
+def analytics_db(tmp_path_factory: pytest.TempPathFactory) -> tuple[str, SyntheticSeries]:
+    tmp_dir = tmp_path_factory.mktemp("hedge-1357-nt-ratio-topix")
+    return _build_market_db(tmp_dir / "market.duckdb")
+
+
+@pytest.fixture(scope="module")
+def default_result(analytics_db: tuple[str, SyntheticSeries]):
+    db_path, _ = analytics_db
+    return run_1357_nt_ratio_topix_hedge_research(db_path)
+
+
+@pytest.fixture(scope="module")
+def configured_result(analytics_db: tuple[str, SyntheticSeries]):
+    db_path, _ = analytics_db
+    return run_1357_nt_ratio_topix_hedge_research(
+        db_path,
+        selected_groups=["TOPIX100", "TOPIX500"],
+        fixed_weights=[0.2, 0.4],
+    )
 
 
 def test_available_range_and_forward_returns_are_returned(
     analytics_db: tuple[str, SyntheticSeries],
+    default_result,
 ) -> None:
-    db_path, series = analytics_db
-    result = run_1357_nt_ratio_topix_hedge_research(db_path)
+    _, series = analytics_db
+    result = default_result
 
     assert result.available_start_date == series.dates[0]
     assert result.available_end_date == series.dates[-1]
@@ -342,9 +360,10 @@ def test_available_range_and_forward_returns_are_returned(
 
 def test_bucket_boundaries_and_regime_flags_are_correct(
     analytics_db: tuple[str, SyntheticSeries],
+    default_result,
 ) -> None:
-    db_path, series = analytics_db
-    result = run_1357_nt_ratio_topix_hedge_research(db_path)
+    _, series = analytics_db
+    result = default_result
 
     assert result.topix_close_stats is not None
     assert result.nt_ratio_stats is not None
@@ -388,9 +407,10 @@ def test_bucket_boundaries_and_regime_flags_are_correct(
 
 def test_proxy_returns_and_hedge_metrics_are_consistent(
     analytics_db: tuple[str, SyntheticSeries],
+    default_result,
 ) -> None:
-    db_path, series = analytics_db
-    result = run_1357_nt_ratio_topix_hedge_research(db_path)
+    _, series = analytics_db
+    result = default_result
 
     event_index = 20
     event_date = series.dates[event_index]
@@ -472,15 +492,10 @@ def test_proxy_returns_and_hedge_metrics_are_consistent(
 
 
 def test_hedge_bundle_roundtrip(
-    analytics_db: tuple[str, SyntheticSeries],
+    configured_result,
     tmp_path: Path,
 ) -> None:
-    db_path, _ = analytics_db
-    result = run_1357_nt_ratio_topix_hedge_research(
-        db_path,
-        selected_groups=["TOPIX100", "TOPIX500"],
-        fixed_weights=[0.2, 0.4],
-    )
+    result = configured_result
 
     bundle = write_1357_nt_ratio_topix_hedge_research_bundle(
         result,
@@ -514,10 +529,11 @@ def test_hedge_bundle_roundtrip(
 
 def test_snapshot_fallback_preserves_results(
     analytics_db: tuple[str, SyntheticSeries],
+    default_result,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db_path, _ = analytics_db
-    normal_result = run_1357_nt_ratio_topix_hedge_research(db_path)
+    normal_result = default_result
 
     real_connect = topix_analysis_module._connect_duckdb
     call_count = {"value": 0}

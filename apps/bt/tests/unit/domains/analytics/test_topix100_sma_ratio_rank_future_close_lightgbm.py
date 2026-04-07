@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
 
+import src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm as lightgbm_module
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
     HORIZON_ORDER,
     run_topix100_sma_ratio_rank_future_close_research,
@@ -16,12 +15,16 @@ from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm import 
     DEFAULT_WALKFORWARD_TRAIN_WINDOW,
     LIGHTGBM_LIBOMP_INSTALL_HINT,
     LIGHTGBM_RESEARCH_INSTALL_HINT,
+    _run_fixed_split_diagnostic,
     format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
     run_topix100_sma_ratio_rank_future_close_lightgbm_research,
 )
 from src.domains.analytics.topix_sma_ratio_rank_future_close_selection import (
     _analyze_ranked_panel,
     _extract_global_row,
+)
+from src.domains.analytics.topix_sma_ratio_rank_future_close_support import (
+    RANKING_FEATURE_ORDER,
 )
 from src.domains.backtest.core.walkforward import generate_walkforward_splits
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
@@ -57,25 +60,25 @@ class FakeLGBMRanker:
         return frame.to_numpy(dtype=float) @ weights
 
 
-@pytest.fixture
-def analytics_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     return build_topix100_research_market_db(
-        tmp_path / "market-two-split.duckdb",
+        tmp_path_factory.mktemp("topix100-sma-lightgbm") / "market-two-split.duckdb",
         start_date="2021-01-04",
         periods=320,
     )
 
 
-@pytest.fixture
-def long_analytics_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def long_analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
     return build_topix100_research_market_db(
-        tmp_path / "market-walkforward-default.duckdb",
+        tmp_path_factory.mktemp("topix100-sma-lightgbm") / "market-walkforward-default.duckdb",
         start_date="2018-01-04",
         periods=1200,
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def base_result(analytics_db_path: str):
     return run_topix100_sma_ratio_rank_future_close_research(
         analytics_db_path,
@@ -83,12 +86,58 @@ def base_result(analytics_db_path: str):
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def long_base_result(long_analytics_db_path: str):
     return run_topix100_sma_ratio_rank_future_close_research(
         long_analytics_db_path,
         min_constituents_per_day=10,
     )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fake_lightgbm_ranker_loader():
+    original_loader = lightgbm_module._load_lightgbm_ranker_cls
+    lightgbm_module._load_lightgbm_ranker_cls = lambda: FakeLGBMRanker
+    yield
+    lightgbm_module._load_lightgbm_ranker_cls = original_loader
+
+
+@pytest.fixture(scope="module")
+def default_walkforward_result(long_base_result):
+    FakeLGBMRanker.instances = []
+    result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
+        long_base_result,
+        include_diagnostic=False,
+    )
+    FakeLGBMRanker.instances = []
+    return result
+
+
+@pytest.fixture(scope="module")
+def short_walkforward_result_bundle(base_result):
+    FakeLGBMRanker.instances = []
+    result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
+        base_result,
+        train_window=60,
+        test_window=20,
+        step=20,
+        include_diagnostic=False,
+    )
+    instances = list(FakeLGBMRanker.instances)
+    FakeLGBMRanker.instances = []
+    return result, instances
+
+
+@pytest.fixture(scope="module")
+def fixed_split_diagnostic(base_result):
+    FakeLGBMRanker.instances = []
+    diagnostic = _run_fixed_split_diagnostic(
+        base_result,
+        ranker_cls=FakeLGBMRanker,
+        feature_columns=tuple(RANKING_FEATURE_ORDER),
+    )
+    FakeLGBMRanker.instances = []
+    return diagnostic
 
 
 def _build_scored_df(event_panel_df: pd.DataFrame, horizon_key: str) -> pd.DataFrame:
@@ -101,17 +150,9 @@ def _build_scored_df(event_panel_df: pd.DataFrame, horizon_key: str) -> pd.DataF
 
 def test_walkforward_helper_uses_default_split_config(
     long_base_result,
-    monkeypatch: pytest.MonkeyPatch,
+    default_walkforward_result,
 ) -> None:
-    FakeLGBMRanker.instances = []
-    monkeypatch.setattr(
-        "src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm._load_lightgbm_ranker_cls",
-        lambda: FakeLGBMRanker,
-    )
-
-    lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
-        long_base_result
-    )
+    lightgbm_result = default_walkforward_result
 
     expected_splits = generate_walkforward_splits(
         pd.DatetimeIndex(long_base_result.event_panel_df["date"].unique()),
@@ -133,20 +174,9 @@ def test_walkforward_helper_uses_default_split_config(
 
 def test_walkforward_helper_trains_lightgbm_on_train_only_dates_and_test_only_scores(
     base_result,
-    monkeypatch: pytest.MonkeyPatch,
+    short_walkforward_result_bundle,
 ) -> None:
-    FakeLGBMRanker.instances = []
-    monkeypatch.setattr(
-        "src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm._load_lightgbm_ranker_cls",
-        lambda: FakeLGBMRanker,
-    )
-
-    lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
-        base_result,
-        train_window=60,
-        test_window=20,
-        step=20,
-    )
+    lightgbm_result, ranker_instances = short_walkforward_result_bundle
 
     coverage_df = lightgbm_result.walkforward.split_coverage_df.sort_values(
         ["split_index", "selected_horizon_key"],
@@ -156,10 +186,10 @@ def test_walkforward_helper_trains_lightgbm_on_train_only_dates_and_test_only_sc
         (coverage_df["lightgbm_train_row_count"] > 0)
         & (coverage_df["lightgbm_test_row_count"] > 0)
     ].copy()
-    walkforward_instances = FakeLGBMRanker.instances[: len(expected_rows)]
+    walkforward_instances = ranker_instances[: len(expected_rows)]
 
     assert len(walkforward_instances) == len(expected_rows)
-    assert len(FakeLGBMRanker.instances) == len(expected_rows) + len(HORIZON_ORDER)
+    assert len(ranker_instances) == len(expected_rows)
 
     for row, instance in zip(
         expected_rows.to_dict(orient="records"),
@@ -196,20 +226,9 @@ def test_walkforward_helper_trains_lightgbm_on_train_only_dates_and_test_only_sc
 
 def test_walkforward_baseline_selection_uses_train_metrics_and_oos_panel_has_no_duplicates(
     base_result,
-    monkeypatch: pytest.MonkeyPatch,
+    short_walkforward_result_bundle,
 ) -> None:
-    FakeLGBMRanker.instances = []
-    monkeypatch.setattr(
-        "src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm._load_lightgbm_ranker_cls",
-        lambda: FakeLGBMRanker,
-    )
-
-    lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
-        base_result,
-        train_window=60,
-        test_window=20,
-        step=20,
-    )
+    lightgbm_result, _ = short_walkforward_result_bundle
 
     walkforward = lightgbm_result.walkforward
     for row in walkforward.baseline_selected_feature_df.to_dict(orient="records"):
@@ -246,21 +265,10 @@ def test_walkforward_baseline_selection_uses_train_metrics_and_oos_panel_has_no_
 
 
 def test_walkforward_helper_returns_oos_comparison_and_feature_importance(
-    base_result,
-    monkeypatch: pytest.MonkeyPatch,
+    short_walkforward_result_bundle,
+    fixed_split_diagnostic,
 ) -> None:
-    FakeLGBMRanker.instances = []
-    monkeypatch.setattr(
-        "src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm._load_lightgbm_ranker_cls",
-        lambda: FakeLGBMRanker,
-    )
-
-    lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
-        base_result,
-        train_window=60,
-        test_window=20,
-        step=20,
-    )
+    lightgbm_result, _ = short_walkforward_result_bundle
 
     comparison = lightgbm_result.walkforward.comparison_summary_df
     split_spread = lightgbm_result.walkforward.split_spread_df
@@ -287,7 +295,8 @@ def test_walkforward_helper_returns_oos_comparison_and_feature_importance(
         "failed",
         "insufficient_coverage",
     }
-    assert lightgbm_result.diagnostic is not None
+    assert not fixed_split_diagnostic.comparison_summary_df.empty
+    assert not fixed_split_diagnostic.feature_importance_df.empty
 
 
 def test_notebook_error_formatter_surfaces_install_and_libomp_hints() -> None:

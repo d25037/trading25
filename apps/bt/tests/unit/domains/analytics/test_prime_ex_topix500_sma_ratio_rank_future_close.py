@@ -19,13 +19,23 @@ from src.domains.analytics.prime_ex_topix500_sma_ratio_rank_future_close import 
 )
 
 
-@pytest.fixture
-def analytics_db_path(tmp_path: Path) -> str:
-    return build_prime_ex_topix500_research_market_db(tmp_path / "market.duckdb")
+@pytest.fixture(scope="module")
+def analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    tmp_dir = tmp_path_factory.mktemp("prime-ex-topix500-sma-ratio-rank-future-close")
+    return build_prime_ex_topix500_research_market_db(tmp_dir / "market.duckdb")
+
+
+@pytest.fixture(scope="module")
+def research_result(analytics_db_path: str):
+    return run_prime_ex_topix500_sma_ratio_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=12,
+    )
 
 
 def test_prime_ex_topix500_available_range_and_universe_counts(
     analytics_db_path: str,
+    research_result,
 ) -> None:
     available_start, available_end = (
         get_prime_ex_topix500_sma_ratio_rank_future_close_available_date_range(
@@ -36,10 +46,7 @@ def test_prime_ex_topix500_available_range_and_universe_counts(
     assert available_start == "2023-01-02"
     assert available_end == "2023-11-03"
 
-    result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=12,
-    )
+    result = research_result
 
     assert result.universe_key == "prime_ex_topix500"
     assert result.universe_label == "PRIME ex TOPIX500"
@@ -53,12 +60,9 @@ def test_prime_ex_topix500_available_range_and_universe_counts(
 
 
 def test_prime_ex_topix500_excludes_topix500_and_standard_codes(
-    analytics_db_path: str,
+    research_result,
 ) -> None:
-    result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=12,
-    )
+    result = research_result
 
     assert sorted(result.event_panel_df["code"].unique().tolist()) == [
         "1001",
@@ -77,13 +81,10 @@ def test_prime_ex_topix500_excludes_topix500_and_standard_codes(
 
 
 def test_prime_ex_topix500_bundle_roundtrip(
-    analytics_db_path: str,
+    research_result,
     tmp_path: Path,
 ) -> None:
-    result = run_prime_ex_topix500_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=12,
-    )
+    result = research_result
 
     bundle = write_prime_ex_topix500_sma_ratio_rank_future_close_research_bundle(
         result,

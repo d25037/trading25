@@ -18,21 +18,27 @@ from src.domains.analytics.topix100_price_to_sma50_decile_partitions import (
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
 
 
-@pytest.fixture
-def analytics_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    tmp_dir = tmp_path_factory.mktemp("topix100-price-to-sma50-decile-partitions")
     return build_topix100_research_market_db(
-        tmp_path / "market-price-to-sma50-partitions.duckdb",
+        tmp_dir / "market-price-to-sma50-partitions.duckdb",
         extra_topix100_constituents=10,
     )
 
 
-def test_price_to_sma50_partition_research_builds_zero_base_candidate_tables(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_price_to_sma50_decile_partitions_research(
+@pytest.fixture(scope="module")
+def research_result(analytics_db_path: str):
+    return run_topix100_price_to_sma50_decile_partitions_research(
         analytics_db_path,
         min_constituents_per_day=20,
     )
+
+
+def test_price_to_sma50_partition_research_builds_zero_base_candidate_tables(
+    research_result,
+) -> None:
+    result = research_result
 
     assert result.price_feature == PRICE_FEATURE
     assert result.volume_feature == VOLUME_FEATURE
@@ -61,12 +67,9 @@ def test_price_to_sma50_partition_research_builds_zero_base_candidate_tables(
 
 
 def test_overall_scorecard_exposes_price_and_volume_lenses_for_each_candidate(
-    analytics_db_path: str,
+    research_result,
 ) -> None:
-    result = run_topix100_price_to_sma50_decile_partitions_research(
-        analytics_db_path,
-        min_constituents_per_day=20,
-    )
+    result = research_result
 
     scoped = result.candidate_overall_scorecard_df[
         (result.candidate_overall_scorecard_df["horizon_key"] == "t_plus_10")
@@ -95,13 +98,10 @@ def test_overall_scorecard_exposes_price_and_volume_lenses_for_each_candidate(
 
 
 def test_price_to_sma50_partition_research_bundle_roundtrip(
-    analytics_db_path: str,
+    research_result,
     tmp_path: Path,
 ) -> None:
-    result = run_topix100_price_to_sma50_decile_partitions_research(
-        analytics_db_path,
-        min_constituents_per_day=20,
-    )
+    result = research_result
 
     bundle = write_topix100_price_to_sma50_decile_partitions_research_bundle(
         result,

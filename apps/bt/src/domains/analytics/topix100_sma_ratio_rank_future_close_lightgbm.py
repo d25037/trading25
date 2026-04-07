@@ -1737,6 +1737,7 @@ def run_topix100_sma_ratio_rank_future_close_lightgbm_research(
     train_window: int = DEFAULT_WALKFORWARD_TRAIN_WINDOW,
     test_window: int = DEFAULT_WALKFORWARD_TEST_WINDOW,
     step: int = DEFAULT_WALKFORWARD_STEP,
+    include_diagnostic: bool = True,
 ) -> Topix100SmaRatioLightgbmResearchResult:
     if base_result.event_panel_df.empty:
         raise Topix100SmaRatioLightgbmResearchError(
@@ -1756,6 +1757,16 @@ def run_topix100_sma_ratio_rank_future_close_lightgbm_research(
 
     diagnostic: Topix100SmaRatioLightgbmFixedSplitDiagnostic | None
     diagnostic_error_message: str | None
+    if not include_diagnostic:
+        diagnostic = None
+        diagnostic_error_message = None
+        return Topix100SmaRatioLightgbmResearchResult(
+            feature_columns=feature_columns,
+            walkforward=walkforward,
+            diagnostic=diagnostic,
+            diagnostic_error_message=diagnostic_error_message,
+        )
+
     try:
         diagnostic = _run_fixed_split_diagnostic(
             base_result,

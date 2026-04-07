@@ -18,13 +18,31 @@ from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
 )
 
 
-@pytest.fixture
-def analytics_db_path(tmp_path: Path) -> str:
-    return build_topix100_research_market_db(tmp_path / "market.duckdb")
+@pytest.fixture(scope="module")
+def analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    tmp_dir = tmp_path_factory.mktemp("topix100-sma-ratio-rank-future-close")
+    return build_topix100_research_market_db(tmp_dir / "market.duckdb")
+
+
+@pytest.fixture(scope="module")
+def min4_result(analytics_db_path: str):
+    return run_topix100_sma_ratio_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=4,
+    )
+
+
+@pytest.fixture(scope="module")
+def min10_result(analytics_db_path: str):
+    return run_topix100_sma_ratio_rank_future_close_research(
+        analytics_db_path,
+        min_constituents_per_day=10,
+    )
 
 
 def test_available_date_range_and_default_start_are_returned(
     analytics_db_path: str,
+    min4_result,
 ) -> None:
     available_start, available_end = (
         get_topix100_sma_ratio_rank_future_close_available_date_range(analytics_db_path)
@@ -33,10 +51,7 @@ def test_available_date_range_and_default_start_are_returned(
     assert available_start == "2023-01-02"
     assert available_end == "2023-11-03"
 
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=4,
-    )
+    result = min4_result
 
     assert result.available_start_date == "2023-01-02"
     assert result.available_end_date == "2023-11-03"
@@ -50,12 +65,9 @@ def test_available_date_range_and_default_start_are_returned(
 
 
 def test_ranked_panel_uses_all_sma_ratio_features_and_4digit_preference(
-    analytics_db_path: str,
+    min10_result,
 ) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+    result = min10_result
 
     assert sorted(result.event_panel_df["code"].unique().tolist()) == [
         "1111",
@@ -84,12 +96,9 @@ def test_ranked_panel_uses_all_sma_ratio_features_and_4digit_preference(
 
 
 def test_feature_selection_and_composite_scores_are_returned(
-    analytics_db_path: str,
+    min10_result,
 ) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+    result = min10_result
 
     assert result.discovery_end_date == "2021-12-31"
     assert result.validation_start_date == "2022-01-01"
@@ -131,13 +140,8 @@ def test_feature_selection_and_composite_scores_are_returned(
     assert not result.extreme_vs_middle_significance_df.empty
 
 
-def test_extreme_vs_middle_tables_are_returned(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+def test_extreme_vs_middle_tables_are_returned(min10_result) -> None:
+    result = min10_result
 
     row = result.extreme_vs_middle_significance_df[
         (result.extreme_vs_middle_significance_df["ranking_feature"] == "price_sma_20_80")
@@ -151,13 +155,8 @@ def test_extreme_vs_middle_tables_are_returned(
     assert pd.notna(row["extreme_minus_middle_mean"])
 
 
-def test_nested_volume_split_tables_are_returned(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+def test_nested_volume_split_tables_are_returned(min10_result) -> None:
+    result = min10_result
 
     summary = result.nested_volume_split_summary_df[
         result.nested_volume_split_summary_df["horizon_key"] == "t_plus_10"
@@ -185,13 +184,8 @@ def test_nested_volume_split_tables_are_returned(
     assert pd.notna(interaction_row["interaction_difference"])
 
 
-def test_q1_q10_volume_split_tables_are_returned(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+def test_q1_q10_volume_split_tables_are_returned(min10_result) -> None:
+    result = min10_result
 
     summary = result.q1_q10_volume_split_summary_df[
         result.q1_q10_volume_split_summary_df["horizon_key"] == "t_plus_10"
@@ -217,13 +211,8 @@ def test_q1_q10_volume_split_tables_are_returned(
     assert interaction_row["n_dates"] >= 0
 
 
-def test_q10_low_hypothesis_tables_are_returned(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+def test_q10_low_hypothesis_tables_are_returned(min10_result) -> None:
+    result = min10_result
 
     assert not result.q10_middle_volume_split_panel_df.empty
     summary = result.q10_middle_volume_split_summary_df[
@@ -244,13 +233,8 @@ def test_q10_low_hypothesis_tables_are_returned(
     }
 
 
-def test_significance_tables_detect_ratio_rank_difference(
-    analytics_db_path: str,
-) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+def test_significance_tables_detect_ratio_rank_difference(min10_result) -> None:
+    result = min10_result
 
     global_row = result.global_significance_df[
         (result.global_significance_df["ranking_feature"] == "price_sma_20_80")
@@ -277,13 +261,10 @@ def test_significance_tables_detect_ratio_rank_difference(
 
 
 def test_sma_ratio_research_bundle_roundtrip(
-    analytics_db_path: str,
+    min10_result,
     tmp_path: Path,
 ) -> None:
-    result = run_topix100_sma_ratio_rank_future_close_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+    result = min10_result
 
     bundle = write_topix100_sma_ratio_rank_future_close_research_bundle(
         result,

@@ -16,19 +16,25 @@ from src.domains.analytics.topix100_sma_ratio_regime_conditioning import (
 )
 
 
-@pytest.fixture
-def analytics_db_path(tmp_path: Path) -> str:
+@pytest.fixture(scope="module")
+def analytics_db_path(tmp_path_factory: pytest.TempPathFactory) -> str:
+    tmp_dir = tmp_path_factory.mktemp("topix100-sma-ratio-regime-conditioning")
     return build_topix100_research_market_db(
-        tmp_path / "market.duckdb",
+        tmp_dir / "market.duckdb",
         include_regimes=True,
     )
 
 
-def test_regime_conditioning_tables_are_returned(analytics_db_path: str) -> None:
-    result = run_topix100_sma_ratio_regime_conditioning_research(
+@pytest.fixture(scope="module")
+def research_result(analytics_db_path: str):
+    return run_topix100_sma_ratio_regime_conditioning_research(
         analytics_db_path,
         min_constituents_per_day=10,
     )
+
+
+def test_regime_conditioning_tables_are_returned(research_result) -> None:
+    result = research_result
 
     assert result.analysis_start_date == "2023-07-28"
     assert result.analysis_end_date == "2023-11-03"
@@ -54,12 +60,9 @@ def test_regime_conditioning_tables_are_returned(analytics_db_path: str) -> None
 
 
 def test_regime_conditioning_hypothesis_table_contains_expected_labels(
-    analytics_db_path: str,
+    research_result,
 ) -> None:
-    result = run_topix100_sma_ratio_regime_conditioning_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+    result = research_result
 
     hypothesis = result.regime_hypothesis_df[
         (result.regime_hypothesis_df["regime_type"] == "topix_close")
@@ -84,13 +87,10 @@ def test_regime_conditioning_hypothesis_table_contains_expected_labels(
 
 
 def test_regime_conditioning_bundle_roundtrip(
-    analytics_db_path: str,
+    research_result,
     tmp_path: Path,
 ) -> None:
-    result = run_topix100_sma_ratio_regime_conditioning_research(
-        analytics_db_path,
-        min_constituents_per_day=10,
-    )
+    result = research_result
 
     bundle = write_topix100_sma_ratio_regime_conditioning_research_bundle(
         result,
