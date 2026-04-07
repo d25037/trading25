@@ -10038,6 +10038,12 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /** Intradaylongrank */
+            intradayLongRank?: number | null;
+            /** Intradayscore */
+            intradayScore?: number | null;
+            /** Intradayshortrank */
+            intradayShortRank?: number | null;
             /** Longscore5D */
             longScore5d?: number | null;
             /** Longscore5Drank */
@@ -10087,6 +10093,12 @@ export interface components {
         Topix100RankingResponse: {
             /** Date */
             date: string;
+            /**
+             * Intradayscoretarget
+             * @default next_session_open_close
+             * @constant
+             */
+            intradayScoreTarget: "next_session_open_close";
             /** Itemcount */
             itemCount: number;
             /** Items */
