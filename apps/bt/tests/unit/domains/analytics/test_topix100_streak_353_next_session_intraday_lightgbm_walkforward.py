@@ -114,4 +114,12 @@ def test_run_walkforward_from_panel_produces_oos_tables(monkeypatch) -> None:
     assert not result.walkforward_model_summary_df.empty
     assert not result.walkforward_model_comparison_df.empty
     assert not result.walkforward_split_comparison_df.empty
+    assert not result.portfolio_stats_df.empty
+    assert not result.daily_return_distribution_df.empty
     assert not result.walkforward_feature_importance_df.empty
+    pair_stats = result.portfolio_stats_df[
+        (result.portfolio_stats_df["model_name"] == "lightgbm")
+        & (result.portfolio_stats_df["top_k"] == 3)
+        & (result.portfolio_stats_df["series_name"] == "pair_50_50")
+    ]
+    assert not pair_stats.empty

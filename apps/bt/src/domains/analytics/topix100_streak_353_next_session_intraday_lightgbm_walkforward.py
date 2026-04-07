@@ -35,6 +35,7 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     run_topix100_price_vs_sma_rank_future_close_research,
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     DEFAULT_TOP_K_VALUES,
     _build_baseline_lookup_df,
     _build_baseline_scorecard,
@@ -50,7 +51,6 @@ from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm im
     _load_lightgbm_regressor_cls,
 )
 from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
-    DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
     DEFAULT_CONTINUOUS_FEATURE_SUFFIXES,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
@@ -75,6 +75,8 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "split_config_df",
     "walkforward_topk_pick_df",
     "walkforward_topk_daily_df",
+    "portfolio_stats_df",
+    "daily_return_distribution_df",
     "walkforward_split_summary_df",
     "walkforward_split_comparison_df",
     "walkforward_model_summary_df",
@@ -111,6 +113,8 @@ class Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult:
     split_config_df: pd.DataFrame
     walkforward_topk_pick_df: pd.DataFrame
     walkforward_topk_daily_df: pd.DataFrame
+    portfolio_stats_df: pd.DataFrame
+    daily_return_distribution_df: pd.DataFrame
     walkforward_split_summary_df: pd.DataFrame
     walkforward_split_comparison_df: pd.DataFrame
     walkforward_model_summary_df: pd.DataFrame
@@ -196,7 +200,7 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
         test_window=test_window,
         step=step,
         feature_panel_df=feature_panel_df,
-        categorical_feature_columns=DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
+        categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
         continuous_feature_columns=(
             price_feature,
             volume_feature,
@@ -360,6 +364,10 @@ def _run_walkforward_from_panel(
     split_config_df = pd.DataFrame.from_records(split_config_records)
     walkforward_topk_pick_df = pd.concat(topk_pick_frames, ignore_index=True)
     walkforward_topk_daily_df = pd.concat(topk_daily_frames, ignore_index=True)
+    portfolio_stats_df = _build_portfolio_stats_df(walkforward_topk_daily_df)
+    daily_return_distribution_df = _build_daily_return_distribution_df(
+        walkforward_topk_daily_df
+    )
     walkforward_split_summary_df = pd.concat(split_summary_frames, ignore_index=True)
     walkforward_split_comparison_df = pd.concat(split_comparison_frames, ignore_index=True)
     walkforward_model_summary_df = _build_validation_model_summary_df(walkforward_topk_daily_df)
@@ -421,6 +429,8 @@ def _run_walkforward_from_panel(
         split_config_df=split_config_df,
         walkforward_topk_pick_df=walkforward_topk_pick_df,
         walkforward_topk_daily_df=walkforward_topk_daily_df,
+        portfolio_stats_df=portfolio_stats_df,
+        daily_return_distribution_df=daily_return_distribution_df,
         walkforward_split_summary_df=walkforward_split_summary_df,
         walkforward_split_comparison_df=walkforward_split_comparison_df,
         walkforward_model_summary_df=walkforward_model_summary_df,
@@ -506,6 +516,140 @@ def _slice_by_date_range(
     return df[(df["date"] >= start_date) & (df["date"] <= end_date)].copy()
 
 
+def _build_portfolio_stats_df(walkforward_topk_daily_df: pd.DataFrame) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    for (model_name, top_k), scoped_df in walkforward_topk_daily_df.groupby(
+        ["model_name", "top_k"],
+        observed=True,
+        sort=False,
+    ):
+        ordered_df = scoped_df.sort_values("date", kind="stable").reset_index(drop=True)
+        for series_name, series_label, series in _iter_daily_return_series(ordered_df):
+            records.append(
+                {
+                    "model_name": str(model_name),
+                    "top_k": int(top_k),
+                    "series_name": series_name,
+                    "series_label": series_label,
+                    **_compute_portfolio_performance_stats(series),
+                }
+            )
+    return pd.DataFrame.from_records(records).sort_values(
+        ["top_k", "model_name", "series_name"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def _build_daily_return_distribution_df(
+    walkforward_topk_daily_df: pd.DataFrame,
+) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    for (model_name, top_k), scoped_df in walkforward_topk_daily_df.groupby(
+        ["model_name", "top_k"],
+        observed=True,
+        sort=False,
+    ):
+        ordered_df = scoped_df.sort_values("date", kind="stable").reset_index(drop=True)
+        for series_name, series_label, series in _iter_daily_return_series(ordered_df):
+            records.append(
+                {
+                    "model_name": str(model_name),
+                    "top_k": int(top_k),
+                    "series_name": series_name,
+                    "series_label": series_label,
+                    **_compute_daily_return_distribution_stats(series),
+                }
+            )
+    return pd.DataFrame.from_records(records).sort_values(
+        ["top_k", "model_name", "series_name"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def _iter_daily_return_series(
+    ordered_df: pd.DataFrame,
+) -> tuple[tuple[str, str, pd.Series], ...]:
+    return (
+        ("long", "Long leg", ordered_df["long_return_mean"].astype(float)),
+        ("short_edge", "Short edge", ordered_df["short_edge_mean"].astype(float)),
+        ("gross_spread", "Gross spread", ordered_df["gross_edge"].astype(float)),
+        (
+            "pair_50_50",
+            "Pair 50/50",
+            ordered_df["gross_edge"].astype(float) / 2.0,
+        ),
+    )
+
+
+def _compute_portfolio_performance_stats(series: pd.Series) -> dict[str, Any]:
+    values = series.astype(float).reset_index(drop=True)
+    day_count = int(len(values))
+    if day_count == 0:
+        return {
+            "day_count": 0,
+            "avg_daily_return": float("nan"),
+            "median_daily_return": float("nan"),
+            "daily_volatility": float("nan"),
+            "annualized_volatility": float("nan"),
+            "sharpe_ratio": float("nan"),
+            "max_drawdown": float("nan"),
+            "total_return": float("nan"),
+            "cagr": float("nan"),
+            "positive_rate": float("nan"),
+            "non_negative_rate": float("nan"),
+            "best_day_return": float("nan"),
+            "worst_day_return": float("nan"),
+        }
+
+    daily_volatility = _safe_std(values)
+    equity_curve = (1.0 + values).cumprod()
+    running_max = equity_curve.cummax()
+    drawdown = equity_curve.div(running_max).sub(1.0)
+    total_return = float(equity_curve.iloc[-1] - 1.0)
+    cagr = float(equity_curve.iloc[-1] ** (252.0 / day_count) - 1.0)
+    annualized_volatility = float(daily_volatility * (252.0**0.5))
+    sharpe_ratio = float(values.mean() / daily_volatility * (252.0**0.5)) if daily_volatility > 0 else float("nan")
+    return {
+        "day_count": day_count,
+        "avg_daily_return": float(values.mean()),
+        "median_daily_return": float(values.median()),
+        "daily_volatility": float(daily_volatility),
+        "annualized_volatility": annualized_volatility,
+        "sharpe_ratio": sharpe_ratio,
+        "max_drawdown": float(drawdown.min()),
+        "total_return": total_return,
+        "cagr": cagr,
+        "positive_rate": float((values > 0).mean()),
+        "non_negative_rate": float((values >= 0).mean()),
+        "best_day_return": float(values.max()),
+        "worst_day_return": float(values.min()),
+    }
+
+
+def _compute_daily_return_distribution_stats(series: pd.Series) -> dict[str, Any]:
+    values = series.astype(float).reset_index(drop=True)
+    return {
+        "day_count": int(len(values)),
+        "mean_return": float(values.mean()),
+        "median_return": float(values.median()),
+        "std_return": float(_safe_std(values)),
+        "min_return": float(values.min()),
+        "p05_return": float(values.quantile(0.05)),
+        "p25_return": float(values.quantile(0.25)),
+        "p75_return": float(values.quantile(0.75)),
+        "p95_return": float(values.quantile(0.95)),
+        "max_return": float(values.max()),
+        "positive_rate": float((values > 0).mean()),
+        "non_negative_rate": float((values >= 0).mean()),
+    }
+
+
+def _safe_std(series: pd.Series) -> float:
+    if len(series) <= 1:
+        return 0.0
+    return float(series.std(ddof=1))
+
+
 def _build_research_bundle_summary_markdown(
     result: Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult,
 ) -> str:
@@ -513,6 +657,12 @@ def _build_research_bundle_summary_markdown(
     comparison_row = _select_comparison_row(
         result.walkforward_model_comparison_df,
         top_k=primary_top_k,
+    )
+    pair_stats_row = _select_portfolio_stats_row(
+        result.portfolio_stats_df,
+        model_name="lightgbm",
+        top_k=primary_top_k,
+        series_name="pair_50_50",
     )
     win_text = _count_split_wins(
         result.walkforward_split_comparison_df,
@@ -544,6 +694,18 @@ def _build_research_bundle_summary_markdown(
                 f"- Top/Bottom {primary_top_k} spread: baseline `{_format_return(float(comparison_row['baseline_avg_long_short_spread']))}`, LightGBM `{_format_return(float(comparison_row['lightgbm_avg_long_short_spread']))}`, lift `{_format_return(float(comparison_row['spread_lift_vs_baseline']))}`, split wins `{win_text}`.",
             ]
         )
+    if pair_stats_row is not None:
+        lines.extend(
+            [
+                "",
+                "## Execution Read",
+                "",
+                f"- Pair 50/50 average daily return: `{_format_return(float(pair_stats_row['avg_daily_return']))}`",
+                f"- Pair 50/50 Sharpe: `{float(pair_stats_row['sharpe_ratio']):.2f}`",
+                f"- Pair 50/50 max drawdown: `{_format_return(float(pair_stats_row['max_drawdown']))}`",
+                f"- Pair 50/50 positive-day rate: `{float(pair_stats_row['positive_rate']):.2%}`",
+            ]
+        )
     if top_feature is not None:
         lines.append(
             f"- Average feature importance leader: `{top_feature['feature_name']}` at share `{float(top_feature['mean_importance_share']):.2%}`."
@@ -563,6 +725,18 @@ def _build_published_summary_payload(
         result.walkforward_model_summary_df,
         model_name="lightgbm",
         top_k=primary_top_k,
+    )
+    pair_stats_row = _select_portfolio_stats_row(
+        result.portfolio_stats_df,
+        model_name="lightgbm",
+        top_k=primary_top_k,
+        series_name="pair_50_50",
+    )
+    pair_distribution_row = _select_distribution_row(
+        result.daily_return_distribution_df,
+        model_name="lightgbm",
+        top_k=primary_top_k,
+        series_name="pair_50_50",
     )
     top_feature = _select_top_feature(result.walkforward_feature_importance_df)
     win_text = _count_split_wins(
@@ -584,6 +758,17 @@ def _build_published_summary_payload(
                 f"Across all out-of-sample blocks, Bottom {primary_top_k} short edge was {_format_return(float(comparison_row['baseline_avg_short_edge']))} for baseline versus {_format_return(float(comparison_row['lightgbm_avg_short_edge']))} for LightGBM.",
                 f"The combined Top/Bottom {primary_top_k} spread was {_format_return(float(comparison_row['lightgbm_avg_long_short_spread']))} for LightGBM versus {_format_return(float(comparison_row['baseline_avg_long_short_spread']))} for baseline, with split wins {win_text}.",
             ]
+        )
+    if pair_stats_row is not None:
+        result_bullets.extend(
+            [
+                f"Interpreted as a 50/50 dollar-neutral pair, the LightGBM Top/Bottom {primary_top_k} book averaged {_format_return(float(pair_stats_row['avg_daily_return']))} per day with Sharpe {float(pair_stats_row['sharpe_ratio']):.2f} and max drawdown {_format_return(float(pair_stats_row['max_drawdown']))}.",
+                f"The same pair book had positive days {float(pair_stats_row['positive_rate']):.2%} of the time over {int(pair_stats_row['day_count'])} out-of-sample sessions.",
+            ]
+        )
+    if pair_distribution_row is not None:
+        result_bullets.append(
+            f"Its daily distribution ran from { _format_return(float(pair_distribution_row['min_return'])) } to { _format_return(float(pair_distribution_row['max_return'])) }, with 5/95 percentiles at { _format_return(float(pair_distribution_row['p05_return'])) } and { _format_return(float(pair_distribution_row['p95_return'])) }."
         )
     if top_feature is not None:
         result_bullets.append(
@@ -627,6 +812,29 @@ def _build_published_summary_payload(
                 },
             ]
         )
+    if pair_stats_row is not None:
+        highlights.extend(
+            [
+                {
+                    "label": "Pair 50/50",
+                    "value": _format_return(float(pair_stats_row["avg_daily_return"])),
+                    "tone": "accent",
+                    "detail": f"avg daily, Top/Bottom {primary_top_k}",
+                },
+                {
+                    "label": "Pair Sharpe",
+                    "value": f"{float(pair_stats_row['sharpe_ratio']):.2f}",
+                    "tone": "success",
+                    "detail": "50/50 dollar-neutral",
+                },
+                {
+                    "label": "Pair Max DD",
+                    "value": _format_return(float(pair_stats_row["max_drawdown"])),
+                    "tone": "danger",
+                    "detail": "50/50 dollar-neutral",
+                },
+            ]
+        )
 
     return {
         "title": "TOPIX100 Streak 3/53 Next-Session Intraday LightGBM Walk-Forward",
@@ -649,6 +857,10 @@ def _build_published_summary_payload(
         "selectedParameters": [
             {"label": "Short X", "value": f"{result.short_window_streaks} streaks"},
             {"label": "Long X", "value": f"{result.long_window_streaks} streaks"},
+            {
+                "label": "Discrete features",
+                "value": ", ".join(result.categorical_feature_columns) or "none",
+            },
             {"label": "Target", "value": "next-session close / open - 1"},
             {"label": "Train/Test", "value": f"{result.train_window}/{result.test_window}"},
             {"label": "Step", "value": str(result.step)},
@@ -671,6 +883,16 @@ def _build_published_summary_payload(
                 "name": "walkforward_feature_importance_df",
                 "label": "Average feature importance",
                 "description": "Mean LightGBM gain importance across all walk-forward splits.",
+            },
+            {
+                "name": "portfolio_stats_df",
+                "label": "Execution portfolio stats",
+                "description": "Return, Sharpe, volatility, and drawdown for long leg, short edge, gross spread, and 50/50 pair interpretations.",
+            },
+            {
+                "name": "daily_return_distribution_df",
+                "label": "Daily return distribution",
+                "description": "Percentile view of day-level returns for each execution interpretation.",
             },
         ],
     }
@@ -701,6 +923,40 @@ def _select_model_summary_row(
 ) -> pd.Series | None:
     scoped_df = summary_df[
         (summary_df["model_name"] == model_name) & (summary_df["top_k"] == top_k)
+    ].copy()
+    if scoped_df.empty:
+        return None
+    return scoped_df.iloc[0]
+
+
+def _select_portfolio_stats_row(
+    stats_df: pd.DataFrame,
+    *,
+    model_name: str,
+    top_k: int,
+    series_name: str,
+) -> pd.Series | None:
+    scoped_df = stats_df[
+        (stats_df["model_name"] == model_name)
+        & (stats_df["top_k"] == top_k)
+        & (stats_df["series_name"] == series_name)
+    ].copy()
+    if scoped_df.empty:
+        return None
+    return scoped_df.iloc[0]
+
+
+def _select_distribution_row(
+    distribution_df: pd.DataFrame,
+    *,
+    model_name: str,
+    top_k: int,
+    series_name: str,
+) -> pd.Series | None:
+    scoped_df = distribution_df[
+        (distribution_df["model_name"] == model_name)
+        & (distribution_df["top_k"] == top_k)
+        & (distribution_df["series_name"] == series_name)
     ].copy()
     if scoped_df.empty:
         return None
