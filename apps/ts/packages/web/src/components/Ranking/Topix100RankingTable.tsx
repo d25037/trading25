@@ -67,10 +67,10 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
 
 function getStudyReadItems(metric: Topix100RankingMetric): string[] {
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Volume split by decile', 'Stage-2 LightGBM score'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Decile-only score', 'Volume/state = context'];
   }
 
-  return ['Legacy comparison', 'Stage-2 score = SMA50 / Vol 5/20'];
+  return ['Legacy comparison', 'Decile-only intraday score'];
 }
 
 function formatScore(value: number | null | undefined): string {
@@ -82,12 +82,13 @@ function formatScore(value: number | null | undefined): string {
 
 function getDefaultSortOrder(sortBy: Topix100RankingSortKey): SortOrder {
   switch (sortBy) {
-    case 'rank':
     case 'code':
     case 'companyName':
     case 'volumeBucket':
     case 'streakShortMode':
     case 'streakLongMode':
+    case 'intradayLongRank':
+    case 'intradayShortRank':
     case 'sector33Name':
       return 'asc';
     default:
@@ -160,10 +161,12 @@ function compareItems(
       return compareNullableStrings(left.streakShortMode, right.streakShortMode, sortOrder);
     case 'streakLongMode':
       return compareNullableStrings(left.streakLongMode, right.streakLongMode, sortOrder);
-    case 'longScore5d':
-      return compareNullableNumbers(left.longScore5d, right.longScore5d, sortOrder);
-    case 'shortScore1d':
-      return compareNullableNumbers(left.shortScore1d, right.shortScore1d, sortOrder);
+    case 'intradayScore':
+      return compareNullableNumbers(left.intradayScore, right.intradayScore, sortOrder);
+    case 'intradayLongRank':
+      return compareNullableNumbers(left.intradayLongRank, right.intradayLongRank, sortOrder);
+    case 'intradayShortRank':
+      return compareNullableNumbers(left.intradayShortRank, right.intradayShortRank, sortOrder);
     case 'volumeSma5_20':
       return compareNullableNumbers(left.volumeSma5_20, right.volumeSma5_20, sortOrder);
     case 'currentPrice':
@@ -204,7 +207,7 @@ function renderSortMark(active: boolean, sortOrder: SortOrder): string {
 
 function SortableHeader({
   label,
-  sortKey,
+  columnKey,
   activeSortBy,
   activeSortOrder,
   onSortChange,
@@ -212,15 +215,15 @@ function SortableHeader({
   buttonClassName,
 }: {
   label: string;
-  sortKey: Topix100RankingSortKey;
+  columnKey: Topix100RankingSortKey;
   activeSortBy: Topix100RankingSortKey;
   activeSortOrder: SortOrder;
   onSortChange: (sortBy: Topix100RankingSortKey, sortOrder: SortOrder) => void;
   className: string;
   buttonClassName?: string;
 }) {
-  const isActive = activeSortBy === sortKey;
-  const nextOrder = resolveNextSortOrder(activeSortBy, activeSortOrder, sortKey);
+  const isActive = activeSortBy === columnKey;
+  const nextOrder = resolveNextSortOrder(activeSortBy, activeSortOrder, columnKey);
 
   return (
     <th
@@ -230,7 +233,7 @@ function SortableHeader({
       <button
         type="button"
         className={`inline-flex w-full items-center gap-1 text-current transition-colors hover:text-foreground ${buttonClassName ?? 'justify-start'}`}
-        onClick={() => onSortChange(sortKey, nextOrder)}
+        onClick={() => onSortChange(columnKey, nextOrder)}
       >
         <span>{label}</span>
         <span aria-hidden="true" className="text-[10px] text-muted-foreground">
@@ -284,9 +287,7 @@ export function Topix100RankingTable({
             <span>
               State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
             </span>
-            <span>
-              Score = Stage-2 LightGBM ({data?.longScoreHorizonDays ?? 5}d long / {data?.shortScoreHorizonDays ?? 1}d short)
-            </span>
+            <span>Score = Next-session open → close LightGBM (decile-only)</span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>
@@ -304,18 +305,10 @@ export function Topix100RankingTable({
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
               <tr>
-                <SortableHeader
-                  label="Rank"
-                  sortKey="rank"
-                  activeSortBy={sortBy}
-                  activeSortOrder={sortOrder}
-                  onSortChange={onSortChange}
-                  className="w-16 px-2 py-1.5 text-center"
-                  buttonClassName="justify-center"
-                />
+                <th className="w-12 px-2 py-1.5 text-center text-muted-foreground">#</th>
                 <SortableHeader
                   label="Code"
-                  sortKey="code"
+                  columnKey="code"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -323,7 +316,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Company"
-                  sortKey="companyName"
+                  columnKey="companyName"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -331,7 +324,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label={metricLabel}
-                  sortKey="metric"
+                  columnKey="metric"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -340,7 +333,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Vol Split"
-                  sortKey="volumeBucket"
+                  columnKey="volumeBucket"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -348,7 +341,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Short"
-                  sortKey="streakShortMode"
+                  columnKey="streakShortMode"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -356,24 +349,15 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Long"
-                  sortKey="streakLongMode"
+                  columnKey="streakLongMode"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
                   className="w-20 px-2 py-1.5 text-left"
                 />
                 <SortableHeader
-                  label="L5d"
-                  sortKey="longScore5d"
-                  activeSortBy={sortBy}
-                  activeSortOrder={sortOrder}
-                  onSortChange={onSortChange}
-                  className="w-24 px-2 py-1.5 text-right"
-                  buttonClassName="justify-end"
-                />
-                <SortableHeader
-                  label="S1d"
-                  sortKey="shortScore1d"
+                  label="ID Score"
+                  columnKey="intradayScore"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -382,7 +366,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Volume SMA 5/20"
-                  sortKey="volumeSma5_20"
+                  columnKey="volumeSma5_20"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -391,7 +375,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Price"
-                  sortKey="currentPrice"
+                  columnKey="currentPrice"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -400,7 +384,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Sector"
-                  sortKey="sector33Name"
+                  columnKey="sector33Name"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -408,7 +392,7 @@ export function Topix100RankingTable({
                 />
                 <SortableHeader
                   label="Volume"
-                  sortKey="volume"
+                  columnKey="volume"
                   activeSortBy={sortBy}
                   activeSortOrder={sortOrder}
                   onSortChange={onSortChange}
@@ -418,13 +402,13 @@ export function Topix100RankingTable({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {items.map((item, index) => (
                 <tr
                   key={item.code}
                   className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
                   onClick={() => onStockClick(item.code)}
                 >
-                  <td className="px-2 py-1.5 text-center font-medium tabular-nums">{item.rank}</td>
+                  <td className="px-2 py-1.5 text-center font-medium tabular-nums">{index + 1}</td>
                   <td className="px-2 py-1.5 font-medium">{item.code}</td>
                   <td className="max-w-[220px] truncate px-2 py-1.5">{item.companyName}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
@@ -448,16 +432,7 @@ export function Topix100RankingTable({
                     </span>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.longScore5dRank ? (
-                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.longScore5dRank}</span>
-                    ) : null}
-                    {formatScore(item.longScore5d)}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {item.shortScore1dRank ? (
-                      <span className="mr-1 text-[11px] text-muted-foreground">#{item.shortScore1dRank}</span>
-                    ) : null}
-                    {formatScore(item.shortScore1d)}
+                    {formatScore(item.intradayScore)}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>

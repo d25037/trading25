@@ -345,8 +345,7 @@ class TestTopix100Ranking:
         assert data["smaWindow"] == 50
         assert data["shortWindowStreaks"] == 3
         assert data["longWindowStreaks"] == 53
-        assert data["longScoreHorizonDays"] == 5
-        assert data["shortScoreHorizonDays"] == 1
+        assert data["intradayScoreTarget"] == "next_session_open_close"
         assert "itemCount" in data
         assert "items" in data
         assert "lastUpdated" in data
@@ -368,10 +367,9 @@ class TestTopix100Ranking:
             assert "streakShortMode" in item
             assert "streakLongMode" in item
             assert "streakStateLabel" in item
-            assert "longScore5d" in item
-            assert "shortScore1d" in item
-            assert "longScore5dRank" in item
-            assert "shortScore1dRank" in item
+            assert "intradayScore" in item
+            assert "intradayLongRank" in item
+            assert "intradayShortRank" in item
 
     def test_supports_metric_query(self, analytics_client):
         resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_sma_20_80")

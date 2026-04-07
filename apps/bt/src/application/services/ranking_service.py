@@ -27,10 +27,9 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
 )
-from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
-    TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_LONG_SCORE_HORIZON_DAYS,
-    TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_SHORT_SCORE_HORIZON_DAYS,
-    score_topix100_streak_353_signal_lightgbm_snapshot,
+from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+    score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
@@ -288,11 +287,12 @@ class RankingService:
         )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
-        score_snapshot = score_topix100_streak_353_signal_lightgbm_snapshot(
+        score_snapshot = score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             self._reader.db_path,
             target_date=target_date,
             short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
             connection=self._reader.conn,
         )
 
@@ -340,26 +340,27 @@ class RankingService:
                         if state_snapshot is not None
                         else None
                     ),
-                    longScore5d=(
-                        state_snapshot.long_score_5d
-                        if state_snapshot is not None
-                        else None
-                    ),
-                    shortScore1d=(
-                        state_snapshot.short_score_1d
-                        if state_snapshot is not None
-                        else None
-                    ),
+                    intradayScore=(state_snapshot.intraday_score if state_snapshot is not None else None),
                 )
             )
 
-        long_ranks = _build_optional_desc_ranks(items, "longScore5d")
-        short_ranks = _build_optional_desc_ranks(items, "shortScore1d")
+        intraday_long_ranks = _build_optional_desc_ranks(items, "intradayScore")
+        intraday_short_ranks = _build_optional_desc_ranks(
+            [
+                item.model_copy(
+                    update={
+                        "intradayScore": (-item.intradayScore if item.intradayScore is not None else None),
+                    }
+                )
+                for item in items
+            ],
+            "intradayScore",
+        )
         items = [
             item.model_copy(
                 update={
-                    "longScore5dRank": long_ranks.get(item.code),
-                    "shortScore1dRank": short_ranks.get(item.code),
+                    "intradayLongRank": intraday_long_ranks.get(item.code),
+                    "intradayShortRank": intraday_short_ranks.get(item.code),
                 }
             )
             for item in items
@@ -371,8 +372,6 @@ class RankingService:
             smaWindow=validated_sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
-            longScoreHorizonDays=TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_LONG_SCORE_HORIZON_DAYS,
-            shortScoreHorizonDays=TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_SHORT_SCORE_HORIZON_DAYS,
             scoreSourceRunId=score_snapshot.score_source_run_id,
             itemCount=len(items),
             items=items,
