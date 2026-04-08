@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bunx --bun vite --configLoader native",
-    "build": "tsc && bunx --bun vite build --configLoader native",
-    "preview": "bunx --bun vite preview --configLoader native",
+    "dev": "bun ./scripts/vite-bun-compat.ts --configLoader native",
+    "build": "tsc && bun ./scripts/vite-bun-compat.ts build --configLoader native",
+    "preview": "bun ./scripts/vite-bun-compat.ts preview --configLoader native",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
