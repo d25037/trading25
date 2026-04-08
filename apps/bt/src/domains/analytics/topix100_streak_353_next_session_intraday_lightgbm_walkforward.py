@@ -124,6 +124,18 @@ class Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult:
     walkforward_feature_importance_df: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class _WalkforwardPredictionArtifacts:
+    split_count: int
+    split_config_df: pd.DataFrame
+    walkforward_prediction_df: pd.DataFrame
+    walkforward_topk_pick_df: pd.DataFrame
+    walkforward_topk_daily_df: pd.DataFrame
+    walkforward_split_summary_df: pd.DataFrame
+    walkforward_split_comparison_df: pd.DataFrame
+    walkforward_feature_importance_split_df: pd.DataFrame
+
+
 def run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
     db_path: str,
     *,
@@ -229,6 +241,118 @@ def _run_walkforward_from_panel(
     categorical_feature_columns: tuple[str, ...],
     continuous_feature_columns: tuple[str, ...],
 ) -> Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult:
+    artifacts = _build_walkforward_prediction_artifacts(
+        db_path=db_path,
+        source_mode=source_mode,
+        source_detail=source_detail,
+        available_start_date=available_start_date,
+        available_end_date=available_end_date,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+        validation_ratio=validation_ratio,
+        top_k_values=top_k_values,
+        train_window=train_window,
+        test_window=test_window,
+        step=step,
+        feature_panel_df=feature_panel_df,
+        categorical_feature_columns=categorical_feature_columns,
+        continuous_feature_columns=continuous_feature_columns,
+    )
+    portfolio_stats_df = _build_portfolio_stats_df(artifacts.walkforward_topk_daily_df)
+    daily_return_distribution_df = _build_daily_return_distribution_df(
+        artifacts.walkforward_topk_daily_df
+    )
+    walkforward_model_summary_df = _build_validation_model_summary_df(
+        artifacts.walkforward_topk_daily_df
+    )
+    walkforward_model_comparison_df = _build_validation_model_comparison_df(
+        walkforward_model_summary_df
+    )
+    walkforward_score_decile_df = _build_validation_score_decile_df(
+        artifacts.walkforward_prediction_df
+    )
+    walkforward_feature_importance_df = (
+        artifacts.walkforward_feature_importance_split_df.groupby(
+            ["model_name", "feature_name"],
+            observed=True,
+            sort=False,
+        )
+        .agg(
+            mean_importance_gain=("importance_gain", "mean"),
+            mean_importance_share=("importance_share", "mean"),
+            split_count=("split_index", "nunique"),
+        )
+        .reset_index()
+        .sort_values(
+            ["mean_importance_gain", "feature_name"],
+            ascending=[False, True],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+    walkforward_feature_importance_df["importance_rank"] = range(
+        1, len(walkforward_feature_importance_df) + 1
+    )
+
+    return Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult(
+        db_path=db_path,
+        source_mode=source_mode,
+        source_detail=source_detail,
+        available_start_date=available_start_date,
+        available_end_date=available_end_date,
+        analysis_start_date=str(feature_panel_df["date"].min()),
+        analysis_end_date=str(feature_panel_df["date"].max()),
+        price_feature=price_feature,
+        price_feature_label=PRICE_FEATURE_LABEL_MAP[price_feature],
+        volume_feature=volume_feature,
+        volume_feature_label=VOLUME_FEATURE_LABEL_MAP[volume_feature],
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+        validation_ratio=validation_ratio,
+        top_k_values=top_k_values,
+        train_window=train_window,
+        test_window=test_window,
+        step=step,
+        split_count=artifacts.split_count,
+        categorical_feature_columns=categorical_feature_columns,
+        continuous_feature_columns=continuous_feature_columns,
+        split_config_df=artifacts.split_config_df,
+        walkforward_topk_pick_df=artifacts.walkforward_topk_pick_df,
+        walkforward_topk_daily_df=artifacts.walkforward_topk_daily_df,
+        portfolio_stats_df=portfolio_stats_df,
+        daily_return_distribution_df=daily_return_distribution_df,
+        walkforward_split_summary_df=artifacts.walkforward_split_summary_df,
+        walkforward_split_comparison_df=artifacts.walkforward_split_comparison_df,
+        walkforward_model_summary_df=walkforward_model_summary_df,
+        walkforward_model_comparison_df=walkforward_model_comparison_df,
+        walkforward_score_decile_df=walkforward_score_decile_df,
+        walkforward_feature_importance_split_df=artifacts.walkforward_feature_importance_split_df,
+        walkforward_feature_importance_df=walkforward_feature_importance_df,
+    )
+
+
+def _build_walkforward_prediction_artifacts(
+    *,
+    db_path: str,
+    source_mode: SourceMode,
+    source_detail: str,
+    available_start_date: str | None,
+    available_end_date: str | None,
+    price_feature: str,
+    volume_feature: str,
+    short_window_streaks: int,
+    long_window_streaks: int,
+    validation_ratio: float,
+    top_k_values: tuple[int, ...],
+    train_window: int,
+    test_window: int,
+    step: int,
+    feature_panel_df: pd.DataFrame,
+    categorical_feature_columns: tuple[str, ...],
+    continuous_feature_columns: tuple[str, ...],
+) -> _WalkforwardPredictionArtifacts:
     unique_dates = pd.to_datetime(sorted(feature_panel_df["date"].astype(str).unique()))
     splits = generate_walkforward_splits(
         unique_dates,
@@ -362,82 +486,25 @@ def _run_walkforward_from_panel(
         raise ValueError("Walk-forward evaluation produced no valid splits")
 
     split_config_df = pd.DataFrame.from_records(split_config_records)
+    walkforward_prediction_df = pd.concat(prediction_frames, ignore_index=True)
     walkforward_topk_pick_df = pd.concat(topk_pick_frames, ignore_index=True)
     walkforward_topk_daily_df = pd.concat(topk_daily_frames, ignore_index=True)
-    portfolio_stats_df = _build_portfolio_stats_df(walkforward_topk_daily_df)
-    daily_return_distribution_df = _build_daily_return_distribution_df(
-        walkforward_topk_daily_df
-    )
     walkforward_split_summary_df = pd.concat(split_summary_frames, ignore_index=True)
     walkforward_split_comparison_df = pd.concat(split_comparison_frames, ignore_index=True)
-    walkforward_model_summary_df = _build_validation_model_summary_df(walkforward_topk_daily_df)
-    walkforward_model_comparison_df = _build_validation_model_comparison_df(
-        walkforward_model_summary_df
-    )
-    walkforward_score_decile_df = _build_validation_score_decile_df(
-        pd.concat(prediction_frames, ignore_index=True)
-    )
     walkforward_feature_importance_split_df = pd.concat(
         feature_importance_frames,
         ignore_index=True,
     )
-    walkforward_feature_importance_df = (
-        walkforward_feature_importance_split_df.groupby(
-            ["model_name", "feature_name"],
-            observed=True,
-            sort=False,
-        )
-        .agg(
-            mean_importance_gain=("importance_gain", "mean"),
-            mean_importance_share=("importance_share", "mean"),
-            split_count=("split_index", "nunique"),
-        )
-        .reset_index()
-        .sort_values(
-            ["mean_importance_gain", "feature_name"],
-            ascending=[False, True],
-            kind="stable",
-        )
-        .reset_index(drop=True)
-    )
-    walkforward_feature_importance_df["importance_rank"] = range(
-        1, len(walkforward_feature_importance_df) + 1
-    )
 
-    return Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult(
-        db_path=db_path,
-        source_mode=source_mode,
-        source_detail=source_detail,
-        available_start_date=available_start_date,
-        available_end_date=available_end_date,
-        analysis_start_date=str(feature_panel_df["date"].min()),
-        analysis_end_date=str(feature_panel_df["date"].max()),
-        price_feature=price_feature,
-        price_feature_label=PRICE_FEATURE_LABEL_MAP[price_feature],
-        volume_feature=volume_feature,
-        volume_feature_label=VOLUME_FEATURE_LABEL_MAP[volume_feature],
-        short_window_streaks=short_window_streaks,
-        long_window_streaks=long_window_streaks,
-        validation_ratio=validation_ratio,
-        top_k_values=top_k_values,
-        train_window=train_window,
-        test_window=test_window,
-        step=step,
+    return _WalkforwardPredictionArtifacts(
         split_count=int(split_config_df["split_index"].nunique()),
-        categorical_feature_columns=categorical_feature_columns,
-        continuous_feature_columns=continuous_feature_columns,
         split_config_df=split_config_df,
+        walkforward_prediction_df=walkforward_prediction_df,
         walkforward_topk_pick_df=walkforward_topk_pick_df,
         walkforward_topk_daily_df=walkforward_topk_daily_df,
-        portfolio_stats_df=portfolio_stats_df,
-        daily_return_distribution_df=daily_return_distribution_df,
         walkforward_split_summary_df=walkforward_split_summary_df,
         walkforward_split_comparison_df=walkforward_split_comparison_df,
-        walkforward_model_summary_df=walkforward_model_summary_df,
-        walkforward_model_comparison_df=walkforward_model_comparison_df,
-        walkforward_score_decile_df=walkforward_score_decile_df,
         walkforward_feature_importance_split_df=walkforward_feature_importance_split_df,
-        walkforward_feature_importance_df=walkforward_feature_importance_df,
     )
 
 
