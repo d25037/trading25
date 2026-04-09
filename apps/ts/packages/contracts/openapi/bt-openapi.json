@@ -15780,6 +15780,15 @@
             "title": "Rankingmetric",
             "type": "string"
           },
+          "scoreModelType": {
+            "default": "daily_refit",
+            "enum": [
+              "walkforward_frozen_split",
+              "daily_refit"
+            ],
+            "title": "Scoremodeltype",
+            "type": "string"
+          },
           "scoreSourceRunId": {
             "anyOf": [
               {
@@ -15790,6 +15799,88 @@
               }
             ],
             "title": "Scoresourcerunid"
+          },
+          "scoreSplitPartialTail": {
+            "default": false,
+            "title": "Scoresplitpartialtail",
+            "type": "boolean"
+          },
+          "scoreSplitTestEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittestend"
+          },
+          "scoreSplitTestStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplitteststart"
+          },
+          "scoreSplitTrainEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittrainend"
+          },
+          "scoreSplitTrainStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittrainstart"
+          },
+          "scoreStepDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scorestepdays"
+          },
+          "scoreTestWindowDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoretestwindowdays"
+          },
+          "scoreTrainWindowDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoretrainwindowdays"
           },
           "shortScoreHorizonDays": {
             "default": 1,

@@ -9,7 +9,9 @@ import pytest
 
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
     _build_feature_panel_df,
+    _slice_feature_panel_to_recent_dates,
     _build_validation_model_comparison_df,
+    _resolve_runtime_walkforward_split,
     load_topix100_streak_353_next_session_intraday_lightgbm_research_bundle,
     run_topix100_streak_353_next_session_intraday_lightgbm_research,
     write_topix100_streak_353_next_session_intraday_lightgbm_research_bundle,
@@ -150,6 +152,74 @@ def test_build_validation_model_comparison_df_computes_lifts() -> None:
     assert float(row["long_return_lift_vs_baseline"]) == pytest.approx(0.006)
     assert float(row["short_edge_lift_vs_baseline"]) == pytest.approx(0.005)
     assert float(row["spread_lift_vs_baseline"]) == pytest.approx(0.011)
+
+
+def test_resolve_runtime_walkforward_split_matches_complete_block() -> None:
+    dates = pd.bdate_range("2021-01-04", periods=900).strftime("%Y-%m-%d")
+    feature_panel_df = pd.DataFrame({"date": dates})
+    snapshot_df = pd.DataFrame({"date": [dates[800]], "code": ["1001"]})
+
+    split = _resolve_runtime_walkforward_split(
+        feature_panel_df=feature_panel_df,
+        target_date=str(dates[800]),
+        snapshot_df=snapshot_df,
+        train_window_days=756,
+        test_window_days=126,
+        step_days=126,
+        purge_signal_dates=0,
+        allow_partial_test_window=True,
+    )
+
+    assert split is not None
+    assert split.train_start == str(dates[0])
+    assert split.train_end == str(dates[755])
+    assert split.test_start == str(dates[756])
+    assert split.test_end == str(dates[881])
+    assert split.is_partial_tail is False
+
+
+def test_resolve_runtime_walkforward_split_supports_partial_tail() -> None:
+    dates = pd.bdate_range("2021-01-04", periods=950).strftime("%Y-%m-%d")
+    feature_panel_df = pd.DataFrame({"date": dates})
+    snapshot_df = pd.DataFrame({"date": [dates[920]], "code": ["1001"]})
+
+    split = _resolve_runtime_walkforward_split(
+        feature_panel_df=feature_panel_df,
+        target_date=str(dates[920]),
+        snapshot_df=snapshot_df,
+        train_window_days=756,
+        test_window_days=126,
+        step_days=126,
+        purge_signal_dates=0,
+        allow_partial_test_window=True,
+    )
+
+    assert split is not None
+    assert split.train_start == str(dates[126])
+    assert split.train_end == str(dates[881])
+    assert split.test_start == str(dates[882])
+    assert split.test_end == str(dates[949])
+    assert split.is_partial_tail is True
+
+
+def test_slice_feature_panel_to_recent_dates_uses_trailing_signal_window() -> None:
+    dates = pd.bdate_range("2026-01-05", periods=10).strftime("%Y-%m-%d")
+    feature_panel_df = pd.DataFrame(
+        {
+            "date": [date for date in dates for _ in range(2)],
+            "code": ["1001", "1002"] * 10,
+        }
+    )
+
+    sliced_df, start_date, end_date = _slice_feature_panel_to_recent_dates(
+        feature_panel_df,
+        max_date_count=4,
+    )
+
+    assert start_date == str(dates[6])
+    assert end_date == str(dates[9])
+    assert sliced_df["date"].nunique() == 4
+    assert set(sliced_df["date"]) == {str(date) for date in dates[6:10]}
 
 
 def test_run_research_builds_signed_intraday_scorecard(monkeypatch, tmp_path) -> None:

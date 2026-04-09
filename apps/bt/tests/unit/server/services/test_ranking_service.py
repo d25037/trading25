@@ -432,6 +432,15 @@ def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgb
         volume_feature="volume_sma_5_20",
         short_window_streaks=3,
         long_window_streaks=53,
+        score_model_type="daily_refit",
+        train_window_days=756,
+        test_window_days=1,
+        step_days=1,
+        split_train_start="2021-01-04",
+        split_train_end="2023-12-29",
+        split_test_start=None,
+        split_test_end=None,
+        split_is_partial_tail=False,
         rows_by_code=rows_by_code,
     )
 
@@ -564,7 +573,7 @@ class TestGetRankings:
 
 
 class TestGetTopix100Ranking:
-    def test_runtime_scoring_uses_decile_only_categorical_features(
+    def test_runtime_scoring_uses_daily_refit_decile_only_categorical_features(
         self, topix100_ranking_service, monkeypatch
     ):
         captured_kwargs: dict[str, object] = {}
@@ -581,6 +590,9 @@ class TestGetTopix100Ranking:
         topix100_ranking_service.get_topix100_ranking()
 
         assert captured_kwargs["categorical_feature_columns"] == ("decile",)
+        assert captured_kwargs["train_lookback_days"] == 756
+        assert "test_window_days" not in captured_kwargs
+        assert "step_days" not in captured_kwargs
 
     def test_default_shape(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
@@ -595,6 +607,15 @@ class TestGetTopix100Ranking:
         assert result.shortWindowStreaks == 3
         assert result.longWindowStreaks == 53
         assert result.intradayScoreTarget == "next_session_open_close"
+        assert result.scoreModelType == "daily_refit"
+        assert result.scoreTrainWindowDays == 756
+        assert result.scoreTestWindowDays == 1
+        assert result.scoreStepDays == 1
+        assert result.scoreSplitTrainStart == "2021-01-04"
+        assert result.scoreSplitTrainEnd == "2023-12-29"
+        assert result.scoreSplitTestStart is None
+        assert result.scoreSplitTestEnd is None
+        assert result.scoreSplitPartialTail is False
         assert result.scoreSourceRunId == "test-run"
         assert result.itemCount == 20
         assert len(result.items) == 20

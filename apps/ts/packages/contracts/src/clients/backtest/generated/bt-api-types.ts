@@ -10121,8 +10121,33 @@ export interface components {
              * @enum {string}
              */
             rankingMetric: "price_vs_sma_gap" | "price_sma_20_80";
+            /**
+             * Scoremodeltype
+             * @default daily_refit
+             * @enum {string}
+             */
+            scoreModelType: "walkforward_frozen_split" | "daily_refit";
             /** Scoresourcerunid */
             scoreSourceRunId?: string | null;
+            /**
+             * Scoresplitpartialtail
+             * @default false
+             */
+            scoreSplitPartialTail: boolean;
+            /** Scoresplittestend */
+            scoreSplitTestEnd?: string | null;
+            /** Scoresplitteststart */
+            scoreSplitTestStart?: string | null;
+            /** Scoresplittrainend */
+            scoreSplitTrainEnd?: string | null;
+            /** Scoresplittrainstart */
+            scoreSplitTrainStart?: string | null;
+            /** Scorestepdays */
+            scoreStepDays?: number | null;
+            /** Scoretestwindowdays */
+            scoreTestWindowDays?: number | null;
+            /** Scoretrainwindowdays */
+            scoreTrainWindowDays?: number | null;
             /**
              * Shortscorehorizondays
              * @default 1

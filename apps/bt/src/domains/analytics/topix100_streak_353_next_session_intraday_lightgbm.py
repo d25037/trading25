@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pandas as pd
 
@@ -81,15 +81,22 @@ from src.domains.analytics.topix_rank_future_close_core import (
     DECILE_ORDER,
     _query_topix100_stock_history,
 )
+from src.domains.backtest.core.walkforward import generate_walkforward_splits
 
 DEFAULT_TOP_K_VALUES: tuple[int, ...] = (1, 3, 5, 10, 20)
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm"
 )
+TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID = (
+    "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward"
+)
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-next-session-intraday-discrete-ablation-walkforward"
 )
 DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = ("decile",)
+DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS = 756
+DEFAULT_RUNTIME_TEST_WINDOW_DAYS = 126
+DEFAULT_RUNTIME_STEP_DAYS = 126
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "feature_panel_df",
     "baseline_lookup_df",
@@ -179,7 +186,25 @@ class Topix100Streak353NextSessionIntradayLightgbmSnapshot:
     volume_feature: str
     short_window_streaks: int
     long_window_streaks: int
+    score_model_type: Literal["walkforward_frozen_split", "daily_refit"]
+    train_window_days: int
+    test_window_days: int | None
+    step_days: int | None
+    split_train_start: str | None
+    split_train_end: str | None
+    split_test_start: str | None
+    split_test_end: str | None
+    split_is_partial_tail: bool
     rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow]
+
+
+@dataclass(frozen=True)
+class _RuntimeWalkforwardSplit:
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    is_partial_tail: bool
 
 
 def _missing_lightgbm_message() -> str:
@@ -471,6 +496,11 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     short_window_streaks: int = DEFAULT_SHORT_WINDOW_STREAKS,
     long_window_streaks: int = DEFAULT_LONG_WINDOW_STREAKS,
     categorical_feature_columns: tuple[str, ...] = DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+    train_lookback_days: int | None = None,
+    test_window_days: int = DEFAULT_RUNTIME_TEST_WINDOW_DAYS,
+    step_days: int = DEFAULT_RUNTIME_STEP_DAYS,
+    purge_signal_dates: int = 0,
+    allow_partial_test_window: bool = True,
     connection: Any | None = None,
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
     if connection is not None:
@@ -482,6 +512,11 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             short_window_streaks,
             long_window_streaks,
             categorical_feature_columns,
+            train_lookback_days,
+            test_window_days,
+            step_days,
+            purge_signal_dates,
+            allow_partial_test_window,
             connection=connection,
         )
     return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
@@ -492,6 +527,11 @@ def score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         short_window_streaks,
         long_window_streaks,
         categorical_feature_columns,
+        train_lookback_days,
+        test_window_days,
+        step_days,
+        purge_signal_dates,
+        allow_partial_test_window,
     )
 
 
@@ -504,6 +544,11 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
     short_window_streaks: int,
     long_window_streaks: int,
     categorical_feature_columns: tuple[str, ...],
+    train_lookback_days: int | None,
+    test_window_days: int,
+    step_days: int,
+    purge_signal_dates: int,
+    allow_partial_test_window: bool,
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
     return _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         db_path,
@@ -513,6 +558,11 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
         short_window_streaks,
         long_window_streaks,
         categorical_feature_columns,
+        train_lookback_days,
+        test_window_days,
+        step_days,
+        purge_signal_dates,
+        allow_partial_test_window,
     )
 
 
@@ -520,9 +570,9 @@ def _resolve_snapshot_score_source_run_id(
     categorical_feature_columns: tuple[str, ...],
 ) -> str | None:
     experiment_id = (
-        TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID
+        TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID
         if categorical_feature_columns == DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS
-        else TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID
+        else TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID
     )
     bundle_path = find_latest_research_bundle_path(experiment_id)
     if bundle_path is None:
@@ -538,6 +588,11 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     short_window_streaks: int,
     long_window_streaks: int,
     categorical_feature_columns: tuple[str, ...],
+    train_lookback_days: int | None,
+    test_window_days: int,
+    step_days: int,
+    purge_signal_dates: int,
+    allow_partial_test_window: bool,
     *,
     connection: Any | None = None,
 ) -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
@@ -547,10 +602,19 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         raise ValueError(f"Unsupported volume_feature: {volume_feature}")
     if short_window_streaks >= long_window_streaks:
         raise ValueError("short_window_streaks must be smaller than long_window_streaks")
+    if train_lookback_days is not None and train_lookback_days < 1:
+        raise ValueError("train_lookback_days must be >= 1 when provided")
+    if test_window_days < 1:
+        raise ValueError("test_window_days must be >= 1")
+    if step_days < 1:
+        raise ValueError("step_days must be >= 1")
+    if purge_signal_dates < 0:
+        raise ValueError("purge_signal_dates must be >= 0")
 
     score_source_run_id = _resolve_snapshot_score_source_run_id(
         categorical_feature_columns
     )
+    train_window_days = train_lookback_days or DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS
     price_feature_to_window = {
         feature: window
         for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
@@ -562,15 +626,9 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
 
     if connection is None:
         with _open_analysis_connection(db_path) as ctx:
-            history_df = _query_topix100_stock_history(
-                ctx.connection,
-                end_date=target_date,
-            )
+            history_df = _query_topix100_stock_history(ctx.connection, end_date=None)
     else:
-        history_df = _query_topix100_stock_history(
-            connection,
-            end_date=target_date,
-        )
+        history_df = _query_topix100_stock_history(connection, end_date=None)
     if history_df.empty:
         return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
             score_source_run_id=score_source_run_id,
@@ -578,13 +636,22 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             volume_feature=volume_feature,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
+            score_model_type="daily_refit",
+            train_window_days=train_window_days,
+            test_window_days=1,
+            step_days=1,
+            split_train_start=None,
+            split_train_end=None,
+            split_test_start=None,
+            split_test_end=None,
+            split_is_partial_tail=False,
             rows_by_code={},
         )
 
     event_panel_df = _enrich_event_panel(
         history_df,
         analysis_start_date=None,
-        analysis_end_date=target_date,
+        analysis_end_date=None,
         min_constituents_per_day=1,
         price_sma_windows=(price_feature_to_window[price_feature],),
         volume_sma_windows=(volume_feature_to_window[volume_feature],),
@@ -596,6 +663,15 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             volume_feature=volume_feature,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
+            score_model_type="daily_refit",
+            train_window_days=train_window_days,
+            test_window_days=1,
+            step_days=1,
+            split_train_start=None,
+            split_train_end=None,
+            split_test_start=None,
+            split_test_end=None,
+            split_is_partial_tail=False,
             rows_by_code={},
         )
 
@@ -608,20 +684,11 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         )
         state_event_df = state_event_df.copy()
         state_event_df["sample_split"] = "training"
-        training_feature_panel_df = _build_feature_panel_from_state_event_df(
+        full_feature_panel_df = _build_feature_panel_from_state_event_df(
             event_panel_df=event_panel_df,
             state_event_df=state_event_df,
             price_feature=price_feature,
             volume_feature=volume_feature,
-        )
-        snapshot_df = _build_scoring_snapshot_df(
-            event_panel_df=event_panel_df,
-            history_df=history_df,
-            target_date=target_date,
-            price_feature=price_feature,
-            volume_feature=volume_feature,
-            short_window_streaks=short_window_streaks,
-            long_window_streaks=long_window_streaks,
         )
     except ValueError:
         return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
@@ -630,20 +697,83 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             volume_feature=volume_feature,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
+            score_model_type="daily_refit",
+            train_window_days=train_window_days,
+            test_window_days=1,
+            step_days=1,
+            split_train_start=None,
+            split_train_end=None,
+            split_test_start=None,
+            split_test_end=None,
+            split_is_partial_tail=False,
             rows_by_code={},
         )
-    if snapshot_df.empty:
+    training_source_df = (
+        full_feature_panel_df[full_feature_panel_df["date"].astype(str) < target_date]
+        .copy()
+        .reset_index(drop=True)
+    )
+    training_feature_panel_df, train_start, train_end = _slice_feature_panel_to_recent_dates(
+        training_source_df,
+        max_date_count=train_window_days,
+    )
+    if training_feature_panel_df.empty or train_start is None or train_end is None:
         return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
             score_source_run_id=score_source_run_id,
             price_feature=price_feature,
             volume_feature=volume_feature,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
+            score_model_type="daily_refit",
+            train_window_days=train_window_days,
+            test_window_days=1,
+            step_days=1,
+            split_train_start=None,
+            split_train_end=None,
+            split_test_start=None,
+            split_test_end=None,
+            split_is_partial_tail=False,
             rows_by_code={},
         )
-
+    snapshot_feature_df = (
+        full_feature_panel_df[full_feature_panel_df["date"].astype(str) == target_date]
+        .copy()
+        .reset_index(drop=True)
+    )
+    if snapshot_feature_df.empty:
+        snapshot_feature_df = _build_scoring_snapshot_df(
+            event_panel_df=event_panel_df,
+            history_df=history_df,
+            target_date=target_date,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+        )
+    if snapshot_feature_df.empty:
+        return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
+            score_source_run_id=score_source_run_id,
+            price_feature=price_feature,
+            volume_feature=volume_feature,
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+            score_model_type="daily_refit",
+            train_window_days=train_window_days,
+            test_window_days=1,
+            step_days=1,
+            split_train_start=train_start,
+            split_train_end=train_end,
+            split_test_start=None,
+            split_test_end=None,
+            split_is_partial_tail=False,
+            rows_by_code={},
+        )
+    category_source_df = pd.concat(
+        [training_feature_panel_df, snapshot_feature_df],
+        ignore_index=True,
+    )
     regressor_cls = _load_lightgbm_regressor_cls()
-    categories = _build_category_lookup(training_feature_panel_df)
+    categories = _build_category_lookup(category_source_df)
     feature_columns = [
         *categorical_feature_columns,
         price_feature,
@@ -652,7 +782,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     ]
     intraday_scores = _predict_lightgbm_snapshot_scores(
         training_feature_panel_df=training_feature_panel_df,
-        snapshot_df=snapshot_df,
+        snapshot_df=snapshot_feature_df,
         target_column="next_session_intraday_return",
         regressor_cls=regressor_cls,
         feature_columns=feature_columns,
@@ -661,7 +791,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     )
 
     rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow] = {}
-    for row in snapshot_df.to_dict(orient="records"):
+    for row in snapshot_feature_df.to_dict(orient="records"):
         normalized_row = {str(key): value for key, value in row.items()}
         code = str(normalized_row["code"])
         score_value = intraday_scores.get(code)
@@ -684,8 +814,118 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         volume_feature=volume_feature,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
+        score_model_type="daily_refit",
+        train_window_days=train_window_days,
+        test_window_days=1,
+        step_days=1,
+        split_train_start=train_start,
+        split_train_end=train_end,
+        split_test_start=None,
+        split_test_end=None,
+        split_is_partial_tail=False,
         rows_by_code=rows_by_code,
     )
+
+
+def _slice_feature_panel_by_date_range(
+    feature_panel_df: pd.DataFrame,
+    *,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    date_values = feature_panel_df["date"].astype(str)
+    return (
+        feature_panel_df[(date_values >= start_date) & (date_values <= end_date)]
+        .copy()
+        .reset_index(drop=True)
+    )
+
+
+def _slice_feature_panel_to_recent_dates(
+    feature_panel_df: pd.DataFrame,
+    *,
+    max_date_count: int,
+) -> tuple[pd.DataFrame, str | None, str | None]:
+    ordered_dates = (
+        feature_panel_df["date"].astype(str).drop_duplicates().sort_values(kind="stable").tolist()
+    )
+    if not ordered_dates:
+        return feature_panel_df.iloc[0:0].copy(), None, None
+    selected_dates = ordered_dates[-max_date_count:]
+    start_date = selected_dates[0]
+    end_date = selected_dates[-1]
+    return (
+        _slice_feature_panel_by_date_range(
+            feature_panel_df,
+            start_date=start_date,
+            end_date=end_date,
+        ),
+        start_date,
+        end_date,
+    )
+
+
+def _resolve_runtime_walkforward_split(  # pyright: ignore[reportUnusedFunction]
+    *,
+    feature_panel_df: pd.DataFrame,
+    target_date: str,
+    snapshot_df: pd.DataFrame,
+    train_window_days: int,
+    test_window_days: int,
+    step_days: int,
+    purge_signal_dates: int,
+    allow_partial_test_window: bool,
+) -> _RuntimeWalkforwardSplit | None:
+    signal_dates = (
+        feature_panel_df["date"].astype(str).drop_duplicates().sort_values(kind="stable").tolist()
+    )
+    if not snapshot_df.empty and target_date not in set(signal_dates):
+        signal_dates.append(target_date)
+    if not signal_dates:
+        return None
+
+    ordered_dates = pd.DatetimeIndex(pd.to_datetime(signal_dates)).sort_values().unique()
+    complete_splits = generate_walkforward_splits(
+        ordered_dates,
+        train_window=train_window_days,
+        test_window=test_window_days,
+        step=step_days,
+        purge_window=purge_signal_dates,
+    )
+    for split in complete_splits:
+        if split.test_start <= target_date <= split.test_end:
+            return _RuntimeWalkforwardSplit(
+                train_start=split.train_start,
+                train_end=split.train_end,
+                test_start=split.test_start,
+                test_end=split.test_end,
+                is_partial_tail=False,
+            )
+
+    if not allow_partial_test_window:
+        return None
+
+    total = len(ordered_dates)
+    start_index = 0
+    while start_index + train_window_days + purge_signal_dates < total:
+        test_start_index = start_index + train_window_days + purge_signal_dates
+        full_test_end_index = test_start_index + test_window_days - 1
+        if full_test_end_index < total:
+            start_index += step_days
+            continue
+
+        partial_split = _RuntimeWalkforwardSplit(
+            train_start=ordered_dates[start_index].date().isoformat(),
+            train_end=ordered_dates[start_index + train_window_days - 1].date().isoformat(),
+            test_start=ordered_dates[test_start_index].date().isoformat(),
+            test_end=ordered_dates[-1].date().isoformat(),
+            is_partial_tail=True,
+        )
+        if partial_split.test_start <= target_date <= partial_split.test_end:
+            return partial_split
+        break
+
+    return None
 
 
 def _build_baseline_selector_value_key(

@@ -115,6 +115,15 @@ class Topix100RankingResponse(BaseModel):
     longScoreHorizonDays: int = 5
     shortScoreHorizonDays: int = 1
     intradayScoreTarget: Literal["next_session_open_close"] = "next_session_open_close"
+    scoreModelType: Literal["walkforward_frozen_split", "daily_refit"] = "daily_refit"
+    scoreTrainWindowDays: int | None = None
+    scoreTestWindowDays: int | None = None
+    scoreStepDays: int | None = None
+    scoreSplitTrainStart: str | None = None
+    scoreSplitTrainEnd: str | None = None
+    scoreSplitTestStart: str | None = None
+    scoreSplitTestEnd: str | None = None
+    scoreSplitPartialTail: bool = False
     scoreSourceRunId: str | None = None
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)

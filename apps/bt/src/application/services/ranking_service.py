@@ -28,6 +28,7 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_SHORT_WINDOW_STREAKS,
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
     DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
@@ -294,6 +295,7 @@ class RankingService:
             short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
             categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+            train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
             connection=self._reader.conn,
         )
 
@@ -385,6 +387,15 @@ class RankingService:
             smaWindow=validated_sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            scoreModelType=score_snapshot.score_model_type,
+            scoreTrainWindowDays=score_snapshot.train_window_days,
+            scoreTestWindowDays=score_snapshot.test_window_days,
+            scoreStepDays=score_snapshot.step_days,
+            scoreSplitTrainStart=score_snapshot.split_train_start,
+            scoreSplitTrainEnd=score_snapshot.split_train_end,
+            scoreSplitTestStart=score_snapshot.split_test_start,
+            scoreSplitTestEnd=score_snapshot.split_test_end,
+            scoreSplitPartialTail=score_snapshot.split_is_partial_tail,
             scoreSourceRunId=score_snapshot.score_source_run_id,
             itemCount=len(items),
             items=items,
