@@ -100,6 +100,8 @@ class Topix100RankingItem(BaseModel):
     intradayScore: float | None = None
     intradayLongRank: int | None = None
     intradayShortRank: int | None = None
+    nextSessionDate: str | None = None
+    nextSessionIntradayReturn: float | None = None
 
 
 class Topix100RankingResponse(BaseModel):

@@ -175,7 +175,8 @@ async def get_fundamental_ranking(
     description=(
         "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap "
         "(default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, "
-        "with volume SMA 5/20 sidecar buckets."
+        "with volume SMA 5/20 sidecar buckets. When the next session exists, "
+        "the response also includes the realized next-session intraday return."
     ),
 )
 async def get_topix100_ranking(
@@ -184,7 +185,7 @@ async def get_topix100_ranking(
     metric: Topix100RankingMetric = Query("price_vs_sma_gap"),
     smaWindow: int = Query(50, description="Supported values: 20, 50, 100."),
 ) -> Topix100RankingResponse:
-    """TOPIX100 の当日ランキングを取得"""
+    """TOPIX100 の当日ランキングを取得し、利用可能なら次営業日の実現 intraday return も返す"""
     from src.application.services.ranking_service import RankingService
 
     reader = getattr(request.app.state, "market_reader", None)

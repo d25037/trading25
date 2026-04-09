@@ -51,6 +51,8 @@ def test_parse_args_accepts_walkforward_options() -> None:
             "126",
             "--step",
             "126",
+            "--purge-signal-dates",
+            "1",
             "--run-id",
             "20260407_130000_testabcd",
         ]
@@ -62,6 +64,7 @@ def test_parse_args_accepts_walkforward_options() -> None:
     assert args.train_window == 756
     assert args.test_window == 126
     assert args.step == 126
+    assert args.purge_signal_dates == 1
     assert args.run_id == "20260407_130000_testabcd"
 
 

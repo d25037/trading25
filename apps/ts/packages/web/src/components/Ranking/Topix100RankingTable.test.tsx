@@ -41,6 +41,8 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         intradayScore: -0.0032,
         intradayLongRank: 3,
         intradayShortRank: 2,
+        nextSessionDate: '2026-03-31',
+        nextSessionIntradayReturn: 0.011,
       },
       {
         rank: 2,
@@ -64,6 +66,8 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         intradayScore: 0.0125,
         intradayLongRank: 1,
         intradayShortRank: 4,
+        nextSessionDate: '2026-03-31',
+        nextSessionIntradayReturn: -0.004,
       },
       {
         rank: 3,
@@ -87,6 +91,8 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         intradayScore: 0.0041,
         intradayLongRank: 2,
         intradayShortRank: 3,
+        nextSessionDate: '2026-03-31',
+        nextSessionIntradayReturn: 0.006,
       },
       {
         rank: 4,
@@ -110,6 +116,8 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
         intradayScore: null,
         intradayLongRank: null,
         intradayShortRank: null,
+        nextSessionDate: null,
+        nextSessionIntradayReturn: null,
       },
     ],
   };
@@ -145,8 +153,11 @@ describe('Topix100RankingTable', () => {
     expect(screen.getByText('Volume/state = context')).toBeInTheDocument();
     expect(screen.getByText('State X = 3/53')).toBeInTheDocument();
     expect(screen.getByText('Score = Next-session open → close LightGBM (decile-only)')).toBeInTheDocument();
+    expect(screen.getByText('Realized = next available open → close when present')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('+1.25%')).toBeInTheDocument();
+    expect(screen.getByText('+1.10%')).toBeInTheDocument();
+    expect(screen.getAllByText('2026-03-31').length).toBeGreaterThan(0);
     expect(screen.getByText('Toyota')).toBeInTheDocument();
     expect(screen.queryByText('Q2-4 Trough')).not.toBeInTheDocument();
     expect(screen.getAllByText('Bullish').length).toBeGreaterThan(0);

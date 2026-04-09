@@ -107,6 +107,7 @@ class Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult:
     train_window: int
     test_window: int
     step: int
+    purge_signal_dates: int
     split_count: int
     categorical_feature_columns: tuple[str, ...]
     continuous_feature_columns: tuple[str, ...]
@@ -150,6 +151,7 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
     train_window: int = DEFAULT_WALKFORWARD_TRAIN_WINDOW,
     test_window: int = DEFAULT_WALKFORWARD_TEST_WINDOW,
     step: int = DEFAULT_WALKFORWARD_STEP,
+    purge_signal_dates: int = 0,
 ) -> Topix100Streak353NextSessionIntradayLightgbmWalkforwardResearchResult:
     if price_feature not in PRICE_FEATURE_LABEL_MAP:
         raise ValueError(f"Unsupported price_feature: {price_feature}")
@@ -211,6 +213,7 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
         train_window=train_window,
         test_window=test_window,
         step=step,
+        purge_signal_dates=purge_signal_dates,
         feature_panel_df=feature_panel_df,
         categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
         continuous_feature_columns=(
@@ -237,6 +240,7 @@ def _run_walkforward_from_panel(
     train_window: int,
     test_window: int,
     step: int,
+    purge_signal_dates: int,
     feature_panel_df: pd.DataFrame,
     categorical_feature_columns: tuple[str, ...],
     continuous_feature_columns: tuple[str, ...],
@@ -256,6 +260,7 @@ def _run_walkforward_from_panel(
         train_window=train_window,
         test_window=test_window,
         step=step,
+        purge_signal_dates=purge_signal_dates,
         feature_panel_df=feature_panel_df,
         categorical_feature_columns=categorical_feature_columns,
         continuous_feature_columns=continuous_feature_columns,
@@ -315,6 +320,7 @@ def _run_walkforward_from_panel(
         train_window=train_window,
         test_window=test_window,
         step=step,
+        purge_signal_dates=purge_signal_dates,
         split_count=artifacts.split_count,
         categorical_feature_columns=categorical_feature_columns,
         continuous_feature_columns=continuous_feature_columns,
@@ -349,6 +355,7 @@ def _build_walkforward_prediction_artifacts(
     train_window: int,
     test_window: int,
     step: int,
+    purge_signal_dates: int,
     feature_panel_df: pd.DataFrame,
     categorical_feature_columns: tuple[str, ...],
     continuous_feature_columns: tuple[str, ...],
@@ -359,6 +366,7 @@ def _build_walkforward_prediction_artifacts(
         train_window=train_window,
         test_window=test_window,
         step=step,
+        purge_window=purge_signal_dates,
     )
     if not splits:
         raise ValueError("No walk-forward splits were generated for the selected panel")
@@ -531,6 +539,7 @@ def write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_researc
             "train_window": result.train_window,
             "test_window": result.test_window,
             "step": result.step,
+            "purge_signal_dates": result.purge_signal_dates,
         },
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
@@ -745,6 +754,7 @@ def _build_research_bundle_summary_markdown(
         f"- Source mode: `{result.source_mode}`",
         f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
         f"- Walk-forward windows: `train {result.train_window} / test {result.test_window} / step {result.step}`",
+        f"- Purge signal dates: `{result.purge_signal_dates}`",
         f"- Split count: `{result.split_count}`",
         "- Target: `next-session open -> close return`",
         f"- Top-k evaluation: `{_format_int_sequence(result.top_k_values)}`",
@@ -931,6 +941,7 @@ def _build_published_summary_payload(
             {"label": "Target", "value": "next-session close / open - 1"},
             {"label": "Train/Test", "value": f"{result.train_window}/{result.test_window}"},
             {"label": "Step", "value": str(result.step)},
+            {"label": "Purge", "value": str(result.purge_signal_dates)},
             {"label": "Top-K grid", "value": _format_int_sequence(result.top_k_values)},
             {"label": "Split count", "value": str(result.split_count)},
         ],

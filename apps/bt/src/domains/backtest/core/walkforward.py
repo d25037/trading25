@@ -25,6 +25,7 @@ def generate_walkforward_splits(
     train_window: int,
     test_window: int,
     step: int | None = None,
+    purge_window: int = 0,
 ) -> List[WalkForwardSplit]:
     """
     日付インデックスからウォークフォワード分割を生成
@@ -34,6 +35,7 @@ def generate_walkforward_splits(
         train_window: 学習期間（営業日数）
         test_window: 検証期間（営業日数）
         step: ステップ幅（Noneならtest_window）
+        purge_window: train/test 間で空ける日数
     """
     dates = pd.DatetimeIndex(list(index)).sort_values().unique()
     if train_window <= 0 or test_window <= 0:
@@ -42,16 +44,18 @@ def generate_walkforward_splits(
     step = step or test_window
     if step <= 0:
         raise ValueError("stepは正の値である必要があります")
+    if purge_window < 0:
+        raise ValueError("purge_windowは0以上である必要があります")
 
     splits: List[WalkForwardSplit] = []
     start = 0
     total = len(dates)
 
-    while start + train_window + test_window <= total:
+    while start + train_window + purge_window + test_window <= total:
         train_start = dates[start]
         train_end = dates[start + train_window - 1]
-        test_start = dates[start + train_window]
-        test_end = dates[start + train_window + test_window - 1]
+        test_start = dates[start + train_window + purge_window]
+        test_end = dates[start + train_window + purge_window + test_window - 1]
 
         splits.append(
             WalkForwardSplit(

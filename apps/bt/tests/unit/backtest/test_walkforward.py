@@ -26,6 +26,22 @@ def test_generate_walkforward_splits():
     assert splits[0].test_end == "2023-01-06"
 
 
+def test_generate_walkforward_splits_with_purge_window():
+    dates = pd.date_range("2023-01-01", periods=12, freq="D")
+    splits = generate_walkforward_splits(
+        dates,
+        train_window=4,
+        test_window=2,
+        step=2,
+        purge_window=1,
+    )
+
+    assert len(splits) == 3
+    assert splits[0].train_end == "2023-01-04"
+    assert splits[0].test_start == "2023-01-06"
+    assert splits[0].test_end == "2023-01-07"
+
+
 def test_run_walk_forward_collects_metrics(monkeypatch):
     runner = BacktestRunner()
 

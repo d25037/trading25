@@ -89,6 +89,8 @@ export interface Topix100RankingItem {
   intradayScore?: number | null;
   intradayLongRank?: number | null;
   intradayShortRank?: number | null;
+  nextSessionDate?: string | null;
+  nextSessionIntradayReturn?: number | null;
 }
 
 export interface Topix100RankingResponse {

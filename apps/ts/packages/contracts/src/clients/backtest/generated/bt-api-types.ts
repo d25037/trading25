@@ -355,7 +355,7 @@ export interface paths {
         };
         /**
          * Get TOPIX100 ranking snapshot
-         * @description Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets.
+         * @description Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets. When the next session exists, the response also includes the realized next-session intraday return.
          */
         get: operations["get_topix100_ranking_api_analytics_topix100_ranking_get"];
         put?: never;
@@ -10050,6 +10050,10 @@ export interface components {
             longScore5dRank?: number | null;
             /** Marketcode */
             marketCode: string;
+            /** Nextsessiondate */
+            nextSessionDate?: string | null;
+            /** Nextsessionintradayreturn */
+            nextSessionIntradayReturn?: number | null;
             /**
              * Pricebucket
              * @enum {string}

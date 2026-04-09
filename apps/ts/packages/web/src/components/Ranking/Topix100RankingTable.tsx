@@ -167,6 +167,12 @@ function compareItems(
       return compareNullableNumbers(left.intradayLongRank, right.intradayLongRank, sortOrder);
     case 'intradayShortRank':
       return compareNullableNumbers(left.intradayShortRank, right.intradayShortRank, sortOrder);
+    case 'nextSessionIntradayReturn':
+      return compareNullableNumbers(
+        left.nextSessionIntradayReturn,
+        right.nextSessionIntradayReturn,
+        sortOrder
+      );
     case 'volumeSma5_20':
       return compareNullableNumbers(left.volumeSma5_20, right.volumeSma5_20, sortOrder);
     case 'currentPrice':
@@ -288,6 +294,7 @@ export function Topix100RankingTable({
               State X = {data?.shortWindowStreaks ?? 3}/{data?.longWindowStreaks ?? 53}
             </span>
             <span>Score = Next-session open → close LightGBM (decile-only)</span>
+            <span>Realized = next available open → close when present</span>
             <span>{data?.date ?? '-'}</span>
           </div>
         </div>
@@ -365,6 +372,15 @@ export function Topix100RankingTable({
                   buttonClassName="justify-end"
                 />
                 <SortableHeader
+                  label="Next Ret"
+                  sortField="nextSessionIntradayReturn"
+                  activeSortBy={sortBy}
+                  activeSortOrder={sortOrder}
+                  onSortChange={onSortChange}
+                  className="w-28 px-2 py-1.5 text-right"
+                  buttonClassName="justify-end"
+                />
+                <SortableHeader
                   label="Volume SMA 5/20"
                   sortField="volumeSma5_20"
                   activeSortBy={sortBy}
@@ -433,6 +449,12 @@ export function Topix100RankingTable({
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
                     {formatScore(item.intradayScore)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <div>{formatScore(item.nextSessionIntradayReturn)}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {item.nextSessionDate ?? '-'}
+                    </div>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>

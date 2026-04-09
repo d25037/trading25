@@ -370,6 +370,8 @@ class TestTopix100Ranking:
             assert "intradayScore" in item
             assert "intradayLongRank" in item
             assert "intradayShortRank" in item
+            assert "nextSessionDate" in item
+            assert "nextSessionIntradayReturn" in item
 
     def test_supports_metric_query(self, analytics_client):
         resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_sma_20_80")
@@ -383,6 +385,16 @@ class TestTopix100Ranking:
         data = resp.json()
         assert data["rankingMetric"] == "price_vs_sma_gap"
         assert data["smaWindow"] == 100
+
+    def test_includes_next_session_realized_return_when_available(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/topix100-ranking?date=2024-02-20")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["date"] == "2024-02-20"
+        assert data["items"]
+        first_item = data["items"][0]
+        assert first_item["nextSessionDate"] == "2024-02-21"
+        assert first_item["nextSessionIntradayReturn"] is not None
 
     def test_422_no_db(self):
         app = create_app()

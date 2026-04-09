@@ -83,6 +83,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=DEFAULT_WALKFORWARD_STEP,
     )
+    parser.add_argument(
+        "--purge-signal-dates",
+        type=int,
+        default=0,
+    )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
@@ -102,6 +107,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_window=args.train_window,
         test_window=args.test_window,
         step=args.step,
+        purge_signal_dates=args.purge_signal_dates,
     )
     bundle = (
         write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research_bundle(

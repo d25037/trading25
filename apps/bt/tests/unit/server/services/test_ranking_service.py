@@ -608,6 +608,8 @@ class TestGetTopix100Ranking:
         assert hasattr(result.items[0], "intradayScore")
         assert hasattr(result.items[0], "intradayLongRank")
         assert hasattr(result.items[0], "intradayShortRank")
+        assert hasattr(result.items[0], "nextSessionDate")
+        assert hasattr(result.items[0], "nextSessionIntradayReturn")
 
     def test_supports_price_sma_20_80_metric(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
@@ -679,6 +681,8 @@ class TestGetTopix100Ranking:
 
         assert result.date == "2024-03-29"
         assert result.itemCount == 20
+        assert result.items[0].nextSessionDate == "2024-03-30"
+        assert result.items[0].nextSessionIntradayReturn == pytest.approx(0.0)
 
 
 class TestGetFundamentalRankings:
