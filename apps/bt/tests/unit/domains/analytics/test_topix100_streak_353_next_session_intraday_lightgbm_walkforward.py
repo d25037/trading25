@@ -94,6 +94,7 @@ def test_run_walkforward_from_panel_produces_oos_tables(monkeypatch) -> None:
         train_window=6,
         test_window=4,
         step=4,
+        purge_signal_dates=1,
         feature_panel_df=feature_panel_df,
         categorical_feature_columns=("decile", "volume_bucket", "short_mode", "long_mode"),
         continuous_feature_columns=(
@@ -111,6 +112,7 @@ def test_run_walkforward_from_panel_produces_oos_tables(monkeypatch) -> None:
     )
 
     assert result.split_count >= 1
+    assert result.purge_signal_dates == 1
     assert not result.walkforward_model_summary_df.empty
     assert not result.walkforward_model_comparison_df.empty
     assert not result.walkforward_split_comparison_df.empty

@@ -37,7 +37,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'web:dev': {
     description: 'Run web dev server',
-    steps: [{ command: ['x', '--bun', 'vite', '--configLoader', 'native'], withEnvFile: true, cwd: WEB_ROOT }],
+    steps: [{ command: ['./scripts/vite-bun-compat.ts', '--configLoader', 'native'], withEnvFile: true, cwd: WEB_ROOT }],
   },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',

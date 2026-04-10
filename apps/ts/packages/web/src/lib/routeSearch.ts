@@ -154,6 +154,7 @@ const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
   'intradayScore',
   'intradayLongRank',
   'intradayShortRank',
+  'nextSessionIntradayReturn',
   'volumeSma5_20',
   'currentPrice',
   'sector33Name',

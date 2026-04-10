@@ -245,6 +245,7 @@ def run_topix100_streak_353_next_session_intraday_discrete_ablation_walkforward_
             train_window=train_window,
             test_window=test_window,
             step=step,
+            purge_signal_dates=0,
             feature_panel_df=feature_panel_df,
             categorical_feature_columns=spec.categorical_feature_columns,
             continuous_feature_columns=continuous_feature_columns,

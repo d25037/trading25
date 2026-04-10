@@ -15563,6 +15563,28 @@
             "title": "Marketcode",
             "type": "string"
           },
+          "nextSessionDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextsessiondate"
+          },
+          "nextSessionIntradayReturn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextsessionintradayreturn"
+          },
           "priceBucket": {
             "enum": [
               "q1",
@@ -15758,6 +15780,15 @@
             "title": "Rankingmetric",
             "type": "string"
           },
+          "scoreModelType": {
+            "default": "daily_refit",
+            "enum": [
+              "walkforward_frozen_split",
+              "daily_refit"
+            ],
+            "title": "Scoremodeltype",
+            "type": "string"
+          },
           "scoreSourceRunId": {
             "anyOf": [
               {
@@ -15768,6 +15799,88 @@
               }
             ],
             "title": "Scoresourcerunid"
+          },
+          "scoreSplitPartialTail": {
+            "default": false,
+            "title": "Scoresplitpartialtail",
+            "type": "boolean"
+          },
+          "scoreSplitTestEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittestend"
+          },
+          "scoreSplitTestStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplitteststart"
+          },
+          "scoreSplitTrainEnd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittrainend"
+          },
+          "scoreSplitTrainStart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoresplittrainstart"
+          },
+          "scoreStepDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scorestepdays"
+          },
+          "scoreTestWindowDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoretestwindowdays"
+          },
+          "scoreTrainWindowDays": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoretrainwindowdays"
           },
           "shortScoreHorizonDays": {
             "default": 1,
@@ -18377,7 +18490,7 @@
     },
     "/api/analytics/topix100-ranking": {
       "get": {
-        "description": "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets.",
+        "description": "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets. When the next session exists, the response also includes the realized next-session intraday return.",
         "operationId": "get_topix100_ranking_api_analytics_topix100_ranking_get",
         "parameters": [
           {

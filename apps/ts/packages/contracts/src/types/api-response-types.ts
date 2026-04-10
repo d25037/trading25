@@ -89,6 +89,8 @@ export interface Topix100RankingItem {
   intradayScore?: number | null;
   intradayLongRank?: number | null;
   intradayShortRank?: number | null;
+  nextSessionDate?: string | null;
+  nextSessionIntradayReturn?: number | null;
 }
 
 export interface Topix100RankingResponse {
@@ -100,6 +102,15 @@ export interface Topix100RankingResponse {
   longScoreHorizonDays: number;
   shortScoreHorizonDays: number;
   intradayScoreTarget: 'next_session_open_close';
+  scoreModelType?: 'walkforward_frozen_split' | 'daily_refit';
+  scoreTrainWindowDays?: number | null;
+  scoreTestWindowDays?: number | null;
+  scoreStepDays?: number | null;
+  scoreSplitTrainStart?: string | null;
+  scoreSplitTrainEnd?: string | null;
+  scoreSplitTestStart?: string | null;
+  scoreSplitTestEnd?: string | null;
+  scoreSplitPartialTail?: boolean;
   scoreSourceRunId?: string | null;
   itemCount: number;
   items: Topix100RankingItem[];

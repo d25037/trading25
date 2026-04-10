@@ -1,4 +1,4 @@
-"""Run the TOPIX100 next-session intraday LightGBM walk-forward study."""
+"""Run the TOPIX100 intraday portfolio-construction walk-forward study."""
 
 from __future__ import annotations
 
@@ -17,15 +17,14 @@ from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning 
     DEFAULT_PRICE_FEATURE,
     DEFAULT_VOLUME_FEATURE,
 )
-from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (  # noqa: E402
-    DEFAULT_TOP_K_VALUES,
-)
-from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm_walkforward import (  # noqa: E402
+from src.domains.analytics.topix100_streak_353_next_session_intraday_portfolio_construction_walkforward import (  # noqa: E402
+    DEFAULT_ABSOLUTE_SELECTION_COUNT,
+    DEFAULT_REFERENCE_TOP_K,
     DEFAULT_WALKFORWARD_STEP,
     DEFAULT_WALKFORWARD_TEST_WINDOW,
     DEFAULT_WALKFORWARD_TRAIN_WINDOW,
-    run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research,
-    write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research_bundle,
+    run_topix100_streak_353_next_session_intraday_portfolio_construction_walkforward_research,
+    write_topix100_streak_353_next_session_intraday_portfolio_construction_walkforward_research_bundle,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (  # noqa: E402
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -38,8 +37,8 @@ from src.shared.config.settings import get_settings  # noqa: E402
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the TOPIX100 next-session intraday LightGBM walk-forward "
-            "study and persist a reproducible bundle."
+            "Run the TOPIX100 next-session intraday portfolio-construction "
+            "walk-forward study and persist a reproducible bundle."
         )
     )
     parser.add_argument("--db-path", default=str(get_settings().market_db_path))
@@ -63,10 +62,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_LONG_WINDOW_STREAKS,
     )
     parser.add_argument(
-        "--top-k-values",
+        "--reference-top-k",
         type=int,
-        nargs="+",
-        default=list(DEFAULT_TOP_K_VALUES),
+        default=DEFAULT_REFERENCE_TOP_K,
+    )
+    parser.add_argument(
+        "--absolute-selection-count",
+        type=int,
+        default=DEFAULT_ABSOLUTE_SELECTION_COUNT,
     )
     parser.add_argument(
         "--train-window",
@@ -83,18 +86,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=DEFAULT_WALKFORWARD_STEP,
     )
-    parser.add_argument(
-        "--purge-signal-dates",
-        type=int,
-        default=0,
-    )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    result = run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
+    result = run_topix100_streak_353_next_session_intraday_portfolio_construction_walkforward_research(
         args.db_path,
         start_date=args.start_date,
         end_date=args.end_date,
@@ -103,14 +101,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         validation_ratio=args.validation_ratio,
         short_window_streaks=args.short_window_streaks,
         long_window_streaks=args.long_window_streaks,
-        top_k_values=args.top_k_values,
+        reference_top_k=args.reference_top_k,
+        absolute_selection_count=args.absolute_selection_count,
         train_window=args.train_window,
         test_window=args.test_window,
         step=args.step,
-        purge_signal_dates=args.purge_signal_dates,
     )
     bundle = (
-        write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research_bundle(
+        write_topix100_streak_353_next_session_intraday_portfolio_construction_walkforward_research_bundle(
             result,
             output_root=Path(args.output_root) if args.output_root else None,
             run_id=args.run_id,

@@ -1,4 +1,4 @@
-"""Run the TOPIX100 next-session intraday LightGBM walk-forward study."""
+"""Run the TOPIX100 next-session intraday refit-cadence ablation study."""
 
 from __future__ import annotations
 
@@ -20,12 +20,11 @@ from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning 
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (  # noqa: E402
     DEFAULT_TOP_K_VALUES,
 )
-from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm_walkforward import (  # noqa: E402
-    DEFAULT_WALKFORWARD_STEP,
-    DEFAULT_WALKFORWARD_TEST_WINDOW,
-    DEFAULT_WALKFORWARD_TRAIN_WINDOW,
-    run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research,
-    write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research_bundle,
+from src.domains.analytics.topix100_streak_353_next_session_intraday_refit_cadence_ablation import (  # noqa: E402
+    DEFAULT_REFERENCE_CADENCE_DAYS,
+    DEFAULT_REFIT_CADENCE_DAYS,
+    run_topix100_streak_353_next_session_intraday_refit_cadence_ablation_research,
+    write_topix100_streak_353_next_session_intraday_refit_cadence_ablation_research_bundle,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (  # noqa: E402
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -38,7 +37,7 @@ from src.shared.config.settings import get_settings  # noqa: E402
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the TOPIX100 next-session intraday LightGBM walk-forward "
+            "Run the TOPIX100 next-session intraday refit-cadence ablation "
             "study and persist a reproducible bundle."
         )
     )
@@ -71,22 +70,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--train-window",
         type=int,
-        default=DEFAULT_WALKFORWARD_TRAIN_WINDOW,
-    )
-    parser.add_argument(
-        "--test-window",
-        type=int,
-        default=DEFAULT_WALKFORWARD_TEST_WINDOW,
-    )
-    parser.add_argument(
-        "--step",
-        type=int,
-        default=DEFAULT_WALKFORWARD_STEP,
+        default=756,
     )
     parser.add_argument(
         "--purge-signal-dates",
         type=int,
         default=0,
+    )
+    parser.add_argument(
+        "--refit-cadence-days",
+        type=int,
+        nargs="+",
+        default=list(DEFAULT_REFIT_CADENCE_DAYS),
+    )
+    parser.add_argument(
+        "--reference-cadence-days",
+        type=int,
+        default=DEFAULT_REFERENCE_CADENCE_DAYS,
     )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
@@ -94,7 +94,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    result = run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
+    result = run_topix100_streak_353_next_session_intraday_refit_cadence_ablation_research(
         args.db_path,
         start_date=args.start_date,
         end_date=args.end_date,
@@ -105,12 +105,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         long_window_streaks=args.long_window_streaks,
         top_k_values=args.top_k_values,
         train_window=args.train_window,
-        test_window=args.test_window,
-        step=args.step,
         purge_signal_dates=args.purge_signal_dates,
+        refit_cadence_days=args.refit_cadence_days,
+        reference_cadence_days=args.reference_cadence_days,
     )
     bundle = (
-        write_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research_bundle(
+        write_topix100_streak_353_next_session_intraday_refit_cadence_ablation_research_bundle(
             result,
             output_root=Path(args.output_root) if args.output_root else None,
             run_id=args.run_id,

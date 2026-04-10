@@ -28,6 +28,7 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_SHORT_WINDOW_STREAKS,
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
+    DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
     DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
@@ -287,12 +288,14 @@ class RankingService:
         )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
+        realized_rows_by_code = self._load_topix100_next_session_intraday_returns(target_date)
         score_snapshot = score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             self._reader.db_path,
             target_date=target_date,
             short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
             categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+            train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
             connection=self._reader.conn,
         )
 
@@ -300,6 +303,7 @@ class RankingService:
         for row in rows:
             code = str(row["code"])
             state_snapshot = score_snapshot.rows_by_code.get(code)
+            realized_row = realized_rows_by_code.get(code)
             items.append(
                 Topix100RankingItem(
                     rank=int(row["rank"]),
@@ -341,6 +345,17 @@ class RankingService:
                         else None
                     ),
                     intradayScore=(state_snapshot.intraday_score if state_snapshot is not None else None),
+                    nextSessionDate=(
+                        str(realized_row["next_session_date"])
+                        if realized_row is not None and realized_row["next_session_date"] is not None
+                        else None
+                    ),
+                    nextSessionIntradayReturn=(
+                        float(realized_row["next_session_intraday_return"])
+                        if realized_row is not None
+                        and realized_row["next_session_intraday_return"] is not None
+                        else None
+                    ),
                 )
             )
 
@@ -372,6 +387,15 @@ class RankingService:
             smaWindow=validated_sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            scoreModelType=score_snapshot.score_model_type,
+            scoreTrainWindowDays=score_snapshot.train_window_days,
+            scoreTestWindowDays=score_snapshot.test_window_days,
+            scoreStepDays=score_snapshot.step_days,
+            scoreSplitTrainStart=score_snapshot.split_train_start,
+            scoreSplitTrainEnd=score_snapshot.split_train_end,
+            scoreSplitTestStart=score_snapshot.split_test_start,
+            scoreSplitTestEnd=score_snapshot.split_test_end,
+            scoreSplitPartialTail=score_snapshot.split_is_partial_tail,
             scoreSourceRunId=score_snapshot.score_source_run_id,
             itemCount=len(items),
             items=items,
@@ -515,6 +539,70 @@ class RankingService:
         if row is None or row["max_date"] is None:
             raise ValueError("No TOPIX100 trading data available in database")
         return str(row["max_date"])
+
+    def _load_topix100_next_session_intraday_returns(
+        self,
+        target_date: str,
+    ) -> dict[str, Mapping[str, Any]]:
+        rows = self._reader.query(
+            f"""
+            WITH topix100_stocks AS (
+                SELECT
+                    code,
+                    normalized_code
+                FROM (
+                    SELECT
+                        code,
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stocks
+                    WHERE coalesce(scale_category, '') IN (?, ?)
+                )
+                WHERE rn = 1
+            ),
+            future_stock_data AS (
+                SELECT normalized_code, date, open, close
+                FROM (
+                    SELECT
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        date,
+                        open,
+                        close,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}, date
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date > ?
+                )
+                WHERE rn = 1
+            ),
+            next_sessions AS (
+                SELECT
+                    normalized_code,
+                    date AS next_session_date,
+                    close / NULLIF(open, 0) - 1 AS next_session_intraday_return,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date ASC
+                    ) AS session_rank
+                FROM future_stock_data
+            )
+            SELECT
+                s.code,
+                ns.next_session_date,
+                ns.next_session_intraday_return
+            FROM topix100_stocks s
+            LEFT JOIN next_sessions ns
+                ON s.normalized_code = ns.normalized_code
+               AND ns.session_rank = 1
+            """,
+            (*_TOPIX100_SCALE_CATEGORIES, target_date),
+        )
+        return {str(row["code"]): row for row in rows}
 
     def _load_topix100_ranking_rows(
         self,

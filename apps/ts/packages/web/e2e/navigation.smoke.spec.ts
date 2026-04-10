@@ -6,7 +6,8 @@ test.describe('navigation smoke', () => {
 
     await expect(page.getByRole('heading', { name: 'Trading History' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Market DB' }).click();
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('link', { name: 'Market DB' }).click();
     await expect(page).toHaveURL(/\/market-db$/);
     await expect(page.getByRole('heading', { name: 'Market DB' })).toBeVisible();
 
