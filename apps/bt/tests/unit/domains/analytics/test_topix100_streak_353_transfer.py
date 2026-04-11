@@ -10,6 +10,7 @@ import pytest
 from src.domains.analytics.topix100_streak_353_transfer import (
     TOPIX100_STREAK_353_TRANSFER_RESEARCH_EXPERIMENT_ID,
     _build_published_summary_payload,
+    build_topix100_streak_daily_state_panel_df,
     build_topix100_streak_state_snapshot_df,
     get_topix100_streak_353_transfer_bundle_path_for_run_id,
     get_topix100_streak_353_transfer_latest_bundle_path,
@@ -262,6 +263,114 @@ def test_topix100_streak_state_snapshot_returns_latest_state_per_stock(
     assert set(snapshot_df["short_mode"].unique()).issubset({"bullish", "bearish"})
     assert set(snapshot_df["long_mode"].unique()).issubset({"bullish", "bearish"})
     assert snapshot_df["state_label"].str.contains("Long ").all()
+
+
+def test_topix100_streak_daily_state_panel_is_point_in_time_stable() -> None:
+    target_date = "2026-01-06"
+    base_history_df = pd.DataFrame.from_records(
+        [
+            {
+                "code": "1111",
+                "company_name": "Alpha",
+                "date": "2026-01-01",
+                "close": 100.0,
+            },
+            {
+                "code": "1111",
+                "company_name": "Alpha",
+                "date": "2026-01-02",
+                "close": 105.0,
+            },
+            {
+                "code": "1111",
+                "company_name": "Alpha",
+                "date": "2026-01-05",
+                "close": 100.0,
+            },
+            {
+                "code": "1111",
+                "company_name": "Alpha",
+                "date": target_date,
+                "close": 98.0,
+            },
+        ]
+    )
+    extended_history_df = pd.concat(
+        [
+            base_history_df,
+            pd.DataFrame.from_records(
+                [
+                    {
+                        "code": "1111",
+                        "company_name": "Alpha",
+                        "date": "2026-01-07",
+                        "close": 97.0,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    base_panel_df = build_topix100_streak_daily_state_panel_df(
+        base_history_df,
+        analysis_end_date=target_date,
+        validation_ratio=None,
+        short_window_streaks=1,
+        long_window_streaks=2,
+    )
+    extended_panel_df = build_topix100_streak_daily_state_panel_df(
+        extended_history_df,
+        analysis_end_date="2026-01-07",
+        validation_ratio=None,
+        short_window_streaks=1,
+        long_window_streaks=2,
+    )
+
+    base_row = (
+        base_panel_df[base_panel_df["date"] == target_date]
+        .reset_index(drop=True)
+        .iloc[0]
+    )
+    extended_row = (
+        extended_panel_df[extended_panel_df["date"] == target_date]
+        .reset_index(drop=True)
+        .iloc[0]
+    )
+
+    assert base_row["segment_return"] == pytest.approx(98.0 / 105.0 - 1.0)
+    assert extended_row["segment_return"] == pytest.approx(float(base_row["segment_return"]))
+    assert extended_row["short_mode"] == base_row["short_mode"]
+    assert extended_row["long_mode"] == base_row["long_mode"]
+    assert extended_row["state_key"] == base_row["state_key"]
+
+
+def test_topix100_streak_daily_state_panel_preserves_full_daily_universe(
+    analytics_db_path: str,
+) -> None:
+    conn = duckdb.connect(analytics_db_path, read_only=True)
+    history_df = conn.execute(
+        """
+        SELECT
+            s.code,
+            s.company_name,
+            sd.date,
+            sd.close
+        FROM stock_data sd
+        JOIN stocks s ON s.code = sd.code
+        ORDER BY s.code, sd.date
+        """
+    ).fetchdf()
+    conn.close()
+
+    state_panel_df = build_topix100_streak_daily_state_panel_df(history_df)
+
+    assert not state_panel_df.empty
+    latest_date = str(state_panel_df["date"].max())
+    latest_codes = set(
+        state_panel_df[state_panel_df["date"] == latest_date]["code"].astype(str)
+    )
+    assert latest_codes == {"1111", "2222", "3333", "4444"}
 
 
 def test_topix100_streak_353_transfer_bundle_roundtrip(

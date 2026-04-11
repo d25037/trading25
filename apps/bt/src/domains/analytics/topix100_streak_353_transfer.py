@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pandas as pd
 
@@ -83,6 +83,29 @@ _STATE_SNAPSHOT_COLUMNS: tuple[str, ...] = (
     "long_mode",
     "state_key",
     "state_label",
+    "short_window_streaks",
+    "long_window_streaks",
+)
+
+_DAILY_STATE_PANEL_COLUMNS: tuple[str, ...] = (
+    "state_event_id",
+    "code",
+    "company_name",
+    "date",
+    "sample_split",
+    "segment_id",
+    "base_streak_mode",
+    "segment_day_count",
+    "segment_return",
+    "segment_abs_return",
+    "short_mode",
+    "long_mode",
+    "state_key",
+    "state_label",
+    "current_streak_mode",
+    "current_streak_day_count",
+    "current_streak_segment_return",
+    "current_streak_segment_abs_return",
     "short_window_streaks",
     "long_window_streaks",
 )
@@ -376,6 +399,76 @@ def _build_state_event_df(
     return _sort_state_frame(combined_df)
 
 
+def build_topix100_streak_daily_state_panel_df(
+    history_df: pd.DataFrame,
+    *,
+    analysis_start_date: str | None = None,
+    analysis_end_date: str | None = None,
+    validation_ratio: float | None = DEFAULT_VALIDATION_RATIO,
+    short_window_streaks: int = DEFAULT_SHORT_WINDOW_STREAKS,
+    long_window_streaks: int = DEFAULT_LONG_WINDOW_STREAKS,
+) -> pd.DataFrame:
+    if short_window_streaks <= 0 or long_window_streaks <= 0:
+        raise ValueError("short_window_streaks and long_window_streaks must be positive")
+    if short_window_streaks >= long_window_streaks:
+        raise ValueError("short_window_streaks must be smaller than long_window_streaks")
+    if validation_ratio is not None and not 0.0 <= validation_ratio < 1.0:
+        raise ValueError("validation_ratio must satisfy 0.0 <= validation_ratio < 1.0")
+    if history_df.empty:
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
+
+    filtered_history_df = history_df.copy()
+    filtered_history_df["date"] = filtered_history_df["date"].astype(str)
+    if analysis_end_date is not None:
+        filtered_history_df = filtered_history_df[
+            filtered_history_df["date"] <= analysis_end_date
+        ].copy()
+    if filtered_history_df.empty:
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
+
+    state_frames: list[pd.DataFrame] = []
+    grouped_history = filtered_history_df.groupby(
+        ["code", "company_name"], sort=False, observed=True
+    )
+    for (code, company_name), stock_df in grouped_history:
+        stock_state_df = _build_stock_daily_state_panel_df(
+            stock_df,
+            code=str(code),
+            company_name=str(company_name),
+            short_window_streaks=short_window_streaks,
+            long_window_streaks=long_window_streaks,
+        )
+        if not stock_state_df.empty:
+            state_frames.append(stock_state_df)
+
+    if not state_frames:
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
+
+    state_panel_df = pd.concat(state_frames, ignore_index=True)
+    if analysis_start_date is not None:
+        state_panel_df = state_panel_df[state_panel_df["date"] >= analysis_start_date].copy()
+    if analysis_end_date is not None:
+        state_panel_df = state_panel_df[state_panel_df["date"] <= analysis_end_date].copy()
+    if state_panel_df.empty:
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
+
+    if validation_ratio is None:
+        state_panel_df["sample_split"] = "full"
+    else:
+        state_panel_df = _assign_daily_sample_split(
+            state_panel_df,
+            validation_ratio=validation_ratio,
+        )
+
+    ordered_columns = [
+        column for column in _DAILY_STATE_PANEL_COLUMNS if column in state_panel_df.columns
+    ]
+    return state_panel_df[ordered_columns].sort_values(
+        ["sample_split", "date", "code"],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
 def build_topix100_streak_state_snapshot_df(
     history_df: pd.DataFrame,
     *,
@@ -389,123 +482,155 @@ def build_topix100_streak_state_snapshot_df(
     if history_df.empty:
         return pd.DataFrame(columns=list(_STATE_SNAPSHOT_COLUMNS))
 
-    snapshot_rows: list[dict[str, Any]] = []
-    grouped_history = history_df.groupby(["code", "company_name"], sort=False, observed=True)
-    for (code, company_name), stock_df in grouped_history:
-        snapshot_row = _build_stock_state_snapshot_row(
-            stock_df,
-            code=str(code),
-            company_name=str(company_name),
-            short_window_streaks=short_window_streaks,
-            long_window_streaks=long_window_streaks,
-        )
-        if snapshot_row is not None:
-            snapshot_rows.append(snapshot_row)
-
-    if not snapshot_rows:
+    state_panel_df = build_topix100_streak_daily_state_panel_df(
+        history_df,
+        validation_ratio=None,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+    )
+    if state_panel_df.empty:
         return pd.DataFrame(columns=list(_STATE_SNAPSHOT_COLUMNS))
-    return pd.DataFrame.from_records(snapshot_rows)
+
+    latest_state_df = (
+        state_panel_df.sort_values(["code", "date"], kind="stable")
+        .groupby("code", observed=True, sort=False)
+        .tail(1)
+        .reset_index(drop=True)
+    )
+    snapshot_df = latest_state_df[
+        [
+            "code",
+            "company_name",
+            "date",
+            "segment_id",
+            "current_streak_mode",
+            "current_streak_day_count",
+            "current_streak_segment_return",
+            "current_streak_segment_abs_return",
+            "short_mode",
+            "long_mode",
+            "state_key",
+            "state_label",
+            "short_window_streaks",
+            "long_window_streaks",
+        ]
+    ].copy()
+    return snapshot_df.sort_values(["date", "code"], kind="stable").reset_index(drop=True)
 
 
-def _build_stock_state_snapshot_row(
+def _build_stock_daily_state_panel_df(
     stock_df: pd.DataFrame,
     *,
     code: str,
     company_name: str,
     short_window_streaks: int,
     long_window_streaks: int,
-) -> dict[str, Any] | None:
+) -> pd.DataFrame:
     prepared_df = stock_df.copy()
     prepared_df["date"] = prepared_df["date"].astype(str)
     prepared_df = prepared_df.sort_values("date", kind="stable").reset_index(drop=True)
     if len(prepared_df) < 2:
-        return None
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
 
-    close = prepared_df["close"].astype(float)
-    prepared_df["close_return"] = close.div(close.shift(1)).sub(1.0)
-    streak_segment_df = _build_live_streak_segment_df(prepared_df)
-    if streak_segment_df.empty or len(streak_segment_df) < long_window_streaks:
-        return None
+    close_values = prepared_df["close"].astype(float).tolist()
+    date_values = prepared_df["date"].astype(str).tolist()
+    current_mode: str | None = None
+    current_segment_start_index = -1
+    current_segment_id = 1
+    segment_returns: list[float] = []
+    row_records: list[dict[str, Any]] = []
 
-    latest_segment = streak_segment_df.iloc[-1]
-    short_mode = _resolve_window_mode(
-        streak_segment_df,
-        window_streaks=short_window_streaks,
-    )
-    long_mode = _resolve_window_mode(
-        streak_segment_df,
-        window_streaks=long_window_streaks,
-    )
-    state_key = _build_multi_timeframe_state_key(
-        long_mode=long_mode,
-        short_mode=short_mode,
-    )
-    return {
-        "code": code,
-        "company_name": company_name,
-        "date": str(latest_segment["end_date"]),
-        "segment_id": int(latest_segment["segment_id"]),
-        "current_streak_mode": str(latest_segment["mode"]),
-        "current_streak_day_count": int(latest_segment["segment_day_count"]),
-        "current_streak_segment_return": float(latest_segment["segment_return"]),
-        "current_streak_segment_abs_return": abs(float(latest_segment["segment_return"])),
-        "short_mode": short_mode,
-        "long_mode": long_mode,
-        "state_key": state_key,
-        "state_label": _format_multi_timeframe_state_label(state_key),
-        "short_window_streaks": short_window_streaks,
-        "long_window_streaks": long_window_streaks,
-    }
+    for row_index in range(1, len(prepared_df)):
+        prior_close = close_values[row_index - 1]
+        current_close = close_values[row_index]
+        if prior_close == 0.0:
+            continue
 
+        close_return = current_close / prior_close - 1.0
+        mode = _classify_close_return_mode(close_return)
+        if current_mode is None or mode != current_mode:
+            current_segment_id += 1
+            current_mode = mode
+            current_segment_start_index = row_index
+            segment_returns.append(0.0)
 
-def _build_live_streak_segment_df(prepared_daily_df: pd.DataFrame) -> pd.DataFrame:
-    full_df = prepared_daily_df.reset_index(drop=True).copy()
-    valid_df = full_df.iloc[1:].copy().reset_index().rename(columns={"index": "row_index"})
-    if valid_df.empty:
-        return pd.DataFrame()
+        anchor_close = close_values[current_segment_start_index - 1]
+        if anchor_close == 0.0:
+            continue
 
-    valid_df["mode"] = valid_df["close_return"].map(_classify_close_return_mode)
-    mode_values = valid_df["mode"].astype(str)
-    valid_df["segment_id"] = (
-        mode_values != mode_values.shift(fill_value=cast(str, mode_values.iloc[0]))
-    ).cumsum() + 1
+        current_segment_return = current_close / anchor_close - 1.0
+        segment_returns[-1] = current_segment_return
+        current_segment_day_count = row_index - current_segment_start_index + 1
+        if len(segment_returns) < long_window_streaks:
+            continue
 
-    grouped = (
-        valid_df.groupby("segment_id", observed=True)
-        .agg(
-            mode=("mode", "first"),
-            start_row_index=("row_index", "first"),
-            end_row_index=("row_index", "last"),
-            start_date=("date", "first"),
-            end_date=("date", "last"),
-            segment_day_count=("date", "count"),
+        short_mode = _resolve_window_mode_from_segment_returns(
+            segment_returns,
+            window_streaks=short_window_streaks,
         )
-        .reset_index()
-    )
-    if grouped.empty:
-        return grouped
+        long_mode = _resolve_window_mode_from_segment_returns(
+            segment_returns,
+            window_streaks=long_window_streaks,
+        )
+        state_key = _build_multi_timeframe_state_key(
+            long_mode=long_mode,
+            short_mode=short_mode,
+        )
+        row_records.append(
+            {
+                "state_event_id": f"{code}:{date_values[row_index]}",
+                "code": code,
+                "company_name": company_name,
+                "date": date_values[row_index],
+                "sample_split": "full",
+                "segment_id": current_segment_id,
+                "base_streak_mode": current_mode,
+                "segment_day_count": current_segment_day_count,
+                "segment_return": current_segment_return,
+                "segment_abs_return": abs(current_segment_return),
+                "short_mode": short_mode,
+                "long_mode": long_mode,
+                "state_key": state_key,
+                "state_label": _format_multi_timeframe_state_label(state_key),
+                "current_streak_mode": current_mode,
+                "current_streak_day_count": current_segment_day_count,
+                "current_streak_segment_return": current_segment_return,
+                "current_streak_segment_abs_return": abs(current_segment_return),
+                "short_window_streaks": short_window_streaks,
+                "long_window_streaks": long_window_streaks,
+            }
+        )
 
-    close = full_df["close"].to_numpy(dtype=float)
-    start_rows = grouped["start_row_index"].to_numpy(dtype=int)
-    end_rows = grouped["end_row_index"].to_numpy(dtype=int)
-    anchor_rows = start_rows - 1
-    grouped["synthetic_open"] = close[anchor_rows]
-    grouped["synthetic_close"] = close[end_rows]
-    grouped["segment_return"] = grouped["synthetic_close"] / grouped["synthetic_open"] - 1.0
-    return grouped.sort_values("segment_id", kind="stable").reset_index(drop=True)
+    if not row_records:
+        return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
+    return pd.DataFrame.from_records(row_records, columns=list(_DAILY_STATE_PANEL_COLUMNS))
 
 
-def _resolve_window_mode(
-    streak_segment_df: pd.DataFrame,
+def _resolve_window_mode_from_segment_returns(
+    segment_returns: Sequence[float],
     *,
     window_streaks: int,
 ) -> str:
-    if len(streak_segment_df) < window_streaks:
+    if len(segment_returns) < window_streaks:
         raise ValueError("Not enough streak segments for the requested window")
-    window_df = streak_segment_df.iloc[-window_streaks:].copy()
-    dominant_index = int(window_df["segment_return"].abs().argmax())
-    dominant_row = window_df.iloc[dominant_index]
-    return "bullish" if float(dominant_row["segment_return"]) >= 0.0 else "bearish"
+    dominant_return = max(segment_returns[-window_streaks:], key=abs)
+    return "bullish" if float(dominant_return) >= 0.0 else "bearish"
+
+
+def _assign_daily_sample_split(
+    state_panel_df: pd.DataFrame,
+    *,
+    validation_ratio: float,
+) -> pd.DataFrame:
+    unique_dates = sorted(state_panel_df["date"].astype(str).unique())
+    split_labels = _build_sample_split_labels(
+        len(unique_dates),
+        validation_ratio=validation_ratio,
+    )
+    date_to_split = dict(zip(unique_dates, split_labels, strict=True))
+    split_df = state_panel_df.copy()
+    split_df["sample_split"] = split_df["date"].astype(str).map(date_to_split)
+    return split_df
 
 
 def _assign_global_sample_split(

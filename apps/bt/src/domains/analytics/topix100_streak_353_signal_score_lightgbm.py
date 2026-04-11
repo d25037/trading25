@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import import_module
+from itertools import combinations
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -43,26 +44,19 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
+    VolumeBucketKey,
+    VOLUME_BUCKET_LABEL_MAP,
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
     VOLUME_SMA_WINDOW_ORDER,
     _enrich_event_panel,
     run_topix100_price_vs_sma_rank_future_close_research,
 )
-from src.domains.analytics.topix100_strongest_setup_q10_threshold import (
-    _build_state_decile_horizon_panel,
-)
-from src.domains.analytics.topix100_streak_353_multivariate_priority import (
-    _build_subset_candidate_scorecard_df,
-    _build_subset_daily_panel_df,
-)
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
-    Topix100Streak353TransferResearchResult,
-    _build_state_event_df,
     build_topix100_streak_state_snapshot_df,
-    run_topix100_streak_353_transfer_research,
+    build_topix100_streak_daily_state_panel_df,
 )
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_VALIDATION_RATIO,
@@ -113,6 +107,18 @@ TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_EXPERIMENT_ID = (
 )
 _LONG_BLEND_PRIOR = 260.0
 _SHORT_BLEND_PRIOR = 320.0
+_FEATURE_ORDER: tuple[str, ...] = ("bucket", "volume", "short_mode", "long_mode")
+_FEATURE_LABEL_MAP: dict[str, str] = {
+    "bucket": "Bucket",
+    "volume": "Volume",
+    "short_mode": "Short mode",
+    "long_mode": "Long mode",
+}
+_MODE_VALUE_LABEL_MAP: dict[str, str] = {
+    "bullish": "Bullish",
+    "bearish": "Bearish",
+}
+_ALL_SENTINEL = "all"
 _LONG_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),
     ("short_mode", "short_mode"),
@@ -129,6 +135,7 @@ _SHORT_CHAIN: tuple[tuple[str, str], ...] = (
 )
 _SIDE_ORDER: tuple[str, ...] = ("long", "short")
 _MODEL_ORDER: tuple[str, ...] = ("baseline", "lightgbm")
+_SPLIT_ORDER: tuple[str, ...] = ("full", "discovery", "validation")
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "feature_panel_df",
     "baseline_lookup_df",
@@ -306,56 +313,31 @@ def run_topix100_streak_353_signal_score_lightgbm_research(
     requested_horizons = tuple(
         sorted({int(long_target_horizon_days), int(short_target_horizon_days)})
     )
-    price_feature_to_window = {
-        feature: window
-        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
-    }
-    volume_feature_to_window = {
-        feature: window
-        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
-    }
-
-    price_result = run_topix100_price_vs_sma_rank_future_close_research(
-        db_path,
+    price_result, feature_panel_df = _build_research_feature_panel_df(
+        db_path=db_path,
         start_date=start_date,
         end_date=end_date,
-        price_sma_windows=(price_feature_to_window[price_feature],),
-        volume_sma_windows=(volume_feature_to_window[volume_feature],),
-    )
-    state_result = run_topix100_streak_353_transfer_research(
-        db_path,
-        start_date=start_date,
-        end_date=end_date,
-        future_horizons=requested_horizons,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
         validation_ratio=validation_ratio,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
-        min_stock_events_per_state=1,
-        min_constituents_per_date_state=1,
+        long_target_horizon_days=long_target_horizon_days,
+        short_target_horizon_days=short_target_horizon_days,
     )
-
-    state_decile_horizon_panel_df = _build_state_decile_horizon_panel(
-        event_panel_df=price_result.event_panel_df,
-        state_horizon_event_df=state_result.state_horizon_event_df,
-        price_feature=price_feature,
-        volume_feature=volume_feature,
+    if feature_panel_df.empty:
+        raise ValueError("Feature panel was empty after joining price and state inputs")
+    state_decile_horizon_panel_df = _build_state_decile_horizon_panel_from_feature_panel_df(
+        feature_panel_df,
         future_horizons=requested_horizons,
+        long_target_horizon_days=long_target_horizon_days,
+        short_target_horizon_days=short_target_horizon_days,
     )
     baseline_lookup_df = _build_baseline_lookup_df(
         state_decile_horizon_panel_df,
         future_horizons=requested_horizons,
     )
     baseline_scorecard = _build_baseline_scorecard(baseline_lookup_df)
-    feature_panel_df = _build_feature_panel_df(
-        event_panel_df=price_result.event_panel_df,
-        state_result=state_result,
-        price_feature=price_feature,
-        volume_feature=volume_feature,
-        long_target_horizon_days=long_target_horizon_days,
-        short_target_horizon_days=short_target_horizon_days,
-    )
-    if feature_panel_df.empty:
-        raise ValueError("Feature panel was empty after joining price and state inputs")
 
     categorical_feature_columns = DEFAULT_CATEGORICAL_FEATURE_COLUMNS
     continuous_feature_columns = (
@@ -463,6 +445,62 @@ def run_topix100_streak_353_signal_score_lightgbm_research(
         validation_score_decile_df=validation_score_decile_df,
         feature_importance_df=feature_importance_df,
     )
+
+
+def _build_research_feature_panel_df(
+    *,
+    db_path: str,
+    start_date: str | None,
+    end_date: str | None,
+    price_feature: str,
+    volume_feature: str,
+    validation_ratio: float,
+    short_window_streaks: int,
+    long_window_streaks: int,
+    long_target_horizon_days: int,
+    short_target_horizon_days: int,
+) -> tuple[Any, pd.DataFrame]:
+    price_feature_to_window = {
+        feature: window
+        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
+    }
+    volume_feature_to_window = {
+        feature: window
+        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
+    }
+
+    price_result = run_topix100_price_vs_sma_rank_future_close_research(
+        db_path,
+        start_date=start_date,
+        end_date=end_date,
+        price_sma_windows=(price_feature_to_window[price_feature],),
+        volume_sma_windows=(volume_feature_to_window[volume_feature],),
+    )
+    with _open_analysis_connection(db_path) as ctx:
+        history_df = _query_topix100_stock_history(
+            ctx.connection,
+            end_date=end_date,
+        )
+    if history_df.empty:
+        raise ValueError("No TOPIX100 constituent stock history was available")
+
+    state_panel_df = build_topix100_streak_daily_state_panel_df(
+        history_df,
+        analysis_start_date=start_date,
+        analysis_end_date=end_date,
+        validation_ratio=validation_ratio,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+    )
+    feature_panel_df = _build_feature_panel_df(
+        event_panel_df=price_result.event_panel_df,
+        state_result=state_panel_df,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+        long_target_horizon_days=long_target_horizon_days,
+        short_target_horizon_days=short_target_horizon_days,
+    )
+    return price_result, feature_panel_df
 
 
 def write_topix100_streak_353_signal_score_lightgbm_research_bundle(
@@ -612,9 +650,6 @@ def _score_topix100_streak_353_signal_lightgbm_snapshot(
     score_source_run_id = (
         load_research_bundle_info(bundle_path).run_id if bundle_path is not None else None
     )
-    requested_horizons = tuple(
-        sorted({int(long_target_horizon_days), int(short_target_horizon_days)})
-    )
     price_feature_to_window = {
         feature: window
         for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
@@ -668,17 +703,16 @@ def _score_topix100_streak_353_signal_lightgbm_snapshot(
         )
 
     try:
-        state_event_df = _build_state_event_df(
+        state_panel_df = build_topix100_streak_daily_state_panel_df(
             history_df,
-            future_horizons=requested_horizons,
+            analysis_end_date=target_date,
+            validation_ratio=None,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
         )
-        state_event_df = state_event_df.copy()
-        state_event_df["sample_split"] = "training"
         training_feature_panel_df = _build_feature_panel_from_state_df(
             event_panel_df=event_panel_df,
-            state_event_df=state_event_df,
+            state_event_df=state_panel_df,
             price_feature=price_feature,
             volume_feature=volume_feature,
             long_target_horizon_days=long_target_horizon_days,
@@ -782,7 +816,7 @@ def _score_topix100_streak_353_signal_lightgbm_snapshot(
 def _build_feature_panel_df(
     *,
     event_panel_df: pd.DataFrame,
-    state_result: Topix100Streak353TransferResearchResult,
+    state_result: Any,
     price_feature: str,
     volume_feature: str,
     long_target_horizon_days: int,
@@ -790,12 +824,33 @@ def _build_feature_panel_df(
 ) -> pd.DataFrame:
     return _build_feature_panel_from_state_df(
         event_panel_df=event_panel_df,
-        state_event_df=state_result.state_event_df,
+        state_event_df=_coerce_signal_state_panel_df(state_result),
         price_feature=price_feature,
         volume_feature=volume_feature,
         long_target_horizon_days=long_target_horizon_days,
         short_target_horizon_days=short_target_horizon_days,
     )
+
+
+def _coerce_signal_state_panel_df(state_source: Any) -> pd.DataFrame:
+    if isinstance(state_source, pd.DataFrame):
+        state_df = state_source.copy()
+    elif hasattr(state_source, "daily_state_panel_df") and isinstance(
+        getattr(state_source, "daily_state_panel_df"),
+        pd.DataFrame,
+    ):
+        state_df = cast(pd.DataFrame, getattr(state_source, "daily_state_panel_df")).copy()
+    elif hasattr(state_source, "state_event_df") and isinstance(
+        getattr(state_source, "state_event_df"),
+        pd.DataFrame,
+    ):
+        state_df = cast(pd.DataFrame, getattr(state_source, "state_event_df")).copy()
+    else:
+        raise ValueError("Unable to resolve a state panel dataframe")
+
+    if "segment_end_date" in state_df.columns and "date" not in state_df.columns:
+        state_df = state_df.rename(columns={"segment_end_date": "date"})
+    return state_df
 
 
 def _build_feature_panel_from_state_df(
@@ -815,18 +870,29 @@ def _build_feature_panel_from_state_df(
         price_feature=price_feature,
         volume_feature=volume_feature,
     )
+    grouped_close = price_df.groupby("code", observed=True, sort=False)["close"]
+    close_base = price_df["close"].replace(0, pd.NA).astype(float)
+    short_event_column = f"t_plus_{short_target_horizon_days}_return"
+    long_event_column = f"t_plus_{long_target_horizon_days}_return"
+    if short_event_column in price_df.columns:
+        price_df["future_return_1d"] = price_df[short_event_column].astype(float)
+    else:
+        short_future_close = grouped_close.shift(-short_target_horizon_days).astype(float)
+        price_df["future_return_1d"] = short_future_close.div(close_base).sub(1.0)
+    if long_event_column in price_df.columns:
+        price_df["future_return_5d"] = price_df[long_event_column].astype(float)
+    else:
+        long_future_close = grouped_close.shift(-long_target_horizon_days).astype(float)
+        price_df["future_return_5d"] = long_future_close.div(close_base).sub(1.0)
 
-    target_columns = [
-        f"future_return_{short_target_horizon_days}d",
-        f"future_return_{long_target_horizon_days}d",
-    ]
+    state_df = _coerce_signal_state_panel_df(state_event_df)
     state_columns = [
         "state_event_id",
         "code",
         "company_name",
         "sample_split",
         "segment_id",
-        "segment_end_date",
+        "date",
         "segment_return",
         "segment_day_count",
         "base_streak_mode",
@@ -834,16 +900,14 @@ def _build_feature_panel_from_state_df(
         "long_mode",
         "state_key",
         "state_label",
-        *target_columns,
     ]
     missing_state_columns = [
-        column for column in state_columns if column not in state_event_df.columns
+        column for column in state_columns if column not in state_df.columns
     ]
     if missing_state_columns:
         raise ValueError(f"Missing state event columns: {missing_state_columns}")
 
-    state_df = state_event_df[state_columns].copy()
-    state_df = state_df.rename(columns={"segment_end_date": "date"})
+    state_df = state_df[state_columns].copy()
     state_df["date"] = state_df["date"].astype(str)
     state_df["code"] = state_df["code"].astype(str).str.zfill(4)
     merged_df = price_df.merge(
@@ -856,8 +920,6 @@ def _build_feature_panel_from_state_df(
         raise ValueError("Joining price rows with state rows produced no overlap")
 
     merged_df["segment_abs_return"] = merged_df["segment_return"].astype(float).abs()
-    merged_df["future_return_1d"] = merged_df[f"future_return_{short_target_horizon_days}d"]
-    merged_df["future_return_5d"] = merged_df[f"future_return_{long_target_horizon_days}d"]
     merged_df["short_edge_1d"] = -merged_df["future_return_1d"].astype(float)
     merged_df["price_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
     merged_df["volume_feature_label"] = VOLUME_FEATURE_LABEL_MAP[volume_feature]
@@ -896,6 +958,50 @@ def _build_feature_panel_from_state_df(
     ).reset_index(drop=True)
 
 
+def _build_state_decile_horizon_panel_from_feature_panel_df(
+    feature_panel_df: pd.DataFrame,
+    *,
+    future_horizons: tuple[int, ...],
+    long_target_horizon_days: int,
+    short_target_horizon_days: int,
+) -> pd.DataFrame:
+    if feature_panel_df.empty:
+        raise ValueError("Feature panel is empty")
+
+    horizon_to_column: dict[int, str] = {
+        int(short_target_horizon_days): "future_return_1d",
+        int(long_target_horizon_days): "future_return_5d",
+    }
+    frames: list[pd.DataFrame] = []
+    for horizon in future_horizons:
+        target_column = horizon_to_column.get(int(horizon))
+        if target_column is None:
+            raise ValueError(f"Unsupported future horizon for feature panel: {horizon}")
+        frame = feature_panel_df[
+            [
+                "date",
+                "code",
+                "company_name",
+                "sample_split",
+                "state_key",
+                "state_label",
+                "short_mode",
+                "long_mode",
+                "decile_num",
+                "decile",
+                "volume_bucket",
+                target_column,
+            ]
+        ].copy()
+        frame = frame.rename(columns={target_column: "future_return"})
+        frame["horizon_days"] = int(horizon)
+        frame = frame.dropna(subset=["future_return"]).copy()
+        frames.append(frame)
+    if not frames:
+        raise ValueError("No horizon rows remained after shaping the feature panel")
+    return pd.concat(frames, ignore_index=True)
+
+
 def _build_price_feature_frame(
     event_panel_df: pd.DataFrame,
     *,
@@ -920,7 +1026,12 @@ def _build_price_feature_frame(
     if missing_event_columns:
         raise ValueError(f"Missing event panel columns: {missing_event_columns}")
 
-    price_df = event_panel_df[required_event_columns].copy()
+    optional_future_columns = [
+        column
+        for column in event_panel_df.columns
+        if column.startswith("t_plus_") and column.endswith("_return")
+    ]
+    price_df = event_panel_df[[*required_event_columns, *optional_future_columns]].copy()
     price_df["date"] = price_df["date"].astype(str)
     price_df["code"] = price_df["code"].astype(str).str.zfill(4)
     price_df = price_df.dropna(subset=[price_feature, volume_feature]).copy()
@@ -1095,6 +1206,264 @@ def _predict_lightgbm_snapshot_scores(
     )
 
 
+def _iter_feature_subsets() -> list[tuple[str, ...]]:
+    subsets: list[tuple[str, ...]] = [tuple()]
+    for size in range(1, len(_FEATURE_ORDER) + 1):
+        for subset in combinations(_FEATURE_ORDER, size):
+            subsets.append(_normalize_subset(subset))
+    return subsets
+
+
+def _normalize_subset(subset: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    subset_set = set(subset)
+    return tuple(feature for feature in _FEATURE_ORDER if feature in subset_set)
+
+
+def _build_subset_key(subset: tuple[str, ...] | list[str]) -> str:
+    normalized = _normalize_subset(subset)
+    if not normalized:
+        return "universe"
+    return "+".join(normalized)
+
+
+def _build_subset_label(subset: tuple[str, ...] | list[str]) -> str:
+    normalized = _normalize_subset(subset)
+    if not normalized:
+        return "Universe"
+    return " + ".join(_FEATURE_LABEL_MAP[feature] for feature in normalized)
+
+
+def _build_selector_value_key(row: pd.Series, subset: tuple[str, ...]) -> str:
+    return "|".join(str(row[feature]) for feature in subset)
+
+
+def _build_selector_value_label(row: pd.Series, subset: tuple[str, ...]) -> str:
+    return " + ".join(_format_feature_value(feature, row[feature]) for feature in subset)
+
+
+def _format_feature_value(feature: str, value: Any) -> str:
+    if value is None or pd.isna(value) or value == _ALL_SENTINEL:
+        return "All"
+    if feature == "bucket":
+        return str(value)
+    if feature == "volume":
+        volume_key = str(value)
+        if volume_key in VOLUME_BUCKET_LABEL_MAP:
+            return VOLUME_BUCKET_LABEL_MAP[cast(VolumeBucketKey, volume_key)]
+        return volume_key
+    if feature in {"short_mode", "long_mode"}:
+        prefix = "Short" if feature == "short_mode" else "Long"
+        mode_label = _MODE_VALUE_LABEL_MAP.get(str(value), str(value).title())
+        return f"{prefix} {mode_label}"
+    return str(value)
+
+
+def _sort_subset_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    split_order = {name: index for index, name in enumerate(_SPLIT_ORDER)}
+    sortable = df.copy()
+    if "sample_split" in sortable.columns:
+        sortable["_split_order"] = sortable["sample_split"].map(split_order).fillna(999)
+    else:
+        sortable["_split_order"] = 999
+    if "feature_count" not in sortable.columns:
+        sortable["feature_count"] = 0
+    if "subset_key" not in sortable.columns:
+        sortable["subset_key"] = ""
+    if "selector_value_key" not in sortable.columns:
+        sortable["selector_value_key"] = ""
+    sortable = sortable.sort_values(
+        ["_split_order", "feature_count", "subset_key", "selector_value_key"],
+        ascending=[True, True, True, True],
+        kind="stable",
+    )
+    return sortable.drop(columns=["_split_order"]).reset_index(drop=True)
+
+
+def _build_subset_daily_panel_df(panel_df: pd.DataFrame) -> pd.DataFrame:
+    if panel_df.empty:
+        return pd.DataFrame()
+
+    working_df = panel_df.copy()
+    working_df["bucket"] = working_df["decile"].astype(str)
+    working_df["volume"] = working_df["volume_bucket"].astype(str)
+    working_df["short_mode"] = working_df["short_mode"].astype(str)
+    working_df["long_mode"] = working_df["long_mode"].astype(str)
+
+    subset_frames: list[pd.DataFrame] = []
+    for subset in _iter_feature_subsets():
+        group_columns = ["sample_split", "date", "horizon_days", *subset]
+        daily_df = (
+            working_df.groupby(group_columns, observed=True, sort=False)
+            .agg(
+                equal_weight_return=("future_return", "mean"),
+                stock_count=("code", "nunique"),
+            )
+            .reset_index()
+        )
+        if daily_df.empty:
+            continue
+        daily_df["subset_key"] = _build_subset_key(subset)
+        daily_df["subset_label"] = _build_subset_label(subset)
+        daily_df["feature_count"] = len(subset)
+        if subset:
+            daily_df["selector_value_key"] = daily_df.apply(
+                lambda row: _build_selector_value_key(row, subset), axis=1
+            )
+            daily_df["selector_value_label"] = daily_df.apply(
+                lambda row: _build_selector_value_label(row, subset), axis=1
+            )
+        else:
+            daily_df["selector_value_key"] = "universe"
+            daily_df["selector_value_label"] = "Universe"
+        for feature in _FEATURE_ORDER:
+            if feature not in daily_df.columns:
+                daily_df[feature] = _ALL_SENTINEL
+        subset_frames.append(
+            daily_df[
+                [
+                    "sample_split",
+                    "date",
+                    "horizon_days",
+                    "subset_key",
+                    "subset_label",
+                    "feature_count",
+                    "selector_value_key",
+                    "selector_value_label",
+                    *_FEATURE_ORDER,
+                    "equal_weight_return",
+                    "stock_count",
+                ]
+            ].copy()
+        )
+    if not subset_frames:
+        return pd.DataFrame()
+    return _sort_subset_frame(pd.concat(subset_frames, ignore_index=True))
+
+
+def _build_subset_candidate_scorecard_df(
+    subset_daily_panel_df: pd.DataFrame,
+    *,
+    future_horizons: tuple[int, ...],
+) -> pd.DataFrame:
+    if subset_daily_panel_df.empty:
+        return pd.DataFrame()
+
+    group_columns = [
+        "sample_split",
+        "subset_key",
+        "subset_label",
+        "feature_count",
+        "selector_value_key",
+        "selector_value_label",
+        *_FEATURE_ORDER,
+    ]
+    summary_rows: list[dict[str, Any]] = []
+    grouped = subset_daily_panel_df.groupby(
+        group_columns + ["horizon_days"], observed=True, sort=False
+    )
+    for keys, scoped_df in grouped:
+        keys = cast(tuple[Any, ...], keys if isinstance(keys, tuple) else (keys,))
+        (
+            sample_split,
+            subset_key,
+            subset_label,
+            feature_count,
+            selector_value_key,
+            selector_value_label,
+            bucket,
+            volume,
+            short_mode,
+            long_mode,
+            horizon_days,
+        ) = keys
+        summary_rows.append(
+            {
+                "sample_split": sample_split,
+                "subset_key": subset_key,
+                "subset_label": subset_label,
+                "feature_count": int(feature_count),
+                "selector_value_key": selector_value_key,
+                "selector_value_label": selector_value_label,
+                "bucket": bucket,
+                "volume": volume,
+                "short_mode": short_mode,
+                "long_mode": long_mode,
+                "horizon_days": int(horizon_days),
+                "mean_equal_weight_return": float(scoped_df["equal_weight_return"].mean()),
+                "positive_hit_rate": float((scoped_df["equal_weight_return"] > 0).mean()),
+                "negative_hit_rate": float((scoped_df["equal_weight_return"] < 0).mean()),
+                "date_count": int(scoped_df["date"].nunique()),
+                "avg_stock_count": float(scoped_df["stock_count"].mean()),
+            }
+        )
+
+    long_df = pd.DataFrame(summary_rows)
+    if long_df.empty:
+        return long_df
+
+    records: list[dict[str, Any]] = []
+    wide_group_columns = [
+        "sample_split",
+        "subset_key",
+        "subset_label",
+        "feature_count",
+        "selector_value_key",
+        "selector_value_label",
+        "bucket",
+        "volume",
+        "short_mode",
+        "long_mode",
+    ]
+    grouped_wide = long_df.groupby(wide_group_columns, observed=True, sort=False)
+    for keys, scoped_df in grouped_wide:
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        record: dict[str, Any] = {
+            column: value for column, value in zip(wide_group_columns, keys, strict=True)
+        }
+        long_scores: list[float] = []
+        short_scores: list[float] = []
+        long_hit_rates: list[float] = []
+        short_hit_rates: list[float] = []
+        for horizon in future_horizons:
+            horizon_df = scoped_df[scoped_df["horizon_days"] == horizon]
+            if horizon_df.empty:
+                record[f"avg_return_{horizon}d"] = None
+                record[f"positive_hit_rate_{horizon}d"] = None
+                record[f"negative_hit_rate_{horizon}d"] = None
+                record[f"date_count_{horizon}d"] = 0
+                record[f"avg_stock_count_{horizon}d"] = None
+                continue
+            row = horizon_df.iloc[0]
+            avg_return = float(row["mean_equal_weight_return"])
+            record[f"avg_return_{horizon}d"] = avg_return
+            record[f"positive_hit_rate_{horizon}d"] = float(row["positive_hit_rate"])
+            record[f"negative_hit_rate_{horizon}d"] = float(row["negative_hit_rate"])
+            record[f"date_count_{horizon}d"] = int(row["date_count"])
+            record[f"avg_stock_count_{horizon}d"] = float(row["avg_stock_count"])
+            long_scores.append(avg_return)
+            short_scores.append(-avg_return)
+            long_hit_rates.append(float(row["positive_hit_rate"]))
+            short_hit_rates.append(float(row["negative_hit_rate"]))
+        record["primary_long_score"] = (
+            float(sum(long_scores) / len(long_scores)) if long_scores else None
+        )
+        record["primary_short_score"] = (
+            float(sum(short_scores) / len(short_scores)) if short_scores else None
+        )
+        record["primary_long_hit_rate"] = (
+            float(sum(long_hit_rates) / len(long_hit_rates)) if long_hit_rates else None
+        )
+        record["primary_short_hit_rate"] = (
+            float(sum(short_hit_rates) / len(short_hit_rates)) if short_hit_rates else None
+        )
+        records.append(record)
+
+    return _sort_subset_frame(pd.DataFrame(records))
+
+
 def _build_baseline_lookup_df(
     state_decile_horizon_panel_df: pd.DataFrame,
     *,
@@ -1145,6 +1514,7 @@ def _build_baseline_validation_prediction_df(
     long_target_horizon_days: int,
     short_target_horizon_days: int,
 ) -> pd.DataFrame:
+    del long_target_horizon_days, short_target_horizon_days
     validation_df = feature_panel_df[feature_panel_df["sample_split"] == "validation"].copy()
     if validation_df.empty:
         raise ValueError("Feature panel has no validation rows")
@@ -1164,9 +1534,7 @@ def _build_baseline_validation_prediction_df(
                 ),
                 axis=1,
             )
-            side_df["target_edge"] = side_df[f"future_return_{long_target_horizon_days}d"].astype(
-                float
-            )
+            side_df["target_edge"] = side_df["future_return_5d"].astype(float)
             side_df["realized_return"] = side_df["target_edge"]
         else:
             side_df["score"] = side_df.apply(
@@ -1180,12 +1548,8 @@ def _build_baseline_validation_prediction_df(
                 ),
                 axis=1,
             )
-            side_df["target_edge"] = -side_df[
-                f"future_return_{short_target_horizon_days}d"
-            ].astype(float)
-            side_df["realized_return"] = side_df[f"future_return_{short_target_horizon_days}d"].astype(
-                float
-            )
+            side_df["target_edge"] = -side_df["future_return_1d"].astype(float)
+            side_df["realized_return"] = side_df["future_return_1d"].astype(float)
         side_df["side"] = side
         side_df["model_name"] = "baseline"
         prediction_frames.append(

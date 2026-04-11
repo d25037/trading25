@@ -65,9 +65,7 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
-    Topix100Streak353TransferResearchResult,
-    _build_state_event_df,
-    run_topix100_streak_353_transfer_research,
+    build_topix100_streak_daily_state_panel_df,
 )
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_VALIDATION_RATIO,
@@ -89,9 +87,6 @@ TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID = (
 )
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward"
-)
-TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID = (
-    "market-behavior/topix100-streak-3-53-next-session-intraday-discrete-ablation-walkforward"
 )
 DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = ("decile",)
 DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS = 756
@@ -261,42 +256,17 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_research(
         default=DEFAULT_TOP_K_VALUES,
         name="top_k_values",
     )
-    price_feature_to_window = {
-        feature: window
-        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
-    }
-    volume_feature_to_window = {
-        feature: window
-        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
-    }
 
-    price_result = run_topix100_price_vs_sma_rank_future_close_research(
-        db_path,
+    price_result, feature_panel_df = _build_research_feature_panel_df(
+        db_path=db_path,
         start_date=start_date,
         end_date=end_date,
-        price_sma_windows=(price_feature_to_window[price_feature],),
-        volume_sma_windows=(volume_feature_to_window[volume_feature],),
-    )
-    state_result = run_topix100_streak_353_transfer_research(
-        db_path,
-        start_date=start_date,
-        end_date=end_date,
-        future_horizons=(1,),
+        price_feature=price_feature,
+        volume_feature=volume_feature,
         validation_ratio=validation_ratio,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
-        min_stock_events_per_state=1,
-        min_constituents_per_date_state=1,
     )
-
-    feature_panel_df = _build_feature_panel_df(
-        event_panel_df=price_result.event_panel_df,
-        state_result=state_result,
-        price_feature=price_feature,
-        volume_feature=volume_feature,
-    )
-    if feature_panel_df.empty:
-        raise ValueError("Feature panel was empty after building the next-session target")
 
     baseline_lookup_df = _build_baseline_lookup_df(feature_panel_df)
     baseline_scorecard = _build_baseline_scorecard(baseline_lookup_df)
@@ -385,16 +355,90 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_research(
 def _build_feature_panel_df(
     *,
     event_panel_df: pd.DataFrame,
-    state_result: Topix100Streak353TransferResearchResult,
+    state_result: Any,
     price_feature: str,
     volume_feature: str,
 ) -> pd.DataFrame:
     return _build_feature_panel_from_state_event_df(
         event_panel_df=event_panel_df,
-        state_event_df=state_result.state_event_df,
+        state_event_df=_coerce_intraday_state_panel_df(state_result),
         price_feature=price_feature,
         volume_feature=volume_feature,
     )
+
+
+def _build_research_feature_panel_df(
+    *,
+    db_path: str,
+    start_date: str | None,
+    end_date: str | None,
+    price_feature: str,
+    volume_feature: str,
+    validation_ratio: float,
+    short_window_streaks: int,
+    long_window_streaks: int,
+) -> tuple[Any, pd.DataFrame]:
+    price_feature_to_window = {
+        feature: window
+        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
+    }
+    volume_feature_to_window = {
+        feature: window
+        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
+    }
+    price_result = run_topix100_price_vs_sma_rank_future_close_research(
+        db_path,
+        start_date=start_date,
+        end_date=end_date,
+        price_sma_windows=(price_feature_to_window[price_feature],),
+        volume_sma_windows=(volume_feature_to_window[volume_feature],),
+    )
+    with _open_analysis_connection(db_path) as ctx:
+        history_df = _query_topix100_stock_history(
+            ctx.connection,
+            end_date=end_date,
+        )
+    if history_df.empty:
+        raise ValueError("No TOPIX100 constituent stock history was available")
+
+    state_panel_df = build_topix100_streak_daily_state_panel_df(
+        history_df,
+        analysis_start_date=start_date,
+        analysis_end_date=end_date,
+        validation_ratio=validation_ratio,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+    )
+    feature_panel_df = _build_feature_panel_df(
+        event_panel_df=price_result.event_panel_df,
+        state_result=state_panel_df,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+    )
+    if feature_panel_df.empty:
+        raise ValueError("Feature panel was empty after building the next-session target")
+    return price_result, feature_panel_df
+
+
+def _coerce_intraday_state_panel_df(state_source: Any) -> pd.DataFrame:
+    if isinstance(state_source, pd.DataFrame):
+        state_df = state_source.copy()
+    elif hasattr(state_source, "daily_state_panel_df") and isinstance(
+        getattr(state_source, "daily_state_panel_df"),
+        pd.DataFrame,
+    ):
+        state_df = cast(pd.DataFrame, getattr(state_source, "daily_state_panel_df")).copy()
+    elif hasattr(state_source, "state_event_df") and isinstance(
+        getattr(state_source, "state_event_df"),
+        pd.DataFrame,
+    ):
+        state_df = cast(pd.DataFrame, getattr(state_source, "state_event_df")).copy()
+    else:
+        raise ValueError("Unable to resolve a state panel dataframe")
+
+    if "segment_end_date" in state_df.columns and "date" not in state_df.columns:
+        state_df = state_df.rename(columns={"segment_end_date": "date"})
+    return state_df
 
 
 def _build_feature_panel_from_state_event_df(
@@ -420,13 +464,14 @@ def _build_feature_panel_from_state_event_df(
         price_df["next_session_open"].replace(0, pd.NA)
     ).sub(1.0)
 
+    state_df = _coerce_intraday_state_panel_df(state_event_df)
     state_columns = [
         "state_event_id",
         "code",
         "company_name",
         "sample_split",
         "segment_id",
-        "segment_end_date",
+        "date",
         "segment_return",
         "segment_day_count",
         "base_streak_mode",
@@ -435,12 +480,11 @@ def _build_feature_panel_from_state_event_df(
         "state_key",
         "state_label",
     ]
-    missing_state_columns = [column for column in state_columns if column not in state_event_df.columns]
+    missing_state_columns = [column for column in state_columns if column not in state_df.columns]
     if missing_state_columns:
         raise ValueError(f"Missing state event columns: {missing_state_columns}")
 
-    state_df = state_event_df[state_columns].copy()
-    state_df = state_df.rename(columns={"segment_end_date": "date"})
+    state_df = state_df[state_columns].copy()
     state_df["date"] = state_df["date"].astype(str)
     state_df["code"] = state_df["code"].astype(str).str.zfill(4)
 
@@ -569,11 +613,9 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot_cached(
 def _resolve_snapshot_score_source_run_id(
     categorical_feature_columns: tuple[str, ...],
 ) -> str | None:
-    experiment_id = (
-        TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID
-        if categorical_feature_columns == DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS
-        else TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_DISCRETE_ABLATION_WALKFORWARD_EXPERIMENT_ID
-    )
+    if categorical_feature_columns != DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS:
+        return None
+    experiment_id = TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID
     bundle_path = find_latest_research_bundle_path(experiment_id)
     if bundle_path is None:
         return None
@@ -626,9 +668,15 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
 
     if connection is None:
         with _open_analysis_connection(db_path) as ctx:
-            history_df = _query_topix100_stock_history(ctx.connection, end_date=None)
+            history_df = _query_topix100_stock_history(
+                ctx.connection,
+                end_date=target_date,
+            )
     else:
-        history_df = _query_topix100_stock_history(connection, end_date=None)
+        history_df = _query_topix100_stock_history(
+            connection,
+            end_date=target_date,
+        )
     if history_df.empty:
         return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
             score_source_run_id=score_source_run_id,
@@ -651,7 +699,7 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
     event_panel_df = _enrich_event_panel(
         history_df,
         analysis_start_date=None,
-        analysis_end_date=None,
+        analysis_end_date=target_date,
         min_constituents_per_day=1,
         price_sma_windows=(price_feature_to_window[price_feature],),
         volume_sma_windows=(volume_feature_to_window[volume_feature],),
@@ -676,17 +724,16 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         )
 
     try:
-        state_event_df = _build_state_event_df(
+        state_panel_df = build_topix100_streak_daily_state_panel_df(
             history_df,
-            future_horizons=(1,),
+            analysis_end_date=target_date,
+            validation_ratio=None,
             short_window_streaks=short_window_streaks,
             long_window_streaks=long_window_streaks,
         )
-        state_event_df = state_event_df.copy()
-        state_event_df["sample_split"] = "training"
         full_feature_panel_df = _build_feature_panel_from_state_event_df(
             event_panel_df=event_panel_df,
-            state_event_df=state_event_df,
+            state_event_df=state_panel_df,
             price_feature=price_feature,
             volume_feature=volume_feature,
         )

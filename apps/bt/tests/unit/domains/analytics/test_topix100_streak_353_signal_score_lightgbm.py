@@ -319,14 +319,32 @@ def test_build_baseline_lookup_df_uses_discovery_only() -> None:
 
 def test_run_research_builds_validation_comparison(monkeypatch) -> None:
     module_price_result, module_state_result = _build_fake_inputs()
+    history_df = module_price_result.event_panel_df[
+        ["date", "code", "company_name", "close"]
+    ].copy()
+
+    class _FakeContext:
+        def __enter__(self):
+            return SimpleNamespace(connection=object())
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
 
     monkeypatch.setattr(
         "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.run_topix100_price_vs_sma_rank_future_close_research",
         lambda *args, **kwargs: module_price_result,
     )
     monkeypatch.setattr(
-        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.run_topix100_streak_353_transfer_research",
-        lambda *args, **kwargs: module_state_result,
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._open_analysis_connection",
+        lambda db_path: _FakeContext(),
+    )
+    monkeypatch.setattr(
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._query_topix100_stock_history",
+        lambda connection, end_date: history_df,
+    )
+    monkeypatch.setattr(
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.build_topix100_streak_daily_state_panel_df",
+        lambda *args, **kwargs: module_state_result.state_event_df,
     )
     monkeypatch.setattr(
         "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._load_lightgbm_regressor_cls",
@@ -350,14 +368,32 @@ def test_run_research_builds_validation_comparison(monkeypatch) -> None:
 
 def test_bundle_roundtrip_and_bundle_path_helpers(tmp_path, monkeypatch) -> None:
     module_price_result, module_state_result = _build_fake_inputs()
+    history_df = module_price_result.event_panel_df[
+        ["date", "code", "company_name", "close"]
+    ].copy()
+
+    class _FakeContext:
+        def __enter__(self):
+            return SimpleNamespace(connection=object())
+
+        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
+            return False
 
     monkeypatch.setattr(
         "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.run_topix100_price_vs_sma_rank_future_close_research",
         lambda *args, **kwargs: module_price_result,
     )
     monkeypatch.setattr(
-        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.run_topix100_streak_353_transfer_research",
-        lambda *args, **kwargs: module_state_result,
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._open_analysis_connection",
+        lambda db_path: _FakeContext(),
+    )
+    monkeypatch.setattr(
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._query_topix100_stock_history",
+        lambda connection, end_date: history_df,
+    )
+    monkeypatch.setattr(
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.build_topix100_streak_daily_state_panel_df",
+        lambda *args, **kwargs: module_state_result.state_event_df,
     )
     monkeypatch.setattr(
         "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._load_lightgbm_regressor_cls",
@@ -419,7 +455,7 @@ def test_score_snapshot_trains_on_history_and_scores_current(monkeypatch) -> Non
         lambda *args, **kwargs: module_price_result.event_panel_df,
     )
     monkeypatch.setattr(
-        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._build_state_event_df",
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.build_topix100_streak_daily_state_panel_df",
         lambda *args, **kwargs: module_state_result.state_event_df,
     )
     monkeypatch.setattr(
@@ -514,7 +550,7 @@ def test_score_snapshot_returns_empty_when_state_pipeline_fails(monkeypatch) -> 
         lambda *args, **kwargs: pd.DataFrame.from_records([{"code": "1000"}]),
     )
     monkeypatch.setattr(
-        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm._build_state_event_df",
+        "src.domains.analytics.topix100_streak_353_signal_score_lightgbm.build_topix100_streak_daily_state_panel_df",
         lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad state")),
     )
 

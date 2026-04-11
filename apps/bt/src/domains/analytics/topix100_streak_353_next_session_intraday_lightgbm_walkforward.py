@@ -27,20 +27,15 @@ from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning 
 )
 from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_LABEL_MAP,
-    PRICE_FEATURE_ORDER,
-    PRICE_SMA_WINDOW_ORDER,
     VOLUME_FEATURE_LABEL_MAP,
-    VOLUME_FEATURE_ORDER,
-    VOLUME_SMA_WINDOW_ORDER,
-    run_topix100_price_vs_sma_rank_future_close_research,
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
     DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     DEFAULT_TOP_K_VALUES,
+    _build_research_feature_panel_df,
     _build_baseline_lookup_df,
     _build_baseline_scorecard,
     _build_baseline_validation_prediction_df,
-    _build_feature_panel_df,
     _build_lightgbm_validation_prediction_df,
     _build_validation_model_comparison_df,
     _build_validation_model_summary_df,
@@ -56,7 +51,6 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
-    run_topix100_streak_353_transfer_research,
 )
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_VALIDATION_RATIO,
@@ -165,38 +159,15 @@ def run_topix100_streak_353_next_session_intraday_lightgbm_walkforward_research(
         default=DEFAULT_TOP_K_VALUES,
         name="top_k_values",
     )
-    price_feature_to_window = {
-        feature: window
-        for feature, window in zip(PRICE_FEATURE_ORDER, PRICE_SMA_WINDOW_ORDER, strict=True)
-    }
-    volume_feature_to_window = {
-        feature: window
-        for feature, window in zip(VOLUME_FEATURE_ORDER, VOLUME_SMA_WINDOW_ORDER, strict=True)
-    }
-
-    price_result = run_topix100_price_vs_sma_rank_future_close_research(
-        db_path,
+    price_result, feature_panel_df = _build_research_feature_panel_df(
+        db_path=db_path,
         start_date=start_date,
         end_date=end_date,
-        price_sma_windows=(price_feature_to_window[price_feature],),
-        volume_sma_windows=(volume_feature_to_window[volume_feature],),
-    )
-    state_result = run_topix100_streak_353_transfer_research(
-        db_path,
-        start_date=start_date,
-        end_date=end_date,
-        future_horizons=(1,),
+        price_feature=price_feature,
+        volume_feature=volume_feature,
         validation_ratio=validation_ratio,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
-        min_stock_events_per_state=1,
-        min_constituents_per_date_state=1,
-    )
-    feature_panel_df = _build_feature_panel_df(
-        event_panel_df=price_result.event_panel_df,
-        state_result=state_result,
-        price_feature=price_feature,
-        volume_feature=volume_feature,
     )
     return _run_walkforward_from_panel(
         db_path=db_path,
