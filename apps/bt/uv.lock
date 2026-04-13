@@ -2448,7 +2448,7 @@ dev = [
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pandas-stubs", specifier = ">=2.3.2.250827" },
     { name = "pyright", specifier = ">=1.1.404" },
-    { name = "pytest", specifier = ">=7.0.0" },
+    { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
     { name = "pytest-cov", specifier = ">=4.0.0" },
     { name = "pytest-mock", specifier = ">=3.10.0" },
