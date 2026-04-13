@@ -34,5 +34,7 @@
   - `SMA50` の plain gap と `ATR14` 正規化 gap を同じ `Q10 / middle x volume` frame で比較し、見た目の違いを volatility scale で説明できるかを見る実験。
 - [market-behavior/topix100-sma-ratio-lightgbm/](./market-behavior/topix100-sma-ratio-lightgbm/README.md)
   - TOPIX100 の 6 本の SMA ratio 特徴に対して、hand-crafted composite baseline と LightGBM ranker を walk-forward OOS で比較する実験。
+- [market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/](./market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/README.md)
+  - TOPIX を long-only で持つ前提で、downside return standard deviation と trend / breadth confirmation を使う fixed overlay を committee 化し、walk-forward と pure OOS で評価する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。
