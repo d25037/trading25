@@ -24,7 +24,7 @@
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.5",
-    "@tanstack/react-query": "^5.96.2",
+    "@tanstack/react-query": "^5.99.0",
     "@tanstack/react-router": "^1.168.19",
     "@trading25/api-clients": "workspace:*",
     "@trading25/contracts": "workspace:*",
