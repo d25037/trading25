@@ -28,13 +28,14 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   limit: 20,
   lookbackDays: 1,
   periodDays: 250,
+  topix100StudyMode: 'swing_5d',
   topix100Metric: 'price_vs_sma_gap',
   topix100SmaWindow: 50,
   topix100PriceBucket: 'all',
   topix100VolumeBucket: 'all',
   topix100ShortMode: 'all',
   topix100LongMode: 'all',
-  topix100SortBy: 'intradayScore',
+  topix100SortBy: 'longScore5d',
   topix100SortOrder: 'desc',
 };
 

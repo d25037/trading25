@@ -10054,6 +10054,8 @@ export interface components {
             nextSessionDate?: string | null;
             /** Nextsessionintradayreturn */
             nextSessionIntradayReturn?: number | null;
+            /** Opentoclose5Dreturn */
+            openToClose5dReturn?: number | null;
             /**
              * Pricebucket
              * @enum {string}
@@ -10083,6 +10085,10 @@ export interface components {
             streakStateKey?: string | null;
             /** Streakstatelabel */
             streakStateLabel?: string | null;
+            /** Swingentrydate */
+            swingEntryDate?: string | null;
+            /** Swingexitdate */
+            swingExitDate?: string | null;
             /** Volume */
             volume: number;
             /** Volumebucket */
@@ -10095,14 +10101,18 @@ export interface components {
          * @description TOPIX100 SMA ranking response.
          */
         Topix100RankingResponse: {
+            /** Benchmarkentrydate */
+            benchmarkEntryDate?: string | null;
+            /** Benchmarkexitdate */
+            benchmarkExitDate?: string | null;
             /** Date */
             date: string;
             /**
              * Intradayscoretarget
              * @default next_session_open_close
-             * @constant
+             * @enum {string}
              */
-            intradayScoreTarget: "next_session_open_close";
+            intradayScoreTarget: "next_session_open_close" | "next_session_open_to_close_5d";
             /** Itemcount */
             itemCount: number;
             /** Items */
@@ -10116,6 +10126,10 @@ export interface components {
             longScoreHorizonDays: number;
             /** Longwindowstreaks */
             longWindowStreaks: number;
+            /** Primarybenchmark */
+            primaryBenchmark?: "topix" | null;
+            /** Primarybenchmarkreturn */
+            primaryBenchmarkReturn?: number | null;
             /**
              * Rankingmetric
              * @enum {string}
@@ -10144,10 +10158,20 @@ export interface components {
             scoreSplitTrainStart?: string | null;
             /** Scorestepdays */
             scoreStepDays?: number | null;
+            /**
+             * Scoretarget
+             * @default next_session_open_close
+             * @enum {string}
+             */
+            scoreTarget: "next_session_open_close" | "next_session_open_to_close_5d";
             /** Scoretestwindowdays */
             scoreTestWindowDays?: number | null;
             /** Scoretrainwindowdays */
             scoreTrainWindowDays?: number | null;
+            /** Secondarybenchmark */
+            secondaryBenchmark?: "topix100_universe" | null;
+            /** Secondarybenchmarkreturn */
+            secondaryBenchmarkReturn?: number | null;
             /**
              * Shortscorehorizondays
              * @default 1
@@ -10160,6 +10184,12 @@ export interface components {
              * @enum {integer}
              */
             smaWindow: 20 | 50 | 100;
+            /**
+             * Studymode
+             * @default intraday
+             * @enum {string}
+             */
+            studyMode: "intraday" | "swing_5d";
         };
         /**
          * TopixDataPoint
@@ -11596,6 +11626,7 @@ export interface operations {
         parameters: {
             query?: {
                 date?: string | null;
+                studyMode?: "intraday" | "swing_5d";
                 metric?: "price_vs_sma_gap" | "price_sma_20_80";
                 /** @description Supported values: 20, 50, 100. */
                 smaWindow?: number;

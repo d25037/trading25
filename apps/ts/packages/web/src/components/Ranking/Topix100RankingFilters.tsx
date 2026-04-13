@@ -5,6 +5,7 @@ import type {
   RankingParams,
   Topix100PriceBucketFilter,
   Topix100StreakModeFilter,
+  Topix100StudyMode,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import {
@@ -36,6 +37,10 @@ const STREAK_MODE_OPTIONS: { value: Topix100StreakModeFilter; label: string }[] 
   { value: 'bearish', label: getTopix100StreakModeLabel('bearish') },
   { value: 'bullish', label: getTopix100StreakModeLabel('bullish') },
 ];
+const STUDY_MODE_OPTIONS: { value: Topix100StudyMode; label: string }[] = [
+  { value: 'swing_5d', label: 'Open -> 5D Close' },
+  { value: 'intraday', label: 'Intraday' },
+];
 
 interface Topix100RankingFiltersProps {
   params: RankingParams;
@@ -43,12 +48,21 @@ interface Topix100RankingFiltersProps {
 }
 
 function buildStudyDescription(
+  studyMode: RankingParams['topix100StudyMode'],
   metric: RankingParams['topix100Metric'],
   smaWindow: RankingParams['topix100SmaWindow']
 ): string {
   const resolvedMetric = resolveTopix100RankingMetric(metric);
   const resolvedSmaWindow = resolveTopix100PriceSmaWindow(smaWindow);
   const metricDescription = getTopix100RankingMetricDescription(resolvedMetric, resolvedSmaWindow);
+  const resolvedStudyMode = studyMode ?? 'swing_5d';
+
+  if (resolvedStudyMode === 'swing_5d') {
+    if (resolvedMetric === 'price_vs_sma_gap') {
+      return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The snapshot stays leak-free at date X, enters on X+1 open, exits on X+5 close, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.`;
+    }
+    return `${metricDescription} The leak-free swing study enters on X+1 open, exits on X+5 close, and keeps TOPIX as the headline benchmark with TOPIX100 universe as the secondary cross-check.`;
+  }
 
   if (resolvedMetric === 'price_vs_sma_gap') {
     return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The production score is now decile-only on the discrete side; streak 3/53 states and volume split stay visible as context filters around the next-session intraday LightGBM read.`;
@@ -61,9 +75,20 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     onChange({ ...params, [key]: value });
   };
+  const studyMode = params.topix100StudyMode ?? 'swing_5d';
   const metric = resolveTopix100RankingMetric(params.topix100Metric);
   const smaWindow = resolveTopix100PriceSmaWindow(params.topix100SmaWindow);
-  const studyDescription = buildStudyDescription(params.topix100Metric, params.topix100SmaWindow);
+  const studyDescription = buildStudyDescription(studyMode, params.topix100Metric, params.topix100SmaWindow);
+
+  const handleStudyModeChange = (value: string) => {
+    const nextStudyMode = value as Topix100StudyMode;
+    onChange({
+      ...params,
+      topix100StudyMode: nextStudyMode,
+      topix100SortBy: nextStudyMode === 'swing_5d' ? 'longScore5d' : 'intradayScore',
+      topix100SortOrder: 'desc',
+    });
+  };
 
   return (
     <Surface className="p-3">
@@ -74,6 +99,17 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
       </div>
       <div className="space-y-2.5">
         <DateInput value={params.date} onChange={(value) => updateParam('date', value)} id="topix100-ranking-date" />
+
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-foreground">Study Mode</p>
+          <SegmentedTabs
+            items={STUDY_MODE_OPTIONS}
+            value={studyMode}
+            onChange={handleStudyModeChange}
+            itemClassName="h-9 justify-start rounded-lg px-3 py-1.5 text-xs"
+            className="flex-col"
+          />
+        </div>
 
         <div className="space-y-1">
           <p className="text-xs font-medium text-foreground">Ranking Metric</p>

@@ -32,6 +32,9 @@ from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm im
     DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
+from src.domains.analytics.topix100_streak_353_next_session_open_to_close_5d_lightgbm import (
+    score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot,
+)
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
     FundamentalRankingItem,
@@ -44,6 +47,7 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100RankingMetric,
     Topix100PriceSmaWindow,
     Topix100RankingResponse,
+    Topix100StudyMode,
 )
 
 
@@ -272,6 +276,7 @@ class RankingService:
         date: str | None = None,
         metric: Topix100RankingMetric = "price_vs_sma_gap",
         sma_window: int = 50,
+        study_mode: Topix100StudyMode = "intraday",
     ) -> Topix100RankingResponse:
         """TOPIX100 の snapshot ランキングを返す。"""
         if metric not in _TOPIX100_RANKING_METRIC_SQL:
@@ -288,6 +293,28 @@ class RankingService:
         )
         if not rows:
             raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
+        if study_mode == "swing_5d":
+            return self._get_topix100_swing_5d_ranking(
+                target_date=target_date,
+                metric=metric,
+                sma_window=validated_sma_window,
+                rows=rows,
+            )
+        return self._get_topix100_intraday_ranking(
+            target_date=target_date,
+            metric=metric,
+            sma_window=validated_sma_window,
+            rows=rows,
+        )
+
+    def _get_topix100_intraday_ranking(
+        self,
+        *,
+        target_date: str,
+        metric: Topix100RankingMetric,
+        sma_window: Topix100PriceSmaWindow,
+        rows: list[Mapping[str, Any]],
+    ) -> Topix100RankingResponse:
         realized_rows_by_code = self._load_topix100_next_session_intraday_returns(target_date)
         score_snapshot = score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             self._reader.db_path,
@@ -305,52 +332,21 @@ class RankingService:
             state_snapshot = score_snapshot.rows_by_code.get(code)
             realized_row = realized_rows_by_code.get(code)
             items.append(
-                Topix100RankingItem(
-                    rank=int(row["rank"]),
-                    code=code,
-                    companyName=str(row["company_name"]),
-                    marketCode=str(row["market_code"]),
-                    sector33Name=str(row["sector_33_name"]),
-                    scaleCategory=str(row["scale_category"] or ""),
-                    currentPrice=float(row["current_price"]),
-                    volume=float(row["volume"]),
-                    priceVsSmaGap=float(row["price_vs_sma_gap"]),
-                    priceSma20_80=float(row["price_sma_20_80"]),
-                    volumeSma5_20=float(row["volume_sma_5_20"]),
-                    priceDecile=int(row["price_decile"]),
-                    priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
-                    volumeBucket=(
-                        cast(Topix100VolumeBucket, str(row["volume_bucket"]).replace("volume_", ""))
-                        if row["volume_bucket"] is not None
-                        else None
+                self._build_topix100_ranking_item(
+                    row=row,
+                    short_mode=state_snapshot.short_mode if state_snapshot is not None else None,
+                    long_mode=state_snapshot.long_mode if state_snapshot is not None else None,
+                    state_key=state_snapshot.state_key if state_snapshot is not None else None,
+                    state_label=state_snapshot.state_label if state_snapshot is not None else None,
+                    intraday_score=(
+                        state_snapshot.intraday_score if state_snapshot is not None else None
                     ),
-                    streakShortMode=(
-                        cast(Literal["bullish", "bearish"], state_snapshot.short_mode)
-                        if state_snapshot is not None
-                        else None
-                    ),
-                    streakLongMode=(
-                        cast(Literal["bullish", "bearish"], state_snapshot.long_mode)
-                        if state_snapshot is not None
-                        else None
-                    ),
-                    streakStateKey=(
-                        state_snapshot.state_key
-                        if state_snapshot is not None
-                        else None
-                    ),
-                    streakStateLabel=(
-                        state_snapshot.state_label
-                        if state_snapshot is not None
-                        else None
-                    ),
-                    intradayScore=(state_snapshot.intraday_score if state_snapshot is not None else None),
-                    nextSessionDate=(
+                    next_session_date=(
                         str(realized_row["next_session_date"])
                         if realized_row is not None and realized_row["next_session_date"] is not None
                         else None
                     ),
-                    nextSessionIntradayReturn=(
+                    next_session_intraday_return=(
                         float(realized_row["next_session_intraday_return"])
                         if realized_row is not None
                         and realized_row["next_session_intraday_return"] is not None
@@ -383,10 +379,13 @@ class RankingService:
 
         return Topix100RankingResponse(
             date=target_date,
+            studyMode="intraday",
             rankingMetric=metric,
-            smaWindow=validated_sma_window,
+            smaWindow=sma_window,
             shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            scoreTarget="next_session_open_close",
+            intradayScoreTarget="next_session_open_close",
             scoreModelType=score_snapshot.score_model_type,
             scoreTrainWindowDays=score_snapshot.train_window_days,
             scoreTestWindowDays=score_snapshot.test_window_days,
@@ -400,6 +399,165 @@ class RankingService:
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
+        )
+
+    def _get_topix100_swing_5d_ranking(
+        self,
+        *,
+        target_date: str,
+        metric: Topix100RankingMetric,
+        sma_window: Topix100PriceSmaWindow,
+        rows: list[Mapping[str, Any]],
+    ) -> Topix100RankingResponse:
+        realized_rows_by_code = self._load_topix100_next_session_open_to_close_5d_returns(target_date)
+        score_snapshot = score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot(
+            self._reader.db_path,
+            target_date=target_date,
+            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
+            connection=self._reader.conn,
+        )
+
+        items = []
+        for row in rows:
+            code = str(row["code"])
+            state_snapshot = score_snapshot.rows_by_code.get(code)
+            realized_row = realized_rows_by_code.get(code)
+            items.append(
+                self._build_topix100_ranking_item(
+                    row=row,
+                    short_mode=state_snapshot.short_mode if state_snapshot is not None else None,
+                    long_mode=state_snapshot.long_mode if state_snapshot is not None else None,
+                    state_key=state_snapshot.state_key if state_snapshot is not None else None,
+                    state_label=state_snapshot.state_label if state_snapshot is not None else None,
+                    long_score_5d=(
+                        state_snapshot.long_score_5d if state_snapshot is not None else None
+                    ),
+                    swing_entry_date=(
+                        str(realized_row["entry_date"])
+                        if realized_row is not None and realized_row["entry_date"] is not None
+                        else None
+                    ),
+                    swing_exit_date=(
+                        str(realized_row["exit_date"])
+                        if realized_row is not None and realized_row["exit_date"] is not None
+                        else None
+                    ),
+                    open_to_close_5d_return=(
+                        float(realized_row["open_to_close_5d_return"])
+                        if realized_row is not None
+                        and realized_row["open_to_close_5d_return"] is not None
+                        else None
+                    ),
+                )
+            )
+
+        long_score_ranks = _build_optional_desc_ranks(items, "longScore5d")
+        items = [
+            item.model_copy(
+                update={
+                    "longScore5dRank": long_score_ranks.get(item.code),
+                }
+            )
+            for item in items
+        ]
+
+        benchmark_row = self._load_topix_open_to_close_5d_benchmark_return(target_date)
+        realized_returns = [
+            cast(float, item.openToClose5dReturn)
+            for item in items
+            if item.openToClose5dReturn is not None
+        ]
+        secondary_benchmark_return = (
+            sum(realized_returns) / len(realized_returns) if realized_returns else None
+        )
+
+        return Topix100RankingResponse(
+            date=target_date,
+            studyMode="swing_5d",
+            rankingMetric=metric,
+            smaWindow=sma_window,
+            shortWindowStreaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+            longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
+            longScoreHorizonDays=score_snapshot.long_target_horizon_days,
+            shortScoreHorizonDays=score_snapshot.short_target_horizon_days,
+            scoreTarget="next_session_open_to_close_5d",
+            intradayScoreTarget="next_session_open_to_close_5d",
+            scoreModelType="daily_refit",
+            scoreTrainWindowDays=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
+            scoreTestWindowDays=1,
+            scoreStepDays=1,
+            scoreSourceRunId=score_snapshot.score_source_run_id,
+            primaryBenchmark="topix",
+            secondaryBenchmark="topix100_universe",
+            primaryBenchmarkReturn=(
+                float(benchmark_row["benchmark_return"])
+                if benchmark_row is not None and benchmark_row["benchmark_return"] is not None
+                else None
+            ),
+            secondaryBenchmarkReturn=secondary_benchmark_return,
+            benchmarkEntryDate=(
+                str(benchmark_row["entry_date"])
+                if benchmark_row is not None and benchmark_row["entry_date"] is not None
+                else None
+            ),
+            benchmarkExitDate=(
+                str(benchmark_row["exit_date"])
+                if benchmark_row is not None and benchmark_row["exit_date"] is not None
+                else None
+            ),
+            itemCount=len(items),
+            items=items,
+            lastUpdated=_now_iso(),
+        )
+
+    def _build_topix100_ranking_item(
+        self,
+        *,
+        row: Mapping[str, Any],
+        short_mode: str | None,
+        long_mode: str | None,
+        state_key: str | None,
+        state_label: str | None,
+        intraday_score: float | None = None,
+        long_score_5d: float | None = None,
+        next_session_date: str | None = None,
+        next_session_intraday_return: float | None = None,
+        swing_entry_date: str | None = None,
+        swing_exit_date: str | None = None,
+        open_to_close_5d_return: float | None = None,
+    ) -> Topix100RankingItem:
+        return Topix100RankingItem(
+            rank=int(row["rank"]),
+            code=str(row["code"]),
+            companyName=str(row["company_name"]),
+            marketCode=str(row["market_code"]),
+            sector33Name=str(row["sector_33_name"]),
+            scaleCategory=str(row["scale_category"] or ""),
+            currentPrice=float(row["current_price"]),
+            volume=float(row["volume"]),
+            priceVsSmaGap=float(row["price_vs_sma_gap"]),
+            priceSma20_80=float(row["price_sma_20_80"]),
+            volumeSma5_20=float(row["volume_sma_5_20"]),
+            priceDecile=int(row["price_decile"]),
+            priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
+            volumeBucket=(
+                cast(Topix100VolumeBucket, str(row["volume_bucket"]).replace("volume_", ""))
+                if row["volume_bucket"] is not None
+                else None
+            ),
+            streakShortMode=cast(Literal["bullish", "bearish"] | None, short_mode),
+            streakLongMode=cast(Literal["bullish", "bearish"] | None, long_mode),
+            streakStateKey=state_key,
+            streakStateLabel=state_label,
+            intradayScore=intraday_score,
+            longScore5d=long_score_5d,
+            nextSessionDate=next_session_date,
+            nextSessionIntradayReturn=next_session_intraday_return,
+            swingEntryDate=swing_entry_date,
+            swingExitDate=swing_exit_date,
+            openToClose5dReturn=open_to_close_5d_return,
         )
 
     def get_fundamental_rankings(
@@ -603,6 +761,161 @@ class RankingService:
             (*_TOPIX100_SCALE_CATEGORIES, target_date),
         )
         return {str(row["code"]): row for row in rows}
+
+    def _load_topix100_next_session_open_to_close_5d_returns(
+        self,
+        target_date: str,
+    ) -> dict[str, Mapping[str, Any]]:
+        rows = self._reader.query(
+            f"""
+            WITH topix100_stocks AS (
+                SELECT
+                    code,
+                    normalized_code
+                FROM (
+                    SELECT
+                        code,
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stocks
+                    WHERE coalesce(scale_category, '') IN (?, ?)
+                )
+                WHERE rn = 1
+            ),
+            future_stock_data AS (
+                SELECT normalized_code, date, open, close
+                FROM (
+                    SELECT
+                        {_normalized_code_sql("code")} AS normalized_code,
+                        date,
+                        open,
+                        close,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {_normalized_code_sql("code")}, date
+                            ORDER BY {_prefer_4digit_order_sql("code")}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date > ?
+                )
+                WHERE rn = 1
+            ),
+            ranked_future_sessions AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    open,
+                    close,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date ASC
+                    ) AS session_rank
+                FROM future_stock_data
+            ),
+            entry_sessions AS (
+                SELECT normalized_code, date AS entry_date, open AS entry_open
+                FROM ranked_future_sessions
+                WHERE session_rank = 1
+            ),
+            exit_sessions AS (
+                SELECT normalized_code, date AS exit_date, close AS exit_close
+                FROM ranked_future_sessions
+                WHERE session_rank = 5
+            )
+            SELECT
+                s.code,
+                e.entry_date,
+                x.exit_date,
+                x.exit_close / NULLIF(e.entry_open, 0) - 1 AS open_to_close_5d_return
+            FROM topix100_stocks s
+            LEFT JOIN entry_sessions e
+                ON s.normalized_code = e.normalized_code
+            LEFT JOIN exit_sessions x
+                ON s.normalized_code = x.normalized_code
+            """,
+            (*_TOPIX100_SCALE_CATEGORIES, target_date),
+        )
+        return {str(row["code"]): row for row in rows}
+
+    def _load_topix_open_to_close_5d_benchmark_return(
+        self,
+        target_date: str,
+    ) -> Mapping[str, Any] | None:
+        if self._table_exists("topix_data"):
+            return self._reader.query_one(
+                """
+                WITH ranked_future_sessions AS (
+                    SELECT
+                        date,
+                        open,
+                        close,
+                        ROW_NUMBER() OVER (ORDER BY date ASC) AS session_rank
+                    FROM topix_data
+                    WHERE date > ?
+                ),
+                entry_session AS (
+                    SELECT date AS entry_date, open AS entry_open
+                    FROM ranked_future_sessions
+                    WHERE session_rank = 1
+                ),
+                exit_session AS (
+                    SELECT date AS exit_date, close AS exit_close
+                    FROM ranked_future_sessions
+                    WHERE session_rank = 5
+                )
+                SELECT
+                    e.entry_date,
+                    x.exit_date,
+                    x.exit_close / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
+                FROM entry_session e
+                CROSS JOIN exit_session x
+                """,
+                (target_date,),
+            )
+
+        if not self._table_exists("index_master") or not self._table_exists("indices_data"):
+            return None
+
+        return self._reader.query_one(
+            """
+            WITH topix_code AS (
+                SELECT code
+                FROM index_master
+                WHERE lower(coalesce(category, '')) = 'topix'
+                ORDER BY CASE WHEN upper(code) = 'TOPIX' THEN 0 ELSE 1 END, code ASC
+                LIMIT 1
+            ),
+            ranked_future_sessions AS (
+                SELECT
+                    id.date,
+                    id.open,
+                    id.close,
+                    ROW_NUMBER() OVER (ORDER BY id.date ASC) AS session_rank
+                FROM indices_data id
+                JOIN topix_code tc ON tc.code = id.code
+                WHERE id.date > ?
+            ),
+            entry_session AS (
+                SELECT date AS entry_date, open AS entry_open
+                FROM ranked_future_sessions
+                WHERE session_rank = 1
+            ),
+            exit_session AS (
+                SELECT date AS exit_date, close AS exit_close
+                FROM ranked_future_sessions
+                WHERE session_rank = 5
+            )
+            SELECT
+                e.entry_date,
+                x.exit_date,
+                x.exit_close / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
+            FROM entry_session e
+            CROSS JOIN exit_session x
+            """,
+            (target_date,),
+        )
 
     def _load_topix100_ranking_rows(
         self,

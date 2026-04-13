@@ -181,9 +181,16 @@ function buildIntroMetaItems(
   if (activeDailyView === 'topix100') {
     const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
     const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
+    const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
     return [
       { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      { label: 'Read', value: 'Decile-only intraday LightGBM score' },
+      {
+        label: 'Read',
+        value:
+          topix100StudyMode === 'swing_5d'
+            ? 'Leak-free X+1 open -> X+5 close, KPI vs TOPIX'
+            : 'Decile-only intraday LightGBM score',
+      },
     ];
   }
   return [
@@ -206,6 +213,7 @@ function RankingContent({
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
+  const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
   const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
   const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
 
@@ -242,6 +250,7 @@ function RankingContent({
         isLoading={topix100RankingQuery.isLoading}
         error={topix100RankingQuery.error}
         onStockClick={onStockClick}
+        studyMode={topix100StudyMode}
         rankingMetric={topix100Metric}
         rankingSmaWindow={topix100SmaWindow}
         priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
@@ -284,11 +293,13 @@ export function RankingPage() {
     setFundamentalRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
+  const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
   const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
   const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking' && activeDailyView !== 'topix100');
   const topix100RankingQuery = useTopix100Ranking(
     rankingParams.date,
+    topix100StudyMode,
     topix100Metric,
     topix100SmaWindow,
     activeSubTab === 'ranking' && activeDailyView === 'topix100'

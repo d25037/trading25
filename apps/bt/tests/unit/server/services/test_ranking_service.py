@@ -23,6 +23,10 @@ from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm im
     Topix100Streak353NextSessionIntradayLightgbmSnapshot,
     Topix100Streak353NextSessionIntradayLightgbmSnapshotRow,
 )
+from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
+    Topix100Streak353SignalScoreLightgbmSnapshot,
+    Topix100Streak353SignalScoreLightgbmSnapshotRow,
+)
 from src.application.services.ranking_service import (
     RankingService,
     _build_market_filter,
@@ -50,6 +54,16 @@ def ranking_db(tmp_path):
             open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL,
             volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT,
             PRIMARY KEY (code, date)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE topix_data (
+            date TEXT PRIMARY KEY,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            created_at TEXT
         )
     """)
     conn.execute("""
@@ -346,6 +360,16 @@ def topix100_ranking_service(tmp_path):
             PRIMARY KEY (code, date)
         )
     """)
+    conn.execute("""
+        CREATE TABLE topix_data (
+            date TEXT PRIMARY KEY,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            created_at TEXT
+        )
+    """)
 
     volume_trends = [6, -6, 5, -5, 4, -4, 3, -3, 2, -2, 1, -1, 7, -7, 8, -8, 9, -9, 10, -10]
     start_date = calendar_date(2024, 1, 1)
@@ -391,6 +415,21 @@ def topix100_ranking_service(tmp_path):
                     None,
                 ),
             )
+
+    for day_index, current_date in enumerate(dates):
+        open_price = 2_000.0 + day_index
+        close_price = 2_000.0 + day_index * 1.2
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?,?,?,?,?,?)",
+            (
+                current_date,
+                open_price,
+                open_price + 5.0,
+                open_price - 5.0,
+                close_price,
+                None,
+            ),
+        )
 
     conn.commit()
     conn.close()
@@ -441,6 +480,32 @@ def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgb
         split_test_start=None,
         split_test_end=None,
         split_is_partial_tail=False,
+        rows_by_code=rows_by_code,
+    )
+
+
+def _build_test_swing_snapshot() -> Topix100Streak353SignalScoreLightgbmSnapshot:
+    rows_by_code: dict[str, Topix100Streak353SignalScoreLightgbmSnapshotRow] = {}
+    for offset, code in enumerate(range(1001, 1021), start=1):
+        rows_by_code[str(code)] = Topix100Streak353SignalScoreLightgbmSnapshotRow(
+            code=str(code),
+            company_name=f"Stock {offset}",
+            date="2024-03-25",
+            short_mode="bearish" if offset % 2 == 0 else "bullish",
+            long_mode="bullish" if offset % 3 else "bearish",
+            state_key=f"state_{offset}",
+            state_label=f"State {offset}",
+            long_score_5d=0.02 - offset * 0.0005,
+            short_score_1d=None,
+        )
+    return Topix100Streak353SignalScoreLightgbmSnapshot(
+        score_source_run_id="swing-test-run",
+        price_feature="price_vs_sma_50_gap",
+        volume_feature="volume_sma_5_20",
+        short_window_streaks=3,
+        long_window_streaks=53,
+        long_target_horizon_days=5,
+        short_target_horizon_days=1,
         rows_by_code=rows_by_code,
     )
 
@@ -704,6 +769,49 @@ class TestGetTopix100Ranking:
         assert result.itemCount == 20
         assert result.items[0].nextSessionDate == "2024-03-30"
         assert result.items[0].nextSessionIntradayReturn == pytest.approx(0.0)
+
+    def test_supports_swing_5d_mode_with_benchmarks(self, topix100_ranking_service, monkeypatch):
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot",
+            lambda *args, **kwargs: _build_test_swing_snapshot(),
+        )
+
+        result = topix100_ranking_service.get_topix100_ranking(
+            date="2024-03-25",
+            study_mode="swing_5d",
+        )
+
+        assert result.date == "2024-03-25"
+        assert result.studyMode == "swing_5d"
+        assert result.scoreTarget == "next_session_open_to_close_5d"
+        assert result.intradayScoreTarget == "next_session_open_to_close_5d"
+        assert result.scoreModelType == "daily_refit"
+        assert result.scoreTrainWindowDays == 756
+        assert result.scoreTestWindowDays == 1
+        assert result.scoreStepDays == 1
+        assert result.scoreSourceRunId == "swing-test-run"
+        assert result.primaryBenchmark == "topix"
+        assert result.secondaryBenchmark == "topix100_universe"
+        assert result.primaryBenchmarkReturn is not None
+        assert result.secondaryBenchmarkReturn is not None
+        assert result.benchmarkEntryDate == "2024-03-26"
+        assert result.benchmarkExitDate == "2024-03-30"
+        assert result.itemCount == 20
+
+        first_item = result.items[0]
+        assert first_item.longScore5d is not None
+        assert first_item.longScore5dRank is not None
+        assert first_item.swingEntryDate == "2024-03-26"
+        assert first_item.swingExitDate == "2024-03-30"
+        assert first_item.openToClose5dReturn is not None
+
+        realized_returns = [
+            item.openToClose5dReturn for item in result.items if item.openToClose5dReturn is not None
+        ]
+        assert realized_returns
+        assert result.secondaryBenchmarkReturn == pytest.approx(
+            sum(realized_returns) / len(realized_returns)
+        )
 
 
 class TestGetFundamentalRankings:

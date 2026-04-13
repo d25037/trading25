@@ -70,6 +70,8 @@ class MarketRankingResponse(BaseModel):
 Topix100RankingMetric = Literal["price_vs_sma_gap", "price_sma_20_80"]
 Topix100PriceSmaWindow = Literal[20, 50, 100]
 Topix100StreakMode = Literal["bullish", "bearish"]
+Topix100StudyMode = Literal["intraday", "swing_5d"]
+Topix100ScoreTarget = Literal["next_session_open_close", "next_session_open_to_close_5d"]
 
 
 class Topix100RankingItem(BaseModel):
@@ -102,19 +104,24 @@ class Topix100RankingItem(BaseModel):
     intradayShortRank: int | None = None
     nextSessionDate: str | None = None
     nextSessionIntradayReturn: float | None = None
+    swingEntryDate: str | None = None
+    swingExitDate: str | None = None
+    openToClose5dReturn: float | None = None
 
 
 class Topix100RankingResponse(BaseModel):
     """TOPIX100 SMA ranking response."""
 
     date: str
+    studyMode: Topix100StudyMode = "intraday"
     rankingMetric: Topix100RankingMetric
     smaWindow: Topix100PriceSmaWindow
     shortWindowStreaks: int
     longWindowStreaks: int
     longScoreHorizonDays: int = 5
     shortScoreHorizonDays: int = 1
-    intradayScoreTarget: Literal["next_session_open_close"] = "next_session_open_close"
+    scoreTarget: Topix100ScoreTarget = "next_session_open_close"
+    intradayScoreTarget: Topix100ScoreTarget = "next_session_open_close"
     scoreModelType: Literal["walkforward_frozen_split", "daily_refit"] = "daily_refit"
     scoreTrainWindowDays: int | None = None
     scoreTestWindowDays: int | None = None
@@ -125,6 +132,12 @@ class Topix100RankingResponse(BaseModel):
     scoreSplitTestEnd: str | None = None
     scoreSplitPartialTail: bool = False
     scoreSourceRunId: str | None = None
+    primaryBenchmark: Literal["topix"] | None = None
+    secondaryBenchmark: Literal["topix100_universe"] | None = None
+    primaryBenchmarkReturn: float | None = None
+    secondaryBenchmarkReturn: float | None = None
+    benchmarkEntryDate: str | None = None
+    benchmarkExitDate: str | None = None
     itemCount: int
     items: list[Topix100RankingItem] = Field(default_factory=list)
     lastUpdated: str

@@ -26,6 +26,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     Topix100RankingMetric,
     Topix100RankingResponse,
+    Topix100StudyMode,
 )
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
@@ -182,6 +183,7 @@ async def get_fundamental_ranking(
 async def get_topix100_ranking(
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    studyMode: Topix100StudyMode = Query("intraday"),
     metric: Topix100RankingMetric = Query("price_vs_sma_gap"),
     smaWindow: int = Query(50, description="Supported values: 20, 50, 100."),
 ) -> Topix100RankingResponse:
@@ -196,6 +198,7 @@ async def get_topix100_ranking(
     try:
         return service.get_topix100_ranking(
             date=date,
+            study_mode=studyMode,
             metric=metric,
             sma_window=smaWindow,
         )

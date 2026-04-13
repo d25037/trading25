@@ -20,6 +20,7 @@ import type {
   Topix100PriceSmaWindow,
   Topix100RankingSortKey,
   Topix100RankingMetric,
+  Topix100StudyMode,
   Topix100PriceBucketFilter,
   Topix100VolumeBucketFilter,
   Topix100StreakModeFilter,
@@ -80,6 +81,7 @@ export interface ScreeningRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTopix100StudyMode?: Topix100StudyMode;
   rankingTopix100Metric?: Topix100RankingMetric;
   rankingTopix100SmaWindow?: Topix100PriceSmaWindow;
   rankingTopix100PriceBucket?: Topix100PriceBucketFilter;
@@ -102,6 +104,7 @@ export interface RankingRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTopix100StudyMode?: Topix100StudyMode;
   rankingTopix100Metric?: Topix100RankingMetric;
   rankingTopix100SmaWindow?: Topix100PriceSmaWindow;
   rankingTopix100PriceBucket?: Topix100PriceBucketFilter;
@@ -138,6 +141,7 @@ const SCREENING_SUB_TABS: ScreeningSubTab[] = [
 const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'];
 const LEGACY_TOPIX100_RANKING_METRIC = 'price_vs_sma20_gap';
+const TOPIX100_STUDY_MODE_VALUES: Topix100StudyMode[] = ['intraday', 'swing_5d'];
 const TOPIX100_RANKING_METRIC_VALUES: Topix100RankingMetric[] = ['price_vs_sma_gap', 'price_sma_20_80'];
 const TOPIX100_PRICE_SMA_WINDOW_VALUES: Topix100PriceSmaWindow[] = [20, 50, 100];
 const TOPIX100_PRICE_BUCKET_VALUES: Topix100PriceBucketFilter[] = ['all', 'q1', 'q10', 'q234'];
@@ -151,14 +155,28 @@ const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
   'volumeBucket',
   'streakShortMode',
   'streakLongMode',
+  'longScore5d',
+  'longScore5dRank',
   'intradayScore',
   'intradayLongRank',
   'intradayShortRank',
+  'openToClose5dReturn',
   'nextSessionIntradayReturn',
   'volumeSma5_20',
   'currentPrice',
   'sector33Name',
   'volume',
+];
+const TOPIX100_SWING_ONLY_SORT_KEYS: Topix100RankingSortKey[] = [
+  'longScore5d',
+  'longScore5dRank',
+  'openToClose5dReturn',
+];
+const TOPIX100_INTRADAY_ONLY_SORT_KEYS: Topix100RankingSortKey[] = [
+  'intradayScore',
+  'intradayLongRank',
+  'intradayShortRank',
+  'nextSessionIntradayReturn',
 ];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = [
@@ -259,6 +277,10 @@ function normalizeTopix100PriceBucketFilter(value: unknown): Topix100PriceBucket
   return normalizeEnum(normalized, TOPIX100_PRICE_BUCKET_VALUES);
 }
 
+function normalizeTopix100StudyMode(value: unknown): Topix100StudyMode | undefined {
+  return normalizeEnum(normalizeString(value), TOPIX100_STUDY_MODE_VALUES);
+}
+
 function normalizeTopix100RankingMetric(value: unknown): Topix100RankingMetric | undefined {
   const normalized = normalizeString(value);
   if (normalized === LEGACY_TOPIX100_RANKING_METRIC) {
@@ -285,12 +307,33 @@ function normalizeTopix100StreakModeFilter(value: unknown): Topix100StreakModeFi
 function normalizeTopix100RankingSortKey(value: unknown): Topix100RankingSortKey | undefined {
   const normalized = normalizeString(value);
   if (normalized === 'longScore5d') {
-    return 'intradayLongRank';
+    return 'longScore5d';
   }
   if (normalized === 'shortScore1d') {
     return 'intradayShortRank';
   }
   return normalizeEnum(normalized, TOPIX100_RANKING_SORT_KEY_VALUES);
+}
+
+function resolveTopix100DefaultSortBy(studyMode: Topix100StudyMode | undefined): Topix100RankingSortKey {
+  return studyMode === 'intraday' ? 'intradayScore' : 'longScore5d';
+}
+
+function normalizeTopix100SortByForStudyMode(
+  sortBy: Topix100RankingSortKey | undefined,
+  studyMode: Topix100StudyMode | undefined
+): Topix100RankingSortKey {
+  const resolvedStudyMode = studyMode ?? DEFAULT_RANKING_PARAMS.topix100StudyMode;
+  if (!sortBy) {
+    return resolveTopix100DefaultSortBy(resolvedStudyMode);
+  }
+  if (resolvedStudyMode === 'intraday' && TOPIX100_SWING_ONLY_SORT_KEYS.includes(sortBy)) {
+    return 'intradayScore';
+  }
+  if (resolvedStudyMode === 'swing_5d' && TOPIX100_INTRADAY_ONLY_SORT_KEYS.includes(sortBy)) {
+    return 'longScore5d';
+  }
+  return sortBy;
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {
@@ -554,6 +597,7 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTopix100StudyMode', normalizeTopix100StudyMode(search.rankingTopix100StudyMode));
   const topix100MetricWindow = normalizeTopix100MetricWindowPair(
     search.rankingTopix100Metric,
     search.rankingTopix100SmaWindow
@@ -597,6 +641,27 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
+  const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
+    ['date', search.rankingDate],
+    ['limit', search.rankingLimit],
+    ['markets', search.rankingMarkets],
+    ['lookbackDays', search.rankingLookbackDays],
+    ['periodDays', search.rankingPeriodDays],
+    ['topix100StudyMode', search.rankingTopix100StudyMode],
+    ['topix100Metric', search.rankingTopix100Metric],
+    ['topix100SmaWindow', search.rankingTopix100SmaWindow],
+    ['topix100PriceBucket', search.rankingTopix100PriceBucket],
+    ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
+    ['topix100ShortMode', search.rankingTopix100ShortMode],
+    ['topix100LongMode', search.rankingTopix100LongMode],
+    ['topix100SortBy', search.rankingTopix100SortBy],
+    ['topix100SortOrder', search.rankingTopix100SortOrder],
+  ]);
+  rankingParams.topix100SortBy = normalizeTopix100SortByForStudyMode(
+    rankingParams.topix100SortBy,
+    rankingParams.topix100StudyMode
+  );
+
   return {
     activeSubTab: search.tab ?? 'preOpenScreening',
     preOpenScreeningParams: assignSearchParams({ ...DEFAULT_PRE_OPEN_SCREENING_PARAMS }, [
@@ -617,21 +682,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
       ['order', search.inSessionOrder],
       ['limit', search.inSessionLimit],
     ]),
-    rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
-      ['date', search.rankingDate],
-      ['limit', search.rankingLimit],
-      ['markets', search.rankingMarkets],
-      ['lookbackDays', search.rankingLookbackDays],
-      ['periodDays', search.rankingPeriodDays],
-      ['topix100Metric', search.rankingTopix100Metric],
-      ['topix100SmaWindow', search.rankingTopix100SmaWindow],
-      ['topix100PriceBucket', search.rankingTopix100PriceBucket],
-      ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
-      ['topix100ShortMode', search.rankingTopix100ShortMode],
-      ['topix100LongMode', search.rankingTopix100LongMode],
-      ['topix100SortBy', search.rankingTopix100SortBy],
-      ['topix100SortOrder', search.rankingTopix100SortOrder],
-    ]),
+    rankingParams,
     fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
       ['limit', search.fundamentalLimit],
       ['markets', search.fundamentalMarkets],
@@ -647,24 +698,31 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
+  const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
+    ['date', search.rankingDate],
+    ['limit', search.rankingLimit],
+    ['markets', search.rankingMarkets],
+    ['lookbackDays', search.rankingLookbackDays],
+    ['periodDays', search.rankingPeriodDays],
+    ['topix100StudyMode', search.rankingTopix100StudyMode],
+    ['topix100Metric', search.rankingTopix100Metric],
+    ['topix100SmaWindow', search.rankingTopix100SmaWindow],
+    ['topix100PriceBucket', search.rankingTopix100PriceBucket],
+    ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
+    ['topix100ShortMode', search.rankingTopix100ShortMode],
+    ['topix100LongMode', search.rankingTopix100LongMode],
+    ['topix100SortBy', search.rankingTopix100SortBy],
+    ['topix100SortOrder', search.rankingTopix100SortOrder],
+  ]);
+  rankingParams.topix100SortBy = normalizeTopix100SortByForStudyMode(
+    rankingParams.topix100SortBy,
+    rankingParams.topix100StudyMode
+  );
+
   return {
     activeSubTab: search.tab ?? 'ranking',
     activeDailyView: search.dailyView ?? 'stocks',
-    rankingParams: assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
-      ['date', search.rankingDate],
-      ['limit', search.rankingLimit],
-      ['markets', search.rankingMarkets],
-      ['lookbackDays', search.rankingLookbackDays],
-      ['periodDays', search.rankingPeriodDays],
-      ['topix100Metric', search.rankingTopix100Metric],
-      ['topix100SmaWindow', search.rankingTopix100SmaWindow],
-      ['topix100PriceBucket', search.rankingTopix100PriceBucket],
-      ['topix100VolumeBucket', search.rankingTopix100VolumeBucket],
-      ['topix100ShortMode', search.rankingTopix100ShortMode],
-      ['topix100LongMode', search.rankingTopix100LongMode],
-      ['topix100SortBy', search.rankingTopix100SortBy],
-      ['topix100SortOrder', search.rankingTopix100SortOrder],
-    ]),
+    rankingParams,
     fundamentalRankingParams: assignSearchParams({ ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS }, [
       ['limit', search.fundamentalLimit],
       ['markets', search.fundamentalMarkets],
@@ -794,6 +852,12 @@ export function serializeScreeningSearch(state: {
   );
   assignIfDefinedAndNotDefault(
     next,
+    'rankingTopix100StudyMode',
+    state.rankingParams.topix100StudyMode,
+    DEFAULT_RANKING_PARAMS.topix100StudyMode
+  );
+  assignIfDefinedAndNotDefault(
+    next,
     'rankingTopix100Metric',
     state.rankingParams.topix100Metric,
     DEFAULT_RANKING_PARAMS.topix100Metric
@@ -832,7 +896,7 @@ export function serializeScreeningSearch(state: {
     next,
     'rankingTopix100SortBy',
     state.rankingParams.topix100SortBy,
-    DEFAULT_RANKING_PARAMS.topix100SortBy
+    resolveTopix100DefaultSortBy(state.rankingParams.topix100StudyMode)
   );
   assignIfDefinedAndNotDefault(
     next,
@@ -881,6 +945,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTopix100StudyMode', normalizeTopix100StudyMode(search.rankingTopix100StudyMode));
   const topix100MetricWindow = normalizeTopix100MetricWindowPair(
     search.rankingTopix100Metric,
     search.rankingTopix100SmaWindow
@@ -954,6 +1019,12 @@ export function serializeRankingSearch(state: {
   );
   assignIfDefinedAndNotDefault(
     next,
+    'rankingTopix100StudyMode',
+    state.rankingParams.topix100StudyMode,
+    DEFAULT_RANKING_PARAMS.topix100StudyMode
+  );
+  assignIfDefinedAndNotDefault(
+    next,
     'rankingTopix100Metric',
     state.rankingParams.topix100Metric,
     DEFAULT_RANKING_PARAMS.topix100Metric
@@ -992,7 +1063,7 @@ export function serializeRankingSearch(state: {
     next,
     'rankingTopix100SortBy',
     state.rankingParams.topix100SortBy,
-    DEFAULT_RANKING_PARAMS.topix100SortBy
+    resolveTopix100DefaultSortBy(state.rankingParams.topix100StudyMode)
   );
   assignIfDefinedAndNotDefault(
     next,

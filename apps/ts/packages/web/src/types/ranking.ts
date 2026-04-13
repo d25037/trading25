@@ -7,6 +7,7 @@ import type {
   SortOrder,
   Topix100PriceSmaWindow,
   Topix100RankingMetric,
+  Topix100StudyMode,
 } from '@trading25/contracts/types/api-response-types';
 
 export type {
@@ -21,6 +22,7 @@ export type {
   Topix100RankingItem,
   Topix100RankingResponse,
   Topix100StreakMode,
+  Topix100StudyMode,
   Topix100VolumeBucket,
 } from '@trading25/contracts/types/api-response-types';
 
@@ -39,9 +41,12 @@ export type Topix100RankingSortKey =
   | 'volumeBucket'
   | 'streakShortMode'
   | 'streakLongMode'
+  | 'longScore5d'
+  | 'longScore5dRank'
   | 'intradayScore'
   | 'intradayLongRank'
   | 'intradayShortRank'
+  | 'openToClose5dReturn'
   | 'nextSessionIntradayReturn'
   | 'volumeSma5_20'
   | 'currentPrice'
@@ -55,6 +60,7 @@ export interface RankingParams {
   markets?: string;
   lookbackDays?: number;
   periodDays?: number;
+  topix100StudyMode?: Topix100StudyMode;
   topix100Metric?: Topix100RankingMetric;
   topix100SmaWindow?: Topix100PriceSmaWindow;
   topix100PriceBucket?: Topix100PriceBucketFilter;

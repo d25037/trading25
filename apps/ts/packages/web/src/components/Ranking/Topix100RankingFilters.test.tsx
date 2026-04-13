@@ -33,6 +33,7 @@ vi.mock('@/components/shared/filters', () => ({
 
 describe('Topix100RankingFilters', () => {
   const defaultParams: RankingParams = {
+    topix100StudyMode: 'swing_5d',
     topix100Metric: 'price_vs_sma_gap',
     topix100SmaWindow: 50,
     topix100PriceBucket: 'all',
@@ -45,10 +46,11 @@ describe('Topix100RankingFilters', () => {
     render(<Topix100RankingFilters params={{}} onChange={vi.fn()} />);
 
     expect(screen.getByText('TOPIX100 SMA Divergence')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open -> 5D Close' })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
       screen.getByText(
-        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. The production score is now decile-only on the discrete side; streak 3/53 states and volume split stay visible as context filters around the next-session intraday LightGBM read.'
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. The snapshot stays leak-free at date X, enters on X+1 open, exits on X+5 close, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();
@@ -60,6 +62,7 @@ describe('Topix100RankingFilters', () => {
     render(
       <Topix100RankingFilters
         params={{
+          topix100StudyMode: 'intraday',
           topix100Metric: 'price_sma_20_80',
           topix100PriceBucket: 'all',
           topix100VolumeBucket: 'all',
@@ -80,6 +83,14 @@ describe('Topix100RankingFilters', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<Topix100RankingFilters params={defaultParams} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'Intraday' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      topix100StudyMode: 'intraday',
+      topix100SortBy: 'intradayScore',
+      topix100SortOrder: 'desc',
+    });
 
     await user.click(screen.getByRole('button', { name: 'SMA Window' }));
     expect(onChange).toHaveBeenLastCalledWith({

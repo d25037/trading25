@@ -15585,6 +15585,17 @@
             ],
             "title": "Nextsessionintradayreturn"
           },
+          "openToClose5dReturn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opentoclose5Dreturn"
+          },
           "priceBucket": {
             "enum": [
               "q1",
@@ -15693,6 +15704,28 @@
             ],
             "title": "Streakstatelabel"
           },
+          "swingEntryDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swingentrydate"
+          },
+          "swingExitDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swingexitdate"
+          },
           "volume": {
             "title": "Volume",
             "type": "number"
@@ -15738,13 +15771,38 @@
       "Topix100RankingResponse": {
         "description": "TOPIX100 SMA ranking response.",
         "properties": {
+          "benchmarkEntryDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmarkentrydate"
+          },
+          "benchmarkExitDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmarkexitdate"
+          },
           "date": {
             "title": "Date",
             "type": "string"
           },
           "intradayScoreTarget": {
-            "const": "next_session_open_close",
             "default": "next_session_open_close",
+            "enum": [
+              "next_session_open_close",
+              "next_session_open_to_close_5d"
+            ],
             "title": "Intradayscoretarget",
             "type": "string"
           },
@@ -15771,6 +15829,29 @@
           "longWindowStreaks": {
             "title": "Longwindowstreaks",
             "type": "integer"
+          },
+          "primaryBenchmark": {
+            "anyOf": [
+              {
+                "const": "topix",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primarybenchmark"
+          },
+          "primaryBenchmarkReturn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primarybenchmarkreturn"
           },
           "rankingMetric": {
             "enum": [
@@ -15860,6 +15941,15 @@
             ],
             "title": "Scorestepdays"
           },
+          "scoreTarget": {
+            "default": "next_session_open_close",
+            "enum": [
+              "next_session_open_close",
+              "next_session_open_to_close_5d"
+            ],
+            "title": "Scoretarget",
+            "type": "string"
+          },
           "scoreTestWindowDays": {
             "anyOf": [
               {
@@ -15882,6 +15972,29 @@
             ],
             "title": "Scoretrainwindowdays"
           },
+          "secondaryBenchmark": {
+            "anyOf": [
+              {
+                "const": "topix100_universe",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondarybenchmark"
+          },
+          "secondaryBenchmarkReturn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondarybenchmarkreturn"
+          },
           "shortScoreHorizonDays": {
             "default": 1,
             "title": "Shortscorehorizondays",
@@ -15899,6 +16012,15 @@
             ],
             "title": "Smawindow",
             "type": "integer"
+          },
+          "studyMode": {
+            "default": "intraday",
+            "enum": [
+              "intraday",
+              "swing_5d"
+            ],
+            "title": "Studymode",
+            "type": "string"
           }
         },
         "required": [
@@ -18508,6 +18630,20 @@
                 }
               ],
               "title": "Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "studyMode",
+            "required": false,
+            "schema": {
+              "default": "intraday",
+              "enum": [
+                "intraday",
+                "swing_5d"
+              ],
+              "title": "Studymode",
+              "type": "string"
             }
           },
           {

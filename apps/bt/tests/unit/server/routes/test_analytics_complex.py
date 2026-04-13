@@ -341,10 +341,12 @@ class TestTopix100Ranking:
         assert resp.status_code == 200
         data = resp.json()
         assert "date" in data
+        assert data["studyMode"] == "intraday"
         assert data["rankingMetric"] == "price_vs_sma_gap"
         assert data["smaWindow"] == 50
         assert data["shortWindowStreaks"] == 3
         assert data["longWindowStreaks"] == 53
+        assert data["scoreTarget"] == "next_session_open_close"
         assert data["intradayScoreTarget"] == "next_session_open_close"
         assert "itemCount" in data
         assert "items" in data
@@ -395,6 +397,69 @@ class TestTopix100Ranking:
         first_item = data["items"][0]
         assert first_item["nextSessionDate"] == "2024-02-21"
         assert first_item["nextSessionIntradayReturn"] is not None
+
+    def test_supports_swing_5d_study_mode(self, analytics_client, monkeypatch):
+        from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
+            Topix100Streak353SignalScoreLightgbmSnapshot,
+            Topix100Streak353SignalScoreLightgbmSnapshotRow,
+        )
+
+        def _score_stub(*args, **kwargs):
+            return Topix100Streak353SignalScoreLightgbmSnapshot(
+                score_source_run_id="route-swing-run",
+                price_feature="price_vs_sma_50_gap",
+                volume_feature="volume_sma_5_20",
+                short_window_streaks=3,
+                long_window_streaks=53,
+                long_target_horizon_days=5,
+                short_target_horizon_days=1,
+                rows_by_code={
+                    "72030": Topix100Streak353SignalScoreLightgbmSnapshotRow(
+                        code="72030",
+                        company_name="トヨタ自動車",
+                        date="2024-02-14",
+                        short_mode="bullish",
+                        long_mode="bullish",
+                        state_key="state_a",
+                        state_label="State A",
+                        long_score_5d=0.012,
+                        short_score_1d=None,
+                    ),
+                    "67580": Topix100Streak353SignalScoreLightgbmSnapshotRow(
+                        code="67580",
+                        company_name="ソニーグループ",
+                        date="2024-02-14",
+                        short_mode="bearish",
+                        long_mode="bullish",
+                        state_key="state_b",
+                        state_label="State B",
+                        long_score_5d=0.008,
+                        short_score_1d=None,
+                    ),
+                },
+            )
+
+        monkeypatch.setattr(
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot",
+            _score_stub,
+        )
+
+        resp = analytics_client.get("/api/analytics/topix100-ranking?date=2024-02-14&studyMode=swing_5d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["studyMode"] == "swing_5d"
+        assert data["scoreTarget"] == "next_session_open_to_close_5d"
+        assert data["primaryBenchmark"] == "topix"
+        assert data["secondaryBenchmark"] == "topix100_universe"
+        assert data["primaryBenchmarkReturn"] is not None
+        assert data["secondaryBenchmarkReturn"] is not None
+        assert data["benchmarkEntryDate"] == "2024-02-15"
+        assert data["benchmarkExitDate"] == "2024-02-21"
+        scored_item = next(item for item in data["items"] if item["longScore5d"] is not None)
+        assert scored_item["longScore5d"] is not None
+        assert scored_item["swingEntryDate"] == "2024-02-15"
+        assert scored_item["swingExitDate"] == "2024-02-21"
+        assert scored_item["openToClose5dReturn"] is not None
 
     def test_422_no_db(self):
         app = create_app()

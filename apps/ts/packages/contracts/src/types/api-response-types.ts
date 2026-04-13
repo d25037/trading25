@@ -62,6 +62,8 @@ export type Topix100VolumeBucket = 'high' | 'low' | null;
 export type Topix100RankingMetric = 'price_vs_sma_gap' | 'price_sma_20_80';
 export type Topix100PriceSmaWindow = 20 | 50 | 100;
 export type Topix100StreakMode = 'bullish' | 'bearish';
+export type Topix100StudyMode = 'intraday' | 'swing_5d';
+export type Topix100ScoreTarget = 'next_session_open_close' | 'next_session_open_to_close_5d';
 
 export interface Topix100RankingItem {
   rank: number;
@@ -91,17 +93,22 @@ export interface Topix100RankingItem {
   intradayShortRank?: number | null;
   nextSessionDate?: string | null;
   nextSessionIntradayReturn?: number | null;
+  swingEntryDate?: string | null;
+  swingExitDate?: string | null;
+  openToClose5dReturn?: number | null;
 }
 
 export interface Topix100RankingResponse {
   date: string;
+  studyMode: Topix100StudyMode;
   rankingMetric: Topix100RankingMetric;
   smaWindow: Topix100PriceSmaWindow;
   shortWindowStreaks: number;
   longWindowStreaks: number;
   longScoreHorizonDays: number;
   shortScoreHorizonDays: number;
-  intradayScoreTarget: 'next_session_open_close';
+  scoreTarget: Topix100ScoreTarget;
+  intradayScoreTarget: Topix100ScoreTarget;
   scoreModelType?: 'walkforward_frozen_split' | 'daily_refit';
   scoreTrainWindowDays?: number | null;
   scoreTestWindowDays?: number | null;
@@ -112,6 +119,12 @@ export interface Topix100RankingResponse {
   scoreSplitTestEnd?: string | null;
   scoreSplitPartialTail?: boolean;
   scoreSourceRunId?: string | null;
+  primaryBenchmark?: 'topix' | null;
+  secondaryBenchmark?: 'topix100_universe' | null;
+  primaryBenchmarkReturn?: number | null;
+  secondaryBenchmarkReturn?: number | null;
+  benchmarkEntryDate?: string | null;
+  benchmarkExitDate?: string | null;
   itemCount: number;
   items: Topix100RankingItem[];
   lastUpdated: string;

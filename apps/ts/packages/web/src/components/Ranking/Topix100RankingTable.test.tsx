@@ -8,12 +8,14 @@ import { Topix100RankingTable } from './Topix100RankingTable';
 function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix100RankingResponse {
   return {
     date: '2026-03-30',
+    studyMode: 'intraday',
     rankingMetric: metric,
     smaWindow: 50,
     shortWindowStreaks: 3,
     longWindowStreaks: 53,
     longScoreHorizonDays: 5,
     shortScoreHorizonDays: 1,
+    scoreTarget: 'next_session_open_close',
     intradayScoreTarget: 'next_session_open_close',
     scoreModelType: 'daily_refit',
     scoreTrainWindowDays: 756,
@@ -25,6 +27,12 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
     scoreSplitTestEnd: null,
     scoreSplitPartialTail: false,
     scoreSourceRunId: '20260406_180623_c0eb7f87',
+    primaryBenchmark: null,
+    secondaryBenchmark: null,
+    primaryBenchmarkReturn: null,
+    secondaryBenchmarkReturn: null,
+    benchmarkEntryDate: null,
+    benchmarkExitDate: null,
     itemCount: 4,
     lastUpdated: '2026-03-30T00:00:00Z',
     items: [
@@ -135,12 +143,14 @@ function createResponse(metric: Topix100RankingResponse['rankingMetric']): Topix
 function createPortfolioSummaryResponse(): Topix100RankingResponse {
   return {
     date: '2026-03-30',
+    studyMode: 'intraday',
     rankingMetric: 'price_vs_sma_gap',
     smaWindow: 50,
     shortWindowStreaks: 3,
     longWindowStreaks: 53,
     longScoreHorizonDays: 5,
     shortScoreHorizonDays: 1,
+    scoreTarget: 'next_session_open_close',
     intradayScoreTarget: 'next_session_open_close',
     scoreModelType: 'daily_refit',
     scoreTrainWindowDays: 756,
@@ -152,6 +162,12 @@ function createPortfolioSummaryResponse(): Topix100RankingResponse {
     scoreSplitTestEnd: null,
     scoreSplitPartialTail: false,
     scoreSourceRunId: '20260406_180623_c0eb7f87',
+    primaryBenchmark: null,
+    secondaryBenchmark: null,
+    primaryBenchmarkReturn: null,
+    secondaryBenchmarkReturn: null,
+    benchmarkEntryDate: null,
+    benchmarkExitDate: null,
     itemCount: 8,
     lastUpdated: '2026-03-30T00:00:00Z',
     items: [
@@ -359,6 +375,30 @@ function createPortfolioSummaryResponse(): Topix100RankingResponse {
   };
 }
 
+function createSwingResponse(): Topix100RankingResponse {
+  const base = createResponse('price_vs_sma_gap');
+  return {
+    ...base,
+    studyMode: 'swing_5d',
+    scoreTarget: 'next_session_open_to_close_5d',
+    intradayScoreTarget: 'next_session_open_to_close_5d',
+    primaryBenchmark: 'topix',
+    secondaryBenchmark: 'topix100_universe',
+    primaryBenchmarkReturn: 0.006,
+    secondaryBenchmarkReturn: 0.004,
+    benchmarkEntryDate: '2026-03-31',
+    benchmarkExitDate: '2026-04-04',
+    items: base.items.map((item, index) => ({
+      ...item,
+      longScore5d: 0.012 - index * 0.002,
+      longScore5dRank: index + 1,
+      swingEntryDate: '2026-03-31',
+      swingExitDate: '2026-04-04',
+      openToClose5dReturn: [0.018, 0.009, 0.007, null][index] ?? null,
+    })),
+  };
+}
+
 describe('Topix100RankingTable', () => {
   it('renders the price / SMA50 gap mode and row clicks', async () => {
     const user = userEvent.setup();
@@ -370,6 +410,7 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={onStockClick}
+        studyMode="intraday"
         rankingMetric="price_vs_sma_gap"
         rankingSmaWindow={50}
         priceBucketFilter="all"
@@ -391,8 +432,8 @@ describe('Topix100RankingTable', () => {
     expect(
       screen.getByText('Score = daily fresh-fit LightGBM (trailing 756 signal days, cadence 1)')
     ).toBeInTheDocument();
-    expect(screen.getByText('Train = 2023-01-04 → 2025-12-30')).toBeInTheDocument();
-    expect(screen.getByText('Realized = next available open → close when present')).toBeInTheDocument();
+    expect(screen.getByText('Train = 2023-01-04 -> 2025-12-30')).toBeInTheDocument();
+    expect(screen.getByText('Realized = next available open -> close when present')).toBeInTheDocument();
     expect(screen.getByText('+12.00%')).toBeInTheDocument();
     expect(screen.getByText('+1.25%')).toBeInTheDocument();
     expect(screen.getByText('+1.10%')).toBeInTheDocument();
@@ -412,6 +453,7 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
+        studyMode="intraday"
         rankingMetric="price_vs_sma_gap"
         rankingSmaWindow={50}
         priceBucketFilter="q10"
@@ -440,6 +482,7 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
+        studyMode="intraday"
         rankingMetric="price_vs_sma_gap"
         rankingSmaWindow={50}
         priceBucketFilter="all"
@@ -464,6 +507,7 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
+        studyMode="intraday"
         rankingMetric="price_vs_sma_gap"
         rankingSmaWindow={50}
         priceBucketFilter="q1"
@@ -492,6 +536,7 @@ describe('Topix100RankingTable', () => {
           isLoading={false}
           error={null}
           onStockClick={vi.fn()}
+          studyMode="intraday"
           rankingMetric="price_vs_sma_gap"
           rankingSmaWindow={50}
           priceBucketFilter="all"
@@ -528,6 +573,7 @@ describe('Topix100RankingTable', () => {
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
+        studyMode="intraday"
         rankingMetric="price_vs_sma_gap"
         rankingSmaWindow={50}
         priceBucketFilter="all"
@@ -550,5 +596,36 @@ describe('Topix100RankingTable', () => {
     expect(screen.getByText('S1')).toBeInTheDocument();
     expect(screen.getByText('-0.07%')).toBeInTheDocument();
     expect(screen.getByText('long -0.17% | short edge +0.03% | gross -0.13% | 2026-03-31')).toBeInTheDocument();
+  });
+
+  it('renders swing summary versus TOPIX and TOPIX100 universe', () => {
+    render(
+      <Topix100RankingTable
+        data={createSwingResponse()}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        studyMode="swing_5d"
+        rankingMetric="price_vs_sma_gap"
+        rankingSmaWindow={50}
+        priceBucketFilter="all"
+        volumeBucketFilter="all"
+        shortModeFilter="all"
+        longModeFilter="all"
+        sortBy="longScore5d"
+        sortOrder="desc"
+        onSortChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('KPI = vs TOPIX')).toBeInTheDocument();
+    expect(screen.getByText('Check = vs TOPIX100 EW')).toBeInTheDocument();
+    expect(screen.getByText('Realized = next available open -> 5th close when present')).toBeInTheDocument();
+    expect(screen.getByText('Swing Summary')).toBeInTheDocument();
+    expect(screen.getByText('Top 1')).toBeInTheDocument();
+    expect(screen.getAllByText('+1.20%').length).toBeGreaterThan(0);
+    expect(screen.getByText('raw +1.80% | vs TOPIX100 EW +1.40% | 2026-03-31 -> 2026-04-04')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /5D Score/i })).toBeInTheDocument();
+    expect(screen.getAllByText('2026-03-31 -> 2026-04-04').length).toBeGreaterThan(0);
   });
 });

@@ -9,6 +9,7 @@ import type {
   Topix100RankingMetric,
   Topix100RankingResponse,
   Topix100StreakModeFilter,
+  Topix100StudyMode,
   Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import { formatPriceJPY, formatRate, formatVolume, formatVolumeRatio } from '@/utils/formatters';
@@ -22,6 +23,7 @@ interface Topix100RankingTableProps {
   isLoading: boolean;
   error: Error | null;
   onStockClick: (code: string) => void;
+  studyMode: Topix100StudyMode;
   rankingMetric: Topix100RankingMetric;
   rankingSmaWindow: Topix100PriceSmaWindow;
   priceBucketFilter: Topix100PriceBucketFilter;
@@ -33,7 +35,7 @@ interface Topix100RankingTableProps {
   onSortChange: (sortBy: Topix100RankingSortKey, sortOrder: SortOrder) => void;
 }
 
-interface SnapshotPortfolioSummary {
+interface IntradaySnapshotSummary {
   topK: number;
   longReturnMean: number;
   shortEdgeMean: number;
@@ -42,12 +44,22 @@ interface SnapshotPortfolioSummary {
   realizedDateLabel: string;
 }
 
+interface SwingSnapshotSummary {
+  topK: number;
+  selectedReturnMean: number;
+  excessVsTopix: number | null;
+  excessVsUniverse: number | null;
+  entryDateLabel: string;
+  exitDateLabel: string;
+}
+
 interface SnapshotBookRole {
   side: 'long' | 'short';
   rank: number;
 }
 
 interface RuntimeMetaSummary {
+  studyMode: Topix100StudyMode;
   metricLabel: string;
   studyReadItems: string[];
   runtimeLabel: string;
@@ -89,7 +101,14 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
   return 'bg-muted text-muted-foreground';
 }
 
-function getStudyReadItems(metric: Topix100RankingMetric): string[] {
+function getStudyReadItems(metric: Topix100RankingMetric, studyMode: Topix100StudyMode): string[] {
+  if (studyMode === 'swing_5d') {
+    if (metric === 'price_vs_sma_gap') {
+      return ['KPI = vs TOPIX', 'Check = vs TOPIX100 EW', 'Entry = X+1 open', 'Exit = X+5 close'];
+    }
+    return ['Legacy metric', 'KPI = vs TOPIX', 'Check = vs TOPIX100 EW'];
+  }
+
   if (metric === 'price_vs_sma_gap') {
     return ['Q10 = below SMA', 'Q2-4 = trough', 'Decile-only score', 'Volume/state = context'];
   }
@@ -108,9 +127,21 @@ function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function compareByScoreDesc(left: Topix100RankingItem, right: Topix100RankingItem): number {
-  const leftScore = left.intradayScore;
-  const rightScore = right.intradayScore;
+function resolveStudyScore(item: Topix100RankingItem, studyMode: Topix100StudyMode): number | null | undefined {
+  return studyMode === 'swing_5d' ? item.longScore5d : item.intradayScore;
+}
+
+function resolveStudyReturn(item: Topix100RankingItem, studyMode: Topix100StudyMode): number | null | undefined {
+  return studyMode === 'swing_5d' ? item.openToClose5dReturn : item.nextSessionIntradayReturn;
+}
+
+function compareByScoreDesc(
+  left: Topix100RankingItem,
+  right: Topix100RankingItem,
+  studyMode: Topix100StudyMode
+): number {
+  const leftScore = resolveStudyScore(left, studyMode);
+  const rightScore = resolveStudyScore(right, studyMode);
   if (!isFiniteNumber(leftScore) && !isFiniteNumber(rightScore)) return left.code.localeCompare(right.code);
   if (!isFiniteNumber(leftScore)) return 1;
   if (!isFiniteNumber(rightScore)) return -1;
@@ -118,9 +149,13 @@ function compareByScoreDesc(left: Topix100RankingItem, right: Topix100RankingIte
   return left.code.localeCompare(right.code);
 }
 
-function compareByScoreAsc(left: Topix100RankingItem, right: Topix100RankingItem): number {
-  const leftScore = left.intradayScore;
-  const rightScore = right.intradayScore;
+function compareByScoreAsc(
+  left: Topix100RankingItem,
+  right: Topix100RankingItem,
+  studyMode: Topix100StudyMode
+): number {
+  const leftScore = resolveStudyScore(left, studyMode);
+  const rightScore = resolveStudyScore(right, studyMode);
   if (!isFiniteNumber(leftScore) && !isFiniteNumber(rightScore)) return left.code.localeCompare(right.code);
   if (!isFiniteNumber(leftScore)) return 1;
   if (!isFiniteNumber(rightScore)) return -1;
@@ -128,31 +163,33 @@ function compareByScoreAsc(left: Topix100RankingItem, right: Topix100RankingItem
   return left.code.localeCompare(right.code);
 }
 
-function summarizeRealizedDateLabel(items: Topix100RankingItem[]): string {
-  const dates = items
-    .map((item) => item.nextSessionDate?.trim())
-    .filter((value): value is string => Boolean(value));
+function summarizeSingleDateLabel(values: Array<string | null | undefined>): string {
+  const dates = values.map((value) => value?.trim()).filter((value): value is string => Boolean(value));
   if (dates.length === 0) {
-    return 'No realized date';
+    return '-';
   }
   const uniqueDates = [...new Set(dates)];
-  return uniqueDates.length === 1 ? (uniqueDates[0] ?? 'No realized date') : 'Mixed realized dates';
+  return uniqueDates.length === 1 ? (uniqueDates[0] ?? '-') : 'Mixed dates';
 }
 
-function getEligibleSnapshotItems(items: Topix100RankingItem[]): Topix100RankingItem[] {
+function getEligibleIntradayItems(items: Topix100RankingItem[]): Topix100RankingItem[] {
   return items.filter(
     (item) => isFiniteNumber(item.intradayScore) && isFiniteNumber(item.nextSessionIntradayReturn)
   );
 }
 
-function buildSnapshotPortfolioSummaries(items: Topix100RankingItem[]): SnapshotPortfolioSummary[] {
-  const eligibleItems = getEligibleSnapshotItems(items);
+function getEligibleSwingItems(items: Topix100RankingItem[]): Topix100RankingItem[] {
+  return items.filter((item) => isFiniteNumber(item.longScore5d) && isFiniteNumber(item.openToClose5dReturn));
+}
+
+function buildIntradayPortfolioSummaries(items: Topix100RankingItem[]): IntradaySnapshotSummary[] {
+  const eligibleItems = getEligibleIntradayItems(items);
   if (eligibleItems.length === 0) {
     return [];
   }
 
-  const longSorted = [...eligibleItems].sort(compareByScoreDesc);
-  const shortSorted = [...eligibleItems].sort(compareByScoreAsc);
+  const longSorted = [...eligibleItems].sort((left, right) => compareByScoreDesc(left, right, 'intraday'));
+  const shortSorted = [...eligibleItems].sort((left, right) => compareByScoreAsc(left, right, 'intraday'));
 
   return SNAPSHOT_SUMMARY_TOP_K_VALUES.flatMap((topK) => {
     if (eligibleItems.length < topK * 2) {
@@ -179,20 +216,52 @@ function buildSnapshotPortfolioSummaries(items: Topix100RankingItem[]): Snapshot
         shortEdgeMean,
         grossEdge,
         pairReturn: grossEdge / 2,
-        realizedDateLabel: summarizeRealizedDateLabel([...longItems, ...shortItems]),
+        realizedDateLabel: summarizeSingleDateLabel([...longItems, ...shortItems].map((item) => item.nextSessionDate)),
+      },
+    ];
+  });
+}
+
+function buildSwingPortfolioSummaries(data: Topix100RankingResponse | undefined): SwingSnapshotSummary[] {
+  const eligibleItems = getEligibleSwingItems(data?.items ?? []);
+  if (eligibleItems.length === 0) {
+    return [];
+  }
+
+  const benchmarkTopix = isFiniteNumber(data?.primaryBenchmarkReturn) ? data.primaryBenchmarkReturn : null;
+  const benchmarkUniverse = isFiniteNumber(data?.secondaryBenchmarkReturn) ? data.secondaryBenchmarkReturn : null;
+  const sorted = [...eligibleItems].sort((left, right) => compareByScoreDesc(left, right, 'swing_5d'));
+
+  return SNAPSHOT_SUMMARY_TOP_K_VALUES.flatMap((topK) => {
+    if (eligibleItems.length < topK) {
+      return [];
+    }
+
+    const selectedItems = sorted.slice(0, topK);
+    const selectedReturnMean =
+      selectedItems.reduce((sum, item) => sum + (item.openToClose5dReturn ?? 0), 0) / topK;
+
+    return [
+      {
+        topK,
+        selectedReturnMean,
+        excessVsTopix: benchmarkTopix !== null ? selectedReturnMean - benchmarkTopix : null,
+        excessVsUniverse: benchmarkUniverse !== null ? selectedReturnMean - benchmarkUniverse : null,
+        entryDateLabel: summarizeSingleDateLabel(selectedItems.map((item) => item.swingEntryDate)),
+        exitDateLabel: summarizeSingleDateLabel(selectedItems.map((item) => item.swingExitDate)),
       },
     ];
   });
 }
 
 function buildSnapshotBookRoleMap(items: Topix100RankingItem[], topK: number): Map<string, SnapshotBookRole> {
-  const eligibleItems = getEligibleSnapshotItems(items);
+  const eligibleItems = getEligibleIntradayItems(items);
   if (eligibleItems.length < topK * 2) {
     return new Map();
   }
 
-  const longItems = [...eligibleItems].sort(compareByScoreDesc).slice(0, topK);
-  const shortItems = [...eligibleItems].sort(compareByScoreAsc).slice(0, topK);
+  const longItems = [...eligibleItems].sort((left, right) => compareByScoreDesc(left, right, 'intraday')).slice(0, topK);
+  const shortItems = [...eligibleItems].sort((left, right) => compareByScoreAsc(left, right, 'intraday')).slice(0, topK);
   const distinctCodes = new Set([...longItems, ...shortItems].map((item) => item.code));
   if (distinctCodes.size < topK * 2) {
     return new Map();
@@ -215,10 +284,7 @@ function formatSnapshotBookRole(role: SnapshotBookRole | undefined): string {
   return `${role.side === 'long' ? 'L' : 'S'}${role.rank}`;
 }
 
-function resolveSnapshotBookEdge(
-  item: Topix100RankingItem,
-  role: SnapshotBookRole | undefined
-): number | null {
+function resolveSnapshotBookEdge(item: Topix100RankingItem, role: SnapshotBookRole | undefined): number | null {
   if (!role || !isFiniteNumber(item.nextSessionIntradayReturn)) {
     return null;
   }
@@ -232,7 +298,7 @@ function buildRuntimeWindowLabel(
 ): string {
   if (isDailyRefit) {
     if (data?.scoreSplitTrainStart && data?.scoreSplitTrainEnd) {
-      return `Train = ${data.scoreSplitTrainStart} → ${data.scoreSplitTrainEnd}`;
+      return `Train = ${data.scoreSplitTrainStart} -> ${data.scoreSplitTrainEnd}`;
     }
     return `Train = trailing ${scoreTrainWindowDays} signal days`;
   }
@@ -243,19 +309,23 @@ function buildRuntimeWindowLabel(
     data?.scoreSplitTestStart &&
     data?.scoreSplitTestEnd
   ) {
-    return `Split = train ${data.scoreSplitTrainStart} → ${data.scoreSplitTrainEnd} | test ${data.scoreSplitTestStart} → ${data.scoreSplitTestEnd}${data.scoreSplitPartialTail ? ' (partial tail)' : ''}`;
+    return `Split = train ${data.scoreSplitTrainStart} -> ${data.scoreSplitTrainEnd} | test ${data.scoreSplitTestStart} -> ${data.scoreSplitTestEnd}${data.scoreSplitPartialTail ? ' (partial tail)' : ''}`;
   }
 
   return 'Split = unavailable';
 }
 
 function buildRuntimeScoreLabel(
+  studyMode: Topix100StudyMode,
   isDailyRefit: boolean,
   scoreTrainWindowDays: number,
   scoreTestWindowDays: number,
   scoreStepDays: number
 ): string {
   if (isDailyRefit) {
+    if (studyMode === 'swing_5d') {
+      return `Score = daily fresh-fit LightGBM (trailing ${scoreTrainWindowDays} signal days)`;
+    }
     return `Score = daily fresh-fit LightGBM (trailing ${scoreTrainWindowDays} signal days, cadence 1)`;
   }
   return `Score = walk-forward frozen LightGBM (train ${scoreTrainWindowDays} / test ${scoreTestWindowDays} / step ${scoreStepDays})`;
@@ -264,8 +334,10 @@ function buildRuntimeScoreLabel(
 function buildRuntimeMetaSummary(
   data: Topix100RankingResponse | undefined,
   rankingMetric: Topix100RankingMetric,
-  rankingSmaWindow: 20 | 50 | 100
+  rankingSmaWindow: 20 | 50 | 100,
+  studyMode: Topix100StudyMode
 ): RuntimeMetaSummary {
+  const effectiveStudyMode = data?.studyMode ?? studyMode;
   const effectiveMetric = data?.rankingMetric ?? rankingMetric;
   const effectiveSmaWindow = data?.smaWindow ?? rankingSmaWindow;
   const scoreTrainWindowDays = data?.scoreTrainWindowDays ?? 756;
@@ -274,9 +346,16 @@ function buildRuntimeMetaSummary(
   const isDailyRefit = data?.scoreModelType === 'daily_refit';
 
   return {
+    studyMode: effectiveStudyMode,
     metricLabel: getTopix100RankingMetricLabel(effectiveMetric, effectiveSmaWindow),
-    studyReadItems: getStudyReadItems(effectiveMetric),
-    runtimeLabel: buildRuntimeScoreLabel(isDailyRefit, scoreTrainWindowDays, scoreTestWindowDays, scoreStepDays),
+    studyReadItems: getStudyReadItems(effectiveMetric, effectiveStudyMode),
+    runtimeLabel: buildRuntimeScoreLabel(
+      effectiveStudyMode,
+      isDailyRefit,
+      scoreTrainWindowDays,
+      scoreTestWindowDays,
+      scoreStepDays
+    ),
     windowLabel: buildRuntimeWindowLabel(data, isDailyRefit, scoreTrainWindowDays),
   };
 }
@@ -290,6 +369,11 @@ function Topix100ResultsHeader({
   data: Topix100RankingResponse | undefined;
   runtimeMeta: RuntimeMetaSummary;
 }) {
+  const realizedLabel =
+    runtimeMeta.studyMode === 'swing_5d'
+      ? 'Realized = next available open -> 5th close when present'
+      : 'Realized = next available open -> close when present';
+
   return (
     <div className="space-y-1 border-b border-border/70 px-4 py-2">
       <SectionEyebrow>Results</SectionEyebrow>
@@ -310,7 +394,7 @@ function Topix100ResultsHeader({
           </span>
           <span>{runtimeMeta.runtimeLabel}</span>
           <span>{runtimeMeta.windowLabel}</span>
-          <span>Realized = next available open → close when present</span>
+          <span>{realizedLabel}</span>
           <span>{data?.date ?? '-'}</span>
         </div>
       </div>
@@ -318,10 +402,15 @@ function Topix100ResultsHeader({
   );
 }
 
-function Topix100SnapshotBooksSection({ snapshotSummaries }: { snapshotSummaries: SnapshotPortfolioSummary[] }) {
+function Topix100IntradaySnapshotBooksSection({
+  snapshotSummaries,
+}: {
+  snapshotSummaries: IntradaySnapshotSummary[];
+}) {
   if (snapshotSummaries.length === 0) {
     return null;
   }
+
   return (
     <div className="border-b border-border/70 px-4 py-3">
       <div className="flex items-center justify-between gap-3">
@@ -349,8 +438,49 @@ function Topix100SnapshotBooksSection({ snapshotSummaries }: { snapshotSummaries
   );
 }
 
+function Topix100SwingSummarySection({ summaries }: { summaries: SwingSnapshotSummary[] }) {
+  if (summaries.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-b border-border/70 px-4 py-3">
+      <div className="space-y-1">
+        <SectionEyebrow>Swing Summary</SectionEyebrow>
+        <p className="text-xs text-muted-foreground">
+          Top-K long books scored on the X-date snapshot, entered on X+1 open, and closed on X+5 close.
+        </p>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        {summaries.map((summary) => {
+          const primaryValue = summary.excessVsTopix ?? summary.selectedReturnMean;
+          return (
+            <CompactMetric
+              key={summary.topK}
+              label={`Top ${summary.topK}`}
+              value={formatScore(primaryValue)}
+              detail={`raw ${formatScore(summary.selectedReturnMean)} | vs TOPIX100 EW ${formatScore(summary.excessVsUniverse)} | ${summary.entryDateLabel} -> ${summary.exitDateLabel}`}
+              tone={primaryValue > 0 ? 'success' : primaryValue < 0 ? 'danger' : 'neutral'}
+              className="p-3"
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function resolveScoreLabel(studyMode: Topix100StudyMode): string {
+  return studyMode === 'swing_5d' ? '5D Score' : 'ID Score';
+}
+
+function resolveReturnLabel(studyMode: Topix100StudyMode): string {
+  return studyMode === 'swing_5d' ? '5D Ret' : 'Next Ret';
+}
+
 function Topix100RankingDataTable({
   items,
+  studyMode,
   effectiveMetric,
   metricLabel,
   sortBy,
@@ -361,6 +491,7 @@ function Topix100RankingDataTable({
   showSnapshotBookColumns,
 }: {
   items: Topix100RankingItem[];
+  studyMode: Topix100StudyMode;
   effectiveMetric: Topix100RankingMetric;
   metricLabel: string;
   sortBy: Topix100RankingSortKey;
@@ -370,6 +501,10 @@ function Topix100RankingDataTable({
   snapshotBookRoleMap: Map<string, SnapshotBookRole>;
   showSnapshotBookColumns: boolean;
 }) {
+  const scoreSortField: Topix100RankingSortKey = studyMode === 'swing_5d' ? 'longScore5d' : 'intradayScore';
+  const returnSortField: Topix100RankingSortKey =
+    studyMode === 'swing_5d' ? 'openToClose5dReturn' : 'nextSessionIntradayReturn';
+
   return (
     <table className="w-full text-xs">
       <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
@@ -425,8 +560,8 @@ function Topix100RankingDataTable({
             className="w-20 px-2 py-1.5 text-left"
           />
           <SortableHeader
-            label="ID Score"
-            sortField="intradayScore"
+            label={resolveScoreLabel(studyMode)}
+            sortField={scoreSortField}
             activeSortBy={sortBy}
             activeSortOrder={sortOrder}
             onSortChange={onSortChange}
@@ -440,8 +575,8 @@ function Topix100RankingDataTable({
             </>
           ) : null}
           <SortableHeader
-            label="Next Ret"
-            sortField="nextSessionIntradayReturn"
+            label={resolveReturnLabel(studyMode)}
+            sortField={returnSortField}
             activeSortBy={sortBy}
             activeSortOrder={sortOrder}
             onSortChange={onSortChange}
@@ -515,7 +650,7 @@ function Topix100RankingDataTable({
                 {item.streakLongMode ? getTopix100StreakModeLabel(item.streakLongMode) : '-'}
               </span>
             </td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{formatScore(item.intradayScore)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{formatScore(resolveStudyScore(item, studyMode))}</td>
             {showSnapshotBookColumns ? (
               <>
                 <td className="px-2 py-1.5 font-medium tabular-nums">
@@ -527,8 +662,12 @@ function Topix100RankingDataTable({
               </>
             ) : null}
             <td className="px-2 py-1.5 text-right tabular-nums">
-              <div>{formatScore(item.nextSessionIntradayReturn)}</div>
-              <div className="text-[10px] text-muted-foreground">{item.nextSessionDate ?? '-'}</div>
+              <div>{formatScore(resolveStudyReturn(item, studyMode))}</div>
+              <div className="text-[10px] text-muted-foreground">
+                {studyMode === 'swing_5d'
+                  ? `${item.swingEntryDate ?? '-'} -> ${item.swingExitDate ?? '-'}`
+                  : item.nextSessionDate ?? '-'}
+              </div>
             </td>
             <td className="px-2 py-1.5 text-right tabular-nums">{formatVolumeRatio(item.volumeSma5_20)}</td>
             <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
@@ -550,6 +689,7 @@ function getDefaultSortOrder(sortBy: Topix100RankingSortKey): SortOrder {
     case 'volumeBucket':
     case 'streakShortMode':
     case 'streakLongMode':
+    case 'longScore5dRank':
     case 'intradayLongRank':
     case 'intradayShortRank':
     case 'sector33Name':
@@ -624,18 +764,20 @@ function compareItems(
       return compareNullableStrings(left.streakShortMode, right.streakShortMode, sortOrder);
     case 'streakLongMode':
       return compareNullableStrings(left.streakLongMode, right.streakLongMode, sortOrder);
+    case 'longScore5d':
+      return compareNullableNumbers(left.longScore5d, right.longScore5d, sortOrder);
+    case 'longScore5dRank':
+      return compareNullableNumbers(left.longScore5dRank, right.longScore5dRank, sortOrder);
     case 'intradayScore':
       return compareNullableNumbers(left.intradayScore, right.intradayScore, sortOrder);
     case 'intradayLongRank':
       return compareNullableNumbers(left.intradayLongRank, right.intradayLongRank, sortOrder);
     case 'intradayShortRank':
       return compareNullableNumbers(left.intradayShortRank, right.intradayShortRank, sortOrder);
+    case 'openToClose5dReturn':
+      return compareNullableNumbers(left.openToClose5dReturn, right.openToClose5dReturn, sortOrder);
     case 'nextSessionIntradayReturn':
-      return compareNullableNumbers(
-        left.nextSessionIntradayReturn,
-        right.nextSessionIntradayReturn,
-        sortOrder
-      );
+      return compareNullableNumbers(left.nextSessionIntradayReturn, right.nextSessionIntradayReturn, sortOrder);
     case 'volumeSma5_20':
       return compareNullableNumbers(left.volumeSma5_20, right.volumeSma5_20, sortOrder);
     case 'currentPrice':
@@ -718,6 +860,7 @@ export function Topix100RankingTable({
   isLoading,
   error,
   onStockClick,
+  studyMode,
   rankingMetric,
   rankingSmaWindow,
   priceBucketFilter,
@@ -728,20 +871,28 @@ export function Topix100RankingTable({
   sortOrder,
   onSortChange,
 }: Topix100RankingTableProps) {
-  const snapshotSummaries = buildSnapshotPortfolioSummaries(data?.items ?? []);
-  const snapshotBookRoleMap = buildSnapshotBookRoleMap(data?.items ?? [], SNAPSHOT_BOOK_TOP_K);
-  const showSnapshotBookColumns = snapshotBookRoleMap.size > 0;
+  const effectiveStudyMode = data?.studyMode ?? studyMode;
+  const intradaySummaries =
+    effectiveStudyMode === 'intraday' ? buildIntradayPortfolioSummaries(data?.items ?? []) : [];
+  const swingSummaries = effectiveStudyMode === 'swing_5d' ? buildSwingPortfolioSummaries(data) : [];
+  const snapshotBookRoleMap =
+    effectiveStudyMode === 'intraday' ? buildSnapshotBookRoleMap(data?.items ?? [], SNAPSHOT_BOOK_TOP_K) : new Map();
+  const showSnapshotBookColumns = effectiveStudyMode === 'intraday' && snapshotBookRoleMap.size > 0;
   const filteredItems = (data?.items ?? []).filter((item) =>
     matchesFilters(item, priceBucketFilter, volumeBucketFilter, shortModeFilter, longModeFilter)
   );
   const effectiveMetric = data?.rankingMetric ?? rankingMetric;
   const items = sortItems(filteredItems, effectiveMetric, sortBy, sortOrder);
-  const runtimeMeta = buildRuntimeMetaSummary(data, rankingMetric, rankingSmaWindow);
+  const runtimeMeta = buildRuntimeMetaSummary(data, rankingMetric, rankingSmaWindow, studyMode);
 
   return (
     <Surface className="flex min-h-[24rem] flex-1 flex-col overflow-hidden">
       <Topix100ResultsHeader itemCount={items.length} data={data} runtimeMeta={runtimeMeta} />
-      <Topix100SnapshotBooksSection snapshotSummaries={snapshotSummaries} />
+      {effectiveStudyMode === 'swing_5d' ? (
+        <Topix100SwingSummarySection summaries={swingSummaries} />
+      ) : (
+        <Topix100IntradaySnapshotBooksSection snapshotSummaries={intradaySummaries} />
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         <DataStateWrapper
@@ -754,6 +905,7 @@ export function Topix100RankingTable({
         >
           <Topix100RankingDataTable
             items={items}
+            studyMode={effectiveStudyMode}
             effectiveMetric={effectiveMetric}
             metricLabel={runtimeMeta.metricLabel}
             sortBy={sortBy}

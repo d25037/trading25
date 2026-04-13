@@ -154,6 +154,7 @@ describe('routeSearch', () => {
       rankingTopix100VolumeBucket: 'low',
       rankingTopix100ShortMode: 'bearish',
       rankingTopix100LongMode: 'bullish',
+      rankingTopix100StudyMode: 'intraday',
       rankingTopix100SortBy: 'longScore5d',
       rankingTopix100SortOrder: 'desc',
       fundamentalMarkets: '0112',
@@ -162,6 +163,9 @@ describe('routeSearch', () => {
     });
 
     const state = getScreeningStateFromSearch(search);
+
+    expect(state.rankingParams.topix100StudyMode).toBe('intraday');
+    expect(state.rankingParams.topix100SortBy).toBe('intradayScore');
 
     expect(serializeScreeningSearch(state)).toEqual({
       rankingMarkets: '0111',
@@ -172,10 +176,26 @@ describe('routeSearch', () => {
       rankingTopix100VolumeBucket: 'low',
       rankingTopix100ShortMode: 'bearish',
       rankingTopix100LongMode: 'bullish',
-      rankingTopix100SortBy: 'intradayLongRank',
+      rankingTopix100StudyMode: 'intraday',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
+    });
+  });
+
+  it('normalizes topix100 default sort when study mode changes through url state', () => {
+    const rankingSearch = validateRankingSearch({
+      dailyView: 'topix100',
+      rankingTopix100StudyMode: 'intraday',
+    });
+
+    const rankingState = getRankingStateFromSearch(rankingSearch);
+
+    expect(rankingState.rankingParams.topix100StudyMode).toBe('intraday');
+    expect(rankingState.rankingParams.topix100SortBy).toBe('intradayScore');
+    expect(serializeRankingSearch(rankingState)).toEqual({
+      dailyView: 'topix100',
+      rankingTopix100StudyMode: 'intraday',
     });
   });
 
@@ -216,6 +236,7 @@ describe('routeSearch', () => {
       dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
+      rankingTopix100StudyMode: 'intraday',
       rankingTopix100Metric: 'price_vs_sma_gap',
       rankingTopix100SmaWindow: '100',
       rankingTopix100PriceBucket: 'q1',
@@ -236,6 +257,7 @@ describe('routeSearch', () => {
       dailyView: 'topix100',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
+      rankingTopix100StudyMode: 'intraday',
       rankingTopix100SmaWindow: 100,
       rankingTopix100PriceBucket: 'q1',
       rankingTopix100VolumeBucket: 'high',
