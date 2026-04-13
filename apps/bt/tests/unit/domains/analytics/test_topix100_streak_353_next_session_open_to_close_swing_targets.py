@@ -18,6 +18,9 @@ from src.domains.analytics.topix100_streak_353_next_session_open_to_close_5d_exc
 from src.domains.analytics.topix100_streak_353_next_session_open_to_close_5d_lightgbm import (
     _build_feature_panel_from_state_event_df as build_feature_panel_from_state_event_df_5d,
 )
+from src.domains.analytics.topix100_streak_353_next_session_open_to_open_5d_lightgbm import (
+    _build_feature_panel_from_state_event_df as build_feature_panel_from_state_event_df_open_to_open_5d,
+)
 
 
 PRICE_FEATURE = "close_to_sma_50"
@@ -55,6 +58,70 @@ def _build_state_panel(day_count: int = 12) -> pd.DataFrame:
                 "sample_split": "discovery" if index < day_count - 2 else "validation",
                 "segment_id": index + 10,
                 "date": date.strftime("%Y-%m-%d"),
+                "segment_return": 0.01 * (index + 1),
+                "segment_day_count": 3,
+                "base_streak_mode": "bullish",
+                "short_mode": "bullish",
+                "long_mode": "bullish",
+                "state_key": "long_bullish__short_bullish",
+                "state_label": "Long Bullish / Short Bullish",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _build_sparse_open_to_open_event_panel() -> pd.DataFrame:
+    calendar = pd.date_range("2020-01-01", periods=10, freq="B").strftime("%Y-%m-%d")
+    rows: list[dict[str, object]] = []
+    for index, date in enumerate(calendar):
+        rows.append(
+            {
+                "date": date,
+                "code": "9999",
+                "company_name": "Calendar Co",
+                "open": 200.0 + index,
+                "high": 201.0 + index,
+                "low": 199.0 + index,
+                "close": 200.5 + index,
+                PRICE_FEATURE: 0.1 + index,
+                VOLUME_FEATURE: 1.0 + index,
+                "date_constituent_count": 100,
+            }
+        )
+        if date != "2020-01-09":
+            rows.append(
+                {
+                    "date": date,
+                    "code": "1332",
+                    "company_name": "Test Co",
+                    "open": 100.0 + index,
+                    "high": 101.0 + index,
+                    "low": 99.0 + index,
+                    "close": 100.5 + index,
+                    PRICE_FEATURE: 0.2 + index,
+                    VOLUME_FEATURE: 1.5 + index,
+                    "date_constituent_count": 100,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _build_sparse_open_to_open_state_panel() -> pd.DataFrame:
+    dates = [
+        date
+        for date in pd.date_range("2020-01-01", periods=10, freq="B").strftime("%Y-%m-%d")
+        if date != "2020-01-09"
+    ]
+    rows: list[dict[str, object]] = []
+    for index, date in enumerate(dates):
+        rows.append(
+            {
+                "state_event_id": index + 1,
+                "code": "1332",
+                "company_name": "Test Co",
+                "sample_split": "discovery",
+                "segment_id": index + 10,
+                "date": date,
                 "segment_return": 0.01 * (index + 1),
                 "segment_day_count": 3,
                 "base_streak_mode": "bullish",
@@ -144,6 +211,32 @@ def test_10d_feature_panel_builds_next_session_open_to_close_target() -> None:
     assert first_row["swing_exit_date"] == "2020-01-15"
     expected = 110.0 / 100.5 - 1.0
     assert first_row["next_session_open_to_close_10d_return"] == pytest.approx(expected)
+
+
+def test_5d_feature_panel_builds_next_session_open_to_open_target() -> None:
+    feature_panel_df = build_feature_panel_from_state_event_df_open_to_open_5d(
+        event_panel_df=_build_event_panel(),
+        state_event_df=_build_state_panel(),
+        price_feature=PRICE_FEATURE,
+        volume_feature=VOLUME_FEATURE,
+    )
+
+    first_row = feature_panel_df.iloc[0]
+    assert first_row["swing_entry_date"] == "2020-01-02"
+    assert first_row["swing_exit_date"] == "2020-01-09"
+    expected = 105.5 / 100.5 - 1.0
+    assert first_row["next_session_open_to_open_5d_return"] == pytest.approx(expected)
+
+
+def test_5d_open_to_open_target_does_not_jump_across_sparse_history() -> None:
+    feature_panel_df = build_feature_panel_from_state_event_df_open_to_open_5d(
+        event_panel_df=_build_sparse_open_to_open_event_panel(),
+        state_event_df=_build_sparse_open_to_open_state_panel(),
+        price_feature=PRICE_FEATURE,
+        volume_feature=VOLUME_FEATURE,
+    )
+
+    assert "2020-01-01" not in feature_panel_df["date"].tolist()
 
 
 def test_excess_baseline_prediction_keeps_raw_return_for_evaluation() -> None:
