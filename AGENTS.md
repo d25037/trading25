@@ -115,7 +115,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 - `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.dataset` は空欄 baseline とする。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
 
 ## bt (Python / uv)
-VectorBT基盤の高速バックテスト・Marimo Notebook実行システム。
+VectorBT基盤の高速バックテスト・runner-first research bundle・optional Marimo viewer システム。
 FastAPI サーバー（:3002）とtyper CLI を提供。
 
 ```bash
@@ -137,6 +137,7 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
 - `Optimization` と candidate-producing な `Lab generate/evolve/optimize` は `engine_policy`（`fast_only` / `fast_then_verify`）と `verification_top_k`（`1..10`, default `5`）を受け付ける。`fast_then_verify` では `vectorbt` fast path 後に上位候補を `Nautilus` child backtest で直列 verification し、親 job は verification 完了まで `running` を維持し、API payload は `fast_candidates` / `verification` を返す
+- research / analytics / ranking の snapshot は point-in-time stable を必須とし、future leak を避けるため `apps/bt/src/shared/utils/pit_guard.py` の helper を優先利用する。`latest per code/group` は as-of filtering の後にだけ取る
 - Lab `evolve` は依存パラメータ制約付き mutation（`long>short` / `slow>fast` / `max>min`）を適用し、baseline（ベース戦略）より悪化した候補は guardrail で棄却して base 採用へフォールバックする
 - Lab `evolve` は世代間で OHLCV/benchmark prefetch を再利用し、forecast revision が必要になった場合のみ再prefetch する
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う

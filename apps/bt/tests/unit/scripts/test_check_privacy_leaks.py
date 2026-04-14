@@ -46,7 +46,7 @@ def test_find_privacy_leaks_ignores_portable_and_generic_example_paths() -> None
         [
             'db = "~/.local/share/trading25/market-timeseries/market.duckdb"',
             'sample = "/Users/john/project/file.db"',
-            'skill = ".codex/skills/bt-marimo-playground/SKILL.md"',
+            'skill = ".codex/skills/bt-research-workflow/SKILL.md"',
         ]
     )
 

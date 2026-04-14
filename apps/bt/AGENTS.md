@@ -1,7 +1,7 @@
 # Trading Backtesting
 
 ## プロジェクト概要
-**Marimo Notebook実行システム**を中心とした高速バックテスト戦略ツール。VectorBT基盤の高速ベクトル化バックテスト・Marimoによる静的HTML出力・YAML設定による柔軟なパラメータ管理を提供。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
+**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、Marimo は viewer-only notebook として扱う。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
 
 ## 重要原則
 - **表面的なごまかしを絶対に行わない。根本的な解決ができないときは、「今は○○の理由で解決できなかった」と素直に言う**
@@ -11,6 +11,11 @@
 - vectorbt関連の処理が発生したとき
   - すぐにlocalのdocuments(docs/vectorbt/)を参照する
   - localに情報がなければ、速やかに公式document(https://vectorbt.dev/api/)を参照する
+- **future leak / point-in-time contamination を最優先で疑う**
+  - snapshot / universe / fundamentals / ranking は必ず `as_of_date` 基準で切る
+  - `src/shared/utils/pit_guard.py` の helper を優先利用する
+  - `latest per code/group` は as-of filtering の後にだけ取る
+  - 研究・分析ロジック変更時は PIT stability test か future-row exclusion test を追加する
 - **ライブラリ活用**: 車輪の再発明を避け、既存機能を最大活用
 - **設計原則**: Single Responsibility Principle, DRY原則の厳守
 - unittestを必ず作成する
@@ -203,6 +208,7 @@ uv run pytest tests/
 - **Signal System**: `../../.codex/skills/bt-signal-system/SKILL.md`
 - **CLI Commands**: `../../.codex/skills/bt-cli-commands/SKILL.md`
 - **Optimization**: `../../.codex/skills/bt-optimization/SKILL.md`
+- **Research Workflow**: `../../.codex/skills/bt-research-workflow/SKILL.md`
 - **Strategy Config**: `../../.codex/skills/bt-strategy-config/SKILL.md`
 
 ### User-Level Skills
@@ -223,13 +229,13 @@ uv run pytest tests/
 
 ## アーキテクチャ特徴
 
-### Marimo実行システム
-- 静的HTML出力（コード非表示・全行テーブル対応）
-- CLIプログレス表示（スピナー・経過時間）
-- YAML設定統合・JSON パラメータ受け渡し
+### Runner-first 研究実行
+- reproducible bundle を runner script から保存する
+- notebook は latest bundle を読む viewer-only surface として扱う
+- 研究内の高速会計は `vectorbt`、上位候補の verification は `Nautilus` に寄せる
 
 ### 統一システム設計
-- **Notebook First**: 分析・可視化中心のワークフロー
+- **Runner First**: domain -> runner -> bundle -> optional notebook viewer を既定にする
 - **型安全性重視**: Python標準型ヒントによる軽量・高速バリデーション
 - **YAML完全制御**: 戦略実装パッケージ完全削除（1,000+ lines削減）・`entry_filter_params`/`exit_trigger_params`による統一管理
 - **API統合**: データローダー全面API移行完了（REST API経由データアクセス）
@@ -239,4 +245,4 @@ uv run pytest tests/
 - ベクトル化処理による大幅な性能向上
 - 大規模データセット対応
 
-この設計により、**Notebook中心**・**VectorBT高速化**・**統一モデル管理**・**統一シグナルシステム**を組み合わせた、スケーラブルで型安全な戦略分析プラットフォームを構築しています。
+この設計により、**runner-first research**・**VectorBT高速化**・**Nautilus verification**・**統一モデル管理**・**統一シグナルシステム**を組み合わせた、スケーラブルで型安全な戦略分析プラットフォームを構築しています。
