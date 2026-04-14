@@ -47,9 +47,7 @@ from src.domains.analytics.topix_streak_extreme_mode import (
 )
 from src.domains.analytics.topix_streak_multi_timeframe_mode import (
     MULTI_TIMEFRAME_STATE_ORDER,
-    _build_multi_timeframe_state_key,
     _build_multi_timeframe_state_streak_df,
-    _format_multi_timeframe_state_label,
 )
 
 DEFAULT_SHORT_WINDOW_STREAKS = 3
@@ -79,10 +77,6 @@ _STATE_SNAPSHOT_COLUMNS: tuple[str, ...] = (
     "current_streak_day_count",
     "current_streak_segment_return",
     "current_streak_segment_abs_return",
-    "short_mode",
-    "long_mode",
-    "state_key",
-    "state_label",
     "short_window_streaks",
     "long_window_streaks",
 )
@@ -98,10 +92,6 @@ _DAILY_STATE_PANEL_COLUMNS: tuple[str, ...] = (
     "segment_day_count",
     "segment_return",
     "segment_abs_return",
-    "short_mode",
-    "long_mode",
-    "state_key",
-    "state_label",
     "current_streak_mode",
     "current_streak_day_count",
     "current_streak_segment_return",
@@ -497,24 +487,7 @@ def build_topix100_streak_state_snapshot_df(
         .tail(1)
         .reset_index(drop=True)
     )
-    snapshot_df = latest_state_df[
-        [
-            "code",
-            "company_name",
-            "date",
-            "segment_id",
-            "current_streak_mode",
-            "current_streak_day_count",
-            "current_streak_segment_return",
-            "current_streak_segment_abs_return",
-            "short_mode",
-            "long_mode",
-            "state_key",
-            "state_label",
-            "short_window_streaks",
-            "long_window_streaks",
-        ]
-    ].copy()
+    snapshot_df = latest_state_df[list(_STATE_SNAPSHOT_COLUMNS)].copy()
     return snapshot_df.sort_values(["date", "code"], kind="stable").reset_index(drop=True)
 
 
@@ -564,18 +537,6 @@ def _build_stock_daily_state_panel_df(
         if len(segment_returns) < long_window_streaks:
             continue
 
-        short_mode = _resolve_window_mode_from_segment_returns(
-            segment_returns,
-            window_streaks=short_window_streaks,
-        )
-        long_mode = _resolve_window_mode_from_segment_returns(
-            segment_returns,
-            window_streaks=long_window_streaks,
-        )
-        state_key = _build_multi_timeframe_state_key(
-            long_mode=long_mode,
-            short_mode=short_mode,
-        )
         row_records.append(
             {
                 "state_event_id": f"{code}:{date_values[row_index]}",
@@ -588,10 +549,6 @@ def _build_stock_daily_state_panel_df(
                 "segment_day_count": current_segment_day_count,
                 "segment_return": current_segment_return,
                 "segment_abs_return": abs(current_segment_return),
-                "short_mode": short_mode,
-                "long_mode": long_mode,
-                "state_key": state_key,
-                "state_label": _format_multi_timeframe_state_label(state_key),
                 "current_streak_mode": current_mode,
                 "current_streak_day_count": current_segment_day_count,
                 "current_streak_segment_return": current_segment_return,
@@ -604,19 +561,6 @@ def _build_stock_daily_state_panel_df(
     if not row_records:
         return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
     return pd.DataFrame.from_records(row_records, columns=list(_DAILY_STATE_PANEL_COLUMNS))
-
-
-def _resolve_window_mode_from_segment_returns(
-    segment_returns: Sequence[float],
-    *,
-    window_streaks: int,
-) -> str:
-    if len(segment_returns) < window_streaks:
-        raise ValueError("Not enough streak segments for the requested window")
-    dominant_return = max(segment_returns[-window_streaks:], key=abs)
-    return "bullish" if float(dominant_return) >= 0.0 else "bearish"
-
-
 def _assign_daily_sample_split(
     state_panel_df: pd.DataFrame,
     *,

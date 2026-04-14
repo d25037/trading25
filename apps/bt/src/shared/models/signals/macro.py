@@ -4,7 +4,7 @@
 
 from typing import Literal
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator
 
 from .base import BaseSignalParams, _validate_period_order
 
@@ -118,25 +118,9 @@ class UniverseRankBucketSignalParams(BaseSignalParams):
         le=500,
         description="価格 / SMA 乖離の基準SMA期間（research default は 50）",
     )
-    volume_short_period: int = Field(
-        default=20,
-        gt=0,
-        le=500,
-        description="出来高短期SMA期間",
-    )
-    volume_long_period: int = Field(
-        default=80,
-        gt=0,
-        le=1000,
-        description="出来高長期SMA期間",
-    )
     price_bucket: Literal["q1", "q10", "q456", "other"] = Field(
         default="q1",
         description="価格順位バケット",
-    )
-    volume_bucket: Literal["any", "high", "low"] = Field(
-        default="any",
-        description="出来高バケット",
     )
     min_constituents: int = Field(
         default=10,
@@ -144,21 +128,3 @@ class UniverseRankBucketSignalParams(BaseSignalParams):
         le=5000,
         description="判定に必要な最小構成銘柄数",
     )
-
-    @field_validator("volume_long_period")
-    @classmethod
-    def validate_volume_period_order(cls, v: int, info: ValidationInfo) -> int:
-        return _validate_period_order(
-            v,
-            info,
-            "volume_short_period",
-            "volume_long_periodはvolume_short_periodより大きい必要があります",
-        )
-
-    @model_validator(mode="after")
-    def validate_volume_bucket_selection(self) -> "UniverseRankBucketSignalParams":
-        if self.price_bucket == "other" and self.volume_bucket != "any":
-            raise ValueError(
-                "price_bucket='other' の場合、volume_bucket は 'any' のみ指定可能です"
-            )
-        return self

@@ -9,8 +9,8 @@ Targets:
 - short score: future 1-day downside, expressed as positive short edge
 
 Design:
-- Rebuild the stage-1 baseline from discovery only, using the same bucket /
-  volume / short-mode / long-mode lookup chain.
+- Rebuild the stage-1 baseline from discovery only, using the same decile
+  lookup chain.
 - Train separate LightGBM regressors for the long and short targets on the same
   discovery rows.
 - Evaluate both on validation with a daily top-k ranking lens.
@@ -44,8 +44,6 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
     PRICE_FEATURE_LABEL_MAP,
     PRICE_FEATURE_ORDER,
     PRICE_SMA_WINDOW_ORDER,
-    VolumeBucketKey,
-    VOLUME_BUCKET_LABEL_MAP,
     VOLUME_FEATURE_LABEL_MAP,
     VOLUME_FEATURE_ORDER,
     VOLUME_SMA_WINDOW_ORDER,
@@ -88,9 +86,6 @@ TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_SHORT_SCORE_HORIZON_DAYS = (
 DEFAULT_TOP_K_VALUES: tuple[int, ...] = (5, 10, 20)
 DEFAULT_CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "decile",
-    "volume_bucket",
-    "short_mode",
-    "long_mode",
 )
 DEFAULT_CONTINUOUS_FEATURE_SUFFIXES: tuple[str, ...] = (
     "recent_return_1d",
@@ -107,31 +102,18 @@ TOPIX100_STREAK_353_SIGNAL_SCORE_LIGHTGBM_EXPERIMENT_ID = (
 )
 _LONG_BLEND_PRIOR = 260.0
 _SHORT_BLEND_PRIOR = 320.0
-_FEATURE_ORDER: tuple[str, ...] = ("bucket", "volume", "short_mode", "long_mode")
+_FEATURE_ORDER: tuple[str, ...] = ("bucket",)
 _FEATURE_LABEL_MAP: dict[str, str] = {
     "bucket": "Bucket",
-    "volume": "Volume",
-    "short_mode": "Short mode",
-    "long_mode": "Long mode",
-}
-_MODE_VALUE_LABEL_MAP: dict[str, str] = {
-    "bullish": "Bullish",
-    "bearish": "Bearish",
 }
 _ALL_SENTINEL = "all"
 _LONG_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),
-    ("short_mode", "short_mode"),
-    ("bucket+short_mode", "bucket+short_mode"),
-    ("bucket+short_mode+long_mode", "bucket+short_mode+long_mode"),
-    ("bucket+volume+short_mode+long_mode", "full"),
+    ("bucket", "bucket"),
 )
 _SHORT_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),
-    ("short_mode", "short_mode"),
-    ("volume+short_mode", "volume+short_mode"),
-    ("volume+short_mode+long_mode", "volume+short_mode+long_mode"),
-    ("bucket+volume+short_mode+long_mode", "full"),
+    ("bucket", "bucket"),
 )
 _SIDE_ORDER: tuple[str, ...] = ("long", "short")
 _MODEL_ORDER: tuple[str, ...] = ("baseline", "lightgbm")
@@ -211,10 +193,6 @@ class Topix100Streak353SignalScoreLightgbmSnapshotRow:
     code: str
     company_name: str
     date: str
-    short_mode: str | None
-    long_mode: str | None
-    state_key: str | None
-    state_label: str | None
     long_score_5d: float | None
     short_score_1d: float | None
 
@@ -787,10 +765,6 @@ def _score_topix100_streak_353_signal_lightgbm_snapshot(
             code=code,
             company_name=str(normalized_row["company_name"]),
             date=str(normalized_row["date"]),
-            short_mode=cast(str | None, normalized_row.get("short_mode")),
-            long_mode=cast(str | None, normalized_row.get("long_mode")),
-            state_key=cast(str | None, normalized_row.get("state_key")),
-            state_label=cast(str | None, normalized_row.get("state_label")),
             long_score_5d=(
                 float(long_score_value) if long_score_value is not None and pd.notna(long_score_value) else None
             ),
@@ -895,11 +869,6 @@ def _build_feature_panel_from_state_df(
         "date",
         "segment_return",
         "segment_day_count",
-        "base_streak_mode",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
     ]
     missing_state_columns = [
         column for column in state_columns if column not in state_df.columns
@@ -933,11 +902,6 @@ def _build_feature_panel_from_state_df(
         "segment_id",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         price_feature,
         volume_feature,
         "recent_return_1d",
@@ -983,13 +947,8 @@ def _build_state_decile_horizon_panel_from_feature_panel_df(
                 "code",
                 "company_name",
                 "sample_split",
-                "state_key",
-                "state_label",
-                "short_mode",
-                "long_mode",
                 "decile_num",
                 "decile",
-                "volume_bucket",
                 target_column,
             ]
         ].copy()
@@ -1062,22 +1021,6 @@ def _build_price_feature_frame(
     price_df["decile"] = price_df["decile_num"].map(
         {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
     )
-    price_df["decile_size"] = price_df.groupby(["date", "decile"], observed=True)[
-        "code"
-    ].transform("size")
-    price_df["volume_rank_desc_within_decile"] = (
-        price_df.groupby(["date", "decile"], observed=True)[volume_feature]
-        .rank(method="first", ascending=False)
-        .astype(int)
-    )
-    price_df["volume_bucket_index"] = (
-        ((price_df["volume_rank_desc_within_decile"] - 1) * 2)
-        // price_df["decile_size"]
-    ) + 1
-    price_df["volume_bucket_index"] = price_df["volume_bucket_index"].clip(1, 2)
-    price_df["volume_bucket"] = price_df["volume_bucket_index"].map(
-        {1: "volume_high", 2: "volume_low"}
-    )
     return price_df
 
 
@@ -1120,10 +1063,6 @@ def _build_scoring_snapshot_df(
                 "current_streak_day_count",
                 "current_streak_segment_return",
                 "current_streak_segment_abs_return",
-                "short_mode",
-                "long_mode",
-                "state_key",
-                "state_label",
             ]
         ],
         on=["date", "code", "company_name"],
@@ -1138,14 +1077,9 @@ def _build_scoring_snapshot_df(
         "company_name",
         "decile_num",
         "decile",
-        "volume_bucket",
         "current_streak_day_count",
         "current_streak_segment_return",
         "current_streak_segment_abs_return",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         price_feature,
         volume_feature,
         "recent_return_1d",
@@ -1246,15 +1180,6 @@ def _format_feature_value(feature: str, value: Any) -> str:
         return "All"
     if feature == "bucket":
         return str(value)
-    if feature == "volume":
-        volume_key = str(value)
-        if volume_key in VOLUME_BUCKET_LABEL_MAP:
-            return VOLUME_BUCKET_LABEL_MAP[cast(VolumeBucketKey, volume_key)]
-        return volume_key
-    if feature in {"short_mode", "long_mode"}:
-        prefix = "Short" if feature == "short_mode" else "Long"
-        mode_label = _MODE_VALUE_LABEL_MAP.get(str(value), str(value).title())
-        return f"{prefix} {mode_label}"
     return str(value)
 
 
@@ -1287,9 +1212,6 @@ def _build_subset_daily_panel_df(panel_df: pd.DataFrame) -> pd.DataFrame:
 
     working_df = panel_df.copy()
     working_df["bucket"] = working_df["decile"].astype(str)
-    working_df["volume"] = working_df["volume_bucket"].astype(str)
-    working_df["short_mode"] = working_df["short_mode"].astype(str)
-    working_df["long_mode"] = working_df["long_mode"].astype(str)
 
     subset_frames: list[pd.DataFrame] = []
     for subset in _iter_feature_subsets():
@@ -1373,9 +1295,6 @@ def _build_subset_candidate_scorecard_df(
             selector_value_key,
             selector_value_label,
             bucket,
-            volume,
-            short_mode,
-            long_mode,
             horizon_days,
         ) = keys
         summary_rows.append(
@@ -1387,9 +1306,6 @@ def _build_subset_candidate_scorecard_df(
                 "selector_value_key": selector_value_key,
                 "selector_value_label": selector_value_label,
                 "bucket": bucket,
-                "volume": volume,
-                "short_mode": short_mode,
-                "long_mode": long_mode,
                 "horizon_days": int(horizon_days),
                 "mean_equal_weight_return": float(scoped_df["equal_weight_return"].mean()),
                 "positive_hit_rate": float((scoped_df["equal_weight_return"] > 0).mean()),
@@ -1412,9 +1328,6 @@ def _build_subset_candidate_scorecard_df(
         "selector_value_key",
         "selector_value_label",
         "bucket",
-        "volume",
-        "short_mode",
-        "long_mode",
     ]
     grouped_wide = long_df.groupby(wide_group_columns, observed=True, sort=False)
     for keys, scoped_df in grouped_wide:
@@ -1527,9 +1440,6 @@ def _build_baseline_validation_prediction_df(
                 lambda row: _score_baseline_target(
                     baseline_scorecard,
                     price_decile=int(row["decile_num"]),
-                    volume_bucket=str(row["volume_bucket"]),
-                    short_mode=str(row["short_mode"]),
-                    long_mode=str(row["long_mode"]),
                     target="long_5d",
                 ),
                 axis=1,
@@ -1541,9 +1451,6 @@ def _build_baseline_validation_prediction_df(
                 lambda row: _score_baseline_target(
                     baseline_scorecard,
                     price_decile=int(row["decile_num"]),
-                    volume_bucket=str(row["volume_bucket"]),
-                    short_mode=str(row["short_mode"]),
-                    long_mode=str(row["long_mode"]),
                     target="short_1d",
                 ),
                 axis=1,
@@ -1562,9 +1469,6 @@ def _build_baseline_validation_prediction_df(
                     "company_name",
                     "decile_num",
                     "decile",
-                    "volume_bucket",
-                    "short_mode",
-                    "long_mode",
                     "score",
                     "target_edge",
                     "realized_return",
@@ -1638,9 +1542,6 @@ def _build_lightgbm_validation_prediction_df(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
             "future_return_1d",
             "future_return_5d",
             "short_edge_1d",
@@ -1664,9 +1565,6 @@ def _build_lightgbm_validation_prediction_df(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
             "score",
             "target_edge",
             "realized_return",
@@ -1723,9 +1621,6 @@ def _build_lightgbm_validation_prediction_df(
 def _build_category_lookup(feature_panel_df: pd.DataFrame) -> dict[str, list[str]]:
     return {
         "decile": list(DECILE_ORDER),
-        "volume_bucket": ["volume_high", "volume_low"],
-        "short_mode": ["bullish", "bearish"],
-        "long_mode": ["bullish", "bearish"],
     }
 
 
@@ -1765,16 +1660,10 @@ def _score_baseline_target(
     scorecard: _BaselineScorecard,
     *,
     price_decile: int,
-    volume_bucket: str,
-    short_mode: str,
-    long_mode: str,
     target: str,
 ) -> float:
     values = {
         "bucket": f"Q{price_decile}",
-        "volume": volume_bucket,
-        "short_mode": short_mode,
-        "long_mode": long_mode,
     }
     chain = _LONG_CHAIN if target == "long_5d" else _SHORT_CHAIN
     prior_strength = _LONG_BLEND_PRIOR if target == "long_5d" else _SHORT_BLEND_PRIOR
@@ -1806,21 +1695,8 @@ def _build_baseline_selector_value_key(
 ) -> str:
     if selector_kind == "universe":
         return "universe"
-    if selector_kind == "short_mode":
-        return values["short_mode"]
-    if selector_kind == "bucket+short_mode":
-        return f'{values["bucket"]}|{values["short_mode"]}'
-    if selector_kind == "bucket+short_mode+long_mode":
-        return f'{values["bucket"]}|{values["short_mode"]}|{values["long_mode"]}'
-    if selector_kind == "volume+short_mode":
-        return f'{values["volume"]}|{values["short_mode"]}'
-    if selector_kind == "volume+short_mode+long_mode":
-        return f'{values["volume"]}|{values["short_mode"]}|{values["long_mode"]}'
-    if selector_kind == "full":
-        return (
-            f'{values["bucket"]}|{values["volume"]}|'
-            f'{values["short_mode"]}|{values["long_mode"]}'
-        )
+    if selector_kind == "bucket":
+        return values["bucket"]
     raise ValueError(f"Unsupported selector kind: {selector_kind}")
 
 

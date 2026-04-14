@@ -226,7 +226,6 @@ def test_build_scoring_snapshot_df_joins_live_state_snapshot(monkeypatch) -> Non
     )
 
     assert set(snapshot_df["code"]) == {"1000", "1001"}
-    assert set(snapshot_df["short_mode"]) == {"bearish", "bullish"}
     assert "recent_return_5d" in snapshot_df.columns
     assert "segment_return" in snapshot_df.columns
 
@@ -246,7 +245,6 @@ def test_build_baseline_lookup_df_uses_discovery_only() -> None:
             panel_df.assign(
                 horizon_days=1,
                 future_return=panel_df["future_return_1d"],
-                volume_bucket_label=panel_df["volume_bucket"],
                 price_feature="price_vs_sma_50_gap",
                 price_feature_label="Price/SMA50",
                 volume_feature="volume_sma_5_20",
@@ -257,15 +255,9 @@ def test_build_baseline_lookup_df_uses_discovery_only() -> None:
                     "code",
                     "company_name",
                     "sample_split",
-                    "state_key",
-                    "state_label",
-                    "short_mode",
-                    "long_mode",
                     "horizon_days",
                     "decile_num",
                     "decile",
-                    "volume_bucket",
-                    "volume_bucket_label",
                     "future_return",
                     "price_feature",
                     "price_feature_label",
@@ -276,7 +268,6 @@ def test_build_baseline_lookup_df_uses_discovery_only() -> None:
             panel_df.assign(
                 horizon_days=5,
                 future_return=panel_df["future_return_5d"],
-                volume_bucket_label=panel_df["volume_bucket"],
                 price_feature="price_vs_sma_50_gap",
                 price_feature_label="Price/SMA50",
                 volume_feature="volume_sma_5_20",
@@ -287,15 +278,9 @@ def test_build_baseline_lookup_df_uses_discovery_only() -> None:
                     "code",
                     "company_name",
                     "sample_split",
-                    "state_key",
-                    "state_label",
-                    "short_mode",
-                    "long_mode",
                     "horizon_days",
                     "decile_num",
                     "decile",
-                    "volume_bucket",
-                    "volume_bucket_label",
                     "future_return",
                     "price_feature",
                     "price_feature_label",
@@ -468,7 +453,6 @@ def test_score_snapshot_trains_on_history_and_scores_current(monkeypatch) -> Non
                     "company_name": "Stock 1000",
                     "decile_num": 1,
                     "decile": "Q1",
-                    "volume_bucket": "volume_low",
                     "segment_day_count": 4,
                     "segment_return": -0.08,
                     "segment_abs_return": 0.08,
@@ -479,10 +463,6 @@ def test_score_snapshot_trains_on_history_and_scores_current(monkeypatch) -> Non
                     "recent_return_5d": -0.05,
                     "intraday_return": -0.01,
                     "range_pct": 0.02,
-                    "short_mode": "bearish",
-                    "long_mode": "bearish",
-                    "state_key": "long_bearish__short_bearish",
-                    "state_label": "Long Bearish / Short Bearish",
                 },
                 {
                     "date": "2026-01-06",
@@ -490,7 +470,6 @@ def test_score_snapshot_trains_on_history_and_scores_current(monkeypatch) -> Non
                     "company_name": "Stock 1001",
                     "decile_num": 10,
                     "decile": "Q10",
-                    "volume_bucket": "volume_high",
                     "segment_day_count": 3,
                     "segment_return": 0.05,
                     "segment_abs_return": 0.05,
@@ -501,10 +480,6 @@ def test_score_snapshot_trains_on_history_and_scores_current(monkeypatch) -> Non
                     "recent_return_5d": 0.03,
                     "intraday_return": 0.01,
                     "range_pct": 0.01,
-                    "short_mode": "bullish",
-                    "long_mode": "bullish",
-                    "state_key": "long_bullish__short_bullish",
-                    "state_label": "Long Bullish / Short Bullish",
                 },
             ]
         ),

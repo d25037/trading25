@@ -443,26 +443,18 @@ def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgb
     rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow] = {}
     for offset, code in enumerate(range(1001, 1021), start=1):
         if offset % 4 == 1:
-            long_mode, short_mode = "bullish", "bullish"
             intraday_score = -0.004
         elif offset % 4 == 2:
-            long_mode, short_mode = "bearish", "bearish"
             intraday_score = 0.013
         elif offset % 4 == 3:
-            long_mode, short_mode = "bullish", "bearish"
             intraday_score = 0.008
         else:
-            long_mode, short_mode = "bearish", "bullish"
             intraday_score = -0.01
         intraday_score += (11 - offset) * 0.0002
         rows_by_code[str(code)] = Topix100Streak353NextSessionIntradayLightgbmSnapshotRow(
             code=str(code),
             company_name=f"Stock {offset}",
             date="2024-03-30",
-            short_mode=short_mode,
-            long_mode=long_mode,
-            state_key=f"long_{long_mode}__short_{short_mode}",
-            state_label=f"Long {long_mode.title()} / Short {short_mode.title()}",
             intraday_score=intraday_score,
         )
     return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
@@ -491,10 +483,6 @@ def _build_test_swing_snapshot() -> Topix100Streak353SignalScoreLightgbmSnapshot
             code=str(code),
             company_name=f"Stock {offset}",
             date="2024-03-25",
-            short_mode="bearish" if offset % 2 == 0 else "bullish",
-            long_mode="bullish" if offset % 3 else "bearish",
-            state_key=f"state_{offset}",
-            state_label=f"State {offset}",
             long_score_5d=0.02 - offset * 0.0005,
             short_score_1d=None,
         )
@@ -688,9 +676,6 @@ class TestGetTopix100Ranking:
         assert result.items[0].volumeSma5_20 >= result.items[1].volumeSma5_20
         assert result.items[0].priceBucket == "q1"
         assert result.items[-1].priceBucket == "q10"
-        assert hasattr(result.items[0], "streakShortMode")
-        assert hasattr(result.items[0], "streakLongMode")
-        assert hasattr(result.items[0], "streakStateLabel")
         assert hasattr(result.items[0], "intradayScore")
         assert hasattr(result.items[0], "intradayLongRank")
         assert hasattr(result.items[0], "intradayShortRank")
@@ -720,23 +705,6 @@ class TestGetTopix100Ranking:
         assert result.rankingMetric == "price_vs_sma_gap"
         assert result.smaWindow == 20
         assert result.items[0].priceVsSmaGap >= result.items[1].priceVsSmaGap
-
-    def test_assigns_volume_buckets_for_every_decile(self, topix100_ranking_service, monkeypatch):
-        monkeypatch.setattr(
-            "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
-            lambda *args, **kwargs: _build_test_signal_snapshot(),
-        )
-        result = topix100_ranking_service.get_topix100_ranking()
-
-        q1_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q1"}
-        q10_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q10"}
-        q234_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "q234"}
-        other_buckets = {item.volumeBucket for item in result.items if item.priceBucket == "other"}
-
-        assert q1_buckets == {"high", "low"}
-        assert q10_buckets == {"high", "low"}
-        assert q234_buckets == {"high", "low"}
-        assert other_buckets == {"high", "low"}
 
     def test_assigns_score_ranks(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(

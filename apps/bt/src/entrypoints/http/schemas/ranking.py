@@ -69,7 +69,6 @@ class MarketRankingResponse(BaseModel):
 
 Topix100RankingMetric = Literal["price_vs_sma_gap", "price_sma_20_80"]
 Topix100PriceSmaWindow = Literal[20, 50, 100]
-Topix100StreakMode = Literal["bullish", "bearish"]
 Topix100StudyMode = Literal["intraday", "swing_5d"]
 Topix100ScoreTarget = Literal[
     "next_session_open_close",
@@ -94,11 +93,6 @@ class Topix100RankingItem(BaseModel):
     volumeSma5_20: float
     priceDecile: int
     priceBucket: Literal["q1", "q10", "q234", "other"]
-    volumeBucket: Literal["high", "low"] | None = None
-    streakShortMode: Topix100StreakMode | None = None
-    streakLongMode: Topix100StreakMode | None = None
-    streakStateKey: str | None = None
-    streakStateLabel: str | None = None
     longScore5d: float | None = None
     shortScore1d: float | None = None
     longScore5dRank: int | None = None

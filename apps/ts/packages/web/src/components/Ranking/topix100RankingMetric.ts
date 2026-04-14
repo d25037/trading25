@@ -3,8 +3,6 @@ import type {
   Topix100PriceBucketFilter,
   Topix100PriceSmaWindow,
   Topix100RankingMetric,
-  Topix100StreakMode,
-  Topix100StreakModeFilter,
 } from '@/types/ranking';
 
 export const DEFAULT_TOPIX100_RANKING_METRIC: Topix100RankingMetric = 'price_vs_sma_gap';
@@ -50,7 +48,7 @@ export function getTopix100RankingMetricDescription(
     return 'Legacy SMA 20/80 comparison view.';
   }
 
-  return `SMA${smaWindow} baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first.`;
+  return `SMA${smaWindow} baseline. Q10 = below SMA; Q2-4 = trough; volume SMA 5/20 stays continuous.`;
 }
 
 export function getTopix100PriceBucketLabel(
@@ -67,18 +65,5 @@ export function getTopix100PriceBucketLabel(
       return 'Q1 Above SMA';
     default:
       return 'Other';
-  }
-}
-
-export function getTopix100StreakModeLabel(
-  mode: Topix100StreakMode | Topix100StreakModeFilter
-): string {
-  switch (mode) {
-    case 'all':
-      return 'All States';
-    case 'bullish':
-      return 'Bullish';
-    case 'bearish':
-      return 'Bearish';
   }
 }

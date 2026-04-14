@@ -69,15 +69,9 @@ def _build_fake_inputs() -> tuple[
             high_price = max(open_price, close_price) * 1.01
             low_price = min(open_price, close_price) * 0.99
 
-            short_mode = "bearish" if code_index % 4 < 2 else "bullish"
-            long_mode = "bearish" if code_index < 6 else "bullish"
-            state_key = f"long_{long_mode}__short_{short_mode}"
-            state_label = (
-                f"Long {'Bearish' if long_mode == 'bearish' else 'Bullish'} / "
-                f"Short {'Bearish' if short_mode == 'bearish' else 'Bullish'}"
-            )
+            base_mode = "bearish" if code_index % 4 < 2 else "bullish"
             sample_split = "discovery" if date_index < 4 else "validation"
-            segment_return = (-0.06 if short_mode == "bearish" else 0.05) + 0.002 * date_index
+            segment_return = (-0.06 if base_mode == "bearish" else 0.05) + 0.002 * date_index
             segment_day_count = 2 + (code_index % 3)
 
             event_rows.append(
@@ -106,11 +100,7 @@ def _build_fake_inputs() -> tuple[
                     "segment_end_date": date,
                     "segment_return": segment_return,
                     "segment_day_count": segment_day_count,
-                    "base_streak_mode": short_mode,
-                    "short_mode": short_mode,
-                    "long_mode": long_mode,
-                    "state_key": state_key,
-                    "state_label": state_label,
+                    "base_streak_mode": base_mode,
                 }
             )
 
@@ -410,14 +400,9 @@ def test_snapshot_scoring_truncates_history_at_target_date(monkeypatch) -> None:
                 "company_name": "Stock 1001",
                 "decile_num": 1,
                 "decile": "Q1",
-                "volume_bucket": "volume_low",
                 "current_streak_day_count": 4,
                 "current_streak_segment_return": -0.03,
                 "current_streak_segment_abs_return": 0.03,
-                "short_mode": "bearish",
-                "long_mode": "bearish",
-                "state_key": "train_state",
-                "state_label": "Train State",
                 price_feature: 0.1,
                 volume_feature: 1.0,
                 "recent_return_1d": -0.01,
@@ -436,14 +421,9 @@ def test_snapshot_scoring_truncates_history_at_target_date(monkeypatch) -> None:
                     "company_name": "Stock 1001",
                     "decile_num": 10,
                     "decile": "Q10",
-                    "volume_bucket": "volume_high",
                     "current_streak_day_count": 9,
                     "current_streak_segment_return": 0.25,
                     "current_streak_segment_abs_return": 0.25,
-                    "short_mode": "bullish",
-                    "long_mode": "bullish",
-                    "state_key": "future_contaminated_state",
-                    "state_label": "Future Contaminated State",
                     price_feature: -9.0,
                     volume_feature: 2.0,
                     "recent_return_1d": 0.03,
@@ -471,14 +451,9 @@ def test_snapshot_scoring_truncates_history_at_target_date(monkeypatch) -> None:
                     "company_name": "Stock 1001",
                     "decile_num": 2,
                     "decile": "Q2",
-                    "volume_bucket": "volume_low",
                     "current_streak_day_count": 5,
                     "current_streak_segment_return": -0.05,
                     "current_streak_segment_abs_return": 0.05,
-                    "short_mode": "bearish",
-                    "long_mode": "bearish",
-                    "state_key": "point_in_time_snapshot",
-                    "state_label": "Point in Time Snapshot",
                     price_feature: 7.5,
                     volume_feature: 0.8,
                     "recent_return_1d": -0.02,
@@ -523,7 +498,6 @@ def test_snapshot_scoring_truncates_history_at_target_date(monkeypatch) -> None:
     assert captured["event_panel_max_date"] == target_date
     assert captured["state_history_max_date"] == target_date
     assert captured["used_snapshot_fallback"] is True
-    assert snapshot.rows_by_code["1001"].state_key == "point_in_time_snapshot"
     assert snapshot.rows_by_code["1001"].intraday_score == pytest.approx(7.5)
 
 
@@ -574,7 +548,6 @@ def test_resolve_snapshot_score_source_run_id_handles_runtime_and_non_runtime_va
     )
 
     assert _resolve_snapshot_score_source_run_id(("decile",)) == "run-123"
-    assert _resolve_snapshot_score_source_run_id(("decile", "volume_bucket")) is None
 
 
 def test_snapshot_scoring_returns_empty_when_history_or_event_panel_is_empty(
@@ -722,14 +695,9 @@ def test_snapshot_scoring_returns_empty_when_state_pipeline_or_training_slice_fa
                     "company_name": "Stock 1001",
                     "decile_num": 1,
                     "decile": "Q1",
-                    "volume_bucket": "volume_low",
                     "current_streak_day_count": 4,
                     "current_streak_segment_return": -0.03,
                     "current_streak_segment_abs_return": 0.03,
-                    "short_mode": "bearish",
-                    "long_mode": "bearish",
-                    "state_key": "state",
-                    "state_label": "State",
                     "price_vs_sma_50_gap": 0.1,
                     "volume_sma_5_20": 1.0,
                     "recent_return_1d": -0.01,

@@ -37,9 +37,6 @@ describe('Topix100RankingFilters', () => {
     topix100Metric: 'price_vs_sma_gap',
     topix100SmaWindow: 50,
     topix100PriceBucket: 'all',
-    topix100VolumeBucket: 'all',
-    topix100ShortMode: 'all',
-    topix100LongMode: 'all',
   };
 
   it('renders the default metric mode when params are omitted', () => {
@@ -50,12 +47,10 @@ describe('Topix100RankingFilters', () => {
     expect(screen.getByRole('button', { name: 'Price / SMA Gap' })).toHaveAttribute('data-state', 'active');
     expect(
       screen.getByText(
-        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first. The snapshot stays leak-free at date X, enters on X+1 open, exits on X+6 open, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.'
+        'Start at Price / SMA50 Gap. SMA50 baseline. Q10 = below SMA; Q2-4 = trough; volume SMA 5/20 stays continuous. The snapshot stays leak-free at date X, enters on X+1 open, exits on X+6 open, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.'
       )
     ).toBeInTheDocument();
     expect(screen.getByText('SMA Window')).toBeInTheDocument();
-    expect(screen.getByText('Short State')).toBeInTheDocument();
-    expect(screen.getByText('Long State')).toBeInTheDocument();
   });
 
   it('renders the legacy metric copy without the sma window control', () => {
@@ -65,7 +60,6 @@ describe('Topix100RankingFilters', () => {
           topix100StudyMode: 'intraday',
           topix100Metric: 'price_sma_20_80',
           topix100PriceBucket: 'all',
-          topix100VolumeBucket: 'all',
         }}
         onChange={vi.fn()}
       />
@@ -79,7 +73,7 @@ describe('Topix100RankingFilters', () => {
     expect(screen.queryByText('SMA Window')).not.toBeInTheDocument();
   });
 
-  it('updates metric, sma window, date, and bucket filters', async () => {
+  it('updates metric, sma window, date, and price bucket filter', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<Topix100RankingFilters params={defaultParams} onChange={onChange} />);
@@ -115,27 +109,6 @@ describe('Topix100RankingFilters', () => {
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       topix100PriceBucket: 'q10',
-    });
-
-    await user.click(screen.getByRole('combobox', { name: 'Volume Bucket' }));
-    await user.click(screen.getByRole('option', { name: 'Volume Low' }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      topix100VolumeBucket: 'low',
-    });
-
-    await user.click(screen.getByRole('combobox', { name: 'Short State' }));
-    await user.click(screen.getByRole('option', { name: 'Bearish' }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      topix100ShortMode: 'bearish',
-    });
-
-    await user.click(screen.getByRole('combobox', { name: 'Long State' }));
-    await user.click(screen.getByRole('option', { name: 'Bullish' }));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      topix100LongMode: 'bullish',
     });
   });
 });

@@ -33,61 +33,47 @@ def _build_universe(periods: int = 100) -> tuple[pd.DatetimeIndex, dict[str, dic
     return dates, universe
 
 
-def test_universe_rank_bucket_signal_matches_target_bucket_and_volume_split() -> None:
+def test_universe_rank_bucket_signal_matches_target_bucket() -> None:
     dates, universe = _build_universe()
 
-    q1_high = universe_rank_bucket_signal(
+    q1 = universe_rank_bucket_signal(
         stock_code="1001",
         target_index=dates,
         universe_multi_data=universe,
         universe_member_codes=list(universe.keys()),
         price_bucket="q1",
-        volume_bucket="high",
         min_constituents=20,
     )
-    q1_low = universe_rank_bucket_signal(
-        stock_code="1002",
-        target_index=dates,
-        universe_multi_data=universe,
-        universe_member_codes=list(universe.keys()),
-        price_bucket="q1",
-        volume_bucket="low",
-        min_constituents=20,
-    )
-    q456_high = universe_rank_bucket_signal(
-        stock_code="1007",
-        target_index=dates,
-        universe_multi_data=universe,
-        universe_member_codes=list(universe.keys()),
-        price_bucket="q456",
-        volume_bucket="high",
-        min_constituents=20,
-    )
-    q10_low = universe_rank_bucket_signal(
+    q10 = universe_rank_bucket_signal(
         stock_code="1020",
         target_index=dates,
         universe_multi_data=universe,
         universe_member_codes=list(universe.keys()),
         price_bucket="q10",
-        volume_bucket="low",
         min_constituents=20,
     )
-    other_any = universe_rank_bucket_signal(
+    q456 = universe_rank_bucket_signal(
+        stock_code="1007",
+        target_index=dates,
+        universe_multi_data=universe,
+        universe_member_codes=list(universe.keys()),
+        price_bucket="q456",
+        min_constituents=20,
+    )
+    other = universe_rank_bucket_signal(
         stock_code="1003",
         target_index=dates,
         universe_multi_data=universe,
         universe_member_codes=list(universe.keys()),
         price_bucket="other",
-        volume_bucket="any",
         min_constituents=20,
     )
 
-    assert not q1_high.iloc[:79].any()
-    assert bool(q1_high.iloc[-1]) is True
-    assert bool(q1_low.iloc[-1]) is True
-    assert bool(q456_high.iloc[-1]) is True
-    assert bool(q10_low.iloc[-1]) is True
-    assert bool(other_any.iloc[-1]) is True
+    assert not q1.iloc[:49].any()
+    assert bool(q1.iloc[-1]) is True
+    assert bool(q10.iloc[-1]) is True
+    assert bool(q456.iloc[-1]) is True
+    assert bool(other.iloc[-1]) is True
 
 
 def test_universe_rank_bucket_signal_returns_false_when_universe_is_too_small() -> None:
@@ -123,11 +109,10 @@ def test_build_universe_rank_bucket_feature_panel_returns_empty_for_invalid_payl
         universe_multi_data=universe,
         universe_member_codes=list(universe.keys()),
         price_sma_period=2,
-        volume_short_period=2,
-        volume_long_period=3,
     )
 
-    assert feature_panel.empty
+    assert not feature_panel.empty
+    assert set(feature_panel["stock_code"].astype(str)) == {"1002"}
 
 
 def test_build_universe_rank_bucket_feature_panel_returns_empty_when_features_never_mature() -> None:
@@ -148,8 +133,6 @@ def test_build_universe_rank_bucket_feature_panel_returns_empty_when_features_ne
         universe_multi_data=universe,
         universe_member_codes=["1001"],
         price_sma_period=5,
-        volume_short_period=5,
-        volume_long_period=10,
     )
 
     assert feature_panel.empty
@@ -174,15 +157,6 @@ def test_universe_rank_bucket_signal_validates_arguments() -> None:
             price_bucket="q2",
         )
 
-    with pytest.raises(ValueError, match="unsupported volume_bucket"):
-        universe_rank_bucket_signal(
-            stock_code="1001",
-            target_index=dates,
-            universe_multi_data=universe,
-            volume_bucket="mid",
-        )
-
-
 def test_universe_rank_bucket_signal_handles_empty_index_and_missing_cached_rows() -> None:
     dates, universe = _build_universe()
 
@@ -203,7 +177,6 @@ def test_universe_rank_bucket_signal_handles_empty_index_and_missing_cached_rows
                 "stock_code": ["1001"] * len(dates),
                 "price_count": [20] * len(dates),
                 "price_bucket": ["q1"] * len(dates),
-                "volume_bucket": ["high"] * len(dates),
             }
         ),
     )

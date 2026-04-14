@@ -12,7 +12,7 @@ This keeps the leak-free point-in-time snapshot discipline:
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, cast
+from typing import Any
 
 import pandas as pd
 
@@ -294,10 +294,6 @@ def _score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
             code=code,
             company_name=str(normalized_row["company_name"]),
             date=str(normalized_row["date"]),
-            short_mode=cast(str | None, normalized_row.get("short_mode")),
-            long_mode=cast(str | None, normalized_row.get("long_mode")),
-            state_key=cast(str | None, normalized_row.get("state_key")),
-            state_label=cast(str | None, normalized_row.get("state_label")),
             long_score_5d=(
                 float(long_score_value)
                 if long_score_value is not None and pd.notna(long_score_value)
@@ -406,11 +402,6 @@ def _build_feature_panel_from_state_event_df(
         "date",
         "segment_return",
         "segment_day_count",
-        "base_streak_mode",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
     ]
     missing_state_columns = [
         column for column in state_columns if column not in state_df.columns
@@ -442,11 +433,6 @@ def _build_feature_panel_from_state_event_df(
         "segment_id",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         price_feature,
         volume_feature,
         "recent_return_1d",

@@ -186,11 +186,7 @@ class TestMacroSignalParams:
         p = UniverseRankBucketSignalParams()
         assert p.price_sma_period == 50
         assert p.price_bucket == "q1"
-        assert p.volume_bucket == "any"
-
-    def test_universe_rank_bucket_rejects_volume_split_for_other_bucket(self) -> None:
-        with pytest.raises(ValidationError, match="volume_bucket"):
-            UniverseRankBucketSignalParams(price_bucket="other", volume_bucket="high")
+        assert p.min_constituents == 10
 
 
 class TestOscillatorSignalParams:

@@ -83,10 +83,7 @@ SECONDARY_BENCHMARK_KEY = "topix100_universe"
 _LONG_BASELINE_BLEND_PRIOR = 260.0
 _BASELINE_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),
-    ("short_mode", "short_mode"),
-    ("bucket+short_mode", "bucket+short_mode"),
-    ("bucket+short_mode+long_mode", "bucket+short_mode+long_mode"),
-    ("full", "full"),
+    ("bucket", "bucket"),
 )
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "split_config_df",
@@ -616,9 +613,6 @@ def _build_baseline_lookup_df(
                 selector_kind,
                 {
                     "bucket": f"Q{int(row['decile_num'])}",
-                    "volume": str(row["volume_bucket"]),
-                    "short_mode": str(row["short_mode"]),
-                    "long_mode": str(row["long_mode"]),
                 },
             ),
             axis=1,
@@ -685,15 +679,9 @@ def _score_baseline_target(
     scorecard: _BaselineScorecard,
     *,
     price_decile: int,
-    volume_bucket: str,
-    short_mode: str,
-    long_mode: str,
 ) -> float:
     values = {
         "bucket": f"Q{price_decile}",
-        "volume": volume_bucket,
-        "short_mode": short_mode,
-        "long_mode": long_mode,
     }
     current_value = scorecard.universe_return
     for subset_key, selector_kind in _BASELINE_CHAIN[1:]:
@@ -721,9 +709,6 @@ def _build_baseline_validation_prediction_df(
         lambda row: _score_baseline_target(
             baseline_scorecard,
             price_decile=int(row["decile_num"]),
-            volume_bucket=str(row["volume_bucket"]),
-            short_mode=str(row["short_mode"]),
-            long_mode=str(row["long_mode"]),
         ),
         axis=1,
     )
@@ -736,11 +721,6 @@ def _build_baseline_validation_prediction_df(
         "company_name",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         "score",
         "realized_return",
     ]
@@ -805,11 +785,6 @@ def _build_lightgbm_validation_prediction_df(
         "company_name",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
     ]
     optional_columns = [
         column

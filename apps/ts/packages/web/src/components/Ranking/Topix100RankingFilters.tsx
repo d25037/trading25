@@ -4,15 +4,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type {
   RankingParams,
   Topix100PriceBucketFilter,
-  Topix100StreakModeFilter,
   Topix100StudyMode,
-  Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import {
   getTopix100RankingMetricLabel,
   getTopix100RankingMetricDescription,
   getTopix100PriceBucketLabel,
-  getTopix100StreakModeLabel,
   resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
   TOPIX100_PRICE_SMA_WINDOW_OPTIONS,
@@ -24,18 +21,6 @@ const PRICE_BUCKET_OPTIONS: { value: Topix100PriceBucketFilter; label: string }[
   { value: 'q10', label: getTopix100PriceBucketLabel('q10') },
   { value: 'q234', label: getTopix100PriceBucketLabel('q234') },
   { value: 'q1', label: getTopix100PriceBucketLabel('q1') },
-];
-
-const VOLUME_BUCKET_OPTIONS: { value: Topix100VolumeBucketFilter; label: string }[] = [
-  { value: 'all', label: 'All Volume' },
-  { value: 'low', label: 'Volume Low' },
-  { value: 'high', label: 'Volume High' },
-];
-
-const STREAK_MODE_OPTIONS: { value: Topix100StreakModeFilter; label: string }[] = [
-  { value: 'all', label: getTopix100StreakModeLabel('all') },
-  { value: 'bearish', label: getTopix100StreakModeLabel('bearish') },
-  { value: 'bullish', label: getTopix100StreakModeLabel('bullish') },
 ];
 const STUDY_MODE_OPTIONS: { value: Topix100StudyMode; label: string }[] = [
   { value: 'swing_5d', label: 'Open -> 5D Open' },
@@ -65,7 +50,7 @@ function buildStudyDescription(
   }
 
   if (resolvedMetric === 'price_vs_sma_gap') {
-    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The production score is now decile-only on the discrete side; streak 3/53 states and volume split stay visible as context filters around the next-session intraday LightGBM read.`;
+    return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The production score is decile-only on the discrete side, with price and volume inputs kept as continuous features for the next-session intraday LightGBM read.`;
   }
 
   return `${metricDescription} The score layer now uses the next-session intraday LightGBM read with decile-only discrete conditioning on top of the same SMA50 / volume 5/20 feature family.`;
@@ -129,7 +114,7 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
             options={TOPIX100_PRICE_SMA_WINDOW_OPTIONS}
             id="topix100-sma-window"
             label="SMA Window"
-            description="SMA50 baseline. Volume split uses SMA 5/20. SMA100 broadens oversold; SMA20 shortens the move."
+            description="SMA50 baseline. Volume SMA 5/20 stays continuous. SMA100 broadens oversold; SMA20 shortens the move."
           />
         ) : null}
 
@@ -146,69 +131,6 @@ export function Topix100RankingFilters({ params, onChange }: Topix100RankingFilt
             </SelectTrigger>
             <SelectContent>
               {PRICE_BUCKET_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="topix100-volume-bucket" className="text-xs font-medium text-foreground">
-            Volume Bucket
-          </label>
-          <Select
-            value={params.topix100VolumeBucket ?? 'all'}
-            onValueChange={(value) => updateParam('topix100VolumeBucket', value as Topix100VolumeBucketFilter)}
-          >
-            <SelectTrigger id="topix100-volume-bucket" className="h-9 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {VOLUME_BUCKET_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="topix100-short-mode" className="text-xs font-medium text-foreground">
-            Short State
-          </label>
-          <Select
-            value={params.topix100ShortMode ?? 'all'}
-            onValueChange={(value) => updateParam('topix100ShortMode', value as Topix100StreakModeFilter)}
-          >
-            <SelectTrigger id="topix100-short-mode" className="h-9 text-xs" aria-label="Short State">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STREAK_MODE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="topix100-long-mode" className="text-xs font-medium text-foreground">
-            Long State
-          </label>
-          <Select
-            value={params.topix100LongMode ?? 'all'}
-            onValueChange={(value) => updateParam('topix100LongMode', value as Topix100StreakModeFilter)}
-          >
-            <SelectTrigger id="topix100-long-mode" className="h-9 text-xs" aria-label="Long State">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STREAK_MODE_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value} className="text-xs">
                   {option.label}
                 </SelectItem>

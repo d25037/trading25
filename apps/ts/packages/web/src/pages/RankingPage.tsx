@@ -254,9 +254,6 @@ function RankingContent({
         rankingMetric={topix100Metric}
         rankingSmaWindow={topix100SmaWindow}
         priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
-        volumeBucketFilter={rankingParams.topix100VolumeBucket ?? 'all'}
-        shortModeFilter={rankingParams.topix100ShortMode ?? 'all'}
-        longModeFilter={rankingParams.topix100LongMode ?? 'all'}
         sortBy={rankingParams.topix100SortBy ?? 'rank'}
         sortOrder={rankingParams.topix100SortOrder ?? 'asc'}
         onSortChange={(sortBy, sortOrder) =>

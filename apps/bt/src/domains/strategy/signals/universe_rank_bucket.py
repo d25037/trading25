@@ -10,8 +10,6 @@ from loguru import logger
 
 from src.shared.models.signals import normalize_bool_series
 
-_PRICE_BUCKETS_REQUIRING_VOLUME_SPLIT = {"q1", "q10", "q456"}
-
 
 def _assign_ntile(
     ranks: pd.Series,
@@ -51,7 +49,7 @@ def _extract_daily_frame(payload: object) -> pd.DataFrame | None:
     daily = payload.get("daily")
     if not isinstance(daily, pd.DataFrame) or daily.empty:
         return None
-    if not {"Close", "Volume"}.issubset(daily.columns):
+    if "Close" not in daily.columns:
         return None
     return daily
 
@@ -61,8 +59,6 @@ def build_universe_rank_bucket_feature_panel(
     universe_multi_data: Mapping[str, Mapping[str, object]],
     universe_member_codes: Sequence[str] | None,
     price_sma_period: int,
-    volume_short_period: int,
-    volume_long_period: int,
 ) -> pd.DataFrame:
     candidate_codes = (
         list(dict.fromkeys(str(code) for code in universe_member_codes))
@@ -75,7 +71,7 @@ def build_universe_rank_bucket_feature_panel(
         daily = _extract_daily_frame(universe_multi_data.get(code))
         if daily is None:
             continue
-        frame = daily.loc[:, ["Close", "Volume"]].copy()
+        frame = daily.loc[:, ["Close"]].copy()
         frame["date"] = pd.DatetimeIndex(frame.index)
         frame["stock_code"] = str(code)
         frames.append(frame.reset_index(drop=True))
@@ -91,19 +87,10 @@ def build_universe_rank_bucket_feature_panel(
         window=price_sma_period,
         min_periods=price_sma_period,
     ).mean().reset_index(level=0, drop=True)
-    volume_short = grouped["Volume"].rolling(
-        window=volume_short_period,
-        min_periods=volume_short_period,
-    ).mean().reset_index(level=0, drop=True)
-    volume_long = grouped["Volume"].rolling(
-        window=volume_long_period,
-        min_periods=volume_long_period,
-    ).mean().reset_index(level=0, drop=True)
 
     features = panel.loc[:, ["date", "stock_code"]].copy()
-    features["price_ratio"] = panel["Close"] / price_sma.replace(0.0, np.nan) - 1.0
-    features["volume_ratio"] = volume_short / volume_long.replace(0.0, np.nan)
-    features = features.dropna(subset=["price_ratio", "volume_ratio"])
+    features["price_ratio"] = panel["Close"] / price_sma.replace(0.0, pd.NA) - 1.0
+    features = features.dropna(subset=["price_ratio"])
     if features.empty:
         return features
 
@@ -127,34 +114,6 @@ def build_universe_rank_bucket_feature_panel(
         ["q1", "q10", "q456"],
         default="other",
     )
-
-    split_mask = features["price_bucket"].isin(_PRICE_BUCKETS_REQUIRING_VOLUME_SPLIT)
-    features["volume_bucket"] = pd.Series(index=features.index, dtype="object")
-    if split_mask.any():
-        split_frame = features.loc[
-            split_mask, ["date", "price_bucket", "stock_code", "volume_ratio"]
-        ].copy()
-        split_frame = split_frame.sort_values(
-            ["date", "price_bucket", "volume_ratio", "stock_code"],
-            ascending=[True, True, False, True],
-        )
-        split_frame["volume_rank"] = (
-            split_frame.groupby(["date", "price_bucket"]).cumcount() + 1
-        )
-        split_frame["volume_count"] = split_frame.groupby(
-            ["date", "price_bucket"]
-        )["stock_code"].transform("size")
-        split_frame["volume_half_rank"] = _assign_ntile(
-            split_frame["volume_rank"],
-            split_frame["volume_count"],
-            tiles=2,
-        )
-        features.loc[split_frame.index, "volume_bucket"] = np.where(
-            split_frame["volume_half_rank"].eq(1),
-            "high",
-            "low",
-        )
-
     return features
 
 
@@ -166,10 +125,7 @@ def universe_rank_bucket_signal(
     universe_member_codes: Sequence[str] | None = None,
     feature_panel: pd.DataFrame | None = None,
     price_sma_period: int = 50,
-    volume_short_period: int = 20,
-    volume_long_period: int = 80,
     price_bucket: str = "q1",
-    volume_bucket: str = "any",
     min_constituents: int = 10,
 ) -> pd.Series:
     """Return True when the target stock sits in the requested price/SMA universe bucket."""
@@ -178,8 +134,6 @@ def universe_rank_bucket_signal(
         raise ValueError("min_constituents must be >= 2")
     if price_bucket not in {"q1", "q10", "q456", "other"}:
         raise ValueError(f"unsupported price_bucket: {price_bucket}")
-    if volume_bucket not in {"any", "high", "low"}:
-        raise ValueError(f"unsupported volume_bucket: {volume_bucket}")
 
     reference_index = pd.Index(target_index)
     result = pd.Series(False, index=reference_index, dtype=bool)
@@ -191,8 +145,6 @@ def universe_rank_bucket_signal(
             universe_multi_data=universe_multi_data,
             universe_member_codes=universe_member_codes,
             price_sma_period=price_sma_period,
-            volume_short_period=volume_short_period,
-            volume_long_period=volume_long_period,
         )
     if feature_panel.empty:
         logger.debug("Universe rank bucket signal skipped: no valid universe feature rows")
@@ -218,16 +170,12 @@ def universe_rank_bucket_signal(
 
     target_rows = target_rows.set_index("date").sort_index()
     matched = target_rows["price_bucket"].eq(price_bucket)
-    if volume_bucket != "any":
-        matched &= target_rows["volume_bucket"].eq(volume_bucket)
 
     result = normalize_bool_series(matched.reindex(reference_index))
     logger.debug(
-        "Universe rank bucket signal generated: stock={} price_bucket={} volume_bucket={} "
-        "true_count={}/{}",
+        "Universe rank bucket signal generated: stock={} price_bucket={} true_count={}/{}",
         stock_code,
         price_bucket,
-        volume_bucket,
         int(result.sum()),
         len(result),
     )

@@ -143,21 +143,6 @@ def _build_excess_feature_panel() -> pd.DataFrame:
             "company_name": ["A", "B", "A", "B"],
             "decile_num": [1, 2, 1, 2],
             "decile": ["Q1", "Q2", "Q1", "Q2"],
-            "volume_bucket": ["volume_high", "volume_low", "volume_high", "volume_low"],
-            "short_mode": ["bullish", "bearish", "bullish", "bearish"],
-            "long_mode": ["bullish", "bearish", "bullish", "bearish"],
-            "state_key": [
-                "long_bullish__short_bullish",
-                "long_bearish__short_bearish",
-                "long_bullish__short_bullish",
-                "long_bearish__short_bearish",
-            ],
-            "state_label": [
-                "Long Bullish / Short Bullish",
-                "Long Bearish / Short Bearish",
-                "Long Bullish / Short Bullish",
-                "Long Bearish / Short Bearish",
-            ],
             PRICE_FEATURE: [0.5, 0.2, 0.6, 0.1],
             VOLUME_FEATURE: [1.5, 1.2, 1.6, 1.1],
             "recent_return_1d": [0.01, -0.01, 0.02, -0.02],
@@ -291,12 +276,7 @@ def test_excess_lightgbm_prediction_keeps_raw_return_for_evaluation() -> None:
     prediction_df, feature_importance_df = _build_lightgbm_validation_prediction_df(
         feature_panel_df,
         regressor_cls=_FakeRegressor,
-        categorical_feature_columns=(
-            "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
-        ),
+        categorical_feature_columns=("decile",),
         continuous_feature_columns=(
             PRICE_FEATURE,
             VOLUME_FEATURE,
@@ -312,4 +292,4 @@ def test_excess_lightgbm_prediction_keeps_raw_return_for_evaluation() -> None:
 
     assert prediction_df["realized_return"].tolist() == [0.08, -0.02]
     assert prediction_df["target_excess_return"].tolist() == [0.05, -0.03]
-    assert len(feature_importance_df) == 11
+    assert len(feature_importance_df) == 8

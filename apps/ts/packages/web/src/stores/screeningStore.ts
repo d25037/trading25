@@ -32,9 +32,6 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   topix100Metric: 'price_vs_sma_gap',
   topix100SmaWindow: 50,
   topix100PriceBucket: 'all',
-  topix100VolumeBucket: 'all',
-  topix100ShortMode: 'all',
-  topix100LongMode: 'all',
   topix100SortBy: 'longScore5d',
   topix100SortOrder: 'desc',
 };

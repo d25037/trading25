@@ -106,10 +106,7 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
 _BASELINE_BLEND_PRIOR = 320.0
 _BASELINE_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),
-    ("short_mode", "short_mode"),
-    ("bucket+short_mode", "bucket+short_mode"),
-    ("bucket+short_mode+long_mode", "bucket+short_mode+long_mode"),
-    ("full", "full"),
+    ("bucket", "bucket"),
 )
 
 
@@ -167,10 +164,6 @@ class Topix100Streak353NextSessionIntradayLightgbmSnapshotRow:
     code: str
     company_name: str
     date: str
-    short_mode: str | None
-    long_mode: str | None
-    state_key: str | None
-    state_label: str | None
     intraday_score: float | None
 
 
@@ -474,11 +467,6 @@ def _build_feature_panel_from_state_event_df(
         "date",
         "segment_return",
         "segment_day_count",
-        "base_streak_mode",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
     ]
     missing_state_columns = [column for column in state_columns if column not in state_df.columns]
     if missing_state_columns:
@@ -508,11 +496,6 @@ def _build_feature_panel_from_state_event_df(
         "segment_id",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         price_feature,
         volume_feature,
         "recent_return_1d",
@@ -846,10 +829,6 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
             code=code,
             company_name=str(normalized_row["company_name"]),
             date=str(normalized_row["date"]),
-            short_mode=cast(str | None, normalized_row.get("short_mode")),
-            long_mode=cast(str | None, normalized_row.get("long_mode")),
-            state_key=cast(str | None, normalized_row.get("state_key")),
-            state_label=cast(str | None, normalized_row.get("state_label")),
             intraday_score=(
                 float(score_value) if score_value is not None and pd.notna(score_value) else None
             ),
@@ -981,17 +960,8 @@ def _build_baseline_selector_value_key(
 ) -> str:
     if selector_kind == "universe":
         return "universe"
-    if selector_kind == "short_mode":
-        return values["short_mode"]
-    if selector_kind == "bucket+short_mode":
-        return f'{values["bucket"]}|{values["short_mode"]}'
-    if selector_kind == "bucket+short_mode+long_mode":
-        return f'{values["bucket"]}|{values["short_mode"]}|{values["long_mode"]}'
-    if selector_kind == "full":
-        return (
-            f'{values["bucket"]}|{values["volume"]}|'
-            f'{values["short_mode"]}|{values["long_mode"]}'
-        )
+    if selector_kind == "bucket":
+        return values["bucket"]
     raise ValueError(f"Unsupported selector kind: {selector_kind}")
 
 
@@ -1027,9 +997,6 @@ def _build_baseline_lookup_df(feature_panel_df: pd.DataFrame) -> pd.DataFrame:
                 selector_kind,
                 {
                     "bucket": f"Q{int(row['decile_num'])}",
-                    "volume": str(row["volume_bucket"]),
-                    "short_mode": str(row["short_mode"]),
-                    "long_mode": str(row["long_mode"]),
                 },
             ),
             axis=1,
@@ -1099,15 +1066,9 @@ def _score_baseline_target(
     scorecard: _BaselineScorecard,
     *,
     price_decile: int,
-    volume_bucket: str,
-    short_mode: str,
-    long_mode: str,
 ) -> float:
     values = {
         "bucket": f"Q{price_decile}",
-        "volume": volume_bucket,
-        "short_mode": short_mode,
-        "long_mode": long_mode,
     }
     current_value = scorecard.universe_return
     for subset_key, selector_kind in _BASELINE_CHAIN[1:]:
@@ -1134,9 +1095,6 @@ def _build_baseline_validation_prediction_df(
         lambda row: _score_baseline_target(
             baseline_scorecard,
             price_decile=int(row["decile_num"]),
-            volume_bucket=str(row["volume_bucket"]),
-            short_mode=str(row["short_mode"]),
-            long_mode=str(row["long_mode"]),
         ),
         axis=1,
     )
@@ -1150,11 +1108,6 @@ def _build_baseline_validation_prediction_df(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
-            "state_key",
-            "state_label",
             "score",
             "realized_return",
         ]
@@ -1219,11 +1172,6 @@ def _build_lightgbm_validation_prediction_df(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
-            "state_key",
-            "state_label",
             target_column,
         ]
     ].copy()
@@ -1238,11 +1186,6 @@ def _build_lightgbm_validation_prediction_df(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
-            "state_key",
-            "state_label",
             "score",
             "realized_return",
         ]
@@ -1391,11 +1334,6 @@ def _build_validation_topk_tables(
             "company_name",
             "decile_num",
             "decile",
-            "volume_bucket",
-            "short_mode",
-            "long_mode",
-            "state_key",
-            "state_label",
             "selection_side",
             "selection_rank",
             "top_k",

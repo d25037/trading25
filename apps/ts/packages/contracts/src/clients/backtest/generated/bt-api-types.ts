@@ -10077,22 +10077,12 @@ export interface components {
             shortScore1d?: number | null;
             /** Shortscore1Drank */
             shortScore1dRank?: number | null;
-            /** Streaklongmode */
-            streakLongMode?: ("bullish" | "bearish") | null;
-            /** Streakshortmode */
-            streakShortMode?: ("bullish" | "bearish") | null;
-            /** Streakstatekey */
-            streakStateKey?: string | null;
-            /** Streakstatelabel */
-            streakStateLabel?: string | null;
             /** Swingentrydate */
             swingEntryDate?: string | null;
             /** Swingexitdate */
             swingExitDate?: string | null;
             /** Volume */
             volume: number;
-            /** Volumebucket */
-            volumeBucket?: ("high" | "low") | null;
             /** Volumesma5 20 */
             volumeSma5_20: number;
         };

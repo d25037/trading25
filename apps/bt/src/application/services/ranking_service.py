@@ -56,7 +56,6 @@ def _now_iso() -> str:
 
 
 Topix100PriceBucket = Literal["q1", "q10", "q234", "other"]
-Topix100VolumeBucket = Literal["high", "low"]
 _TOPIX100_RANKING_METRIC_SQL: dict[Topix100RankingMetric, str] = {
     "price_vs_sma_gap": "price_vs_sma_gap",
     "price_sma_20_80": "price_sma_20_80",
@@ -334,10 +333,6 @@ class RankingService:
             items.append(
                 self._build_topix100_ranking_item(
                     row=row,
-                    short_mode=state_snapshot.short_mode if state_snapshot is not None else None,
-                    long_mode=state_snapshot.long_mode if state_snapshot is not None else None,
-                    state_key=state_snapshot.state_key if state_snapshot is not None else None,
-                    state_label=state_snapshot.state_label if state_snapshot is not None else None,
                     intraday_score=(
                         state_snapshot.intraday_score if state_snapshot is not None else None
                     ),
@@ -427,10 +422,6 @@ class RankingService:
             items.append(
                 self._build_topix100_ranking_item(
                     row=row,
-                    short_mode=state_snapshot.short_mode if state_snapshot is not None else None,
-                    long_mode=state_snapshot.long_mode if state_snapshot is not None else None,
-                    state_key=state_snapshot.state_key if state_snapshot is not None else None,
-                    state_label=state_snapshot.state_label if state_snapshot is not None else None,
                     long_score_5d=(
                         state_snapshot.long_score_5d if state_snapshot is not None else None
                     ),
@@ -516,10 +507,6 @@ class RankingService:
         self,
         *,
         row: Mapping[str, Any],
-        short_mode: str | None,
-        long_mode: str | None,
-        state_key: str | None,
-        state_label: str | None,
         intraday_score: float | None = None,
         long_score_5d: float | None = None,
         next_session_date: str | None = None,
@@ -542,15 +529,6 @@ class RankingService:
             volumeSma5_20=float(row["volume_sma_5_20"]),
             priceDecile=int(row["price_decile"]),
             priceBucket=cast(Topix100PriceBucket, row["price_bucket"]),
-            volumeBucket=(
-                cast(Topix100VolumeBucket, str(row["volume_bucket"]).replace("volume_", ""))
-                if row["volume_bucket"] is not None
-                else None
-            ),
-            streakShortMode=cast(Literal["bullish", "bearish"] | None, short_mode),
-            streakLongMode=cast(Literal["bullish", "bearish"] | None, long_mode),
-            streakStateKey=state_key,
-            streakStateLabel=state_label,
             intradayScore=intraday_score,
             longScore5d=long_score_5d,
             nextSessionDate=next_session_date,
@@ -1056,15 +1034,6 @@ class RankingService:
                         ELSE 'other'
                     END AS price_bucket
                 FROM price_ranked
-            ),
-            volume_ranked AS (
-                SELECT
-                    *,
-                    NTILE(2) OVER (
-                        PARTITION BY price_decile
-                        ORDER BY volume_sma_5_20 DESC, code ASC
-                    ) AS volume_half_rank
-                FROM bucketed
             )
             SELECT
                 rank,
@@ -1079,13 +1048,8 @@ class RankingService:
                 price_sma_20_80,
                 volume_sma_5_20,
                 price_decile,
-                price_bucket,
-                CASE
-                    WHEN volume_half_rank = 1 THEN 'volume_high'
-                    WHEN volume_half_rank = 2 THEN 'volume_low'
-                    ELSE NULL
-                END AS volume_bucket
-            FROM volume_ranked
+                price_bucket
+            FROM bucketed
             ORDER BY rank
             """,
             (*_TOPIX100_SCALE_CATEGORIES, target_date, target_date),

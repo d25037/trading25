@@ -532,7 +532,6 @@ class TestSignalProcessor:
                 "stock_code": ["1111", "1111", "1111", "2222", "2222", "2222"],
                 "price_count": [2, 2, 2, 2, 2, 2],
                 "price_bucket": ["q1", "q1", "q1", "q10", "q10", "q10"],
-                "volume_bucket": ["high", "high", "high", "low", "low", "low"],
             }
         )
 
@@ -584,7 +583,6 @@ class TestSignalProcessor:
                 "stock_code": ["1111"] * len(index),
                 "price_count": [1] * len(index),
                 "price_bucket": ["q1"] * len(index),
-                "volume_bucket": ["high"] * len(index),
             }
         )
 
@@ -600,8 +598,6 @@ class TestSignalProcessor:
                     universe_multi_data=universe_multi_data,
                     universe_member_codes=("1111",),
                     price_sma_period=price_sma_period,
-                    volume_short_period=20,
-                    volume_long_period=80,
                 )
 
         assert mock_builder.call_count == self.processor._UNIVERSE_BUCKET_CACHE_LIMIT + 1  # noqa: SLF001

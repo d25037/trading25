@@ -260,9 +260,10 @@ def test_topix100_streak_state_snapshot_returns_latest_state_per_stock(
     snapshot_df = build_topix100_streak_state_snapshot_df(history_df)
 
     assert not snapshot_df.empty
-    assert set(snapshot_df["short_mode"].unique()).issubset({"bullish", "bearish"})
-    assert set(snapshot_df["long_mode"].unique()).issubset({"bullish", "bearish"})
-    assert snapshot_df["state_label"].str.contains("Long ").all()
+    assert "short_mode" not in snapshot_df.columns
+    assert "long_mode" not in snapshot_df.columns
+    assert "state_key" not in snapshot_df.columns
+    assert "state_label" not in snapshot_df.columns
 
 
 def test_topix100_streak_daily_state_panel_is_point_in_time_stable() -> None:
@@ -340,9 +341,8 @@ def test_topix100_streak_daily_state_panel_is_point_in_time_stable() -> None:
 
     assert base_row["segment_return"] == pytest.approx(98.0 / 105.0 - 1.0)
     assert extended_row["segment_return"] == pytest.approx(float(base_row["segment_return"]))
-    assert extended_row["short_mode"] == base_row["short_mode"]
-    assert extended_row["long_mode"] == base_row["long_mode"]
-    assert extended_row["state_key"] == base_row["state_key"]
+    assert extended_row["current_streak_mode"] == base_row["current_streak_mode"]
+    assert extended_row["current_streak_day_count"] == base_row["current_streak_day_count"]
 
 
 def test_topix100_streak_daily_state_panel_preserves_full_daily_universe(

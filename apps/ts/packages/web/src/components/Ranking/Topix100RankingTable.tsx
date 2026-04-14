@@ -8,15 +8,10 @@ import type {
   Topix100RankingSortKey,
   Topix100RankingMetric,
   Topix100RankingResponse,
-  Topix100StreakModeFilter,
   Topix100StudyMode,
-  Topix100VolumeBucketFilter,
 } from '@/types/ranking';
 import { formatPriceJPY, formatRate, formatVolume, formatVolumeRatio } from '@/utils/formatters';
-import {
-  getTopix100RankingMetricLabel,
-  getTopix100StreakModeLabel,
-} from './topix100RankingMetric';
+import { getTopix100RankingMetricLabel } from './topix100RankingMetric';
 
 interface Topix100RankingTableProps {
   data: Topix100RankingResponse | undefined;
@@ -27,9 +22,6 @@ interface Topix100RankingTableProps {
   rankingMetric: Topix100RankingMetric;
   rankingSmaWindow: Topix100PriceSmaWindow;
   priceBucketFilter: Topix100PriceBucketFilter;
-  volumeBucketFilter: Topix100VolumeBucketFilter;
-  shortModeFilter: Topix100StreakModeFilter;
-  longModeFilter: Topix100StreakModeFilter;
   sortBy: Topix100RankingSortKey;
   sortOrder: SortOrder;
   onSortChange: (sortBy: Topix100RankingSortKey, sortOrder: SortOrder) => void;
@@ -71,34 +63,12 @@ const SNAPSHOT_BOOK_TOP_K = 3;
 
 function matchesFilters(
   item: Topix100RankingItem,
-  priceBucketFilter: Topix100PriceBucketFilter,
-  volumeBucketFilter: Topix100VolumeBucketFilter,
-  shortModeFilter: Topix100StreakModeFilter,
-  longModeFilter: Topix100StreakModeFilter
+  priceBucketFilter: Topix100PriceBucketFilter
 ): boolean {
   if (priceBucketFilter !== 'all' && item.priceBucket !== priceBucketFilter) {
     return false;
   }
-  if (volumeBucketFilter !== 'all' && item.volumeBucket !== volumeBucketFilter) {
-    return false;
-  }
-  if (shortModeFilter !== 'all' && item.streakShortMode !== shortModeFilter) {
-    return false;
-  }
-  if (longModeFilter !== 'all' && item.streakLongMode !== longModeFilter) {
-    return false;
-  }
   return true;
-}
-
-function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): string {
-  if (mode === 'bullish') {
-    return 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300';
-  }
-  if (mode === 'bearish') {
-    return 'bg-rose-500/12 text-rose-700 dark:text-rose-300';
-  }
-  return 'bg-muted text-muted-foreground';
 }
 
 function getStudyReadItems(metric: Topix100RankingMetric, studyMode: Topix100StudyMode): string[] {
@@ -110,7 +80,7 @@ function getStudyReadItems(metric: Topix100RankingMetric, studyMode: Topix100Stu
   }
 
   if (metric === 'price_vs_sma_gap') {
-    return ['Q10 = below SMA', 'Q2-4 = trough', 'Decile-only score', 'Volume/state = context'];
+    return ['Q10 = below SMA', 'Q2-4 = trough', 'Decile-only score', 'Volume SMA 5/20 continuous'];
   }
 
   return ['Legacy comparison', 'Decile-only intraday score'];
@@ -535,30 +505,7 @@ function Topix100RankingDataTable({
             className="w-28 px-2 py-1.5 text-right"
             buttonClassName="justify-end"
           />
-          <SortableHeader
-            label="Vol Split"
-            sortField="volumeBucket"
-            activeSortBy={sortBy}
-            activeSortOrder={sortOrder}
-            onSortChange={onSortChange}
-            className="w-20 px-2 py-1.5 text-left"
-          />
-          <SortableHeader
-            label="Short"
-            sortField="streakShortMode"
-            activeSortBy={sortBy}
-            activeSortOrder={sortOrder}
-            onSortChange={onSortChange}
-            className="w-20 px-2 py-1.5 text-left"
-          />
-          <SortableHeader
-            label="Long"
-            sortField="streakLongMode"
-            activeSortBy={sortBy}
-            activeSortOrder={sortOrder}
-            onSortChange={onSortChange}
-            className="w-20 px-2 py-1.5 text-left"
-          />
+          <th className="w-20 px-2 py-1.5 text-left text-muted-foreground">Bucket</th>
           <SortableHeader
             label={resolveScoreLabel(studyMode)}
             sortField={scoreSortField}
@@ -635,21 +582,7 @@ function Topix100RankingDataTable({
                 ? formatVolumeRatio(item.priceSma20_80)
                 : formatRate(item.priceVsSmaGap)}
             </td>
-            <td className="px-2 py-1.5 text-muted-foreground">{item.volumeBucket ?? '-'}</td>
-            <td className="px-2 py-1.5">
-              <span
-                className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${streakModeToneClass(item.streakShortMode)}`}
-              >
-                {item.streakShortMode ? getTopix100StreakModeLabel(item.streakShortMode) : '-'}
-              </span>
-            </td>
-            <td className="px-2 py-1.5">
-              <span
-                className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${streakModeToneClass(item.streakLongMode)}`}
-              >
-                {item.streakLongMode ? getTopix100StreakModeLabel(item.streakLongMode) : '-'}
-              </span>
-            </td>
+            <td className="px-2 py-1.5 text-muted-foreground uppercase">{item.priceBucket}</td>
             <td className="px-2 py-1.5 text-right tabular-nums">{formatScore(resolveStudyScore(item, studyMode))}</td>
             {showSnapshotBookColumns ? (
               <>
@@ -686,9 +619,6 @@ function getDefaultSortOrder(sortBy: Topix100RankingSortKey): SortOrder {
   switch (sortBy) {
     case 'code':
     case 'companyName':
-    case 'volumeBucket':
-    case 'streakShortMode':
-    case 'streakLongMode':
     case 'longScore5dRank':
     case 'intradayLongRank':
     case 'intradayShortRank':
@@ -758,12 +688,6 @@ function compareItems(
         rankingMetric === 'price_sma_20_80' ? right.priceSma20_80 : right.priceVsSmaGap,
         sortOrder
       );
-    case 'volumeBucket':
-      return compareNullableStrings(left.volumeBucket, right.volumeBucket, sortOrder);
-    case 'streakShortMode':
-      return compareNullableStrings(left.streakShortMode, right.streakShortMode, sortOrder);
-    case 'streakLongMode':
-      return compareNullableStrings(left.streakLongMode, right.streakLongMode, sortOrder);
     case 'longScore5d':
       return compareNullableNumbers(left.longScore5d, right.longScore5d, sortOrder);
     case 'longScore5dRank':
@@ -864,9 +788,6 @@ export function Topix100RankingTable({
   rankingMetric,
   rankingSmaWindow,
   priceBucketFilter,
-  volumeBucketFilter,
-  shortModeFilter,
-  longModeFilter,
   sortBy,
   sortOrder,
   onSortChange,
@@ -878,9 +799,7 @@ export function Topix100RankingTable({
   const snapshotBookRoleMap =
     effectiveStudyMode === 'intraday' ? buildSnapshotBookRoleMap(data?.items ?? [], SNAPSHOT_BOOK_TOP_K) : new Map();
   const showSnapshotBookColumns = effectiveStudyMode === 'intraday' && snapshotBookRoleMap.size > 0;
-  const filteredItems = (data?.items ?? []).filter((item) =>
-    matchesFilters(item, priceBucketFilter, volumeBucketFilter, shortModeFilter, longModeFilter)
-  );
+  const filteredItems = (data?.items ?? []).filter((item) => matchesFilters(item, priceBucketFilter));
   const effectiveMetric = data?.rankingMetric ?? rankingMetric;
   const items = sortItems(filteredItems, effectiveMetric, sortBy, sortOrder);
   const runtimeMeta = buildRuntimeMetaSummary(data, rankingMetric, rankingSmaWindow, studyMode);

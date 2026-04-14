@@ -567,15 +567,11 @@ class SignalProcessor:
         universe_multi_data: dict[str, dict[str, pd.DataFrame]],
         universe_member_codes: Sequence[str] | None,
         price_sma_period: int,
-        volume_short_period: int,
-        volume_long_period: int,
     ) -> pd.DataFrame:
         cache_key = (
             id(universe_multi_data),
             self._normalize_universe_member_codes(universe_member_codes),
             price_sma_period,
-            volume_short_period,
-            volume_long_period,
         )
 
         with self._universe_rank_bucket_cache_lock:
@@ -588,8 +584,6 @@ class SignalProcessor:
                 universe_multi_data=universe_multi_data,
                 universe_member_codes=universe_member_codes,
                 price_sma_period=price_sma_period,
-                volume_short_period=volume_short_period,
-                volume_long_period=volume_long_period,
             )
             self._universe_rank_bucket_cache[cache_key] = feature_panel
             self._universe_rank_bucket_cache.move_to_end(cache_key)
@@ -752,8 +746,6 @@ class SignalProcessor:
                     universe_multi_data=params["universe_multi_data"],
                     universe_member_codes=params.get("universe_member_codes"),
                     price_sma_period=params["price_sma_period"],
-                    volume_short_period=params["volume_short_period"],
-                    volume_long_period=params["volume_long_period"],
                 )
 
             # 5. シグナル計算

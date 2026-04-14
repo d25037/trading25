@@ -365,10 +365,6 @@ class TestTopix100Ranking:
             assert "volumeSma5_20" in item
             assert "priceDecile" in item
             assert "priceBucket" in item
-            assert "volumeBucket" in item
-            assert "streakShortMode" in item
-            assert "streakLongMode" in item
-            assert "streakStateLabel" in item
             assert "intradayScore" in item
             assert "intradayLongRank" in item
             assert "intradayShortRank" in item
@@ -418,10 +414,6 @@ class TestTopix100Ranking:
                         code="72030",
                         company_name="トヨタ自動車",
                         date="2024-02-14",
-                        short_mode="bullish",
-                        long_mode="bullish",
-                        state_key="state_a",
-                        state_label="State A",
                         long_score_5d=0.012,
                         short_score_1d=None,
                     ),
@@ -429,10 +421,6 @@ class TestTopix100Ranking:
                         code="67580",
                         company_name="ソニーグループ",
                         date="2024-02-14",
-                        short_mode="bearish",
-                        long_mode="bullish",
-                        state_key="state_b",
-                        state_label="State B",
                         long_score_5d=0.008,
                         short_score_1d=None,
                     ),

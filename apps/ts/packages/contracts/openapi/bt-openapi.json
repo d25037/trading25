@@ -15652,58 +15652,6 @@
             ],
             "title": "Shortscore1Drank"
           },
-          "streakLongMode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "bullish",
-                  "bearish"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Streaklongmode"
-          },
-          "streakShortMode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "bullish",
-                  "bearish"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Streakshortmode"
-          },
-          "streakStateKey": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Streakstatekey"
-          },
-          "streakStateLabel": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Streakstatelabel"
-          },
           "swingEntryDate": {
             "anyOf": [
               {
@@ -15729,21 +15677,6 @@
           "volume": {
             "title": "Volume",
             "type": "number"
-          },
-          "volumeBucket": {
-            "anyOf": [
-              {
-                "enum": [
-                  "high",
-                  "low"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Volumebucket"
           },
           "volumeSma5_20": {
             "title": "Volumesma5 20",

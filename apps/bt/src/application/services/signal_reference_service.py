@@ -85,7 +85,7 @@ _SIGNAL_COPY_OVERRIDES: dict[str, dict[str, list[str] | str]] = {
         ],
         "pitfalls": [
             "Single-stock or tiny universes will usually return no matches because decile buckets need enough constituents.",
-            "Q10 is the below-SMA cohort and Q1 is the above-SMA cohort; optional volume high/low split only applies inside q1, q10, and q456.",
+            "Q10 is the below-SMA cohort and Q1 is the above-SMA cohort; validate which side matches the intended mean-reversion or momentum read.",
         ],
     },
 }
@@ -146,19 +146,8 @@ _SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
         "label": "Price SMA Window",
         "unit": "bars",
     },
-    "volume_short_period": {
-        "label": "Volume Short Period",
-        "unit": "bars",
-    },
-    "volume_long_period": {
-        "label": "Volume Long Period",
-        "unit": "bars",
-    },
     "price_bucket": {
         "label": "Price Bucket",
-    },
-    "volume_bucket": {
-        "label": "Volume Bucket",
     },
     "min_constituents": {
         "label": "Min Constituents",

@@ -58,11 +58,6 @@ def build_feature_panel_from_state_event_df(
         "date",
         "segment_return",
         "segment_day_count",
-        "base_streak_mode",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
     ]
     missing_state_columns = [
         column for column in state_columns if column not in state_df.columns
@@ -94,11 +89,6 @@ def build_feature_panel_from_state_event_df(
         "segment_id",
         "decile_num",
         "decile",
-        "volume_bucket",
-        "short_mode",
-        "long_mode",
-        "state_key",
-        "state_label",
         price_feature,
         volume_feature,
         "recent_return_1d",
