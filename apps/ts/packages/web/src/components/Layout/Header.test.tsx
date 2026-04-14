@@ -147,6 +147,19 @@ describe('Header', () => {
     expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
   });
 
+  it('closes the overflow menu when the route changes', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Header />);
+
+    await user.click(screen.getByRole('button', { name: 'More' }));
+    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
+
+    pathname = '/market-db';
+    rerender(<Header />);
+
+    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+  });
+
   it('renders theme toggle', () => {
     render(<Header />);
 

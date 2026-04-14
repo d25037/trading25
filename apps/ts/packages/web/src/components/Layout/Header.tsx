@@ -67,11 +67,17 @@ export function Header() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const previousPathnameRef = useRef(pathname);
 
   const activeOverflowItem = overflowNavigationItems.find((item) => isNavigationItemActive(item, pathname));
   const MoreMenuIcon = activeOverflowItem?.icon ?? MoreHorizontal;
 
   useEffect(() => {
+    if (previousPathnameRef.current === pathname) {
+      return;
+    }
+
+    previousPathnameRef.current = pathname;
     setIsMoreMenuOpen(false);
   }, [pathname]);
 

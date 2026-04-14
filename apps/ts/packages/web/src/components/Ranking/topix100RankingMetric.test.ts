@@ -30,7 +30,7 @@ describe('topix100RankingMetric', () => {
   it('returns metric labels and descriptions for both modes', () => {
     expect(getTopix100RankingMetricLabel('price_vs_sma_gap', 50)).toBe('Price / SMA50 Gap');
     expect(getTopix100RankingMetricDescription('price_vs_sma_gap', 100)).toBe(
-      'SMA100 baseline. Q10 = below SMA; Q2-4 = trough; Volume Low (5/20) first.'
+      'SMA100 baseline. Q10 = below SMA; Q2-4 = trough; volume SMA 5/20 stays continuous.'
     );
     expect(getTopix100RankingMetricLabel('price_sma_20_80')).toBe('Price SMA 20/80');
     expect(getTopix100RankingMetricDescription('price_sma_20_80')).toBe('Legacy SMA 20/80 comparison view.');
