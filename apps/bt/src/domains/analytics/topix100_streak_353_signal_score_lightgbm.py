@@ -1047,6 +1047,7 @@ def _build_scoring_snapshot_df(
         history_df,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
+        as_of_date=target_date,
     )
     if state_snapshot_df.empty:
         return pd.DataFrame()

@@ -49,6 +49,10 @@ from src.domains.analytics.topix_streak_multi_timeframe_mode import (
     MULTI_TIMEFRAME_STATE_ORDER,
     _build_multi_timeframe_state_streak_df,
 )
+from src.shared.utils.pit_guard import (
+    latest_rows_per_group_as_of,
+    slice_frame_as_of,
+)
 
 DEFAULT_SHORT_WINDOW_STREAKS = 3
 DEFAULT_LONG_WINDOW_STREAKS = 53
@@ -183,7 +187,11 @@ def run_topix100_streak_353_transfer_research(
     if start_date is not None:
         history_df = history_df[history_df["date"] >= start_date].copy()
     if end_date is not None:
-        history_df = history_df[history_df["date"] <= end_date].copy()
+        history_df = slice_frame_as_of(
+            history_df,
+            as_of_date=end_date,
+            date_col="date",
+        )
     if history_df.empty:
         raise ValueError("No TOPIX100 constituent rows remained after date filters")
 
@@ -410,9 +418,11 @@ def build_topix100_streak_daily_state_panel_df(
     filtered_history_df = history_df.copy()
     filtered_history_df["date"] = filtered_history_df["date"].astype(str)
     if analysis_end_date is not None:
-        filtered_history_df = filtered_history_df[
-            filtered_history_df["date"] <= analysis_end_date
-        ].copy()
+        filtered_history_df = slice_frame_as_of(
+            filtered_history_df,
+            as_of_date=analysis_end_date,
+            date_col="date",
+        )
     if filtered_history_df.empty:
         return pd.DataFrame(columns=list(_DAILY_STATE_PANEL_COLUMNS))
 
@@ -464,6 +474,7 @@ def build_topix100_streak_state_snapshot_df(
     *,
     short_window_streaks: int = DEFAULT_SHORT_WINDOW_STREAKS,
     long_window_streaks: int = DEFAULT_LONG_WINDOW_STREAKS,
+    as_of_date: str | None = None,
 ) -> pd.DataFrame:
     if short_window_streaks <= 0 or long_window_streaks <= 0:
         raise ValueError("short_window_streaks and long_window_streaks must be positive")
@@ -474,6 +485,7 @@ def build_topix100_streak_state_snapshot_df(
 
     state_panel_df = build_topix100_streak_daily_state_panel_df(
         history_df,
+        analysis_end_date=as_of_date,
         validation_ratio=None,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
@@ -481,11 +493,11 @@ def build_topix100_streak_state_snapshot_df(
     if state_panel_df.empty:
         return pd.DataFrame(columns=list(_STATE_SNAPSHOT_COLUMNS))
 
-    latest_state_df = (
-        state_panel_df.sort_values(["code", "date"], kind="stable")
-        .groupby("code", observed=True, sort=False)
-        .tail(1)
-        .reset_index(drop=True)
+    latest_state_df = latest_rows_per_group_as_of(
+        state_panel_df,
+        group_cols=["code"],
+        as_of_date=as_of_date,
+        date_col="date",
     )
     snapshot_df = latest_state_df[list(_STATE_SNAPSHOT_COLUMNS)].copy()
     return snapshot_df.sort_values(["date", "code"], kind="stable").reset_index(drop=True)

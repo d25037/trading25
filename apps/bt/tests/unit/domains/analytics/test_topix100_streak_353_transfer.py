@@ -7,6 +7,7 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
+from tests.unit.utils.pit_assertions import assert_frame_rows_equal_at_date
 from src.domains.analytics.topix100_streak_353_transfer import (
     TOPIX100_STREAK_353_TRANSFER_RESEARCH_EXPERIMENT_ID,
     _build_published_summary_payload,
@@ -328,21 +329,49 @@ def test_topix100_streak_daily_state_panel_is_point_in_time_stable() -> None:
         long_window_streaks=2,
     )
 
-    base_row = (
-        base_panel_df[base_panel_df["date"] == target_date]
-        .reset_index(drop=True)
-        .iloc[0]
+    assert_frame_rows_equal_at_date(
+        base_panel_df,
+        extended_panel_df,
+        target_date=target_date,
+        compare_columns=(
+            "date",
+            "code",
+            "segment_return",
+            "current_streak_mode",
+            "current_streak_day_count",
+        ),
     )
+    base_row = base_panel_df[base_panel_df["date"] == target_date].reset_index(drop=True).iloc[0]
     extended_row = (
-        extended_panel_df[extended_panel_df["date"] == target_date]
-        .reset_index(drop=True)
-        .iloc[0]
+        extended_panel_df[extended_panel_df["date"] == target_date].reset_index(drop=True).iloc[0]
     )
 
     assert base_row["segment_return"] == pytest.approx(98.0 / 105.0 - 1.0)
     assert extended_row["segment_return"] == pytest.approx(float(base_row["segment_return"]))
     assert extended_row["current_streak_mode"] == base_row["current_streak_mode"]
     assert extended_row["current_streak_day_count"] == base_row["current_streak_day_count"]
+
+
+def test_topix100_streak_state_snapshot_honors_as_of_date() -> None:
+    target_date = "2026-01-06"
+    history_df = pd.DataFrame.from_records(
+        [
+            {"code": "1111", "company_name": "Alpha", "date": "2026-01-01", "close": 100.0},
+            {"code": "1111", "company_name": "Alpha", "date": "2026-01-02", "close": 105.0},
+            {"code": "1111", "company_name": "Alpha", "date": "2026-01-05", "close": 100.0},
+            {"code": "1111", "company_name": "Alpha", "date": target_date, "close": 98.0},
+            {"code": "1111", "company_name": "Alpha", "date": "2026-01-07", "close": 97.0},
+        ]
+    )
+
+    snapshot_df = build_topix100_streak_state_snapshot_df(
+        history_df,
+        short_window_streaks=1,
+        long_window_streaks=2,
+        as_of_date=target_date,
+    )
+
+    assert snapshot_df["date"].tolist() == [target_date]
 
 
 def test_topix100_streak_daily_state_panel_preserves_full_daily_universe(

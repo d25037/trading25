@@ -194,7 +194,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("72030", "2024-05-10", 100.0, "FY", 120.0, 118.0, 100.0),
+        ("72030", "2024-01-10", 100.0, "FY", 120.0, 118.0, 100.0),
     )
     conn.execute(
         """
@@ -203,7 +203,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?)
         """,
-        ("72030", "2024-08-10", "1Q", 140.0, 100.0),
+        ("72030", "2024-01-18", "1Q", 140.0, 100.0),
     )
 
     conn.execute(
@@ -214,7 +214,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?)
         """,
-        ("67580", "2024-05-12", 200.0, "FY", 220.0, 200.0),
+        ("67580", "2024-01-12", 200.0, "FY", 220.0, 200.0),
     )
     conn.execute(
         """
@@ -234,7 +234,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("83060", "2024-05-15", -50.0, "FY", -40.0, -42.0, 50.0),
+        ("83060", "2024-01-15", -50.0, "FY", -40.0, -42.0, 50.0),
     )
     conn.execute(
         """
@@ -254,7 +254,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("46890", "2024-05-18", 80.0, "FY", None, None, 100.0),
+        ("46890", "2024-01-16", 80.0, "FY", None, None, 100.0),
     )
     conn.execute(
         """
@@ -263,7 +263,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?)
         """,
-        ("46890", "2024-08-18", "2Q", 95.0, 100.0),
+        ("46890", "2024-01-18", "2Q", 95.0, 100.0),
     )
     conn.execute(
         """
@@ -273,7 +273,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("22220", "2024-05-20", 0.0, "FY", 60.0, 60.0, 100.0),
+        ("22220", "2024-01-17", 0.0, "FY", 60.0, 60.0, 100.0),
     )
     conn.execute(
         """
@@ -293,7 +293,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("33330", "2024-05-21", 200.0, "FY", 250.0, 250.0, 100.0),
+        ("33330", "2024-01-11", 200.0, "FY", 250.0, 250.0, 100.0),
     )
     conn.execute(
         """
@@ -313,7 +313,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("44440", "2024-05-22", 140.0, "FY", None, None, 100.0),
+        ("44440", "2024-01-12", 140.0, "FY", None, None, 100.0),
     )
     conn.execute(
         """
@@ -323,7 +323,7 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
-        ("5555", "2024-05-25", 50.0, "FY", 60.0, 60.0, 100.0),
+        ("5555", "2024-01-18", 50.0, "FY", 60.0, 60.0, 100.0),
     )
 
     conn.commit()
@@ -799,7 +799,7 @@ class TestGetFundamentalRankings:
         # forecast 140.0 / actual 100.0 = 1.4
         assert toyota.epsValue == 1.4
         assert toyota.periodType == "1Q"
-        assert toyota.disclosedDate == "2024-08-10"
+        assert toyota.disclosedDate == "2024-01-18"
 
     def test_fy_forecast_fallback_when_revision_missing(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
@@ -807,7 +807,7 @@ class TestGetFundamentalRankings:
         assert sony is not None
         assert sony.source == "fy"
         assert sony.periodType == "FY"
-        assert sony.disclosedDate == "2024-05-12"
+        assert sony.disclosedDate == "2024-01-12"
         # forecast: 220 * (200 / 250) = 176.0
         # actual: 200 * (200 / 250) = 160.0
         # ratio: 176.0 / 160.0 = 1.1
@@ -819,7 +819,7 @@ class TestGetFundamentalRankings:
         assert alt is not None
         assert alt.source == "revised"
         assert alt.periodType == "2Q"
-        assert alt.disclosedDate == "2024-08-18"
+        assert alt.disclosedDate == "2024-01-18"
         # forecast 95.0 / actual 80.0 = 1.1875
         assert alt.epsValue == 1.1875
 
@@ -853,7 +853,7 @@ class TestGetFundamentalRankings:
             )
             VALUES (?,?,?,?,?,?,?)
             """,
-            ("55550", "2024-05-25", 400.0, "FY", 200.0, 200.0, 100.0),
+            ("55550", "2024-01-18", 400.0, "FY", 200.0, 200.0, 100.0),
         )
         conn.close()
 
@@ -904,8 +904,31 @@ class TestGetFundamentalRankings:
             forecast_lookback_fy_count=2,
         )
         filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
-        # 33330 has two FY disclosures in 2024, but lookback=2 should count 2024+2023.
+        # 33330 has a later future FY disclosure too, but lookback=2 should still count 2024+2023 as of the target date.
         assert "33330" not in filtered_codes
+
+    def test_fundamental_rankings_ignore_future_disclosures(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
+            )
+            VALUES (?,?,?,?,?)
+            """,
+            ("72030", "2024-01-22", "2Q", 999.0, 100.0),
+        )
+        conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_fundamental_rankings(markets="prime", limit=20)
+        reader.close()
+
+        toyota = next((item for item in result.rankings.ratioHigh if item.code == "72030"), None)
+        assert toyota is not None
+        assert toyota.disclosedDate == "2024-01-18"
+        assert toyota.epsValue == pytest.approx(1.4)
 
     def test_filter_handles_stock_without_forecast_snapshot(self, service):
         filtered = service.get_fundamental_rankings(
@@ -1035,6 +1058,23 @@ class TestRankingHelperBranches:
                 lookback_fy_count=2,
             )
             == 110.0
+        )
+        assert (
+            service._resolve_latest_forecast_snapshot(
+                [
+                    _StatementRow("X", "2024-01-10", "FY", 100.0, 120.0, 120.0, 100.0),
+                    _StatementRow("X", "2024-01-18", "1Q", None, 140.0, None, 100.0),
+                    _StatementRow("X", "2024-01-22", "2Q", None, 999.0, None, 100.0),
+                ],
+                baseline_shares=100.0,
+                as_of_date="2024-01-19",
+            )
+            == _ForecastValue(
+                value=140.0,
+                disclosed_date="2024-01-18",
+                period_type="1Q",
+                source="revised",
+            )
         )
 
         forecast = _ForecastValue(

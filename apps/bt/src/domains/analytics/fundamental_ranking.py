@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.pit_guard import filter_records_as_of
 from src.shared.utils.share_adjustment import (
     is_valid_share_count as _is_valid_share_count_shared,
     resolve_latest_quarterly_baseline_shares,
@@ -121,10 +122,30 @@ def calculate_eps_ratio(forecast_value: float, actual_value: float) -> float | N
 
 
 class FundamentalRankingCalculator:
-    def resolve_baseline_shares(self, rows: list[StatementRow]) -> float | None:
+    def _rows_as_of(
+        self,
+        rows: list[StatementRow],
+        *,
+        as_of_date: str | None,
+    ) -> list[StatementRow]:
+        if as_of_date is None:
+            return list(rows)
+        return filter_records_as_of(
+            rows,
+            as_of_date=as_of_date,
+            date_getter=lambda row: row.disclosed_date,
+        )
+
+    def resolve_baseline_shares(
+        self,
+        rows: list[StatementRow],
+        *,
+        as_of_date: str | None = None,
+    ) -> float | None:
+        eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
         snapshots = [
             (row.period_type, row.disclosed_date, row.shares_outstanding)
-            for row in rows
+            for row in eligible_rows
         ]
         return resolve_latest_quarterly_baseline_shares(snapshots)
 
@@ -132,8 +153,11 @@ class FundamentalRankingCalculator:
         self,
         rows: list[StatementRow],
         baseline_shares: float | None,
+        *,
+        as_of_date: str | None = None,
     ) -> ForecastValue | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
+        eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
+        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
         for row in sorted_rows:
             if row.period_type != "FY":
                 continue
@@ -157,11 +181,14 @@ class FundamentalRankingCalculator:
         rows: list[StatementRow],
         baseline_shares: float | None,
         lookback_fy_count: int,
+        *,
+        as_of_date: str | None = None,
     ) -> float | None:
         if lookback_fy_count < 1:
             raise ValueError("lookback_fy_count must be >= 1")
 
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
+        eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
+        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
         recent_values: list[float] = []
         seen_cycles: set[str] = set()
 
@@ -187,8 +214,14 @@ class FundamentalRankingCalculator:
             return None
         return max(recent_values)
 
-    def resolve_latest_fy_row(self, rows: list[StatementRow]) -> LatestFyRow | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
+    def resolve_latest_fy_row(
+        self,
+        rows: list[StatementRow],
+        *,
+        as_of_date: str | None = None,
+    ) -> LatestFyRow | None:
+        eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
+        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
         for row in sorted_rows:
             if row.period_type != "FY":
                 continue
@@ -231,8 +264,11 @@ class FundamentalRankingCalculator:
         rows: list[StatementRow],
         baseline_shares: float | None,
         fy_disclosed_date: str,
+        *,
+        as_of_date: str | None = None,
     ) -> ForecastValue | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
+        eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
+        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
         for row in sorted_rows:
             if row.period_type not in _QUARTER_PERIODS:
                 continue
@@ -262,8 +298,10 @@ class FundamentalRankingCalculator:
         self,
         rows: list[StatementRow],
         baseline_shares: float | None,
+        *,
+        as_of_date: str | None = None,
     ) -> ForecastValue | None:
-        latest_fy_row = self.resolve_latest_fy_row(rows)
+        latest_fy_row = self.resolve_latest_fy_row(rows, as_of_date=as_of_date)
         if latest_fy_row is None:
             return None
 
@@ -271,6 +309,7 @@ class FundamentalRankingCalculator:
             rows,
             baseline_shares,
             latest_fy_row.disclosed_date,
+            as_of_date=as_of_date,
         )
         if revised is not None:
             return revised
