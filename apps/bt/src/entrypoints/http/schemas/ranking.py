@@ -71,7 +71,11 @@ Topix100RankingMetric = Literal["price_vs_sma_gap", "price_sma_20_80"]
 Topix100PriceSmaWindow = Literal[20, 50, 100]
 Topix100StreakMode = Literal["bullish", "bearish"]
 Topix100StudyMode = Literal["intraday", "swing_5d"]
-Topix100ScoreTarget = Literal["next_session_open_close", "next_session_open_to_close_5d"]
+Topix100ScoreTarget = Literal[
+    "next_session_open_close",
+    "next_session_open_to_close_5d",
+    "next_session_open_to_open_5d",
+]
 
 
 class Topix100RankingItem(BaseModel):
@@ -106,7 +110,7 @@ class Topix100RankingItem(BaseModel):
     nextSessionIntradayReturn: float | None = None
     swingEntryDate: str | None = None
     swingExitDate: str | None = None
-    openToClose5dReturn: float | None = None
+    openToOpen5dReturn: float | None = None
 
 
 class Topix100RankingResponse(BaseModel):

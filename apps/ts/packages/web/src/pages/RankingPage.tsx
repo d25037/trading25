@@ -188,7 +188,7 @@ function buildIntroMetaItems(
         label: 'Read',
         value:
           topix100StudyMode === 'swing_5d'
-            ? 'Leak-free X+1 open -> X+5 close, KPI vs TOPIX'
+            ? 'Leak-free X+1 open -> X+6 open, KPI vs TOPIX'
             : 'Decile-only intraday LightGBM score',
       },
     ];

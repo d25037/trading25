@@ -38,7 +38,7 @@ const STREAK_MODE_OPTIONS: { value: Topix100StreakModeFilter; label: string }[] 
   { value: 'bullish', label: getTopix100StreakModeLabel('bullish') },
 ];
 const STUDY_MODE_OPTIONS: { value: Topix100StudyMode; label: string }[] = [
-  { value: 'swing_5d', label: 'Open -> 5D Close' },
+  { value: 'swing_5d', label: 'Open -> 5D Open' },
   { value: 'intraday', label: 'Intraday' },
 ];
 
@@ -59,9 +59,9 @@ function buildStudyDescription(
 
   if (resolvedStudyMode === 'swing_5d') {
     if (resolvedMetric === 'price_vs_sma_gap') {
-      return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The snapshot stays leak-free at date X, enters on X+1 open, exits on X+5 close, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.`;
+      return `Start at ${getTopix100RankingMetricLabel(resolvedMetric, resolvedSmaWindow)}. ${metricDescription} The snapshot stays leak-free at date X, enters on X+1 open, exits on X+6 open, and reads selection skill first versus TOPIX, then versus the equal-weight TOPIX100 universe.`;
     }
-    return `${metricDescription} The leak-free swing study enters on X+1 open, exits on X+5 close, and keeps TOPIX as the headline benchmark with TOPIX100 universe as the secondary cross-check.`;
+    return `${metricDescription} The leak-free swing study enters on X+1 open, exits on X+6 open, and keeps TOPIX as the headline benchmark with TOPIX100 universe as the secondary cross-check.`;
   }
 
   if (resolvedMetric === 'price_vs_sma_gap') {

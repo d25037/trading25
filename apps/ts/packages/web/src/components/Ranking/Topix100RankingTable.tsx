@@ -104,7 +104,7 @@ function streakModeToneClass(mode: Topix100RankingItem['streakShortMode']): stri
 function getStudyReadItems(metric: Topix100RankingMetric, studyMode: Topix100StudyMode): string[] {
   if (studyMode === 'swing_5d') {
     if (metric === 'price_vs_sma_gap') {
-      return ['KPI = vs TOPIX', 'Check = vs TOPIX100 EW', 'Entry = X+1 open', 'Exit = X+5 close'];
+      return ['KPI = vs TOPIX', 'Check = vs TOPIX100 EW', 'Entry = X+1 open', 'Exit = X+6 open'];
     }
     return ['Legacy metric', 'KPI = vs TOPIX', 'Check = vs TOPIX100 EW'];
   }
@@ -132,7 +132,7 @@ function resolveStudyScore(item: Topix100RankingItem, studyMode: Topix100StudyMo
 }
 
 function resolveStudyReturn(item: Topix100RankingItem, studyMode: Topix100StudyMode): number | null | undefined {
-  return studyMode === 'swing_5d' ? item.openToClose5dReturn : item.nextSessionIntradayReturn;
+  return studyMode === 'swing_5d' ? item.openToOpen5dReturn : item.nextSessionIntradayReturn;
 }
 
 function compareByScoreDesc(
@@ -179,7 +179,7 @@ function getEligibleIntradayItems(items: Topix100RankingItem[]): Topix100Ranking
 }
 
 function getEligibleSwingItems(items: Topix100RankingItem[]): Topix100RankingItem[] {
-  return items.filter((item) => isFiniteNumber(item.longScore5d) && isFiniteNumber(item.openToClose5dReturn));
+  return items.filter((item) => isFiniteNumber(item.longScore5d) && isFiniteNumber(item.openToOpen5dReturn));
 }
 
 function buildIntradayPortfolioSummaries(items: Topix100RankingItem[]): IntradaySnapshotSummary[] {
@@ -239,7 +239,7 @@ function buildSwingPortfolioSummaries(data: Topix100RankingResponse | undefined)
 
     const selectedItems = sorted.slice(0, topK);
     const selectedReturnMean =
-      selectedItems.reduce((sum, item) => sum + (item.openToClose5dReturn ?? 0), 0) / topK;
+      selectedItems.reduce((sum, item) => sum + (item.openToOpen5dReturn ?? 0), 0) / topK;
 
     return [
       {
@@ -371,7 +371,7 @@ function Topix100ResultsHeader({
 }) {
   const realizedLabel =
     runtimeMeta.studyMode === 'swing_5d'
-      ? 'Realized = next available open -> 5th close when present'
+      ? 'Realized = next available X+1 open -> X+6 open when present'
       : 'Realized = next available open -> close when present';
 
   return (
@@ -448,7 +448,7 @@ function Topix100SwingSummarySection({ summaries }: { summaries: SwingSnapshotSu
       <div className="space-y-1">
         <SectionEyebrow>Swing Summary</SectionEyebrow>
         <p className="text-xs text-muted-foreground">
-          Top-K long books scored on the X-date snapshot, entered on X+1 open, and closed on X+5 close.
+          Top-K long books scored on the X-date snapshot, entered on X+1 open, and exited on X+6 open.
         </p>
       </div>
       <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -475,7 +475,7 @@ function resolveScoreLabel(studyMode: Topix100StudyMode): string {
 }
 
 function resolveReturnLabel(studyMode: Topix100StudyMode): string {
-  return studyMode === 'swing_5d' ? '5D Ret' : 'Next Ret';
+  return studyMode === 'swing_5d' ? '5D O2O Ret' : 'Next Ret';
 }
 
 function Topix100RankingDataTable({
@@ -503,7 +503,7 @@ function Topix100RankingDataTable({
 }) {
   const scoreSortField: Topix100RankingSortKey = studyMode === 'swing_5d' ? 'longScore5d' : 'intradayScore';
   const returnSortField: Topix100RankingSortKey =
-    studyMode === 'swing_5d' ? 'openToClose5dReturn' : 'nextSessionIntradayReturn';
+    studyMode === 'swing_5d' ? 'openToOpen5dReturn' : 'nextSessionIntradayReturn';
 
   return (
     <table className="w-full text-xs">
@@ -774,8 +774,8 @@ function compareItems(
       return compareNullableNumbers(left.intradayLongRank, right.intradayLongRank, sortOrder);
     case 'intradayShortRank':
       return compareNullableNumbers(left.intradayShortRank, right.intradayShortRank, sortOrder);
-    case 'openToClose5dReturn':
-      return compareNullableNumbers(left.openToClose5dReturn, right.openToClose5dReturn, sortOrder);
+    case 'openToOpen5dReturn':
+      return compareNullableNumbers(left.openToOpen5dReturn, right.openToOpen5dReturn, sortOrder);
     case 'nextSessionIntradayReturn':
       return compareNullableNumbers(left.nextSessionIntradayReturn, right.nextSessionIntradayReturn, sortOrder);
     case 'volumeSma5_20':

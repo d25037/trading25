@@ -380,21 +380,21 @@ function createSwingResponse(): Topix100RankingResponse {
   return {
     ...base,
     studyMode: 'swing_5d',
-    scoreTarget: 'next_session_open_to_close_5d',
-    intradayScoreTarget: 'next_session_open_to_close_5d',
+    scoreTarget: 'next_session_open_to_open_5d',
+    intradayScoreTarget: 'next_session_open_to_open_5d',
     primaryBenchmark: 'topix',
     secondaryBenchmark: 'topix100_universe',
     primaryBenchmarkReturn: 0.006,
     secondaryBenchmarkReturn: 0.004,
     benchmarkEntryDate: '2026-03-31',
-    benchmarkExitDate: '2026-04-04',
+    benchmarkExitDate: '2026-04-07',
     items: base.items.map((item, index) => ({
       ...item,
       longScore5d: 0.012 - index * 0.002,
       longScore5dRank: index + 1,
       swingEntryDate: '2026-03-31',
-      swingExitDate: '2026-04-04',
-      openToClose5dReturn: [0.018, 0.009, 0.007, null][index] ?? null,
+      swingExitDate: '2026-04-07',
+      openToOpen5dReturn: [0.018, 0.009, 0.007, null][index] ?? null,
     })),
   };
 }
@@ -620,12 +620,13 @@ describe('Topix100RankingTable', () => {
 
     expect(screen.getByText('KPI = vs TOPIX')).toBeInTheDocument();
     expect(screen.getByText('Check = vs TOPIX100 EW')).toBeInTheDocument();
-    expect(screen.getByText('Realized = next available open -> 5th close when present')).toBeInTheDocument();
+    expect(screen.getByText('Realized = next available X+1 open -> X+6 open when present')).toBeInTheDocument();
     expect(screen.getByText('Swing Summary')).toBeInTheDocument();
     expect(screen.getByText('Top 1')).toBeInTheDocument();
     expect(screen.getAllByText('+1.20%').length).toBeGreaterThan(0);
-    expect(screen.getByText('raw +1.80% | vs TOPIX100 EW +1.40% | 2026-03-31 -> 2026-04-04')).toBeInTheDocument();
+    expect(screen.getByText('raw +1.80% | vs TOPIX100 EW +1.40% | 2026-03-31 -> 2026-04-07')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /5D Score/i })).toBeInTheDocument();
-    expect(screen.getAllByText('2026-03-31 -> 2026-04-04').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /5D O2O Ret/i })).toBeInTheDocument();
+    expect(screen.getAllByText('2026-03-31 -> 2026-04-07').length).toBeGreaterThan(0);
   });
 });

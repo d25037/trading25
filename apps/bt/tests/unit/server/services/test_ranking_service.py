@@ -373,7 +373,7 @@ def topix100_ranking_service(tmp_path):
 
     volume_trends = [6, -6, 5, -5, 4, -4, 3, -3, 2, -2, 1, -1, 7, -7, 8, -8, 9, -9, 10, -10]
     start_date = calendar_date(2024, 1, 1)
-    dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(90)]
+    dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(91)]
 
     for idx in range(20):
         code = f"{1001 + idx}"
@@ -666,7 +666,7 @@ class TestGetTopix100Ranking:
         )
         result = topix100_ranking_service.get_topix100_ranking()
 
-        assert result.date == "2024-03-30"
+        assert result.date == "2024-03-31"
         assert result.rankingMetric == "price_vs_sma_gap"
         assert result.smaWindow == 50
         assert result.shortWindowStreaks == 3
@@ -772,7 +772,7 @@ class TestGetTopix100Ranking:
 
     def test_supports_swing_5d_mode_with_benchmarks(self, topix100_ranking_service, monkeypatch):
         monkeypatch.setattr(
-            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot",
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot",
             lambda *args, **kwargs: _build_test_swing_snapshot(),
         )
 
@@ -783,8 +783,8 @@ class TestGetTopix100Ranking:
 
         assert result.date == "2024-03-25"
         assert result.studyMode == "swing_5d"
-        assert result.scoreTarget == "next_session_open_to_close_5d"
-        assert result.intradayScoreTarget == "next_session_open_to_close_5d"
+        assert result.scoreTarget == "next_session_open_to_open_5d"
+        assert result.intradayScoreTarget == "next_session_open_to_open_5d"
         assert result.scoreModelType == "daily_refit"
         assert result.scoreTrainWindowDays == 756
         assert result.scoreTestWindowDays == 1
@@ -795,18 +795,18 @@ class TestGetTopix100Ranking:
         assert result.primaryBenchmarkReturn is not None
         assert result.secondaryBenchmarkReturn is not None
         assert result.benchmarkEntryDate == "2024-03-26"
-        assert result.benchmarkExitDate == "2024-03-30"
+        assert result.benchmarkExitDate == "2024-03-31"
         assert result.itemCount == 20
 
         first_item = result.items[0]
         assert first_item.longScore5d is not None
         assert first_item.longScore5dRank is not None
         assert first_item.swingEntryDate == "2024-03-26"
-        assert first_item.swingExitDate == "2024-03-30"
-        assert first_item.openToClose5dReturn is not None
+        assert first_item.swingExitDate == "2024-03-31"
+        assert first_item.openToOpen5dReturn is not None
 
         realized_returns = [
-            item.openToClose5dReturn for item in result.items if item.openToClose5dReturn is not None
+            item.openToOpen5dReturn for item in result.items if item.openToOpen5dReturn is not None
         ]
         assert realized_returns
         assert result.secondaryBenchmarkReturn == pytest.approx(

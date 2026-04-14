@@ -355,7 +355,7 @@ export interface paths {
         };
         /**
          * Get TOPIX100 ranking snapshot
-         * @description Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets. When the next session exists, the response also includes the realized next-session intraday return.
+         * @description Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap (default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, with volume SMA 5/20 sidecar buckets. Intraday mode reports the realized next-session open-to-close return, while swing mode reports the realized X+1 open to X+6 open return.
          */
         get: operations["get_topix100_ranking_api_analytics_topix100_ranking_get"];
         put?: never;
@@ -10054,8 +10054,8 @@ export interface components {
             nextSessionDate?: string | null;
             /** Nextsessionintradayreturn */
             nextSessionIntradayReturn?: number | null;
-            /** Opentoclose5Dreturn */
-            openToClose5dReturn?: number | null;
+            /** Opentoopen5Dreturn */
+            openToOpen5dReturn?: number | null;
             /**
              * Pricebucket
              * @enum {string}
@@ -10112,7 +10112,7 @@ export interface components {
              * @default next_session_open_close
              * @enum {string}
              */
-            intradayScoreTarget: "next_session_open_close" | "next_session_open_to_close_5d";
+            intradayScoreTarget: "next_session_open_close" | "next_session_open_to_close_5d" | "next_session_open_to_open_5d";
             /** Itemcount */
             itemCount: number;
             /** Items */
@@ -10163,7 +10163,7 @@ export interface components {
              * @default next_session_open_close
              * @enum {string}
              */
-            scoreTarget: "next_session_open_close" | "next_session_open_to_close_5d";
+            scoreTarget: "next_session_open_close" | "next_session_open_to_close_5d" | "next_session_open_to_open_5d";
             /** Scoretestwindowdays */
             scoreTestWindowDays?: number | null;
             /** Scoretrainwindowdays */

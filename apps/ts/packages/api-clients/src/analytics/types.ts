@@ -124,7 +124,7 @@ export interface Topix100RankingItem {
   nextSessionIntradayReturn?: number | null;
   swingEntryDate?: string | null;
   swingExitDate?: string | null;
-  openToClose5dReturn?: number | null;
+  openToOpen5dReturn?: number | null;
 }
 
 export interface Topix100RankingResponse {

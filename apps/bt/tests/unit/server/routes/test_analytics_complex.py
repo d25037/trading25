@@ -440,7 +440,7 @@ class TestTopix100Ranking:
             )
 
         monkeypatch.setattr(
-            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot",
+            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot",
             _score_stub,
         )
 
@@ -448,18 +448,18 @@ class TestTopix100Ranking:
         assert resp.status_code == 200
         data = resp.json()
         assert data["studyMode"] == "swing_5d"
-        assert data["scoreTarget"] == "next_session_open_to_close_5d"
+        assert data["scoreTarget"] == "next_session_open_to_open_5d"
         assert data["primaryBenchmark"] == "topix"
         assert data["secondaryBenchmark"] == "topix100_universe"
         assert data["primaryBenchmarkReturn"] is not None
         assert data["secondaryBenchmarkReturn"] is not None
         assert data["benchmarkEntryDate"] == "2024-02-15"
-        assert data["benchmarkExitDate"] == "2024-02-21"
+        assert data["benchmarkExitDate"] == "2024-02-22"
         scored_item = next(item for item in data["items"] if item["longScore5d"] is not None)
         assert scored_item["longScore5d"] is not None
         assert scored_item["swingEntryDate"] == "2024-02-15"
-        assert scored_item["swingExitDate"] == "2024-02-21"
-        assert scored_item["openToClose5dReturn"] is not None
+        assert scored_item["swingExitDate"] == "2024-02-22"
+        assert scored_item["openToOpen5dReturn"] is not None
 
     def test_422_no_db(self):
         app = create_app()

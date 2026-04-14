@@ -32,8 +32,8 @@ from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm im
     DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
     score_topix100_streak_353_next_session_intraday_lightgbm_snapshot,
 )
-from src.domains.analytics.topix100_streak_353_next_session_open_to_close_5d_lightgbm import (
-    score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot,
+from src.domains.analytics.topix100_streak_353_next_session_open_to_open_5d_lightgbm import (
+    score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot,
 )
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
@@ -409,8 +409,8 @@ class RankingService:
         sma_window: Topix100PriceSmaWindow,
         rows: list[Mapping[str, Any]],
     ) -> Topix100RankingResponse:
-        realized_rows_by_code = self._load_topix100_next_session_open_to_close_5d_returns(target_date)
-        score_snapshot = score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot(
+        realized_rows_by_code = self._load_topix100_next_session_open_to_open_5d_returns(target_date)
+        score_snapshot = score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
             self._reader.db_path,
             target_date=target_date,
             short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
@@ -444,10 +444,10 @@ class RankingService:
                         if realized_row is not None and realized_row["exit_date"] is not None
                         else None
                     ),
-                    open_to_close_5d_return=(
-                        float(realized_row["open_to_close_5d_return"])
+                    open_to_open_5d_return=(
+                        float(realized_row["open_to_open_5d_return"])
                         if realized_row is not None
-                        and realized_row["open_to_close_5d_return"] is not None
+                        and realized_row["open_to_open_5d_return"] is not None
                         else None
                     ),
                 )
@@ -463,11 +463,11 @@ class RankingService:
             for item in items
         ]
 
-        benchmark_row = self._load_topix_open_to_close_5d_benchmark_return(target_date)
+        benchmark_row = self._load_topix_open_to_open_5d_benchmark_return(target_date)
         realized_returns = [
-            cast(float, item.openToClose5dReturn)
+            cast(float, item.openToOpen5dReturn)
             for item in items
-            if item.openToClose5dReturn is not None
+            if item.openToOpen5dReturn is not None
         ]
         secondary_benchmark_return = (
             sum(realized_returns) / len(realized_returns) if realized_returns else None
@@ -482,8 +482,8 @@ class RankingService:
             longWindowStreaks=_TOPIX100_LONG_WINDOW_STREAKS,
             longScoreHorizonDays=score_snapshot.long_target_horizon_days,
             shortScoreHorizonDays=score_snapshot.short_target_horizon_days,
-            scoreTarget="next_session_open_to_close_5d",
-            intradayScoreTarget="next_session_open_to_close_5d",
+            scoreTarget="next_session_open_to_open_5d",
+            intradayScoreTarget="next_session_open_to_open_5d",
             scoreModelType="daily_refit",
             scoreTrainWindowDays=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
             scoreTestWindowDays=1,
@@ -526,7 +526,7 @@ class RankingService:
         next_session_intraday_return: float | None = None,
         swing_entry_date: str | None = None,
         swing_exit_date: str | None = None,
-        open_to_close_5d_return: float | None = None,
+        open_to_open_5d_return: float | None = None,
     ) -> Topix100RankingItem:
         return Topix100RankingItem(
             rank=int(row["rank"]),
@@ -557,7 +557,7 @@ class RankingService:
             nextSessionIntradayReturn=next_session_intraday_return,
             swingEntryDate=swing_entry_date,
             swingExitDate=swing_exit_date,
-            openToClose5dReturn=open_to_close_5d_return,
+            openToOpen5dReturn=open_to_open_5d_return,
         )
 
     def get_fundamental_rankings(
@@ -762,7 +762,7 @@ class RankingService:
         )
         return {str(row["code"]): row for row in rows}
 
-    def _load_topix100_next_session_open_to_close_5d_returns(
+    def _load_topix100_next_session_open_to_open_5d_returns(
         self,
         target_date: str,
     ) -> dict[str, Mapping[str, Any]]:
@@ -820,15 +820,15 @@ class RankingService:
                 WHERE session_rank = 1
             ),
             exit_sessions AS (
-                SELECT normalized_code, date AS exit_date, close AS exit_close
+                SELECT normalized_code, date AS exit_date, open AS exit_open
                 FROM ranked_future_sessions
-                WHERE session_rank = 5
+                WHERE session_rank = 6
             )
             SELECT
                 s.code,
                 e.entry_date,
                 x.exit_date,
-                x.exit_close / NULLIF(e.entry_open, 0) - 1 AS open_to_close_5d_return
+                x.exit_open / NULLIF(e.entry_open, 0) - 1 AS open_to_open_5d_return
             FROM topix100_stocks s
             LEFT JOIN entry_sessions e
                 ON s.normalized_code = e.normalized_code
@@ -839,7 +839,7 @@ class RankingService:
         )
         return {str(row["code"]): row for row in rows}
 
-    def _load_topix_open_to_close_5d_benchmark_return(
+    def _load_topix_open_to_open_5d_benchmark_return(
         self,
         target_date: str,
     ) -> Mapping[str, Any] | None:
@@ -850,7 +850,6 @@ class RankingService:
                     SELECT
                         date,
                         open,
-                        close,
                         ROW_NUMBER() OVER (ORDER BY date ASC) AS session_rank
                     FROM topix_data
                     WHERE date > ?
@@ -861,14 +860,14 @@ class RankingService:
                     WHERE session_rank = 1
                 ),
                 exit_session AS (
-                    SELECT date AS exit_date, close AS exit_close
+                    SELECT date AS exit_date, open AS exit_open
                     FROM ranked_future_sessions
-                    WHERE session_rank = 5
+                    WHERE session_rank = 6
                 )
                 SELECT
                     e.entry_date,
                     x.exit_date,
-                    x.exit_close / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
+                    x.exit_open / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
                 FROM entry_session e
                 CROSS JOIN exit_session x
                 """,
@@ -891,7 +890,6 @@ class RankingService:
                 SELECT
                     id.date,
                     id.open,
-                    id.close,
                     ROW_NUMBER() OVER (ORDER BY id.date ASC) AS session_rank
                 FROM indices_data id
                 JOIN topix_code tc ON tc.code = id.code
@@ -900,19 +898,19 @@ class RankingService:
             entry_session AS (
                 SELECT date AS entry_date, open AS entry_open
                 FROM ranked_future_sessions
-                WHERE session_rank = 1
-            ),
-            exit_session AS (
-                SELECT date AS exit_date, close AS exit_close
-                FROM ranked_future_sessions
-                WHERE session_rank = 5
-            )
-            SELECT
-                e.entry_date,
-                x.exit_date,
-                x.exit_close / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
-            FROM entry_session e
-            CROSS JOIN exit_session x
+                    WHERE session_rank = 1
+                ),
+                exit_session AS (
+                    SELECT date AS exit_date, open AS exit_open
+                    FROM ranked_future_sessions
+                    WHERE session_rank = 6
+                )
+                SELECT
+                    e.entry_date,
+                    x.exit_date,
+                    x.exit_open / NULLIF(e.entry_open, 0) - 1 AS benchmark_return
+                FROM entry_session e
+                CROSS JOIN exit_session x
             """,
             (target_date,),
         )

@@ -63,7 +63,10 @@ export type Topix100RankingMetric = 'price_vs_sma_gap' | 'price_sma_20_80';
 export type Topix100PriceSmaWindow = 20 | 50 | 100;
 export type Topix100StreakMode = 'bullish' | 'bearish';
 export type Topix100StudyMode = 'intraday' | 'swing_5d';
-export type Topix100ScoreTarget = 'next_session_open_close' | 'next_session_open_to_close_5d';
+export type Topix100ScoreTarget =
+  | 'next_session_open_close'
+  | 'next_session_open_to_close_5d'
+  | 'next_session_open_to_open_5d';
 
 export interface Topix100RankingItem {
   rank: number;
@@ -95,7 +98,7 @@ export interface Topix100RankingItem {
   nextSessionIntradayReturn?: number | null;
   swingEntryDate?: string | null;
   swingExitDate?: string | null;
-  openToClose5dReturn?: number | null;
+  openToOpen5dReturn?: number | null;
 }
 
 export interface Topix100RankingResponse {

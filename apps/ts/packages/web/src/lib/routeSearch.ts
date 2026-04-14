@@ -160,7 +160,7 @@ const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
   'intradayScore',
   'intradayLongRank',
   'intradayShortRank',
-  'openToClose5dReturn',
+  'openToOpen5dReturn',
   'nextSessionIntradayReturn',
   'volumeSma5_20',
   'currentPrice',
@@ -170,7 +170,7 @@ const TOPIX100_RANKING_SORT_KEY_VALUES: Topix100RankingSortKey[] = [
 const TOPIX100_SWING_ONLY_SORT_KEYS: Topix100RankingSortKey[] = [
   'longScore5d',
   'longScore5dRank',
-  'openToClose5dReturn',
+  'openToOpen5dReturn',
 ];
 const TOPIX100_INTRADAY_ONLY_SORT_KEYS: Topix100RankingSortKey[] = [
   'intradayScore',

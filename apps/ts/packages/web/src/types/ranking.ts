@@ -46,7 +46,7 @@ export type Topix100RankingSortKey =
   | 'intradayScore'
   | 'intradayLongRank'
   | 'intradayShortRank'
-  | 'openToClose5dReturn'
+  | 'openToOpen5dReturn'
   | 'nextSessionIntradayReturn'
   | 'volumeSma5_20'
   | 'currentPrice'
