@@ -336,9 +336,9 @@ def _query_resampled_topix100_intraday_bars_from_connection(
     )
 
     params: list[Any] = [
-        interval_minutes,
-        interval_minutes,
         *date_params,
+        interval_minutes,
+        interval_minutes,
     ]
     bars_df = cast(
         pd.DataFrame,
