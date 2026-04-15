@@ -8,6 +8,7 @@ GET    /api/db/sync/jobs/active      — 実行中 Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}     — Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}/stream — Sync SSE stream
 DELETE /api/db/sync/jobs/{jobId}     — Sync ジョブキャンセル
+POST   /api/db/intraday/sync         — Intraday minute data sync
 POST   /api/db/stocks/refresh        — 銘柄データ再取得
 """
 
@@ -37,6 +38,8 @@ from src.infrastructure.db.market.time_series_store import (
 )
 from src.entrypoints.http.schemas.db import (
     CreateSyncJobResponse,
+    IntradaySyncRequest,
+    IntradaySyncResponse,
     MarketStatsResponse,
     MarketValidationResponse,
     RefreshRequest,
@@ -49,7 +52,12 @@ from src.entrypoints.http.schemas.db import (
     SyncResult,
 )
 from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
-from src.application.services import db_stats_service, db_validation_service, stock_refresh_service
+from src.application.services import (
+    db_stats_service,
+    db_validation_service,
+    intraday_sync_service,
+    stock_refresh_service,
+)
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.sync_service import SyncJobData, SyncMode, sync_job_manager, start_sync
 from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
@@ -457,6 +465,23 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
 
 
 # --- Refresh ---
+
+
+@router.post(
+    "/api/db/intraday/sync",
+    response_model=IntradaySyncResponse,
+    summary="Sync intraday minute bars into local DuckDB",
+)
+async def sync_intraday(request: Request, body: IntradaySyncRequest) -> IntradaySyncResponse:
+    market_db = _get_market_db(request)
+    time_series_store = _get_market_time_series_store(request)
+    jquants_client = _get_jquants_client(request)
+    return await intraday_sync_service.sync_intraday_data(
+        body,
+        market_db=market_db,
+        time_series_store=time_series_store,
+        jquants_client=jquants_client,
+    )
 
 
 @router.post(

@@ -45,6 +45,15 @@ class StockDataStats(BaseModel):
     averageStocksPerDay: float = 0
 
 
+class StockMinuteDataStats(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+    latestTime: str | None = None
+    averageBarsPerDay: float = 0
+
+
 class IndicesStats(BaseModel):
     masterCount: int = 0
     dataCount: int = 0
@@ -91,6 +100,7 @@ class MarketStatsResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataStats
+    stockMinuteData: StockMinuteDataStats
     indices: IndicesStats
     options225: Options225Stats
     margin: MarginStats
@@ -119,6 +129,14 @@ class StockDataValidation(BaseModel):
     dateRange: DateRange | None = None
     missingDates: list[str] = Field(default_factory=list)
     missingDatesCount: int = 0
+
+
+class StockMinuteDataValidation(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+    latestTime: str | None = None
 
 
 class MarginValidation(BaseModel):
@@ -185,6 +203,7 @@ class MarketValidationResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
+    stockMinuteData: StockMinuteDataValidation
     options225: Options225Validation
     margin: MarginValidation
     fundamentals: FundamentalsValidation
@@ -206,6 +225,7 @@ class MarketValidationResponse(BaseModel):
 
 SyncModeLiteral = Literal["auto", "initial", "incremental", "repair"]
 SyncDataBackendLiteral = Literal["duckdb-parquet"]
+IntradaySyncModeLiteral = Literal["auto", "bulk", "rest"]
 
 
 class SyncDataPlaneRequest(BaseModel):
@@ -286,6 +306,45 @@ class SyncFetchDetailsResponse(BaseModel):
     mode: str
     latest: SyncFetchDetail | None = None
     items: list[SyncFetchDetail] = Field(default_factory=list)
+
+
+# --- Intraday Sync ---
+
+
+class IntradaySyncRequest(BaseModel):
+    mode: IntradaySyncModeLiteral = "auto"
+    date: str | None = None
+    dateFrom: str | None = None
+    dateTo: str | None = None
+    codes: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_date_inputs(self) -> "IntradaySyncRequest":
+        if self.date and (self.dateFrom or self.dateTo):
+            raise ValueError("date cannot be combined with dateFrom/dateTo")
+        if not self.date and not self.dateFrom and not self.dateTo:
+            raise ValueError("date or dateFrom/dateTo is required")
+        if self.dateFrom and self.dateTo and self.dateFrom > self.dateTo:
+            raise ValueError("dateFrom must be before or equal to dateTo")
+        if self.mode == "rest" and not self.codes:
+            raise ValueError("codes is required when mode='rest'")
+        return self
+
+
+class IntradaySyncResponse(BaseModel):
+    success: bool
+    mode: IntradaySyncModeLiteral
+    requestedCodes: int = 0
+    storedCodes: int = 0
+    datesProcessed: int = 0
+    recordsFetched: int = 0
+    recordsStored: int = 0
+    apiCalls: int = 0
+    selectedFiles: int = 0
+    cacheHits: int = 0
+    cacheMisses: int = 0
+    skippedRows: int = 0
+    lastUpdated: str
 
 
 # --- Refresh ---

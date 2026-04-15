@@ -23,6 +23,19 @@ class MarketOHLCVRecord(BaseModel):
     volume: int
 
 
+class MarketMinuteBarRecord(BaseModel):
+    """分足レコード"""
+
+    date: str = Field(description="日付 (YYYY-MM-DD)")
+    time: str = Field(description="時刻 (HH:MM)")
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    turnoverValue: float | None = None
+
+
 # --- OHLC (no volume, for TOPIX) ---
 
 

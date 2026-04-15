@@ -33,6 +33,7 @@ from src.entrypoints.http.schemas.db import (
     MarginValidation,
     MarketValidationResponse,
     Options225Validation,
+    StockMinuteDataValidation,
     ValidationSampleWindow,
     ValidationSampleWindows,
     StockDataValidation,
@@ -333,6 +334,18 @@ def validate_market_db(
         missingDates=missing_dates[:_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT],
         missingDatesCount=missing_dates_count,
     )
+    stock_minute_data_val = StockMinuteDataValidation(
+        count=inspection.stock_minute_count,
+        uniqueStockCount=inspection.stock_minute_code_count,
+        dateCount=inspection.stock_minute_date_count,
+        dateRange=DateRange(
+            min=inspection.stock_minute_min,
+            max=inspection.stock_minute_max,
+        )
+        if inspection.stock_minute_min and inspection.stock_minute_max
+        else None,
+        latestTime=inspection.latest_stock_minute_time,
+    )
 
     options_225_val = Options225Validation(
         count=inspection.options_225_count,
@@ -388,6 +401,7 @@ def validate_market_db(
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
+        stockMinuteData=stock_minute_data_val,
         options225=options_225_val,
         margin=margin_val,
         fundamentals=fundamentals_val,

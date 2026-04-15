@@ -5625,6 +5625,141 @@
         "title": "IntegrityIssue",
         "type": "object"
       },
+      "IntradaySyncRequest": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Codes",
+            "type": "array"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "dateFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datefrom"
+          },
+          "dateTo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dateto"
+          },
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "bulk",
+              "rest"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "IntradaySyncRequest",
+        "type": "object"
+      },
+      "IntradaySyncResponse": {
+        "properties": {
+          "apiCalls": {
+            "default": 0,
+            "title": "Apicalls",
+            "type": "integer"
+          },
+          "cacheHits": {
+            "default": 0,
+            "title": "Cachehits",
+            "type": "integer"
+          },
+          "cacheMisses": {
+            "default": 0,
+            "title": "Cachemisses",
+            "type": "integer"
+          },
+          "datesProcessed": {
+            "default": 0,
+            "title": "Datesprocessed",
+            "type": "integer"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "auto",
+              "bulk",
+              "rest"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "recordsFetched": {
+            "default": 0,
+            "title": "Recordsfetched",
+            "type": "integer"
+          },
+          "recordsStored": {
+            "default": 0,
+            "title": "Recordsstored",
+            "type": "integer"
+          },
+          "requestedCodes": {
+            "default": 0,
+            "title": "Requestedcodes",
+            "type": "integer"
+          },
+          "selectedFiles": {
+            "default": 0,
+            "title": "Selectedfiles",
+            "type": "integer"
+          },
+          "skippedRows": {
+            "default": 0,
+            "title": "Skippedrows",
+            "type": "integer"
+          },
+          "storedCodes": {
+            "default": 0,
+            "title": "Storedcodes",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "mode",
+          "lastUpdated"
+        ],
+        "title": "IntradaySyncResponse",
+        "type": "object"
+      },
       "JobExecutionControl": {
         "description": "ジョブの durable execution control 状態",
         "properties": {
@@ -7284,6 +7419,63 @@
         "title": "MarketFundamentalRankingResponse",
         "type": "object"
       },
+      "MarketMinuteBarRecord": {
+        "description": "分足レコード",
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "date": {
+            "description": "日付 (YYYY-MM-DD)",
+            "title": "Date",
+            "type": "string"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "title": "Low",
+            "type": "number"
+          },
+          "open": {
+            "title": "Open",
+            "type": "number"
+          },
+          "time": {
+            "description": "時刻 (HH:MM)",
+            "title": "Time",
+            "type": "string"
+          },
+          "turnoverValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnovervalue"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "time",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "MarketMinuteBarRecord",
+        "type": "object"
+      },
       "MarketOHLCRecord": {
         "description": "OHLC レコード（出来高なし、TOPIX 用）",
         "properties": {
@@ -7544,6 +7736,9 @@
           "stockData": {
             "$ref": "#/components/schemas/StockDataStats"
           },
+          "stockMinuteData": {
+            "$ref": "#/components/schemas/StockMinuteDataStats"
+          },
           "stocks": {
             "$ref": "#/components/schemas/StockStats"
           },
@@ -7566,6 +7761,7 @@
           "topix",
           "stocks",
           "stockData",
+          "stockMinuteData",
           "indices",
           "options225",
           "margin",
@@ -7704,6 +7900,9 @@
           "stockData": {
             "$ref": "#/components/schemas/StockDataValidation"
           },
+          "stockMinuteData": {
+            "$ref": "#/components/schemas/StockMinuteDataValidation"
+          },
           "stocks": {
             "$ref": "#/components/schemas/StockStats"
           },
@@ -7734,6 +7933,7 @@
           "topix",
           "stocks",
           "stockData",
+          "stockMinuteData",
           "options225",
           "margin",
           "fundamentals",
@@ -14086,6 +14286,95 @@
           "record_count"
         ],
         "title": "StockListItem",
+        "type": "object"
+      },
+      "StockMinuteDataStats": {
+        "properties": {
+          "averageBarsPerDay": {
+            "default": 0,
+            "title": "Averagebarsperday",
+            "type": "number"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latesttime"
+          },
+          "uniqueStockCount": {
+            "default": 0,
+            "title": "Uniquestockcount",
+            "type": "integer"
+          }
+        },
+        "title": "StockMinuteDataStats",
+        "type": "object"
+      },
+      "StockMinuteDataValidation": {
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latestTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latesttime"
+          },
+          "uniqueStockCount": {
+            "default": 0,
+            "title": "Uniquestockcount",
+            "type": "integer"
+          }
+        },
+        "title": "StockMinuteDataValidation",
         "type": "object"
       },
       "StockSearchResponse": {
@@ -22918,6 +23207,77 @@
         ]
       }
     },
+    "/api/db/intraday/sync": {
+      "post": {
+        "operationId": "sync_intraday_api_db_intraday_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntradaySyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntradaySyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Sync intraday minute bars into local DuckDB",
+        "tags": [
+          "Database"
+        ]
+      }
+    },
     "/api/db/stats": {
       "get": {
         "operationId": "get_db_stats_api_db_stats_get",
@@ -25779,6 +26139,129 @@
           }
         },
         "summary": "単一銘柄情報取得",
+        "tags": [
+          "Market Data"
+        ]
+      }
+    },
+    "/api/market/stocks/{code}/minute-bars": {
+      "get": {
+        "operationId": "get_stock_minute_bars_api_market_stocks__code__minute_bars_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "description": "対象日 (YYYY-MM-DD)",
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "対象日 (YYYY-MM-DD)",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "開始時刻 (HH:MM)",
+            "in": "query",
+            "name": "start_time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "開始時刻 (HH:MM)",
+              "title": "Start Time"
+            }
+          },
+          {
+            "description": "終了時刻 (HH:MM)",
+            "in": "query",
+            "name": "end_time",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "終了時刻 (HH:MM)",
+              "title": "End Time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MarketMinuteBarRecord"
+                  },
+                  "title": "Response Get Stock Minute Bars Api Market Stocks  Code  Minute Bars Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "銘柄 分足データ取得",
         "tags": [
           "Market Data"
         ]

@@ -95,6 +95,25 @@ stock_data = Table(
 Index("idx_stock_data_date", stock_data.c.date)
 Index("idx_stock_data_code", stock_data.c.code)
 
+# --- stock_data_minute_raw ---
+stock_data_minute_raw = Table(
+    "stock_data_minute_raw",
+    market_meta,
+    Column("code", Text, nullable=False),
+    Column("date", Text, nullable=False),
+    Column("time", Text, nullable=False),
+    Column("open", REAL, nullable=False),
+    Column("high", REAL, nullable=False),
+    Column("low", REAL, nullable=False),
+    Column("close", REAL, nullable=False),
+    Column("volume", Integer, nullable=False),
+    Column("turnover_value", REAL),
+    Column("created_at", Text),
+    PrimaryKeyConstraint("code", "date", "time"),
+)
+Index("idx_stock_data_minute_raw_date", stock_data_minute_raw.c.date)
+Index("idx_stock_data_minute_raw_code", stock_data_minute_raw.c.code)
+
 # --- topix_data ---
 topix_data = Table(
     "topix_data",

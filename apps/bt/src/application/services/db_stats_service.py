@@ -27,6 +27,7 @@ from src.entrypoints.http.schemas.db import (
     MarketStatsResponse,
     Options225Stats,
     StockDataStats,
+    StockMinuteDataStats,
     StorageStats,
     StockStats,
     TopixStats,
@@ -159,6 +160,23 @@ def get_market_stats(
             else 0.0
         ),
     )
+    stock_minute_data = StockMinuteDataStats(
+        count=inspection.stock_minute_count,
+        uniqueStockCount=inspection.stock_minute_code_count,
+        dateCount=inspection.stock_minute_date_count,
+        dateRange=DateRange(
+            min=inspection.stock_minute_min,
+            max=inspection.stock_minute_max,
+        )
+        if inspection.stock_minute_min and inspection.stock_minute_max
+        else None,
+        latestTime=inspection.latest_stock_minute_time,
+        averageBarsPerDay=(
+            round(inspection.stock_minute_count / inspection.stock_minute_date_count, 2)
+            if inspection.stock_minute_date_count > 0
+            else 0.0
+        ),
+    )
 
     # Indices
     indices = IndicesStats(
@@ -215,6 +233,7 @@ def get_market_stats(
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data,
+        stockMinuteData=stock_minute_data,
         indices=indices,
         options225=options_225,
         margin=margin,

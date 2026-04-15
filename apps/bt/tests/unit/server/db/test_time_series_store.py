@@ -35,6 +35,26 @@ def _stock_row_for(date: str) -> dict[str, object]:
     return row
 
 
+def _stock_minute_row(
+    *,
+    code: str = "7203",
+    date: str = "2026-02-10",
+    time: str = "09:00",
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "date": date,
+        "time": time,
+        "open": 1.0,
+        "high": 2.0,
+        "low": 1.0,
+        "close": 2.0,
+        "volume": 100,
+        "turnover_value": 200.0,
+        "created_at": f"{date}T00:00:00+00:00",
+    }
+
+
 def _query_rows(db_path: Path, sql: str) -> list[tuple]:
     conn = duckdb.connect(str(db_path))
     try:
@@ -175,6 +195,13 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
 
     store.publish_topix_data(_topix_rows())
     store.publish_stock_data([_stock_row()])
+    store.publish_stock_minute_data(
+        [
+            _stock_minute_row(date="2026-02-10", time="09:00"),
+            _stock_minute_row(date="2026-02-10", time="09:01"),
+            _stock_minute_row(date="2026-02-11", time="15:30"),
+        ]
+    )
     store.publish_indices_data(
         [
             {
@@ -222,6 +249,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     )
     store.index_topix_data()
     store.index_stock_data()
+    store.index_stock_minute_data()
     store.index_indices_data()
     store.index_options_225_data()
     store.index_margin_data()
@@ -237,6 +265,12 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.topix_count == 2
     assert inspection.stock_count == 1
     assert inspection.stock_date_count == 1
+    assert inspection.stock_minute_count == 3
+    assert inspection.stock_minute_min == "2026-02-10"
+    assert inspection.stock_minute_max == "2026-02-11"
+    assert inspection.stock_minute_date_count == 2
+    assert inspection.stock_minute_code_count == 1
+    assert inspection.latest_stock_minute_time == "15:30"
     assert inspection.indices_count == 1
     assert inspection.indices_min == "2026-02-10"
     assert inspection.indices_max == "2026-02-10"
@@ -277,6 +311,29 @@ def test_index_options_225_data_exports_parquet(tmp_path: Path) -> None:
     store.index_options_225_data()
 
     assert (parquet_dir / "options_225_data.parquet").exists()
+
+    store.close()
+
+
+def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    assert store is not None
+
+    store.publish_stock_minute_data(
+        [
+            _stock_minute_row(date="2026-02-10", time="09:00"),
+            _stock_minute_row(date="2026-02-11", time="15:30"),
+        ]
+    )
+    store.index_stock_minute_data()
+
+    assert (parquet_dir / "stock_data_minute_raw" / "date=2026-02-10" / "data.parquet").exists()
+    assert (parquet_dir / "stock_data_minute_raw" / "date=2026-02-11" / "data.parquet").exists()
 
     store.close()
 
@@ -821,6 +878,10 @@ class _ConcurrentAccessDetectingConnection:
     def _cursor_for(sql: str) -> _ResultCursor:
         if "FROM topix_data" in sql and "MAX(date)" in sql:
             return _ResultCursor(one=(0, None, None))
+        if "FROM stock_data_minute_raw" in sql and "COUNT(DISTINCT date)" in sql:
+            return _ResultCursor(one=(0, None, None, 0, 0))
+        if "FROM stock_data_minute_raw" in sql and "ORDER BY date DESC, time DESC" in sql:
+            return _ResultCursor(one=None)
         if "FROM stock_data" in sql and "COUNT(DISTINCT date)" in sql:
             return _ResultCursor(one=(0, None, None, 0))
         if "FROM indices_data" in sql and "COUNT(DISTINCT date)" in sql:
@@ -835,6 +896,8 @@ class _ConcurrentAccessDetectingConnection:
             return _ResultCursor(many=[])
         if "PRAGMA table_info('statements')" in sql:
             return _ResultCursor(many=[])
+        if "SELECT DISTINCT date FROM stock_data_minute_raw" in sql:
+            return _ResultCursor(many=[])
         if "COPY (SELECT * FROM" in sql:
             return _ResultCursor()
         return _ResultCursor()
@@ -847,6 +910,7 @@ def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     store._parquet_dir.mkdir(parents=True, exist_ok=True)
     store._conn = _ConcurrentAccessDetectingConnection()
     store._dirty_tables = set()
+    store._dirty_stock_minute_dates = set()
     store._stock_projection_full_rebuild_codes = set()
     store._lock = RLock()
     return store
@@ -921,6 +985,7 @@ def test_publish_methods_return_zero_for_empty_rows(tmp_path: Path) -> None:
     store = _build_lock_test_store(tmp_path)
     assert store.publish_topix_data([]) == 0
     assert store.publish_stock_data([]) == 0
+    assert store.publish_stock_minute_data([]) == 0
     assert store.publish_indices_data([]) == 0
     assert store.publish_margin_data([]) == 0
     assert store.publish_statements([]) == 0

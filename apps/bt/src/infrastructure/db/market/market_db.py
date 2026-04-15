@@ -30,6 +30,7 @@ METADATA_KEYS = {
     "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
     "FUNDAMENTALS_EMPTY_CODES": "fundamentals_empty_codes",
     "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
+    "LAST_INTRADAY_SYNC": "last_intraday_sync",
 }
 LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v1"
 
@@ -37,6 +38,7 @@ _STATS_TABLES: tuple[str, ...] = (
     "stocks",
     "stock_data_raw",
     "stock_data",
+    "stock_data_minute_raw",
     "topix_data",
     "indices_data",
     "options_225_data",
@@ -215,6 +217,23 @@ class MarketDb:
                 adjustment_factor DOUBLE,
                 created_at TEXT,
                 PRIMARY KEY (code, date)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_data_minute_raw (
+                code TEXT,
+                date TEXT,
+                time TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                turnover_value DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date, time)
             )
             """
         )
@@ -742,6 +761,45 @@ class MarketDb:
         self.set_sync_metadata(
             METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
             LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+        )
+        return len(rows)
+
+    def upsert_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
+        """stock_data_minute_raw に upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+        params = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("time"),
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+                row.get("volume"),
+                row.get("turnover_value"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO stock_data_minute_raw (
+                code, date, time, open, high, low, close, volume, turnover_value, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code, date, time) DO UPDATE
+            SET open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                turnover_value = excluded.turnover_value,
+                created_at = excluded.created_at
+            """,
+            params,
         )
         return len(rows)
 

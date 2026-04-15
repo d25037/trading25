@@ -183,6 +183,106 @@ class TestGetTopix:
         assert result is None
 
 
+class TestGetStockMinuteBars:
+    def test_returns_minute_bars_with_time_range(self):
+        class MockReader:
+            def query(self, _sql, _params=()):
+                return [
+                    {
+                        "code": "7203",
+                        "date": "2026-02-10",
+                        "time": "09:00",
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.5,
+                        "volume": 1000,
+                        "turnover_value": 100500.0,
+                    },
+                    {
+                        "code": "72030",
+                        "date": "2026-02-10",
+                        "time": "09:00",
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.5,
+                        "volume": 1000,
+                        "turnover_value": 100500.0,
+                    },
+                    {
+                        "code": "7203",
+                        "date": "2026-02-10",
+                        "time": "09:01",
+                        "open": 100.5,
+                        "high": 102.0,
+                        "low": 100.0,
+                        "close": 101.5,
+                        "volume": 900,
+                        "turnover_value": 91350.0,
+                    },
+                ]
+
+            def query_one(self, _sql, _params=()):
+                raise AssertionError("stock lookup should not run when minute rows exist")
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        result = svc.get_stock_minute_bars(
+            "7203",
+            date="2026-02-10",
+            start_time="09:00",
+            end_time="09:01",
+        )
+
+        assert result is not None
+        assert len(result) == 2
+        assert result[0].time == "09:00"
+        assert result[0].volume == 1000
+        assert result[0].turnoverValue == 100500.0
+        assert result[1].time == "09:01"
+
+    def test_returns_empty_list_when_stock_exists_without_minute_rows(self):
+        class MockReader:
+            def query(self, _sql, _params=()):
+                return []
+
+            def query_one(self, _sql, _params=()):
+                return {"code": "72030"}
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        result = svc.get_stock_minute_bars("7203", date="2026-02-10")
+
+        assert result == []
+
+    def test_returns_empty_list_when_code_exists_in_minute_table_on_other_date(self):
+        class MockReader:
+            def query(self, _sql, _params=()):
+                return []
+
+            def query_one(self, sql, _params=()):
+                if "stock_data_minute_raw" in sql:
+                    return {"code": "9984"}
+                if "FROM stocks" in sql:
+                    raise AssertionError("stocks lookup should not run when minute code exists")
+                raise AssertionError(f"unexpected query_one: {sql}")
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        result = svc.get_stock_minute_bars("9984", date="2026-02-15")
+
+        assert result == []
+
+    def test_returns_none_when_stock_is_missing(self):
+        class MockReader:
+            def query(self, _sql, _params=()):
+                return []
+
+            def query_one(self, _sql, _params=()):
+                return None
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        assert svc.get_stock_minute_bars("0000", date="2026-02-10") is None
+
+
 class TestGetOptions225:
     def test_resolves_latest_date(self, service):
         result = service.get_options_225()

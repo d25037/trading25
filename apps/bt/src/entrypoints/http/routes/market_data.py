@@ -16,6 +16,7 @@ from src.application.services.options_225 import normalize_options_225_date
 from src.entrypoints.http.error_utils import market_data_http_exception
 from src.entrypoints.http.schemas.jquants import N225OptionsExplorerResponse
 from src.entrypoints.http.schemas.market_data import (
+    MarketMinuteBarRecord,
     MarketOHLCRecord,
     MarketOHLCVRecord,
     MarketStockData,
@@ -82,6 +83,36 @@ def get_stock_ohlcv(
 ) -> list[MarketOHLCVRecord]:
     service = _get_market_data_service(request)
     result = service.get_stock_ohlcv(code, start_date=start_date, end_date=end_date)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Stock not found")
+    return result
+
+
+@router.get(
+    "/api/market/stocks/{code}/minute-bars",
+    response_model=list[MarketMinuteBarRecord],
+    summary="銘柄 分足データ取得",
+)
+def get_stock_minute_bars(
+    request: Request,
+    code: str,
+    date: str = Query(..., description="対象日 (YYYY-MM-DD)"),
+    start_time: str | None = Query(default=None, description="開始時刻 (HH:MM)"),
+    end_time: str | None = Query(default=None, description="終了時刻 (HH:MM)"),
+) -> list[MarketMinuteBarRecord]:
+    if start_time and end_time and start_time > end_time:
+        raise HTTPException(
+            status_code=422,
+            detail="'start_time' must be before or equal to 'end_time'",
+        )
+
+    service = _get_market_data_service(request)
+    result = service.get_stock_minute_bars(
+        code,
+        date=date,
+        start_time=start_time,
+        end_time=end_time,
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="Stock not found")
     return result

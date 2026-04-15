@@ -1248,6 +1248,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/db/intraday/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync intraday minute bars into local DuckDB */
+        post: operations["sync_intraday_api_db_intraday_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db/stats": {
         parameters: {
             query?: never;
@@ -1910,6 +1927,23 @@ export interface paths {
         };
         /** 単一銘柄情報取得 */
         get: operations["get_stock_info_api_market_stocks__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/stocks/{code}/minute-bars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 銘柄 分足データ取得 */
+        get: operations["get_stock_minute_bars_api_market_stocks__code__minute_bars_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5610,6 +5644,85 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** IntradaySyncRequest */
+        IntradaySyncRequest: {
+            /** Codes */
+            codes?: string[];
+            /** Date */
+            date?: string | null;
+            /** Datefrom */
+            dateFrom?: string | null;
+            /** Dateto */
+            dateTo?: string | null;
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "bulk" | "rest";
+        };
+        /** IntradaySyncResponse */
+        IntradaySyncResponse: {
+            /**
+             * Apicalls
+             * @default 0
+             */
+            apiCalls: number;
+            /**
+             * Cachehits
+             * @default 0
+             */
+            cacheHits: number;
+            /**
+             * Cachemisses
+             * @default 0
+             */
+            cacheMisses: number;
+            /**
+             * Datesprocessed
+             * @default 0
+             */
+            datesProcessed: number;
+            /** Lastupdated */
+            lastUpdated: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "auto" | "bulk" | "rest";
+            /**
+             * Recordsfetched
+             * @default 0
+             */
+            recordsFetched: number;
+            /**
+             * Recordsstored
+             * @default 0
+             */
+            recordsStored: number;
+            /**
+             * Requestedcodes
+             * @default 0
+             */
+            requestedCodes: number;
+            /**
+             * Selectedfiles
+             * @default 0
+             */
+            selectedFiles: number;
+            /**
+             * Skippedrows
+             * @default 0
+             */
+            skippedRows: number;
+            /**
+             * Storedcodes
+             * @default 0
+             */
+            storedCodes: number;
+            /** Success */
+            success: boolean;
+        };
         /**
          * JobExecutionControl
          * @description ジョブの durable execution control 状態
@@ -6471,6 +6584,34 @@ export interface components {
             rankings: components["schemas"]["FundamentalRankings"];
         };
         /**
+         * MarketMinuteBarRecord
+         * @description 分足レコード
+         */
+        MarketMinuteBarRecord: {
+            /** Close */
+            close: number;
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Open */
+            open: number;
+            /**
+             * Time
+             * @description 時刻 (HH:MM)
+             */
+            time: string;
+            /** Turnovervalue */
+            turnoverValue?: number | null;
+            /** Volume */
+            volume: number;
+        };
+        /**
          * MarketOHLCRecord
          * @description OHLC レコード（出来高なし、TOPIX 用）
          */
@@ -6581,6 +6722,7 @@ export interface components {
             margin: components["schemas"]["MarginStats"];
             options225: components["schemas"]["Options225Stats"];
             stockData: components["schemas"]["StockDataStats"];
+            stockMinuteData: components["schemas"]["StockMinuteDataStats"];
             stocks: components["schemas"]["StockStats"];
             storage: components["schemas"]["StorageStats"];
             /**
@@ -6654,6 +6796,7 @@ export interface components {
              */
             status: "healthy" | "warning" | "error";
             stockData: components["schemas"]["StockDataValidation"];
+            stockMinuteData: components["schemas"]["StockMinuteDataValidation"];
             stocks: components["schemas"]["StockStats"];
             /** Stocksneedingrefresh */
             stocksNeedingRefresh?: string[];
@@ -9260,6 +9403,53 @@ export interface components {
              * @description Stock code (4-digit)
              */
             stockCode: string;
+        };
+        /** StockMinuteDataStats */
+        StockMinuteDataStats: {
+            /**
+             * Averagebarsperday
+             * @default 0
+             */
+            averageBarsPerDay: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Latesttime */
+            latestTime?: string | null;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
+        };
+        /** StockMinuteDataValidation */
+        StockMinuteDataValidation: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Latesttime */
+            latestTime?: string | null;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
         };
         /**
          * StockSearchResponse
@@ -14619,6 +14809,66 @@ export interface operations {
             };
         };
     };
+    sync_intraday_api_db_intraday_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntradaySyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntradaySyncResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_db_stats_api_db_stats_get: {
         parameters: {
             query?: never;
@@ -16619,6 +16869,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StockInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_stock_minute_bars_api_market_stocks__code__minute_bars_get: {
+        parameters: {
+            query: {
+                /** @description 対象日 (YYYY-MM-DD) */
+                date: string;
+                /** @description 開始時刻 (HH:MM) */
+                start_time?: string | null;
+                /** @description 終了時刻 (HH:MM) */
+                end_time?: string | null;
+            };
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketMinuteBarRecord"][];
                 };
             };
             /** @description Bad Request */

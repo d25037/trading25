@@ -764,6 +764,44 @@ class TestSyncRoutes:
             mock_close.assert_not_called()
 
 
+class TestIntradaySyncRoute:
+    def test_intraday_sync_success(self, client: TestClient) -> None:
+        with patch(
+            "src.entrypoints.http.routes.db.intraday_sync_service.sync_intraday_data",
+            new_callable=AsyncMock,
+        ) as mock_sync:
+            mock_sync.return_value = {
+                "success": True,
+                "mode": "rest",
+                "requestedCodes": 1,
+                "storedCodes": 1,
+                "datesProcessed": 1,
+                "recordsFetched": 2,
+                "recordsStored": 2,
+                "apiCalls": 1,
+                "selectedFiles": 0,
+                "cacheHits": 0,
+                "cacheMisses": 0,
+                "skippedRows": 0,
+                "lastUpdated": "2026-04-15T08:00:00+00:00",
+            }
+
+            resp = client.post(
+                "/api/db/intraday/sync",
+                json={"date": "2026-04-14", "codes": ["9984"]},
+            )
+
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["mode"] == "rest"
+            assert data["recordsStored"] == 2
+            assert mock_sync.await_count == 1
+
+    def test_intraday_sync_validation_error(self, client: TestClient) -> None:
+        resp = client.post("/api/db/intraday/sync", json={"mode": "rest", "date": "2026-04-14"})
+        assert resp.status_code == 422
+
+
 class TestRefreshRoute:
     def test_refresh_success(self, client: TestClient) -> None:
         with (

@@ -52,6 +52,21 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
         )
     """)
     conn.execute("""
+        CREATE TABLE stock_data_minute_raw (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            open DOUBLE NOT NULL,
+            high DOUBLE NOT NULL,
+            low DOUBLE NOT NULL,
+            close DOUBLE NOT NULL,
+            volume BIGINT NOT NULL,
+            turnover_value DOUBLE,
+            created_at TEXT,
+            PRIMARY KEY (code, date, time)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY,
             open DOUBLE NOT NULL,
@@ -140,6 +155,16 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
                 "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (code, date_value, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
             )
+
+    conn.executemany(
+        "INSERT INTO stock_data_minute_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("7203", "2024-01-16", "09:00", 2500.0, 2505.0, 2495.0, 2502.0, 1000, 2502000.0, None),
+            ("72030", "2024-01-16", "09:00", 2500.0, 2505.0, 2495.0, 2502.0, 1000, 2502000.0, None),
+            ("7203", "2024-01-16", "09:01", 2502.0, 2508.0, 2500.0, 2506.0, 800, 2004800.0, None),
+            ("9984", "2024-01-16", "15:30", 7000.0, 7010.0, 6990.0, 7005.0, 500, 3502500.0, None),
+        ],
+    )
 
     for date_value in ("2024-01-15", "2024-01-16", "2024-01-17"):
         conn.execute(
@@ -449,6 +474,41 @@ class TestGetStockOhlcv:
         data = resp.json()
         record = data[0]
         assert set(record.keys()) == {"date", "open", "high", "low", "close", "volume"}
+
+
+class TestGetStockMinuteBars:
+    def test_200(self, client_with_market_db):
+        resp = client_with_market_db.get(
+            "/api/market/stocks/7203/minute-bars?date=2024-01-16"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["time"] == "09:00"
+        assert data[0]["volume"] == 1000
+        assert data[0]["turnoverValue"] == 2502000.0
+        assert data[1]["time"] == "09:01"
+
+    def test_200_with_time_range(self, client_with_market_db):
+        resp = client_with_market_db.get(
+            "/api/market/stocks/7203/minute-bars?date=2024-01-16&start_time=09:01&end_time=09:01"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["time"] == "09:01"
+
+    def test_404(self, client_with_market_db):
+        resp = client_with_market_db.get(
+            "/api/market/stocks/0000/minute-bars?date=2024-01-16"
+        )
+        assert resp.status_code == 404
+
+    def test_422_invalid_time_range(self, client_with_market_db):
+        resp = client_with_market_db.get(
+            "/api/market/stocks/7203/minute-bars?date=2024-01-16&start_time=15:30&end_time=09:00"
+        )
+        assert resp.status_code == 422
 
 
 class TestGetTopix:

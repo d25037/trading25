@@ -13,6 +13,7 @@ from src.application.services.options_225 import build_options_225_response
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.application.services.market_code_alias import resolve_market_codes
 from src.entrypoints.http.schemas.market_data import (
+    MarketMinuteBarRecord,
     MarketOHLCRecord,
     MarketOHLCVRecord,
     MarketStockData,
@@ -127,6 +128,73 @@ class MarketDataService:
             )
             for row in rows
         ]
+
+    def get_stock_minute_bars(
+        self,
+        code: str,
+        *,
+        date: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> list[MarketMinuteBarRecord] | None:
+        """銘柄の分足データを取得"""
+        codes = _stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in codes)
+
+        sql = (
+            "SELECT code, date, time, open, high, low, close, volume, turnover_value "
+            f"FROM stock_data_minute_raw WHERE code IN ({placeholders}) AND date = ?"
+        )
+        params: list[str] = [*codes, date]
+
+        if start_time:
+            sql += " AND time >= ?"
+            params.append(start_time)
+        if end_time:
+            sql += " AND time <= ?"
+            params.append(end_time)
+
+        sql += " ORDER BY time, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
+        rows = self._reader.query(sql, tuple(params))
+        if rows:
+            by_time: dict[str, MarketMinuteBarRecord] = {}
+            for row in rows:
+                time_value = str(row["time"])
+                by_time.setdefault(
+                    time_value,
+                    MarketMinuteBarRecord(
+                        date=str(row["date"]),
+                        time=time_value,
+                        open=float(row["open"]),
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
+                        volume=self._coerce_volume(row["volume"]),
+                        turnoverValue=(
+                            float(row["turnover_value"])
+                            if row["turnover_value"] is not None
+                            else None
+                        ),
+                    ),
+                )
+            return [by_time[key] for key in sorted(by_time)]
+
+        minute_row = self._reader.query_one(
+            f"SELECT code FROM stock_data_minute_raw WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
+        )
+        if minute_row is not None:
+            return []
+
+        stock_row = self._reader.query_one(
+            f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
+        )
+        if stock_row is None:
+            return None
+        return []
 
     def get_all_stocks(
         self,

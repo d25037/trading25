@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
@@ -16,6 +17,7 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
@@ -23,6 +25,7 @@ class MarketTimeSeriesStore(Protocol):  # pragma: no cover
 
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
+    def index_stock_minute_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
     def index_options_225_data(self) -> None: ...
     def index_margin_data(self) -> None: ...
@@ -69,6 +72,12 @@ class TimeSeriesInspection:
     stock_min: str | None = None
     stock_max: str | None = None
     stock_date_count: int = 0
+    stock_minute_count: int = 0
+    stock_minute_min: str | None = None
+    stock_minute_max: str | None = None
+    stock_minute_date_count: int = 0
+    stock_minute_code_count: int = 0
+    latest_stock_minute_time: str | None = None
     missing_stock_dates: list[str] = field(default_factory=list)
     missing_stock_dates_count: int = 0
     indices_count: int = 0
@@ -120,6 +129,7 @@ class DuckDbParquetTimeSeriesStore:
     """DuckDB へ upsert し、Parquet を再生成する Data Plane store。"""
 
     _STOCK_DATA_RELATION_INSERT_THRESHOLD = 1000
+    _STOCK_MINUTE_DATA_RELATION_INSERT_THRESHOLD = 1000
     _INDICES_DATA_RELATION_INSERT_THRESHOLD = 1000
     _OPTIONS_225_RELATION_INSERT_THRESHOLD = 1000
     _MARGIN_DATA_RELATION_INSERT_THRESHOLD = 1000
@@ -156,6 +166,23 @@ class DuckDbParquetTimeSeriesStore:
             "created_at",
         ),
         conflict_columns=("code", "date"),
+    )
+    _STOCK_MINUTE_DATA_UPSERT_SPEC = _RelationUpsertSpec(
+        table_name="stock_data_minute_raw",
+        relation_name="__tmp_stock_data_minute_raw_publish",
+        columns=(
+            "code",
+            "date",
+            "time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "turnover_value",
+            "created_at",
+        ),
+        conflict_columns=("code", "date", "time"),
     )
     _INDICES_DATA_UPSERT_SPEC = _RelationUpsertSpec(
         table_name="indices_data",
@@ -323,6 +350,7 @@ class DuckDbParquetTimeSeriesStore:
         # app state で共有されるため、sync 書き込みと stats/validate 読み取りを直列化する。
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
+        self._dirty_stock_minute_dates: set[str] = set()
         self._stock_projection_full_rebuild_codes: set[str] = set()
         self._ensure_schema()
         self._cleanup_invalid_topix_rows_on_startup()
@@ -370,6 +398,23 @@ class DuckDbParquetTimeSeriesStore:
                     adjustment_factor DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stock_data_minute_raw (
+                    code TEXT,
+                    date TEXT,
+                    time TEXT,
+                    open DOUBLE,
+                    high DOUBLE,
+                    low DOUBLE,
+                    close DOUBLE,
+                    volume BIGINT,
+                    turnover_value DOUBLE,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date, time)
                 )
                 """
             )
@@ -567,6 +612,33 @@ class DuckDbParquetTimeSeriesStore:
 
         return published
 
+    def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
+        published = self._publish_rows_with_upsert_spec(
+            rows,
+            spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC,
+            relation_insert_threshold=self._STOCK_MINUTE_DATA_RELATION_INSERT_THRESHOLD,
+            relation_publisher=self._publish_stock_minute_data_via_relation,
+        )
+        if published <= 0:
+            return 0
+
+        with self._lock:
+            self._dirty_stock_minute_dates.update(
+                str(row.get("date"))
+                for row in rows
+                if row.get("date")
+            )
+        return published
+
+    def _publish_stock_minute_data_via_relation(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> int:
+        return self._publish_rows_via_relation(
+            rows,
+            spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC,
+        )
+
     def _publish_stock_data_via_relation(self, rows: list[dict[str, Any]]) -> int:
         return self._publish_rows_via_relation(
             rows,
@@ -640,6 +712,9 @@ class DuckDbParquetTimeSeriesStore:
         self._export_if_dirty("stock_data_raw")
         self._export_if_dirty("stock_data")
 
+    def index_stock_minute_data(self) -> None:
+        self._export_if_dirty("stock_data_minute_raw")
+
     def index_indices_data(self) -> None:
         self._export_if_dirty("indices_data")
 
@@ -671,6 +746,25 @@ class DuckDbParquetTimeSeriesStore:
                     MAX(date) AS max_date,
                     COUNT(DISTINCT date) AS date_count
                 FROM stock_data
+                """
+            ).fetchone()
+            stock_minute_row_raw = self._conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS count,
+                    MIN(date) AS min_date,
+                    MAX(date) AS max_date,
+                    COUNT(DISTINCT date) AS date_count,
+                    COUNT(DISTINCT code) AS code_count
+                FROM stock_data_minute_raw
+                """
+            ).fetchone()
+            latest_stock_minute_row = self._conn.execute(
+                """
+                SELECT date, time
+                FROM stock_data_minute_raw
+                ORDER BY date DESC, time DESC
+                LIMIT 1
                 """
             ).fetchone()
             indices_row_raw = self._conn.execute(
@@ -743,6 +837,11 @@ class DuckDbParquetTimeSeriesStore:
             topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
             stock_row = (
                 stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
+            )
+            stock_minute_row = (
+                stock_minute_row_raw
+                if stock_minute_row_raw is not None
+                else (0, None, None, 0, 0)
             )
             indices_row = (
                 indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
@@ -838,6 +937,15 @@ class DuckDbParquetTimeSeriesStore:
                 stock_min=cast(str | None, stock_row[1]),
                 stock_max=cast(str | None, stock_row[2]),
                 stock_date_count=int(stock_row[3] or 0),
+                stock_minute_count=int(stock_minute_row[0] or 0),
+                stock_minute_min=cast(str | None, stock_minute_row[1]),
+                stock_minute_max=cast(str | None, stock_minute_row[2]),
+                stock_minute_date_count=int(stock_minute_row[3] or 0),
+                stock_minute_code_count=int(stock_minute_row[4] or 0),
+                latest_stock_minute_time=cast(
+                    str | None,
+                    latest_stock_minute_row[1] if latest_stock_minute_row else None,
+                ),
                 missing_stock_dates=missing_stock_dates,
                 missing_stock_dates_count=missing_stock_dates_count,
                 indices_count=int(indices_row[0] or 0),
@@ -908,6 +1016,9 @@ class DuckDbParquetTimeSeriesStore:
         with self._lock:
             if table_name not in self._dirty_tables:
                 return
+            if table_name == "stock_data_minute_raw":
+                self._export_stock_minute_partitions()
+                return
             spec = self._TABLE_SPECS[table_name]
             output_path = self._parquet_dir / spec.parquet_name
             if output_path.exists():
@@ -922,6 +1033,49 @@ class DuckDbParquetTimeSeriesStore:
                 source_sql = spec.table_name
             self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
             self._dirty_tables.discard(table_name)
+
+    def _export_stock_minute_partitions(self) -> None:
+        output_root = self._parquet_dir / "stock_data_minute_raw"
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        target_dates = sorted(
+            self._dirty_stock_minute_dates or self._load_existing_stock_minute_dates()
+        )
+
+        for date_value in target_dates:
+            partition_dir = output_root / f"date={date_value}"
+            shutil.rmtree(partition_dir, ignore_errors=True)
+
+            count_row = self._conn.execute(
+                "SELECT COUNT(*) FROM stock_data_minute_raw WHERE date = ?",
+                [date_value],
+            ).fetchone()
+            if not count_row or int(count_row[0] or 0) <= 0:
+                continue
+
+            partition_dir.mkdir(parents=True, exist_ok=True)
+            output_path = partition_dir / "data.parquet"
+            escaped_path = str(output_path).replace("'", "''")
+            escaped_date = date_value.replace("'", "''")
+            self._conn.execute(
+                f"""
+                COPY (
+                    SELECT *
+                    FROM stock_data_minute_raw
+                    WHERE date = '{escaped_date}'
+                    ORDER BY code, time
+                ) TO '{escaped_path}' (FORMAT PARQUET)
+                """
+            )
+
+        self._dirty_stock_minute_dates.clear()
+        self._dirty_tables.discard("stock_data_minute_raw")
+
+    def _load_existing_stock_minute_dates(self) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT date FROM stock_data_minute_raw ORDER BY date"
+        ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0]]
 
     @staticmethod
     def _requires_full_stock_reprojection(adjustment_factor: Any) -> bool:
