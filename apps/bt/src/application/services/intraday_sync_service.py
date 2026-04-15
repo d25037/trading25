@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
 
 from src.application.services.jquants_bulk_service import BulkApiClientLike, JQuantsBulkService
@@ -67,6 +67,45 @@ def _resolve_mode(
     if request.mode == "rest":
         return "rest"
     return "rest" if normalized_codes else "bulk"
+
+
+def _parse_request_date(value: str | None) -> date | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).date()  # noqa: DTZ007
+        except ValueError:
+            continue
+    return None
+
+
+def _build_request_date_window(
+    request: IntradaySyncRequest,
+) -> tuple[date | None, date | None]:
+    if request.date:
+        target = _parse_request_date(request.date)
+        return target, target
+    return _parse_request_date(request.dateFrom), _parse_request_date(request.dateTo)
+
+
+def _row_within_request_window(
+    row_date: str | None,
+    *,
+    min_date: date | None,
+    max_date: date | None,
+) -> bool:
+    parsed = _parse_request_date(row_date)
+    if parsed is None:
+        return False
+    if min_date is not None and parsed < min_date:
+        return False
+    if max_date is not None and parsed > max_date:
+        return False
+    return True
 
 
 async def sync_intraday_data(
@@ -186,6 +225,7 @@ async def _sync_intraday_via_bulk(
 ) -> IntradaySyncResponse:
     now_iso = _now_iso()
     target_codes = set(normalized_codes)
+    min_date, max_date = _build_request_date_window(request)
     dates_seen: set[str] = set()
     stored_codes: set[str] = set()
     fetched_count = 0
@@ -215,6 +255,12 @@ async def _sync_intraday_via_bulk(
                 skipped_rows += 1
                 continue
             if target_codes and str(row["code"]) not in target_codes:
+                continue
+            if not _row_within_request_window(
+                str(row["date"]),
+                min_date=min_date,
+                max_date=max_date,
+            ):
                 continue
             publish_rows.append(row)
             fetched_count += 1

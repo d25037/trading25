@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from unittest.mock import AsyncMock
 
 import pytest
@@ -210,3 +211,95 @@ async def test_sync_intraday_data_bulk_filters_codes_and_counts_cache() -> None:
     assert len(store.published_batches) == 1
     assert store.published_batches[0][0]["code"] == "7203"
     assert market_db.metadata[METADATA_KEYS["LAST_INTRADAY_SYNC"]] == result.lastUpdated
+
+
+@pytest.mark.asyncio
+async def test_sync_intraday_data_bulk_clips_rows_to_requested_date_window() -> None:
+    market_db = DummyMarketDb()
+    store = DummyStore()
+    client = AsyncMock()
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/minute",
+        files=[
+            BulkFileInfo(
+                key="minute/202604.csv.gz",
+                last_modified="2026-04-14T16:35:00+09:00",
+                size=100,
+                range_start=date(2026, 4, 1),
+                range_end=date(2026, 4, 30),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = DummyBulkService(
+        plan=plan,
+        rows=[
+            {
+                "Date": "2026-04-01",
+                "Time": "09:00",
+                "Code": "72030",
+                "O": 100.0,
+                "H": 101.0,
+                "L": 99.0,
+                "C": 100.5,
+                "Vo": 1000,
+                "Va": 100500.0,
+            },
+            {
+                "Date": "2026-04-10",
+                "Time": "09:00",
+                "Code": "72030",
+                "O": 101.0,
+                "H": 102.0,
+                "L": 100.0,
+                "C": 101.5,
+                "Vo": 900,
+                "Va": 91350.0,
+            },
+            {
+                "Date": "2026-04-14",
+                "Time": "09:00",
+                "Code": "72030",
+                "O": 102.0,
+                "H": 103.0,
+                "L": 101.0,
+                "C": 102.5,
+                "Vo": 950,
+                "Va": 97375.0,
+            },
+        ],
+        result=BulkFetchResult(
+            rows=[],
+            api_calls=2,
+            cache_hits=0,
+            cache_misses=1,
+            selected_files=1,
+        ),
+    )
+
+    result = await sync_intraday_data(
+        IntradaySyncRequest(
+            mode="bulk",
+            dateFrom="2026-04-10",
+            dateTo="2026-04-14",
+            codes=["7203"],
+        ),
+        market_db=market_db,
+        time_series_store=store,
+        jquants_client=client,
+        bulk_service_factory=lambda: bulk_service,
+    )
+
+    assert result.success is True
+    assert result.mode == "bulk"
+    assert result.recordsFetched == 2
+    assert result.recordsStored == 2
+    assert result.datesProcessed == 2
+    assert len(store.published_batches) == 1
+    assert [row["date"] for row in store.published_batches[0]] == [
+        "2026-04-10",
+        "2026-04-14",
+    ]
