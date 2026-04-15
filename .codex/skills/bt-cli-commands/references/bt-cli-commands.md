@@ -2,12 +2,13 @@
 
 Generated from Typer command declarations. Do not edit manually.
 
-Total commands: **10**
+Total commands: **11**
 
 | Command |
 |---|
 | `bt backtest` |
 | `bt cleanup` |
+| `bt intraday-sync` |
 | `bt lab evolve` |
 | `bt lab generate` |
 | `bt lab improve` |

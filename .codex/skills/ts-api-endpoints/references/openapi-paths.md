@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **134**
+Total paths: **137**
 
 ## /api/analytics
 
@@ -97,6 +97,7 @@ Total paths: **134**
 
 | Path | Methods |
 |---|---|
+| `/api/db/intraday/sync` | `POST` |
 | `/api/db/stats` | `GET` |
 | `/api/db/stocks/refresh` | `POST` |
 | `/api/db/sync` | `POST` |
@@ -133,6 +134,7 @@ Total paths: **134**
 | `/api/jquants/daily-quotes` | `GET` |
 | `/api/jquants/indices` | `GET` |
 | `/api/jquants/listed-info` | `GET` |
+| `/api/jquants/minute-bars` | `GET` |
 | `/api/jquants/options/225` | `GET` |
 | `/api/jquants/statements` | `GET` |
 | `/api/jquants/statements/raw` | `GET` |
@@ -160,6 +162,7 @@ Total paths: **134**
 | `/api/market/options/225` | `GET` |
 | `/api/market/stocks` | `GET` |
 | `/api/market/stocks/{code}` | `GET` |
+| `/api/market/stocks/{code}/minute-bars` | `GET` |
 | `/api/market/stocks/{code}/ohlcv` | `GET` |
 | `/api/market/topix` | `GET` |
 
