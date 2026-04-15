@@ -107,15 +107,23 @@ def _build_market_db(db_path: Path) -> str:
     )
 
     session_specs = [
-        ("72030", "2024-01-05", 50, 99.0, 98.0),
-        ("72030", "2024-01-08", 100, 99.4, 99.0),
-        ("67580", "2024-01-05", 200, 99.6, 99.5),
-        ("67580", "2024-01-08", 400, 100.1, 100.2),
-        ("99840", "2024-01-05", 600, 100.4, 100.8),
-        ("99840", "2024-01-08", 800, 100.6, 101.2),
+        ("72030", "2024-01-05", 50, 99.0, 100.8, 99.2, 98.0),
+        ("72030", "2024-01-08", 100, 99.4, 100.6, 99.4, 99.0),
+        ("67580", "2024-01-05", 200, 99.6, 100.4, 99.6, 99.5),
+        ("67580", "2024-01-08", 400, 100.1, 100.3, 100.7, 100.2),
+        ("99840", "2024-01-05", 600, 100.4, 100.8, 101.0, 100.8),
+        ("99840", "2024-01-08", 800, 100.6, 101.0, 101.4, 101.2),
     ]
     rows: list[tuple[str, str, str, float, float, float, float, int, float, None]] = []
-    for code, date, second_volume, second_close, day_close in session_specs:
+    for (
+        code,
+        date,
+        second_volume,
+        second_close,
+        performance_start_close,
+        performance_end_close,
+        day_close,
+    ) in session_specs:
         rows.extend(
             [
                 (
@@ -140,6 +148,30 @@ def _build_market_db(db_path: Path) -> str:
                     second_close,
                     second_volume,
                     float(second_volume) * second_close,
+                    None,
+                ),
+                (
+                    code,
+                    date,
+                    "10:30",
+                    performance_start_close,
+                    performance_start_close,
+                    performance_start_close,
+                    performance_start_close,
+                    1000,
+                    1000.0 * performance_start_close,
+                    None,
+                ),
+                (
+                    code,
+                    date,
+                    "13:30",
+                    performance_end_close,
+                    performance_end_close,
+                    performance_end_close,
+                    performance_end_close,
+                    1000,
+                    1000.0 * performance_end_close,
                     None,
                 ),
                 (
@@ -188,10 +220,15 @@ def test_run_research_splits_sharp_volume_drop_sessions(
     assert interval_row["threshold_ratio"] == pytest.approx(0.3)
     assert interval_row["sharp_drop_count"] == 3
     assert interval_row["non_sharp_drop_count"] == 3
+    assert interval_row["performance_start_time"] == "10:30"
+    assert interval_row["performance_end_time"] == "13:30"
+    assert interval_row["performance_window_mean_spread"] < 0
     assert interval_row["open_to_close_mean_spread"] < 0
     assert interval_row["second_to_close_mean_spread"] < 0
 
     group_df = result.group_comparison_df.set_index("group_key")
+    assert group_df.loc["sharp_drop", "performance_window_mean"] < 0
+    assert group_df.loc["non_sharp_drop", "performance_window_mean"] > 0
     assert group_df.loc["sharp_drop", "open_to_close_mean"] < 0
     assert group_df.loc["non_sharp_drop", "open_to_close_mean"] > 0
 
@@ -234,6 +271,8 @@ def test_research_bundle_roundtrip(
     ).exists()
     assert reloaded.interval_minutes_list == result.interval_minutes_list
     assert reloaded.drop_percentile == pytest.approx(result.drop_percentile)
+    assert reloaded.performance_start_time == result.performance_start_time
+    assert reloaded.performance_end_time == result.performance_end_time
     pd.testing.assert_frame_equal(
         reloaded.interval_summary_df,
         result.interval_summary_df,

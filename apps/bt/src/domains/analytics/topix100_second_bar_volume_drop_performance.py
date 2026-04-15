@@ -5,7 +5,7 @@ This study asks a narrower intraday question on the current TOPIX100 universe:
 
 - how quickly does volume fade from the opening bar into the next bar?
 - if the next bar volume collapses unusually hard, does the stock underperform
-  through the rest of the day?
+  between a user-chosen intraday start and end anchor?
 
 The research defines "sharp volume drop" from the empirical cross-sectional
 distribution of:
@@ -45,13 +45,15 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
 )
 
 SECOND_BAR_VOLUME_DROP_PERFORMANCE_EXPERIMENT_ID = (
-    "market-behavior/topix100-second-bar-volume-drop-performance"
+    "market-behavior/topix100-second-bar-volume-drop-window-performance"
 )
 SECOND_BAR_VOLUME_DROP_OVERVIEW_PLOT_FILENAME = (
-    "second_bar_volume_drop_overview.png"
+    "second_bar_volume_drop_window_overview.png"
 )
 DEFAULT_DROP_PERCENTILE = 0.20
 DEFAULT_RATIO_BUCKET_COUNT = 10
+DEFAULT_PERFORMANCE_START_TIME = "10:30"
+DEFAULT_PERFORMANCE_END_TIME = "13:30"
 
 _SESSION_LEVEL_COLUMNS: tuple[str, ...] = (
     "interval_minutes",
@@ -59,11 +61,16 @@ _SESSION_LEVEL_COLUMNS: tuple[str, ...] = (
     "code",
     "first_bucket_time",
     "second_bucket_time",
+    "performance_start_bucket_time",
+    "performance_end_bucket_time",
     "close_bucket_time",
     "first_volume",
     "second_volume",
+    "performance_start_close",
+    "performance_end_close",
     "second_to_first_volume_ratio",
     "open_to_second_return",
+    "performance_window_return",
     "open_to_close_return",
     "second_to_close_return",
 )
@@ -102,6 +109,9 @@ _RATIO_BUCKET_SUMMARY_COLUMNS: tuple[str, ...] = (
     "ratio_mean",
     "open_to_second_mean",
     "open_to_second_median",
+    "performance_window_mean",
+    "performance_window_median",
+    "performance_window_hit_positive",
     "open_to_close_mean",
     "open_to_close_median",
     "open_to_close_hit_positive",
@@ -121,6 +131,9 @@ _GROUP_COMPARISON_COLUMNS: tuple[str, ...] = (
     "ratio_median",
     "open_to_second_mean",
     "open_to_second_median",
+    "performance_window_mean",
+    "performance_window_median",
+    "performance_window_hit_positive",
     "open_to_close_mean",
     "open_to_close_median",
     "open_to_close_hit_positive",
@@ -132,12 +145,22 @@ _INTERVAL_SUMMARY_COLUMNS: tuple[str, ...] = (
     "interval_minutes",
     "sample_count",
     "stock_count",
+    "performance_start_time",
+    "performance_end_time",
     "threshold_percentile",
     "threshold_ratio",
     "sharp_drop_count",
     "sharp_drop_share",
     "non_sharp_drop_count",
     "non_sharp_drop_share",
+    "sharp_drop_performance_window_mean",
+    "non_sharp_drop_performance_window_mean",
+    "performance_window_mean_spread",
+    "sharp_drop_performance_window_hit_positive",
+    "non_sharp_drop_performance_window_hit_positive",
+    "performance_window_hit_positive_spread",
+    "performance_window_welch_t_stat",
+    "performance_window_welch_p_value",
     "sharp_drop_open_to_close_mean",
     "non_sharp_drop_open_to_close_mean",
     "open_to_close_mean_spread",
@@ -168,6 +191,8 @@ class Topix100SecondBarVolumeDropPerformanceResult:
     analysis_end_date: str | None
     interval_minutes_list: tuple[int, ...]
     drop_percentile: float
+    performance_start_time: str
+    performance_end_time: str
     topix100_constituent_count: int
     total_session_count: int
     session_level_df: pd.DataFrame
@@ -217,6 +242,14 @@ def _validate_drop_percentile(value: float) -> float:
     return percentile
 
 
+def _validate_bucket_time(value: str, *, name: str) -> str:
+    try:
+        normalized = pd.Timestamp(f"2000-01-01 {value}").strftime("%H:%M")
+    except Exception as exc:  # pragma: no cover - defensive date parsing wrapper
+        raise ValueError(f"{name} must be a valid HH:MM bucket time") from exc
+    return normalized
+
+
 def _coerce_optional_float(value: Any) -> float | None:
     try:
         numeric = float(value)
@@ -247,6 +280,8 @@ def _build_session_level_df(
     bars_df: pd.DataFrame,
     *,
     interval_minutes: int,
+    performance_start_time: str,
+    performance_end_time: str,
 ) -> pd.DataFrame:
     if bars_df.empty:
         return _empty_session_level_df()
@@ -273,6 +308,24 @@ def _build_session_level_df(
             "close": "second_close",
         }
     )
+    performance_start_df = working_df.loc[
+        working_df["bucket_time"] == performance_start_time,
+        ["date", "code", "bucket_time", "close"],
+    ].rename(
+        columns={
+            "bucket_time": "performance_start_bucket_time",
+            "close": "performance_start_close",
+        }
+    )
+    performance_end_df = working_df.loc[
+        working_df["bucket_time"] == performance_end_time,
+        ["date", "code", "bucket_time", "close"],
+    ].rename(
+        columns={
+            "bucket_time": "performance_end_bucket_time",
+            "close": "performance_end_close",
+        }
+    )
     close_df = (
         working_df.groupby(["date", "code"], as_index=False)
         .tail(1)
@@ -284,10 +337,11 @@ def _build_session_level_df(
             }
         )
     )
-    session_level_df = first_df.merge(second_df, on=["date", "code"], how="inner").merge(
-        close_df,
-        on=["date", "code"],
-        how="inner",
+    session_level_df = (
+        first_df.merge(second_df, on=["date", "code"], how="inner")
+        .merge(performance_start_df, on=["date", "code"], how="inner")
+        .merge(performance_end_df, on=["date", "code"], how="inner")
+        .merge(close_df, on=["date", "code"], how="inner")
     )
     session_level_df = session_level_df.loc[
         session_level_df["first_volume"].astype(float) > 0
@@ -300,6 +354,11 @@ def _build_session_level_df(
     )
     session_level_df["open_to_second_return"] = (
         session_level_df["second_close"] / session_level_df["day_open"] - 1.0
+    )
+    session_level_df["performance_window_return"] = (
+        session_level_df["performance_end_close"]
+        / session_level_df["performance_start_close"]
+        - 1.0
     )
     session_level_df["open_to_close_return"] = (
         session_level_df["day_close"] / session_level_df["day_open"] - 1.0
@@ -398,6 +457,15 @@ def _build_ratio_bucket_summary_df(
                     "ratio_mean": ratio_value,
                     "open_to_second_mean": float(working_df["open_to_second_return"].iloc[0]),
                     "open_to_second_median": float(working_df["open_to_second_return"].iloc[0]),
+                    "performance_window_mean": float(
+                        working_df["performance_window_return"].iloc[0]
+                    ),
+                    "performance_window_median": float(
+                        working_df["performance_window_return"].iloc[0]
+                    ),
+                    "performance_window_hit_positive": float(
+                        working_df["performance_window_return"].iloc[0] > 0
+                    ),
                     "open_to_close_mean": float(working_df["open_to_close_return"].iloc[0]),
                     "open_to_close_median": float(working_df["open_to_close_return"].iloc[0]),
                     "open_to_close_hit_positive": float(
@@ -435,6 +503,12 @@ def _build_ratio_bucket_summary_df(
             ratio_mean=("second_to_first_volume_ratio", "mean"),
             open_to_second_mean=("open_to_second_return", "mean"),
             open_to_second_median=("open_to_second_return", "median"),
+            performance_window_mean=("performance_window_return", "mean"),
+            performance_window_median=("performance_window_return", "median"),
+            performance_window_hit_positive=(
+                "performance_window_return",
+                lambda values: float((values > 0).mean()),
+            ),
             open_to_close_mean=("open_to_close_return", "mean"),
             open_to_close_median=("open_to_close_return", "median"),
             open_to_close_hit_positive=(
@@ -488,6 +562,12 @@ def _build_group_comparison_df(
             ratio_median=("second_to_first_volume_ratio", "median"),
             open_to_second_mean=("open_to_second_return", "mean"),
             open_to_second_median=("open_to_second_return", "median"),
+            performance_window_mean=("performance_window_return", "mean"),
+            performance_window_median=("performance_window_return", "median"),
+            performance_window_hit_positive=(
+                "performance_window_return",
+                lambda values: float((values > 0).mean()),
+            ),
             open_to_close_mean=("open_to_close_return", "mean"),
             open_to_close_median=("open_to_close_return", "median"),
             open_to_close_hit_positive=(
@@ -519,6 +599,8 @@ def _build_interval_summary_row(
     *,
     interval_minutes: int,
     drop_percentile: float,
+    performance_start_time: str,
+    performance_end_time: str,
     threshold_ratio: float | None,
 ) -> dict[str, Any]:
     if session_level_df.empty or threshold_ratio is None or group_comparison_df.empty:
@@ -526,12 +608,22 @@ def _build_interval_summary_row(
             "interval_minutes": interval_minutes,
             "sample_count": 0,
             "stock_count": 0,
+            "performance_start_time": performance_start_time,
+            "performance_end_time": performance_end_time,
             "threshold_percentile": drop_percentile,
             "threshold_ratio": threshold_ratio,
             "sharp_drop_count": 0,
             "sharp_drop_share": 0.0,
             "non_sharp_drop_count": 0,
             "non_sharp_drop_share": 0.0,
+            "sharp_drop_performance_window_mean": None,
+            "non_sharp_drop_performance_window_mean": None,
+            "performance_window_mean_spread": None,
+            "sharp_drop_performance_window_hit_positive": None,
+            "non_sharp_drop_performance_window_hit_positive": None,
+            "performance_window_hit_positive_spread": None,
+            "performance_window_welch_t_stat": None,
+            "performance_window_welch_p_value": None,
             "sharp_drop_open_to_close_mean": None,
             "non_sharp_drop_open_to_close_mean": None,
             "open_to_close_mean_spread": None,
@@ -566,14 +658,28 @@ def _build_interval_summary_row(
         sharp_df["open_to_close_return"],
         non_sharp_df["open_to_close_return"],
     )
+    performance_window_t_stat, performance_window_p_value = _safe_welch_t_test(
+        sharp_df["performance_window_return"],
+        non_sharp_df["performance_window_return"],
+    )
     second_to_close_t_stat, second_to_close_p_value = _safe_welch_t_test(
         sharp_df["second_to_close_return"],
         non_sharp_df["second_to_close_return"],
     )
+    sharp_performance_window_mean = float(
+        cast(Any, sharp_row)["performance_window_mean"]
+    )
+    non_performance_window_mean = float(cast(Any, non_row)["performance_window_mean"])
     sharp_open_to_close_mean = float(cast(Any, sharp_row)["open_to_close_mean"])
     non_open_to_close_mean = float(cast(Any, non_row)["open_to_close_mean"])
     sharp_second_to_close_mean = float(cast(Any, sharp_row)["second_to_close_mean"])
     non_second_to_close_mean = float(cast(Any, non_row)["second_to_close_mean"])
+    sharp_performance_window_hit = float(
+        cast(Any, sharp_row)["performance_window_hit_positive"]
+    )
+    non_performance_window_hit = float(
+        cast(Any, non_row)["performance_window_hit_positive"]
+    )
     sharp_open_hit = float(cast(Any, sharp_row)["open_to_close_hit_positive"])
     non_open_hit = float(cast(Any, non_row)["open_to_close_hit_positive"])
     sharp_second_hit = float(cast(Any, sharp_row)["second_to_close_hit_positive"])
@@ -582,12 +688,24 @@ def _build_interval_summary_row(
         "interval_minutes": interval_minutes,
         "sample_count": int(len(session_level_df)),
         "stock_count": int(session_level_df["code"].nunique()),
+        "performance_start_time": performance_start_time,
+        "performance_end_time": performance_end_time,
         "threshold_percentile": drop_percentile,
         "threshold_ratio": threshold_ratio,
         "sharp_drop_count": int(len(sharp_df)),
         "sharp_drop_share": float(len(sharp_df) / len(session_level_df)),
         "non_sharp_drop_count": int(len(non_sharp_df)),
         "non_sharp_drop_share": float(len(non_sharp_df) / len(session_level_df)),
+        "sharp_drop_performance_window_mean": sharp_performance_window_mean,
+        "non_sharp_drop_performance_window_mean": non_performance_window_mean,
+        "performance_window_mean_spread": sharp_performance_window_mean
+        - non_performance_window_mean,
+        "sharp_drop_performance_window_hit_positive": sharp_performance_window_hit,
+        "non_sharp_drop_performance_window_hit_positive": non_performance_window_hit,
+        "performance_window_hit_positive_spread": sharp_performance_window_hit
+        - non_performance_window_hit,
+        "performance_window_welch_t_stat": performance_window_t_stat,
+        "performance_window_welch_p_value": performance_window_p_value,
         "sharp_drop_open_to_close_mean": sharp_open_to_close_mean,
         "non_sharp_drop_open_to_close_mean": non_open_to_close_mean,
         "open_to_close_mean_spread": sharp_open_to_close_mean - non_open_to_close_mean,
@@ -615,9 +733,21 @@ def run_topix100_second_bar_volume_drop_performance_research(
     end_date: str | None = None,
     interval_minutes_list: Sequence[int] | None = None,
     drop_percentile: float = DEFAULT_DROP_PERCENTILE,
+    performance_start_time: str = DEFAULT_PERFORMANCE_START_TIME,
+    performance_end_time: str = DEFAULT_PERFORMANCE_END_TIME,
 ) -> Topix100SecondBarVolumeDropPerformanceResult:
     validated_intervals = _normalize_interval_minutes(interval_minutes_list)
     validated_drop_percentile = _validate_drop_percentile(drop_percentile)
+    validated_performance_start_time = _validate_bucket_time(
+        performance_start_time,
+        name="performance_start_time",
+    )
+    validated_performance_end_time = _validate_bucket_time(
+        performance_end_time,
+        name="performance_end_time",
+    )
+    if validated_performance_start_time >= validated_performance_end_time:
+        raise ValueError("performance_start_time must be earlier than performance_end_time")
 
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
@@ -643,6 +773,8 @@ def run_topix100_second_bar_volume_drop_performance_research(
             session_level_df = _build_session_level_df(
                 bars_df,
                 interval_minutes=interval_minutes,
+                performance_start_time=validated_performance_start_time,
+                performance_end_time=validated_performance_end_time,
             )
             session_level_frames.append(session_level_df)
 
@@ -684,6 +816,8 @@ def run_topix100_second_bar_volume_drop_performance_research(
                     group_comparison_df,
                     interval_minutes=interval_minutes,
                     drop_percentile=validated_drop_percentile,
+                    performance_start_time=validated_performance_start_time,
+                    performance_end_time=validated_performance_end_time,
                     threshold_ratio=threshold_ratio,
                 )
             )
@@ -730,6 +864,8 @@ def run_topix100_second_bar_volume_drop_performance_research(
         analysis_end_date=analysis_end_date,
         interval_minutes_list=validated_intervals,
         drop_percentile=validated_drop_percentile,
+        performance_start_time=validated_performance_start_time,
+        performance_end_time=validated_performance_end_time,
         topix100_constituent_count=topix100_constituent_count,
         total_session_count=total_session_count,
         session_level_df=session_level_df,
@@ -754,6 +890,8 @@ def _split_result_payload(
             "analysis_end_date": result.analysis_end_date,
             "interval_minutes_list": list(result.interval_minutes_list),
             "drop_percentile": result.drop_percentile,
+            "performance_start_time": result.performance_start_time,
+            "performance_end_time": result.performance_end_time,
             "topix100_constituent_count": result.topix100_constituent_count,
             "total_session_count": result.total_session_count,
         },
@@ -781,6 +919,8 @@ def _build_result_from_payload(
         analysis_end_date=cast(str | None, metadata.get("analysis_end_date")),
         interval_minutes_list=tuple(int(value) for value in metadata["interval_minutes_list"]),
         drop_percentile=float(metadata["drop_percentile"]),
+        performance_start_time=str(metadata["performance_start_time"]),
+        performance_end_time=str(metadata["performance_end_time"]),
         topix100_constituent_count=int(metadata["topix100_constituent_count"]),
         total_session_count=int(metadata["total_session_count"]),
         session_level_df=tables["session_level_df"],
@@ -797,6 +937,8 @@ def _build_published_summary(
     return {
         "intervalMinutesList": list(result.interval_minutes_list),
         "dropPercentile": result.drop_percentile,
+        "performanceStartTime": result.performance_start_time,
+        "performanceEndTime": result.performance_end_time,
         "analysisStartDate": result.analysis_start_date,
         "analysisEndDate": result.analysis_end_date,
         "topix100ConstituentCount": result.topix100_constituent_count,
@@ -818,6 +960,7 @@ def _build_research_bundle_summary_markdown(
         f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
         f"- Interval minutes: `{', '.join(str(value) for value in result.interval_minutes_list)}`",
         f"- Sharp-drop definition: bottom `{result.drop_percentile * 100:.0f}%` of `second bar volume / opening bar volume` for each interval",
+        f"- Performance window: `{result.performance_start_time} -> {result.performance_end_time}`",
         f"- Current TOPIX100 constituents: `{result.topix100_constituent_count}`",
         f"- Total stock sessions: `{result.total_session_count}`",
         "",
@@ -832,12 +975,13 @@ def _build_research_bundle_summary_markdown(
                 lines.append(f"- `{row.interval_minutes}m`: no analyzable rows.")
                 continue
             threshold_ratio = float(cast(Any, row.threshold_ratio))
+            performance_spread = float(cast(Any, row.performance_window_mean_spread))
             open_spread = float(cast(Any, row.open_to_close_mean_spread))
-            second_spread = float(cast(Any, row.second_to_close_mean_spread))
             lines.append(
                 f"- `{row.interval_minutes}m`: sharp drop = ratio `<= {threshold_ratio:.4f}`. "
-                f"Same-day open→close spread was `{open_spread * 100:+.4f}%`, "
-                f"and second-bar-end→close spread was `{second_spread * 100:+.4f}%` "
+                f"`{result.performance_start_time}→{result.performance_end_time}` spread was "
+                f"`{performance_spread * 100:+.4f}%`, "
+                f"with open→close spread `{open_spread * 100:+.4f}%` "
                 f"(sharp drop minus non-sharp drop)."
             )
     lines.extend(
@@ -936,31 +1080,34 @@ def write_topix100_second_bar_volume_drop_overview_plot(
         hist_ax.grid(axis="y", alpha=0.25, linewidth=0.7)
 
         perf_plot_df = group_df.copy()
+        perf_plot_df["performance_window_pct"] = (
+            perf_plot_df["performance_window_mean"] * 100.0
+        )
         perf_plot_df["open_to_close_pct"] = perf_plot_df["open_to_close_mean"] * 100.0
-        perf_plot_df["second_to_close_pct"] = (
-            perf_plot_df["second_to_close_mean"] * 100.0
+        performance_window_label = (
+            f"{result.performance_start_time} → {result.performance_end_time} mean"
         )
         x_positions = [0, 1]
         bar_width = 0.36
         perf_ax.bar(
             [value - bar_width / 2 for value in x_positions],
-            perf_plot_df["open_to_close_pct"],
+            perf_plot_df["performance_window_pct"],
             width=bar_width,
             color="#2563eb",
-            label="Open → Close mean",
+            label=performance_window_label,
         )
         perf_ax.bar(
             [value + bar_width / 2 for value in x_positions],
-            perf_plot_df["second_to_close_pct"],
+            perf_plot_df["open_to_close_pct"],
             width=bar_width,
             color="#059669",
-            label="Second bar end → Close mean",
+            label="Open → Close mean",
         )
         perf_ax.axhline(0.0, color="#111827", linewidth=1.0, alpha=0.85)
         perf_ax.set_xticks(x_positions)
         perf_ax.set_xticklabels(list(perf_plot_df["group_label"]))
         perf_ax.set_ylabel("Mean return (%)")
-        perf_ax.set_title(f"{interval_minutes}m same-day performance split")
+        perf_ax.set_title(f"{interval_minutes}m intraday performance split")
         perf_ax.legend(loc="best", frameon=False)
         perf_ax.grid(axis="y", alpha=0.25, linewidth=0.7)
 
@@ -986,6 +1133,8 @@ def write_topix100_second_bar_volume_drop_performance_research_bundle(
             "end_date": result.analysis_end_date,
             "interval_minutes_list": list(result.interval_minutes_list),
             "drop_percentile": result.drop_percentile,
+            "performance_start_time": result.performance_start_time,
+            "performance_end_time": result.performance_end_time,
         },
         db_path=result.db_path,
         analysis_start_date=result.analysis_start_date,
@@ -1033,4 +1182,3 @@ def get_topix100_second_bar_volume_drop_performance_bundle_path_for_run_id(
         run_id,
         output_root=output_root,
     )
-

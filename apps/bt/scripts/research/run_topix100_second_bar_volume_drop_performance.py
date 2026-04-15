@@ -21,6 +21,8 @@ _BT_ROOT = _ensure_bt_root_on_path()
 from scripts.research.common import add_bundle_output_arguments, emit_bundle_payload  # noqa: E402
 from src.domains.analytics.topix100_second_bar_volume_drop_performance import (  # noqa: E402
     DEFAULT_DROP_PERCENTILE,
+    DEFAULT_PERFORMANCE_END_TIME,
+    DEFAULT_PERFORMANCE_START_TIME,
     run_topix100_second_bar_volume_drop_performance_research,
     write_topix100_second_bar_volume_drop_performance_research_bundle,
 )
@@ -67,6 +69,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Use 0.20 for the bottom 20%% tail."
         ),
     )
+    parser.add_argument(
+        "--performance-start-time",
+        default=DEFAULT_PERFORMANCE_START_TIME,
+        help="Return measurement start bucket time (HH:MM).",
+    )
+    parser.add_argument(
+        "--performance-end-time",
+        default=DEFAULT_PERFORMANCE_END_TIME,
+        help="Return measurement end bucket time (HH:MM).",
+    )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
@@ -79,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         end_date=args.end_date,
         interval_minutes_list=_parse_interval_minutes(args.intervals),
         drop_percentile=args.drop_percentile,
+        performance_start_time=args.performance_start_time,
+        performance_end_time=args.performance_end_time,
     )
     bundle = write_topix100_second_bar_volume_drop_performance_research_bundle(
         result,

@@ -48,6 +48,10 @@ def test_parse_args_accepts_runner_options() -> None:
             "5,15,30",
             "--drop-percentile",
             "0.2",
+            "--performance-start-time",
+            "10:30",
+            "--performance-end-time",
+            "13:30",
             "--output-root",
             "/tmp/research",
             "--run-id",
@@ -60,6 +64,8 @@ def test_parse_args_accepts_runner_options() -> None:
     assert args.db_path == "/tmp/market.duckdb"
     assert args.intervals == "5,15,30"
     assert args.drop_percentile == 0.2
+    assert args.performance_start_time == "10:30"
+    assert args.performance_end_time == "13:30"
     assert args.run_id == "20260415_140000_testabcd"
 
 
@@ -67,7 +73,7 @@ def test_main_runs_research_and_prints_bundle_payload(monkeypatch, capsys) -> No
     module = _load_module()
     fake_result = object()
     fake_bundle = SimpleNamespace(
-        experiment_id="market-behavior/topix100-second-bar-volume-drop-performance",
+        experiment_id="market-behavior/topix100-second-bar-volume-drop-window-performance",
         run_id="20260415_140000_testabcd",
         bundle_dir=Path("/tmp/research/run"),
         manifest_path=Path("/tmp/research/run/manifest.json"),
@@ -94,6 +100,10 @@ def test_main_runs_research_and_prints_bundle_payload(monkeypatch, capsys) -> No
             "5,15,30",
             "--drop-percentile",
             "0.2",
+            "--performance-start-time",
+            "10:30",
+            "--performance-end-time",
+            "13:30",
             "--run-id",
             "20260415_140000_testabcd",
         ]
