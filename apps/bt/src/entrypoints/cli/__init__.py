@@ -154,6 +154,54 @@ def migrate_optimization_specs_command() -> None:
     migrate_legacy_optimization_specs()
 
 
+@app.command(name="intraday-sync")
+def intraday_sync_command(
+    mode: str = typer.Option(
+        "auto",
+        "--mode",
+        help="Sync mode: auto, bulk, or rest",
+    ),
+    date_value: str | None = typer.Option(
+        None,
+        "--date",
+        help="Date YYYY-MM-DD. Defaults to the latest ready JST date after the 16:45 cutoff.",
+    ),
+    date_from: str | None = typer.Option(
+        None,
+        "--from",
+        help="Start date YYYY-MM-DD",
+    ),
+    date_to: str | None = typer.Option(
+        None,
+        "--to",
+        help="End date YYYY-MM-DD",
+    ),
+    codes: list[str] | None = typer.Option(
+        None,
+        "--code",
+        help="Stock code filter. Repeat for multiple codes.",
+    ),
+) -> None:
+    """
+    Sync intraday minute bars into the local DuckDB store.
+
+    Examples:
+        uv run bt intraday-sync
+        uv run bt intraday-sync --date 2026-04-15
+        uv run bt intraday-sync --from 2026-04-01 --to 2026-04-15
+        uv run bt intraday-sync --mode rest --date 2026-04-15 --code 9984
+    """
+    from src.entrypoints.cli.intraday import run_intraday_sync_command
+
+    run_intraday_sync_command(
+        mode=mode,
+        date_value=date_value,
+        date_from=date_from,
+        date_to=date_to,
+        codes=codes or [],
+    )
+
+
 def _kill_process_on_port(port: int) -> bool:
     """指定ポートを使用しているプロセスをkillする
 

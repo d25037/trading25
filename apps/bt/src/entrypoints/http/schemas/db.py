@@ -25,6 +25,20 @@ class StorageStats(BaseModel):
     totalBytes: int = 0
 
 
+IntradayFreshnessStatusLiteral = Literal["idle", "up_to_date", "stale"]
+
+
+class IntradayFreshness(BaseModel):
+    status: IntradayFreshnessStatusLiteral
+    expectedDate: str
+    latestDate: str | None = None
+    latestTime: str | None = None
+    lastIntradaySync: str | None = None
+    readyTimeJst: str
+    evaluatedAtJst: str
+    calendarBasis: str = "weekday_cutoff"
+
+
 # --- Stats ---
 
 
@@ -94,6 +108,7 @@ class FundamentalsStats(BaseModel):
 class MarketStatsResponse(BaseModel):
     initialized: bool
     lastSync: str | None = None
+    lastIntradaySync: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
     storage: StorageStats
@@ -105,6 +120,7 @@ class MarketStatsResponse(BaseModel):
     options225: Options225Stats
     margin: MarginStats
     fundamentals: FundamentalsStats
+    intradayFreshness: IntradayFreshness
     lastUpdated: str
 
 
@@ -198,6 +214,7 @@ class MarketValidationResponse(BaseModel):
     status: Literal["healthy", "warning", "error"]
     initialized: bool
     lastSync: str | None = None
+    lastIntradaySync: str | None = None
     lastStocksRefresh: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
     topix: TopixStats
@@ -217,6 +234,7 @@ class MarketValidationResponse(BaseModel):
     integrityIssuesCount: int = 0
     sampleWindows: ValidationSampleWindows
     recommendations: list[str] = Field(default_factory=list)
+    intradayFreshness: IntradayFreshness
     lastUpdated: str
 
 

@@ -5625,6 +5625,77 @@
         "title": "IntegrityIssue",
         "type": "object"
       },
+      "IntradayFreshness": {
+        "properties": {
+          "calendarBasis": {
+            "default": "weekday_cutoff",
+            "title": "Calendarbasis",
+            "type": "string"
+          },
+          "evaluatedAtJst": {
+            "title": "Evaluatedatjst",
+            "type": "string"
+          },
+          "expectedDate": {
+            "title": "Expecteddate",
+            "type": "string"
+          },
+          "lastIntradaySync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastintradaysync"
+          },
+          "latestDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestdate"
+          },
+          "latestTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latesttime"
+          },
+          "readyTimeJst": {
+            "title": "Readytimejst",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "up_to_date",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "expectedDate",
+          "readyTimeJst",
+          "evaluatedAtJst"
+        ],
+        "title": "IntradayFreshness",
+        "type": "object"
+      },
       "IntradaySyncRequest": {
         "properties": {
           "codes": {
@@ -7712,6 +7783,20 @@
             "title": "Initialized",
             "type": "boolean"
           },
+          "intradayFreshness": {
+            "$ref": "#/components/schemas/IntradayFreshness"
+          },
+          "lastIntradaySync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastintradaysync"
+          },
           "lastSync": {
             "anyOf": [
               {
@@ -7766,6 +7851,7 @@
           "options225",
           "margin",
           "fundamentals",
+          "intradayFreshness",
           "lastUpdated"
         ],
         "title": "MarketStatsResponse",
@@ -7845,6 +7931,20 @@
             "default": 0,
             "title": "Integrityissuescount",
             "type": "integer"
+          },
+          "intradayFreshness": {
+            "$ref": "#/components/schemas/IntradayFreshness"
+          },
+          "lastIntradaySync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastintradaysync"
           },
           "lastStocksRefresh": {
             "anyOf": [
@@ -7938,6 +8038,7 @@
           "margin",
           "fundamentals",
           "sampleWindows",
+          "intradayFreshness",
           "lastUpdated"
         ],
         "title": "MarketValidationResponse",

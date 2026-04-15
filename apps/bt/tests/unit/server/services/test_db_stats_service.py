@@ -14,15 +14,16 @@ class DummyMarketDb:
     def __init__(
         self,
         fundamentals_target_codes: set[str] | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         self._fundamentals_target_codes = fundamentals_target_codes or set()
+        self._metadata = metadata or {"last_sync_date": "2026-03-01T00:00:00+00:00"}
 
     def is_initialized(self) -> bool:
         return True
 
     def get_sync_metadata(self, key: str) -> str | None:
-        del key
-        return "2026-03-01T00:00:00+00:00"
+        return self._metadata.get(key)
 
     def get_stats(self) -> dict[str, int]:
         return {"stocks": 2, "index_master": 1}
@@ -166,6 +167,36 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
+    assert result.intradayFreshness.status == "idle"
+
+
+def test_get_market_stats_includes_intraday_freshness_snapshot() -> None:
+    market_db = DummyMarketDb(
+        metadata={
+            "last_sync_date": "2026-03-01T00:00:00+00:00",
+            "last_intraday_sync": "2026-04-15T07:50:00+00:00",
+        }
+    )
+    inspection = TimeSeriesInspection(
+        source="duckdb-parquet",
+        stock_minute_count=323,
+        stock_minute_min="2026-04-15",
+        stock_minute_max="2026-04-15",
+        stock_minute_date_count=1,
+        stock_minute_code_count=1,
+        latest_stock_minute_time="15:30",
+        statement_codes=set(),
+    )
+
+    result = db_stats_service.get_market_stats(
+        market_db=market_db,
+        time_series_store=DummyStore(inspection),
+    )
+
+    assert result.lastIntradaySync == "2026-04-15T07:50:00+00:00"
+    assert result.intradayFreshness.lastIntradaySync == "2026-04-15T07:50:00+00:00"
+    assert result.intradayFreshness.latestDate == "2026-04-15"
+    assert result.intradayFreshness.latestTime == "15:30"
 
 
 def test_get_market_stats_includes_options_225_ranges() -> None:

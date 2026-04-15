@@ -5644,6 +5644,31 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** IntradayFreshness */
+        IntradayFreshness: {
+            /**
+             * Calendarbasis
+             * @default weekday_cutoff
+             */
+            calendarBasis: string;
+            /** Evaluatedatjst */
+            evaluatedAtJst: string;
+            /** Expecteddate */
+            expectedDate: string;
+            /** Lastintradaysync */
+            lastIntradaySync?: string | null;
+            /** Latestdate */
+            latestDate?: string | null;
+            /** Latesttime */
+            latestTime?: string | null;
+            /** Readytimejst */
+            readyTimeJst: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "up_to_date" | "stale";
+        };
         /** IntradaySyncRequest */
         IntradaySyncRequest: {
             /** Codes */
@@ -6715,6 +6740,9 @@ export interface components {
             indices: components["schemas"]["IndicesStats"];
             /** Initialized */
             initialized: boolean;
+            intradayFreshness: components["schemas"]["IntradayFreshness"];
+            /** Lastintradaysync */
+            lastIntradaySync?: string | null;
             /** Lastsync */
             lastSync?: string | null;
             /** Lastupdated */
@@ -6779,6 +6807,9 @@ export interface components {
              * @default 0
              */
             integrityIssuesCount: number;
+            intradayFreshness: components["schemas"]["IntradayFreshness"];
+            /** Lastintradaysync */
+            lastIntradaySync?: string | null;
             /** Laststocksrefresh */
             lastStocksRefresh?: string | null;
             /** Lastsync */

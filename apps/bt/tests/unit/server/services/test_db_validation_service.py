@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import src.application.services.db_validation_service as db_validation_service
+from src.application.services.intraday_schedule import IntradayFreshnessSnapshot
 from src.application.services.db_validation_service import (
     _SIGNAL_REQUIREMENTS,
     _build_readiness_issues,
@@ -305,6 +306,52 @@ def test_validate_market_db_recommends_reset_before_enabling_local_projection() 
     assert not any(
         "Reset market-timeseries/market.duckdb" in rec for rec in result.recommendations
     )
+    assert result.intradayFreshness.status == "idle"
+
+
+def test_validate_market_db_warns_when_intraday_data_is_stale(
+    monkeypatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db._metadata[METADATA_KEYS["LAST_INTRADAY_SYNC"]] = "2026-04-14T07:50:00+00:00"
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            stock_minute_count=323,
+            stock_minute_min="2026-04-14",
+            stock_minute_max="2026-04-14",
+            stock_minute_date_count=1,
+            stock_minute_code_count=1,
+            latest_stock_minute_time="15:30",
+            indices_count=10,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+    monkeypatch.setattr(
+        db_validation_service,
+        "build_intraday_freshness",
+        lambda **_kwargs: IntradayFreshnessSnapshot(
+            status="stale",
+            expected_date="2026-04-15",
+            latest_date="2026-04-14",
+            latest_time="15:30",
+            last_intraday_sync="2026-04-14T07:50:00+00:00",
+            ready_time_jst="16:45",
+            evaluated_at_jst="2026-04-15T17:00:00+09:00",
+        ),
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.lastIntradaySync == "2026-04-14T07:50:00+00:00"
+    assert result.intradayFreshness.status == "stale"
+    assert any("Run intraday sync to ingest minute bars through 2026-04-15" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_limits_adjustment_event_samples_but_uses_total_count() -> None:

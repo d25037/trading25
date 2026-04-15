@@ -16,6 +16,7 @@ from src.application.services.listed_market_targets import (
     normalize_frontier_date,
     resolve_frontier_cache_codes,
 )
+from src.application.services.intraday_schedule import build_intraday_freshness
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
@@ -30,6 +31,7 @@ from src.entrypoints.http.schemas.db import (
     DateRange,
     FundamentalsValidation,
     IntegrityIssue,
+    IntradayFreshness,
     MarginValidation,
     MarketValidationResponse,
     Options225Validation,
@@ -134,6 +136,7 @@ def validate_market_db(
     legacy_stock_snapshot = market_db.is_legacy_stock_price_snapshot()
     stock_price_adjustment_mode = market_db.get_stock_price_adjustment_mode()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
+    last_intraday_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_INTRADAY_SYNC"])
     last_refresh = market_db.get_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"])
 
     basic = market_db.get_stats()
@@ -205,6 +208,12 @@ def validate_market_db(
         _resolve_options_225_missing_topix_coverage_dates(inspection)
     )
     options_225_partial_local_data = options_225_missing_topix_coverage_dates_count > 0
+    intraday_freshness_snapshot = build_intraday_freshness(
+        latest_date=inspection.stock_minute_max,
+        latest_time=inspection.latest_stock_minute_time,
+        last_intraday_sync=last_intraday_sync,
+    )
+    intraday_is_stale = intraday_freshness_snapshot.status == "stale"
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
@@ -287,6 +296,12 @@ def validate_market_db(
         recommendations.append(
             f"Retry {len(fundamentals_failed_codes)} failed fundamentals codes"
         )
+    if intraday_is_stale:
+        recommendations.append(
+            "Run intraday sync to ingest minute bars through "
+            f"{intraday_freshness_snapshot.expected_date} "
+            f"(latest local minute date: {intraday_freshness_snapshot.latest_date or 'n/a'})"
+        )
     recommendations.extend(readiness_recommendations)
 
     # Status determination
@@ -304,6 +319,7 @@ def validate_market_db(
         or options_225_conflicting_underlying_dates_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
+        or intraday_is_stale
         or integrity_issues
     ):
         status = "warning"
@@ -396,6 +412,7 @@ def validate_market_db(
         status=status,
         initialized=initialized,
         lastSync=last_sync,
+        lastIntradaySync=last_intraday_sync,
         lastStocksRefresh=last_refresh,
         timeSeriesSource=inspection.source,
         topix=topix,
@@ -468,6 +485,16 @@ def validate_market_db(
             ),
         ),
         recommendations=recommendations,
+        intradayFreshness=IntradayFreshness(
+            status=intraday_freshness_snapshot.status,
+            expectedDate=intraday_freshness_snapshot.expected_date,
+            latestDate=intraday_freshness_snapshot.latest_date,
+            latestTime=intraday_freshness_snapshot.latest_time,
+            lastIntradaySync=intraday_freshness_snapshot.last_intraday_sync,
+            readyTimeJst=intraday_freshness_snapshot.ready_time_jst,
+            evaluatedAtJst=intraday_freshness_snapshot.evaluated_at_jst,
+            calendarBasis=intraday_freshness_snapshot.calendar_basis,
+        ),
         lastUpdated=datetime.now(UTC).isoformat(),
     )
 

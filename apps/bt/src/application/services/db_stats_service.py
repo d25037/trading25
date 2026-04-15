@@ -16,12 +16,14 @@ from src.application.services.listed_market_targets import (
     normalize_frontier_date,
     resolve_frontier_cache_codes,
 )
+from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.entrypoints.http.schemas.db import (
     DateRange,
     FundamentalsStats,
     IndicesStats,
+    IntradayFreshness,
     ListedMarketCoverage,
     MarginStats,
     MarketStatsResponse,
@@ -105,6 +107,7 @@ def get_market_stats(
     """DuckDB 時系列 SoT と market metadata を統合した統計情報を返す。"""
     initialized = market_db.is_initialized()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
+    last_intraday_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_INTRADAY_SYNC"])
     inspection = time_series_store.inspect()
 
     # Metadata / reference data (DuckDB metadata tables)
@@ -223,10 +226,16 @@ def get_market_stats(
             ),
         ),
     )
+    intraday_freshness_snapshot = build_intraday_freshness(
+        latest_date=inspection.stock_minute_max,
+        latest_time=inspection.latest_stock_minute_time,
+        last_intraday_sync=last_intraday_sync,
+    )
 
     return MarketStatsResponse(
         initialized=initialized,
         lastSync=last_sync,
+        lastIntradaySync=last_intraday_sync,
         timeSeriesSource=inspection.source,
         databaseSize=storage.duckdbBytes,
         storage=storage,
@@ -238,5 +247,15 @@ def get_market_stats(
         options225=options_225,
         margin=margin,
         fundamentals=fundamentals,
+        intradayFreshness=IntradayFreshness(
+            status=intraday_freshness_snapshot.status,
+            expectedDate=intraday_freshness_snapshot.expected_date,
+            latestDate=intraday_freshness_snapshot.latest_date,
+            latestTime=intraday_freshness_snapshot.latest_time,
+            lastIntradaySync=intraday_freshness_snapshot.last_intraday_sync,
+            readyTimeJst=intraday_freshness_snapshot.ready_time_jst,
+            evaluatedAtJst=intraday_freshness_snapshot.evaluated_at_jst,
+            calendarBasis=intraday_freshness_snapshot.calendar_basis,
+        ),
         lastUpdated=datetime.now(UTC).isoformat(),
     )
