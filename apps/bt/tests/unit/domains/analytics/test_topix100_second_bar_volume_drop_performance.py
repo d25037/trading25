@@ -222,13 +222,21 @@ def test_run_research_splits_sharp_volume_drop_sessions(
     assert interval_row["non_sharp_drop_count"] == 3
     assert interval_row["performance_start_time"] == "10:30"
     assert interval_row["performance_end_time"] == "13:30"
+    assert interval_row["open_to_performance_start_mean_spread"] < 0
     assert interval_row["performance_window_mean_spread"] < 0
+    assert interval_row["performance_end_to_close_mean_spread"] < 0
     assert interval_row["open_to_close_mean_spread"] < 0
     assert interval_row["second_to_close_mean_spread"] < 0
 
     group_df = result.group_comparison_df.set_index("group_key")
+    assert group_df.loc["sharp_drop", "open_to_performance_start_mean"] < group_df.loc[
+        "non_sharp_drop", "open_to_performance_start_mean"
+    ]
     assert group_df.loc["sharp_drop", "performance_window_mean"] < 0
     assert group_df.loc["non_sharp_drop", "performance_window_mean"] > 0
+    assert group_df.loc["sharp_drop", "performance_end_to_close_mean"] < group_df.loc[
+        "non_sharp_drop", "performance_end_to_close_mean"
+    ]
     assert group_df.loc["sharp_drop", "open_to_close_mean"] < 0
     assert group_df.loc["non_sharp_drop", "open_to_close_mean"] > 0
 

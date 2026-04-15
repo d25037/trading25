@@ -70,7 +70,9 @@ _SESSION_LEVEL_COLUMNS: tuple[str, ...] = (
     "performance_end_close",
     "second_to_first_volume_ratio",
     "open_to_second_return",
+    "open_to_performance_start_return",
     "performance_window_return",
+    "performance_end_to_close_return",
     "open_to_close_return",
     "second_to_close_return",
 )
@@ -109,9 +111,15 @@ _RATIO_BUCKET_SUMMARY_COLUMNS: tuple[str, ...] = (
     "ratio_mean",
     "open_to_second_mean",
     "open_to_second_median",
+    "open_to_performance_start_mean",
+    "open_to_performance_start_median",
+    "open_to_performance_start_hit_positive",
     "performance_window_mean",
     "performance_window_median",
     "performance_window_hit_positive",
+    "performance_end_to_close_mean",
+    "performance_end_to_close_median",
+    "performance_end_to_close_hit_positive",
     "open_to_close_mean",
     "open_to_close_median",
     "open_to_close_hit_positive",
@@ -131,9 +139,15 @@ _GROUP_COMPARISON_COLUMNS: tuple[str, ...] = (
     "ratio_median",
     "open_to_second_mean",
     "open_to_second_median",
+    "open_to_performance_start_mean",
+    "open_to_performance_start_median",
+    "open_to_performance_start_hit_positive",
     "performance_window_mean",
     "performance_window_median",
     "performance_window_hit_positive",
+    "performance_end_to_close_mean",
+    "performance_end_to_close_median",
+    "performance_end_to_close_hit_positive",
     "open_to_close_mean",
     "open_to_close_median",
     "open_to_close_hit_positive",
@@ -153,6 +167,14 @@ _INTERVAL_SUMMARY_COLUMNS: tuple[str, ...] = (
     "sharp_drop_share",
     "non_sharp_drop_count",
     "non_sharp_drop_share",
+    "sharp_drop_open_to_performance_start_mean",
+    "non_sharp_drop_open_to_performance_start_mean",
+    "open_to_performance_start_mean_spread",
+    "sharp_drop_open_to_performance_start_hit_positive",
+    "non_sharp_drop_open_to_performance_start_hit_positive",
+    "open_to_performance_start_hit_positive_spread",
+    "open_to_performance_start_welch_t_stat",
+    "open_to_performance_start_welch_p_value",
     "sharp_drop_performance_window_mean",
     "non_sharp_drop_performance_window_mean",
     "performance_window_mean_spread",
@@ -161,6 +183,14 @@ _INTERVAL_SUMMARY_COLUMNS: tuple[str, ...] = (
     "performance_window_hit_positive_spread",
     "performance_window_welch_t_stat",
     "performance_window_welch_p_value",
+    "sharp_drop_performance_end_to_close_mean",
+    "non_sharp_drop_performance_end_to_close_mean",
+    "performance_end_to_close_mean_spread",
+    "sharp_drop_performance_end_to_close_hit_positive",
+    "non_sharp_drop_performance_end_to_close_hit_positive",
+    "performance_end_to_close_hit_positive_spread",
+    "performance_end_to_close_welch_t_stat",
+    "performance_end_to_close_welch_p_value",
     "sharp_drop_open_to_close_mean",
     "non_sharp_drop_open_to_close_mean",
     "open_to_close_mean_spread",
@@ -355,10 +385,16 @@ def _build_session_level_df(
     session_level_df["open_to_second_return"] = (
         session_level_df["second_close"] / session_level_df["day_open"] - 1.0
     )
+    session_level_df["open_to_performance_start_return"] = (
+        session_level_df["performance_start_close"] / session_level_df["day_open"] - 1.0
+    )
     session_level_df["performance_window_return"] = (
         session_level_df["performance_end_close"]
         / session_level_df["performance_start_close"]
         - 1.0
+    )
+    session_level_df["performance_end_to_close_return"] = (
+        session_level_df["day_close"] / session_level_df["performance_end_close"] - 1.0
     )
     session_level_df["open_to_close_return"] = (
         session_level_df["day_close"] / session_level_df["day_open"] - 1.0
@@ -457,6 +493,15 @@ def _build_ratio_bucket_summary_df(
                     "ratio_mean": ratio_value,
                     "open_to_second_mean": float(working_df["open_to_second_return"].iloc[0]),
                     "open_to_second_median": float(working_df["open_to_second_return"].iloc[0]),
+                    "open_to_performance_start_mean": float(
+                        working_df["open_to_performance_start_return"].iloc[0]
+                    ),
+                    "open_to_performance_start_median": float(
+                        working_df["open_to_performance_start_return"].iloc[0]
+                    ),
+                    "open_to_performance_start_hit_positive": float(
+                        working_df["open_to_performance_start_return"].iloc[0] > 0
+                    ),
                     "performance_window_mean": float(
                         working_df["performance_window_return"].iloc[0]
                     ),
@@ -465,6 +510,15 @@ def _build_ratio_bucket_summary_df(
                     ),
                     "performance_window_hit_positive": float(
                         working_df["performance_window_return"].iloc[0] > 0
+                    ),
+                    "performance_end_to_close_mean": float(
+                        working_df["performance_end_to_close_return"].iloc[0]
+                    ),
+                    "performance_end_to_close_median": float(
+                        working_df["performance_end_to_close_return"].iloc[0]
+                    ),
+                    "performance_end_to_close_hit_positive": float(
+                        working_df["performance_end_to_close_return"].iloc[0] > 0
                     ),
                     "open_to_close_mean": float(working_df["open_to_close_return"].iloc[0]),
                     "open_to_close_median": float(working_df["open_to_close_return"].iloc[0]),
@@ -503,10 +557,22 @@ def _build_ratio_bucket_summary_df(
             ratio_mean=("second_to_first_volume_ratio", "mean"),
             open_to_second_mean=("open_to_second_return", "mean"),
             open_to_second_median=("open_to_second_return", "median"),
+            open_to_performance_start_mean=("open_to_performance_start_return", "mean"),
+            open_to_performance_start_median=("open_to_performance_start_return", "median"),
+            open_to_performance_start_hit_positive=(
+                "open_to_performance_start_return",
+                lambda values: float((values > 0).mean()),
+            ),
             performance_window_mean=("performance_window_return", "mean"),
             performance_window_median=("performance_window_return", "median"),
             performance_window_hit_positive=(
                 "performance_window_return",
+                lambda values: float((values > 0).mean()),
+            ),
+            performance_end_to_close_mean=("performance_end_to_close_return", "mean"),
+            performance_end_to_close_median=("performance_end_to_close_return", "median"),
+            performance_end_to_close_hit_positive=(
+                "performance_end_to_close_return",
                 lambda values: float((values > 0).mean()),
             ),
             open_to_close_mean=("open_to_close_return", "mean"),
@@ -562,10 +628,22 @@ def _build_group_comparison_df(
             ratio_median=("second_to_first_volume_ratio", "median"),
             open_to_second_mean=("open_to_second_return", "mean"),
             open_to_second_median=("open_to_second_return", "median"),
+            open_to_performance_start_mean=("open_to_performance_start_return", "mean"),
+            open_to_performance_start_median=("open_to_performance_start_return", "median"),
+            open_to_performance_start_hit_positive=(
+                "open_to_performance_start_return",
+                lambda values: float((values > 0).mean()),
+            ),
             performance_window_mean=("performance_window_return", "mean"),
             performance_window_median=("performance_window_return", "median"),
             performance_window_hit_positive=(
                 "performance_window_return",
+                lambda values: float((values > 0).mean()),
+            ),
+            performance_end_to_close_mean=("performance_end_to_close_return", "mean"),
+            performance_end_to_close_median=("performance_end_to_close_return", "median"),
+            performance_end_to_close_hit_positive=(
+                "performance_end_to_close_return",
                 lambda values: float((values > 0).mean()),
             ),
             open_to_close_mean=("open_to_close_return", "mean"),
@@ -616,6 +694,14 @@ def _build_interval_summary_row(
             "sharp_drop_share": 0.0,
             "non_sharp_drop_count": 0,
             "non_sharp_drop_share": 0.0,
+            "sharp_drop_open_to_performance_start_mean": None,
+            "non_sharp_drop_open_to_performance_start_mean": None,
+            "open_to_performance_start_mean_spread": None,
+            "sharp_drop_open_to_performance_start_hit_positive": None,
+            "non_sharp_drop_open_to_performance_start_hit_positive": None,
+            "open_to_performance_start_hit_positive_spread": None,
+            "open_to_performance_start_welch_t_stat": None,
+            "open_to_performance_start_welch_p_value": None,
             "sharp_drop_performance_window_mean": None,
             "non_sharp_drop_performance_window_mean": None,
             "performance_window_mean_spread": None,
@@ -624,6 +710,14 @@ def _build_interval_summary_row(
             "performance_window_hit_positive_spread": None,
             "performance_window_welch_t_stat": None,
             "performance_window_welch_p_value": None,
+            "sharp_drop_performance_end_to_close_mean": None,
+            "non_sharp_drop_performance_end_to_close_mean": None,
+            "performance_end_to_close_mean_spread": None,
+            "sharp_drop_performance_end_to_close_hit_positive": None,
+            "non_sharp_drop_performance_end_to_close_hit_positive": None,
+            "performance_end_to_close_hit_positive_spread": None,
+            "performance_end_to_close_welch_t_stat": None,
+            "performance_end_to_close_welch_p_value": None,
             "sharp_drop_open_to_close_mean": None,
             "non_sharp_drop_open_to_close_mean": None,
             "open_to_close_mean_spread": None,
@@ -654,6 +748,10 @@ def _build_interval_summary_row(
     non_row = group_comparison_df.loc[
         group_comparison_df["group_key"] == "non_sharp_drop"
     ].iloc[0]
+    open_to_performance_start_t_stat, open_to_performance_start_p_value = _safe_welch_t_test(
+        sharp_df["open_to_performance_start_return"],
+        non_sharp_df["open_to_performance_start_return"],
+    )
     open_to_close_t_stat, open_to_close_p_value = _safe_welch_t_test(
         sharp_df["open_to_close_return"],
         non_sharp_df["open_to_close_return"],
@@ -662,23 +760,51 @@ def _build_interval_summary_row(
         sharp_df["performance_window_return"],
         non_sharp_df["performance_window_return"],
     )
+    performance_end_to_close_t_stat, performance_end_to_close_p_value = _safe_welch_t_test(
+        sharp_df["performance_end_to_close_return"],
+        non_sharp_df["performance_end_to_close_return"],
+    )
     second_to_close_t_stat, second_to_close_p_value = _safe_welch_t_test(
         sharp_df["second_to_close_return"],
         non_sharp_df["second_to_close_return"],
+    )
+    sharp_open_to_performance_start_mean = float(
+        cast(Any, sharp_row)["open_to_performance_start_mean"]
+    )
+    non_open_to_performance_start_mean = float(
+        cast(Any, non_row)["open_to_performance_start_mean"]
     )
     sharp_performance_window_mean = float(
         cast(Any, sharp_row)["performance_window_mean"]
     )
     non_performance_window_mean = float(cast(Any, non_row)["performance_window_mean"])
+    sharp_performance_end_to_close_mean = float(
+        cast(Any, sharp_row)["performance_end_to_close_mean"]
+    )
+    non_performance_end_to_close_mean = float(
+        cast(Any, non_row)["performance_end_to_close_mean"]
+    )
     sharp_open_to_close_mean = float(cast(Any, sharp_row)["open_to_close_mean"])
     non_open_to_close_mean = float(cast(Any, non_row)["open_to_close_mean"])
     sharp_second_to_close_mean = float(cast(Any, sharp_row)["second_to_close_mean"])
     non_second_to_close_mean = float(cast(Any, non_row)["second_to_close_mean"])
+    sharp_open_to_performance_start_hit = float(
+        cast(Any, sharp_row)["open_to_performance_start_hit_positive"]
+    )
+    non_open_to_performance_start_hit = float(
+        cast(Any, non_row)["open_to_performance_start_hit_positive"]
+    )
     sharp_performance_window_hit = float(
         cast(Any, sharp_row)["performance_window_hit_positive"]
     )
     non_performance_window_hit = float(
         cast(Any, non_row)["performance_window_hit_positive"]
+    )
+    sharp_performance_end_to_close_hit = float(
+        cast(Any, sharp_row)["performance_end_to_close_hit_positive"]
+    )
+    non_performance_end_to_close_hit = float(
+        cast(Any, non_row)["performance_end_to_close_hit_positive"]
     )
     sharp_open_hit = float(cast(Any, sharp_row)["open_to_close_hit_positive"])
     non_open_hit = float(cast(Any, non_row)["open_to_close_hit_positive"])
@@ -696,6 +822,16 @@ def _build_interval_summary_row(
         "sharp_drop_share": float(len(sharp_df) / len(session_level_df)),
         "non_sharp_drop_count": int(len(non_sharp_df)),
         "non_sharp_drop_share": float(len(non_sharp_df) / len(session_level_df)),
+        "sharp_drop_open_to_performance_start_mean": sharp_open_to_performance_start_mean,
+        "non_sharp_drop_open_to_performance_start_mean": non_open_to_performance_start_mean,
+        "open_to_performance_start_mean_spread": sharp_open_to_performance_start_mean
+        - non_open_to_performance_start_mean,
+        "sharp_drop_open_to_performance_start_hit_positive": sharp_open_to_performance_start_hit,
+        "non_sharp_drop_open_to_performance_start_hit_positive": non_open_to_performance_start_hit,
+        "open_to_performance_start_hit_positive_spread": sharp_open_to_performance_start_hit
+        - non_open_to_performance_start_hit,
+        "open_to_performance_start_welch_t_stat": open_to_performance_start_t_stat,
+        "open_to_performance_start_welch_p_value": open_to_performance_start_p_value,
         "sharp_drop_performance_window_mean": sharp_performance_window_mean,
         "non_sharp_drop_performance_window_mean": non_performance_window_mean,
         "performance_window_mean_spread": sharp_performance_window_mean
@@ -706,6 +842,16 @@ def _build_interval_summary_row(
         - non_performance_window_hit,
         "performance_window_welch_t_stat": performance_window_t_stat,
         "performance_window_welch_p_value": performance_window_p_value,
+        "sharp_drop_performance_end_to_close_mean": sharp_performance_end_to_close_mean,
+        "non_sharp_drop_performance_end_to_close_mean": non_performance_end_to_close_mean,
+        "performance_end_to_close_mean_spread": sharp_performance_end_to_close_mean
+        - non_performance_end_to_close_mean,
+        "sharp_drop_performance_end_to_close_hit_positive": sharp_performance_end_to_close_hit,
+        "non_sharp_drop_performance_end_to_close_hit_positive": non_performance_end_to_close_hit,
+        "performance_end_to_close_hit_positive_spread": sharp_performance_end_to_close_hit
+        - non_performance_end_to_close_hit,
+        "performance_end_to_close_welch_t_stat": performance_end_to_close_t_stat,
+        "performance_end_to_close_welch_p_value": performance_end_to_close_p_value,
         "sharp_drop_open_to_close_mean": sharp_open_to_close_mean,
         "non_sharp_drop_open_to_close_mean": non_open_to_close_mean,
         "open_to_close_mean_spread": sharp_open_to_close_mean - non_open_to_close_mean,
@@ -975,12 +1121,22 @@ def _build_research_bundle_summary_markdown(
                 lines.append(f"- `{row.interval_minutes}m`: no analyzable rows.")
                 continue
             threshold_ratio = float(cast(Any, row.threshold_ratio))
+            open_to_start_spread = float(
+                cast(Any, row.open_to_performance_start_mean_spread)
+            )
             performance_spread = float(cast(Any, row.performance_window_mean_spread))
+            end_to_close_spread = float(
+                cast(Any, row.performance_end_to_close_mean_spread)
+            )
             open_spread = float(cast(Any, row.open_to_close_mean_spread))
             lines.append(
                 f"- `{row.interval_minutes}m`: sharp drop = ratio `<= {threshold_ratio:.4f}`. "
+                f"`open→{result.performance_start_time}` spread was "
+                f"`{open_to_start_spread * 100:+.4f}%`, "
                 f"`{result.performance_start_time}→{result.performance_end_time}` spread was "
                 f"`{performance_spread * 100:+.4f}%`, "
+                f"`{result.performance_end_time}→close` spread was "
+                f"`{end_to_close_spread * 100:+.4f}%`, "
                 f"with open→close spread `{open_spread * 100:+.4f}%` "
                 f"(sharp drop minus non-sharp drop)."
             )
@@ -1080,34 +1236,48 @@ def write_topix100_second_bar_volume_drop_overview_plot(
         hist_ax.grid(axis="y", alpha=0.25, linewidth=0.7)
 
         perf_plot_df = group_df.copy()
+        perf_plot_df["open_to_start_pct"] = (
+            perf_plot_df["open_to_performance_start_mean"] * 100.0
+        )
         perf_plot_df["performance_window_pct"] = (
             perf_plot_df["performance_window_mean"] * 100.0
         )
-        perf_plot_df["open_to_close_pct"] = perf_plot_df["open_to_close_mean"] * 100.0
+        perf_plot_df["end_to_close_pct"] = (
+            perf_plot_df["performance_end_to_close_mean"] * 100.0
+        )
+        open_to_start_label = f"Open → {result.performance_start_time} mean"
         performance_window_label = (
             f"{result.performance_start_time} → {result.performance_end_time} mean"
         )
+        end_to_close_label = f"{result.performance_end_time} → Close mean"
         x_positions = [0, 1]
-        bar_width = 0.36
+        bar_width = 0.22
         perf_ax.bar(
-            [value - bar_width / 2 for value in x_positions],
-            perf_plot_df["performance_window_pct"],
+            [value - bar_width for value in x_positions],
+            perf_plot_df["open_to_start_pct"],
             width=bar_width,
             color="#2563eb",
+            label=open_to_start_label,
+        )
+        perf_ax.bar(
+            x_positions,
+            perf_plot_df["performance_window_pct"],
+            width=bar_width,
+            color="#059669",
             label=performance_window_label,
         )
         perf_ax.bar(
-            [value + bar_width / 2 for value in x_positions],
-            perf_plot_df["open_to_close_pct"],
+            [value + bar_width for value in x_positions],
+            perf_plot_df["end_to_close_pct"],
             width=bar_width,
-            color="#059669",
-            label="Open → Close mean",
+            color="#dc2626",
+            label=end_to_close_label,
         )
         perf_ax.axhline(0.0, color="#111827", linewidth=1.0, alpha=0.85)
         perf_ax.set_xticks(x_positions)
         perf_ax.set_xticklabels(list(perf_plot_df["group_label"]))
         perf_ax.set_ylabel("Mean return (%)")
-        perf_ax.set_title(f"{interval_minutes}m intraday performance split")
+        perf_ax.set_title(f"{interval_minutes}m segmented intraday performance split")
         perf_ax.legend(loc="best", frameon=False)
         perf_ax.grid(axis="y", alpha=0.25, linewidth=0.7)
 
