@@ -63,17 +63,21 @@ class BulkFetchResult:
 class JQuantsBulkService:
     """Bulk API helper used by sync strategies."""
 
+    _CSV_READ_BATCH_SIZE = 50_000
+
     def __init__(
         self,
         client: BulkApiClientLike,
         *,
         cache_dir: Path | None = None,
         downloader: Callable[[str], Awaitable[bytes]] | None = None,
+        csv_read_batch_size: int | None = None,
     ) -> None:
         self._client = client
         self._cache_dir = cache_dir or (get_cache_dir() / "jquants-bulk")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._downloader = downloader or self._download_bytes
+        self._csv_read_batch_size = max(1, int(csv_read_batch_size or self._CSV_READ_BATCH_SIZE))
 
     async def build_plan(
         self,
@@ -145,11 +149,14 @@ class JQuantsBulkService:
                 cache_path.write_bytes(payload)
                 self._write_cache_meta(file_info)
 
-            batch_rows = self._read_csv_gzip_rows(cache_path)
-            if on_rows_batch is not None:
-                await on_rows_batch(batch_rows, file_info)
-            if accumulate_rows:
-                rows.extend(batch_rows)
+            for batch_rows in self._iter_csv_gzip_row_batches(
+                cache_path,
+                batch_size=self._csv_read_batch_size,
+            ):
+                if on_rows_batch is not None:
+                    await on_rows_batch(batch_rows, file_info)
+                if accumulate_rows:
+                    rows.extend(batch_rows)
 
         return BulkFetchResult(
             rows=rows,
@@ -308,6 +315,21 @@ class JQuantsBulkService:
 
     def _read_csv_gzip_rows(self, path: Path) -> list[dict[str, Any]]:
         return list(self._iter_csv_gzip_rows(path))
+
+    def _iter_csv_gzip_row_batches(
+        self,
+        path: Path,
+        *,
+        batch_size: int,
+    ) -> Iterator[list[dict[str, Any]]]:
+        batch: list[dict[str, Any]] = []
+        for row in self._iter_csv_gzip_rows(path):
+            batch.append(row)
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
 
     def _iter_csv_gzip_rows(self, path: Path) -> Iterator[dict[str, Any]]:
         with gzip.open(path, mode="rt", encoding="utf-8-sig", newline="") as fh:

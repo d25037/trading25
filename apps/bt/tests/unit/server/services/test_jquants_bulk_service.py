@@ -177,6 +177,52 @@ async def test_bulk_service_fetch_with_callback_without_accumulating_rows(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_bulk_service_streams_large_csv_in_multiple_batches(tmp_path: Path) -> None:
+    key = "equities_bars_daily_20260210.csv.gz"
+    rows = [
+        {"Code": "72030", "Date": "2026-02-10", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "1000"},
+        {"Code": "67580", "Date": "2026-02-10", "O": "3", "H": "4", "L": "3", "C": "4", "Vo": "2000"},
+        {"Code": "99840", "Date": "2026-02-10", "O": "5", "H": "6", "L": "5", "C": "6", "Vo": "3000"},
+    ]
+    payload = _gzip_csv_bytes(rows)
+    client = _BulkClient(
+        list_payload=[{"Key": key, "LastModified": "2026-02-11T00:00:00Z", "Size": len(payload)}],
+        signed_urls={key: "https://signed.local/equities-20260210.csv.gz"},
+    )
+
+    async def _downloader(_url: str) -> bytes:
+        return payload
+
+    service = JQuantsBulkService(
+        client,
+        cache_dir=tmp_path / "bulk-cache",
+        downloader=_downloader,
+        csv_read_batch_size=2,
+    )
+
+    plan = await service.build_plan(endpoint="/equities/bars/daily")
+    seen_batches: list[list[dict[str, Any]]] = []
+
+    async def _on_rows_batch(batch_rows: list[dict[str, Any]], _file_info: Any) -> None:
+        seen_batches.append(batch_rows)
+
+    result = await service.fetch_with_plan(
+        plan,
+        on_rows_batch=_on_rows_batch,
+        accumulate_rows=False,
+    )
+
+    assert [len(batch) for batch in seen_batches] == [2, 1]
+    assert [row["Code"] for batch in seen_batches for row in batch] == [
+        "72030",
+        "67580",
+        "99840",
+    ]
+    assert result.rows == []
+    assert result.api_calls == 2
+
+
+@pytest.mark.asyncio
 async def test_bulk_service_wraps_signed_url_download_error(tmp_path: Path) -> None:
     key = "indices_bars_daily_20260210.csv.gz"
     payload_rows = [{"Date": "2026-02-10", "Code": "0000", "O": "1", "H": "2", "L": "1", "C": "2"}]
