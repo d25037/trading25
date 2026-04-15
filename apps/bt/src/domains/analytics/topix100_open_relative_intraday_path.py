@@ -9,6 +9,7 @@ the close for the current TOPIX100 constituent set.
 from __future__ import annotations
 
 import importlib
+import os
 import shutil
 import tempfile
 from collections.abc import Sequence
@@ -105,6 +106,9 @@ _INTERVAL_SUMMARY_COLUMNS: tuple[str, ...] = (
 )
 TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/topix100-open-relative-intraday-path"
+)
+TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME = (
+    "intraday_path_overview.png"
 )
 
 
@@ -874,6 +878,10 @@ def _build_research_bundle_summary_markdown(
     summary_lines.extend(
         [
             "",
+            "## Artifact Plots",
+            "",
+            f"- `{TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME}`",
+            "",
             "## Artifact Tables",
             "",
             *[
@@ -885,6 +893,137 @@ def _build_research_bundle_summary_markdown(
     return "\n".join(summary_lines)
 
 
+def _import_matplotlib_pyplot() -> Any:
+    mpl_config_dir = Path(tempfile.gettempdir()) / "trading25-matplotlib"
+    mpl_config_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_config_dir))
+    matplotlib = importlib.import_module("matplotlib")
+    use_backend = getattr(matplotlib, "use", None)
+    if callable(use_backend):
+        use_backend("Agg", force=True)
+    return importlib.import_module("matplotlib.pyplot")
+
+
+def write_topix100_open_relative_intraday_path_overview_plot(
+    result: Topix100OpenRelativeIntradayPathResult,
+    *,
+    output_path: str | Path,
+) -> Path:
+    if result.path_summary_df.empty or result.extrema_timing_df.empty:
+        raise ValueError("No summary data was available to plot.")
+
+    plt = _import_matplotlib_pyplot()
+    output_path = Path(output_path).expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    path_summary_df = result.path_summary_df.sort_values(
+        ["interval_minutes", "bucket_minute"]
+    ).copy()
+    extrema_timing_df = result.extrema_timing_df.sort_values(
+        ["interval_minutes", "bucket_minute"]
+    ).copy()
+    interval_colors = {
+        interval: color
+        for interval, color in zip(
+            result.interval_minutes_list,
+            ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c"),
+            strict=False,
+        )
+    }
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(14, 9),
+        sharex=True,
+        constrained_layout=True,
+    )
+    summary_axes = axes[0]
+    timing_axes = axes[1]
+    for interval_minutes in result.interval_minutes_list:
+        color = interval_colors.get(interval_minutes, "#1f2937")
+        interval_path_df = path_summary_df.loc[
+            path_summary_df["interval_minutes"] == interval_minutes
+        ].copy()
+        interval_extrema_df = extrema_timing_df.loc[
+            extrema_timing_df["interval_minutes"] == interval_minutes
+        ].copy()
+        if interval_path_df.empty or interval_extrema_df.empty:
+            continue
+
+        x_values = interval_path_df["bucket_minute"] / 60.0
+        summary_axes.plot(
+            x_values,
+            interval_path_df["mean_close_return"] * 100.0,
+            label=f"{interval_minutes}m mean close/open",
+            color=color,
+            linewidth=2.0,
+        )
+        trough_row = interval_path_df.sort_values(
+            ["mean_close_return", "bucket_minute"]
+        ).iloc[0]
+        trough_x = float(trough_row["bucket_minute"]) / 60.0
+        trough_y = float(trough_row["mean_close_return"]) * 100.0
+        summary_axes.scatter([trough_x], [trough_y], color=color, s=28, zorder=3)
+        summary_axes.annotate(
+            f"{interval_minutes}m low {trough_row['bucket_time']}",
+            xy=(trough_x, trough_y),
+            xytext=(0, 10 if interval_minutes % 2 else -16),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            ha="center",
+        )
+
+        extrema_x_values = interval_extrema_df["bucket_minute"] / 60.0
+        timing_axes.plot(
+            extrema_x_values,
+            interval_extrema_df["session_min_low_share"] * 100.0,
+            label=f"{interval_minutes}m session-low timing",
+            color=color,
+            linewidth=2.0,
+        )
+        peak_row = interval_extrema_df.sort_values(
+            ["session_min_low_share", "bucket_minute"],
+            ascending=[False, True],
+        ).iloc[0]
+        peak_x = float(peak_row["bucket_minute"]) / 60.0
+        peak_y = float(peak_row["session_min_low_share"]) * 100.0
+        timing_axes.scatter([peak_x], [peak_y], color=color, s=28, zorder=3)
+        timing_axes.annotate(
+            f"{interval_minutes}m peak {peak_row['bucket_time']}",
+            xy=(peak_x, peak_y),
+            xytext=(0, 10 if interval_minutes % 2 else -16),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            ha="center",
+        )
+
+    for axes_item in (summary_axes, timing_axes):
+        axes_item.axvline(9.5, color="#6b7280", linestyle="--", linewidth=1.0, alpha=0.8)
+        axes_item.grid(axis="y", alpha=0.25, linewidth=0.7)
+
+    summary_axes.axhline(0.0, color="#111827", linewidth=1.0, alpha=0.8)
+    summary_axes.set_ylabel("Mean close/open return (%)")
+    summary_axes.set_title(
+        "TOPIX100 intraday path vs session open"
+        f" ({result.analysis_start_date} to {result.analysis_end_date})"
+    )
+    summary_axes.legend(loc="best", frameon=False)
+
+    timing_axes.set_ylabel("Share of sessions with session low (%)")
+    timing_axes.set_xlabel("JST time")
+    timing_axes.legend(loc="best", frameon=False)
+
+    tick_minutes = [540, 570, 600, 630, 660, 690, 720, 750, 780, 810, 840, 870, 900, 930]
+    timing_axes.set_xticks([minute / 60.0 for minute in tick_minutes])
+    timing_axes.set_xticklabels([_format_bucket_time(minute) for minute in tick_minutes])
+
+    fig.savefig(output_path, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def write_topix100_open_relative_intraday_path_research_bundle(
     result: Topix100OpenRelativeIntradayPathResult,
     *,
@@ -893,7 +1032,7 @@ def write_topix100_open_relative_intraday_path_research_bundle(
     notes: str | None = None,
 ) -> ResearchBundleInfo:
     metadata, tables = _split_result_payload(result)
-    return write_research_bundle(
+    bundle = write_research_bundle(
         experiment_id=TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_RESEARCH_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_open_relative_intraday_path_research",
@@ -913,6 +1052,14 @@ def write_topix100_open_relative_intraday_path_research_bundle(
         run_id=run_id,
         notes=notes,
     )
+    write_topix100_open_relative_intraday_path_overview_plot(
+        result,
+        output_path=(
+            bundle.bundle_dir
+            / TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME
+        ),
+    )
+    return bundle
 
 
 def load_topix100_open_relative_intraday_path_research_bundle(

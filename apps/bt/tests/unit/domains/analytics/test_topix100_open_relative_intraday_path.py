@@ -8,6 +8,7 @@ import pytest
 
 from src.domains.analytics.topix100_open_relative_intraday_path import (
     TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_RESEARCH_EXPERIMENT_ID,
+    TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME,
     get_topix100_open_relative_intraday_path_bundle_path_for_run_id,
     get_topix100_open_relative_intraday_path_latest_bundle_path,
     load_topix100_open_relative_intraday_path_research_bundle,
@@ -232,6 +233,9 @@ def test_research_bundle_roundtrip(
         )
         == bundle.bundle_dir
     )
+    assert (
+        bundle.bundle_dir / TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME
+    ).exists()
     assert reloaded.interval_minutes_list == result.interval_minutes_list
     assert reloaded.total_session_count == result.total_session_count
     pd.testing.assert_frame_equal(
