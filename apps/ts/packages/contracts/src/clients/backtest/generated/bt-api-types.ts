@@ -1567,6 +1567,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jquants/minute-bars": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Minute Bars
+         * @description 分足データを取得（JQuants 生フォーマット）
+         */
+        get: operations["get_minute_bars_api_jquants_minute_bars_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jquants/options/225": {
         parameters: {
             query?: never;
@@ -6660,6 +6680,40 @@ export interface components {
             strategyName: string;
             /** Strategyscore */
             strategyScore?: number | null;
+        };
+        /**
+         * MinuteBarItem
+         * @description 分足データ（JQuants 生フォーマット）
+         */
+        MinuteBarItem: {
+            /** C */
+            C?: number | null;
+            /** Code */
+            Code: string;
+            /** Date */
+            Date: string;
+            /** H */
+            H?: number | null;
+            /** L */
+            L?: number | null;
+            /** O */
+            O?: number | null;
+            /** Time */
+            Time: string;
+            /** Va */
+            Va?: number | null;
+            /** Vo */
+            Vo?: number | null;
+        };
+        /**
+         * MinuteBarsResponse
+         * @description 分足レスポンス
+         */
+        MinuteBarsResponse: {
+            /** Data */
+            data: components["schemas"]["MinuteBarItem"][];
+            /** Pagination Key */
+            pagination_key?: string | null;
         };
         /**
          * N225OptionItem
@@ -15483,6 +15537,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiListedInfoResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_minute_bars_api_jquants_minute_bars_get: {
+        parameters: {
+            query?: {
+                /** @description Stock code (4-5 digits) */
+                code?: string | null;
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Specific date (YYYY-MM-DD) */
+                date?: string | null;
+                /** @description Pagination key */
+                pagination_key?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinuteBarsResponse"];
                 };
             };
             /** @description Bad Request */

@@ -17,6 +17,7 @@ from src.entrypoints.http.schemas.jquants import (
     ApiListedInfoResponse,
     ApiMarginInterestResponse,
     DailyQuotesResponse,
+    MinuteBarsResponse,
     N225OptionsExplorerResponse,
     N225OptionsSummary,
     N225OptionsNumericRange,
@@ -86,6 +87,35 @@ class TestDailyQuotes:
             return_value=mock_response,
         ):
             resp = app_client.get("/api/jquants/daily-quotes?code=7203")
+            assert resp.status_code == 200
+            assert resp.json()["data"] == []
+
+
+class TestMinuteBars:
+    def test_minute_bars_require_code_or_date(self, app_client):
+        resp = app_client.get("/api/jquants/minute-bars")
+        assert resp.status_code == 422
+
+    def test_minute_bars_validate_date_range(self, app_client):
+        mock_response = MinuteBarsResponse(data=[])
+        with patch.object(
+            _proxy_service(app_client),
+            "get_minute_bars",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            resp = app_client.get("/api/jquants/minute-bars?code=7203&from=2024-12-31&to=2024-01-01")
+            assert resp.status_code == 422
+
+    def test_minute_bars_with_code(self, app_client):
+        mock_response = MinuteBarsResponse(data=[])
+        with patch.object(
+            _proxy_service(app_client),
+            "get_minute_bars",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            resp = app_client.get("/api/jquants/minute-bars?code=7203&date=2024-01-05")
             assert resp.status_code == 200
             assert resp.json()["data"] == []
 

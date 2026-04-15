@@ -62,6 +62,30 @@ class DailyQuotesResponse(BaseModel):
     pagination_key: str | None = None
 
 
+# --- Minute Bars ---
+
+
+class MinuteBarItem(BaseModel):
+    """分足データ（JQuants 生フォーマット）"""
+
+    Date: str
+    Time: str
+    Code: str
+    O: NullableFloat = None  # noqa: E741
+    H: NullableFloat = None
+    L: NullableFloat = None
+    C: NullableFloat = None
+    Vo: NullableFloat = None
+    Va: NullableFloat = None
+
+
+class MinuteBarsResponse(BaseModel):
+    """分足レスポンス"""
+
+    data: list[MinuteBarItem]
+    pagination_key: str | None = None
+
+
 # --- Indices ---
 
 

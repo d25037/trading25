@@ -50,6 +50,39 @@ def test_jquants_fetch_daily_quotes_writes_json(tmp_path: Path) -> None:
     assert written["data"][0]["Code"] == "7203"
 
 
+def test_jquants_fetch_minute_bars_writes_json(tmp_path: Path) -> None:
+    payload = {"data": [{"Date": "2026-03-03", "Time": "09:00", "Code": "99840"}]}
+
+    with (
+        patch("src.entrypoints.cli.jquants._request_json", return_value=payload),
+        patch("src.entrypoints.cli.jquants._today_label", return_value="2026-03-03"),
+    ):
+        result = runner.invoke(
+            jquants_module.jquants_app,
+            [
+                "fetch",
+                "minute-bars",
+                "--code",
+                "9984",
+                "--json",
+                "--output",
+                str(tmp_path),
+            ],
+        )
+
+    assert result.exit_code == 0
+    output_path = tmp_path / "9984_minute_2026-03-03.json"
+    assert output_path.exists()
+    written = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written["data"][0]["Code"] == "99840"
+
+
+def test_jquants_fetch_minute_bars_requires_code_or_date() -> None:
+    result = runner.invoke(jquants_module.jquants_app, ["fetch", "minute-bars"])
+    assert result.exit_code == 1
+    assert "Either --code or --date is required" in result.stdout
+
+
 def test_jquants_refresh_tokens_alias_calls_status() -> None:
     with patch("src.entrypoints.cli.jquants.auth_status") as mock_status:
         result = runner.invoke(jquants_module.jquants_app, ["auth", "refresh-tokens"])

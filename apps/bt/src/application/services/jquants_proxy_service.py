@@ -33,6 +33,8 @@ from src.entrypoints.http.schemas.jquants import (
     AuthStatusResponse,
     DailyQuoteItem,
     DailyQuotesResponse,
+    MinuteBarItem,
+    MinuteBarsResponse,
     N225OptionsExplorerResponse,
     RawStatementItem,
     RawStatementsResponse,
@@ -128,6 +130,37 @@ class JQuantsProxyService:
         data = [DailyQuoteItem.model_validate(item) for item in raw_data]
         pagination_key = body.get("pagination_key")
         return DailyQuotesResponse(data=data, pagination_key=pagination_key)
+
+    # --- Minute Bars ---
+
+    async def get_minute_bars(
+        self,
+        code: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        date: str | None = None,
+        pagination_key: str | None = None,
+    ) -> MinuteBarsResponse:
+        if not code and not date:
+            raise HTTPException(status_code=422, detail="Either 'code' or 'date' is required")
+
+        params: dict[str, Any] = {}
+        if code:
+            params["code"] = code
+        if date_from:
+            params["from"] = date_from
+        if date_to:
+            params["to"] = date_to
+        if date:
+            params["date"] = date
+        if pagination_key:
+            params["pagination_key"] = pagination_key
+
+        body = await self._client.get("/equities/bars/minute", params)
+        raw_data = body.get("data", [])
+        data = [MinuteBarItem.model_validate(item) for item in raw_data]
+        next_pagination_key = body.get("pagination_key")
+        return MinuteBarsResponse(data=data, pagination_key=next_pagination_key)
 
     # --- Indices ---
 

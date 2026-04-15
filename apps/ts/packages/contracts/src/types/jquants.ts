@@ -80,6 +80,24 @@ export interface JQuantsDailyQuotesResponse {
   pagination_key?: string;
 }
 
+// Minute Stock Prices Types (eq-bars-minute)
+export interface JQuantsMinuteBar {
+  Date: string; // YYYY-MM-DD
+  Time: string; // HH:mm
+  Code: string;
+  O: number | null; // Open
+  H: number | null; // High
+  L: number | null; // Low
+  C: number | null; // Close
+  Vo: number | null; // Volume
+  Va: number | null; // Value (TurnoverValue)
+}
+
+export interface JQuantsMinuteBarsResponse {
+  data: JQuantsMinuteBar[];
+  pagination_key?: string;
+}
+
 // Weekly Margin Interest Types (mkt-margin-int)
 export interface JQuantsWeeklyMarginInterest {
   Date: string; // YYYY-MM-DD
@@ -106,6 +124,14 @@ export interface JQuantsListedInfoParams {
 }
 
 export interface JQuantsDailyQuotesParams {
+  code?: string;
+  from?: string; // YYYYMMDD or YYYY-MM-DD
+  to?: string; // YYYYMMDD or YYYY-MM-DD
+  date?: string; // YYYYMMDD or YYYY-MM-DD
+  pagination_key?: string;
+}
+
+export interface JQuantsMinuteBarsParams {
   code?: string;
   from?: string; // YYYYMMDD or YYYY-MM-DD
   to?: string; // YYYYMMDD or YYYY-MM-DD

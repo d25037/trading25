@@ -238,6 +238,50 @@ def fetch_daily_quotes(
     _print_fetch_summary("Daily Quotes", len(rows), written)
 
 
+@fetch_app.command("minute-bars")
+def fetch_minute_bars(
+    code: str | None = typer.Option(None, "--code", help="Stock code"),
+    date_value: str | None = typer.Option(None, "--date", help="Date YYYY-MM-DD"),
+    date_from: str | None = typer.Option(None, "--from", help="From YYYY-MM-DD"),
+    date_to: str | None = typer.Option(None, "--to", help="To YYYY-MM-DD"),
+    pagination_key: str | None = typer.Option(None, "--pagination-key", help="Pagination key"),
+    csv_output: bool = typer.Option(False, "--csv", help="Write CSV"),
+    json_output: bool = typer.Option(False, "--json", help="Write JSON"),
+    output_dir: Path = typer.Option(DEFAULT_OUTPUT_DIR, "--output", help="Output directory"),
+    bt_url: str = typer.Option(DEFAULT_BT_API_URL, "--bt-url", help="bt FastAPI URL"),
+) -> None:
+    """Fetch /api/jquants/minute-bars."""
+    if code is None and date_value is None:
+        console.print("[red]Either --code or --date is required.[/red]")
+        raise typer.Exit(code=1)
+
+    payload = _request_json(
+        bt_url,
+        "/api/jquants/minute-bars",
+        params={
+            "code": code,
+            "date": date_value,
+            "from": date_from,
+            "to": date_to,
+            "pagination_key": pagination_key,
+        },
+    )
+    rows = payload.get("data", [])
+    if not isinstance(rows, list):
+        rows = []
+
+    filename_base = f"{code}_minute_{_today_label()}" if code else f"minute_bars_{_today_label()}"
+
+    written: Path | None = None
+    if csv_output:
+        safe_rows = [row for row in rows if isinstance(row, dict)]
+        written = _write_csv(safe_rows, output_dir, f"{filename_base}.csv")
+    elif json_output:
+        written = _write_json(payload, output_dir, f"{filename_base}.json")
+
+    _print_fetch_summary("Minute Bars", len(rows), written)
+
+
 @fetch_app.command("listed-info")
 def fetch_listed_info(
     code: str | None = typer.Argument(None, help="Optional stock code"),

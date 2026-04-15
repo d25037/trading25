@@ -255,6 +255,12 @@ class TestDataKeyExtraction:
         key = client._extract_data_key("/equities/bars/daily", body)
         assert key == "data"
 
+    def test_known_minute_endpoint(self, client):
+        """minute bars endpoint も data キーを使う"""
+        body = {"data": [{"Date": "2024-01-01", "Time": "09:00"}]}
+        key = client._extract_data_key("/equities/bars/minute", body)
+        assert key == "data"
+
     def test_known_endpoint_falls_back_when_mapped_key_missing(self, client):
         """既知エンドポイントでも data が無い場合は最初の配列キーへフォールバック"""
         body = {"indices": [{"Date": "2024-01-01"}]}

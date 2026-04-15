@@ -7773,6 +7773,124 @@
         "title": "MatchedStrategyItem",
         "type": "object"
       },
+      "MinuteBarItem": {
+        "description": "分足データ（JQuants 生フォーマット）",
+        "properties": {
+          "C": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "C"
+          },
+          "Code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "Date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "H": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "H"
+          },
+          "L": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "L"
+          },
+          "O": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "O"
+          },
+          "Time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "Va": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Va"
+          },
+          "Vo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vo"
+          }
+        },
+        "required": [
+          "Date",
+          "Time",
+          "Code"
+        ],
+        "title": "MinuteBarItem",
+        "type": "object"
+      },
+      "MinuteBarsResponse": {
+        "description": "分足レスポンス",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MinuteBarItem"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "pagination_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pagination Key"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "MinuteBarsResponse",
+        "type": "object"
+      },
       "N225OptionItem": {
         "description": "Normalized Nikkei 225 option daily bar item.",
         "properties": {
@@ -24071,6 +24189,162 @@
           }
         },
         "summary": "Get Listed Info",
+        "tags": [
+          "JQuants Proxy"
+        ]
+      }
+    },
+    "/api/jquants/minute-bars": {
+      "get": {
+        "description": "分足データを取得（JQuants 生フォーマット）",
+        "operationId": "get_minute_bars_api_jquants_minute_bars_get",
+        "parameters": [
+          {
+            "description": "Stock code (4-5 digits)",
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 5,
+                  "minLength": 4,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stock code (4-5 digits)",
+              "title": "Code"
+            }
+          },
+          {
+            "description": "Start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date (YYYY-MM-DD)",
+              "title": "From"
+            }
+          },
+          {
+            "description": "End date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date (YYYY-MM-DD)",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Specific date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Specific date (YYYY-MM-DD)",
+              "title": "Date"
+            }
+          },
+          {
+            "description": "Pagination key",
+            "in": "query",
+            "name": "pagination_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pagination key",
+              "title": "Pagination Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinuteBarsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Minute Bars",
         "tags": [
           "JQuants Proxy"
         ]

@@ -33,6 +33,20 @@ def _daily_quote_item(code: str = "72030") -> dict[str, object]:
     }
 
 
+def _minute_bar_item(code: str = "72030") -> dict[str, object]:
+    return {
+        "Date": "2024-01-04",
+        "Time": "09:00",
+        "Code": code,
+        "O": 100.0,
+        "H": 101.0,
+        "L": 99.5,
+        "C": 100.5,
+        "Vo": 1200.0,
+        "Va": 120050.0,
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_auth_status_reflects_api_key_presence() -> None:
     client = AsyncMock()
@@ -81,6 +95,59 @@ async def test_get_daily_quotes_without_optional_filters() -> None:
 
     assert len(response.data) == 1
     client.get.assert_awaited_once_with("/equities/bars/daily", {"code": "7203"})
+
+
+@pytest.mark.asyncio
+async def test_get_minute_bars_with_code_and_pagination_key() -> None:
+    client = AsyncMock()
+    client.get = AsyncMock(return_value={"data": [_minute_bar_item()], "pagination_key": "next"})
+    service = JQuantsProxyService(client)
+
+    response = await service.get_minute_bars(
+        code="7203",
+        date_from="2024-01-01",
+        date_to="2024-01-31",
+        date="2024-01-04",
+        pagination_key="current",
+    )
+
+    assert len(response.data) == 1
+    assert response.data[0].Time == "09:00"
+    assert response.pagination_key == "next"
+    client.get.assert_awaited_once_with(
+        "/equities/bars/minute",
+        {
+            "code": "7203",
+            "from": "2024-01-01",
+            "to": "2024-01-31",
+            "date": "2024-01-04",
+            "pagination_key": "current",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_minute_bars_accepts_date_only() -> None:
+    client = AsyncMock()
+    client.get = AsyncMock(return_value={"data": [_minute_bar_item(code="99840")]})
+    service = JQuantsProxyService(client)
+
+    response = await service.get_minute_bars(date="2024-01-04")
+
+    assert len(response.data) == 1
+    assert response.data[0].Code == "99840"
+    client.get.assert_awaited_once_with("/equities/bars/minute", {"date": "2024-01-04"})
+
+
+@pytest.mark.asyncio
+async def test_get_minute_bars_requires_code_or_date() -> None:
+    client = AsyncMock()
+    service = JQuantsProxyService(client)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.get_minute_bars()
+
+    assert exc_info.value.status_code == 422
 
 
 @pytest.mark.asyncio

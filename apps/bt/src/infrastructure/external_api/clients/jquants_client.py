@@ -53,6 +53,7 @@ class JQuantsAsyncClient:
     # v2 破壊的変更: 全エンドポイントが "data" キーに統一
     _DATA_KEYS: dict[str, str] = {
         "/equities/bars/daily": "data",
+        "/equities/bars/minute": "data",
         "/indices/bars/daily": "data",
         "/indices/bars/daily/topix": "data",
         "/derivatives/bars/daily/options/225": "data",

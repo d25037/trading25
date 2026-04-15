@@ -2,8 +2,9 @@
 JQuants Proxy Routes
 
 Hono Layer 1: JQuants Proxy API の移植。
-7 エンドポイント: auth/status, daily-quotes, indices, listed-info,
-                  margin-interest, statements, statements/raw, topix
+10 エンドポイント: auth/status, daily-quotes, minute-bars, indices,
+                   listed-info, margin-interest, statements,
+                   statements/raw, topix, options/225
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from src.entrypoints.http.schemas.jquants import (
     ApiMarginInterestResponse,
     AuthStatusResponse,
     DailyQuotesResponse,
+    MinuteBarsResponse,
     N225OptionsExplorerResponse,
     RawStatementsResponse,
     StatementsResponse,
@@ -53,6 +55,30 @@ async def get_daily_quotes(
     """日足クォートデータを取得（JQuants 生フォーマット）"""
     service = _get_proxy_service(request)
     return await service.get_daily_quotes(code, date_from, date_to, date)
+
+
+@router.get("/minute-bars", response_model=MinuteBarsResponse)
+async def get_minute_bars(
+    request: Request,
+    code: str | None = Query(
+        None,
+        min_length=4,
+        max_length=5,
+        description="Stock code (4-5 digits)",
+    ),
+    date_from: str | None = Query(None, alias="from", description="Start date (YYYY-MM-DD)"),
+    date_to: str | None = Query(None, alias="to", description="End date (YYYY-MM-DD)"),
+    date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
+    pagination_key: str | None = Query(None, description="Pagination key"),
+) -> MinuteBarsResponse:
+    """分足データを取得（JQuants 生フォーマット）"""
+    if not code and not date:
+        raise HTTPException(status_code=422, detail="Either 'code' or 'date' is required")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="'from' date must be before or equal to 'to' date")
+
+    service = _get_proxy_service(request)
+    return await service.get_minute_bars(code, date_from, date_to, date, pagination_key)
 
 
 @router.get("/indices", response_model=ApiIndicesResponse)
