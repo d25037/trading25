@@ -56,6 +56,11 @@ from src.domains.analytics.topix100_streak_353_transfer import (
     build_topix100_streak_state_snapshot_df,
     build_topix100_streak_daily_state_panel_df,
 )
+from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
+    build_topix100_streak_price_feature_frame,
+    coerce_topix100_streak_state_panel_df,
+    join_topix100_streak_state_panel_df,
+)
 from src.domains.analytics.topix_close_return_streaks import (
     DEFAULT_VALIDATION_RATIO,
     _normalize_positive_int_sequence,
@@ -807,24 +812,7 @@ def _build_feature_panel_df(
 
 
 def _coerce_signal_state_panel_df(state_source: Any) -> pd.DataFrame:
-    if isinstance(state_source, pd.DataFrame):
-        state_df = state_source.copy()
-    elif hasattr(state_source, "daily_state_panel_df") and isinstance(
-        getattr(state_source, "daily_state_panel_df"),
-        pd.DataFrame,
-    ):
-        state_df = cast(pd.DataFrame, getattr(state_source, "daily_state_panel_df")).copy()
-    elif hasattr(state_source, "state_event_df") and isinstance(
-        getattr(state_source, "state_event_df"),
-        pd.DataFrame,
-    ):
-        state_df = cast(pd.DataFrame, getattr(state_source, "state_event_df")).copy()
-    else:
-        raise ValueError("Unable to resolve a state panel dataframe")
-
-    if "segment_end_date" in state_df.columns and "date" not in state_df.columns:
-        state_df = state_df.rename(columns={"segment_end_date": "date"})
-    return state_df
+    return coerce_topix100_streak_state_panel_df(state_source)
 
 
 def _build_feature_panel_from_state_df(
@@ -859,36 +847,10 @@ def _build_feature_panel_from_state_df(
         long_future_close = grouped_close.shift(-long_target_horizon_days).astype(float)
         price_df["future_return_5d"] = long_future_close.div(close_base).sub(1.0)
 
-    state_df = _coerce_signal_state_panel_df(state_event_df)
-    state_columns = [
-        "state_event_id",
-        "code",
-        "company_name",
-        "sample_split",
-        "segment_id",
-        "date",
-        "segment_return",
-        "segment_day_count",
-    ]
-    missing_state_columns = [
-        column for column in state_columns if column not in state_df.columns
-    ]
-    if missing_state_columns:
-        raise ValueError(f"Missing state event columns: {missing_state_columns}")
-
-    state_df = state_df[state_columns].copy()
-    state_df["date"] = state_df["date"].astype(str)
-    state_df["code"] = state_df["code"].astype(str).str.zfill(4)
-    merged_df = price_df.merge(
-        state_df,
-        on=["date", "code", "company_name"],
-        how="inner",
-        validate="one_to_one",
+    merged_df = join_topix100_streak_state_panel_df(
+        price_df,
+        state_source=state_event_df,
     )
-    if merged_df.empty:
-        raise ValueError("Joining price rows with state rows produced no overlap")
-
-    merged_df["segment_abs_return"] = merged_df["segment_return"].astype(float).abs()
     merged_df["short_edge_1d"] = -merged_df["future_return_1d"].astype(float)
     merged_df["price_feature_label"] = PRICE_FEATURE_LABEL_MAP[price_feature]
     merged_df["volume_feature_label"] = VOLUME_FEATURE_LABEL_MAP[volume_feature]
@@ -967,61 +929,11 @@ def _build_price_feature_frame(
     price_feature: str,
     volume_feature: str,
 ) -> pd.DataFrame:
-    required_event_columns = [
-        "date",
-        "code",
-        "company_name",
-        "open",
-        "high",
-        "low",
-        "close",
-        price_feature,
-        volume_feature,
-        "date_constituent_count",
-    ]
-    missing_event_columns = [
-        column for column in required_event_columns if column not in event_panel_df.columns
-    ]
-    if missing_event_columns:
-        raise ValueError(f"Missing event panel columns: {missing_event_columns}")
-
-    optional_future_columns = [
-        column
-        for column in event_panel_df.columns
-        if column.startswith("t_plus_") and column.endswith("_return")
-    ]
-    price_df = event_panel_df[[*required_event_columns, *optional_future_columns]].copy()
-    price_df["date"] = price_df["date"].astype(str)
-    price_df["code"] = price_df["code"].astype(str).str.zfill(4)
-    price_df = price_df.dropna(subset=[price_feature, volume_feature]).copy()
-    if price_df.empty:
-        raise ValueError("No event rows remained after dropping missing feature values")
-
-    price_df = price_df.sort_values(["code", "date"], kind="stable").reset_index(drop=True)
-    close_group = price_df.groupby("code", observed=True)["close"]
-    price_df["recent_return_1d"] = close_group.pct_change(1)
-    price_df["recent_return_3d"] = close_group.pct_change(3)
-    price_df["recent_return_5d"] = close_group.pct_change(5)
-    price_df["intraday_return"] = price_df["close"].astype(float).div(
-        price_df["open"].replace(0, pd.NA).astype(float)
-    ).sub(1.0)
-    price_df["range_pct"] = (
-        price_df["high"].astype(float).sub(price_df["low"].astype(float))
-    ).div(price_df["close"].replace(0, pd.NA).astype(float))
-    price_df["price_rank_desc"] = (
-        price_df.groupby("date", observed=True)[price_feature]
-        .rank(method="first", ascending=False)
-        .astype(int)
+    return build_topix100_streak_price_feature_frame(
+        event_panel_df,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
     )
-    price_df["decile_num"] = (
-        ((price_df["price_rank_desc"] - 1) * len(DECILE_ORDER))
-        // price_df["date_constituent_count"]
-    ) + 1
-    price_df["decile_num"] = price_df["decile_num"].clip(1, len(DECILE_ORDER))
-    price_df["decile"] = price_df["decile_num"].map(
-        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
-    )
-    return price_df
 
 
 def _build_scoring_snapshot_df(

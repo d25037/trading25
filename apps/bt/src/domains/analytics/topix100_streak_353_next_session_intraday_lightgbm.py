@@ -55,12 +55,16 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
     _build_category_lookup,
     _build_lightgbm_params,
     _build_model_matrix,
-    _build_price_feature_frame,
     _build_scoring_snapshot_df,
     _format_int_sequence,
     _format_return,
     _load_lightgbm_regressor_cls,
     _predict_lightgbm_snapshot_scores,
+)
+from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
+    build_topix100_streak_price_feature_frame,
+    coerce_topix100_streak_state_panel_df,
+    join_topix100_streak_state_panel_df,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -414,24 +418,7 @@ def _build_research_feature_panel_df(
 
 
 def _coerce_intraday_state_panel_df(state_source: Any) -> pd.DataFrame:
-    if isinstance(state_source, pd.DataFrame):
-        state_df = state_source.copy()
-    elif hasattr(state_source, "daily_state_panel_df") and isinstance(
-        getattr(state_source, "daily_state_panel_df"),
-        pd.DataFrame,
-    ):
-        state_df = cast(pd.DataFrame, getattr(state_source, "daily_state_panel_df")).copy()
-    elif hasattr(state_source, "state_event_df") and isinstance(
-        getattr(state_source, "state_event_df"),
-        pd.DataFrame,
-    ):
-        state_df = cast(pd.DataFrame, getattr(state_source, "state_event_df")).copy()
-    else:
-        raise ValueError("Unable to resolve a state panel dataframe")
-
-    if "segment_end_date" in state_df.columns and "date" not in state_df.columns:
-        state_df = state_df.rename(columns={"segment_end_date": "date"})
-    return state_df
+    return coerce_topix100_streak_state_panel_df(state_source)
 
 
 def _build_feature_panel_from_state_event_df(
@@ -444,7 +431,7 @@ def _build_feature_panel_from_state_event_df(
     if event_panel_df.empty or state_event_df.empty:
         raise ValueError("Base price/state inputs were empty")
 
-    price_df = _build_price_feature_frame(
+    price_df = build_topix100_streak_price_feature_frame(
         event_panel_df,
         price_feature=price_feature,
         volume_feature=volume_feature,
@@ -457,36 +444,14 @@ def _build_feature_panel_from_state_event_df(
         price_df["next_session_open"].replace(0, pd.NA)
     ).sub(1.0)
 
-    state_df = _coerce_intraday_state_panel_df(state_event_df)
-    state_columns = [
-        "state_event_id",
-        "code",
-        "company_name",
-        "sample_split",
-        "segment_id",
-        "date",
-        "segment_return",
-        "segment_day_count",
-    ]
-    missing_state_columns = [column for column in state_columns if column not in state_df.columns]
-    if missing_state_columns:
-        raise ValueError(f"Missing state event columns: {missing_state_columns}")
-
-    state_df = state_df[state_columns].copy()
-    state_df["date"] = state_df["date"].astype(str)
-    state_df["code"] = state_df["code"].astype(str).str.zfill(4)
-
-    merged_df = price_df.merge(
-        state_df,
-        on=["date", "code", "company_name"],
-        how="inner",
-        validate="one_to_one",
+    merged_df = join_topix100_streak_state_panel_df(
+        price_df,
+        state_source=state_event_df,
+        dropna_target_columns=("next_session_intraday_return",),
+        empty_target_error_message=(
+            "No next-session intraday targets remained after joining price and state rows"
+        ),
     )
-    merged_df = merged_df.dropna(subset=["next_session_intraday_return"]).copy()
-    if merged_df.empty:
-        raise ValueError("No next-session intraday targets remained after joining price and state rows")
-
-    merged_df["segment_abs_return"] = merged_df["segment_return"].astype(float).abs()
     ordered_columns = [
         "date",
         "code",

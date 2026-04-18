@@ -1,12 +1,12 @@
 ---
 id: bt-062
 title: "high-coupling research family を段階分解する"
-status: open
+status: in-progress
 priority: high
 labels: [bt, research, refactor, analytics]
 project: bt
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-19
 depends_on: [bt-061]
 blocks: [bt-063]
 parent: bt-060
@@ -19,7 +19,7 @@ parent: bt-060
 - data access / feature panel / model / walkforward / sampling / report shaping の境界を family 内で明確にする。
 
 ## 受け入れ条件
-- [ ] `topix100_streak_*` の分割先が family 内で合意され、最初の extraction が入っている。
+- [x] `topix100_streak_*` の分割先が family 内で合意され、最初の extraction が入っている。
 - [ ] event-conditioned analytics の `event filter / outcome builder / sampling / report shaping` 分離が少なくとも 1 family で実施されている。
 - [ ] family ごとの shared helper 依存が concrete study より上位へ寄っている。
 
@@ -29,7 +29,10 @@ parent: bt-060
 - [ ] family ごとの最小 public entrypoint を runner / bundle writer / bundle loader に揃える。
 
 ## 結果
-- 未着手
+- `apps/bt/src/domains/analytics/topix100_streak_lightgbm_feature_panel.py` を追加し、TOPIX100 streak LightGBM family の shared feature-panel helper を新設した。
+- `topix100_streak_353_signal_score_lightgbm.py` と `topix100_streak_353_next_session_intraday_lightgbm.py` の price feature build / state panel coercion / price-state join を shared helper 経由へ移した。
+- 既存の `_build_price_feature_frame` / `_coerce_*_state_panel_df` は wrapper として残し、family 内の他 study へ段階展開しやすい形にした。
+- 検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt ruff check ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_signal_score_lightgbm.py apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_intraday_lightgbm.py`
 
 ## 補足
 - 親 issue: `bt-060`
