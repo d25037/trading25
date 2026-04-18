@@ -41,6 +41,8 @@ jobs:
         run: python scripts/skills/audit_skills.py --strict-legacy
       - name: Check privacy leaks
         run: python scripts/check-privacy-leaks.py
+      - name: Check research guardrails
+        run: python scripts/check-research-guardrails.py
       - name: Lint
         run: ./scripts/lint.sh
       - name: Typecheck

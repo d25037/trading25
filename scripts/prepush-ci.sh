@@ -92,6 +92,7 @@ install_shared_deps() {
 run_core_suite() {
   run_step "quality:audit-skills" python3 "${repo_root}/scripts/skills/audit_skills.py" --strict-legacy
   run_step "quality:privacy-leak-check" python3 "${repo_root}/scripts/check-privacy-leaks.py"
+  run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
   run_step "quality:lint" "${repo_root}/scripts/lint.sh"
   run_step "quality:typecheck" "${repo_root}/scripts/typecheck.sh"
   run_step "contract-tests" "${repo_root}/scripts/check-contract-sync.sh"

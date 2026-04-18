@@ -40,6 +40,7 @@ description: apps/bt の research runner / bundle / optional notebook viewer wor
 - 新しい research pipeline では PIT stability test を追加し、discovery / validation / walk-forward を跨いだ future-derived bucket や summary を使わない。
 - execution semantics の会計は `vectorbt` fast path に寄せ、`Nautilus` は verification 用に限定する。
 - notebook は UI と可視化に限定し、bundle viewer として動かす。
+- playground notebook は `src.shared.research_notebook_viewer` を使い、`runner_path` は実在する `apps/bt/scripts/research/run_*.py` を指す。
 - notebook ファイル名は `<topic>_playground.py` 形式を使う。
 - marimo notebook は標準ヘッダと一意な公開変数名を維持する。
 
@@ -48,4 +49,5 @@ description: apps/bt の research runner / bundle / optional notebook viewer wor
 - `uv run pytest <affected tests>`
 - `uv run --project apps/bt python apps/bt/scripts/research/<runner>.py --help`
 - `uv run --project apps/bt marimo check --strict <changed-notebook.py>`
+- `python3 scripts/check-research-guardrails.py`
 - `python3 scripts/skills/audit_skills.py --strict-legacy`
