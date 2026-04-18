@@ -28,9 +28,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_payload_research_bundle,
+    write_payload_research_bundle,
 )
 
 TOPIX100_SCALE_CATEGORIES: tuple[str, ...] = (
@@ -971,8 +970,7 @@ def write_topix100_open_relative_intraday_path_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    metadata, tables = _split_result_payload(result)
-    bundle = write_research_bundle(
+    bundle = write_payload_research_bundle(
         experiment_id=TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_RESEARCH_EXPERIMENT_ID,
         module=__name__,
         function="run_topix100_open_relative_intraday_path_research",
@@ -981,11 +979,8 @@ def write_topix100_open_relative_intraday_path_research_bundle(
             "end_date": result.analysis_end_date,
             "interval_minutes_list": list(result.interval_minutes_list),
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata=metadata,
-        result_tables=tables,
+        result=result,
+        split_result_payload=_split_result_payload,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         published_summary=_build_published_summary(result),
         output_root=output_root,
@@ -1005,9 +1000,10 @@ def write_topix100_open_relative_intraday_path_research_bundle(
 def load_topix100_open_relative_intraday_path_research_bundle(
     bundle_path: str | Path,
 ) -> Topix100OpenRelativeIntradayPathResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    return _build_result_from_payload(dict(info.result_metadata), tables)
+    return load_payload_research_bundle(
+        bundle_path,
+        build_result_from_payload=_build_result_from_payload,
+    )
 
 
 def get_topix100_open_relative_intraday_path_latest_bundle_path(

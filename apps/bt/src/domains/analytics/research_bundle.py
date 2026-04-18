@@ -9,7 +9,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import UnionType
-from typing import Any, Iterable, Literal, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import Any, Callable, Iterable, Literal, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import duckdb
 import pandas as pd
@@ -252,6 +252,45 @@ def write_dataclass_research_bundle(
     )
 
 
+def write_payload_research_bundle(
+    *,
+    experiment_id: str,
+    module: str,
+    function: str,
+    params: dict[str, Any],
+    result: BundleResultT,
+    split_result_payload: Callable[
+        [BundleResultT], tuple[dict[str, Any], dict[str, pd.DataFrame]]
+    ],
+    summary_markdown: str,
+    published_summary: dict[str, Any] | None = None,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    result_metadata, result_tables = split_result_payload(result)
+    return write_research_bundle(
+        experiment_id=experiment_id,
+        module=module,
+        function=function,
+        params=params,
+        db_path=str(result_metadata["db_path"]),
+        analysis_start_date=_coerce_optional_str(
+            result_metadata.get("analysis_start_date")
+        ),
+        analysis_end_date=_coerce_optional_str(
+            result_metadata.get("analysis_end_date")
+        ),
+        result_metadata=result_metadata,
+        result_tables=result_tables,
+        summary_markdown=summary_markdown,
+        published_summary=published_summary,
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
 def load_research_bundle_info(bundle_path: str | Path) -> ResearchBundleInfo:
     bundle_dir = _resolve_bundle_dir(bundle_path)
     manifest_path = bundle_dir / MANIFEST_FILENAME
@@ -294,6 +333,19 @@ def load_research_bundle_published_summary(
             f"{info.published_summary_path}"
         )
     return payload
+
+
+def load_payload_research_bundle(
+    bundle_path: str | Path,
+    *,
+    build_result_from_payload: Callable[
+        [dict[str, Any], dict[str, pd.DataFrame]], BundleResultT
+    ],
+    table_names: Iterable[str] | None = None,
+) -> BundleResultT:
+    info = load_research_bundle_info(bundle_path)
+    tables = load_research_bundle_tables(bundle_path, table_names=table_names)
+    return build_result_from_payload(dict(info.result_metadata), tables)
 
 
 def load_dataclass_research_bundle(

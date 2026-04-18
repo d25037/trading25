@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import pandas as pd
 import pytest
@@ -14,10 +14,12 @@ from src.domains.analytics.research_bundle import (
     get_research_bundle_dir,
     list_research_bundle_infos,
     load_dataclass_research_bundle,
+    load_payload_research_bundle,
     load_research_bundle_info,
     load_research_bundle_published_summary,
     load_research_bundle_tables,
     write_dataclass_research_bundle,
+    write_payload_research_bundle,
     write_research_bundle,
 )
 
@@ -33,6 +35,50 @@ class _ExampleDataclassResult:
     row_count: int
     summary_df: pd.DataFrame
     detail_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _ExamplePayloadResult:
+    db_path: str
+    source_mode: Literal["snapshot", "live"]
+    analysis_start_date: str | None
+    analysis_end_date: str | None
+    selected_groups: tuple[str, ...]
+    summary_df: pd.DataFrame
+    detail_df: pd.DataFrame
+
+
+def _split_example_payload_result(
+    result: _ExamplePayloadResult,
+) -> tuple[dict[str, object], dict[str, pd.DataFrame]]:
+    return (
+        {
+            "db_path": result.db_path,
+            "source_mode": result.source_mode,
+            "analysis_start_date": result.analysis_start_date,
+            "analysis_end_date": result.analysis_end_date,
+            "selected_groups": list(result.selected_groups),
+        },
+        {
+            "summary_df": result.summary_df,
+            "detail_df": result.detail_df,
+        },
+    )
+
+
+def _build_example_payload_result(
+    metadata: dict[str, object],
+    tables: dict[str, pd.DataFrame],
+) -> _ExamplePayloadResult:
+    return _ExamplePayloadResult(
+        db_path=str(metadata["db_path"]),
+        source_mode=cast(Literal["snapshot", "live"], metadata["source_mode"]),
+        analysis_start_date=cast(str | None, metadata.get("analysis_start_date")),
+        analysis_end_date=cast(str | None, metadata.get("analysis_end_date")),
+        selected_groups=tuple(str(value) for value in cast(list[object], metadata["selected_groups"])),
+        summary_df=tables["summary_df"],
+        detail_df=tables["detail_df"],
+    )
 
 
 def test_research_bundle_write_and_load_roundtrip(tmp_path: Path) -> None:
@@ -251,3 +297,44 @@ def test_dataclass_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
     assert loaded.row_count == 2
     assert loaded.summary_df.equals(result.summary_df)
     assert loaded.detail_df.equals(result.detail_df)
+
+
+def test_payload_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
+    result = _ExamplePayloadResult(
+        db_path=str(tmp_path / "market.duckdb"),
+        source_mode="live",
+        analysis_start_date="2024-02-01",
+        analysis_end_date="2024-02-29",
+        selected_groups=("TOPIX100", "TOPIX500"),
+        summary_df=pd.DataFrame([{"metric": "share", "value": 0.4}]),
+        detail_df=pd.DataFrame([{"date": "2024-02-05", "code": "7203"}]),
+    )
+
+    bundle = write_payload_research_bundle(
+        experiment_id="unit-test/payload-example",
+        module="tests.example",
+        function="run_payload_example",
+        params={"selected_groups": ["TOPIX100", "TOPIX500"]},
+        result=result,
+        split_result_payload=_split_example_payload_result,
+        summary_markdown="# Payload Example\n",
+        published_summary={"title": "Payload Example"},
+        output_root=tmp_path,
+        run_id="20260418_220000_payload0",
+    )
+    loaded = load_payload_research_bundle(
+        bundle.bundle_dir,
+        build_result_from_payload=_build_example_payload_result,
+        table_names=("summary_df", "detail_df"),
+    )
+
+    assert loaded.db_path == result.db_path
+    assert loaded.source_mode == "live"
+    assert loaded.analysis_start_date == "2024-02-01"
+    assert loaded.analysis_end_date == "2024-02-29"
+    assert loaded.selected_groups == ("TOPIX100", "TOPIX500")
+    assert loaded.summary_df.equals(result.summary_df)
+    assert loaded.detail_df.equals(result.detail_df)
+    assert load_research_bundle_published_summary(bundle.bundle_dir) == {
+        "title": "Payload Example"
+    }

@@ -28,9 +28,8 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
-    load_research_bundle_info,
-    load_research_bundle_tables,
-    write_research_bundle,
+    load_payload_research_bundle,
+    write_payload_research_bundle,
 )
 
 CloseBucketKey = Literal[
@@ -1014,8 +1013,7 @@ def write_topix_close_stock_overnight_distribution_research_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    result_metadata, result_tables = _split_result_payload(result)
-    return write_research_bundle(
+    return write_payload_research_bundle(
         experiment_id=TOPIX_CLOSE_STOCK_OVERNIGHT_RESEARCH_EXPERIMENT_ID,
         module=__name__,
         function="run_topix_close_stock_overnight_distribution",
@@ -1028,11 +1026,8 @@ def write_topix_close_stock_overnight_distribution_research_bundle(
             "sample_size": result.sample_size,
             "clip_percentiles": list(result.clip_percentiles),
         },
-        db_path=result.db_path,
-        analysis_start_date=result.analysis_start_date,
-        analysis_end_date=result.analysis_end_date,
-        result_metadata=result_metadata,
-        result_tables=result_tables,
+        result=result,
+        split_result_payload=_split_result_payload,
         summary_markdown=_build_research_bundle_summary_markdown(result),
         output_root=output_root,
         run_id=run_id,
@@ -1043,9 +1038,10 @@ def write_topix_close_stock_overnight_distribution_research_bundle(
 def load_topix_close_stock_overnight_distribution_research_bundle(
     bundle_path: str | Path,
 ) -> TopixCloseStockOvernightDistributionResult:
-    info = load_research_bundle_info(bundle_path)
-    tables = load_research_bundle_tables(bundle_path)
-    return _build_result_from_payload(dict(info.result_metadata), tables)
+    return load_payload_research_bundle(
+        bundle_path,
+        build_result_from_payload=_build_result_from_payload,
+    )
 
 
 def get_topix_close_stock_overnight_distribution_latest_bundle_path(
