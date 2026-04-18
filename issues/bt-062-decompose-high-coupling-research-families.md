@@ -32,7 +32,9 @@ parent: bt-060
 - `apps/bt/src/domains/analytics/topix100_streak_lightgbm_feature_panel.py` を追加し、TOPIX100 streak LightGBM family の shared feature-panel helper を新設した。
 - `topix100_streak_353_signal_score_lightgbm.py` と `topix100_streak_353_next_session_intraday_lightgbm.py` の price feature build / state panel coercion / price-state join を shared helper 経由へ移した。
 - 既存の `_build_price_feature_frame` / `_coerce_*_state_panel_df` は wrapper として残し、family 内の他 study へ段階展開しやすい形にした。
+- `topix100_streak_353_next_session_open_to_open_5d_lightgbm.py` / `topix100_streak_353_next_session_open_to_close_5d_lightgbm.py` / `topix100_streak_353_next_session_open_to_close_10d_lightgbm.py` の swing target builder も shared helper 直結へ移し、signal score module への内部依存を浅くした。
 - 検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt ruff check ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_signal_score_lightgbm.py apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_intraday_lightgbm.py`
+- 追加検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_open_to_close_swing_targets.py`
 
 ## 補足
 - 親 issue: `bt-060`
