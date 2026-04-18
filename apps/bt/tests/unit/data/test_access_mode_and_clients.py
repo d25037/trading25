@@ -212,8 +212,15 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
                 )
             ]
 
-        def get_ohlcv_batch(self, codes: list[str]) -> dict[str, list[SimpleNamespace]]:
+        def get_ohlcv_batch(
+            self,
+            codes: list[str],
+            start=None,  # noqa: ANN001
+            end=None,  # noqa: ANN001
+        ) -> dict[str, list[SimpleNamespace]]:
             assert codes == ["7203", "6501"]
+            assert start == "2024-01-01"
+            assert end == "2024-12-31"
             return {
                 "7203": [
                     _ns(
@@ -291,8 +298,15 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
                 )
             ]
 
-        def get_margin_batch(self, codes: list[str]) -> dict[str, list[SimpleNamespace]]:
+        def get_margin_batch(
+            self,
+            codes: list[str],
+            start=None,  # noqa: ANN001
+            end=None,  # noqa: ANN001
+        ) -> dict[str, list[SimpleNamespace]]:
             assert codes == ["7203", "6501"]
+            assert start == "2024-01-01"
+            assert end == "2024-12-31"
             return {
                 "7203": [
                     _ns(
@@ -402,7 +416,7 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     stock_df = client.get_stock_ohlcv("7203", "2024-01-01", "2024-12-31")
     assert list(stock_df.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
-    stock_batch = client.get_stocks_ohlcv_batch(["7203", "6501"])
+    stock_batch = client.get_stocks_ohlcv_batch(["7203", "6501"], "2024-01-01", "2024-12-31")
     assert list(stock_batch.keys()) == ["7203"]
 
     stock_list = client.get_stock_list(min_records=50)
@@ -421,7 +435,9 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
 
     margin_df = client.get_margin("7203", "2024-01-01", "2024-12-31")
     assert list(margin_df.columns) == ["longMarginVolume", "shortMarginVolume"]
-    assert list(client.get_margin_batch(["7203", "6501"]).keys()) == ["7203"]
+    assert list(
+        client.get_margin_batch(["7203", "6501"], "2024-01-01", "2024-12-31").keys()
+    ) == ["7203"]
     assert len(client.get_margin_list(codes=["7203"])) == 1
     assert client.get_margin_list(codes=["UNKNOWN"]).empty
 

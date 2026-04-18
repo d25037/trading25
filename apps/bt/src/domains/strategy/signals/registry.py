@@ -982,6 +982,8 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
             "threshold": p.risk_adjusted_return.threshold,
             "ratio_type": p.risk_adjusted_return.ratio_type,
             "condition": p.risk_adjusted_return.condition,
+            "margin_min": p.risk_adjusted_return.margin_min,
+            "margin_max": p.risk_adjusted_return.margin_max,
         },
         entry_purpose="高リスク調整リターン銘柄選別",
         exit_purpose="低リスク調整リターン警告",

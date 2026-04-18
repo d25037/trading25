@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -43,3 +45,10 @@ def emit_bundle_payload(bundle: ResearchBundleInfo) -> None:
             indent=2,
         )
     )
+
+
+def ensure_bt_workdir(bt_root: str | Path) -> Path:
+    resolved = Path(bt_root).resolve()
+    if Path.cwd().resolve() != resolved:
+        os.chdir(resolved)
+    return resolved

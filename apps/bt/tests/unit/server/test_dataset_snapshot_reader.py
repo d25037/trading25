@@ -320,6 +320,13 @@ def test_dataset_snapshot_reader_public_methods_cover_duckdb_bundle(tmp_path: Pa
         ohlcv_batch = reader.get_ohlcv_batch(["7203", "9999"])
         assert len(ohlcv_batch["7203"]) == 2
         assert ohlcv_batch["9999"] == []
+        filtered_ohlcv_batch = reader.get_ohlcv_batch(
+            ["7203", "9999"],
+            start="2024-01-05",
+            end="2024-01-05",
+        )
+        assert len(filtered_ohlcv_batch["7203"]) == 1
+        assert filtered_ohlcv_batch["9999"] == []
 
         assert reader.get_topix(end="2024-01-04")[0].close == 2510.0
         assert reader.get_indices()[0].sector_name == "食料品"
@@ -329,6 +336,13 @@ def test_dataset_snapshot_reader_public_methods_cover_duckdb_bundle(tmp_path: Pa
         margin_batch = reader.get_margin_batch(["7203", "9999"])
         assert len(margin_batch["7203"]) == 1
         assert margin_batch["9999"] == []
+        filtered_margin_batch = reader.get_margin_batch(
+            ["7203", "9999"],
+            start="2024-01-05",
+            end="2024-01-05",
+        )
+        assert filtered_margin_batch["7203"] == []
+        assert filtered_margin_batch["9999"] == []
 
         statements = reader.get_statements("7203", period_type="1Q")
         assert {row.type_of_current_period for row in statements} == {"1Q", "Q1"}

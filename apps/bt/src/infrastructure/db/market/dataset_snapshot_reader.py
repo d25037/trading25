@@ -373,18 +373,31 @@ class DatasetSnapshotReader:
             tuple(params),
         )
 
-    def get_ohlcv_batch(self, codes: list[str]) -> dict[str, list[_DuckDbRow]]:
+    def get_ohlcv_batch(
+        self,
+        codes: list[str],
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict[str, list[_DuckDbRow]]:
         normalized = [normalize_stock_code(code) for code in codes]
         if not normalized:
             return {}
-        placeholders = ",".join("?" for _ in normalized)
+        code_placeholders = ",".join("?" for _ in normalized)
+        clauses = [f"code IN ({code_placeholders})"]
+        params: list[Any] = list(normalized)
+        if start:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end:
+            clauses.append("date <= ?")
+            params.append(end)
         rows = self.query(
             f"""
             SELECT * FROM stock_data
-            WHERE code IN ({placeholders})
+            WHERE {' AND '.join(clauses)}
             ORDER BY code, date
             """,
-            tuple(normalized),
+            tuple(params),
         )
         result: dict[str, list[_DuckDbRow]] = {code: [] for code in normalized}
         for row in rows:
@@ -461,18 +474,31 @@ class DatasetSnapshotReader:
             tuple(params),
         )
 
-    def get_margin_batch(self, codes: list[str]) -> dict[str, list[_DuckDbRow]]:
+    def get_margin_batch(
+        self,
+        codes: list[str],
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict[str, list[_DuckDbRow]]:
         normalized = [normalize_stock_code(code) for code in codes]
         if not normalized:
             return {}
-        placeholders = ",".join("?" for _ in normalized)
+        code_placeholders = ",".join("?" for _ in normalized)
+        clauses = [f"code IN ({code_placeholders})"]
+        params: list[Any] = list(normalized)
+        if start:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end:
+            clauses.append("date <= ?")
+            params.append(end)
         rows = self.query(
             f"""
             SELECT * FROM margin_data
-            WHERE code IN ({placeholders})
+            WHERE {' AND '.join(clauses)}
             ORDER BY code, date
             """,
-            tuple(normalized),
+            tuple(params),
         )
         result: dict[str, list[_DuckDbRow]] = {code: [] for code in normalized}
         for row in rows:

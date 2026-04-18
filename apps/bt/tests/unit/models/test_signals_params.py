@@ -104,10 +104,16 @@ class TestRiskAdjustedReturnSignalParams:
         p = RiskAdjustedReturnSignalParams()
         assert p.ratio_type == "sortino"
         assert p.condition == "above"
+        assert p.margin_min is None
+        assert p.margin_max is None
 
     def test_invalid_ratio_type(self) -> None:
         with pytest.raises(ValidationError, match="ratio_type"):
             RiskAdjustedReturnSignalParams(ratio_type="calmar")
+
+    def test_invalid_margin_order(self) -> None:
+        with pytest.raises(ValidationError, match="margin_max"):
+            RiskAdjustedReturnSignalParams(margin_min=0.5, margin_max=0.2)
 
 
 class TestVolumeRatioSignalParams:

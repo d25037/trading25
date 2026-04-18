@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.domains.strategy.indicators import compute_risk_adjusted_return
 from src.domains.strategy.signals.risk_adjusted import risk_adjusted_return_signal
 
 
@@ -101,6 +102,40 @@ class TestRiskAdjustedReturnSignal:
         )
         # 低い閾値の方が多くのシグナルが出る
         assert signal_low.sum() >= signal_high.sum()
+
+    def test_margin_band_filters_extreme_ratio_values(self):
+        """margin band が threshold 超過分の上下限として効くこと"""
+        lookback_period = 30
+        threshold = 1.0
+        ratio = compute_risk_adjusted_return(
+            close=self.price_up,
+            lookback_period=lookback_period,
+            ratio_type="sharpe",
+        )
+        baseline = risk_adjusted_return_signal(
+            close=self.price_up,
+            lookback_period=lookback_period,
+            threshold=threshold,
+            ratio_type="sharpe",
+            condition="above",
+        )
+        bounded = risk_adjusted_return_signal(
+            close=self.price_up,
+            lookback_period=lookback_period,
+            threshold=threshold,
+            ratio_type="sharpe",
+            condition="above",
+            margin_min=0.3,
+            margin_max=2.4,
+        )
+
+        expected = (
+            (ratio >= threshold)
+            & ((ratio - threshold) >= 0.3)
+            & ((ratio - threshold) <= 2.4)
+        ).fillna(False)
+        assert bounded.equals(expected.astype(bool))
+        assert bounded.sum() <= baseline.sum()
 
     def test_lookback_period_effect(self):
         """期間効果テスト"""

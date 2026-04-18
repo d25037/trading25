@@ -22,6 +22,8 @@ def risk_adjusted_return_signal(
     threshold: float = 1.0,
     ratio_type: str = "sortino",
     condition: str = "above",
+    margin_min: float | None = None,
+    margin_max: float | None = None,
 ) -> pd.Series[bool]:
     """
     リスク調整リターンシグナル
@@ -39,6 +41,8 @@ def risk_adjusted_return_signal(
         condition: 閾値条件
             - "above": ratio >= threshold（高リスク調整リターン銘柄選別）
             - "below": ratio < threshold（低リスク調整リターン警告）
+        margin_min: research用の最小マージン（ratio - threshold の下限）
+        margin_max: research用の最大マージン（ratio - threshold の上限）
 
     Returns:
         pd.Series[bool]: 条件を満たす場合にTrue
@@ -58,7 +62,8 @@ def risk_adjusted_return_signal(
     """
     logger.debug(
         f"リスク調整リターンシグナル: 処理開始 "
-        f"(期間={lookback_period}, 閾値={threshold}, タイプ={ratio_type}, 条件={condition})"
+        f"(期間={lookback_period}, 閾値={threshold}, タイプ={ratio_type}, 条件={condition}, "
+        f"margin_min={margin_min}, margin_max={margin_max})"
     )
 
     if ratio_type not in ["sharpe", "sortino"]:
@@ -79,6 +84,11 @@ def risk_adjusted_return_signal(
 
     # 閾値判定
     signal: pd.Series[bool] = ratio >= threshold if condition == "above" else ratio < threshold
+    margin = ratio - threshold
+    if margin_min is not None:
+        signal = signal & (margin >= margin_min)
+    if margin_max is not None:
+        signal = signal & (margin <= margin_max)
     result: pd.Series[bool] = normalize_bool_series(signal)
 
     logger.debug(

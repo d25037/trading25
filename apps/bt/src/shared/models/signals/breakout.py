@@ -147,6 +147,22 @@ class RiskAdjustedReturnSignalParams(BaseSignalParams):
         default="above",
         description="閾値条件（above=閾値以上、below=閾値未満）",
     )
+    margin_min: float | None = Field(
+        default=None,
+        ge=-10.0,
+        le=10.0,
+        description=(
+            "research用の最小マージン。ratio - threshold がこの値以上のときだけ通す"
+        ),
+    )
+    margin_max: float | None = Field(
+        default=None,
+        ge=-10.0,
+        le=10.0,
+        description=(
+            "research用の最大マージン。ratio - threshold がこの値以下のときだけ通す"
+        ),
+    )
 
     @field_validator("ratio_type")
     @classmethod
@@ -159,3 +175,19 @@ class RiskAdjustedReturnSignalParams(BaseSignalParams):
     @classmethod
     def validate_condition(cls, v: str) -> str:
         return _validate_condition_above_below(v)
+
+    @field_validator("margin_max")
+    @classmethod
+    def validate_margin_order(
+        cls,
+        v: float | None,
+        info: ValidationInfo,
+    ) -> float | None:
+        margin_min = info.data.get("margin_min")
+        if (
+            v is not None
+            and margin_min is not None
+            and float(v) < float(margin_min)
+        ):
+            raise ValueError("margin_maxはmargin_min以上である必要があります")
+        return v

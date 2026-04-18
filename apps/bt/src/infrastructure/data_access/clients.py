@@ -257,8 +257,12 @@ class DirectDatasetClient:
         end_date: str | None = None,
         timeframe: Literal["daily", "weekly", "monthly"] = "daily",
     ) -> dict[str, pd.DataFrame]:
-        _ = (start_date, end_date, timeframe)
-        batch = self._db.get_ohlcv_batch(stock_codes)
+        _ = timeframe
+        batch = self._db.get_ohlcv_batch(
+            stock_codes,
+            start=start_date,
+            end=end_date,
+        )
         return {code: _to_ohlcv_df(rows) for code, rows in batch.items() if rows}
 
     def get_stock_list(
@@ -344,8 +348,11 @@ class DirectDatasetClient:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict[str, pd.DataFrame]:
-        _ = (start_date, end_date)
-        batch = self._db.get_margin_batch(stock_codes)
+        batch = self._db.get_margin_batch(
+            stock_codes,
+            start=start_date,
+            end=end_date,
+        )
         return {code: _to_margin_df(rows) for code, rows in batch.items() if rows}
 
     def get_margin_list(

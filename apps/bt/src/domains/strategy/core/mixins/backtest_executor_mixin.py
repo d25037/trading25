@@ -200,7 +200,8 @@ class BacktestExecutorMixin:
 
     @staticmethod
     def _normalize_signal_frame(frame: pd.DataFrame) -> pd.DataFrame:
-        return frame.fillna(False).infer_objects(copy=False).astype(bool)
+        with pd.option_context("future.no_silent_downcasting", True):
+            return frame.fillna(False).infer_objects(copy=False).astype(bool)
 
     @staticmethod
     def _build_empty_exit_frame(entries_data: pd.DataFrame) -> pd.DataFrame:
