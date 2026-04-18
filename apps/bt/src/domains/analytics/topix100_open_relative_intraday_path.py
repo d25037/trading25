@@ -10,16 +10,20 @@ from __future__ import annotations
 
 import importlib
 import os
-import shutil
 import tempfile
 from collections.abc import Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import pandas as pd
 
+from src.domains.analytics.readonly_duckdb_support import (
+    SourceMode,
+    _connect_duckdb as _shared_connect_duckdb,
+    normalize_code_sql as _normalize_code_sql,
+    open_readonly_analysis_connection,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
@@ -29,17 +33,11 @@ from src.domains.analytics.research_bundle import (
     write_research_bundle,
 )
 
-SourceMode = Literal["live", "snapshot"]
-
 TOPIX100_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Core30",
     "TOPIX Large70",
 )
 DEFAULT_INTERVAL_MINUTES: tuple[int, ...] = (5, 15, 30)
-_LOCK_ERROR_PATTERNS: tuple[str, ...] = (
-    "conflicting lock is held",
-    "could not set lock",
-)
 _RESAMPLED_BAR_COLUMNS: tuple[str, ...] = (
     "date",
     "code",
@@ -129,73 +127,15 @@ class Topix100OpenRelativeIntradayPathResult:
     interval_summary_df: pd.DataFrame
 
 
-@dataclass(frozen=True)
-class _ConnectionContext:
-    connection: Any
-    source_mode: SourceMode
-    source_detail: str
-
-
 def _connect_duckdb(db_path: str, *, read_only: bool = True) -> Any:
-    duckdb = importlib.import_module("duckdb")
-    return duckdb.connect(db_path, read_only=read_only)
+    return _shared_connect_duckdb(db_path, read_only=read_only)
 
 
-def _is_lock_error(error: Exception) -> bool:
-    message = str(error).lower()
-    return any(pattern in message for pattern in _LOCK_ERROR_PATTERNS)
-
-
-@contextmanager
 def _open_analysis_connection(db_path: str):
-    conn: Any | None = None
-    tmpdir: tempfile.TemporaryDirectory[str] | None = None
-    try:
-        try:
-            conn = _connect_duckdb(db_path, read_only=True)
-            yield _ConnectionContext(
-                connection=conn,
-                source_mode="live",
-                source_detail=f"live DuckDB: {db_path}",
-            )
-            return
-        except Exception as exc:
-            if not _is_lock_error(exc):
-                raise
-
-        tmpdir = tempfile.TemporaryDirectory(
-            prefix="topix100-open-relative-intraday-path-",
-            dir="/tmp",
-        )
-        snapshot_dir = Path(tmpdir.name)
-        db_path_obj = Path(db_path)
-        snapshot_path = snapshot_dir / db_path_obj.name
-        shutil.copy2(db_path_obj, snapshot_path)
-
-        wal_path = Path(f"{db_path}.wal")
-        if wal_path.exists():
-            shutil.copy2(wal_path, Path(f"{snapshot_path}.wal"))
-
-        conn = _connect_duckdb(str(snapshot_path), read_only=True)
-        yield _ConnectionContext(
-            connection=conn,
-            source_mode="snapshot",
-            source_detail=f"temporary snapshot copied from {db_path}",
-        )
-    finally:
-        if conn is not None:
-            conn.close()
-        if tmpdir is not None:
-            tmpdir.cleanup()
-
-
-def _normalize_code_sql(column_name: str) -> str:
-    return (
-        "CASE "
-        f"WHEN length({column_name}) IN (5, 6) AND right({column_name}, 1) = '0' "
-        f"THEN left({column_name}, length({column_name}) - 1) "
-        f"ELSE {column_name} "
-        "END"
+    return open_readonly_analysis_connection(
+        db_path,
+        snapshot_prefix="topix100-open-relative-intraday-path-",
+        connect_fn=_connect_duckdb,
     )
 
 
