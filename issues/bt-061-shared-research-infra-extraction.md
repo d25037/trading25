@@ -1,12 +1,12 @@
 ---
 id: bt-061
 title: "shared research infra extraction を進める"
-status: in-progress
+status: done
 priority: high
 labels: [bt, research, refactor, analytics]
 project: bt
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-19
 depends_on: []
 blocks: [bt-062, bt-063]
 parent: bt-060
@@ -29,13 +29,14 @@ parent: bt-060
 - [x] `topix_close_stock_overnight_distribution.py` / `topix_gap_intraday_distribution.py` / `stock_intraday_overnight_share.py` / `topix100_open_relative_intraday_path.py` の重複 helper を thin wrapper 化した。
 - [x] shared helper 自体の unit test を追加した。
 - [x] payload-based bundle writer / loader helper を `research_bundle.py` に追加し、event-conditioned analytics 4 module の bundle wrapper 重複を削った。
-- [ ] latest bundle resolution helper と plot publication hook の共通化を次の slice で検討する。
+- [x] latest bundle resolution helper と plot publication hook の共通化を入れた。
 
 ## 結果
 - 2026-04-18: shared read-only DuckDB helper を追加し、event-conditioned analytics 4 module の duplicated helper を除去した。
 - 2026-04-18: 既存の monkeypatch ベース lock fallback test を壊さないよう、concrete module 側には `_connect_duckdb` と `_open_analysis_connection` の互換 wrapper を残した。
 - 2026-04-18: `write_payload_research_bundle` / `load_payload_research_bundle` を追加し、event-conditioned analytics 4 module の bundle write/load boilerplate を共通化した。
+- 2026-04-19: `write_bundle_artifact` / `resolve_optional_bundle_path` / `resolve_required_bundle_path` を追加し、plot artifact publish と latest bundle resolution の共通パターンを `research_bundle.py` 側へ寄せた。
 
 ## 補足
 - 親 issue: `bt-060`
-- 次の候補: latest bundle resolution helper / plot publication hook
+- 次の候補: `write_payload_research_bundle` 未移行 family の bundle wrapper 共通化

@@ -33,6 +33,7 @@ from src.domains.analytics.research_bundle import (
     get_research_bundle_dir,
     load_research_bundle_info,
     load_research_bundle_tables,
+    write_bundle_artifact,
     write_research_bundle,
 )
 from src.domains.analytics.topix100_open_relative_intraday_path import (
@@ -1192,16 +1193,20 @@ def write_topix100_symbol_intraday_habit_research_bundle(
         run_id=run_id,
         notes=notes,
     )
-    write_topix100_symbol_intraday_habit_overview_plot(
-        result,
-        output_path=(
-            bundle.bundle_dir / TOPIX100_SYMBOL_INTRADAY_HABIT_OVERVIEW_PLOT_FILENAME
+    write_bundle_artifact(
+        bundle,
+        TOPIX100_SYMBOL_INTRADAY_HABIT_OVERVIEW_PLOT_FILENAME,
+        lambda output_path: write_topix100_symbol_intraday_habit_overview_plot(
+            result,
+            output_path=output_path,
         ),
     )
-    write_topix100_symbol_intraday_habit_overlay_plot(
-        result,
-        output_path=(
-            bundle.bundle_dir / TOPIX100_SYMBOL_INTRADAY_HABIT_OVERLAY_PLOT_FILENAME
+    write_bundle_artifact(
+        bundle,
+        TOPIX100_SYMBOL_INTRADAY_HABIT_OVERLAY_PLOT_FILENAME,
+        lambda output_path: write_topix100_symbol_intraday_habit_overlay_plot(
+            result,
+            output_path=output_path,
         ),
     )
     return bundle

@@ -18,6 +18,9 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_info,
     load_research_bundle_published_summary,
     load_research_bundle_tables,
+    resolve_optional_bundle_path,
+    resolve_required_bundle_path,
+    write_bundle_artifact,
     write_dataclass_research_bundle,
     write_payload_research_bundle,
     write_research_bundle,
@@ -79,6 +82,12 @@ def _build_example_payload_result(
         summary_df=tables["summary_df"],
         detail_df=tables["detail_df"],
     )
+
+
+def _write_example_artifact(output_path: Path) -> Path:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("artifact", encoding="utf-8")
+    return output_path
 
 
 def test_research_bundle_write_and_load_roundtrip(tmp_path: Path) -> None:
@@ -338,3 +347,60 @@ def test_payload_research_bundle_adapter_roundtrip(tmp_path: Path) -> None:
     assert load_research_bundle_published_summary(bundle.bundle_dir) == {
         "title": "Payload Example"
     }
+
+
+def test_resolve_optional_bundle_path_prefers_explicit_path(tmp_path: Path) -> None:
+    explicit_path = tmp_path / "explicit-bundle"
+
+    resolved = resolve_optional_bundle_path(
+        explicit_path,
+        latest_bundle_resolver=lambda: tmp_path / "latest-bundle",
+    )
+
+    assert resolved == explicit_path
+
+
+def test_resolve_optional_bundle_path_uses_latest_resolver(tmp_path: Path) -> None:
+    latest_path = tmp_path / "latest-bundle"
+
+    resolved = resolve_optional_bundle_path(
+        None,
+        latest_bundle_resolver=lambda: latest_path,
+    )
+
+    assert resolved == latest_path
+
+
+def test_resolve_required_bundle_path_raises_when_missing(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="missing bundle"):
+        resolve_required_bundle_path(
+            None,
+            latest_bundle_resolver=lambda: None,
+            missing_message="missing bundle",
+        )
+
+
+def test_write_bundle_artifact_writes_into_bundle_dir(tmp_path: Path) -> None:
+    bundle = write_research_bundle(
+        experiment_id="unit-test/artifact-example",
+        module="tests.example",
+        function="run_example",
+        params={},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date=None,
+        analysis_end_date=None,
+        result_metadata={},
+        result_tables={"summary_df": pd.DataFrame([{"value": 1}])},
+        summary_markdown="# Artifact Example\n",
+        output_root=tmp_path,
+        run_id="20260419_120000_artifact",
+    )
+
+    artifact_path = write_bundle_artifact(
+        bundle,
+        "charts/example.txt",
+        _write_example_artifact,
+    )
+
+    assert artifact_path == bundle.bundle_dir / "charts/example.txt"
+    assert artifact_path.read_text(encoding="utf-8") == "artifact"

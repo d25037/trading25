@@ -348,6 +348,43 @@ def load_payload_research_bundle(
     return build_result_from_payload(dict(info.result_metadata), tables)
 
 
+def resolve_optional_bundle_path(
+    bundle_path: str | Path | None,
+    *,
+    latest_bundle_resolver: Callable[[], Path | None],
+) -> Path | None:
+    if bundle_path is not None:
+        return Path(bundle_path).expanduser()
+    return latest_bundle_resolver()
+
+
+def resolve_required_bundle_path(
+    bundle_path: str | Path | None,
+    *,
+    latest_bundle_resolver: Callable[[], Path | None],
+    missing_message: str,
+) -> Path:
+    resolved_path = resolve_optional_bundle_path(
+        bundle_path,
+        latest_bundle_resolver=latest_bundle_resolver,
+    )
+    if resolved_path is None:
+        raise FileNotFoundError(missing_message)
+    return resolved_path
+
+
+def write_bundle_artifact(
+    bundle: ResearchBundleInfo,
+    artifact_path: str | Path,
+    writer: Callable[[Path], str | Path | None],
+) -> Path:
+    resolved_output_path = bundle.bundle_dir / Path(artifact_path)
+    written_path = writer(resolved_output_path)
+    if written_path is None:
+        return resolved_output_path
+    return Path(written_path).expanduser()
+
+
 def load_dataclass_research_bundle(
     bundle_path: str | Path,
     *,

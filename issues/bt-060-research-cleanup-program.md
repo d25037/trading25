@@ -6,7 +6,7 @@ priority: high
 labels: [bt, research, refactor, workflow, testing]
 project: bt
 created: 2026-04-18
-updated: 2026-04-18
+updated: 2026-04-19
 depends_on: []
 blocks: []
 parent: null
@@ -36,7 +36,7 @@ parent: null
 - [x] research family inventory を作る。
 - [x] notebook viewer-only guardrail checker を追加し、local prepush と CI quality に接続する。
 - [x] current violation を修正する。
-- [ ] Phase 1: shared infra を concrete study から抽出する。
+- [x] Phase 1: shared infra を concrete study から抽出する。
 - [ ] Phase 2: high-coupling family を family 単位で分解する。
 - [ ] Phase 3: notebook / publication / docs を research surface として正規化する。
 
@@ -120,6 +120,7 @@ parent: null
 - 2026-04-18: `topix100_sma50_raw_vs_atr_q10_bounce_playground.py` の notebook recompute を除去し、viewer-only に戻した。
 - 2026-04-18: `topix100_streak_353_transfer` の canonical runner を追加し、playground の runner path を実在ファイルへ揃えた。
 - 2026-04-18: Phase 1 の最初の slice として `readonly_duckdb_support.py` を追加し、event-conditioned analytics 4 module に散っていた read-only DuckDB access / snapshot fallback / date range / code normalize helper を共通化した。
+- 2026-04-19: Phase 1 を完了し、payload-based bundle helper と plot publication / latest bundle resolution helper を shared 化した。
 
 ## 補足
 - 既存の近い前提: `issues/done/bt-049-analytics-research-refactor-program.md`

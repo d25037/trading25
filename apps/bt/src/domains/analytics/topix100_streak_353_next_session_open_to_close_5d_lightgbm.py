@@ -19,6 +19,7 @@ import pandas as pd
 from src.domains.analytics.research_bundle import (
     find_latest_research_bundle_path,
     load_research_bundle_info,
+    resolve_optional_bundle_path,
 )
 from src.domains.analytics.topix100_price_vs_sma_q10_bounce_regime_conditioning import (
     DEFAULT_PRICE_FEATURE,
@@ -143,11 +144,15 @@ def _score_topix100_streak_353_next_session_open_to_close_5d_lightgbm_snapshot(
     if train_lookback_days is not None and train_lookback_days < 1:
         raise ValueError("train_lookback_days must be >= 1 when provided")
 
-    bundle_path = find_latest_research_bundle_path(
-        TOPIX100_STREAK_353_NEXT_SESSION_OPEN_TO_CLOSE_5D_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID
+    bundle_path = resolve_optional_bundle_path(
+        None,
+        latest_bundle_resolver=lambda: (
+            find_latest_research_bundle_path(
+                TOPIX100_STREAK_353_NEXT_SESSION_OPEN_TO_CLOSE_5D_LIGHTGBM_WALKFORWARD_EXPERIMENT_ID
+            )
+            or get_topix100_streak_353_signal_score_lightgbm_latest_bundle_path()
+        ),
     )
-    if bundle_path is None:
-        bundle_path = get_topix100_streak_353_signal_score_lightgbm_latest_bundle_path()
     score_source_run_id = (
         load_research_bundle_info(bundle_path).run_id if bundle_path is not None else None
     )

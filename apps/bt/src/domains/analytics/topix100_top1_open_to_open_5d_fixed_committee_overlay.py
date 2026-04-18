@@ -31,6 +31,8 @@ from src.domains.analytics.research_bundle import (
     get_research_bundle_dir,
     load_dataclass_research_bundle,
     load_research_bundle_info,
+    resolve_optional_bundle_path,
+    resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix100_streak_353_next_session_open_to_open_5d_lightgbm_walkforward import (
@@ -488,22 +490,24 @@ def get_topix100_top1_open_to_open_5d_fixed_committee_overlay_bundle_path_for_ru
 
 
 def _resolve_top1_bundle_path(bundle_path: str | Path | None) -> Path:
-    if bundle_path is not None:
-        return Path(bundle_path).expanduser()
-    latest_bundle_path = (
-        get_topix100_streak_353_next_session_open_to_open_5d_lightgbm_walkforward_latest_bundle_path()
+    return resolve_required_bundle_path(
+        bundle_path,
+        latest_bundle_resolver=(
+            get_topix100_streak_353_next_session_open_to_open_5d_lightgbm_walkforward_latest_bundle_path
+        ),
+        missing_message="No TOPIX100 open-to-open 5D source bundle was found",
     )
-    if latest_bundle_path is None:
-        raise FileNotFoundError("No TOPIX100 open-to-open 5D source bundle was found")
-    return latest_bundle_path
 
 
 def _resolve_optional_committee_bundle_path(
     bundle_path: str | Path | None,
 ) -> Path | None:
-    if bundle_path is not None:
-        return Path(bundle_path).expanduser()
-    return get_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_latest_bundle_path()
+    return resolve_optional_bundle_path(
+        bundle_path,
+        latest_bundle_resolver=(
+            get_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_latest_bundle_path
+        ),
+    )
 
 
 def _select_source_top1_pick_df(

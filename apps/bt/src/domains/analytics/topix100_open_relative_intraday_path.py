@@ -29,6 +29,7 @@ from src.domains.analytics.research_bundle import (
     find_latest_research_bundle_path,
     get_research_bundle_dir,
     load_payload_research_bundle,
+    write_bundle_artifact,
     write_payload_research_bundle,
 )
 
@@ -987,11 +988,12 @@ def write_topix100_open_relative_intraday_path_research_bundle(
         run_id=run_id,
         notes=notes,
     )
-    write_topix100_open_relative_intraday_path_overview_plot(
-        result,
-        output_path=(
-            bundle.bundle_dir
-            / TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME
+    write_bundle_artifact(
+        bundle,
+        TOPIX100_OPEN_RELATIVE_INTRADAY_PATH_OVERVIEW_PLOT_FILENAME,
+        lambda output_path: write_topix100_open_relative_intraday_path_overview_plot(
+            result,
+            output_path=output_path,
         ),
     )
     return bundle
