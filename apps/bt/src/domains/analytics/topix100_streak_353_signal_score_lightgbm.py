@@ -58,6 +58,7 @@ from src.domains.analytics.topix100_streak_353_transfer import (
 )
 from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
     build_topix100_streak_price_feature_frame,
+    build_topix100_streak_scoring_snapshot_df,
     coerce_topix100_streak_state_panel_df,
     join_topix100_streak_state_panel_df,
 )
@@ -946,70 +947,16 @@ def _build_scoring_snapshot_df(
     short_window_streaks: int,
     long_window_streaks: int,
 ) -> pd.DataFrame:
-    price_df = _build_price_feature_frame(
-        event_panel_df,
+    return build_topix100_streak_scoring_snapshot_df(
+        event_panel_df=event_panel_df,
+        history_df=history_df,
+        target_date=target_date,
         price_feature=price_feature,
         volume_feature=volume_feature,
-    )
-    snapshot_price_df = price_df[price_df["date"] == target_date].copy()
-    if snapshot_price_df.empty:
-        return pd.DataFrame()
-
-    state_snapshot_df = build_topix100_streak_state_snapshot_df(
-        history_df,
         short_window_streaks=short_window_streaks,
         long_window_streaks=long_window_streaks,
-        as_of_date=target_date,
+        state_snapshot_builder=build_topix100_streak_state_snapshot_df,
     )
-    if state_snapshot_df.empty:
-        return pd.DataFrame()
-
-    state_snapshot_df = state_snapshot_df.copy()
-    state_snapshot_df["date"] = state_snapshot_df["date"].astype(str)
-    state_snapshot_df["code"] = state_snapshot_df["code"].astype(str).str.zfill(4)
-    merged_df = snapshot_price_df.merge(
-        state_snapshot_df[
-            [
-                "date",
-                "code",
-                "company_name",
-                "current_streak_day_count",
-                "current_streak_segment_return",
-                "current_streak_segment_abs_return",
-            ]
-        ],
-        on=["date", "code", "company_name"],
-        how="inner",
-        validate="one_to_one",
-    )
-    if merged_df.empty:
-        return pd.DataFrame()
-    ordered_columns = [
-        "date",
-        "code",
-        "company_name",
-        "decile_num",
-        "decile",
-        "current_streak_day_count",
-        "current_streak_segment_return",
-        "current_streak_segment_abs_return",
-        price_feature,
-        volume_feature,
-        "recent_return_1d",
-        "recent_return_3d",
-        "recent_return_5d",
-        "intraday_return",
-        "range_pct",
-    ]
-    snapshot_df = merged_df[ordered_columns].copy()
-    snapshot_df = snapshot_df.rename(
-        columns={
-            "current_streak_day_count": "segment_day_count",
-            "current_streak_segment_return": "segment_return",
-            "current_streak_segment_abs_return": "segment_abs_return",
-        }
-    )
-    return snapshot_df.sort_values(["date", "code"], kind="stable").reset_index(drop=True)
 
 
 def _predict_lightgbm_snapshot_scores(

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence, cast
+from typing import Any, Callable, Sequence, cast
 
 import pandas as pd
 
+from src.domains.analytics.topix100_streak_353_transfer import (
+    build_topix100_streak_state_snapshot_df,
+)
 from src.domains.analytics.topix_rank_future_close_core import DECILE_ORDER
 
 STREAK_STATE_PANEL_COLUMNS: tuple[str, ...] = (
@@ -138,3 +141,119 @@ def join_topix100_streak_state_panel_df(
 
     merged_df["segment_abs_return"] = merged_df["segment_return"].astype(float).abs()
     return merged_df
+
+
+def build_topix100_streak_scoring_snapshot_df(
+    *,
+    event_panel_df: pd.DataFrame,
+    history_df: pd.DataFrame,
+    target_date: str,
+    price_feature: str,
+    volume_feature: str,
+    short_window_streaks: int,
+    long_window_streaks: int,
+    state_snapshot_builder: Callable[..., pd.DataFrame] | None = None,
+) -> pd.DataFrame:
+    price_df = build_topix100_streak_price_feature_frame(
+        event_panel_df,
+        price_feature=price_feature,
+        volume_feature=volume_feature,
+    )
+    snapshot_price_df = price_df[price_df["date"] == target_date].copy()
+    if snapshot_price_df.empty:
+        return pd.DataFrame()
+
+    builder = state_snapshot_builder or build_topix100_streak_state_snapshot_df
+    state_snapshot_df = builder(
+        history_df,
+        short_window_streaks=short_window_streaks,
+        long_window_streaks=long_window_streaks,
+        as_of_date=target_date,
+    )
+    if state_snapshot_df.empty:
+        return pd.DataFrame()
+
+    state_snapshot_df = state_snapshot_df.copy()
+    state_snapshot_df["date"] = state_snapshot_df["date"].astype(str)
+    state_snapshot_df["code"] = state_snapshot_df["code"].astype(str).str.zfill(4)
+    merged_df = snapshot_price_df.merge(
+        state_snapshot_df[
+            [
+                "date",
+                "code",
+                "company_name",
+                "current_streak_day_count",
+                "current_streak_segment_return",
+                "current_streak_segment_abs_return",
+            ]
+        ],
+        on=["date", "code", "company_name"],
+        how="inner",
+        validate="one_to_one",
+    )
+    if merged_df.empty:
+        return pd.DataFrame()
+    ordered_columns = [
+        "date",
+        "code",
+        "company_name",
+        "decile_num",
+        "decile",
+        "current_streak_day_count",
+        "current_streak_segment_return",
+        "current_streak_segment_abs_return",
+        price_feature,
+        volume_feature,
+        "recent_return_1d",
+        "recent_return_3d",
+        "recent_return_5d",
+        "intraday_return",
+        "range_pct",
+    ]
+    snapshot_df = merged_df[ordered_columns].copy()
+    snapshot_df = snapshot_df.rename(
+        columns={
+            "current_streak_day_count": "segment_day_count",
+            "current_streak_segment_return": "segment_return",
+            "current_streak_segment_abs_return": "segment_abs_return",
+        }
+    )
+    return snapshot_df.sort_values(["date", "code"], kind="stable").reset_index(drop=True)
+
+
+def slice_topix100_streak_feature_panel_by_date_range(
+    feature_panel_df: pd.DataFrame,
+    *,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    date_values = feature_panel_df["date"].astype(str)
+    return (
+        feature_panel_df[(date_values >= start_date) & (date_values <= end_date)]
+        .copy()
+        .reset_index(drop=True)
+    )
+
+
+def slice_topix100_streak_feature_panel_to_recent_dates(
+    feature_panel_df: pd.DataFrame,
+    *,
+    max_date_count: int,
+) -> tuple[pd.DataFrame, str | None, str | None]:
+    ordered_dates = (
+        feature_panel_df["date"].astype(str).drop_duplicates().sort_values(kind="stable").tolist()
+    )
+    if not ordered_dates:
+        return feature_panel_df.iloc[0:0].copy(), None, None
+    selected_dates = ordered_dates[-max_date_count:]
+    start_date = selected_dates[0]
+    end_date = selected_dates[-1]
+    return (
+        slice_topix100_streak_feature_panel_by_date_range(
+            feature_panel_df,
+            start_date=start_date,
+            end_date=end_date,
+        ),
+        start_date,
+        end_date,
+    )

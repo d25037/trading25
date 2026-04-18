@@ -55,7 +55,6 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
     _build_category_lookup,
     _build_lightgbm_params,
     _build_model_matrix,
-    _build_scoring_snapshot_df,
     _format_int_sequence,
     _format_return,
     _load_lightgbm_regressor_cls,
@@ -63,8 +62,10 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
 )
 from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
     build_topix100_streak_price_feature_frame,
+    build_topix100_streak_scoring_snapshot_df as _build_scoring_snapshot_df,
     coerce_topix100_streak_state_panel_df,
     join_topix100_streak_state_panel_df,
+    slice_topix100_streak_feature_panel_to_recent_dates,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -817,42 +818,14 @@ def _score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
         rows_by_code=rows_by_code,
     )
 
-
-def _slice_feature_panel_by_date_range(
-    feature_panel_df: pd.DataFrame,
-    *,
-    start_date: str,
-    end_date: str,
-) -> pd.DataFrame:
-    date_values = feature_panel_df["date"].astype(str)
-    return (
-        feature_panel_df[(date_values >= start_date) & (date_values <= end_date)]
-        .copy()
-        .reset_index(drop=True)
-    )
-
-
 def _slice_feature_panel_to_recent_dates(
     feature_panel_df: pd.DataFrame,
     *,
     max_date_count: int,
 ) -> tuple[pd.DataFrame, str | None, str | None]:
-    ordered_dates = (
-        feature_panel_df["date"].astype(str).drop_duplicates().sort_values(kind="stable").tolist()
-    )
-    if not ordered_dates:
-        return feature_panel_df.iloc[0:0].copy(), None, None
-    selected_dates = ordered_dates[-max_date_count:]
-    start_date = selected_dates[0]
-    end_date = selected_dates[-1]
-    return (
-        _slice_feature_panel_by_date_range(
-            feature_panel_df,
-            start_date=start_date,
-            end_date=end_date,
-        ),
-        start_date,
-        end_date,
+    return slice_topix100_streak_feature_panel_to_recent_dates(
+        feature_panel_df,
+        max_date_count=max_date_count,
     )
 
 

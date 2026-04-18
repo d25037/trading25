@@ -36,7 +36,6 @@ from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
 )
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
     DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
-    _slice_feature_panel_to_recent_dates,
 )
 from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
     DEFAULT_CATEGORICAL_FEATURE_COLUMNS,
@@ -46,14 +45,15 @@ from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
     Topix100Streak353SignalScoreLightgbmSnapshot,
     Topix100Streak353SignalScoreLightgbmSnapshotRow,
     _build_category_lookup,
-    _build_scoring_snapshot_df,
     _load_lightgbm_regressor_cls,
     _predict_lightgbm_snapshot_scores,
     get_topix100_streak_353_signal_score_lightgbm_latest_bundle_path,
 )
 from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
     build_topix100_streak_price_feature_frame,
+    build_topix100_streak_scoring_snapshot_df,
     join_topix100_streak_state_panel_df,
+    slice_topix100_streak_feature_panel_to_recent_dates,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -233,9 +233,11 @@ def _score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
         .copy()
         .reset_index(drop=True)
     )
-    training_feature_panel_df, _train_start, _train_end = _slice_feature_panel_to_recent_dates(
+    training_feature_panel_df, _train_start, _train_end = (
+        slice_topix100_streak_feature_panel_to_recent_dates(
         training_source_df,
         max_date_count=train_window_days,
+        )
     )
     if training_feature_panel_df.empty:
         return _empty_snapshot(
@@ -252,7 +254,7 @@ def _score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
         .reset_index(drop=True)
     )
     if snapshot_feature_df.empty:
-        snapshot_feature_df = _build_scoring_snapshot_df(
+        snapshot_feature_df = build_topix100_streak_scoring_snapshot_df(
             event_panel_df=event_panel_df,
             history_df=history_df,
             target_date=target_date,
