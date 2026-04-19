@@ -34,8 +34,10 @@ parent: bt-060
 - 既存の `_build_price_feature_frame` / `_coerce_*_state_panel_df` は wrapper として残し、family 内の他 study へ段階展開しやすい形にした。
 - `topix100_streak_353_next_session_open_to_open_5d_lightgbm.py` / `topix100_streak_353_next_session_open_to_close_5d_lightgbm.py` / `topix100_streak_353_next_session_open_to_close_10d_lightgbm.py` の swing target builder も shared helper 直結へ移し、signal score module への内部依存を浅くした。
 - `topix100_streak_lightgbm_feature_panel.py` に snapshot feature builder と recent-date slicer も集約し、`signal_score` / `intraday` の wrapper を残したまま swing runtime snapshot modules の concrete-module 依存をさらに減らした。
+- `topix100_streak_lightgbm_validation_support.py` を追加し、`DEFAULT_TOP_K_VALUES` / baseline selector key / score decile shaping を shared support へ移した。walkforward modules は intraday concrete module ではなく shared support と `topix_streak_extreme_mode` の formatter を直接参照するように整理した。
 - 検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt ruff check ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright ...`, `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_signal_score_lightgbm.py apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_intraday_lightgbm.py`
 - 追加検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_open_to_close_swing_targets.py`
+- walkforward 追加検証: `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_streak_353_next_session_intraday_lightgbm_walkforward.py apps/bt/tests/unit/scripts/test_run_topix100_streak_353_next_session_intraday_lightgbm_walkforward.py apps/bt/tests/unit/scripts/test_run_topix100_streak_353_next_session_open_to_open_5d_lightgbm_walkforward.py`
 
 ## 補足
 - 親 issue: `bt-060`

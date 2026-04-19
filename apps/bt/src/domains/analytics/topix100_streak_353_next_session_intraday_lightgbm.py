@@ -67,6 +67,11 @@ from src.domains.analytics.topix100_streak_lightgbm_feature_panel import (
     join_topix100_streak_state_panel_df,
     slice_topix100_streak_feature_panel_to_recent_dates,
 )
+from src.domains.analytics.topix100_streak_lightgbm_validation_support import (
+    DEFAULT_TOPIX100_STREAK_LIGHTGBM_TOP_K_VALUES,
+    build_topix100_streak_baseline_selector_value_key,
+    build_topix100_streak_validation_score_decile_df,
+)
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
     DEFAULT_SHORT_WINDOW_STREAKS,
@@ -81,12 +86,11 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _open_analysis_connection,
 )
 from src.domains.analytics.topix_rank_future_close_core import (
-    DECILE_ORDER,
     _query_topix100_stock_history,
 )
 from src.domains.backtest.core.walkforward import generate_walkforward_splits
 
-DEFAULT_TOP_K_VALUES: tuple[int, ...] = (1, 3, 5, 10, 20)
+DEFAULT_TOP_K_VALUES = DEFAULT_TOPIX100_STREAK_LIGHTGBM_TOP_K_VALUES
 TOPIX100_STREAK_353_NEXT_SESSION_INTRADAY_LIGHTGBM_EXPERIMENT_ID = (
     "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm"
 )
@@ -896,11 +900,7 @@ def _build_baseline_selector_value_key(
     selector_kind: str,
     values: dict[str, str],
 ) -> str:
-    if selector_kind == "universe":
-        return "universe"
-    if selector_kind == "bucket":
-        return values["bucket"]
-    raise ValueError(f"Unsupported selector kind: {selector_kind}")
+    return build_topix100_streak_baseline_selector_value_key(selector_kind, values)
 
 
 def _build_baseline_lookup_df(feature_panel_df: pd.DataFrame) -> pd.DataFrame:
@@ -1386,39 +1386,8 @@ def _build_validation_model_comparison_df(
 def _build_validation_score_decile_df(
     validation_prediction_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    ranked_df = validation_prediction_df.copy()
-    ranked_df["date_constituent_count"] = ranked_df.groupby(
-        ["model_name", "date"],
-        observed=True,
-    )["code"].transform("size")
-    ranked_df["score_rank_desc"] = ranked_df.groupby(
-        ["model_name", "date"],
-        observed=True,
-    )["score"].rank(method="first", ascending=False)
-    ranked_df["score_decile_index"] = (
-        ((ranked_df["score_rank_desc"] - 1) * len(DECILE_ORDER))
-        // ranked_df["date_constituent_count"]
-    ) + 1
-    ranked_df["score_decile_index"] = ranked_df["score_decile_index"].clip(
-        1, len(DECILE_ORDER)
-    )
-    ranked_df["score_decile"] = ranked_df["score_decile_index"].map(
-        {index: f"Q{index}" for index in range(1, len(DECILE_ORDER) + 1)}
-    )
-    return (
-        ranked_df.groupby(
-            ["model_name", "score_decile_index", "score_decile"],
-            observed=True,
-            sort=False,
-        )
-        .agg(
-            mean_realized_return=("realized_return", "mean"),
-            stock_count=("code", "count"),
-            date_count=("date", "nunique"),
-        )
-        .reset_index()
-        .sort_values(["model_name", "score_decile_index"], kind="stable")
-        .reset_index(drop=True)
+    return build_topix100_streak_validation_score_decile_df(
+        validation_prediction_df
     )
 
 
