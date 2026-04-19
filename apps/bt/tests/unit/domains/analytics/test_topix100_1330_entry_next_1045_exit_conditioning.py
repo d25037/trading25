@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import duckdb
@@ -244,6 +245,12 @@ def test_research_bundle_roundtrip(
         bundle.bundle_dir
         / TOPIX100_1330_ENTRY_NEXT_1045_EXIT_CONDITIONING_PLOT_FILENAME
     ).exists()
+    summary_markdown = bundle.summary_path.read_text(encoding="utf-8")
+    published_summary = json.loads(bundle.published_summary_path.read_text(encoding="utf-8"))
+    assert "## Previous-Day 10:45 Cross" in summary_markdown
+    assert "prev_day_peak_transition_df" in summary_markdown
+    assert published_summary["prevDayPeakTime"] == result.prev_day_peak_time
+    assert len(published_summary["sectorSummary"]) == len(result.sector_comparison_df)
     assert reloaded.prev_day_peak_time == result.prev_day_peak_time
     assert reloaded.regime_day_count == result.regime_day_count
     pd.testing.assert_frame_equal(

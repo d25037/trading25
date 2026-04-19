@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
 
@@ -653,3 +653,153 @@ def _sort_prev_day_peak_transition_df(df: pd.DataFrame) -> pd.DataFrame:
         kind="stable",
     ).drop(columns=["_prev_day_order", "_current_order"])
     return ordered.reset_index(drop=True)
+
+
+def _format_pct(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return "n/a"
+    return f"{float(value) * 100:+.4f}%"
+
+
+def _build_conditioning_published_summary(
+    metadata: Mapping[str, Any],
+    tables: Mapping[str, pd.DataFrame],
+) -> dict[str, Any]:
+    return {
+        "intervalMinutes": int(metadata["interval_minutes"]),
+        "entryTime": str(metadata["entry_time"]),
+        "exitTime": str(metadata["exit_time"]),
+        "tailFraction": float(metadata["tail_fraction"]),
+        "prevDayPeakTime": str(metadata["prev_day_peak_time"]),
+        "analysisStartDate": metadata.get("analysis_start_date"),
+        "analysisEndDate": metadata.get("analysis_end_date"),
+        "regimeSummary": tables["regime_comparison_df"].to_dict(orient="records"),
+        "sectorSummary": tables["sector_comparison_df"].to_dict(orient="records"),
+        "prevDayPeakSummary": tables["prev_day_peak_comparison_df"].to_dict(orient="records"),
+    }
+
+
+def _build_conditioning_research_bundle_summary_markdown(
+    metadata: Mapping[str, Any],
+    tables: Mapping[str, pd.DataFrame],
+    *,
+    plot_filename: str,
+) -> str:
+    entry_time = str(metadata["entry_time"])
+    exit_time = str(metadata["exit_time"])
+    tail_fraction = float(metadata["tail_fraction"])
+    regime_comparison_df = tables["regime_comparison_df"]
+    sector_comparison_df = tables["sector_comparison_df"]
+    prev_day_peak_transition_df = tables["prev_day_peak_transition_df"]
+
+    summary_lines = [
+        "# TOPIX100 13:30 Entry -> Next 10:45 Exit Conditioning",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{metadata['source_mode']}`",
+        (
+            f"- Available range: "
+            f"`{metadata.get('available_start_date')} -> {metadata.get('available_end_date')}`"
+        ),
+        (
+            f"- Analysis range: "
+            f"`{metadata.get('analysis_start_date')} -> {metadata.get('analysis_end_date')}`"
+        ),
+        f"- Interval minutes: `{int(metadata['interval_minutes'])}`",
+        f"- Entry time: `{entry_time}`",
+        f"- Exit time: `{exit_time}`",
+        f"- Previous-day peak anchor: `{metadata['prev_day_peak_time']}`",
+        f"- Tail fraction per side: `{tail_fraction * 100:.1f}%`",
+        f"- Current TOPIX100 constituents: `{int(metadata['topix100_constituent_count'])}`",
+        f"- Eligible entry sessions: `{int(metadata['eligible_session_count'])}`",
+        f"- Regime day count: `{int(metadata['regime_day_count'])}`",
+        "",
+        "## Current Read",
+        "",
+    ]
+
+    if regime_comparison_df.empty:
+        summary_lines.append("- Regime comparison rows were empty.")
+    else:
+        for row in regime_comparison_df.itertuples(index=False):
+            summary_lines.append(
+                f"- `{row.segment_label}`: winners-minus-losers "
+                f"`{entry_time} -> D+1 {exit_time}` spread "
+                f"`{_format_pct(row.entry_to_next_exit_mean_spread)}` "
+                f"(p=`{row.entry_to_next_exit_welch_p_value}`)."
+            )
+
+    if not sector_comparison_df.empty:
+        best_sector = sector_comparison_df.sort_values(
+            ["entry_to_next_exit_mean_spread", "segment_label"],
+            ascending=[False, True],
+            kind="stable",
+        ).iloc[0]
+        weakest_sector = sector_comparison_df.sort_values(
+            ["entry_to_next_exit_mean_spread", "segment_label"],
+            ascending=[True, True],
+            kind="stable",
+        ).iloc[0]
+        summary_lines.extend(
+            [
+                "",
+                "## Sector Read",
+                "",
+                (
+                    f"- Largest positive winners-minus-losers sector spread: "
+                    f"`{best_sector['segment_label']}` "
+                    f"`{_format_pct(float(best_sector['entry_to_next_exit_mean_spread']))}`."
+                ),
+                (
+                    f"- Largest negative winners-minus-losers sector spread: "
+                    f"`{weakest_sector['segment_label']}` "
+                    f"`{_format_pct(float(weakest_sector['entry_to_next_exit_mean_spread']))}`."
+                ),
+            ]
+        )
+
+    if not prev_day_peak_transition_df.empty:
+        strongest_transition = prev_day_peak_transition_df.sort_values(
+            ["mean_entry_to_next_exit_return", "sample_count"],
+            ascending=[False, False],
+            kind="stable",
+        ).iloc[0]
+        weakest_transition = prev_day_peak_transition_df.sort_values(
+            ["mean_entry_to_next_exit_return", "sample_count"],
+            ascending=[True, False],
+            kind="stable",
+        ).iloc[0]
+        summary_lines.extend(
+            [
+                "",
+                "## Previous-Day 10:45 Cross",
+                "",
+                (
+                    f"- Strongest cell: `{strongest_transition['prev_day_peak_group_label']}` x "
+                    f"`{strongest_transition['current_entry_bucket_label']}` "
+                    f"`{_format_pct(float(strongest_transition['mean_entry_to_next_exit_return']))}` "
+                    f"({int(strongest_transition['sample_count'])} sessions)."
+                ),
+                (
+                    f"- Weakest cell: `{weakest_transition['prev_day_peak_group_label']}` x "
+                    f"`{weakest_transition['current_entry_bucket_label']}` "
+                    f"`{_format_pct(float(weakest_transition['mean_entry_to_next_exit_return']))}` "
+                    f"({int(weakest_transition['sample_count'])} sessions)."
+                ),
+            ]
+        )
+
+    summary_lines.extend(
+        [
+            "",
+            "## Artifact Plots",
+            "",
+            f"- `{plot_filename}`",
+            "",
+            "## Artifact Tables",
+            "",
+            *[f"- `{table_name}`" for table_name in tables],
+        ]
+    )
+    return "\n".join(summary_lines)

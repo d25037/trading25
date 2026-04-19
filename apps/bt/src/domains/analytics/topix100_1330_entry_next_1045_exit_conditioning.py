@@ -34,6 +34,8 @@ from src.domains.analytics.topix100_1330_entry_next_1045_exit import (
 )
 from src.domains.analytics.topix100_1330_entry_next_1045_exit_conditioning_support import (
     _CURRENT_ENTRY_BUCKET_ORDER,
+    _build_conditioning_published_summary,
+    _build_conditioning_research_bundle_summary_markdown,
     _PREV_DAY_PEAK_ORDER,
     _build_current_entry_bucket_label_map,
     _build_enriched_session_level_df,
@@ -376,142 +378,6 @@ def _build_result_from_payload(
     )
 
 
-def _build_published_summary(
-    result: Topix1001330EntryNext1045ExitConditioningResult,
-) -> dict[str, Any]:
-    return {
-        "intervalMinutes": result.interval_minutes,
-        "entryTime": result.entry_time,
-        "exitTime": result.exit_time,
-        "tailFraction": result.tail_fraction,
-        "prevDayPeakTime": result.prev_day_peak_time,
-        "analysisStartDate": result.analysis_start_date,
-        "analysisEndDate": result.analysis_end_date,
-        "regimeSummary": result.regime_comparison_df.to_dict(orient="records"),
-        "sectorSummary": result.sector_comparison_df.to_dict(orient="records"),
-        "prevDayPeakSummary": result.prev_day_peak_comparison_df.to_dict(orient="records"),
-    }
-
-
-def _format_pct(value: float | None) -> str:
-    if value is None or pd.isna(value):
-        return "n/a"
-    return f"{float(value) * 100:+.4f}%"
-
-
-def _build_research_bundle_summary_markdown(
-    result: Topix1001330EntryNext1045ExitConditioningResult,
-) -> str:
-    summary_lines = [
-        "# TOPIX100 13:30 Entry -> Next 10:45 Exit Conditioning",
-        "",
-        "## Snapshot",
-        "",
-        f"- Source mode: `{result.source_mode}`",
-        f"- Available range: `{result.available_start_date} -> {result.available_end_date}`",
-        f"- Analysis range: `{result.analysis_start_date} -> {result.analysis_end_date}`",
-        f"- Interval minutes: `{result.interval_minutes}`",
-        f"- Entry time: `{result.entry_time}`",
-        f"- Exit time: `{result.exit_time}`",
-        f"- Previous-day peak anchor: `{result.prev_day_peak_time}`",
-        f"- Tail fraction per side: `{result.tail_fraction * 100:.1f}%`",
-        f"- Current TOPIX100 constituents: `{result.topix100_constituent_count}`",
-        f"- Eligible entry sessions: `{result.eligible_session_count}`",
-        f"- Regime day count: `{result.regime_day_count}`",
-        "",
-        "## Current Read",
-        "",
-    ]
-
-    if result.regime_comparison_df.empty:
-        summary_lines.append("- Regime comparison rows were empty.")
-    else:
-        for row in result.regime_comparison_df.itertuples(index=False):
-            summary_lines.append(
-                f"- `{row.segment_label}`: winners-minus-losers "
-                f"`{result.entry_time} -> D+1 {result.exit_time}` spread "
-                f"`{_format_pct(cast(float | None, row.entry_to_next_exit_mean_spread))}` "
-                f"(p=`{row.entry_to_next_exit_welch_p_value}`)."
-            )
-
-    if not result.sector_comparison_df.empty:
-        best_sector = result.sector_comparison_df.sort_values(
-            ["entry_to_next_exit_mean_spread", "segment_label"],
-            ascending=[False, True],
-            kind="stable",
-        ).iloc[0]
-        weakest_sector = result.sector_comparison_df.sort_values(
-            ["entry_to_next_exit_mean_spread", "segment_label"],
-            ascending=[True, True],
-            kind="stable",
-        ).iloc[0]
-        summary_lines.extend(
-            [
-                "",
-                "## Sector Read",
-                "",
-                (
-                    f"- Largest positive winners-minus-losers sector spread: "
-                    f"`{best_sector['segment_label']}` "
-                    f"`{_format_pct(float(best_sector['entry_to_next_exit_mean_spread']))}`."
-                ),
-                (
-                    f"- Largest negative winners-minus-losers sector spread: "
-                    f"`{weakest_sector['segment_label']}` "
-                    f"`{_format_pct(float(weakest_sector['entry_to_next_exit_mean_spread']))}`."
-                ),
-            ]
-        )
-
-    if not result.prev_day_peak_transition_df.empty:
-        strongest_transition = result.prev_day_peak_transition_df.sort_values(
-            ["mean_entry_to_next_exit_return", "sample_count"],
-            ascending=[False, False],
-            kind="stable",
-        ).iloc[0]
-        weakest_transition = result.prev_day_peak_transition_df.sort_values(
-            ["mean_entry_to_next_exit_return", "sample_count"],
-            ascending=[True, False],
-            kind="stable",
-        ).iloc[0]
-        summary_lines.extend(
-            [
-                "",
-                "## Previous-Day 10:45 Cross",
-                "",
-                (
-                    f"- Strongest cell: `{strongest_transition['prev_day_peak_group_label']}` x "
-                    f"`{strongest_transition['current_entry_bucket_label']}` "
-                    f"`{_format_pct(float(strongest_transition['mean_entry_to_next_exit_return']))}` "
-                    f"({int(strongest_transition['sample_count'])} sessions)."
-                ),
-                (
-                    f"- Weakest cell: `{weakest_transition['prev_day_peak_group_label']}` x "
-                    f"`{weakest_transition['current_entry_bucket_label']}` "
-                    f"`{_format_pct(float(weakest_transition['mean_entry_to_next_exit_return']))}` "
-                    f"({int(weakest_transition['sample_count'])} sessions)."
-                ),
-            ]
-        )
-
-    summary_lines.extend(
-        [
-            "",
-            "## Artifact Plots",
-            "",
-            f"- `{TOPIX100_1330_ENTRY_NEXT_1045_EXIT_CONDITIONING_PLOT_FILENAME}`",
-            "",
-            "## Artifact Tables",
-            "",
-            *[
-                f"- `{table_name}`"
-                for table_name in _split_result_payload(result)[1].keys()
-            ],
-        ]
-    )
-    return "\n".join(summary_lines)
-
-
 def _plot_grouped_regime_bars(axis: Any, regime_group_summary_df: pd.DataFrame) -> None:
     if regime_group_summary_df.empty:
         axis.text(0.5, 0.5, "No regime data", ha="center", va="center", transform=axis.transAxes)
@@ -708,8 +574,12 @@ def write_topix100_1330_entry_next_1045_exit_conditioning_research_bundle(
         analysis_end_date=result.analysis_end_date,
         result_metadata=metadata,
         result_tables=tables,
-        summary_markdown=_build_research_bundle_summary_markdown(result),
-        published_summary=_build_published_summary(result),
+        summary_markdown=_build_conditioning_research_bundle_summary_markdown(
+            metadata,
+            tables,
+            plot_filename=TOPIX100_1330_ENTRY_NEXT_1045_EXIT_CONDITIONING_PLOT_FILENAME,
+        ),
+        published_summary=_build_conditioning_published_summary(metadata, tables),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
