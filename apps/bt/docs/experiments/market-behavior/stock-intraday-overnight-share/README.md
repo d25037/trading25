@@ -27,6 +27,8 @@
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_stock_intraday_overnight_share.py`
 - Notebook:
   - `apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py`
 - Domain logic:

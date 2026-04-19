@@ -83,6 +83,7 @@ def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
         latest_run_id=latest_run_id,
         latest_bundle_path_str=latest_bundle_path_str,
         runner_path="apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py",
+        docs_readme_path="apps/bt/docs/experiments/market-behavior/topix100-price-vs-sma-q10-bounce/README.md",
     )
     controls_view
     return bundle_path, run_id

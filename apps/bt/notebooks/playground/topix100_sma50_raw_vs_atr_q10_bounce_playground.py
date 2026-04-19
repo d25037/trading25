@@ -93,6 +93,7 @@ def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
         latest_run_id=latest_run_id,
         latest_bundle_path_str=latest_bundle_path_str,
         runner_path="apps/bt/scripts/research/run_topix100_sma50_raw_vs_atr_q10_bounce.py",
+        docs_readme_path="apps/bt/docs/experiments/market-behavior/topix100-sma50-raw-vs-atr-q10-bounce/README.md",
         extra_note_lines=[
             "- compare the raw SMA50 gap and ATR14-standardized gap from an existing bundle",
             "- use the runner to generate a fresh bundle before updating this notebook view",

@@ -28,6 +28,8 @@ NT 倍率の前日比を event day として z-score bucket 化し、個別銘�
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_nt_ratio_change_stock_overnight_distribution.py`
 - Notebook:
   - `apps/bt/notebooks/playground/nt_ratio_change_stock_overnight_distribution_playground.py`
 - Domain logic:

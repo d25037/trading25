@@ -25,6 +25,8 @@
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_topix100_vi_change_regime_conditioning.py`
 - Notebook:
   - `apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py`
 - Domain logic:

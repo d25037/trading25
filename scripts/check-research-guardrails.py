@@ -26,6 +26,9 @@ RUN_RESEARCH_NAME_RE = re.compile(r"^run_[a-z0-9_]+_research$")
 RUNNER_PATH_RE = re.compile(
     r"runner_path\s*=\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)"
 )
+DOCS_README_PATH_RE = re.compile(
+    r"docs_readme_path\s*=\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)"
+)
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,43 @@ def find_guardrail_findings_in_text(
                     line_number=line_number,
                     rule_name="missing-runner-script",
                     message=f"Declared runner path was not found: {runner_path.as_posix()}",
+                )
+            )
+
+    for match in DOCS_README_PATH_RE.finditer(text):
+        docs_readme_path = Path(match.group("path"))
+        line_number = _line_number_for_offset(text, match.start())
+        if not docs_readme_path.as_posix().startswith("apps/bt/docs/experiments/"):
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=line_number,
+                    rule_name="docs-readme-prefix",
+                    message=(
+                        "Playground `docs_readme_path` must point to "
+                        "`apps/bt/docs/experiments/.../README.md`."
+                    ),
+                )
+            )
+        if docs_readme_path.name != "README.md":
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=line_number,
+                    rule_name="docs-readme-name",
+                    message="Playground `docs_readme_path` must point to a README.md file.",
+                )
+            )
+        if not (root / docs_readme_path).is_file():
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=line_number,
+                    rule_name="missing-docs-readme",
+                    message=(
+                        "Declared docs readme path was not found: "
+                        f"{docs_readme_path.as_posix()}"
+                    ),
                 )
             )
 

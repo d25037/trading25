@@ -37,6 +37,8 @@ TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close.py`
 - Notebook:
   - `apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`
 - Domain logic:

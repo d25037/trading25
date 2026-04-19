@@ -26,11 +26,12 @@ description: apps/bt の research runner / bundle / optional notebook viewer wor
 
 1. 変更したい計算ロジックを `apps/bt/src/domains` の既存ドメインに実装する。
 2. 追加・変更したロジックの unit test を `apps/bt/tests/unit` に実装する。
-3. `apps/bt/scripts/research` に runner script を追加・更新し、`manifest.json + results.duckdb + summary.md` の bundle を保存できるようにする。
+3. `apps/bt/scripts/research` に runner script を追加・更新し、`manifest.json + results.duckdb + summary.md` の bundle を保存できるようにする。published surface が structured summary を持つ場合は `summary.json` も揃える。
 4. snapshot / universe / fundamentals / ranking join は必ず `as_of_date` 基準で切り、`slice_frame_as_of` / `latest_rows_per_group_as_of` / `filter_records_as_of` を優先利用する。
 5. research 内の高速 backtest は `vectorbt` adapter を使い、追加の custom execution engine を増やさない。上位候補の authoritative check が必要な場合だけ `Nautilus` verification を使う。
 6. `apps/bt/notebooks/playground` の notebook は latest bundle を既定で読む viewer-only にし、fresh recompute は notebook に持ち込まず runner script へ寄せる。
 7. 再利用価値が高い場合、notebook を template へ昇格する。
+8. 長く残す研究は `apps/bt/docs/experiments/<experiment>/README.md` を canonical note にし、notebook viewer から `runner_path` と `docs_readme_path` を辿れるようにする。
 
 ## Guardrails
 
@@ -41,6 +42,7 @@ description: apps/bt の research runner / bundle / optional notebook viewer wor
 - execution semantics の会計は `vectorbt` fast path に寄せ、`Nautilus` は verification 用に限定する。
 - notebook は UI と可視化に限定し、bundle viewer として動かす。
 - playground notebook は `src.shared.research_notebook_viewer` を使い、`runner_path` は実在する `apps/bt/scripts/research/run_*.py` を指す。
+- canonical note がある playground notebook は `docs_readme_path` も渡し、runner / bundle / docs の入口を揃える。
 - notebook ファイル名は `<topic>_playground.py` 形式を使う。
 - marimo notebook は標準ヘッダと一意な公開変数名を維持する。
 

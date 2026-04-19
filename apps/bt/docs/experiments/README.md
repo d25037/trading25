@@ -9,7 +9,9 @@
 - notebook は `apps/bt/notebooks/playground/` の viewer-only surface とし、新規 run は runner script からのみ行う。
 - 長く残す知見は `apps/bt/docs/experiments/` に集約する。
 - 各実験は `README.md` を canonical note、`baseline-YYYY-MM-DD.md` を時点固定の結果メモとして残す。
-- runner-first 実験は `~/.local/share/trading25/research/<experiment>/<run_id>/` に `manifest.json + results.duckdb + summary.md` を保存する。
+- runner-first 実験は `~/.local/share/trading25/research/<experiment>/<run_id>/` に `manifest.json + results.duckdb + summary.md` を保存し、structured summary を出す場合は `summary.json` も含める。
+- published research の最小 surface は `runner script + latest bundle resolver + canonical note README + baseline note` とする。
+- docs-backed notebook は `build_bundle_viewer_controls(...)` に `runner_path` を必須で渡し、canonical note がある場合は `docs_readme_path` も渡す。
 - 画像を固定資産として残す場合のみ `figures/` に保存する。
 
 ## Index

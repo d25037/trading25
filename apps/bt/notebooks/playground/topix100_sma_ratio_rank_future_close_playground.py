@@ -78,6 +78,7 @@ def _(build_bundle_viewer_controls, latest_bundle_path_str, latest_run_id, mo):
         latest_run_id=latest_run_id,
         latest_bundle_path_str=latest_bundle_path_str,
         runner_path="apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close.py",
+        docs_readme_path="apps/bt/docs/experiments/market-behavior/topix100-sma-ratio-lightgbm/README.md",
         extra_note_lines=[
             "- This notebook is baseline-bundle viewer only.",
             "- LightGBM side analysis is not executed inside the notebook.",

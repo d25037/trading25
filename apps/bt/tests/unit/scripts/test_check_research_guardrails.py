@@ -79,6 +79,45 @@ def _(build_bundle_viewer_controls, mo):
     assert findings[0].rule_name == "missing-runner-script"
 
 
+def test_scan_playground_files_detects_missing_docs_readme(tmp_path: Path) -> None:
+    module = _load_module()
+    runner = tmp_path / "apps" / "bt" / "scripts" / "research" / "run_demo.py"
+    runner.parent.mkdir(parents=True)
+    runner.write_text("#!/usr/bin/env python3\n")
+
+    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    notebook.parent.mkdir(parents=True, exist_ok=True)
+    notebook.write_text(
+        """
+import marimo
+
+@app.cell
+def _():
+    from src.shared.research_notebook_viewer import build_bundle_viewer_controls
+    return build_bundle_viewer_controls
+
+@app.cell
+def _(build_bundle_viewer_controls, mo):
+    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
+        mo,
+        latest_run_id="",
+        latest_bundle_path_str="",
+        runner_path="apps/bt/scripts/research/run_demo.py",
+        docs_readme_path="apps/bt/docs/experiments/demo/README.md",
+    )
+    return bundle_path, run_id
+""".strip()
+    )
+
+    findings = module.scan_playground_files(
+        tmp_path,
+        [Path("apps/bt/notebooks/playground/demo_playground.py")],
+    )
+
+    assert len(findings) == 1
+    assert findings[0].rule_name == "missing-docs-readme"
+
+
 def test_main_accepts_clean_viewer_only_notebook(tmp_path: Path, capsys) -> None:
     module = _load_module()
     runner = tmp_path / "apps" / "bt" / "scripts" / "research" / "run_demo.py"

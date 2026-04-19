@@ -32,6 +32,8 @@
 
 ## Source Of Truth
 
+- Runner:
+  - `apps/bt/scripts/research/run_1357_nt_ratio_topix_hedge.py`
 - Notebook:
   - `apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py`
 - Domain logic:

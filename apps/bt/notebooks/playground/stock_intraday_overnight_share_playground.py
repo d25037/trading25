@@ -79,6 +79,7 @@ def _(
         latest_run_id=latest_run_id,
         latest_bundle_path_str=latest_bundle_path_str,
         runner_path="apps/bt/scripts/research/run_stock_intraday_overnight_share.py",
+        docs_readme_path="apps/bt/docs/experiments/market-behavior/stock-intraday-overnight-share/README.md",
     )
     min_session_count = mo.ui.number(
         value=60,

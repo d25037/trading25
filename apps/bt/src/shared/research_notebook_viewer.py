@@ -39,6 +39,7 @@ def build_bundle_viewer_controls(
     latest_run_id: str,
     latest_bundle_path_str: str,
     runner_path: str,
+    docs_readme_path: str | None = None,
     extra_note_lines: list[str] | None = None,
     header_widgets: list[Any] | None = None,
 ) -> tuple[Any, Any, Any]:
@@ -53,7 +54,10 @@ def build_bundle_viewer_controls(
         "- Notebook path is **viewer-only**: load an existing bundle by `Run ID` or `Bundle Path`.",
         f"- Canonical runner: `{runner_path}`",
         "- Fresh analysis should be executed outside the notebook via the runner script.",
+        "- Expected bundle surface: `manifest.json`, `results.duckdb`, `summary.md`, and `summary.json` when a structured summary is published.",
     ]
+    if docs_readme_path:
+        note_lines.append(f"- Canonical note: `{docs_readme_path}`")
     if extra_note_lines:
         note_lines.extend(extra_note_lines)
 
