@@ -38,6 +38,8 @@ TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted
 ## Source Of Truth
 
 - Runner:
+  - `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py`
+- Baseline runner:
   - `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close.py`
 - Notebook:
   - `apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`
@@ -63,25 +65,12 @@ TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted
 ## Reproduction
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt --group research python - <<'PY'
-from src.shared.config.settings import get_settings
-from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
-    run_topix100_sma_ratio_rank_future_close_research,
-)
-from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm import (
-    run_topix100_sma_ratio_rank_future_close_lightgbm_research,
-)
-
-base_result = run_topix100_sma_ratio_rank_future_close_research(
-    get_settings().market_db_path
-)
-lightgbm_result = run_topix100_sma_ratio_rank_future_close_lightgbm_research(
-    base_result
-)
-print(lightgbm_result.walkforward.comparison_summary_df)
-print(lightgbm_result.walkforward.exploratory_gate_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt --group research python \
+  apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py
 ```
+
+bundle は `~/.local/share/trading25/research/market-behavior/topix100-sma-ratio-lightgbm/<run_id>/`
+に `manifest.json`, `results.duckdb`, `summary.md`, `summary.json` として保存されます。
 
 Notebook で確認する場合:
 
@@ -89,6 +78,8 @@ Notebook で確認する場合:
 UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
   apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py
 ```
+
+この notebook は baseline bundle viewer で、LightGBM 側の再計算は行いません。LightGBM の bundle 再現は上の dedicated runner を使います。
 
 ## Next Questions
 

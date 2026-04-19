@@ -1,7 +1,7 @@
 ---
 id: bt-063
 title: "research surface を runner bundle docs で正規化する"
-status: in-progress
+status: done
 priority: medium
 labels: [bt, research, docs, workflow]
 project: bt
@@ -19,12 +19,12 @@ parent: bt-060
 - research の最低限成果物を `runner + bundle + summary + docs reference` に固定する。
 
 ## 受け入れ条件
-- [ ] playground / published notebook / docs の参照関係が runner-first に統一されている。
+- [x] playground / published notebook / docs の参照関係が runner-first に統一されている。
 - [x] published research の最小要件が docs か skill に明文化されている。
 - [x] latest bundle resolution / summary / docs reference の surface が family 横断で再利用可能になっている。
 
 ## 実施内容
-- [ ] notebook / docs / research catalog の surface を棚卸しする。
+- [x] notebook / docs / research catalog の surface を棚卸しする。
 - [x] published research の最小成果物を定義し、skill / docs / templates に反映する。
 - [x] bundle summary と docs reference の生成 helper を統一する。
 
@@ -37,6 +37,10 @@ parent: bt-060
 - `apps/bt/src/domains/analytics/research_bundle.py` に canonical note README の path helper を追加し、`apps/bt/src/application/services/research_catalog_service.py` と `/api/analytics/research` schema から `docsReadmePath` を返せるようにした。
 - `apps/bt/tests/unit/domains/analytics/test_research_bundle.py` と `apps/bt/tests/unit/server/routes/test_analytics_research.py` を更新し、catalog/detail の docs reference と canonical note helper を回帰テスト化した。
 - canonical note README の Reproduction を、専用 runner がある family について `uv run --project apps/bt python apps/bt/scripts/research/run_*.py ...` へ揃えた。
+- `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py` に LightGBM study の bundle write/load/latest-path/published-summary helper を追加し、canonical note path と一致する `market-behavior/topix100-sma-ratio-lightgbm` experiment id を持つ reproducible bundle entry を用意した。
+- `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py` を追加し、baseline runner の上に LightGBM walk-forward + optional fixed-split diagnostic を積む dedicated runner-first 導線を作った。
+- `apps/bt/docs/experiments/market-behavior/topix100-sma-ratio-lightgbm/README.md` の Source Of Truth / Reproduction を LightGBM runner 基準へ更新し、baseline viewer notebook とは役割を分けた。
+- `apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py` の note を更新し、viewer-only notebook から dedicated LightGBM runner へ辿れるようにした。
 - 検証:
   - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt ruff check apps/bt/src/shared/research_notebook_viewer.py apps/bt/tests/unit/shared/test_research_notebook_viewer.py apps/bt/tests/unit/scripts/test_check_research_guardrails.py`
   - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright apps/bt/src/shared/research_notebook_viewer.py`
@@ -47,8 +51,14 @@ parent: bt-060
   - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright apps/bt/src/domains/analytics/research_bundle.py apps/bt/src/application/services/research_catalog_service.py apps/bt/src/entrypoints/http/routes/analytics_research.py apps/bt/src/entrypoints/http/schemas/research.py`
   - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_research_bundle.py apps/bt/tests/unit/server/routes/test_analytics_research.py apps/bt/tests/unit/shared/test_research_notebook_viewer.py apps/bt/tests/unit/scripts/test_check_research_guardrails.py`
   - `bun run --filter @trading25/contracts bt:sync`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt ruff check apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close_lightgbm.py apps/bt/tests/unit/scripts/test_run_topix100_sma_ratio_rank_future_close_lightgbm.py`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pyright apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_topix100_sma_ratio_rank_future_close_lightgbm.py apps/bt/tests/unit/scripts/test_run_topix100_sma_ratio_rank_future_close_lightgbm.py`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py --help`
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo check --strict apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`
+  - `python3 scripts/check-research-guardrails.py`
 
 ## 補足
 - 親 issue: `bt-060`
 - 依存: `bt-061`, `bt-062`
-- 残件: `apps/bt/docs/experiments/market-behavior/topix100-sma-ratio-lightgbm/README.md` は専用 runner が未整備のため、inline Python reproduction のまま。次 slice では dedicated runner / bundle entry を追加するか、既存 runner と LightGBM step の二段導線として canonical に整理する。
+- `bt-063` で runner / bundle / canonical note / viewer-only notebook の接続を一通り揃えたので、以後の published research 追加はこの surface を踏襲する。

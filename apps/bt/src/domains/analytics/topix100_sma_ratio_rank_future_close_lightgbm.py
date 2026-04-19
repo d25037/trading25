@@ -10,10 +10,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib import import_module
+from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
 
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    find_latest_research_bundle_path,
+    get_research_bundle_dir,
+    load_payload_research_bundle,
+    write_payload_research_bundle,
+)
 from src.domains.analytics.topix_rank_future_close_core import (
     DECILE_ORDER,
     _assign_feature_deciles,
@@ -109,6 +117,44 @@ class Topix100SmaRatioLightgbmResearchResult:
     walkforward: Topix100SmaRatioLightgbmWalkforwardResearchResult
     diagnostic: Topix100SmaRatioLightgbmFixedSplitDiagnostic | None
     diagnostic_error_message: str | None
+
+
+TOPIX100_SMA_RATIO_LIGHTGBM_RESEARCH_EXPERIMENT_ID = (
+    "market-behavior/topix100-sma-ratio-lightgbm"
+)
+_WALKFORWARD_TABLE_FIELD_NAMES = (
+    "split_config_df",
+    "split_coverage_df",
+    "selected_model_df",
+    "baseline_selected_feature_df",
+    "baseline_selected_composite_df",
+    "comparison_summary_df",
+    "split_spread_df",
+    "feature_importance_df",
+    "feature_importance_split_df",
+    "ranked_panel_df",
+    "ranking_feature_summary_df",
+    "decile_future_summary_df",
+    "daily_group_means_df",
+    "global_significance_df",
+    "pairwise_significance_df",
+    "exploratory_gate_df",
+)
+_DIAGNOSTIC_TABLE_FIELD_NAMES = (
+    "selected_model_df",
+    "comparison_summary_df",
+    "feature_importance_df",
+    "ranked_panel_df",
+    "ranking_feature_summary_df",
+    "decile_future_summary_df",
+    "daily_group_means_df",
+    "global_significance_df",
+    "pairwise_significance_df",
+)
+_RESULT_TABLE_NAMES = tuple(
+    [f"walkforward_{field_name}" for field_name in _WALKFORWARD_TABLE_FIELD_NAMES]
+    + [f"diagnostic_{field_name}" for field_name in _DIAGNOSTIC_TABLE_FIELD_NAMES]
+)
 
 
 def _missing_lightgbm_message() -> str:
@@ -1783,4 +1829,501 @@ def run_topix100_sma_ratio_rank_future_close_lightgbm_research(
         walkforward=walkforward,
         diagnostic=diagnostic,
         diagnostic_error_message=diagnostic_error_message,
+    )
+
+
+def _format_return(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.4%}"
+
+
+def _format_percent(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.1%}"
+
+
+def _select_walkforward_comparison_row(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    selected_horizon_key: str,
+    model_name: str,
+) -> pd.Series | None:
+    scoped_df = result.walkforward.comparison_summary_df[
+        (result.walkforward.comparison_summary_df["selected_horizon_key"] == selected_horizon_key)
+        & (result.walkforward.comparison_summary_df["model_name"] == model_name)
+    ].copy()
+    if scoped_df.empty:
+        return None
+    return scoped_df.iloc[0]
+
+
+def _select_walkforward_gate_row(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    selected_horizon_key: str,
+) -> pd.Series | None:
+    scoped_df = result.walkforward.exploratory_gate_df[
+        result.walkforward.exploratory_gate_df["selected_horizon_key"]
+        == selected_horizon_key
+    ].copy()
+    if scoped_df.empty:
+        return None
+    return scoped_df.iloc[0]
+
+
+def _select_walkforward_top_feature(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    selected_horizon_key: str,
+) -> pd.Series | None:
+    scoped_df = result.walkforward.feature_importance_df[
+        result.walkforward.feature_importance_df["selected_horizon_key"]
+        == selected_horizon_key
+    ].copy()
+    if scoped_df.empty:
+        return None
+    scoped_df = scoped_df.sort_values(
+        ["importance_rank", "feature_name"],
+        kind="stable",
+    )
+    return scoped_df.iloc[0]
+
+
+def _highlight_tone_for_spread(value: float | None) -> str:
+    if value is None:
+        return "neutral"
+    if value > 0:
+        return "success"
+    if value < 0:
+        return "danger"
+    return "neutral"
+
+
+def _build_research_bundle_summary_markdown(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    base_result: Topix100SmaRatioRankFutureCloseResearchResult,
+) -> str:
+    lines = [
+        "# TOPIX100 SMA Ratio LightGBM",
+        "",
+        "## Snapshot",
+        "",
+        f"- Source mode: `{base_result.source_mode}`",
+        f"- Available range: `{base_result.available_start_date} -> {base_result.available_end_date}`",
+        f"- Analysis range: `{base_result.analysis_start_date} -> {base_result.analysis_end_date}`",
+        f"- Walk-forward train/test/step: `{result.walkforward.train_window} / {result.walkforward.test_window} / {result.walkforward.step}`",
+        f"- Overall gate status: `{result.walkforward.overall_gate_status}`",
+        f"- Diagnostic fixed split: `{'included' if result.diagnostic is not None else 'skipped'}`",
+        f"- Feature columns: `{', '.join(result.feature_columns)}`",
+        "",
+        "## Current Read",
+        "",
+        "The lookup baseline is rebuilt from train-only rows inside each split, then LightGBM ranks the following out-of-sample block with the same six SMA-ratio features.",
+    ]
+
+    for selected_horizon_key in HORIZON_ORDER:
+        baseline_row = _select_walkforward_comparison_row(
+            result,
+            selected_horizon_key=selected_horizon_key,
+            model_name="baseline",
+        )
+        lightgbm_row = _select_walkforward_comparison_row(
+            result,
+            selected_horizon_key=selected_horizon_key,
+            model_name="lightgbm",
+        )
+        gate_row = _select_walkforward_gate_row(
+            result,
+            selected_horizon_key=selected_horizon_key,
+        )
+        top_feature = _select_walkforward_top_feature(
+            result,
+            selected_horizon_key=selected_horizon_key,
+        )
+        if baseline_row is not None and lightgbm_row is not None:
+            lines.append(
+                f"- `{selected_horizon_key}` overall Q1-Q10 spread: baseline `{_format_return(_as_float(baseline_row['q1_minus_q10_mean']))}`, LightGBM `{_format_return(_as_float(lightgbm_row['q1_minus_q10_mean']))}`."
+            )
+        if gate_row is not None and bool(gate_row["is_gate_horizon"]):
+            lines.append(
+                f"  Gate `{gate_row['gate_status']}` with median split spread `{_format_return(_as_float(gate_row['median_split_q1_minus_q10_mean']))}` and positive split share `{_format_percent(_as_float(gate_row['positive_split_share']))}`."
+            )
+        if top_feature is not None:
+            lines.append(
+                f"  Top feature: `{top_feature['feature_name']}` (mean gain `{float(top_feature['mean_importance_gain']):.4f}`)."
+            )
+
+    if result.diagnostic_error_message:
+        lines.extend(
+            [
+                "",
+                "## Diagnostic Note",
+                "",
+                f"- Fixed-split diagnostic was skipped: `{result.diagnostic_error_message}`",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Artifact Tables",
+            "",
+            "- `walkforward_comparison_summary_df`: baseline / LightGBM overall OOS comparison by horizon",
+            "- `walkforward_exploratory_gate_df`: gate status for `t_plus_5` / `t_plus_10`",
+            "- `walkforward_feature_importance_df`: average LightGBM feature importance across valid splits",
+            "- `walkforward_split_spread_df`: per-split baseline / LightGBM OOS spread diagnostics",
+            "- `diagnostic_comparison_summary_df`: fixed-split reference comparison (if included)",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _build_published_summary_payload(
+    result: Topix100SmaRatioLightgbmResearchResult,
+) -> dict[str, Any]:
+    t_plus_5_row = _select_walkforward_comparison_row(
+        result,
+        selected_horizon_key="t_plus_5",
+        model_name="lightgbm",
+    )
+    t_plus_10_row = _select_walkforward_comparison_row(
+        result,
+        selected_horizon_key="t_plus_10",
+        model_name="lightgbm",
+    )
+    t_plus_10_feature = _select_walkforward_top_feature(
+        result,
+        selected_horizon_key="t_plus_10",
+    )
+
+    if result.walkforward.overall_gate_status == "passed":
+        headline = (
+            "Walk-forward OOS gate passed for both t_plus_5 and t_plus_10, so the "
+            "SMA-ratio feature family remains useful after replacing the hand-crafted "
+            "composite with a leak-free LightGBM ranker."
+        )
+    elif result.walkforward.overall_gate_status == "insufficient_coverage":
+        headline = (
+            "The walk-forward coverage was not long enough to judge the gate on every "
+            "target horizon, so this bundle is informative but not yet conclusive."
+        )
+    else:
+        headline = (
+            "This bundle tests whether the TOPIX100 SMA-ratio family still survives "
+            "a leak-free walk-forward LightGBM ranking setup."
+        )
+
+    result_bullets = [
+        "Each split rebuilds the baseline composite from train-only rows, then trains LightGBM on the same train block and ranks only the following out-of-sample dates.",
+        "The six inputs stay fixed: three price SMA ratios and three volume SMA ratios.",
+    ]
+    if t_plus_5_row is not None:
+        result_bullets.append(
+            f"At `t_plus_5`, LightGBM delivered overall Q1-Q10 spread `{_format_return(_as_float(t_plus_5_row['q1_minus_q10_mean']))}` with median split spread `{_format_return(_as_float(t_plus_5_row['median_split_q1_minus_q10_mean']))}`."
+        )
+    if t_plus_10_row is not None:
+        result_bullets.append(
+            f"At `t_plus_10`, LightGBM delivered overall Q1-Q10 spread `{_format_return(_as_float(t_plus_10_row['q1_minus_q10_mean']))}` with positive split share `{_format_percent(_as_float(t_plus_10_row['positive_split_share']))}`."
+        )
+    if t_plus_10_feature is not None:
+        result_bullets.append(
+            f"The highest average gain at `t_plus_10` was `{t_plus_10_feature['feature_name']}`."
+        )
+
+    highlights = [
+        {
+            "label": "Gate status",
+            "value": result.walkforward.overall_gate_status,
+            "tone": (
+                "success"
+                if result.walkforward.overall_gate_status == "passed"
+                else "warning"
+                if result.walkforward.overall_gate_status == "insufficient_coverage"
+                else "danger"
+            ),
+            "detail": "walk-forward OOS",
+        },
+        {
+            "label": "Train/Test",
+            "value": f"{result.walkforward.train_window}/{result.walkforward.test_window}",
+            "tone": "neutral",
+            "detail": f"step {result.walkforward.step}",
+        },
+    ]
+    for selected_horizon_key, row in (
+        ("t_plus_5", t_plus_5_row),
+        ("t_plus_10", t_plus_10_row),
+    ):
+        if row is None:
+            continue
+        highlights.append(
+            {
+                "label": selected_horizon_key,
+                "value": _format_return(_as_float(row["q1_minus_q10_mean"])),
+                "tone": _highlight_tone_for_spread(
+                    _as_float(row["q1_minus_q10_mean"])
+                ),
+                "detail": "overall spread",
+            }
+        )
+
+    return {
+        "title": "TOPIX100 SMA Ratio LightGBM",
+        "tags": ["TOPIX100", "sma-ratio", "lightgbm", "walk-forward"],
+        "purpose": (
+            "Check whether the existing TOPIX100 SMA-ratio feature family still "
+            "produces usable cross-sectional ranking once the hand-crafted composite "
+            "is replaced by a leak-free LightGBM ranker."
+        ),
+        "method": [
+            "Build the same TOPIX100 SMA-ratio event panel used by the baseline study.",
+            "Inside each walk-forward split, rebuild the baseline composite from train-only rows and fit LightGBM on the same train block.",
+            "Evaluate the out-of-sample Q1/Q10 spread on t_plus_1, t_plus_5, and t_plus_10, and gate the study on t_plus_5 and t_plus_10.",
+        ],
+        "resultHeadline": headline,
+        "resultBullets": result_bullets,
+        "considerations": [
+            "This remains a research bundle and does not include fees, slippage, or capacity constraints.",
+            "The notebook linked from the canonical note stays viewer-only for the baseline bundle; LightGBM reproduction runs from the dedicated runner.",
+        ],
+        "selectedParameters": [
+            {
+                "label": "Feature columns",
+                "value": ", ".join(result.feature_columns),
+            },
+            {
+                "label": "Train/Test/Step",
+                "value": (
+                    f"{result.walkforward.train_window}/"
+                    f"{result.walkforward.test_window}/"
+                    f"{result.walkforward.step}"
+                ),
+            },
+            {
+                "label": "Diagnostic fixed split",
+                "value": "included" if result.diagnostic is not None else "skipped",
+            },
+            {
+                "label": "Gate horizons",
+                "value": "t_plus_5, t_plus_10",
+            },
+        ],
+        "highlights": highlights,
+        "tableHighlights": [
+            {
+                "name": "walkforward_comparison_summary_df",
+                "label": "Overall OOS comparison",
+                "description": "Baseline and LightGBM Q1/Q10 spread by horizon on the combined walk-forward out-of-sample rows.",
+            },
+            {
+                "name": "walkforward_exploratory_gate_df",
+                "label": "Gate status",
+                "description": "Overall spread, median split spread, and positive split share for the gate horizons.",
+            },
+            {
+                "name": "walkforward_feature_importance_df",
+                "label": "Average feature importance",
+                "description": "Mean LightGBM gain importance across valid walk-forward splits.",
+            },
+            {
+                "name": "walkforward_split_spread_df",
+                "label": "Per-split spread",
+                "description": "Split-level baseline versus LightGBM OOS spread diagnostics.",
+            },
+            {
+                "name": "diagnostic_comparison_summary_df",
+                "label": "Fixed-split diagnostic",
+                "description": "Discovery / validation comparison used as a secondary reference when included.",
+            },
+        ],
+    }
+
+
+def _split_lightgbm_research_result_payload(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    base_result: Topix100SmaRatioRankFutureCloseResearchResult,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    metadata = {
+        "db_path": base_result.db_path,
+        "analysis_start_date": base_result.analysis_start_date,
+        "analysis_end_date": base_result.analysis_end_date,
+        "feature_columns": list(result.feature_columns),
+        "diagnostic_error_message": result.diagnostic_error_message,
+        "walkforward_train_window": result.walkforward.train_window,
+        "walkforward_test_window": result.walkforward.test_window,
+        "walkforward_step": result.walkforward.step,
+        "walkforward_min_split_count_for_gate": result.walkforward.min_split_count_for_gate,
+        "walkforward_positive_split_share_gate": result.walkforward.positive_split_share_gate,
+        "walkforward_overall_gate_status": result.walkforward.overall_gate_status,
+        "has_diagnostic": result.diagnostic is not None,
+        "diagnostic_discovery_end_date": (
+            result.diagnostic.discovery_end_date if result.diagnostic is not None else None
+        ),
+        "diagnostic_validation_start_date": (
+            result.diagnostic.validation_start_date
+            if result.diagnostic is not None
+            else None
+        ),
+    }
+
+    tables = {
+        f"walkforward_{field_name}": getattr(result.walkforward, field_name)
+        for field_name in _WALKFORWARD_TABLE_FIELD_NAMES
+    }
+    if result.diagnostic is None:
+        tables.update(
+            {
+                f"diagnostic_{field_name}": getattr(
+                    result.walkforward,
+                    field_name,
+                ).iloc[0:0].copy()
+                for field_name in _DIAGNOSTIC_TABLE_FIELD_NAMES
+            }
+        )
+    else:
+        tables.update(
+            {
+                f"diagnostic_{field_name}": getattr(result.diagnostic, field_name)
+                for field_name in _DIAGNOSTIC_TABLE_FIELD_NAMES
+            }
+        )
+    return metadata, tables
+
+
+def _build_lightgbm_research_result_from_payload(
+    metadata: dict[str, Any],
+    tables: dict[str, pd.DataFrame],
+) -> Topix100SmaRatioLightgbmResearchResult:
+    walkforward = Topix100SmaRatioLightgbmWalkforwardResearchResult(
+        train_window=int(metadata["walkforward_train_window"]),
+        test_window=int(metadata["walkforward_test_window"]),
+        step=int(metadata["walkforward_step"]),
+        min_split_count_for_gate=int(metadata["walkforward_min_split_count_for_gate"]),
+        positive_split_share_gate=float(
+            metadata["walkforward_positive_split_share_gate"]
+        ),
+        overall_gate_status=str(metadata["walkforward_overall_gate_status"]),
+        split_config_df=tables["walkforward_split_config_df"],
+        split_coverage_df=tables["walkforward_split_coverage_df"],
+        selected_model_df=tables["walkforward_selected_model_df"],
+        baseline_selected_feature_df=tables[
+            "walkforward_baseline_selected_feature_df"
+        ],
+        baseline_selected_composite_df=tables[
+            "walkforward_baseline_selected_composite_df"
+        ],
+        comparison_summary_df=tables["walkforward_comparison_summary_df"],
+        split_spread_df=tables["walkforward_split_spread_df"],
+        feature_importance_df=tables["walkforward_feature_importance_df"],
+        feature_importance_split_df=tables[
+            "walkforward_feature_importance_split_df"
+        ],
+        ranked_panel_df=tables["walkforward_ranked_panel_df"],
+        ranking_feature_summary_df=tables[
+            "walkforward_ranking_feature_summary_df"
+        ],
+        decile_future_summary_df=tables["walkforward_decile_future_summary_df"],
+        daily_group_means_df=tables["walkforward_daily_group_means_df"],
+        global_significance_df=tables["walkforward_global_significance_df"],
+        pairwise_significance_df=tables["walkforward_pairwise_significance_df"],
+        exploratory_gate_df=tables["walkforward_exploratory_gate_df"],
+    )
+
+    diagnostic: Topix100SmaRatioLightgbmFixedSplitDiagnostic | None = None
+    if bool(metadata.get("has_diagnostic")):
+        diagnostic = Topix100SmaRatioLightgbmFixedSplitDiagnostic(
+            discovery_end_date=str(metadata["diagnostic_discovery_end_date"]),
+            validation_start_date=str(metadata["diagnostic_validation_start_date"]),
+            selected_model_df=tables["diagnostic_selected_model_df"],
+            comparison_summary_df=tables["diagnostic_comparison_summary_df"],
+            feature_importance_df=tables["diagnostic_feature_importance_df"],
+            ranked_panel_df=tables["diagnostic_ranked_panel_df"],
+            ranking_feature_summary_df=tables["diagnostic_ranking_feature_summary_df"],
+            decile_future_summary_df=tables["diagnostic_decile_future_summary_df"],
+            daily_group_means_df=tables["diagnostic_daily_group_means_df"],
+            global_significance_df=tables["diagnostic_global_significance_df"],
+            pairwise_significance_df=tables[
+                "diagnostic_pairwise_significance_df"
+            ],
+        )
+
+    return Topix100SmaRatioLightgbmResearchResult(
+        feature_columns=tuple(str(value) for value in metadata["feature_columns"]),
+        walkforward=walkforward,
+        diagnostic=diagnostic,
+        diagnostic_error_message=cast(str | None, metadata.get("diagnostic_error_message")),
+    )
+
+
+def write_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
+    result: Topix100SmaRatioLightgbmResearchResult,
+    *,
+    base_result: Topix100SmaRatioRankFutureCloseResearchResult,
+    output_root: str | Path | None = None,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> ResearchBundleInfo:
+    return write_payload_research_bundle(
+        experiment_id=TOPIX100_SMA_RATIO_LIGHTGBM_RESEARCH_EXPERIMENT_ID,
+        module=__name__,
+        function="run_topix100_sma_ratio_rank_future_close_lightgbm_research",
+        params={
+            "start_date": base_result.analysis_start_date,
+            "end_date": base_result.analysis_end_date,
+            "lookback_years": base_result.lookback_years,
+            "min_constituents_per_day": base_result.min_constituents_per_day,
+            "train_window": result.walkforward.train_window,
+            "test_window": result.walkforward.test_window,
+            "step": result.walkforward.step,
+            "include_diagnostic": result.diagnostic is not None,
+        },
+        result=result,
+        split_result_payload=lambda current_result: _split_lightgbm_research_result_payload(
+            current_result,
+            base_result=base_result,
+        ),
+        summary_markdown=_build_research_bundle_summary_markdown(
+            result,
+            base_result=base_result,
+        ),
+        published_summary=_build_published_summary_payload(result),
+        output_root=output_root,
+        run_id=run_id,
+        notes=notes,
+    )
+
+
+def load_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
+    bundle_path: str | Path,
+) -> Topix100SmaRatioLightgbmResearchResult:
+    return load_payload_research_bundle(
+        bundle_path,
+        build_result_from_payload=_build_lightgbm_research_result_from_payload,
+        table_names=_RESULT_TABLE_NAMES,
+    )
+
+
+def get_topix100_sma_ratio_rank_future_close_lightgbm_latest_bundle_path(
+    *,
+    output_root: str | Path | None = None,
+) -> Path | None:
+    return find_latest_research_bundle_path(
+        TOPIX100_SMA_RATIO_LIGHTGBM_RESEARCH_EXPERIMENT_ID,
+        output_root=output_root,
+    )
+
+
+def get_topix100_sma_ratio_rank_future_close_lightgbm_bundle_path_for_run_id(
+    run_id: str,
+    *,
+    output_root: str | Path | None = None,
+) -> Path:
+    return get_research_bundle_dir(
+        TOPIX100_SMA_RATIO_LIGHTGBM_RESEARCH_EXPERIMENT_ID,
+        run_id,
+        output_root=output_root,
     )

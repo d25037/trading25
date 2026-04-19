@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 import src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm as lightgbm_module
+from src.domains.analytics.research_bundle import load_research_bundle_published_summary
 from src.domains.analytics.topix_rank_future_close_core import _assign_feature_deciles
 from src.domains.analytics.topix100_sma_ratio_rank_future_close import (
     HORIZON_ORDER,
@@ -16,9 +17,12 @@ from src.domains.analytics.topix100_sma_ratio_rank_future_close_lightgbm import 
     DEFAULT_WALKFORWARD_TRAIN_WINDOW,
     LIGHTGBM_LIBOMP_INSTALL_HINT,
     LIGHTGBM_RESEARCH_INSTALL_HINT,
+    get_topix100_sma_ratio_rank_future_close_lightgbm_latest_bundle_path,
     _run_fixed_split_diagnostic,
     format_topix100_sma_ratio_rank_future_close_lightgbm_notebook_error,
+    load_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle,
     run_topix100_sma_ratio_rank_future_close_lightgbm_research,
+    write_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle,
 )
 from src.domains.analytics.topix_sma_ratio_rank_future_close_selection import (
     _analyze_ranked_panel,
@@ -532,6 +536,53 @@ def test_walkforward_helper_returns_oos_comparison_and_feature_importance(
     }
     assert not fixed_split_diagnostic.comparison_summary_df.empty
     assert not fixed_split_diagnostic.feature_importance_df.empty
+
+
+def test_lightgbm_bundle_roundtrip_persists_publication_payload(
+    base_result,
+    short_walkforward_result_bundle,
+    tmp_path,
+) -> None:
+    lightgbm_result, _ = short_walkforward_result_bundle
+
+    bundle = write_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
+        lightgbm_result,
+        base_result=base_result,
+        output_root=tmp_path,
+        run_id="20260419_120000_testabcd",
+        notes="lightgbm bundle roundtrip",
+    )
+    loaded = load_topix100_sma_ratio_rank_future_close_lightgbm_research_bundle(
+        bundle.bundle_dir
+    )
+    published_summary = load_research_bundle_published_summary(bundle.bundle_dir)
+
+    assert bundle.experiment_id == "market-behavior/topix100-sma-ratio-lightgbm"
+    assert loaded.feature_columns == lightgbm_result.feature_columns
+    assert loaded.walkforward.overall_gate_status == lightgbm_result.walkforward.overall_gate_status
+    assert list(loaded.walkforward.comparison_summary_df.columns) == list(
+        lightgbm_result.walkforward.comparison_summary_df.columns
+    )
+    assert loaded.walkforward.comparison_summary_df["selected_horizon_key"].tolist() == (
+        lightgbm_result.walkforward.comparison_summary_df["selected_horizon_key"].tolist()
+    )
+    assert loaded.walkforward.comparison_summary_df["model_name"].tolist() == (
+        lightgbm_result.walkforward.comparison_summary_df["model_name"].tolist()
+    )
+    assert loaded.walkforward.comparison_summary_df["gate_status"].fillna("missing").tolist() == (
+        lightgbm_result.walkforward.comparison_summary_df["gate_status"]
+        .fillna("missing")
+        .tolist()
+    )
+    assert loaded.walkforward.comparison_summary_df["q1_minus_q10_mean"].tolist() == pytest.approx(
+        lightgbm_result.walkforward.comparison_summary_df["q1_minus_q10_mean"].tolist()
+    )
+    assert get_topix100_sma_ratio_rank_future_close_lightgbm_latest_bundle_path(
+        output_root=tmp_path
+    ) == bundle.bundle_dir
+    assert published_summary is not None
+    assert published_summary["title"] == "TOPIX100 SMA Ratio LightGBM"
+    assert published_summary["resultHeadline"]
 
 
 def test_notebook_error_formatter_surfaces_install_and_libomp_hints() -> None:
