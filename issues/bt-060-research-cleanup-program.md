@@ -1,7 +1,7 @@
 ---
 id: bt-060
 title: "research cleanup program を phase で管理する"
-status: in-progress
+status: done
 priority: high
 labels: [bt, research, refactor, workflow, testing]
 project: bt
@@ -37,8 +37,8 @@ parent: null
 - [x] notebook viewer-only guardrail checker を追加し、local prepush と CI quality に接続する。
 - [x] current violation を修正する。
 - [x] Phase 1: shared infra を concrete study から抽出する。
-- [ ] Phase 2: high-coupling family を family 単位で分解する。
-- [ ] Phase 3: notebook / publication / docs を research surface として正規化する。
+- [x] Phase 2: high-coupling family を family 単位で分解する。
+- [x] Phase 3: notebook / publication / docs を research surface として正規化する。
 
 ## Family Inventory
 
@@ -121,9 +121,14 @@ parent: null
 - 2026-04-18: `topix100_streak_353_transfer` の canonical runner を追加し、playground の runner path を実在ファイルへ揃えた。
 - 2026-04-18: Phase 1 の最初の slice として `readonly_duckdb_support.py` を追加し、event-conditioned analytics 4 module に散っていた read-only DuckDB access / snapshot fallback / date range / code normalize helper を共通化した。
 - 2026-04-19: Phase 1 を完了し、payload-based bundle helper と plot publication / latest bundle resolution helper を shared 化した。
+- 2026-04-19: Phase 2 を `bt-062` として完了し、TOPIX100 streak / LightGBM family を `feature panel / validation support / walkforward / publication` に分け、1330 conditioning family でも `event / outcome / report shaping` を family-local support へ切り出した。
+- 2026-04-19: Phase 3 を `bt-063` として完了し、research catalog から `docsReadmePath` を返す surface、canonical note の runner-first Reproduction、viewer-only notebook から dedicated runner へ辿る導線を揃えた。
+- 2026-04-19: `topix100-sma-ratio-lightgbm` には dedicated runner と bundle entry を追加し、最後に残っていた inline Python reproduction を解消した。
+- 2026-04-19: `bt-061` / `bt-062` / `bt-063` がすべて `done` となり、この cleanup program で予定していた Phase 0-3 は一巡完了した。
 
 ## 補足
 - 既存の近い前提: `issues/done/bt-049-analytics-research-refactor-program.md`
 - workflow SoT: `.codex/skills/bt-research-workflow/SKILL.md`
 - notebook/viewer SoT: `apps/bt/src/shared/research_notebook_viewer.py`
 - child issue: `bt-061` / `bt-062` / `bt-063`
+- 終了条件: child issue 完了に伴い、本 parent issue も close。
