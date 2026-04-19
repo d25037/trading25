@@ -7842,6 +7842,8 @@ export interface components {
             analysisStartDate?: string | null;
             /** Createdat */
             createdAt: string;
+            /** Docsreadmepath */
+            docsReadmePath?: string | null;
             /** Experimentid */
             experimentId: string;
             /** Gitcommit */

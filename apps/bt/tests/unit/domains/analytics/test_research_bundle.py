@@ -12,12 +12,14 @@ from src.domains.analytics.research_bundle import (
     build_research_run_id,
     find_latest_research_bundle_path,
     get_research_bundle_dir,
+    get_research_experiment_docs_readme_path,
     list_research_bundle_infos,
     load_dataclass_research_bundle,
     load_payload_research_bundle,
     load_research_bundle_info,
     load_research_bundle_published_summary,
     load_research_bundle_tables,
+    resolve_research_experiment_docs_readme_path,
     resolve_optional_bundle_path,
     resolve_required_bundle_path,
     write_bundle_artifact,
@@ -175,6 +177,25 @@ def test_find_latest_research_bundle_path_prefers_latest_mtime(tmp_path: Path) -
 
     assert latest == second.bundle_dir
     assert latest != first.bundle_dir
+
+
+def test_research_experiment_docs_readme_path_helpers() -> None:
+    docs_path = get_research_experiment_docs_readme_path(
+        "market-behavior/topix-gap-intraday-distribution"
+    )
+
+    assert docs_path.name == "README.md"
+    assert docs_path.is_file()
+    assert (
+        resolve_research_experiment_docs_readme_path(
+            "market-behavior/topix-gap-intraday-distribution"
+        )
+        == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
+    )
+    assert (
+        resolve_research_experiment_docs_readme_path("market-behavior/does-not-exist")
+        is None
+    )
 
 
 def test_get_research_bundle_dir_and_run_id_helpers(tmp_path: Path) -> None:

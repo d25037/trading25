@@ -35,6 +35,7 @@ def _to_catalog_item(entry: ResearchCatalogEntry) -> ResearchCatalogItem:
         title=entry.title,
         objective=entry.objective,
         headline=entry.headline,
+        docsReadmePath=entry.docs_readme_path,
         createdAt=entry.created_at,
         analysisStartDate=entry.analysis_start_date,
         analysisEndDate=entry.analysis_end_date,

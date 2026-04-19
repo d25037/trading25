@@ -10926,6 +10926,17 @@
             "title": "Createdat",
             "type": "string"
           },
+          "docsReadmePath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docsreadmepath"
+          },
           "experimentId": {
             "title": "Experimentid",
             "type": "string"

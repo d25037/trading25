@@ -47,6 +47,7 @@ class ResearchCatalogItem(BaseModel):
     title: str
     objective: str | None = None
     headline: str | None = None
+    docsReadmePath: str | None = None
     createdAt: str
     analysisStartDate: str | None = None
     analysisEndDate: str | None = None

@@ -50,24 +50,14 @@ TOPIX の寄り付き gap を event day として bucket 化し、個別銘柄�
 ## 再現方法
 
 ```bash
-uv run --project apps/bt python - <<'PY'
-from src.domains.analytics.topix_gap_intraday_distribution import (
-    get_topix_gap_return_stats,
-    run_topix_gap_intraday_distribution,
-)
-
-db_path = "~/.local/share/trading25/market-timeseries/market.duckdb"
-stats = get_topix_gap_return_stats(db_path, sigma_threshold_1=1.0, sigma_threshold_2=2.0)
-result = run_topix_gap_intraday_distribution(
-    db_path,
-    gap_threshold_1=stats.threshold_1,
-    gap_threshold_2=stats.threshold_2,
-    sample_size=0,
-)
-print(result.summary_df)
-print(result.rotation_overall_summary_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_topix_gap_intraday_distribution.py \
+  --sample-size 0
 ```
+
+この command は
+`~/.local/share/trading25/research/market-behavior/topix-gap-intraday-distribution/<run_id>/`
+へ bundle を保存します。
 
 Notebook で確認する場合:
 

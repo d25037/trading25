@@ -45,23 +45,14 @@ TOPIX の当日引け変動を event day として bucket 化し、個別銘柄�
 ## Reproduction
 
 ```bash
-uv run --project apps/bt python - <<'PY'
-from src.domains.analytics.topix_close_stock_overnight_distribution import (
-    get_topix_close_return_stats,
-    run_topix_close_stock_overnight_distribution,
-)
-
-db_path = "~/.local/share/trading25/market-timeseries/market.duckdb"
-stats = get_topix_close_return_stats(db_path, sigma_threshold_1=1.0, sigma_threshold_2=2.0)
-result = run_topix_close_stock_overnight_distribution(
-    db_path,
-    close_threshold_1=stats.threshold_1,
-    close_threshold_2=stats.threshold_2,
-    sample_size=0,
-)
-print(result.summary_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_topix_close_stock_overnight_distribution.py \
+  --sample-size 0
 ```
+
+この command は
+`~/.local/share/trading25/research/market-behavior/topix-close-stock-overnight/<run_id>/`
+へ bundle を保存します。
 
 Notebook で確認する場合:
 

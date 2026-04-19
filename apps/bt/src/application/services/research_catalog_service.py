@@ -8,6 +8,7 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     list_research_bundle_infos,
     load_research_bundle_published_summary,
+    resolve_research_experiment_docs_readme_path,
 )
 
 MetricTone = Literal["neutral", "accent", "success", "warning", "danger"]
@@ -55,6 +56,7 @@ class ResearchCatalogEntry:
     title: str
     objective: str | None
     headline: str | None
+    docs_readme_path: str | None
     created_at: str
     analysis_start_date: str | None
     analysis_end_date: str | None
@@ -161,6 +163,7 @@ def _build_catalog_entry(info: ResearchBundleInfo) -> ResearchCatalogEntry:
         title=title,
         objective=objective,
         headline=headline,
+        docs_readme_path=resolve_research_experiment_docs_readme_path(info.experiment_id),
         created_at=info.created_at,
         analysis_start_date=info.analysis_start_date,
         analysis_end_date=info.analysis_end_date,

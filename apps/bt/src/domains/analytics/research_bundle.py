@@ -21,6 +21,9 @@ RESULTS_DB_FILENAME = "results.duckdb"
 SUMMARY_FILENAME = "summary.md"
 PUBLISHED_SUMMARY_FILENAME = "summary.json"
 DEFAULT_RESEARCH_ROOT_NAME = "research"
+_BT_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_DOCS_EXPERIMENTS_ROOT = _BT_PROJECT_ROOT / "docs" / "experiments"
 BundleResultT = TypeVar("BundleResultT")
 
 
@@ -113,6 +116,19 @@ def get_research_bundle_dir(
     output_root: str | Path | None = None,
 ) -> Path:
     return get_research_experiment_dir(experiment_id, output_root=output_root) / run_id
+
+
+def get_research_experiment_docs_readme_path(experiment_id: str) -> Path:
+    return _DOCS_EXPERIMENTS_ROOT / experiment_id / "README.md"
+
+
+def resolve_research_experiment_docs_readme_path(
+    experiment_id: str,
+) -> str | None:
+    docs_readme_path = get_research_experiment_docs_readme_path(experiment_id)
+    if not docs_readme_path.is_file():
+        return None
+    return docs_readme_path.relative_to(_REPO_ROOT).as_posix()
 
 
 def find_latest_research_bundle_path(

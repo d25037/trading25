@@ -58,22 +58,13 @@
 ## Reproduction
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python - <<'PY'
-from src.shared.config.settings import get_settings
-from src.domains.analytics.hedge_1357_nt_ratio_topix import (
-    run_1357_nt_ratio_topix_hedge_research,
-)
-
-result = run_1357_nt_ratio_topix_hedge_research(get_settings().market_db_path)
-print(result.shortlist_df)
-print(
-    result.joint_forward_summary_df[
-        (result.joint_forward_summary_df["split"] == "overall")
-        & (result.joint_forward_summary_df["target_name"] == "next_close_to_close")
-    ]
-)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_1357_nt_ratio_topix_hedge.py
 ```
+
+この command は
+`~/.local/share/trading25/research/market-behavior/1357-nt-ratio-topix-hedge/<run_id>/`
+へ bundle を保存します。
 
 Notebook で確認する場合:
 

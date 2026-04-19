@@ -51,21 +51,14 @@
 ## Reproduction
 
 ```bash
-uv run --project apps/bt python - <<'PY'
-import sys
-sys.path.insert(0, "apps/bt")
-
-from src.domains.analytics.stock_intraday_overnight_share import (
-    run_stock_intraday_overnight_share_analysis,
-)
-
-result = run_stock_intraday_overnight_share_analysis(
-    "~/.local/share/trading25/market-timeseries/market.duckdb",
-    min_session_count=60,
-)
-print(result.group_summary_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_stock_intraday_overnight_share.py \
+  --min-session-count 60
 ```
+
+この command は
+`~/.local/share/trading25/research/market-behavior/stock-intraday-overnight-share/<run_id>/`
+へ bundle を保存します。
 
 Notebook で確認する場合:
 

@@ -52,19 +52,14 @@ NT 倍率の前日比を event day として z-score bucket 化し、個別銘�
 ## Reproduction
 
 ```bash
-uv run --project apps/bt python - <<'PY'
-from src.domains.analytics.nt_ratio_change_stock_overnight_distribution import (
-    run_nt_ratio_change_stock_overnight_distribution,
-)
-
-result = run_nt_ratio_change_stock_overnight_distribution(
-    "~/.local/share/trading25/market-timeseries/market.duckdb",
-    sample_size=0,
-)
-print(result.nt_ratio_stats)
-print(result.summary_df)
-PY
+UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
+  apps/bt/scripts/research/run_nt_ratio_change_stock_overnight_distribution.py \
+  --sample-size 0
 ```
+
+この command は
+`~/.local/share/trading25/research/market-behavior/nt-ratio-change-stock-overnight/<run_id>/`
+へ bundle を保存します。
 
 Notebook で確認する場合:
 

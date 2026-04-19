@@ -31,7 +31,7 @@ def research_client(tmp_path: Path) -> TestClient:
     reload_settings()
 
     write_research_bundle(
-        experiment_id="market-behavior/published-alpha",
+        experiment_id="market-behavior/topix-gap-intraday-distribution",
         module="tests.alpha",
         function="run_alpha",
         params={"window": 3},
@@ -56,7 +56,7 @@ def research_client(tmp_path: Path) -> TestClient:
         run_id="20260405_100000_alpha0001",
     )
     write_research_bundle(
-        experiment_id="market-behavior/published-alpha",
+        experiment_id="market-behavior/topix-gap-intraday-distribution",
         module="tests.alpha",
         function="run_alpha",
         params={"window": 5},
@@ -81,7 +81,7 @@ def research_client(tmp_path: Path) -> TestClient:
         run_id="20260405_110000_alpha0002",
     )
     write_research_bundle(
-        experiment_id="market-behavior/unstructured-beta",
+        experiment_id="market-behavior/topix-close-stock-overnight",
         module="tests.beta",
         function="run_beta",
         params={"window": 8},
@@ -116,20 +116,32 @@ def test_list_research_catalog_returns_latest_per_experiment(
     payload = response.json()
     assert "lastUpdated" in payload
     assert [item["experimentId"] for item in payload["items"]] == [
-        "market-behavior/unstructured-beta",
-        "market-behavior/published-alpha",
+        "market-behavior/topix-close-stock-overnight",
+        "market-behavior/topix-gap-intraday-distribution",
     ]
     published_item = next(
-        item for item in payload["items"] if item["experimentId"] == "market-behavior/published-alpha"
+        item
+        for item in payload["items"]
+        if item["experimentId"] == "market-behavior/topix-gap-intraday-distribution"
     )
     assert published_item["runId"] == "20260405_110000_alpha0002"
     assert published_item["title"] == "Alpha Research Latest"
     assert published_item["hasStructuredSummary"] is True
+    assert (
+        published_item["docsReadmePath"]
+        == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
+    )
     fallback_item = next(
-        item for item in payload["items"] if item["experimentId"] == "market-behavior/unstructured-beta"
+        item
+        for item in payload["items"]
+        if item["experimentId"] == "market-behavior/topix-close-stock-overnight"
     )
     assert fallback_item["title"] == "Beta Research"
     assert fallback_item["hasStructuredSummary"] is False
+    assert (
+        fallback_item["docsReadmePath"]
+        == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
+    )
 
 
 def test_get_research_detail_returns_structured_summary_and_run_history(
@@ -137,12 +149,16 @@ def test_get_research_detail_returns_structured_summary_and_run_history(
 ) -> None:
     response = research_client.get(
         "/api/analytics/research/detail",
-        params={"experimentId": "market-behavior/published-alpha"},
+        params={"experimentId": "market-behavior/topix-gap-intraday-distribution"},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["item"]["runId"] == "20260405_110000_alpha0002"
+    assert (
+        payload["item"]["docsReadmePath"]
+        == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
+    )
     assert payload["summary"]["title"] == "Alpha Research Latest"
     assert payload["summary"]["purpose"] == "Latest alpha purpose."
     assert payload["summary"]["resultHeadline"] == "Latest alpha headline"
@@ -160,12 +176,16 @@ def test_get_research_detail_returns_markdown_fallback_for_unstructured_bundle(
 ) -> None:
     response = research_client.get(
         "/api/analytics/research/detail",
-        params={"experimentId": "market-behavior/unstructured-beta"},
+        params={"experimentId": "market-behavior/topix-close-stock-overnight"},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["item"]["title"] == "Beta Research"
+    assert (
+        payload["item"]["docsReadmePath"]
+        == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
+    )
     assert payload["summary"] is None
     assert payload["summaryMarkdown"].startswith("# Beta Research")
     assert payload["outputTables"] == ["summary_df"]
