@@ -44,3 +44,11 @@
   - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
 - [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)
   - `stop_low × intraday_range` の翌日引け確認後に買う buy-only 枝を、trade-level と同日等ウェイト portfolio lens の両方で読む実験。
+- [market-behavior/speculative-volume-surge-follow-on/](./market-behavior/speculative-volume-surge-follow-on/README.md)
+  - `+10% close × 10x volume` の speculative surge episode をまとめ、初動の伸びと後日 breakout / secondary surge の関係を見る実験。
+- [market-behavior/speculative-volume-surge-pullback-edge/](./market-behavior/speculative-volume-surge-pullback-edge/README.md)
+  - 初回 surge 後の pullback close が `surge 前日 close` 比でどこにいると、その後の upside/downside 非対称性が良いかを見る実験。
+- [market-behavior/speculative-volume-surge-prime-pullback-profile/](./market-behavior/speculative-volume-surge-prime-pullback-profile/README.md)
+  - `プライム` surge を `1 episode = 1 deepest-pullback label` に落とし、浅い continuation と深い押しの close return / asymmetry を比較する実験。
+- [market-behavior/speculative-volume-surge-prime-pullback-tradeable/](./market-behavior/speculative-volume-surge-prime-pullback-tradeable/README.md)
+  - `プライム` surge の first-pullback entry を `0-10% / 10-20%` で執行し、`20営業日 hold or peak reclaim` の tradeable return と deepest-family alignment を見る実験。
