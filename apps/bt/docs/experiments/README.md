@@ -40,3 +40,7 @@
   - TOPIX を long-only で持つ前提で、downside return standard deviation と trend / breadth confirmation を使う fixed overlay を committee 化し、walk-forward と pure OOS で評価する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。
+- [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)
+  - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
+- [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)
+  - `stop_low × intraday_range` の翌日引け確認後に買う buy-only 枝を、trade-level と同日等ウェイト portfolio lens の両方で読む実験。
