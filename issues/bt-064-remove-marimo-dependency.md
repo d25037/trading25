@@ -33,14 +33,14 @@ parent: null
 - 移行中も `BacktestResult.html_path` と `/api/backtest/result/{id}` の成果物契約は維持する。
 
 ## 実施計画
-- [ ] Phase 1: backtest report renderer の抽象を作る
+- [x] Phase 1: backtest report renderer の抽象を作る
   - `ReportRenderer` 相当の interface を追加する。
   - 現行 `MarimoExecutor.plan_report_paths(...)` の path planning を marimo 非依存の helper に移す。
   - `BacktestRunner` は `report_payload.json` から HTML を生成する renderer を呼ぶ。
 - [ ] Phase 2: marimo 非依存 HTML renderer を実装する
-  - `apps/bt/notebooks/templates/strategy_analysis.py` の表示責務を、payload-driven な HTML renderer に移す。
-  - `result.html` は metrics / manifest / report payload を読む静的 HTML とし、失敗時も manifest の `report_status` / `render_error` を維持する。
-  - `tests/unit/backtest/test_marimo_executor.py` は renderer path / artifact path / timeout ではなく、新 renderer の入出力契約テストへ置き換える。
+  - [x] `apps/bt/notebooks/templates/strategy_analysis.py` の表示責務を、payload-driven な HTML renderer に移す。
+  - [x] `result.html` は metrics / manifest / report payload を読む静的 HTML とし、失敗時も manifest の `report_status` / `render_error` を維持する。
+  - [ ] `tests/unit/backtest/test_marimo_executor.py` は renderer path / artifact path / timeout ではなく、新 renderer の入出力契約テストへ置き換える。
 - [ ] Phase 3: optimization report を notebook generator から外す
   - `apps/bt/src/domains/optimization/notebook_generator.py` を `optimization_report_renderer.py` へ置き換える。
   - `apps/bt/notebooks/templates/optimization_analysis.py` 依存を削除する。
@@ -61,6 +61,13 @@ parent: null
 - [ ] `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` が既存成果物から summary を再解決できる。
 - [ ] research runner / bundle / canonical note の再現導線が notebook runtime に依存しない。
 - [ ] `apps/bt/pyproject.toml` と `apps/bt/uv.lock` に marimo が残っていない。
+
+## 進捗
+- 2026-04-22: `apps/bt/src/domains/backtest/core/report_renderer.py` を追加し、artifact path planning と payload-driven static HTML rendering を marimo 非依存に分離した。
+- 2026-04-22: `BacktestRunner` は `MarimoExecutor` ではなく `StaticHtmlReportRenderer` を使って `result.html` を生成するように変更した。`metrics.json` / manifest / simulation payload / report payload の bt-046 契約は維持した。
+- 2026-04-22: Nautilus verification の artifact path planning も `BacktestReportPathPlanner` へ切り替えた。report は従来通り `not_requested` のまま。
+- 2026-04-22: `BacktestArtifactWriter` の report renderer metadata を `static_html` に更新し、manifest の versions から marimo version を外した。
+- 2026-04-22: `tests/unit/backtest/test_backtest_runner.py` を static renderer 前提へ更新し、`tests/unit/backtest/test_report_renderer.py` を追加した。
 
 ## 注意点
 - 一括削除は blast radius が大きい。まず renderer 分離で `BacktestRunner` の report rendering を差し替え、その後 notebook / docs / tests を削る。

@@ -17,8 +17,9 @@ import pandas as pd
 import pytest
 
 from src.infrastructure.external_api.client import BaseAPIClient
+from src.infrastructure.data_access.mode import get_data_access_mode
 from src.domains.backtest.core.runner import BacktestRunner
-from src.domains.backtest.core.marimo_executor import BacktestReportPaths
+from src.domains.backtest.core.report_renderer import BacktestReportPaths
 
 
 class _FakeMetricValue:
@@ -82,13 +83,13 @@ def _fake_simulation_result() -> dict[str, Any]:
     }
 
 
-class _FakeExecutor:
+class _FakeRenderer:
     def __init__(self, output_dir: str) -> None:
         self.output_dir = output_dir
-        self.executed_template_path = None
-        self.executed_strategy_name = None
-        self.executed_extra_env = None
-        self.execution_metadata = None
+        self.rendered_strategy_name = None
+        self.rendered_dataset_name = None
+        self.rendered_parameters = None
+        self.rendered_report_payload_path = None
 
     def plan_report_paths(
         self,
@@ -106,32 +107,34 @@ class _FakeExecutor:
             report_payload_path=html_path.with_suffix(".report.json"),
         )
 
-    def execute_notebook(
+    def render_report(
         self,
-        template_path: str,
-        parameters: dict,
+        *,
+        report_payload_path: Path,
+        html_path: Path,
         strategy_name: str,
-        extra_env: dict[str, str] | None = None,
-        html_path: Path | None = None,
-        execution_metadata: dict[str, str] | None = None,
+        dataset_name: str,
+        metrics_path: Path | None = None,
+        manifest_path: Path | None = None,
+        parameters: dict[str, Any] | None = None,
     ):
-        self.executed_template_path = template_path
-        self.executed_strategy_name = strategy_name
-        self.executed_extra_env = extra_env
-        self.execution_metadata = execution_metadata
-        resolved_html_path = html_path or Path(self.output_dir) / "result.html"
-        resolved_html_path.write_text("<html></html>", encoding="utf-8")
-        return resolved_html_path
+        _ = (metrics_path, manifest_path)
+        self.rendered_strategy_name = strategy_name
+        self.rendered_dataset_name = dataset_name
+        self.rendered_parameters = parameters
+        self.rendered_report_payload_path = report_payload_path
+        html_path.write_text("<html></html>", encoding="utf-8")
+        return html_path
 
 
 def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
     runner = BacktestRunner()
 
-    fake_executor = _FakeExecutor(str(tmp_path))
+    fake_renderer = _FakeRenderer(str(tmp_path))
 
-    def _fake_executor_factory(output_dir: str):
+    def _fake_renderer_factory(output_dir: str):
         assert output_dir == str(tmp_path)
-        return fake_executor
+        return fake_renderer
 
     # ConfigLoaderの呼び出しを差し替え
     monkeypatch.setattr(
@@ -156,8 +159,8 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        _fake_executor_factory,
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        _fake_renderer_factory,
     )
     monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
 
@@ -166,17 +169,15 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
     assert result.html_path.exists()
     assert result.metrics_path is not None and result.metrics_path.exists()
     assert result.report_payload_path is not None and result.report_payload_path.exists()
-    assert fake_executor.executed_template_path == "custom_template.py"
-    assert fake_executor.executed_strategy_name == "test_strategy"
-    assert fake_executor.executed_extra_env == {"BT_DATA_ACCESS_MODE": "direct"}
-    assert fake_executor.execution_metadata is not None
-    assert "simulation_payload_path" in fake_executor.execution_metadata
-    assert "report_payload_path" in fake_executor.execution_metadata
+    assert fake_renderer.rendered_strategy_name == "test_strategy"
+    assert fake_renderer.rendered_dataset_name == "sample"
+    assert fake_renderer.rendered_parameters is not None
+    assert fake_renderer.rendered_report_payload_path == result.report_payload_path
 
 
 def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
     runner = BacktestRunner()
-    fake_executor = _FakeExecutor(str(tmp_path))
+    fake_renderer = _FakeRenderer(str(tmp_path))
 
     monkeypatch.setattr(
         runner.config_loader,
@@ -194,15 +195,17 @@ def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: fake_executor,
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: fake_renderer,
     )
-    monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
+
+    def _simulate(_parameters):
+        assert get_data_access_mode() == "http"
+        return _fake_simulation_result()
+
+    monkeypatch.setattr(runner, "_execute_simulation", _simulate)
 
     runner.execute("production/test_strategy", data_access_mode="http")
-
-    assert fake_executor.executed_extra_env is not None
-    assert fake_executor.executed_extra_env.get("BT_DATA_ACCESS_MODE") == "http"
 
 
 def test_backtest_runner_default_direct_mode_bypasses_http_requests(
@@ -235,7 +238,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
 
     monkeypatch.setattr(BaseAPIClient, "_request", _fail_http_request)
 
-    fake_executor = _FakeExecutor(str(tmp_path))
+    fake_renderer = _FakeRenderer(str(tmp_path))
 
     monkeypatch.setattr(
         runner.config_loader,
@@ -253,8 +256,8 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: fake_executor,
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: fake_renderer,
     )
     def _simulate(_parameters):
         from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
@@ -267,7 +270,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
 
     runner.execute("production/test_strategy")
 
-    assert fake_executor.executed_extra_env == {"BT_DATA_ACCESS_MODE": "direct"}
+    assert fake_renderer.rendered_strategy_name == "test_strategy"
 
 
 def test_backtest_runner_progress_callback_and_walk_forward_manifest(
@@ -275,7 +278,7 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
     tmp_path: Path,
 ):
     runner = BacktestRunner()
-    fake_executor = _FakeExecutor(str(tmp_path))
+    fake_renderer = _FakeRenderer(str(tmp_path))
     statuses: list[str] = []
 
     monkeypatch.setattr(
@@ -294,8 +297,8 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: fake_executor,
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: fake_renderer,
     )
     monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
     monkeypatch.setattr(
@@ -323,23 +326,26 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
 def test_backtest_runner_preserves_core_artifacts_when_html_render_fails(monkeypatch, tmp_path: Path):
     runner = BacktestRunner()
 
-    class _MissingHtmlExecutor(_FakeExecutor):
-        def execute_notebook(
+    class _MissingHtmlRenderer(_FakeRenderer):
+        def render_report(
             self,
-            template_path: str,
-            parameters: dict[str, Any],
+            *,
+            report_payload_path: Path,
+            html_path: Path,
             strategy_name: str,
-            extra_env: dict[str, str] | None = None,
-            html_path: Path | None = None,
-            execution_metadata: dict[str, str] | None = None,
+            dataset_name: str,
+            metrics_path: Path | None = None,
+            manifest_path: Path | None = None,
+            parameters: dict[str, Any] | None = None,
         ) -> Path:
             _ = (
-                template_path,
-                parameters,
-                strategy_name,
-                extra_env,
+                report_payload_path,
                 html_path,
-                execution_metadata,
+                strategy_name,
+                dataset_name,
+                metrics_path,
+                manifest_path,
+                parameters,
             )
             raise RuntimeError("HTML file was not created")
 
@@ -359,8 +365,8 @@ def test_backtest_runner_preserves_core_artifacts_when_html_render_fails(monkeyp
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: _MissingHtmlExecutor(str(tmp_path)),
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: _MissingHtmlRenderer(str(tmp_path)),
     )
     monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
 
@@ -378,7 +384,7 @@ def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
     tmp_path: Path,
 ):
     runner = BacktestRunner()
-    fake_executor = _FakeExecutor(str(tmp_path))
+    fake_renderer = _FakeRenderer(str(tmp_path))
 
     monkeypatch.setattr(
         runner.config_loader,
@@ -396,8 +402,8 @@ def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: fake_executor,
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: fake_renderer,
     )
     monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
     monkeypatch.setattr(
@@ -461,8 +467,8 @@ def test_backtest_runner_elapsed_time_includes_report_render_time(monkeypatch, t
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.domains.backtest.core.runner.MarimoExecutor",
-        lambda _output_dir: _FakeExecutor(str(tmp_path)),
+        "src.domains.backtest.core.runner.StaticHtmlReportRenderer",
+        lambda _output_dir: _FakeRenderer(str(tmp_path)),
     )
     monkeypatch.setattr(runner, "_execute_simulation", lambda _parameters: _fake_simulation_result())
 

@@ -111,7 +111,7 @@ class BacktestArtifactWriter:
                 ),
             },
             "report": {
-                "renderer": "marimo_html",
+                "renderer": "static_html",
                 "status": report_status,
                 "html_path": str(html_path) if html_path else None,
                 "render_time": report_render_time,
@@ -123,7 +123,6 @@ class BacktestArtifactWriter:
             "versions": {
                 "python": self._get_package_version("python"),
                 "vectorbt": self._get_package_version("vectorbt"),
-                "marimo": self._get_package_version("marimo"),
                 "pydantic": self._get_package_version("pydantic"),
             },
             "git_commit": self._get_git_commit(),

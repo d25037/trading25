@@ -19,7 +19,7 @@ from loguru import logger
 
 from src.domains.backtest.contracts import CanonicalExecutionMetrics, EngineFamily, RunSpec
 from src.domains.backtest.core.artifacts import BacktestArtifactWriter
-from src.domains.backtest.core.marimo_executor import MarimoExecutor
+from src.domains.backtest.core.report_renderer import BacktestReportPathPlanner
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
 from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
@@ -907,7 +907,7 @@ class NautilusVerificationRunner:
         executor_output_dir = self._vectorbt_runner.config_loader.get_output_directory(
             strategy_config
         )
-        report_paths = MarimoExecutor(str(executor_output_dir)).plan_report_paths(
+        report_paths = BacktestReportPathPlanner(str(executor_output_dir)).plan_report_paths(
             parameters,
             strategy_name_only,
             output_filename=f"{strategy_name_only}_{run_id[:8]}_nautilus",

@@ -16,7 +16,6 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.infrastructure.data_access.mode import (
-    DATA_ACCESS_MODE_ENV,
     data_access_mode_context,
     normalize_data_access_mode,
 )
@@ -25,7 +24,10 @@ from src.domains.backtest.core.artifacts import (
     build_metrics_payload as build_backtest_metrics_payload,
 )
 from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
-from src.domains.backtest.core.marimo_executor import BacktestReportPaths, MarimoExecutor
+from src.domains.backtest.core.report_renderer import (
+    BacktestReportPaths,
+    StaticHtmlReportRenderer,
+)
 from src.domains.backtest.core.report_payload import (
     build_backtest_report_payload,
     write_backtest_report_payload,
@@ -132,13 +134,11 @@ class BacktestRunner:
             dataset_name = shared_config.get("dataset", "unknown")
 
             executor_output_dir = self.config_loader.get_output_directory(strategy_config)
-            executor = MarimoExecutor(str(executor_output_dir))
-            template_path = str(self.config_loader.get_template_notebook_path(strategy_config))
-            report_paths = executor.plan_report_paths(parameters, strategy_name_only)
+            report_renderer = StaticHtmlReportRenderer(str(executor_output_dir))
+            report_paths = report_renderer.plan_report_paths(parameters, strategy_name_only)
 
             logger.debug(f"バックテスト実行開始: strategy={strategy_name_only}")
             logger.debug(f"出力ディレクトリ: {executor_output_dir}")
-            logger.debug(f"テンプレートパス: {template_path}")
 
             notify("バックテストを実行中...")
 
@@ -186,11 +186,10 @@ class BacktestRunner:
             notify("レポートを描画中...")
 
             html_path, report_status, render_error, report_render_time = self._render_report(
-                executor=executor,
-                template_path=template_path,
+                renderer=report_renderer,
                 parameters=parameters,
                 strategy_name=strategy_name_only,
-                data_access_mode=resolved_mode,
+                dataset_name=dataset_name,
                 report_paths=report_paths,
             )
             total_elapsed_time = time.time() - start_time
@@ -357,11 +356,10 @@ class BacktestRunner:
     def _render_report(
         self,
         *,
-        executor: MarimoExecutor,
-        template_path: str,
+        renderer: StaticHtmlReportRenderer,
         parameters: dict[str, Any],
         strategy_name: str,
-        data_access_mode: str,
+        dataset_name: str,
         report_paths: BacktestReportPaths,
     ) -> tuple[Path | None, str, str | None, float]:
         html_path: Path | None = None
@@ -369,18 +367,16 @@ class BacktestRunner:
         report_status = "completed"
         render_started_at = time.time()
         try:
-            rendered_html_path = executor.execute_notebook(
-                template_path=template_path,
-                parameters=parameters,
-                strategy_name=strategy_name,
-                extra_env={DATA_ACCESS_MODE_ENV: data_access_mode},
+            if report_paths.report_payload_path is None:
+                raise RuntimeError("report payload path is required for HTML rendering")
+            rendered_html_path = renderer.render_report(
+                report_payload_path=report_paths.report_payload_path,
                 html_path=report_paths.html_path,
-                execution_metadata={
-                    "simulation_payload_path": str(report_paths.simulation_payload_path),
-                    "report_payload_path": str(report_paths.report_payload_path)
-                    if report_paths.report_payload_path is not None
-                    else "",
-                },
+                strategy_name=strategy_name,
+                dataset_name=dataset_name,
+                metrics_path=report_paths.metrics_path,
+                manifest_path=report_paths.manifest_path,
+                parameters=parameters,
             )
             if rendered_html_path.exists():
                 html_path = rendered_html_path
