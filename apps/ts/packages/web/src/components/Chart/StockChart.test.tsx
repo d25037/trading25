@@ -61,12 +61,21 @@ const mockChartStore = {
     tradingValueMA: {
       period: 15,
     },
+    accumulationFlow: {
+      cmfPeriod: 20,
+      chaikinFastPeriod: 3,
+      chaikinSlowPeriod: 10,
+      obvLookbackPeriod: 20,
+    },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
       ratioType: 'sortino' as const,
       threshold: 1.0,
       condition: 'above' as const,
     },
+    showCMF: false,
+    showChaikinOscillator: false,
+    showOBVFlowScore: false,
     showRiskAdjustedReturnChart: false,
     signalOverlay: {
       enabled: false,

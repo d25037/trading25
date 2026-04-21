@@ -122,6 +122,24 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
   if (settings.showTradingValueMA) {
     specs.push({ type: 'trading_value_ma', params: { period: settings.tradingValueMA.period } });
   }
+  if (settings.showCMF) {
+    specs.push({ type: 'cmf', params: { period: settings.accumulationFlow.cmfPeriod } });
+  }
+  if (settings.showChaikinOscillator) {
+    specs.push({
+      type: 'chaikin_oscillator',
+      params: {
+        fast_period: settings.accumulationFlow.chaikinFastPeriod,
+        slow_period: settings.accumulationFlow.chaikinSlowPeriod,
+      },
+    });
+  }
+  if (settings.showOBVFlowScore) {
+    specs.push({
+      type: 'obv_flow_score',
+      params: { lookback_period: settings.accumulationFlow.obvLookbackPeriod },
+    });
+  }
   if (settings.showRiskAdjustedReturnChart) {
     specs.push({
       type: 'risk_adjusted_return',
@@ -242,6 +260,15 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
   {
     prefix: 'trading_value_ma_',
     transform: (r) => ({ target: 'tradingValueMA', data: transformTradingValueMARecords(r) }),
+  },
+  { prefix: 'cmf_', transform: (r) => ({ target: 'indicator', name: 'cmf', data: transformSingleValueRecords(r) }) },
+  {
+    prefix: 'chaikin_oscillator_',
+    transform: (r) => ({ target: 'indicator', name: 'chaikinOscillator', data: transformSingleValueRecords(r) }),
+  },
+  {
+    prefix: 'obv_flow_score_',
+    transform: (r) => ({ target: 'indicator', name: 'obvFlowScore', data: transformSingleValueRecords(r) }),
   },
   {
     prefix: 'risk_adjusted_return_',

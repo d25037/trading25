@@ -422,6 +422,24 @@ class TestSignalRegistry:
         assert sig.category == "volatility"
         assert sig.data_requirements == ["ohlc"]
 
+    def test_accumulation_flow_signals_registered(self) -> None:
+        expected = {
+            "cmf_threshold",
+            "chaikin_oscillator",
+            "obv_flow_score",
+            "accumulation_pressure",
+        }
+        matches = {
+            s.param_key: s
+            for s in SIGNAL_REGISTRY
+            if s.param_key in expected
+        }
+
+        assert set(matches) == expected
+        for sig in matches.values():
+            assert sig.category == "volume"
+            assert sig.data_requirements == ["ohlc", "volume"]
+
 
 class TestFundamentalAdjustedSelection:
     def _get_signal(self, param_key: str):

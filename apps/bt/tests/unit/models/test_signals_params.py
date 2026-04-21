@@ -36,6 +36,10 @@ from src.shared.models.signals.volatility import (
     VolatilityPercentileSignalParams,
 )
 from src.shared.models.signals.volume import (
+    AccumulationPressureSignalParams,
+    ChaikinOscillatorSignalParams,
+    CMFThresholdSignalParams,
+    OBVFlowScoreSignalParams,
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
     VolumeRatioAboveSignalParams,
@@ -159,6 +163,35 @@ class TestTradingValueRangeSignalParams:
     def test_invalid_range(self) -> None:
         with pytest.raises(ValidationError, match="最大閾値"):
             TradingValueRangeSignalParams(min_threshold=100.0, max_threshold=50.0)
+
+
+class TestAccumulationFlowSignalParams:
+    def test_cmf_defaults(self) -> None:
+        p = CMFThresholdSignalParams()
+        assert p.period == 20
+        assert p.threshold == 0.05
+        assert p.condition == "above"
+
+    def test_flow_score_defaults(self) -> None:
+        chaikin = ChaikinOscillatorSignalParams()
+        assert chaikin.fast_period == 3
+        assert chaikin.slow_period == 10
+        assert chaikin.threshold == 0.0
+        assert OBVFlowScoreSignalParams().threshold == 0.05
+
+    def test_chaikin_invalid_period_order(self) -> None:
+        with pytest.raises(ValidationError, match="長期期間"):
+            ChaikinOscillatorSignalParams(fast_period=10, slow_period=3)
+
+    def test_invalid_condition(self) -> None:
+        with pytest.raises(ValidationError, match="condition"):
+            CMFThresholdSignalParams(condition="equal")
+
+    def test_accumulation_pressure_min_votes(self) -> None:
+        p = AccumulationPressureSignalParams(min_votes=2)
+        assert p.min_votes == 2
+        with pytest.raises(ValidationError):
+            AccumulationPressureSignalParams(min_votes=4)
 
 
 class TestMacroSignalParams:

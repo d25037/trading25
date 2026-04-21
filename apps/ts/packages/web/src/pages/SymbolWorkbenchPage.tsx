@@ -11,6 +11,7 @@ import { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimefra
 import { MarginPressureChart } from '@/components/Chart/MarginPressureChart';
 import { PPOChart } from '@/components/Chart/PPOChart';
 import { RiskAdjustedReturnChart } from '@/components/Chart/RiskAdjustedReturnChart';
+import { SingleValueIndicatorChart } from '@/components/Chart/SingleValueIndicatorChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
@@ -22,7 +23,7 @@ import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
-import { useSymbolWorkbenchRouteState, useMigrateSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
+import { useMigrateSymbolWorkbenchRouteState, useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
 import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -833,6 +834,45 @@ function SymbolWorkbenchPanelsContent({
               longPeriod={settings.volumeComparison.longPeriod}
               lowerMultiplier={settings.volumeComparison.lowerMultiplier}
               higherMultiplier={settings.volumeComparison.higherMultiplier}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showCMF && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(chartData[settings.displayTimeframe]?.indicators.cmf as IndicatorValue[]) || []}
+              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} CMF`}
+              periodLabel={`${settings.accumulationFlow.cmfPeriod}`}
+              accentColor="#0EA5E9"
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showChaikinOscillator && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(chartData[settings.displayTimeframe]?.indicators.chaikinOscillator as IndicatorValue[]) || []}
+              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Chaikin Oscillator`}
+              periodLabel={`${settings.accumulationFlow.chaikinFastPeriod}/${settings.accumulationFlow.chaikinSlowPeriod}`}
+              accentColor="#14B8A6"
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showOBVFlowScore && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(chartData[settings.displayTimeframe]?.indicators.obvFlowScore as IndicatorValue[]) || []}
+              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} OBV Flow Score`}
+              periodLabel={`${settings.accumulationFlow.obvLookbackPeriod}`}
+              accentColor="#A855F7"
             />
           </ErrorBoundary>
         </Surface>

@@ -8,12 +8,17 @@ import numpy as np
 import pandas as pd
 
 from src.domains.strategy.indicators import (
+    compute_accumulation_distribution_line,
+    compute_chaikin_oscillator,
     compute_atr,
     compute_atr_support_line,
     compute_bollinger_bands,
+    compute_chaikin_money_flow,
     compute_macd,
     compute_moving_average,
     compute_nbar_support,
+    compute_on_balance_volume,
+    compute_on_balance_volume_score,
     compute_risk_adjusted_return,
     compute_rsi,
     compute_trading_value_ma,
@@ -258,6 +263,72 @@ def _compute_trading_value_ma(
     return key, _series_to_records(ma, nan_handling)
 
 
+def _compute_cmf(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    period = params.get("period", 20)
+    cmf = compute_chaikin_money_flow(
+        ohlcv["High"],
+        ohlcv["Low"],
+        ohlcv["Close"],
+        ohlcv["Volume"],
+        period=period,
+    )
+    key = _make_key("cmf", period=period)
+    return key, _series_to_records(cmf, nan_handling)
+
+
+def _compute_adl(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    del params
+    adl = compute_accumulation_distribution_line(
+        ohlcv["High"],
+        ohlcv["Low"],
+        ohlcv["Close"],
+        ohlcv["Volume"],
+    )
+    return "adl", _series_to_records(adl, nan_handling)
+
+
+def _compute_chaikin_oscillator(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    fast_period = params.get("fast_period", 3)
+    slow_period = params.get("slow_period", 10)
+    oscillator = compute_chaikin_oscillator(
+        ohlcv["High"],
+        ohlcv["Low"],
+        ohlcv["Close"],
+        ohlcv["Volume"],
+        fast_period=fast_period,
+        slow_period=slow_period,
+    )
+    key = _make_key("chaikin_oscillator", fast=fast_period, slow=slow_period)
+    return key, _series_to_records(oscillator, nan_handling)
+
+
+def _compute_obv(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    del params
+    obv = compute_on_balance_volume(ohlcv["Close"], ohlcv["Volume"])
+    return "obv", _series_to_records(obv, nan_handling)
+
+
+def _compute_obv_flow_score(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    lookback_period = params.get("lookback_period", 20)
+    score = compute_on_balance_volume_score(
+        ohlcv["Close"],
+        ohlcv["Volume"],
+        lookback_period=lookback_period,
+    )
+    key = _make_key("obv_flow_score", lookback=lookback_period)
+    return key, _series_to_records(score, nan_handling)
+
+
 def _compute_risk_adjusted_return(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -289,5 +360,10 @@ INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "nbar_support": _compute_nbar_support,
     "volume_comparison": _compute_volume_comparison,
     "trading_value_ma": _compute_trading_value_ma,
+    "cmf": _compute_cmf,
+    "adl": _compute_adl,
+    "chaikin_oscillator": _compute_chaikin_oscillator,
+    "obv": _compute_obv,
+    "obv_flow_score": _compute_obv_flow_score,
     "risk_adjusted_return": _compute_risk_adjusted_return,
 }

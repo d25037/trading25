@@ -47,6 +47,9 @@ const mockChartStore = {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showCMF: false,
+    showChaikinOscillator: false,
+    showOBVFlowScore: false,
     showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
@@ -84,6 +87,12 @@ const mockChartStore = {
     },
     tradingValueMA: {
       period: 15,
+    },
+    accumulationFlow: {
+      cmfPeriod: 20,
+      chaikinFastPeriod: 3,
+      chaikinSlowPeriod: 10,
+      obvLookbackPeriod: 20,
     },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
@@ -169,6 +178,15 @@ describe('ChartControls', () => {
       ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     };
     mockChartStore.settings.signalOverlay.signals = [];
+    mockChartStore.settings.showCMF = false;
+    mockChartStore.settings.showChaikinOscillator = false;
+    mockChartStore.settings.showOBVFlowScore = false;
+    mockChartStore.settings.accumulationFlow = {
+      cmfPeriod: 20,
+      chaikinFastPeriod: 3,
+      chaikinSlowPeriod: 10,
+      obvLookbackPeriod: 20,
+    };
     mockChartStore.updateSettings = vi.fn();
     mockChartStore.toggleRelativeMode = vi.fn();
     mockUseSignalReference.mockReturnValue({ data: undefined, error: null });
@@ -512,6 +530,9 @@ describe('ChartControls', () => {
     mockChartStore.settings.showRiskAdjustedReturnChart = true;
     mockChartStore.settings.showVolumeComparison = true;
     mockChartStore.settings.showTradingValueMA = true;
+    mockChartStore.settings.showCMF = true;
+    mockChartStore.settings.showChaikinOscillator = true;
+    mockChartStore.settings.showOBVFlowScore = true;
     mockChartStore.updateVolumeComparison = vi.fn();
     mockChartStore.updateTradingValueMA = vi.fn();
     mockChartStore.updateSettings = vi.fn();
@@ -526,6 +547,10 @@ describe('ChartControls', () => {
     fireEvent.change(screen.getByLabelText('Long Period'), { target: { value: '120' } });
     fireEvent.change(screen.getByLabelText('Lower Mult.'), { target: { value: '1.2' } });
     fireEvent.change(screen.getByLabelText('Higher Mult.'), { target: { value: '1.8' } });
+    fireEvent.change(screen.getByLabelText('CMF Period'), { target: { value: '21' } });
+    fireEvent.change(screen.getByLabelText('Chaikin Fast'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Chaikin Slow'), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText('OBV Score Lookback'), { target: { value: '34' } });
     fireEvent.change(screen.getByLabelText('Period'), { target: { value: '18' } });
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
@@ -538,6 +563,18 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ longPeriod: 120 });
     expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ lowerMultiplier: 1.2 });
     expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ higherMultiplier: 1.8 });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      accumulationFlow: expect.objectContaining({ cmfPeriod: 21 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      accumulationFlow: expect.objectContaining({ chaikinFastPeriod: 4, chaikinSlowPeriod: 10 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      accumulationFlow: expect.objectContaining({ chaikinSlowPeriod: 12 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      accumulationFlow: expect.objectContaining({ obvLookbackPeriod: 34 }),
+    });
     expect(mockChartStore.updateTradingValueMA).toHaveBeenCalledWith({ period: 18 });
   });
 
@@ -572,6 +609,15 @@ describe('ChartControls', () => {
 
     await user.click(screen.getByRole('switch', { name: /volume comparison/i }));
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showVolumeComparison: true });
+
+    await user.click(screen.getByRole('switch', { name: /^cmf$/i }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showCMF: true });
+
+    await user.click(screen.getByRole('switch', { name: /chaikin oscillator/i }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showChaikinOscillator: true });
+
+    await user.click(screen.getByRole('switch', { name: /obv flow score/i }));
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showOBVFlowScore: true });
 
     await user.click(screen.getByRole('switch', { name: /trading value ma/i }));
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showTradingValueMA: true });

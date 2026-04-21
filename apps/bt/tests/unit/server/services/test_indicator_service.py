@@ -3,6 +3,7 @@ Indicator Service ユニットテスト
 """
 
 from datetime import date
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -147,16 +148,17 @@ class TestMakeKey:
 
 
 class TestIndicatorRegistry:
-    """全13インジケーターのレジストリテスト"""
+    """インジケーターレジストリテスト"""
 
-    def test_registry_has_13_entries(self):
-        assert len(INDICATOR_REGISTRY) == 13
+    def test_registry_has_expected_entries(self):
+        assert len(INDICATOR_REGISTRY) == 18
 
     def test_all_types_registered(self):
         expected = {
             "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma", "risk_adjusted_return",
+            "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
+            "obv_flow_score", "risk_adjusted_return",
         }
         assert set(INDICATOR_REGISTRY.keys()) == expected
 
@@ -248,7 +250,7 @@ class TestComputeBollinger:
 class TestComputeATR:
     def test_basic(self):
         ohlcv = _make_ohlcv()
-        key, records = INDICATOR_REGISTRY["atr"](ohlcv, {"period": 14}, "include")
+        key, _ = INDICATOR_REGISTRY["atr"](ohlcv, {"period": 14}, "include")
         assert key == "atr_14"
 
     def test_positive_values(self):
@@ -270,7 +272,7 @@ class TestComputeATRSupport:
 class TestComputeNBarSupport:
     def test_basic(self):
         ohlcv = _make_ohlcv()
-        key, records = INDICATOR_REGISTRY["nbar_support"](ohlcv, {"period": 20}, "include")
+        key, _ = INDICATOR_REGISTRY["nbar_support"](ohlcv, {"period": 20}, "include")
         assert key == "nbar_support_20"
 
 
@@ -308,8 +310,58 @@ class TestComputeVolumeComparison:
 class TestComputeTradingValueMA:
     def test_basic(self):
         ohlcv = _make_ohlcv()
-        key, records = INDICATOR_REGISTRY["trading_value_ma"](ohlcv, {"period": 20}, "include")
+        key, _ = INDICATOR_REGISTRY["trading_value_ma"](ohlcv, {"period": 20}, "include")
         assert key == "trading_value_ma_20"
+
+
+class TestComputeAccumulationFlowIndicators:
+    def test_cmf_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["cmf"](ohlcv, {"period": 20}, "include")
+
+        assert key == "cmf_20"
+        assert len(records) == 200
+        assert "value" in records[-1]
+
+    def test_adl_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["adl"](ohlcv, {}, "include")
+
+        assert key == "adl"
+        assert len(records) == 200
+        assert "value" in records[-1]
+
+    def test_chaikin_oscillator_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["chaikin_oscillator"](
+            ohlcv,
+            {"fast_period": 3, "slow_period": 10},
+            "include",
+        )
+
+        assert key == "chaikin_oscillator_3_10"
+        assert len(records) == 200
+        assert "value" in records[-1]
+
+    def test_obv_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["obv"](ohlcv, {}, "include")
+
+        assert key == "obv"
+        assert len(records) == 200
+        assert "value" in records[-1]
+
+    def test_obv_flow_score_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["obv_flow_score"](
+            ohlcv,
+            {"lookback_period": 20},
+            "include",
+        )
+
+        assert key == "obv_flow_score_20"
+        assert len(records) == 200
+        assert "value" in records[-1]
 
 
 class TestComputeRiskAdjustedReturn:
@@ -684,7 +736,7 @@ class TestPPOZeroDivision:
             "Volume": np.ones(50) * 100000,
         }, index=dates)
 
-        key, records = INDICATOR_REGISTRY["ppo"](ohlcv, {}, "include")
+        _, records = INDICATOR_REGISTRY["ppo"](ohlcv, {}, "include")
         # infがNoneに変換されていることを確認
         for r in records:
             if r.get("ppo") is not None:
@@ -854,7 +906,7 @@ class TestCalculateRelativeOHLCV:
         """skipモードでゼロを含む行が除外されること"""
         stock = self._make_stock_df()
         bench = self._make_benchmark_df()
-        bench.iloc[2, bench.columns.get_loc("Open")] = 0.0
+        bench.iat[2, cast(int, bench.columns.get_loc("Open"))] = 0.0
 
         result = calculate_relative_ohlcv(stock, bench, "skip")
         assert len(result) == 4  # 1行除外

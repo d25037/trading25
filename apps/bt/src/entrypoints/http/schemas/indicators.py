@@ -7,7 +7,7 @@ Indicator API Schemas
 from datetime import date
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from src.entrypoints.http.schemas.analytics_common import (
     DataProvenance,
@@ -117,6 +117,46 @@ class TradingValueMAParams(BaseModel):
     period: int = Field(default=20, ge=1, le=500, description="MA期間")
 
 
+class CMFParams(BaseModel):
+    """Chaikin Money Flow パラメータ"""
+
+    period: int = Field(default=20, ge=1, le=500, description="CMF計算期間")
+
+
+class ADLParams(BaseModel):
+    """Accumulation/Distribution Line パラメータ"""
+
+
+class OBVParams(BaseModel):
+    """On-Balance Volume パラメータ"""
+
+
+class VolumeFlowScoreParams(BaseModel):
+    """OBV flow score パラメータ"""
+
+    lookback_period: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        description="累積volume-flow変化の正規化期間",
+    )
+
+
+class ChaikinOscillatorParams(BaseModel):
+    """Chaikin Oscillator パラメータ"""
+
+    fast_period: int = Field(default=3, ge=1, le=500, description="ADL短期EMA期間")
+    slow_period: int = Field(default=10, ge=1, le=500, description="ADL長期EMA期間")
+
+    @field_validator("slow_period")
+    @classmethod
+    def validate_period_order(cls, v: int, info: ValidationInfo) -> int:
+        fast_period = info.data.get("fast_period")
+        if fast_period is not None and v <= fast_period:
+            raise ValueError("slow_periodはfast_periodより大きい必要があります")
+        return v
+
+
 class RiskAdjustedReturnParams(BaseModel):
     """リスク調整リターンパラメータ"""
 
@@ -142,6 +182,11 @@ INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
     "nbar_support": NBarSupportParams,
     "volume_comparison": VolumeComparisonParams,
     "trading_value_ma": TradingValueMAParams,
+    "cmf": CMFParams,
+    "adl": ADLParams,
+    "chaikin_oscillator": ChaikinOscillatorParams,
+    "obv": OBVParams,
+    "obv_flow_score": VolumeFlowScoreParams,
     "risk_adjusted_return": RiskAdjustedReturnParams,
 }
 
@@ -158,6 +203,11 @@ INDICATOR_TYPES = Literal[
     "nbar_support",
     "volume_comparison",
     "trading_value_ma",
+    "cmf",
+    "adl",
+    "chaikin_oscillator",
+    "obv",
+    "obv_flow_score",
     "risk_adjusted_return",
 ]
 

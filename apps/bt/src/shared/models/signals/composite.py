@@ -42,6 +42,10 @@ from .sector import (
     SectorVolatilityRegimeParams,
 )
 from .volume import (
+    AccumulationPressureSignalParams,
+    ChaikinOscillatorSignalParams,
+    CMFThresholdSignalParams,
+    OBVFlowScoreSignalParams,
     TradingValueEmaRatioAboveSignalParams,
     TradingValueEmaRatioBelowSignalParams,
     TradingValueRangeSignalParams,
@@ -81,6 +85,22 @@ class SignalParams(BaseModel):
     )
     trading_value_range: TradingValueRangeSignalParams = Field(
         default_factory=TradingValueRangeSignalParams, description="売買代金範囲シグナル"
+    )
+    cmf_threshold: CMFThresholdSignalParams = Field(
+        default_factory=CMFThresholdSignalParams,
+        description="Chaikin Money Flow閾値シグナル",
+    )
+    chaikin_oscillator: ChaikinOscillatorSignalParams = Field(
+        default_factory=ChaikinOscillatorSignalParams,
+        description="Chaikin oscillatorシグナル",
+    )
+    obv_flow_score: OBVFlowScoreSignalParams = Field(
+        default_factory=OBVFlowScoreSignalParams,
+        description="OBV flow scoreシグナル",
+    )
+    accumulation_pressure: AccumulationPressureSignalParams = Field(
+        default_factory=AccumulationPressureSignalParams,
+        description="CMF/Chaikin/OBV投票式買い集めproxyシグナル",
     )
     trend: TrendSignalParams = Field(
         default_factory=TrendSignalParams, description="トレンドシグナル"

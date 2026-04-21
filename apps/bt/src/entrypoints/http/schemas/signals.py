@@ -40,6 +40,10 @@ PHASE1_SIGNAL_TYPES = Literal[
     "volume_ratio_below",
     "trading_value",
     "trading_value_range",
+    "cmf_threshold",
+    "chaikin_oscillator",
+    "obv_flow_score",
+    "accumulation_pressure",
 ]
 
 PHASE1_SIGNAL_LIST = [
@@ -63,6 +67,10 @@ PHASE1_SIGNAL_LIST = [
     "volume_ratio_below",
     "trading_value",
     "trading_value_range",
+    "cmf_threshold",
+    "chaikin_oscillator",
+    "obv_flow_score",
+    "accumulation_pressure",
 ]
 
 

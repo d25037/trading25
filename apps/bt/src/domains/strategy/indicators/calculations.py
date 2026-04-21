@@ -195,6 +195,102 @@ def compute_volume_weighted_ema(
     return weighted_price_ema / volume_ema.replace(0, np.nan)
 
 
+def _compute_money_flow_multiplier(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+) -> pd.Series[float]:
+    price_range = high - low
+    multiplier = ((close - low) - (high - close)) / price_range.replace(0, np.nan)
+    return multiplier.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
+def compute_chaikin_money_flow(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+    volume: pd.Series[float],
+    period: int = 20,
+) -> pd.Series[float]:
+    """Chaikin Money Flow (CMF) を計算する。
+
+    定義: rolling_sum(money_flow_multiplier * volume) / rolling_sum(volume)
+    """
+    multiplier = _compute_money_flow_multiplier(high, low, close)
+    money_flow_volume = multiplier * volume
+    volume_sum = volume.rolling(window=period, min_periods=period).sum()
+    mfv_sum = money_flow_volume.rolling(window=period, min_periods=period).sum()
+    return mfv_sum / volume_sum.replace(0, np.nan)
+
+
+def compute_accumulation_distribution_line(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+    volume: pd.Series[float],
+) -> pd.Series[float]:
+    """Accumulation/Distribution Line (ADL) を計算する。"""
+    multiplier = _compute_money_flow_multiplier(high, low, close)
+    money_flow_volume = (multiplier * volume).fillna(0.0)
+    return money_flow_volume.cumsum()
+
+
+def compute_on_balance_volume(
+    close: pd.Series[float],
+    volume: pd.Series[float],
+) -> pd.Series[float]:
+    """On-Balance Volume (OBV) を計算する。"""
+    direction = np.sign(close.diff()).fillna(0.0)
+    signed_volume = (direction * volume).fillna(0.0)
+    return signed_volume.cumsum()
+
+
+def compute_volume_flow_score(
+    cumulative_flow: pd.Series[float],
+    volume: pd.Series[float],
+    lookback_period: int = 20,
+) -> pd.Series[float]:
+    """累積 volume-flow 指標の直近変化を出来高で正規化する。
+
+    OBV など raw cumulative value が銘柄間比較しづらい指標では、
+    lookback 期間の変化量を同期間出来高で割った -1..1 近辺の
+    score を使う。
+    """
+    flow_change = cumulative_flow - cumulative_flow.shift(lookback_period)
+    volume_sum = volume.rolling(
+        window=lookback_period,
+        min_periods=lookback_period,
+    ).sum()
+    return flow_change / volume_sum.replace(0, np.nan)
+
+
+def compute_chaikin_oscillator(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+    volume: pd.Series[float],
+    fast_period: int = 3,
+    slow_period: int = 10,
+) -> pd.Series[float]:
+    """Chaikin Oscillator = EMA(ADL, fast) - EMA(ADL, slow) を計算する。"""
+    if slow_period <= fast_period:
+        raise ValueError("slow_period must be greater than fast_period")
+    adl = compute_accumulation_distribution_line(high, low, close, volume)
+    fast_ema = compute_moving_average(adl, fast_period, ma_type="ema")
+    slow_ema = compute_moving_average(adl, slow_period, ma_type="ema")
+    return fast_ema - slow_ema
+
+
+def compute_on_balance_volume_score(
+    close: pd.Series[float],
+    volume: pd.Series[float],
+    lookback_period: int = 20,
+) -> pd.Series[float]:
+    """OBV の lookback 正規化 flow score を計算する。"""
+    obv = compute_on_balance_volume(close, volume)
+    return compute_volume_flow_score(obv, volume, lookback_period)
+
+
 def compute_nbar_support(
     low: pd.Series[float],
     period: int,

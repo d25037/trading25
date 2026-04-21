@@ -272,6 +272,10 @@ describe('chartStore', () => {
     expect(state.settings.indicators.ema.period).toBe(defaultSettings.indicators.ema.period);
     expect(state.settings.indicators.vwema.period).toBe(defaultSettings.indicators.vwema.period);
     expect(state.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
+    expect(state.settings.accumulationFlow).toEqual(defaultSettings.accumulationFlow);
+    expect(state.settings.showCMF).toBe(defaultSettings.showCMF);
+    expect(state.settings.showChaikinOscillator).toBe(defaultSettings.showChaikinOscillator);
+    expect(state.settings.showOBVFlowScore).toBe(defaultSettings.showOBVFlowScore);
     expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
     expect(state.settings.showFundamentalsHistoryPanel).toBe(defaultSettings.showFundamentalsHistoryPanel);
     expect(state.settings.showCostStructurePanel).toBe(defaultSettings.showCostStructurePanel);
@@ -324,6 +328,9 @@ describe('chartStore', () => {
     expect(state.settings.displayTimeframe).toBe(defaultSettings.displayTimeframe);
     expect(state.settings.chartType).toBe(defaultSettings.chartType);
     expect(state.settings.showPPOChart).toBe(defaultSettings.showPPOChart);
+    expect(state.settings.showCMF).toBe(defaultSettings.showCMF);
+    expect(state.settings.showChaikinOscillator).toBe(defaultSettings.showChaikinOscillator);
+    expect(state.settings.showOBVFlowScore).toBe(defaultSettings.showOBVFlowScore);
     expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
     expect(state.settings.visibleBars).toBe(defaultSettings.visibleBars);
     expect(state.settings.indicators.ppo.enabled).toBe(defaultSettings.indicators.ppo.enabled);
@@ -397,6 +404,54 @@ describe('chartStore', () => {
       ratioType: 'sortino',
       threshold: 1.0,
       condition: 'above',
+    });
+  });
+
+  it('defaults accumulation-flow chart settings', () => {
+    const settings = useChartStore.getState().settings;
+    expect(settings.showCMF).toBe(false);
+    expect(settings.showChaikinOscillator).toBe(false);
+    expect(settings.showOBVFlowScore).toBe(false);
+    expect(settings.accumulationFlow).toEqual({
+      cmfPeriod: 20,
+      chaikinFastPeriod: 3,
+      chaikinSlowPeriod: 10,
+      obvLookbackPeriod: 20,
+    });
+  });
+
+  it('sanitizes invalid persisted accumulation-flow settings during rehydrate', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          settings: {
+            showCMF: 'true',
+            showChaikinOscillator: 'false',
+            showOBVFlowScore: 1,
+            accumulationFlow: {
+              cmfPeriod: 'x',
+              chaikinFastPeriod: 9,
+              chaikinSlowPeriod: 3,
+              obvLookbackPeriod: 0,
+            },
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const settings = useChartStore.getState().settings;
+    expect(settings.showCMF).toBe(defaultSettings.showCMF);
+    expect(settings.showChaikinOscillator).toBe(defaultSettings.showChaikinOscillator);
+    expect(settings.showOBVFlowScore).toBe(defaultSettings.showOBVFlowScore);
+    expect(settings.accumulationFlow).toEqual({
+      cmfPeriod: defaultSettings.accumulationFlow.cmfPeriod,
+      chaikinFastPeriod: 9,
+      chaikinSlowPeriod: 10,
+      obvLookbackPeriod: 1,
     });
   });
 

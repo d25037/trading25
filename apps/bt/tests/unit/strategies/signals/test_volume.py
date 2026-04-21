@@ -9,7 +9,14 @@ import pandas as pd
 import numpy as np
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
-from src.domains.strategy.signals.volume import volume_ratio_above_signal, volume_signal
+from src.domains.strategy.signals.volume import (
+    accumulation_pressure_signal,
+    chaikin_oscillator_signal,
+    cmf_threshold_signal,
+    obv_flow_score_signal,
+    volume_ratio_above_signal,
+    volume_signal,
+)
 from src.shared.models.config import SharedConfig
 
 
@@ -265,6 +272,89 @@ class TestVolumeSignal:
         assert signal_median.iloc[150:160].sum() == 0
 
 
+class TestAccumulationFlowSignals:
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=40)
+        close = pd.Series(np.linspace(100.0, 120.0, 40), index=self.dates)
+        self.close = close
+        self.high = close + 1.0
+        self.low = close - 3.0
+        self.volume = pd.Series(np.ones(40) * 1000.0, index=self.dates)
+
+    def test_cmf_threshold_signal_above(self):
+        signal = cmf_threshold_signal(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            period=5,
+            threshold=0.1,
+            condition="above",
+        )
+
+        assert signal.dtype == bool
+        assert signal.iloc[5:].all()
+
+    def test_chaikin_oscillator_signal_above(self):
+        signal = chaikin_oscillator_signal(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            fast_period=2,
+            slow_period=5,
+            threshold=0.1,
+            condition="above",
+        )
+
+        assert signal.dtype == bool
+        assert signal.iloc[5:].all()
+
+    def test_obv_flow_score_signal_above(self):
+        signal = obv_flow_score_signal(
+            self.close,
+            self.volume,
+            lookback_period=5,
+            threshold=0.5,
+            condition="above",
+        )
+
+        assert signal.dtype == bool
+        assert signal.iloc[5:].all()
+
+    def test_accumulation_pressure_uses_min_votes(self):
+        signal = accumulation_pressure_signal(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            cmf_period=5,
+            chaikin_fast_period=2,
+            chaikin_slow_period=5,
+            obv_lookback_period=5,
+            cmf_threshold=0.1,
+            chaikin_oscillator_threshold=0.1,
+            obv_score_threshold=0.5,
+            min_votes=2,
+        )
+
+        assert signal.dtype == bool
+        assert signal.iloc[5:].all()
+
+    def test_condition_below_detects_weak_flow(self):
+        signal = cmf_threshold_signal(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            period=5,
+            threshold=0.9,
+            condition="below",
+        )
+
+        assert signal.iloc[5:].all()
+
+
 class TestVolumeSignalIntegration:
     """SignalProcessorとの統合テスト"""
 
@@ -427,6 +517,61 @@ class TestVolumeSignalIntegration:
         assert len(result) == len(base_signal)
         # EMAでもエントリーフィルター（AND条件）として機能
         assert result.sum() <= base_signal.sum()
+
+    def test_accumulation_pressure_with_signal_processor_entry(self):
+        """SignalProcessorで買い集めproxyとして使用"""
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
+
+        dates = pd.date_range("2023-01-01", periods=40)
+        close = pd.Series(np.linspace(100.0, 120.0, 40), index=dates)
+        ohlc_data = pd.DataFrame(
+            {
+                "Open": close - 1.0,
+                "High": close + 1.0,
+                "Low": close - 3.0,
+                "Close": close,
+                "Volume": np.ones(40) * 1000.0,
+            },
+            index=dates,
+        )
+        base_signal = pd.Series([True] * 40, index=dates)
+
+        params = SignalParams()
+        params.accumulation_pressure.enabled = True
+        params.accumulation_pressure.cmf_period = 5
+        params.accumulation_pressure.chaikin_fast_period = 2
+        params.accumulation_pressure.chaikin_slow_period = 5
+        params.accumulation_pressure.obv_lookback_period = 5
+        params.accumulation_pressure.cmf_threshold = 0.1
+        params.accumulation_pressure.chaikin_oscillator_threshold = 0.1
+        params.accumulation_pressure.obv_score_threshold = 0.5
+        params.accumulation_pressure.min_votes = 2
+
+        processor = SignalProcessor()
+        result = processor.apply_signals(
+            base_signal=base_signal,
+            signal_type="entry",
+            ohlc_data=ohlc_data,
+            signal_params=params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="accumulation-pressure-entry-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=params,
+                exit_signal_params=SignalParams(),
+            ),
+        )
+
+        assert isinstance(result, pd.Series)
+        assert result.dtype == bool
+        assert result.sum() > 0
 
 
 if __name__ == "__main__":

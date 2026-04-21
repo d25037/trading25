@@ -69,6 +69,12 @@ export interface ChartSettings {
   tradingValueMA: {
     period: number;
   };
+  accumulationFlow: {
+    cmfPeriod: number;
+    chaikinFastPeriod: number;
+    chaikinSlowPeriod: number;
+    obvLookbackPeriod: number;
+  };
   riskAdjustedReturn: {
     lookbackPeriod: number;
     ratioType: RiskAdjustedReturnRatioType;
@@ -80,6 +86,9 @@ export interface ChartSettings {
   showPPOChart: boolean;
   showVolumeComparison: boolean;
   showTradingValueMA: boolean;
+  showCMF: boolean;
+  showChaikinOscillator: boolean;
+  showOBVFlowScore: boolean;
   showRiskAdjustedReturnChart: boolean;
   showFundamentalsPanel: boolean;
   showFundamentalsHistoryPanel: boolean;
@@ -166,6 +175,12 @@ export const defaultSettings: ChartSettings = {
   tradingValueMA: {
     period: 15,
   },
+  accumulationFlow: {
+    cmfPeriod: 20,
+    chaikinFastPeriod: 3,
+    chaikinSlowPeriod: 10,
+    obvLookbackPeriod: 20,
+  },
   riskAdjustedReturn: {
     lookbackPeriod: 60,
     ratioType: 'sortino',
@@ -177,6 +192,9 @@ export const defaultSettings: ChartSettings = {
   showPPOChart: false,
   showVolumeComparison: false,
   showTradingValueMA: false,
+  showCMF: false,
+  showChaikinOscillator: false,
+  showOBVFlowScore: false,
   showRiskAdjustedReturnChart: false,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
@@ -307,6 +325,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
   const partialIndicators = toPartialRecord<ChartSettings['indicators']>(partial.indicators);
   const partialVolumeComparison = toPartialRecord<ChartSettings['volumeComparison']>(partial.volumeComparison);
   const partialTradingValueMA = toPartialRecord<ChartSettings['tradingValueMA']>(partial.tradingValueMA);
+  const partialAccumulationFlow = toPartialRecord<ChartSettings['accumulationFlow']>(partial.accumulationFlow);
   const partialRiskAdjustedReturn = toPartialRecord<ChartSettings['riskAdjustedReturn']>(partial.riskAdjustedReturn);
   const partialSignalOverlay = toPartialRecord<ChartSettings['signalOverlay']>(partial.signalOverlay);
   const partialSma = toPartialRecord<ChartSettings['indicators']['sma']>(partialIndicators.sma);
@@ -385,6 +404,27 @@ function normalizeSettings(settings: unknown): ChartSettings {
     tradingValueMA: {
       period: normalizePositiveInt(partialTradingValueMA.period, defaultSettings.tradingValueMA.period),
     },
+    accumulationFlow: {
+      cmfPeriod: normalizePositiveInt(partialAccumulationFlow.cmfPeriod, defaultSettings.accumulationFlow.cmfPeriod),
+      chaikinFastPeriod: normalizePositiveInt(
+        partialAccumulationFlow.chaikinFastPeriod,
+        defaultSettings.accumulationFlow.chaikinFastPeriod
+      ),
+      chaikinSlowPeriod: Math.max(
+        normalizePositiveInt(
+          partialAccumulationFlow.chaikinSlowPeriod,
+          defaultSettings.accumulationFlow.chaikinSlowPeriod
+        ),
+        normalizePositiveInt(
+          partialAccumulationFlow.chaikinFastPeriod,
+          defaultSettings.accumulationFlow.chaikinFastPeriod
+        ) + 1
+      ),
+      obvLookbackPeriod: normalizePositiveInt(
+        partialAccumulationFlow.obvLookbackPeriod,
+        defaultSettings.accumulationFlow.obvLookbackPeriod
+      ),
+    },
     riskAdjustedReturn: {
       lookbackPeriod: normalizePositiveInt(
         partialRiskAdjustedReturn.lookbackPeriod,
@@ -406,6 +446,9 @@ function normalizeSettings(settings: unknown): ChartSettings {
     showPPOChart: normalizeBoolean(partial.showPPOChart, defaultSettings.showPPOChart),
     showVolumeComparison: normalizeBoolean(partial.showVolumeComparison, defaultSettings.showVolumeComparison),
     showTradingValueMA: normalizeBoolean(partial.showTradingValueMA, defaultSettings.showTradingValueMA),
+    showCMF: normalizeBoolean(partial.showCMF, defaultSettings.showCMF),
+    showChaikinOscillator: normalizeBoolean(partial.showChaikinOscillator, defaultSettings.showChaikinOscillator),
+    showOBVFlowScore: normalizeBoolean(partial.showOBVFlowScore, defaultSettings.showOBVFlowScore),
     showRiskAdjustedReturnChart: normalizeBoolean(
       partial.showRiskAdjustedReturnChart,
       defaultSettings.showRiskAdjustedReturnChart

@@ -4,7 +4,11 @@
 
 from pydantic import Field, ValidationInfo, field_validator
 
-from .base import BaseSignalParams, _validate_period_order
+from .base import (
+    BaseSignalParams,
+    _validate_condition_above_below,
+    _validate_period_order,
+)
 
 
 class _BaseVolumeRatioSignalParams(BaseSignalParams):
@@ -175,3 +179,146 @@ class TradingValueRangeSignalParams(BaseSignalParams):
         if "min_threshold" in info.data and v <= info.data["min_threshold"]:
             raise ValueError("最大閾値は最小閾値より大きい必要があります")
         return v
+
+
+class CMFThresholdSignalParams(BaseSignalParams):
+    """Chaikin Money Flow 閾値シグナルパラメータ"""
+
+    period: int = Field(default=20, gt=0, le=500, description="CMF計算期間")
+    threshold: float = Field(
+        default=0.05,
+        ge=-1.0,
+        le=1.0,
+        description="CMF閾値（-1.0〜1.0）",
+    )
+    condition: str = Field(
+        default="above",
+        description="閾値判定方向（above=閾値以上、below=閾値未満）",
+    )
+
+    @field_validator("condition")
+    @classmethod
+    def validate_condition(cls, v: str) -> str:
+        return _validate_condition_above_below(v)
+
+
+class ChaikinOscillatorSignalParams(BaseSignalParams):
+    """Chaikin oscillator 閾値シグナルパラメータ"""
+
+    fast_period: int = Field(
+        default=3,
+        gt=0,
+        le=500,
+        description="ADL短期EMA期間",
+    )
+    slow_period: int = Field(
+        default=10,
+        gt=0,
+        le=500,
+        description="ADL長期EMA期間",
+    )
+    threshold: float = Field(
+        default=0.0,
+        description="Chaikin oscillator閾値",
+    )
+    condition: str = Field(
+        default="above",
+        description="閾値判定方向（above=閾値以上、below=閾値未満）",
+    )
+
+    @field_validator("condition")
+    @classmethod
+    def validate_condition(cls, v: str) -> str:
+        return _validate_condition_above_below(v)
+
+    @field_validator("slow_period")
+    @classmethod
+    def validate_period_order(cls, v: int, info: ValidationInfo) -> int:
+        return _validate_period_order(
+            v,
+            info,
+            "fast_period",
+            "Chaikin oscillator長期期間は短期期間より大きい必要があります",
+        )
+
+
+class OBVFlowScoreSignalParams(BaseSignalParams):
+    """OBV flow score 閾値シグナルパラメータ"""
+
+    lookback_period: int = Field(
+        default=20,
+        gt=0,
+        le=500,
+        description="OBV変化を出来高で正規化する期間",
+    )
+    threshold: float = Field(
+        default=0.05,
+        ge=-1.0,
+        le=1.0,
+        description="OBV flow score閾値（-1.0〜1.0）",
+    )
+    condition: str = Field(
+        default="above",
+        description="閾値判定方向（above=閾値以上、below=閾値未満）",
+    )
+
+    @field_validator("condition")
+    @classmethod
+    def validate_condition(cls, v: str) -> str:
+        return _validate_condition_above_below(v)
+
+
+class AccumulationPressureSignalParams(BaseSignalParams):
+    """CMF/Chaikin/OBV の投票式 accumulation pressure シグナルパラメータ"""
+
+    cmf_period: int = Field(default=20, gt=0, le=500, description="CMF計算期間")
+    chaikin_fast_period: int = Field(
+        default=3,
+        gt=0,
+        le=500,
+        description="Chaikin oscillator短期EMA期間",
+    )
+    chaikin_slow_period: int = Field(
+        default=10,
+        gt=0,
+        le=500,
+        description="Chaikin oscillator長期EMA期間",
+    )
+    obv_lookback_period: int = Field(
+        default=20,
+        gt=0,
+        le=500,
+        description="OBV flow score計算期間",
+    )
+    cmf_threshold: float = Field(
+        default=0.05,
+        ge=-1.0,
+        le=1.0,
+        description="CMFの買い集めproxy閾値",
+    )
+    chaikin_oscillator_threshold: float = Field(
+        default=0.0,
+        description="Chaikin oscillatorの買い集めproxy閾値",
+    )
+    obv_score_threshold: float = Field(
+        default=0.05,
+        ge=-1.0,
+        le=1.0,
+        description="OBV flow scoreの買い集めproxy閾値",
+    )
+    min_votes: int = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="CMF/Chaikin/OBVのうち必要な成立数",
+    )
+
+    @field_validator("chaikin_slow_period")
+    @classmethod
+    def validate_chaikin_period_order(cls, v: int, info: ValidationInfo) -> int:
+        return _validate_period_order(
+            v,
+            info,
+            "chaikin_fast_period",
+            "Chaikin oscillator長期期間は短期期間より大きい必要があります",
+        )

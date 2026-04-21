@@ -83,6 +83,12 @@ const mockSettings = {
   tradingValueMA: {
     period: 15,
   },
+  accumulationFlow: {
+    cmfPeriod: 20,
+    chaikinFastPeriod: 3,
+    chaikinSlowPeriod: 10,
+    obvLookbackPeriod: 20,
+  },
   riskAdjustedReturn: {
     lookbackPeriod: 60,
     ratioType: 'sortino' as const,
@@ -94,6 +100,9 @@ const mockSettings = {
   showPPOChart: true,
   showVolumeComparison: true,
   showTradingValueMA: true,
+  showCMF: true,
+  showChaikinOscillator: true,
+  showOBVFlowScore: true,
   showRiskAdjustedReturnChart: true,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
@@ -140,6 +149,10 @@ vi.mock('@/components/Chart/PPOChart', () => ({
 
 vi.mock('@/components/Chart/RiskAdjustedReturnChart', () => ({
   RiskAdjustedReturnChart: () => <div>Risk Adjusted Return Chart</div>,
+}));
+
+vi.mock('@/components/Chart/SingleValueIndicatorChart', () => ({
+  SingleValueIndicatorChart: ({ title }: { title: string }) => <div>{title}</div>,
 }));
 
 vi.mock('@/components/Chart/VolumeComparisonChart', () => ({

@@ -41,6 +41,7 @@ describe('buildIndicatorSpecs', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    accumulationFlow: { cmfPeriod: 20, chaikinFastPeriod: 3, chaikinSlowPeriod: 10, obvLookbackPeriod: 20 },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
       ratioType: 'sortino' as const,
@@ -52,6 +53,9 @@ describe('buildIndicatorSpecs', () => {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showCMF: false,
+    showChaikinOscillator: false,
+    showOBVFlowScore: false,
     showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
@@ -171,6 +175,20 @@ describe('buildIndicatorSpecs', () => {
     const settings = { ...baseSettings, showTradingValueMA: true, tradingValueMA: { period: 30 } };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({ type: 'trading_value_ma', params: { period: 30 } });
+  });
+
+  it('should include accumulation-flow sub-chart indicators when enabled', () => {
+    const settings = {
+      ...baseSettings,
+      showCMF: true,
+      showChaikinOscillator: true,
+      showOBVFlowScore: true,
+      accumulationFlow: { cmfPeriod: 21, chaikinFastPeriod: 4, chaikinSlowPeriod: 12, obvLookbackPeriod: 34 },
+    };
+    const specs = buildIndicatorSpecs(settings);
+    expect(specs).toContainEqual({ type: 'cmf', params: { period: 21 } });
+    expect(specs).toContainEqual({ type: 'chaikin_oscillator', params: { fast_period: 4, slow_period: 12 } });
+    expect(specs).toContainEqual({ type: 'obv_flow_score', params: { lookback_period: 34 } });
   });
 
   it('should include risk_adjusted_return when showRiskAdjustedReturnChart is true', () => {
@@ -342,6 +360,23 @@ describe('mapBtResponseToChartData', () => {
     const result = mapBtResponseToChartData(response);
     expect(result.indicators.riskAdjustedReturn).toEqual([{ time: '2024-01-01', value: 1.25 }]);
   });
+
+  it('should transform accumulation-flow records into indicators', () => {
+    const response = {
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        cmf_20: [{ date: '2024-01-01', value: 0.12 }],
+        chaikin_oscillator_3_10: [{ date: '2024-01-01', value: 0.8 }],
+        obv_flow_score_20: [{ date: '2024-01-01', value: -0.4 }],
+      },
+    };
+    const result = mapBtResponseToChartData(response);
+    expect(result.indicators.cmf).toEqual([{ time: '2024-01-01', value: 0.12 }]);
+    expect(result.indicators.chaikinOscillator).toEqual([{ time: '2024-01-01', value: 0.8 }]);
+    expect(result.indicators.obvFlowScore).toEqual([{ time: '2024-01-01', value: -0.4 }]);
+  });
 });
 
 // ===== btIndicatorKeys Tests =====
@@ -371,6 +406,7 @@ describe('useBtIndicators', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    accumulationFlow: { cmfPeriod: 20, chaikinFastPeriod: 3, chaikinSlowPeriod: 10, obvLookbackPeriod: 20 },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
       ratioType: 'sortino' as const,
@@ -382,6 +418,9 @@ describe('useBtIndicators', () => {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showCMF: false,
+    showChaikinOscillator: false,
+    showOBVFlowScore: false,
     showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,

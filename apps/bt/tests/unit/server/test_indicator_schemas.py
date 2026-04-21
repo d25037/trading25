@@ -2,14 +2,19 @@
 Indicator Schemas ユニットテスト
 """
 
+from typing import Any, cast
+
 import pytest
 from pydantic import ValidationError
 
 from src.entrypoints.http.schemas.analytics_common import DataProvenance
 from src.entrypoints.http.schemas.indicators import (
+    ADLParams,
     ATRParams,
     ATRSupportParams,
     BollingerParams,
+    ChaikinOscillatorParams,
+    CMFParams,
     EMAParams,
     IndicatorComputeRequest,
     IndicatorComputeResponse,
@@ -17,12 +22,14 @@ from src.entrypoints.http.schemas.indicators import (
     MACDParams,
     MarginIndicatorRequest,
     NBarSupportParams,
+    OBVParams,
     OHLCVResampleRequest,
     PPOParams,
     RSIParams,
     RiskAdjustedReturnParams,
     SMAParams,
     TradingValueMAParams,
+    VolumeFlowScoreParams,
     VolumeComparisonParams,
 )
 
@@ -113,6 +120,27 @@ class TestParamsModels:
         p = TradingValueMAParams(period=50)
         assert p.period == 50
 
+    def test_cmf_params_default(self):
+        p = CMFParams()
+        assert p.period == 20
+
+    def test_adl_obv_params_default(self):
+        assert ADLParams().model_dump() == {}
+        assert OBVParams().model_dump() == {}
+
+    def test_volume_flow_score_params_default(self):
+        p = VolumeFlowScoreParams()
+        assert p.lookback_period == 20
+
+    def test_chaikin_oscillator_params_default(self):
+        p = ChaikinOscillatorParams()
+        assert p.fast_period == 3
+        assert p.slow_period == 10
+
+    def test_chaikin_oscillator_params_reject_invalid_order(self):
+        with pytest.raises(ValidationError):
+            ChaikinOscillatorParams(fast_period=10, slow_period=3)
+
     def test_risk_adjusted_return_params_default(self):
         p = RiskAdjustedReturnParams()
         assert p.lookback_period == 60
@@ -120,7 +148,7 @@ class TestParamsModels:
 
     def test_risk_adjusted_return_params_invalid_ratio_type(self):
         with pytest.raises(ValidationError):
-            RiskAdjustedReturnParams(ratio_type="invalid")
+            RiskAdjustedReturnParams(ratio_type=cast(Any, "invalid"))
 
 
 class TestIndicatorSpec:
@@ -144,16 +172,20 @@ class TestIndicatorSpec:
 
     def test_invalid_type(self):
         with pytest.raises(ValidationError):
-            IndicatorSpec(type="unknown", params={})
+            IndicatorSpec(type=cast(Any, "unknown"), params={})
 
-    def test_all_13_types(self):
+    def test_all_types(self):
         types = [
             "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma", "risk_adjusted_return",
+            "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
+            "obv_flow_score", "risk_adjusted_return",
         ]
         for t in types:
-            spec = IndicatorSpec(type=t, params={} if t not in ("sma", "ema", "vwema") else {"period": 20})
+            spec = IndicatorSpec(
+                type=cast(Any, t),
+                params={} if t not in ("sma", "ema", "vwema") else {"period": 20},
+            )
             assert spec.type == t
 
 
@@ -284,5 +316,5 @@ class TestMarginIndicatorRequest:
         with pytest.raises(ValidationError):
             MarginIndicatorRequest(
                 stock_code="7203",
-                indicators=["unknown"],
+                indicators=cast(Any, ["unknown"]),
             )

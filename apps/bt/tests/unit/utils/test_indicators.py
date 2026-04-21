@@ -8,10 +8,15 @@ import pytest
 import vectorbt as vbt
 
 from src.domains.strategy.indicators.calculations import (
+    compute_accumulation_distribution_line,
+    compute_chaikin_oscillator,
     compute_atr_support_line,
+    compute_chaikin_money_flow,
     compute_macd,
     compute_moving_average,
     compute_nbar_support,
+    compute_on_balance_volume,
+    compute_on_balance_volume_score,
     compute_risk_adjusted_return,
     compute_rsi,
     compute_trading_value_ma,
@@ -194,6 +199,89 @@ class TestComputeVolumeWeightedEMA:
         volume.iloc[0] = 0
         result = compute_volume_weighted_ema(self.close, volume, 10)
         assert len(result) == 50
+
+
+class TestAccumulationFlowIndicators:
+    def setup_method(self):
+        self.high = pd.Series([10.0, 10.0, 10.0])
+        self.low = pd.Series([0.0, 0.0, 0.0])
+        self.close = pd.Series([10.0, 5.0, 0.0])
+        self.volume = pd.Series([100.0, 100.0, 100.0])
+
+    def test_cmf_matches_manual_money_flow(self):
+        result = compute_chaikin_money_flow(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            period=3,
+        )
+
+        assert result.iloc[2] == pytest.approx(0.0)
+
+    def test_adl_matches_manual_cumulative_money_flow(self):
+        result = compute_accumulation_distribution_line(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+        )
+
+        assert result.tolist() == pytest.approx([100.0, 100.0, 0.0])
+
+    def test_obv_matches_manual_signed_volume(self):
+        result = compute_on_balance_volume(self.close, self.volume)
+
+        assert result.tolist() == pytest.approx([0.0, -100.0, -200.0])
+
+    def test_accumulation_flow_indicators_use_distinct_formulas(self):
+        cmf = compute_chaikin_money_flow(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            period=2,
+        )
+        chaikin = compute_chaikin_oscillator(
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            fast_period=2,
+            slow_period=3,
+        )
+        obv_score = compute_on_balance_volume_score(
+            self.close,
+            self.volume,
+            lookback_period=2,
+        )
+
+        assert cmf.iloc[2] == pytest.approx(-0.5)
+        assert chaikin.iloc[2] == pytest.approx(-16.6666666667)
+        assert obv_score.iloc[2] == pytest.approx(-1.0)
+
+    def test_chaikin_oscillator_rejects_invalid_period_order(self):
+        with pytest.raises(ValueError, match="slow_period"):
+            compute_chaikin_oscillator(
+                self.high,
+                self.low,
+                self.close,
+                self.volume,
+                fast_period=3,
+                slow_period=3,
+            )
+
+    def test_flat_bar_money_flow_is_zero(self):
+        flat = pd.Series([10.0, 10.0, 10.0])
+        result = compute_chaikin_money_flow(
+            flat,
+            flat,
+            flat,
+            self.volume,
+            period=2,
+        )
+
+        assert result.iloc[1] == pytest.approx(0.0)
 
 
 class TestComputeMovingAverage:

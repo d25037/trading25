@@ -174,6 +174,10 @@ _RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES = {
     "trading_value_ema_ratio_above",
     "trading_value_ema_ratio_below",
     "trading_value_range",
+    "cmf_threshold",
+    "chaikin_oscillator",
+    "obv_flow_score",
+    "accumulation_pressure",
 }
 
 

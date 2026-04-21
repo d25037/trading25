@@ -352,6 +352,18 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
     [settings.riskAdjustedReturn, updateSettings]
   );
 
+  const updateAccumulationFlow = useCallback(
+    (newSettings: Partial<ChartSettings['accumulationFlow']>) => {
+      updateSettings({
+        accumulationFlow: {
+          ...settings.accumulationFlow,
+          ...newSettings,
+        },
+      });
+    },
+    [settings.accumulationFlow, updateSettings]
+  );
+
   const renderDialogBody = (dialogId: SettingDialogId) => {
     switch (dialogId) {
       case 'chartSettings':
@@ -770,6 +782,62 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                   defaultValue={1.5}
                 />
               </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="CMF"
+              enabled={settings.showCMF}
+              onToggle={(checked) => updateSettings({ showCMF: checked })}
+            >
+              <NumberInput
+                label="CMF Period"
+                value={settings.accumulationFlow.cmfPeriod}
+                onChange={(cmfPeriod) => updateAccumulationFlow({ cmfPeriod })}
+                defaultValue={20}
+              />
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="Chaikin Oscillator"
+              enabled={settings.showChaikinOscillator}
+              onToggle={(checked) => updateSettings({ showChaikinOscillator: checked })}
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <NumberInput
+                  label="Chaikin Fast"
+                  value={settings.accumulationFlow.chaikinFastPeriod}
+                  onChange={(chaikinFastPeriod) =>
+                    updateAccumulationFlow({
+                      chaikinFastPeriod,
+                      chaikinSlowPeriod: Math.max(settings.accumulationFlow.chaikinSlowPeriod, chaikinFastPeriod + 1),
+                    })
+                  }
+                  defaultValue={3}
+                />
+                <NumberInput
+                  label="Chaikin Slow"
+                  value={settings.accumulationFlow.chaikinSlowPeriod}
+                  onChange={(chaikinSlowPeriod) =>
+                    updateAccumulationFlow({
+                      chaikinSlowPeriod: Math.max(chaikinSlowPeriod, settings.accumulationFlow.chaikinFastPeriod + 1),
+                    })
+                  }
+                  defaultValue={10}
+                />
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="OBV Flow Score"
+              enabled={settings.showOBVFlowScore}
+              onToggle={(checked) => updateSettings({ showOBVFlowScore: checked })}
+            >
+              <NumberInput
+                label="OBV Score Lookback"
+                value={settings.accumulationFlow.obvLookbackPeriod}
+                onChange={(obvLookbackPeriod) => updateAccumulationFlow({ obvLookbackPeriod })}
+                defaultValue={20}
+              />
             </IndicatorToggle>
 
             <IndicatorToggle
