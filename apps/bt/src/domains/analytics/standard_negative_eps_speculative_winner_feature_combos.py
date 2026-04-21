@@ -82,7 +82,7 @@ _FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         bucket_order=("<5m", "5m-20m", "20m-100m", "100m-500m", ">=500m", "missing"),
     ),
     FeatureSpec(
-        key="entry_open",
+        key="entry_open",  # gitleaks:allow - feature identifier, not a secret
         label="Entry open (JPY)",
         bucket_column="entry_open_bucket",
         bucket_order=("<100", "100-300", "300-1000", ">=1000", "missing"),
@@ -633,17 +633,17 @@ def _build_feature_bucket_def_df(
             "definition": "prior 63-session return > -10%",
         },
         {
-            "feature_key": "volume_ratio_20d",
+            "feature_key": "volume_ratio_20d",  # gitleaks:allow - feature identifier
             "bucket_label": "<0.7",
             "definition": "trailing 20-session mean volume / trailing 252-session mean volume < 0.7",
         },
         {
-            "feature_key": "volume_ratio_20d",
+            "feature_key": "volume_ratio_20d",  # gitleaks:allow - feature identifier
             "bucket_label": "0.7-1.5",
             "definition": "0.7 <= trailing 20-session mean volume / trailing 252-session mean volume <= 1.5",
         },
         {
-            "feature_key": "volume_ratio_20d",
+            "feature_key": "volume_ratio_20d",  # gitleaks:allow - feature identifier
             "bucket_label": ">1.5",
             "definition": "trailing 20-session mean volume / trailing 252-session mean volume > 1.5",
         },

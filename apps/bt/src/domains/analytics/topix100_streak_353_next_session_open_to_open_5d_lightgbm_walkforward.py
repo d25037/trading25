@@ -81,7 +81,7 @@ DEFAULT_WALKFORWARD_TRAIN_WINDOW = 756
 DEFAULT_WALKFORWARD_TEST_WINDOW = 126
 DEFAULT_WALKFORWARD_STEP = 126
 PRIMARY_BENCHMARK_KEY = "topix"
-SECONDARY_BENCHMARK_KEY = "topix100_universe"
+SECONDARY_BENCHMARK_KEY = "topix100_universe"  # gitleaks:allow - benchmark identifier
 _LONG_BASELINE_BLEND_PRIOR = 260.0
 _BASELINE_CHAIN: tuple[tuple[str, str], ...] = (
     ("universe", "universe"),

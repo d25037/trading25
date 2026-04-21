@@ -339,7 +339,7 @@ class TestComputeAccumulationFlowIndicators:
             "include",
         )
 
-        assert key == "chaikin_oscillator_3_10"
+        assert key == "chaikin_oscillator_3_10"  # gitleaks:allow - indicator id
         assert len(records) == 200
         assert "value" in records[-1]
 
