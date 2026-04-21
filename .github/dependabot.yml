@@ -134,7 +134,6 @@ updates:
         applies-to: "version-updates"
         patterns:
           - "lightgbm"
-          - "marimo"
           - "nautilus-trader"
           - "numpy"
           - "optuna"

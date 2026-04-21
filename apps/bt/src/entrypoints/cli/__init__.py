@@ -72,7 +72,7 @@ def backtest_command(
     """
     バックテスト実行
 
-    Marimoテンプレートを実行してバックテストを行います。
+    BacktestRunnerでバックテストを実行し、静的HTMLレポートを生成します。
     --optimize フラグでパラメータ最適化モードに切り替えます。
 
     Examples:

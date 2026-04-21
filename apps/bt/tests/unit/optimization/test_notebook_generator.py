@@ -1,10 +1,8 @@
-"""
-パラメータ最適化Notebook生成機能のテスト（Marimo実行方式）
-"""
+"""パラメータ最適化HTML生成機能のテスト。"""
 
 import json
 import os
-from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 import pytest
 
@@ -168,31 +166,22 @@ class TestSaveResultsAsJson:
         assert "trade_count" not in loaded_data[0]["metric_values"]
 
 
-class TestNotebookGeneratorMarimo:
-    """Notebook生成機能のテスト（Marimo実行方式）"""
+class TestNotebookGeneratorStaticHtml:
+    """静的HTML生成機能のテスト"""
 
-    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
-    def test_generate_notebook_with_marimo_mock(
+    def test_generate_notebook_writes_static_html(
         self,
-        mock_executor_class,
         sample_optimization_results,
         sample_parameter_ranges,
         sample_scoring_weights,
         tmp_path,
     ):
-        """モックを使用したNotebook生成テスト（Marimo）"""
-        # モックMarimoExecutorを設定
-        mock_executor = MagicMock()
-        mock_executor_class.return_value = mock_executor
+        """最適化結果を静的HTMLとして保存する"""
+        output_path = tmp_path / "test_output.html"
 
-        # execute_notebookのモック戻り値を設定
-        output_path = tmp_path / "optimization/test_strategy/test_output.html"
-        mock_executor.execute_notebook.return_value = output_path
-
-        # Notebook生成実行
         result_path = generate_optimization_notebook(
             results=sample_optimization_results,
-            output_path=str(tmp_path / "test_output.html"),
+            output_path=str(output_path),
             strategy_name="test_strategy",
             parameter_ranges=sample_parameter_ranges,
             scoring_weights=sample_scoring_weights,
@@ -200,48 +189,25 @@ class TestNotebookGeneratorMarimo:
             _skip_path_validation=True,
         )
 
-        # MarimoExecutorが正しく呼び出されたか確認
-        mock_executor_class.assert_called_once_with(output_dir=str(tmp_path))
-        mock_executor.execute_notebook.assert_called_once()
-
-        # 呼び出し引数確認
-        call_args = mock_executor.execute_notebook.call_args
-        assert (
-            call_args.kwargs["template_path"]
-            == "notebooks/templates/optimization_analysis.py"
-        )
-        assert call_args.kwargs["strategy_name"] is None
-
-        # パラメータ内容確認
-        params = call_args.kwargs["parameters"]
-        assert "results_json_path" in params
-        assert params["strategy_name"] == "test_strategy"
-        assert params["n_combinations"] == 9
-
-        # 戻り値確認
+        html = output_path.read_text(encoding="utf-8")
         assert result_path == str(output_path)
+        assert "Optimization Analysis" in html
+        assert "test_strategy" in html
+        assert "entry_filter_params.period_extrema_break.period" in html
+        assert "trade_count" in html
+        assert "0.8500" in html
 
-    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
-    @patch("src.domains.optimization.notebook_generator.os.remove")
-    def test_json_file_creation_marimo(
+    def test_json_file_is_removed_after_generation(
         self,
-        mock_remove,
-        mock_executor_class,
         sample_optimization_results,
         sample_parameter_ranges,
         sample_scoring_weights,
         tmp_path,
     ):
-        """JSONファイルが正しく作成されるか確認（Marimo）"""
-        mock_executor = MagicMock()
-        mock_executor_class.return_value = mock_executor
-
+        """HTML生成後に一時JSONを削除する"""
         output_dir = tmp_path / "optimization/test_strategy"
-        output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "test_output.html"
-        mock_executor.execute_notebook.return_value = output_path
 
-        # Notebook生成実行
         generate_optimization_notebook(
             results=sample_optimization_results,
             output_path=str(output_path),
@@ -252,32 +218,18 @@ class TestNotebookGeneratorMarimo:
             _skip_path_validation=True,
         )
 
-        # JSONファイルが作成されたか確認
-        json_files = list(output_dir.glob("data_*.json"))
-        assert len(json_files) == 1
+        assert output_path.exists()
+        assert list(output_dir.glob("data_*.json")) == []
 
-        # JSON内容確認
-        with open(json_files[0], encoding="utf-8") as f:
-            loaded_data = json.load(f)
-
-        assert len(loaded_data) == 3
-        assert loaded_data[0]["score"] == 0.85
-
-    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
-    def test_parameter_passing_marimo(
+    def test_parameter_metadata_is_rendered(
         self,
-        mock_executor_class,
         sample_optimization_results,
         sample_parameter_ranges,
         sample_scoring_weights,
         tmp_path,
     ):
-        """パラメータが正しく渡されるか確認（Marimo）"""
-        mock_executor = MagicMock()
-        mock_executor_class.return_value = mock_executor
-
+        """strategy / combination / scoring metadataをHTMLへ埋め込む"""
         output_path = tmp_path / "test_output.html"
-        mock_executor.execute_notebook.return_value = output_path
 
         generate_optimization_notebook(
             results=sample_optimization_results,
@@ -289,38 +241,30 @@ class TestNotebookGeneratorMarimo:
             _skip_path_validation=True,
         )
 
-        # パラメータ確認
-        call_args = mock_executor.execute_notebook.call_args
-        params = call_args.kwargs["parameters"]
+        html = output_path.read_text(encoding="utf-8")
+        assert "range_break_v6" in html
+        assert "27" in html
+        assert "sharpe_ratio" in html
+        assert "ratio_threshold" in html
 
-        assert params["strategy_name"] == "range_break_v6"
-        assert params["n_combinations"] == 27
-        assert params["parameter_ranges"] == sample_parameter_ranges
-        assert params["scoring_weights"] == sample_scoring_weights
-        assert "results_json_path" in params
-
-    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
-    def test_error_handling_marimo(
+    def test_write_error_propagates_and_cleans_temp_json(
         self,
-        mock_executor_class,
+        monkeypatch,
         sample_optimization_results,
         sample_parameter_ranges,
         sample_scoring_weights,
         tmp_path,
     ):
-        """エラーハンドリングのテスト（Marimo）"""
-        mock_executor = MagicMock()
-        mock_executor_class.return_value = mock_executor
-
-        # execute_notebookがエラーを発生させる
-        mock_executor.execute_notebook.side_effect = Exception(
-            "Marimo execution failed"
-        )
-
+        """HTML書き込みエラーを伝播し、一時JSONを削除する"""
         output_path = tmp_path / "test_output.html"
 
-        # エラーが伝播することを確認
-        with pytest.raises(Exception, match="Marimo execution failed"):
+        def fail_write_text(self, *args, **kwargs):  # noqa: ANN001, ANN002
+            _ = (self, args, kwargs)
+            raise OSError("write failed")
+
+        monkeypatch.setattr(Path, "write_text", fail_write_text)
+
+        with pytest.raises(OSError, match="write failed"):
             generate_optimization_notebook(
                 results=sample_optimization_results,
                 output_path=str(output_path),
@@ -330,3 +274,5 @@ class TestNotebookGeneratorMarimo:
                 n_combinations=9,
                 _skip_path_validation=True,
             )
+
+        assert list(tmp_path.glob("data_*.json")) == []

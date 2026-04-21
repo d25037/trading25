@@ -4,20 +4,19 @@ Backtest Command Module
 Backtest execution subcommand
 """
 
-import time
 import threading
-from pathlib import Path
-from typing import Any, Dict, Tuple
+import time
+from typing import Any, Dict, Tuple, cast
 
+from loguru import logger
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
-from loguru import logger
 
 from src.shared.constants import THREAD_TIMEOUT_SECONDS
-from src.infrastructure.data_access.mode import DATA_ACCESS_MODE_ENV
+from src.domains.backtest.core import BacktestResult, BacktestRunner
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.production_requirements import (
     validate_production_strategy_dataset_requirement,
@@ -56,9 +55,6 @@ def run_backtest(strategy: str) -> None:
         # Base on default.yaml parameters, add entry_filter_params, exit_trigger_params
         parameters = config_loader.default_config.get("parameters", {}).copy()
 
-        # Extract strategy name from path (production/range_break_v5 -> range_break_v5)
-        strategy_name_only = strategy.split("/")[-1]
-
         # Merge shared_config (default + strategy override)
         merged_shared_config = config_loader.merge_shared_config(strategy_config)
         parameters["shared_config"] = merged_shared_config
@@ -72,30 +68,25 @@ def run_backtest(strategy: str) -> None:
         # Display execution info before running
         _display_execution_info(strategy_config, parameters)
 
-        # Initialize executor based on mode
-        executor_output_dir = config_loader.get_output_directory(strategy_config)
-
-        # Marimo execution (HTML output)
-        from src.domains.backtest.core.marimo_executor import MarimoExecutor
-
-        executor = MarimoExecutor(str(executor_output_dir))
-        template_path = "notebooks/templates/strategy_analysis.py"
-
         # Execute with progress spinner
-        html_path, elapsed_time = _execute_with_progress(
-            executor=executor,
-            template_path=template_path,
-            parameters=parameters,
-            strategy_name=strategy_name_only,
-        )
+        runner = BacktestRunner()
+        result, elapsed_time = _execute_with_progress(runner=runner, strategy=strategy)
 
         # Success message
         console.print("[bold green]Execution completed![/bold green]")
-        console.print(f"[bold cyan]HTML Output:[/bold cyan] {html_path}")
+        html_path = result.html_path
+        if html_path is None:
+            console.print("[bold yellow]HTML Output:[/bold yellow] not generated")
+        else:
+            console.print(f"[bold cyan]HTML Output:[/bold cyan] {html_path}")
 
         # Display summary
-        summary = executor.get_execution_summary(html_path)
+        summary = dict(result.summary)
         summary["execution_time"] = elapsed_time
+        if html_path is not None:
+            summary["html_path"] = str(html_path)
+            if html_path.exists():
+                summary["file_size"] = html_path.stat().st_size
         _display_execution_summary(summary)
 
     except Exception as e:
@@ -105,37 +96,36 @@ def run_backtest(strategy: str) -> None:
 
 
 def _execute_with_progress(
-    executor: Any,
-    template_path: str,
-    parameters: Dict[str, Any],
-    strategy_name: str,
-) -> Tuple[Path, float]:
+    runner: BacktestRunner,
+    strategy: str,
+) -> Tuple[BacktestResult, float]:
     """
-    Execute notebook with live progress display
+    Execute backtest with live progress display
 
     Args:
-        executor: MarimoExecutor instance
-        template_path: Path to template notebook
-        parameters: Execution parameters
-        strategy_name: Strategy name
+        runner: BacktestRunner instance
+        strategy: Strategy name
 
     Returns:
-        Tuple of (output_path, elapsed_time)
+        Tuple of (backtest result, elapsed_time)
 
     Raises:
         Exception: Re-raises any exception from the execution thread
         KeyboardInterrupt: If user interrupts during execution
     """
-    result: Dict[str, Any] = {"path": None, "error": None}
+    result: Dict[str, Any] = {"backtest_result": None, "error": None}
+    progress_state = {"status": "Executing backtest..."}
     start_time = time.time()
+
+    def update_progress(status: str, _elapsed: float) -> None:
+        progress_state["status"] = status
 
     def run_execution() -> None:
         try:
-            result["path"] = executor.execute_notebook(
-                template_path=template_path,
-                parameters=parameters,
-                strategy_name=strategy_name,
-                extra_env={DATA_ACCESS_MODE_ENV: "direct"},
+            result["backtest_result"] = runner.execute(
+                strategy,
+                progress_callback=update_progress,
+                data_access_mode="direct",
             )
         except Exception as e:
             result["error"] = e
@@ -157,9 +147,14 @@ def _execute_with_progress(
                 else:
                     time_str = f"{seconds:05.2f}s"
 
-                spinner = Spinner("dots", text=Text.from_markup(
-                    f"[bold blue]Executing backtest...[/bold blue] [cyan]{time_str}[/cyan]"
-                ))
+                spinner = Spinner(
+                    "dots",
+                    text=Text.assemble(
+                        (progress_state["status"], "bold blue"),
+                        " ",
+                        (time_str, "cyan"),
+                    ),
+                )
                 live.update(spinner)
                 time.sleep(0.1)
     except KeyboardInterrupt:
@@ -173,7 +168,11 @@ def _execute_with_progress(
     if result["error"]:
         raise result["error"]
 
-    return result["path"], elapsed_time
+    backtest_result = result["backtest_result"]
+    if backtest_result is None:
+        raise RuntimeError("Backtest finished without a result")
+
+    return cast(BacktestResult, backtest_result), elapsed_time
 
 
 def _display_execution_info(
@@ -205,7 +204,7 @@ def _display_execution_info(
 
 
 def _display_execution_summary(summary: Dict[str, Any]) -> None:
-    """Display execution summary for Marimo"""
+    """Display execution summary."""
     if "error" in summary:
         console.print(f"[red]Summary Error: {summary['error']}[/red]")
         return
@@ -231,6 +230,11 @@ def _display_execution_summary(summary: Dict[str, Any]) -> None:
     if file_size > 0:
         file_size_kb = file_size / 1024
         summary_table.add_row("File Size", f"{file_size_kb:.1f} KB")
+
+    if summary.get("report_status"):
+        summary_table.add_row("Report Status", str(summary["report_status"]))
+    if summary.get("_render_error"):
+        summary_table.add_row("Render Error", str(summary["_render_error"]))
 
     summary_table.add_row("Generated At", str(summary.get("generated_at", "N/A")))
     summary_table.add_row("Status", "Success")

@@ -6,7 +6,7 @@ default:
     output_directory:       # XDG準拠パスを使用（get_backtest_results_dir()）
     create_output_dir: true
 
-  # デフォルトパラメータ（Marimoに渡される）
+  # デフォルトパラメータ（BacktestRunner が使用）
   parameters:
     shared_config:
       initial_cash: 10000000 # 初期資金

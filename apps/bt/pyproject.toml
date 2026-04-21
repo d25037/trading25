@@ -17,7 +17,6 @@ dependencies = [
     "scipy>=1.7.0",  # Statistical functions (pearsonr, linregress)
     "httpx>=0.27.0",  # Sync HTTP client for API calls
     "optuna>=3.0.0",  # Bayesian optimization for strategy agent
-    "marimo>=0.23.0",  # Reactive notebook with static HTML export
     "ruamel.yaml>=0.18.0",  # YAML library with comment preservation
     "fastapi>=0.115.0",  # FastAPI server for backtest API
     "uvicorn[standard]>=0.44.0",  # ASGI server for FastAPI
@@ -117,5 +116,5 @@ show_error_codes = true
 
 # パッケージ固有設定
 [[tool.mypy.overrides]]
-module = ["vectorbt.*", "optuna.*", "marimo.*", "ruamel.*"]
+module = ["vectorbt.*", "optuna.*", "ruamel.*"]
 ignore_missing_imports = true

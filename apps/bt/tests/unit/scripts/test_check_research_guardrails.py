@@ -23,8 +23,6 @@ def test_find_guardrail_findings_detects_viewer_only_regressions(tmp_path: Path)
     module = _load_module()
     relative_path = Path("apps/bt/notebooks/playground/demo_playground.py")
     text = """
-import marimo
-
 @app.cell
 def _():
     from src.domains.analytics.demo import run_demo_research
@@ -51,8 +49,6 @@ def test_scan_playground_files_detects_missing_runner_script(tmp_path: Path) -> 
     notebook.parent.mkdir(parents=True)
     notebook.write_text(
         """
-import marimo
-
 @app.cell
 def _():
     from src.shared.research_notebook_viewer import build_bundle_viewer_controls
@@ -89,8 +85,6 @@ def test_scan_playground_files_detects_missing_docs_readme(tmp_path: Path) -> No
     notebook.parent.mkdir(parents=True, exist_ok=True)
     notebook.write_text(
         """
-import marimo
-
 @app.cell
 def _():
     from src.shared.research_notebook_viewer import build_bundle_viewer_controls
@@ -128,8 +122,6 @@ def test_main_accepts_clean_viewer_only_notebook(tmp_path: Path, capsys) -> None
     notebook.parent.mkdir(parents=True, exist_ok=True)
     notebook.write_text(
         """
-import marimo
-
 @app.cell
 def _():
     from src.shared.research_notebook_viewer import build_bundle_viewer_controls

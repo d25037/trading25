@@ -19,7 +19,7 @@ parent: null
 - backtest result の SoT を既存の成果物セット（`result.html` + `*.metrics.json` + manifest / payload）に保ち、report rendering を notebook runtime から切り離す。
 - research workflow は runner-first + bundle-first を維持し、optional viewer がなくても再現・検証できる状態にする。
 
-## 現状
+## 開始時点の状況
 - `apps/bt/pyproject.toml` の通常 dependency に `marimo>=0.23.0` がある。
 - `apps/bt/src/domains/backtest/core/marimo_executor.py` が backtest report HTML の export を担っている。
 - `BacktestRunner` / Nautilus adapter / optimization notebook generator が `MarimoExecutor` を経由して HTML を生成している。
@@ -37,22 +37,23 @@ parent: null
   - `ReportRenderer` 相当の interface を追加する。
   - 現行 `MarimoExecutor.plan_report_paths(...)` の path planning を marimo 非依存の helper に移す。
   - `BacktestRunner` は `report_payload.json` から HTML を生成する renderer を呼ぶ。
-- [ ] Phase 2: marimo 非依存 HTML renderer を実装する
+- [x] Phase 2: marimo 非依存 HTML renderer を実装する
   - [x] `apps/bt/notebooks/templates/strategy_analysis.py` の表示責務を、payload-driven な HTML renderer に移す。
   - [x] `result.html` は metrics / manifest / report payload を読む静的 HTML とし、失敗時も manifest の `report_status` / `render_error` を維持する。
-  - [ ] `tests/unit/backtest/test_marimo_executor.py` は renderer path / artifact path / timeout ではなく、新 renderer の入出力契約テストへ置き換える。
+  - [x] `tests/unit/backtest/test_marimo_executor.py` は削除し、新 renderer の入出力契約テストへ置き換える。
 - [ ] Phase 3: optimization report を notebook generator から外す
-  - `apps/bt/src/domains/optimization/notebook_generator.py` を `optimization_report_renderer.py` へ置き換える。
-  - `apps/bt/notebooks/templates/optimization_analysis.py` 依存を削除する。
+  - [x] `apps/bt/src/domains/optimization/notebook_generator.py` の実装を Marimo 実行から静的 HTML writer へ置き換える。
+  - [x] `apps/bt/notebooks/templates/optimization_analysis.py` 依存を削除する。
+  - [ ] 公開名を `optimization_report_renderer.py` へ整理し、旧 `notebook_generator` 名を撤去する。
 - [ ] Phase 4: playground notebook を optional / archive へ移す
   - `apps/bt/notebooks/playground/*_playground.py` を `apps/bt/docs/experiments` と runner bundle から辿る optional reference に格下げするか、削除する。
   - `scripts/check-research-guardrails.py` は notebook 検査ではなく docs / runner / bundle surface 検査へ寄せる。
   - docs の `marimo edit` 再現コマンドを runner / bundle / docs の導線へ置き換える。
-- [ ] Phase 5: dependency と CI から marimo を削除する
-  - `apps/bt/pyproject.toml` から `marimo` と mypy override を削除する。
-  - `apps/bt/uv.lock` から marimo tree を落とす。
-  - `marimo check --strict` を検証手順から削除し、renderer / guardrail / docs reference のテストに置き換える。
-  - Dependabot の marimo 更新 PR が出ない状態にする。
+- [x] Phase 5: dependency と CI から marimo を削除する
+  - [x] `apps/bt/pyproject.toml` から `marimo` と mypy override を削除する。
+  - [x] `apps/bt/uv.lock` から marimo tree を落とす。
+  - [x] active CI / prepush dependency から `marimo check --strict` が不要な状態にする。
+  - [x] Dependabot の marimo 更新 PR が出ない状態にする。
 
 ## 受け入れ条件
 - [ ] `uv run --project apps/bt pytest` が marimo 未インストール環境で通る。
@@ -60,7 +61,7 @@ parent: null
 - [ ] `bt backtest <strategy>` が `result.html` / metrics / manifest / simulation payload / report payload を生成する。
 - [ ] `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` が既存成果物から summary を再解決できる。
 - [ ] research runner / bundle / canonical note の再現導線が notebook runtime に依存しない。
-- [ ] `apps/bt/pyproject.toml` と `apps/bt/uv.lock` に marimo が残っていない。
+- [x] `apps/bt/pyproject.toml` と `apps/bt/uv.lock` に marimo が残っていない。
 
 ## 進捗
 - 2026-04-22: `apps/bt/src/domains/backtest/core/report_renderer.py` を追加し、artifact path planning と payload-driven static HTML rendering を marimo 非依存に分離した。
@@ -68,6 +69,10 @@ parent: null
 - 2026-04-22: Nautilus verification の artifact path planning も `BacktestReportPathPlanner` へ切り替えた。report は従来通り `not_requested` のまま。
 - 2026-04-22: `BacktestArtifactWriter` の report renderer metadata を `static_html` に更新し、manifest の versions から marimo version を外した。
 - 2026-04-22: `tests/unit/backtest/test_backtest_runner.py` を static renderer 前提へ更新し、`tests/unit/backtest/test_report_renderer.py` を追加した。
+- 2026-04-22: `bt backtest` CLI の HTML 生成導線を `MarimoExecutor.execute_notebook` から `BacktestRunner` + static renderer へ切り替えた。
+- 2026-04-22: optimization report generator を Marimo template 実行から静的 HTML writer へ切り替え、関連 unit test を static HTML 前提へ更新した。
+- 2026-04-22: 参照が無くなった `apps/bt/src/domains/backtest/core/marimo_executor.py` と旧 executor 専用テストを削除した。
+- 2026-04-22: `apps/bt/pyproject.toml` / `apps/bt/uv.lock` / Dependabot grouping から marimo を削除した。旧 template import test も削除し、pytest 側が marimo runtime を import しないようにした。
 
 ## 注意点
 - 一括削除は blast radius が大きい。まず renderer 分離で `BacktestRunner` の report rendering を差し替え、その後 notebook / docs / tests を削る。

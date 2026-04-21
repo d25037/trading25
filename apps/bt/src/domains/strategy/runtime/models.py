@@ -19,7 +19,7 @@ class ExecutionConfig(BaseModel):
 
     template_notebook: str = Field(
         default="notebooks/templates/strategy_analysis.py",
-        description="Marimoテンプレートパス",
+        description="Legacy report template path",
     )
     output_directory: str | None = Field(
         default=None, description="出力ディレクトリ（Noneでデフォルト）"
