@@ -110,6 +110,10 @@ _SIGNAL_FIELD_OVERRIDES: dict[str, dict[str, str]] = {
         "label": "Short Period",
         "unit": "bars",
     },
+    "ema_period": {
+        "label": "EMA Period",
+        "unit": "bars",
+    },
     "long_period": {
         "label": "Long Period",
         "unit": "bars",
@@ -167,6 +171,8 @@ _RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES = {
     "volume_ratio_above",
     "volume_ratio_below",
     "trading_value",
+    "trading_value_ema_ratio_above",
+    "trading_value_ema_ratio_below",
     "trading_value_range",
 }
 

@@ -162,6 +162,16 @@ def get_default_params(
             "period": 15,
             "threshold_value": 1.0,
         },
+        "trading_value_ema_ratio_above": {
+            "ema_period": 3,
+            "baseline_period": 20,
+            "ratio_threshold": 1.0,
+        },
+        "trading_value_ema_ratio_below": {
+            "ema_period": 3,
+            "baseline_period": 20,
+            "ratio_threshold": 0.9,
+        },
         "trading_value_range": {
             "period": 15,
             "min_threshold": 1.0,

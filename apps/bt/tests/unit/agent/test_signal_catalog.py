@@ -32,6 +32,7 @@ def test_new_registry_signals_are_available_in_lab_catalog() -> None:
         "retracement_cross",
         "volume_ratio_above",
         "volume_ratio_below",
+        "trading_value_ema_ratio_below",
         "buy_and_hold",
         "sector_strength_ranking",
         "sector_rotation_phase",

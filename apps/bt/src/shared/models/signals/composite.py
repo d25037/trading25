@@ -42,6 +42,8 @@ from .sector import (
     SectorVolatilityRegimeParams,
 )
 from .volume import (
+    TradingValueEmaRatioAboveSignalParams,
+    TradingValueEmaRatioBelowSignalParams,
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
     VolumeRatioAboveSignalParams,
@@ -68,6 +70,14 @@ class SignalParams(BaseModel):
     )
     trading_value: TradingValueSignalParams = Field(
         default_factory=TradingValueSignalParams, description="売買代金シグナル"
+    )
+    trading_value_ema_ratio_above: TradingValueEmaRatioAboveSignalParams = Field(
+        default_factory=TradingValueEmaRatioAboveSignalParams,
+        description="短期EMA売買代金 / ADV シグナル",
+    )
+    trading_value_ema_ratio_below: TradingValueEmaRatioBelowSignalParams = Field(
+        default_factory=TradingValueEmaRatioBelowSignalParams,
+        description="短期EMA売買代金 / ADV stale-volume シグナル",
     )
     trading_value_range: TradingValueRangeSignalParams = Field(
         default_factory=TradingValueRangeSignalParams, description="売買代金範囲シグナル"

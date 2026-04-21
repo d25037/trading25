@@ -99,6 +99,8 @@ class TestSignalParamsTypeSafety:
 
         # 全シグナルがデフォルトで無効
         assert params.volume_ratio_above.enabled is False
+        assert params.trading_value_ema_ratio_above.enabled is False
+        assert params.trading_value_ema_ratio_below.enabled is False
         assert params.crossover.enabled is False
         assert params.baseline_deviation.enabled is False
         assert params.baseline_position.enabled is False
@@ -280,6 +282,8 @@ class TestIDECompletionSupport:
         # これらの属性は全て型が確定しており、IDEで補完される
         assert hasattr(params, "volume_ratio_above")
         assert hasattr(params, "volume_ratio_below")
+        assert hasattr(params, "trading_value_ema_ratio_above")
+        assert hasattr(params, "trading_value_ema_ratio_below")
         assert hasattr(params, "crossover")
         assert hasattr(params, "baseline_deviation")
         assert hasattr(params, "baseline_position")
@@ -296,6 +300,8 @@ class TestIDECompletionSupport:
         # ネストされた属性も補完される
         assert hasattr(params.volume_ratio_above, "enabled")
         assert hasattr(params.volume_ratio_above, "ratio_threshold")
+        assert hasattr(params.trading_value_ema_ratio_above, "ema_period")
+        assert hasattr(params.trading_value_ema_ratio_below, "ema_period")
         assert hasattr(params.fundamental, "per")
         assert hasattr(params.fundamental.per, "enabled")
 

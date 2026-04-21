@@ -45,6 +45,8 @@ LEGACY_SIGNAL_ORDER: list[str] = [
     "volume_ratio_above",
     "volume_ratio_below",
     "trading_value",
+    "trading_value_ema_ratio_above",
+    "trading_value_ema_ratio_below",
     "trading_value_range",
     "beta",
     "margin",
@@ -61,6 +63,7 @@ SIGNAL_USAGE_OVERRIDES: dict[str, Literal["entry", "exit", "both"]] = {
     "fundamental": "entry",
     "volume_ratio_above": "entry",
     "volume_ratio_below": "exit",
+    "trading_value_ema_ratio_below": "exit",
 }
 
 
@@ -101,6 +104,12 @@ SIGNAL_RELATION_OVERRIDES: dict[str, dict[str, list[str]]] = {
     },
     "trading_value": {
         "mutually_exclusive": ["trading_value_range"],
+    },
+    "trading_value_ema_ratio_above": {
+        "recommended_with": ["volume_ratio_above"],
+    },
+    "trading_value_ema_ratio_below": {
+        "recommended_with": ["volume_ratio_above"],
     },
     "trading_value_range": {
         "mutually_exclusive": ["trading_value"],
@@ -188,6 +197,16 @@ LEGACY_PARAM_RANGE_OVERRIDES: dict[str, dict[str, ParamRange]] = {
     "trading_value": {
         "period": (5, 50, "int"),
         "threshold_value": (0.1, 100.0, "float"),
+    },
+    "trading_value_ema_ratio_above": {
+        "ema_period": (2, 10, "int"),
+        "baseline_period": (10, 60, "int"),
+        "ratio_threshold": (0.8, 2.0, "float"),
+    },
+    "trading_value_ema_ratio_below": {
+        "ema_period": (2, 10, "int"),
+        "baseline_period": (10, 60, "int"),
+        "ratio_threshold": (0.5, 1.1, "float"),
     },
     "trading_value_range": {
         "period": (5, 50, "int"),

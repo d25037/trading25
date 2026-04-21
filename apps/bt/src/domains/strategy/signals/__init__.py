@@ -7,6 +7,10 @@
 
 # Volume signals
 from .volume import volume_ratio_above_signal, volume_ratio_below_signal
+from .trading_value_ema_ratio import (
+    trading_value_ema_ratio_above_signal,
+    trading_value_ema_ratio_below_signal,
+)
 
 
 # Fundamental signals
@@ -95,6 +99,8 @@ __all__ = [
     # Volume
     "volume_ratio_above_signal",
     "volume_ratio_below_signal",
+    "trading_value_ema_ratio_above_signal",
+    "trading_value_ema_ratio_below_signal",
     # Fundamental
     "is_undervalued_by_per",
     "is_undervalued_by_pbr",

@@ -130,6 +130,10 @@ class TestVolumeRatioSignalParams:
         with pytest.raises(ValidationError):
             VolumeRatioAboveSignalParams(short_period=100, long_period=50)
 
+    def test_median_ma_type(self) -> None:
+        p = VolumeRatioAboveSignalParams(ma_type="median")
+        assert p.ma_type == "median"
+
     def test_invalid_ma_type(self) -> None:
         with pytest.raises(ValidationError, match="ma_type"):
             VolumeRatioAboveSignalParams(ma_type="wma")

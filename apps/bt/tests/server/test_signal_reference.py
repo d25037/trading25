@@ -506,6 +506,14 @@ class TestDescriptionOptionsExtraction:
         assert condition_field["type"] == "select"
         assert condition_field["options"] == ["below", "above"]
 
+    def test_volume_ratio_ma_type_options_include_median(self):
+        """volume_ratio_above.ma_typeでmedianを選べること"""
+        result = build_signal_reference()
+        signal = next(s for s in result["signals"] if s["key"] == "volume_ratio_above")
+        ma_type_field = next(f for f in signal["fields"] if f["name"] == "ma_type")
+        assert ma_type_field["type"] == "select"
+        assert ma_type_field["options"] == ["sma", "ema", "median"]
+
 
 class TestFundamentalParentFieldPropagation:
     """ファンダメンタル子シグナルへの親フィールド伝搬テスト"""

@@ -153,6 +153,13 @@ def compute_volume_mas(
     ma_type: str = "sma",
 ) -> tuple[pd.Series[float], pd.Series[float]]:
     """出来高の短期/長期MA"""
+    if ma_type == "median":
+        short_ma = volume.rolling(window=short_period, min_periods=short_period).median()
+        long_ma = volume.rolling(window=long_period, min_periods=long_period).median()
+        return short_ma, long_ma
+    if ma_type not in ("sma", "ema"):
+        raise ValueError(f"未対応のma_type: {ma_type} (sma/ema/medianのみ)")
+
     resolved_ma_type: MovingAverageType = "ema" if ma_type == "ema" else "sma"
     short_ma = compute_moving_average(volume, short_period, ma_type=resolved_ma_type)
     long_ma = compute_moving_average(volume, long_period, ma_type=resolved_ma_type)

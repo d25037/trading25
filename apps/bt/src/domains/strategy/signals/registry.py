@@ -73,6 +73,10 @@ from .sector_strength import (
     sector_volatility_regime_signal,
 )
 from .trading_value import trading_value_signal
+from .trading_value_ema_ratio import (
+    trading_value_ema_ratio_above_signal,
+    trading_value_ema_ratio_below_signal,
+)
 from .trading_value_range import trading_value_range_signal
 from .universe_rank_bucket import universe_rank_bucket_signal
 from .volatility import (
@@ -420,6 +424,47 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="volume",
         description="売買代金の閾値判定",
         param_key="trading_value",
+        data_checker=lambda d: "execution_close" in d and "volume" in d,
+        data_requirements=["ohlc", "volume"],
+    ),
+    # 2-1. 売買代金EMA比率シグナル
+    SignalDefinition(
+        name="売買代金EMA比率上抜け",
+        signal_func=trading_value_ema_ratio_above_signal,
+        enabled_checker=lambda p: p.trading_value_ema_ratio_above.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "volume": d["volume"],
+            "ratio_threshold": p.trading_value_ema_ratio_above.ratio_threshold,
+            "ema_period": p.trading_value_ema_ratio_above.ema_period,
+            "baseline_period": p.trading_value_ema_ratio_above.baseline_period,
+        },
+        entry_purpose="直近の売買代金参加がADVを上回る銘柄を絞り込む",
+        exit_purpose="",
+        category="volume",
+        description="EMA売買代金がADVを上回る freshness 条件を判定",
+        param_key="trading_value_ema_ratio_above",
+        data_checker=lambda d: "execution_close" in d and "volume" in d,
+        data_requirements=["ohlc", "volume"],
+        exit_disabled=True,
+    ),
+    # 2-1b. 売買代金EMA比率下抜けシグナル
+    SignalDefinition(
+        name="売買代金EMA比率下抜け",
+        signal_func=trading_value_ema_ratio_below_signal,
+        enabled_checker=lambda p: p.trading_value_ema_ratio_below.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "volume": d["volume"],
+            "ratio_threshold": p.trading_value_ema_ratio_below.ratio_threshold,
+            "ema_period": p.trading_value_ema_ratio_below.ema_period,
+            "baseline_period": p.trading_value_ema_ratio_below.baseline_period,
+        },
+        entry_purpose="直近の売買代金参加が崩れた銘柄を除外する",
+        exit_purpose="直近の売買代金参加崩れを検出",
+        category="volume",
+        description="EMA売買代金がADV未満に落ちる stale-volume 条件を判定",
+        param_key="trading_value_ema_ratio_below",
         data_checker=lambda d: "execution_close" in d and "volume" in d,
         data_requirements=["ohlc", "volume"],
     ),

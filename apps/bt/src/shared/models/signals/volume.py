@@ -22,7 +22,7 @@ class _BaseVolumeRatioSignalParams(BaseSignalParams):
     long_period: int = Field(
         default=100, gt=0, le=800, description="出来高長期移動平均期間"
     )
-    ma_type: str = Field(default="sma", description="移動平均タイプ（sma/ema）")
+    ma_type: str = Field(default="sma", description="移動平均タイプ（sma/ema/median）")
 
     @field_validator("long_period")
     @classmethod
@@ -34,8 +34,8 @@ class _BaseVolumeRatioSignalParams(BaseSignalParams):
     @field_validator("ma_type")
     @classmethod
     def validate_ma_type(cls, v: str) -> str:
-        if v not in ["sma", "ema"]:
-            raise ValueError("ma_typeは'sma'または'ema'のみ指定可能です")
+        if v not in ["sma", "ema", "median"]:
+            raise ValueError("ma_typeは'sma'、'ema'、'median'のみ指定可能です")
         return v
 
 
@@ -82,6 +82,72 @@ class TradingValueSignalParams(BaseSignalParams):
         if v not in ["above", "below"]:
             raise ValueError("directionは'above'または'below'のみ指定可能です")
         return v
+
+
+class TradingValueEmaRatioAboveSignalParams(BaseSignalParams):
+    """短期EMA売買代金がADVを上回る freshness シグナル"""
+
+    ratio_threshold: float = Field(
+        default=1.0,
+        gt=0.0,
+        le=10.0,
+        description="EMA売買代金がADVの何倍以上でTrueにするか",
+    )
+    ema_period: int = Field(
+        default=3,
+        gt=0,
+        le=30,
+        description="売買代金EMA期間",
+    )
+    baseline_period: int = Field(
+        default=20,
+        gt=0,
+        le=250,
+        description="ADV（単純平均売買代金）期間",
+    )
+
+    @field_validator("baseline_period")
+    @classmethod
+    def validate_period_order(cls, v: int, info: ValidationInfo) -> int:
+        return _validate_period_order(
+            v,
+            info,
+            "ema_period",
+            "ADV期間はEMA期間より大きい必要があります",
+        )
+
+
+class TradingValueEmaRatioBelowSignalParams(BaseSignalParams):
+    """短期EMA売買代金がADVを下回る stale-volume シグナル"""
+
+    ratio_threshold: float = Field(
+        default=0.9,
+        gt=0.0,
+        le=10.0,
+        description="EMA売買代金がADVの何倍未満でTrueにするか",
+    )
+    ema_period: int = Field(
+        default=3,
+        gt=0,
+        le=30,
+        description="売買代金EMA期間",
+    )
+    baseline_period: int = Field(
+        default=20,
+        gt=0,
+        le=250,
+        description="ADV（単純平均売買代金）期間",
+    )
+
+    @field_validator("baseline_period")
+    @classmethod
+    def validate_period_order(cls, v: int, info: ValidationInfo) -> int:
+        return _validate_period_order(
+            v,
+            info,
+            "ema_period",
+            "ADV期間はEMA期間より大きい必要があります",
+        )
 
 
 class TradingValueRangeSignalParams(BaseSignalParams):

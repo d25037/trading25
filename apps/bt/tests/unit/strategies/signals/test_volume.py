@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
-from src.domains.strategy.signals.volume import volume_signal
+from src.domains.strategy.signals.volume import volume_ratio_above_signal, volume_signal
 from src.shared.models.config import SharedConfig
 
 
@@ -240,6 +240,29 @@ class TestVolumeSignal:
         assert isinstance(signal_ema, pd.Series)
         # SMAとEMAは異なる結果を返す（完全一致しない）
         assert not signal_sma.equals(signal_ema)
+
+    def test_median_ma_ignores_single_day_spike(self):
+        """medianは1日だけの出来高スパイクでTrueにならない"""
+        spike_volume = pd.Series(np.ones(200) * 1000, index=self.dates)
+        spike_volume.iloc[150] = 50000
+
+        signal_sma = volume_ratio_above_signal(
+            spike_volume,
+            ratio_threshold=1.5,
+            short_period=10,
+            long_period=50,
+            ma_type="sma",
+        )
+        signal_median = volume_ratio_above_signal(
+            spike_volume,
+            ratio_threshold=1.5,
+            short_period=10,
+            long_period=50,
+            ma_type="median",
+        )
+
+        assert bool(signal_sma.iloc[150]) is True
+        assert signal_median.iloc[150:160].sum() == 0
 
 
 class TestVolumeSignalIntegration:

@@ -29,7 +29,9 @@ class TestSignalParams:
     def test_all_fields_exist(self):
         sp = SignalParams()
         expected_fields = [
-            "volume_ratio_above", "volume_ratio_below", "trading_value", "trading_value_range",
+            "volume_ratio_above", "volume_ratio_below", "trading_value",
+            "trading_value_ema_ratio_above", "trading_value_ema_ratio_below",
+            "trading_value_range",
             "trend", "fundamental", "volatility_percentile", "beta", "margin",
             "atr_support_position", "atr_support_cross",
             "retracement_position", "retracement_cross",

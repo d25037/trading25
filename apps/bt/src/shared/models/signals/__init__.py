@@ -51,6 +51,8 @@ from .volatility import (
     VolatilityPercentileSignalParams,
 )
 from .volume import (
+    TradingValueEmaRatioAboveSignalParams,
+    TradingValueEmaRatioBelowSignalParams,
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
     VolumeRatioAboveSignalParams,
@@ -65,6 +67,8 @@ __all__ = [
     "Signals",
     "normalize_bool_series",
     # volume
+    "TradingValueEmaRatioAboveSignalParams",
+    "TradingValueEmaRatioBelowSignalParams",
     "TradingValueRangeSignalParams",
     "TradingValueSignalParams",
     "VolumeRatioAboveSignalParams",
