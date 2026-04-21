@@ -62,7 +62,7 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class FeatureSpec:
-    key: str
+    identifier: str
     label: str
     bucket_column: str
     bucket_order: tuple[str, ...] | None = None
@@ -70,80 +70,80 @@ class FeatureSpec:
 
 _FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
-        key="entry_market_cap_bil_jpy",
+        identifier="entry_market_cap_bil_jpy",
         label="Entry market cap (JPY bn)",
         bucket_column="entry_market_cap_bucket",
         bucket_order=("<5b", "5b-20b", "20b-50b", "50b-200b", ">=200b", "missing"),
     ),
     FeatureSpec(
-        key="entry_adv",
+        identifier="entry_adv",
         label="Entry ADV (JPY)",
         bucket_column="entry_adv_bucket",
         bucket_order=("<5m", "5m-20m", "20m-100m", "100m-500m", ">=500m", "missing"),
     ),
     FeatureSpec(
-        key="entry_open",  # gitleaks:allow - feature identifier, not a secret
+        identifier="entry_open",
         label="Entry open (JPY)",
         bucket_column="entry_open_bucket",
         bucket_order=("<100", "100-300", "300-1000", ">=1000", "missing"),
     ),
     FeatureSpec(
-        key="prior_252d_return_pct",
+        identifier="prior_252d_return_pct",
         label="Prior 252d return (%)",
         bucket_column="prior_252d_return_bucket",
         bucket_order=("-80% to -50%", "-50% to -20%", ">-20%", "missing"),
     ),
     FeatureSpec(
-        key="prior_20d_return_pct",
+        identifier="prior_20d_return_pct",
         label="Prior 20d return (%)",
         bucket_column="prior_20d_return_bucket",
         bucket_order=("<=-30%", "-30% to 0%", ">0%", "missing"),
     ),
     FeatureSpec(
-        key="prior_63d_return_pct",
+        identifier="prior_63d_return_pct",
         label="Prior 63d return (%)",
         bucket_column="prior_63d_return_bucket",
         bucket_order=("<=-50%", "-50% to -10%", ">-10%", "missing"),
     ),
     FeatureSpec(
-        key="volume_ratio_20d",
+        identifier="volume_ratio_20d",
         label="Volume ratio 20d",
         bucket_column="volume_ratio_20d_bucket",
         bucket_order=("<0.7", "0.7-1.5", ">1.5", "missing"),
     ),
     FeatureSpec(
-        key="pre_entry_volatility_20d",
+        identifier="pre_entry_volatility_20d",
         label="Pre-entry volatility 20d (%)",
         bucket_column="pre_entry_volatility_20d_bucket",
         bucket_order=("low", "mid", "high", "missing"),
     ),
     FeatureSpec(
-        key="equity_ratio_pct",
+        identifier="equity_ratio_pct",
         label="Equity ratio (%)",
         bucket_column="equity_ratio_bucket",
         bucket_order=("<30%", "30-50%", ">=50%", "missing"),
     ),
     FeatureSpec(
-        key="profit_margin_pct",
+        identifier="profit_margin_pct",
         label="Profit margin (%)",
         bucket_column="profit_margin_bucket",
         bucket_order=("<=0%", "0-5%", ">5%", "missing"),
     ),
     FeatureSpec(
-        key="cfo_margin_pct",
+        identifier="cfo_margin_pct",
         label="CFO margin (%)",
         bucket_column="cfo_margin_bucket",
         bucket_order=("<=0%", "0-10%", ">10%", "missing"),
     ),
     FeatureSpec(
-        key="sector_33_name",
+        identifier="sector_33_name",
         label="Sector (33)",
         bucket_column="sector_bucket",
         bucket_order=None,
     ),
 )
-_FEATURE_SPEC_BY_KEY: dict[str, FeatureSpec] = {spec.key: spec for spec in _FEATURE_SPECS}
-_FEATURE_ORDER: dict[str, int] = {spec.key: idx for idx, spec in enumerate(_FEATURE_SPECS)}
+_FEATURE_SPEC_BY_KEY: dict[str, FeatureSpec] = {spec.identifier: spec for spec in _FEATURE_SPECS}
+_FEATURE_ORDER: dict[str, int] = {spec.identifier: idx for idx, spec in enumerate(_FEATURE_SPECS)}
 _EVENT_FEATURE_COLUMNS: tuple[str, ...] = (
     "event_id",
     "code",
@@ -971,16 +971,16 @@ def _combo_payload(
 ) -> dict[str, Any]:
     ordered_pairs = sorted(
         zip(feature_specs, bucket_labels, strict=True),
-        key=lambda pair: _FEATURE_ORDER[pair[0].key],
+        key=lambda pair: _FEATURE_ORDER[pair[0].identifier],
     )
     ordered_specs = [pair[0] for pair in ordered_pairs]
     ordered_buckets = [str(pair[1]) for pair in ordered_pairs]
     payload: dict[str, Any] = {
         "feature_count": len(ordered_specs),
-        "feature_keys": "|".join(spec.key for spec in ordered_specs),
+        "feature_keys": "|".join(spec.identifier for spec in ordered_specs),
         "feature_labels": " + ".join(spec.label for spec in ordered_specs),
         "combo_key": " | ".join(
-            f"{spec.key}={bucket}" for spec, bucket in zip(ordered_specs, ordered_buckets, strict=True)
+            f"{spec.identifier}={bucket}" for spec, bucket in zip(ordered_specs, ordered_buckets, strict=True)
         ),
         "combo_label": " / ".join(
             f"{spec.label}: {bucket}"
@@ -997,7 +997,7 @@ def _combo_payload(
         "feature_3_bucket_label": None,
     }
     for idx, (spec, bucket) in enumerate(zip(ordered_specs, ordered_buckets, strict=True), start=1):
-        payload[f"feature_{idx}_key"] = spec.key
+        payload[f"feature_{idx}_key"] = spec.identifier
         payload[f"feature_{idx}_label"] = spec.label
         payload[f"feature_{idx}_bucket_label"] = bucket
     return payload
@@ -1158,23 +1158,23 @@ def _build_triplet_combo_summary_df(
         if pair_df.empty:
             continue
         for extra_spec in _FEATURE_SPECS:
-            if extra_spec.key in used_keys:
+            if extra_spec.identifier in used_keys:
                 continue
             grouped = pair_df.groupby(extra_spec.bucket_column, sort=False, dropna=False)
             for extra_bucket, cell_df in grouped:
                 if len(cell_df) < min_event_count:
                     continue
-                feature_keys = [*used_keys, extra_spec.key]
+                feature_keys = [*used_keys, extra_spec.identifier]
                 bucket_lookup = {
                     str(pair_row["feature_1_key"]): str(pair_row["feature_1_bucket_label"]),
                     str(pair_row["feature_2_key"]): str(pair_row["feature_2_bucket_label"]),
-                    extra_spec.key: str(extra_bucket),
+                    extra_spec.identifier: str(extra_bucket),
                 }
                 ordered_specs = [
                     _FEATURE_SPEC_BY_KEY[key]
                     for key in sorted(feature_keys, key=lambda value: _FEATURE_ORDER[value])
                 ]
-                ordered_buckets = [bucket_lookup[spec.key] for spec in ordered_specs]
+                ordered_buckets = [bucket_lookup[spec.identifier] for spec in ordered_specs]
                 combo_payload = _combo_payload(ordered_specs, ordered_buckets)
                 record_key = (cohort_key, str(combo_payload["combo_key"]))
                 metric_payload = _metric_payload(cell_df, cohort_stats=cohort_stats_lookup[cohort_key])
