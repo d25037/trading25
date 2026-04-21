@@ -69,7 +69,6 @@ modules = [
     "typer",
     "uvicorn",
     "vectorbt",
-    "watchdog",
 ]
 
 missing = [m for m in modules if importlib.util.find_spec(m) is None]

@@ -19,7 +19,6 @@ dependencies = [
     "optuna>=3.0.0",  # Bayesian optimization for strategy agent
     "marimo>=0.23.0",  # Reactive notebook with static HTML export
     "ruamel.yaml>=0.18.0",  # YAML library with comment preservation
-    "watchdog>=6.0.0",
     "fastapi>=0.115.0",  # FastAPI server for backtest API
     "uvicorn[standard]>=0.44.0",  # ASGI server for FastAPI
     "sse-starlette>=2.0.0",  # Server-Sent Events for FastAPI

@@ -11,7 +11,16 @@ updates:
       - "dependencies"
       - "ci"
       - "security"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      github-actions-runtime:
+        applies-to: "version-updates"
+        patterns:
+          - "actions/*"
+          - "astral-sh/*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(deps)"
 
@@ -26,7 +35,56 @@ updates:
       - "dependencies"
       - "ts"
       - "security"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      ts-toolchain:
+        applies-to: "version-updates"
+        patterns:
+          - "@biomejs/*"
+          - "bun-types"
+          - "typescript"
+          - "vite"
+          - "@vitejs/*"
+          - "vitest"
+          - "@vitest/*"
+          - "happy-dom"
+          - "@testing-library/*"
+          - "@playwright/*"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "openapi-typescript"
+        update-types:
+          - "minor"
+          - "patch"
+      ts-react-runtime:
+        applies-to: "version-updates"
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+          - "@tanstack/*"
+          - "@radix-ui/*"
+        update-types:
+          - "minor"
+          - "patch"
+      ts-ui-runtime:
+        applies-to: "version-updates"
+        patterns:
+          - "@monaco-editor/*"
+          - "monaco-editor"
+          - "class-variance-authority"
+          - "clsx"
+          - "js-yaml"
+          - "@types/js-yaml"
+          - "lightweight-charts"
+          - "lucide-react"
+          - "tailwind-merge"
+          - "zod"
+          - "zustand"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(deps)"
 
@@ -41,6 +99,51 @@ updates:
       - "dependencies"
       - "bt"
       - "security"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      bt-dev-tools:
+        applies-to: "version-updates"
+        patterns:
+          - "mypy"
+          - "pandas-stubs"
+          - "pyright"
+          - "pytest*"
+          - "respx"
+          - "ruff"
+        update-types:
+          - "minor"
+          - "patch"
+      bt-server-runtime:
+        applies-to: "version-updates"
+        patterns:
+          - "duckdb"
+          - "fastapi"
+          - "httpx"
+          - "loguru"
+          - "pydantic"
+          - "rich"
+          - "ruamel.yaml"
+          - "sqlalchemy"
+          - "sse-starlette"
+          - "typer"
+          - "uvicorn*"
+        update-types:
+          - "minor"
+          - "patch"
+      bt-research-runtime:
+        applies-to: "version-updates"
+        patterns:
+          - "lightgbm"
+          - "marimo"
+          - "nautilus-trader"
+          - "numpy"
+          - "optuna"
+          - "pandas"
+          - "scikit-learn"
+          - "scipy"
+          - "vectorbt"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(deps)"
