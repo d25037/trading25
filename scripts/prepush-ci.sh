@@ -101,6 +101,7 @@ run_core_suite() {
     "package-unit-tests" \
     env \
     CI_DEPS_READY=1 \
+    BT_UNIT_TEST_SHARDS="${BT_UNIT_TEST_SHARDS:-3}" \
     BT_COVERAGE_DATA_FILE="${coverage_dir}/.coverage.unit" \
     "${repo_root}/scripts/test-packages.sh"
   run_step \

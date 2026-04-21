@@ -766,6 +766,7 @@ class TestSyncRoutes:
 
 class TestIntradaySyncRoute:
     def test_intraday_sync_success(self, client: TestClient) -> None:
+        client.app.state.market_time_series_store = MagicMock()
         with patch(
             "src.entrypoints.http.routes.db.intraday_sync_service.sync_intraday_data",
             new_callable=AsyncMock,

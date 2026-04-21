@@ -138,8 +138,8 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_9_tables(self) -> None:
-        assert len(market_meta.tables) == 9
+    def test_market_meta_has_10_tables(self) -> None:
+        assert len(market_meta.tables) == 10
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key

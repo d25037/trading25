@@ -64,7 +64,7 @@ from src.entrypoints.http.schemas.screening import (
 from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.application.services.analytics_provenance import build_market_provenance
 from src.application.services.dataset_presets import get_preset_label
-from src.application.services.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
     load_market_sector_indices,

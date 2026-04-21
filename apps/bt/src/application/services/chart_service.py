@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
-from src.application.services.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.synthetic_indices import (
     NT_RATIO_SYNTHETIC_INDEX_CATEGORY,

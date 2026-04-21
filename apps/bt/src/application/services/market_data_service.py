@@ -11,7 +11,7 @@ from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.options_225 import build_options_225_response
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
-from src.application.services.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import resolve_market_codes
 from src.entrypoints.http.schemas.market_data import (
     MarketMinuteBarRecord,
     MarketOHLCRecord,

@@ -22,7 +22,7 @@ from typing import Any, Protocol
 
 from loguru import logger
 
-from src.application.services.market_code_alias import expand_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes
 from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo

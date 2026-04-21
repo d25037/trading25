@@ -12,7 +12,7 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
-from src.application.services.market_code_alias import expand_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes
 from src.domains.analytics.fundamental_ranking import (
     FundamentalRankingCalculator,
     StatementRow,

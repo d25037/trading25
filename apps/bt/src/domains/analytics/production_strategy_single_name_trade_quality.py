@@ -465,15 +465,30 @@ def _extract_trade_ledger_rows(
         return []
 
     frame = trade_records.copy()
-    entry_timestamp = pd.to_datetime(frame.get("Entry Timestamp"), errors="coerce")
-    exit_timestamp = pd.to_datetime(frame.get("Exit Timestamp"), errors="coerce")
-    holding_days = (
-        exit_timestamp.sub(entry_timestamp).dt.total_seconds().div(86400.0)
+    entry_timestamp_values = (
+        frame["Entry Timestamp"]
+        if "Entry Timestamp" in frame.columns
+        else pd.Series(pd.NaT, index=frame.index)
     )
+    exit_timestamp_values = (
+        frame["Exit Timestamp"]
+        if "Exit Timestamp" in frame.columns
+        else pd.Series(pd.NaT, index=frame.index)
+    )
+    entry_timestamp = pd.to_datetime(entry_timestamp_values, errors="coerce")
+    exit_timestamp = pd.to_datetime(exit_timestamp_values, errors="coerce")
 
     rows: list[dict[str, Any]] = []
     strategy_basename = strategy_name.split("/")[-1]
     for idx in range(len(frame)):
+        entry_value = entry_timestamp.iloc[idx]
+        exit_value = exit_timestamp.iloc[idx]
+        holding_days = None
+        if pd.notna(entry_value) and pd.notna(exit_value):
+            holding_days = _coerce_float(
+                (pd.Timestamp(exit_value) - pd.Timestamp(entry_value)).total_seconds()
+                / 86400.0
+            )
         rows.append(
             {
                 "strategy_name": strategy_name,
@@ -484,9 +499,9 @@ def _extract_trade_ledger_rows(
                 "window_start_date": window_start_date,
                 "window_end_date": window_end_date,
                 "symbol": str(frame.iloc[idx].get("Column", "")),
-                "entry_timestamp": _coerce_timestamp(entry_timestamp.iloc[idx]),
-                "exit_timestamp": _coerce_timestamp(exit_timestamp.iloc[idx]),
-                "holding_days": _coerce_float(holding_days.iloc[idx]),
+                "entry_timestamp": _coerce_timestamp(entry_value),
+                "exit_timestamp": _coerce_timestamp(exit_value),
+                "holding_days": holding_days,
                 "size": _coerce_float(frame.iloc[idx].get("Size")),
                 "avg_entry_price": _coerce_float(frame.iloc[idx].get("Avg Entry Price")),
                 "avg_exit_price": _coerce_float(frame.iloc[idx].get("Avg Exit Price")),

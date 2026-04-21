@@ -166,6 +166,11 @@ class TestVolumeRatioAboveSignalParams:
         params = VolumeRatioAboveSignalParams(enabled=True, ma_type="ema")
         assert params.ma_type == "ema"
 
+    def test_valid_ma_type_median(self):
+        """有効なma_type=medianでVolumeRatioAboveSignalParams作成"""
+        params = VolumeRatioAboveSignalParams(enabled=True, ma_type="median")
+        assert params.ma_type == "median"
+
     def test_invalid_ma_type(self):
         """無効なma_typeでValidationError"""
         with pytest.raises(ValidationError) as exc_info:
@@ -173,7 +178,7 @@ class TestVolumeRatioAboveSignalParams:
                 enabled=True,
                 ma_type="wma",  # wmaは未対応
             )
-        assert "ma_typeは'sma'または'ema'のみ指定可能です" in str(exc_info.value)
+        assert "ma_typeは'sma'、'ema'、'median'のみ指定可能です" in str(exc_info.value)
 
     def test_default_ma_type(self):
         """デフォルトma_typeはsma"""

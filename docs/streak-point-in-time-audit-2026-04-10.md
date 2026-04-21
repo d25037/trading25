@@ -84,8 +84,8 @@ Historical snapshot runtime は、
 
 対象の主経路:
 
-- [topix100_streak_353_next_session_intraday_lightgbm.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_streak_353_next_session_intraday_lightgbm.py)
-- [ranking_service.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/application/services/ranking_service.py)
+- [topix100_streak_353_next_session_intraday_lightgbm.py](../apps/bt/src/domains/analytics/topix100_streak_353_next_session_intraday_lightgbm.py)
+- [ranking_service.py](../apps/bt/src/application/services/ranking_service.py)
 
 ## Root Cause 2: Research Feature Panel Design Bug
 
@@ -189,7 +189,7 @@ tradeable daily signal panel の SoT に流用してはいけない。
 
 新しい SoT は daily point-in-time state panel:
 
-- [topix100_streak_353_transfer.py](/Users/shinjiroaso/dev/trading25/apps/bt/src/domains/analytics/topix100_streak_353_transfer.py)
+- [topix100_streak_353_transfer.py](../apps/bt/src/domains/analytics/topix100_streak_353_transfer.py)
   - `build_topix100_streak_daily_state_panel_df(...)`
   - `build_topix100_streak_state_snapshot_df(...)`
 

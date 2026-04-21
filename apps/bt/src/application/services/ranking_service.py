@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.application.services.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import resolve_market_codes
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
