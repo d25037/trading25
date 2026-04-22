@@ -59,6 +59,10 @@ Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
   performance and deeper drawdown.
 - The strongest reusable single-factor families were low `PBR`, low
   `forward PER`, low `PER`, and high dividend yield / forecast dividend yield.
+- `forward EPS / actual EPS` was added as `forward_eps_to_actual_eps`; it was
+  weak as a broad selector in this run. Q5 high ratio did not beat Q1 low ratio
+  for `all`, `standard`, or `growth`, though `prime` had a small positive Q5
+  tilt.
 - Low `PBR + small cap` was the strongest cross condition. `standard`
   `PBR Q1 + market-cap Q1` produced CAGR `37.7%`, Sharpe `2.16`, Sortino
   `2.40`, Calmar `1.18`, maxDD `-31.9%`.

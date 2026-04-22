@@ -263,6 +263,7 @@ def test_run_study_adjusts_per_share_metrics_to_entry_share_baseline(
     assert split_event["eps"] == pytest.approx(50.0)
     assert split_event["bps"] == pytest.approx(500.0)
     assert split_event["forward_eps"] == pytest.approx(70.0)
+    assert split_event["forward_eps_to_actual_eps"] == pytest.approx(1.4)
     assert split_event["forward_eps_source"] == "revised"
     assert split_event["per"] == pytest.approx(1.0)
     assert split_event["pbr"] == pytest.approx(0.1)
@@ -277,6 +278,7 @@ def test_run_study_adjusts_per_share_metrics_to_entry_share_baseline(
     assert bool(negative_event["share_adjustment_applied"]) is False
     assert negative_event["event_return"] == pytest.approx(-0.2)
     assert negative_event["eps"] == pytest.approx(-20.0)
+    assert negative_event["forward_eps_to_actual_eps"] == pytest.approx(0.5)
 
 
 def test_feature_buckets_and_annual_portfolio_summary_are_built(

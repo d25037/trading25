@@ -121,6 +121,7 @@ class AnnualFirstOpenLastCloseFundamentalPanelResult:
 _FACTOR_DEFINITIONS: tuple[FeatureDefinition, ...] = (
     FeatureDefinition("eps", "EPS", True),
     FeatureDefinition("forward_eps", "Forward EPS", True),
+    FeatureDefinition("forward_eps_to_actual_eps", "Forward EPS / actual EPS", True),
     FeatureDefinition("bps", "BPS", True),
     FeatureDefinition("per", "PER", False),
     FeatureDefinition("forward_per", "Forward PER", False),
@@ -857,6 +858,7 @@ def _build_feature_values(
             ),
             "eps": eps,
             "forward_eps": forward_eps,
+            "forward_eps_to_actual_eps": _ratio(forward_eps, eps),
             "forward_eps_source": forward_eps_source,
             "forward_eps_disclosed_date": forward_eps_date,
             "forward_eps_period_type": forward_eps_period,
