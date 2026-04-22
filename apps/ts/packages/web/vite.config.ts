@@ -86,7 +86,7 @@ export default defineConfig({
 	},
 	server: {
 		host: '0.0.0.0',
-		allowedHosts: ['mba-m4'],
+		allowedHosts: ['mba-m4', 'hx90'],
 		port: WEB_PORT,
 		strictPort: true,
 		proxy: {
