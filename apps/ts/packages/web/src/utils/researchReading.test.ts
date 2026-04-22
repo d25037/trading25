@@ -74,6 +74,45 @@ Short intro paragraph.
     expect(model.considerationSections[0]?.title).toBe('Reading Note');
   });
 
+  it('does not use context bullets as the fallback headline for table-heavy markdown', () => {
+    const model = buildResearchReadingModel(
+      createDetail({
+        item: {
+          experimentId: 'market-behavior/accumulation-flow-followthrough',
+          runId: '20260421_141732_82dc6d61',
+          title: 'Accumulation Flow Followthrough',
+          objective:
+            '| Universe | Stocks | Analysis Stocks | Stock Days | Accum Events | Not Ext | Wick | | --- | --- | --- | --- | --- | --- | --- |',
+          headline: 'Universes: `TOPIX500 / PRIME ex TOPIX500 / Standard / Growth`.',
+          createdAt: '2026-04-21T14:17:32+00:00',
+          analysisStartDate: '2016-04-21',
+          analysisEndDate: '2026-04-20',
+          gitCommit: '58c1fd4a',
+          tags: [],
+          hasStructuredSummary: false,
+        },
+        summaryMarkdown: `# Accumulation Flow Followthrough
+
+## Scope
+
+- Universes: \`TOPIX500 / PRIME ex TOPIX500 / Standard / Growth\`.
+- Entry assumption: next session open after the signal date.
+
+## Best Event Buckets (20d)
+
+| Universe | Filter | Events | Mean |
+| --- | --- | --- | --- |
+| TOPIX500 | Accumulation + not extended | 224537 | 0.010545 |
+`,
+      })
+    );
+
+    expect(model.headline).toBe('Accumulation Flow Followthrough');
+    expect(model.resultSections[0]?.title).toBe('Best Event Buckets (20d)');
+    expect(model.resultSections[0]?.items[0]).toBe('| Universe | Filter | Events | Mean |');
+    expect(model.contextSections[0]?.items[0]).toBe('Universes: TOPIX500 / PRIME ex TOPIX500 / Standard / Growth.');
+  });
+
   it('uses structured summary fields as the reading model when available', () => {
     const model = buildResearchReadingModel(
       createDetail({

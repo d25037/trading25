@@ -62,6 +62,41 @@ function cleanMarkdownText(value: string): string {
     .trim();
 }
 
+function isMarkdownTableLine(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('|')) {
+    return false;
+  }
+  const withoutLeadingPipe = trimmed.slice(1);
+  const withoutTrailingPipe = withoutLeadingPipe.endsWith('|') ? withoutLeadingPipe.slice(0, -1) : withoutLeadingPipe;
+  return withoutTrailingPipe.split('|').length > 1;
+}
+
+function firstTextItem(sections: ResearchReadingSection[]): string | undefined {
+  for (const section of sections) {
+    const item = section.items.find((value) => !isMarkdownTableLine(value));
+    if (item) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function nonTableText(value?: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return isMarkdownTableLine(cleanMarkdownText(value)) ? undefined : value;
+}
+
+function containsCleanedItem(sections: ResearchReadingSection[], value?: string | null): boolean {
+  if (!value) {
+    return false;
+  }
+  const cleanedValue = cleanMarkdownText(value);
+  return sections.some((section) => section.items.some((item) => cleanMarkdownText(item) === cleanedValue));
+}
+
 function parseMarkdownSections(markdown: string): {
   title?: string;
   intro: string[];
@@ -219,8 +254,14 @@ function buildFallbackReadingModel(detail: ResearchDetailResponse): ResearchRead
     });
   }
 
+  const catalogHeadline =
+    containsCleanedItem(contextSections, detail.item.headline) || isMarkdownTableLine(cleanMarkdownText(detail.item.headline ?? ''))
+      ? undefined
+      : detail.item.headline;
+  const headline = catalogHeadline ?? firstTextItem(resultSections) ?? nonTableText(detail.item.objective) ?? parsed.title ?? detail.item.title;
+
   return {
-    headline: detail.item.headline ?? detail.item.objective ?? resultSections[0]?.items[0] ?? parsed.title ?? detail.item.title,
+    headline,
     resultSections,
     considerationSections,
     contextSections,

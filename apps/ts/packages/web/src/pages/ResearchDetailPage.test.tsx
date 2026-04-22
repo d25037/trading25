@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchDetailPage } from './ResearchDetailPage';
@@ -58,7 +58,16 @@ beforeEach(() => {
             highlights: [{ label: 'Selected X', value: '3 streaks', tone: 'accent', detail: 'best discovery score' }],
             tableHighlights: [{ name: 'mode_summary_df', label: 'Forward return summary', description: '1/5/10/20d' }],
           },
-          summaryMarkdown: '# TOPIX Streak Extreme Mode\n\nRaw summary paragraph.\n',
+          summaryMarkdown: `# TOPIX Streak Extreme Mode
+
+Raw summary paragraph.
+
+## Best Event Buckets (20d)
+
+| Universe | Filter | Events | Mean |
+| --- | --- | --- | --- |
+| TOPIX500 | Accumulation + not extended | 224537 | 0.010545 |
+`,
           outputTables: ['mode_summary_df', 'window_score_df'],
           availableRuns: [
             { runId: '20260405_110000_alpha0002', createdAt: '2026-04-05T11:00:00+00:00', isLatest: true },
@@ -100,6 +109,12 @@ Beta fallback paragraph.
 
 - Beta fallback takeaway.
 
+## Best Event Buckets (20d)
+
+| Universe | Filter | Events | Mean |
+| --- | --- | --- | --- |
+| TOPIX500 | Accumulation pressure | 545411 | 0.009499 |
+
 ## Artifact Tables
 
 - \`summary_df\`
@@ -132,6 +147,17 @@ describe('ResearchDetailPage', () => {
     expect(screen.getByText('Raw Bundle Markdown')).toBeInTheDocument();
   });
 
+  it('renders markdown pipe tables as structured tables', () => {
+    render(<ResearchDetailPage />);
+
+    const table = screen.getByRole('table', { name: 'Markdown table' });
+    expect(within(table).getByRole('columnheader', { name: 'Universe' })).toBeInTheDocument();
+    expect(within(table).getByRole('columnheader', { name: 'Events' })).toBeInTheDocument();
+    expect(within(table).getByText('TOPIX500')).toBeInTheDocument();
+    expect(within(table).getByText('0.010545')).toBeInTheDocument();
+    expect(screen.queryByText('| Universe | Filter | Events | Mean |')).not.toBeInTheDocument();
+  });
+
   it('falls back to markdown when no structured summary exists', () => {
     currentSearch = {
       experimentId: 'market-behavior/unstructured-beta',
@@ -145,6 +171,21 @@ describe('ResearchDetailPage', () => {
     expect(screen.getAllByText('Current Read').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Beta fallback takeaway.').length).toBeGreaterThan(0);
     expect(screen.getAllByText('How To Read It').length).toBeGreaterThan(0);
+  });
+
+  it('renders promoted fallback markdown tables as structured tables', () => {
+    currentSearch = {
+      experimentId: 'market-behavior/unstructured-beta',
+      runId: '20260405_120000_beta0001',
+    };
+
+    render(<ResearchDetailPage />);
+
+    const tables = screen.getAllByRole('table', { name: 'Markdown table' });
+    expect(tables.length).toBeGreaterThanOrEqual(2);
+    expect(within(tables[0] as HTMLElement).getByRole('columnheader', { name: 'Universe' })).toBeInTheDocument();
+    expect(within(tables[0] as HTMLElement).getByText('Accumulation pressure')).toBeInTheDocument();
+    expect(screen.queryByText('| Universe | Filter | Events | Mean |')).not.toBeInTheDocument();
   });
 
   it('navigates between runs and back to the catalog', async () => {

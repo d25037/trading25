@@ -1,5 +1,5 @@
 import { ArrowLeft, Loader2, ScrollText, Sparkles } from 'lucide-react';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import {
   CompactMetric,
   PageIntro,
@@ -44,6 +44,194 @@ function getHighlightTone(tone: ResearchHighlightTone): ResearchHighlightTone {
   }
 }
 
+interface MarkdownTable {
+  headers: MarkdownTableHeader[];
+  rows: MarkdownTableRow[];
+}
+
+interface MarkdownTableHeader {
+  id: string;
+  label: string;
+}
+
+interface MarkdownTableRow {
+  id: string;
+  cells: MarkdownTableCell[];
+}
+
+interface MarkdownTableCell {
+  id: string;
+  value: string;
+}
+
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) {
+    return [];
+  }
+
+  const withoutLeadingPipe = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+  const withoutTrailingPipe = withoutLeadingPipe.endsWith('|') ? withoutLeadingPipe.slice(0, -1) : withoutLeadingPipe;
+  return withoutTrailingPipe.split('|').map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function isPotentialMarkdownTableLine(line: string): boolean {
+  return line.trim().startsWith('|') && splitMarkdownTableRow(line).length > 1;
+}
+
+function parseMarkdownTable(lines: string[]): MarkdownTable | null {
+  if (lines.length < 2 || !isMarkdownTableSeparator(lines[1] ?? '')) {
+    return null;
+  }
+
+  const headerLabels = splitMarkdownTableRow(lines[0] ?? '');
+  if (headerLabels.length === 0) {
+    return null;
+  }
+
+  const headers = headerLabels.map((label, index) => ({
+    id: `header:${index}:${label}`,
+    label,
+  }));
+  const rows = lines.slice(2).map((line, rowIndex) => {
+    const cells = splitMarkdownTableRow(line);
+    return {
+      id: `row:${rowIndex}:${line}`,
+      cells: headers.map((header, cellIndex) => ({
+        id: `cell:${rowIndex}:${header.id}`,
+        value: cells[cellIndex] ?? '',
+      })),
+    };
+  });
+
+  return { headers, rows };
+}
+
+function isNumericMarkdownCell(value: string): boolean {
+  return /^[-+]?(\d+|\d*\.\d+)(e[-+]?\d+)?%?$/i.test(value.replace(/,/g, '').trim());
+}
+
+function MarkdownTableBlock({ table }: { table: MarkdownTable }) {
+  return (
+    <div className="overflow-hidden rounded-[18px] border border-border/60 bg-[var(--app-surface-muted)]">
+      <div className="overflow-x-auto">
+        <table aria-label="Markdown table" className="min-w-full border-collapse text-left text-xs">
+          <thead className="bg-[var(--app-surface-emphasis)] text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+            <tr>
+              {table.headers.map((header) => (
+                <th
+                  key={header.id}
+                  scope="col"
+                  className={cn(
+                    'border-b border-border/60 px-3 py-2.5 font-semibold whitespace-nowrap',
+                    isNumericMarkdownCell(header.label) ? 'text-right' : 'text-left'
+                  )}
+                >
+                  {header.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {table.rows.map((row) => (
+              <tr key={row.id} className="bg-background/40">
+                {row.cells.map((cell) => {
+                  const isNumeric = isNumericMarkdownCell(cell.value);
+                  return (
+                    <td
+                      key={cell.id}
+                      className={cn(
+                        'px-3 py-2.5 whitespace-nowrap text-foreground',
+                        isNumeric ? 'text-right font-mono tabular-nums' : 'text-left'
+                      )}
+                    >
+                      {cell.value}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function buildContentKey(prefix: string, value: string, seen: Map<string, number>): string {
+  const count = seen.get(value) ?? 0;
+  seen.set(value, count + 1);
+  return `${prefix}:${value}:${count}`;
+}
+
+function renderMarkdownItemBlocks(items: string[], keyPrefix: string): ReactNode[] {
+  const blocks: ReactNode[] = [];
+  const seen = new Map<string, number>();
+  let tableLines: string[] = [];
+
+  const appendParagraph = (item: string) => {
+    blocks.push(
+      <p key={buildContentKey(`${keyPrefix}:paragraph`, item, seen)} className="text-sm leading-6 text-foreground">
+        {item}
+      </p>
+    );
+  };
+
+  const flushTable = () => {
+    if (tableLines.length === 0) {
+      return;
+    }
+    const table = parseMarkdownTable(tableLines);
+    if (table) {
+      blocks.push(
+        <MarkdownTableBlock key={buildContentKey(`${keyPrefix}:table`, tableLines.join('\n'), seen)} table={table} />
+      );
+    } else {
+      tableLines.forEach(appendParagraph);
+    }
+    tableLines = [];
+  };
+
+  for (const item of items) {
+    if (isPotentialMarkdownTableLine(item)) {
+      tableLines.push(item);
+      continue;
+    }
+    flushTable();
+    appendParagraph(item);
+  }
+
+  flushTable();
+  return blocks;
+}
+
+function isRawMarkdownTableText(value?: string | null): boolean {
+  return value ? isPotentialMarkdownTableLine(value.trim()) : false;
+}
+
+function getDetailDescription(detail: ResearchDetailResponse, reading: ResearchReadingModel): string {
+  if (detail.summary) {
+    return (
+      detail.item.headline ??
+      detail.item.objective ??
+      'Read the latest published analytics bundle with the result and interpretation surfaced first.'
+    );
+  }
+
+  if (detail.item.objective && !isRawMarkdownTableText(detail.item.objective)) {
+    return detail.item.objective;
+  }
+  if (reading.headline !== detail.item.title) {
+    return reading.headline;
+  }
+  return 'Read the latest published analytics bundle with the result and interpretation surfaced first.';
+}
+
 function MarkdownSummary({ markdown }: { markdown: string }) {
   const blocks = useMemo(
     () =>
@@ -67,6 +255,10 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
         }
         const firstLine = lines[0] ?? '';
         const blockKey = `block:${block}`;
+        const table = parseMarkdownTable(lines);
+        if (table) {
+          return <MarkdownTableBlock key={blockKey} table={table} />;
+        }
         if (lines.every((line) => line.startsWith('- '))) {
           return (
             <ul key={blockKey} className="space-y-2 text-sm leading-6 text-foreground">
@@ -145,11 +337,7 @@ function ReadingSectionBlock({
     >
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{section.title}</p>
       <div className="mt-3 space-y-3">
-        {section.items.map((item) => (
-          <p key={`${section.title}:${item}`} className="text-sm leading-6 text-foreground">
-            {item}
-          </p>
-        ))}
+        {renderMarkdownItemBlocks(section.items, `section:${section.title}`)}
       </div>
     </div>
   );
@@ -334,11 +522,7 @@ export function ResearchDetailView({ detail, onBack, onSelectRun }: ResearchDeta
       <PageIntro
         eyebrow="Published Research"
         title={detail.item.title}
-        description={
-          detail.item.headline ??
-          detail.item.objective ??
-          'Read the latest published analytics bundle with the result and interpretation surfaced first.'
-        }
+        description={getDetailDescription(detail, reading)}
         meta={<PageIntroMetaList items={metaItems} />}
       />
 
