@@ -177,22 +177,23 @@ def _load_published_summary(
     info: ResearchBundleInfo,
     summary_markdown: str,
 ) -> PublishedResearchSummaryData | None:
-    payload = load_research_bundle_published_summary(info.bundle_dir)
+    try:
+        payload = load_research_bundle_published_summary(info.bundle_dir)
+    except ValueError:
+        return None
     if payload is None:
+        return None
+
+    # Older bundles can use summary.json for raw result metadata. Only payloads
+    # with an explicit purpose are part of the published-summary surface.
+    purpose = _normalize_optional_string(payload.get("purpose"))
+    if purpose is None:
         return None
 
     title = _normalize_optional_string(payload.get("title")) or _extract_title(
         summary_markdown,
         info,
     )
-    purpose = _normalize_optional_string(payload.get("purpose")) or _extract_first_paragraph(
-        summary_markdown
-    )
-    if purpose is None:
-        raise ValueError(
-            f"Published research summary is missing purpose: {info.published_summary_path}"
-        )
-
     return PublishedResearchSummaryData(
         title=title,
         tags=_normalize_string_tuple(payload.get("tags")),

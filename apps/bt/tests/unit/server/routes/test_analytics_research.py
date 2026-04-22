@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 import os
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture()
-def research_client(tmp_path: Path) -> TestClient:
+def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     from src.shared.config.settings import reload_settings
 
     data_dir = tmp_path / "data"
@@ -189,6 +190,53 @@ def test_get_research_detail_returns_markdown_fallback_for_unstructured_bundle(
     assert payload["summary"] is None
     assert payload["summaryMarkdown"].startswith("# Beta Research")
     assert payload["outputTables"] == ["summary_df"]
+
+
+def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
+    research_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    write_research_bundle(
+        experiment_id="market-behavior/raw-result-summary-json",
+        module="tests.raw",
+        function="run_raw",
+        params={"window": 21},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date="2022-01-01",
+        analysis_end_date="2022-12-31",
+        result_metadata={"source_mode": "snapshot"},
+        result_tables={"summary_df": pd.DataFrame([{"value": 4}])},
+        summary_markdown="# Raw Result Summary\n\n## Setup\n\n- Scope: topix500\n\n## Result\n\n- Raw result bullet\n",
+        published_summary={
+            "selectedMarkets": ["topix500"],
+            "eventSummary": [{"mean_return_pct": 1.23}],
+        },
+        run_id="20260405_130000_raw0001",
+    )
+
+    catalog_response = research_client.get("/api/analytics/research")
+
+    assert catalog_response.status_code == 200
+    catalog_payload = catalog_response.json()
+    raw_item = next(
+        item
+        for item in catalog_payload["items"]
+        if item["experimentId"] == "market-behavior/raw-result-summary-json"
+    )
+    assert raw_item["title"] == "Raw Result Summary"
+    assert raw_item["hasStructuredSummary"] is False
+    assert raw_item["objective"] is None
+    assert raw_item["headline"] == "Scope: topix500"
+
+    detail_response = research_client.get(
+        "/api/analytics/research/detail",
+        params={"experimentId": "market-behavior/raw-result-summary-json"},
+    )
+
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["summary"] is None
+    assert detail_payload["summaryMarkdown"].startswith("# Raw Result Summary")
 
 
 def test_get_research_detail_returns_404_when_missing(
