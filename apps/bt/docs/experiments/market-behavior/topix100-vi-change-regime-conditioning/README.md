@@ -27,8 +27,6 @@
 
 - Runner:
   - `apps/bt/scripts/research/run_topix100_vi_change_regime_conditioning.py`
-- Notebook:
-  - `apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_vi_change_regime_conditioning.py`
 - Tests:
@@ -45,12 +43,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
 `~/.local/share/trading25/research/market-behavior/topix100-vi-change-regime-conditioning/<run_id>/`
 へ bundle を保存します。
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_vi_change_regime_conditioning_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 ## Notes
 

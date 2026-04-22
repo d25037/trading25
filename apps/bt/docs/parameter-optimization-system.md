@@ -248,7 +248,7 @@ src/
 │   ├── engine.py  # 最適化エンジン
 │   ├── param_builder.py  # SignalParams動的構築
 │   ├── evaluator.py  # 評価指標計算
-│   └── notebook_generator.py  # 可視化HTML自動生成
+│   └── optimization_report_renderer.py  # 可視化HTML自動生成
 config/
 └── optimization/  # パラメータグリッド定義（新規）
     ├── template_grid.yaml
@@ -339,7 +339,7 @@ class ParameterOptimizer:
         )
 
         # 4. 可視化HTML生成
-        html_path = self._generate_visualization_notebook(sorted_results)
+        html_path = self._generate_visualization_report(sorted_results)
 
         return OptimizationResult(
             best_params=sorted_results[0]["params"],
@@ -418,7 +418,7 @@ class ParameterOptimizer:
 
         return f"{output_dir}/{timestamp}.html"
 
-    def _generate_visualization_notebook(self, sorted_results: List[Dict]) -> str:
+    def _generate_visualization_report(self, sorted_results: List[Dict]) -> str:
         """
         最適化結果から可視化HTMLを自動生成
 
@@ -436,9 +436,9 @@ class ParameterOptimizer:
             - パラメータ相関行列
             - 最適パラメータ詳細表
         """
-        from .notebook_generator import generate_optimization_notebook
+        from .optimization_report_renderer import generate_optimization_report
 
-        html_path = generate_optimization_notebook(
+        html_path = generate_optimization_report(
             results=sorted_results,
             output_path=self.output_html_path,
             strategy_name=self.strategy_name,
@@ -666,7 +666,7 @@ def build_signal_params(
   - `engine.py`（最適化エンジン）
   - `param_builder.py`（SignalParams動的構築）
   - `evaluator.py`（評価指標計算）
-  - `notebook_generator.py`（可視化HTML自動生成）
+  - `optimization_report_renderer.py`（可視化HTML自動生成）
 - `config/optimization/`（新規ディレクトリ）
 - `~/.local/share/trading25/backtest/optimization/`（可視化HTML出力先・戦略別サブディレクトリ）
 - `docs/parameter-optimization-system.md`（このドキュメント）

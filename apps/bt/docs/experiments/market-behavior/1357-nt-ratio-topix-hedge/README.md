@@ -34,8 +34,6 @@
 
 - Runner:
   - `apps/bt/scripts/research/run_1357_nt_ratio_topix_hedge.py`
-- Notebook:
-  - `apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/hedge_1357_nt_ratio_topix.py`
 - Tests:
@@ -66,12 +64,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
 `~/.local/share/trading25/research/market-behavior/1357-nt-ratio-topix-hedge/<run_id>/`
 へ bundle を保存します。
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/hedge_1357_nt_ratio_topix_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 ## Next Questions
 

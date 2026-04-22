@@ -15,7 +15,7 @@
 - 今後 `Nautilus Trader` を導入する可能性があるなら、設計の中心は「vectorbt を置き換えること」ではなく「multi-engine を成立させる抽象境界を先に作ること」になる。
 - ただし、実行エンジンの境界はまだ曖昧で、責務分離も完全ではない。
   - `apps/bt/src/domains/backtest/core/runner.py`
-  - `apps/bt/src/domains/backtest/core/marimo_executor.py`
+  - `apps/bt/src/domains/backtest/core/report_renderer.py`
   - `apps/bt/src/domains/strategy/core/mixins/backtest_executor_mixin.py`
   - `apps/bt/src/application/services/job_manager.py`
   - `apps/ts/packages/web/src/hooks/useBacktest.ts`
@@ -41,8 +41,8 @@
 
 ### 2.2 現行が「最良ではない」理由
 
-- 実行の本体がまだ notebook export に強く引っ張られている。
-  - `BacktestRunner` は `MarimoExecutor` を直接呼び、HTML 出力が実行パスの中心に近い。
+- 実行の本体が presentation artifact に引っ張られすぎないよう、HTML は renderer layer に閉じる必要がある。
+  - 現行は `StaticHtmlReportRenderer` で simulation payload から HTML を生成する。
   - 理想では HTML は presentation artifact であり、simulation engine の本体ではない。
 - 戦略オブジェクトが抱える責務が重い。
   - `backtest_executor_mixin.py` はデータロード、signal 生成、execution policy、portfolio 作成、Kelly 最適化を同時に抱えている。
@@ -53,7 +53,7 @@
   - backtest / optimize / lab / screening は API プロセス内の `asyncio.create_task + ThreadPoolExecutor` で動く。
   - これはローカル用途では実用的だが、job plane と API plane がまだ同居している。
 - 実行パスが一枚岩ではない。
-  - backtest は `BacktestRunner -> MarimoExecutor` 寄りの流れだが、optimize / lab は strategy runtime をより直接叩いている。
+  - backtest / optimize / lab は近い runtime を使っているが、compiled execution pipeline としてはまだ揃い切っていない。
   - つまり「同じ engine を別 UI から使う」のではなく、「近いが少し違う実行系」が並んでいる。
 - data plane が二重化している。
   - market plane は `market.duckdb + parquet` に進んだが、dataset plane はまだ `dataset.db` 読み書きが残っている。
@@ -407,16 +407,15 @@ job 状態は SSE を主導線にする。polling は fallback にする。
 
 現行のように backend が SSE を持っているのに、backtest / optimize 側 UI が polling 主体なのは中途半端なので、ゼロからなら最初から揃える。
 
-### 9.2 notebook
+### 9.2 report
 
-notebook は「engine の実行面」ではなく「分析・可視化面」に限定する。
+report は「engine の実行面」ではなく「分析・可視化面」に限定する。
 
-- notebook は canonical artifact を読む
-- notebook から engine 本体を直接起動しない
+- report renderer は canonical artifact を読む
+- report renderer から engine 本体を直接起動しない
 - report template は renderer layer に置く
 
-これは marimo をやめるという意味ではない。  
-marimo を job execution の中心から外すという意味である。
+notebook runtime は repo の必須導線から外し、job execution の中心には置かない。
 
 ## 10. Dataset と Engine を一体でどう移行するか
 
@@ -479,7 +478,7 @@ dataset plane と engine abstraction は一緒に進める必要がある。
 
 逆に、最初から捨てるものは次の通り。
 
-- notebook export を authoritative execution path に置くこと
+- presentation artifact を authoritative execution path に置くこと
 - API プロセス内 ThreadPool を worker の代わりに使い続けること
 - YAML を実行時 SoT にすること
 - signal 側で ad-hoc に lookahead 調整すること
@@ -490,7 +489,7 @@ dataset plane と engine abstraction は一緒に進める必要がある。
 
 全面作り直しをしなくても、次の順で寄せるのが一番効く。
 
-1. `BacktestRunner` から marimo 実行を外し、simulation result と report rendering を分離する。
+1. `BacktestRunner` の simulation result と report rendering の分離を維持し、renderer を presentation layer に閉じ込める。
 2. `execution_policy.mode=current_session_round_trip` のような例外処理を一般化し、availability model を導入する。
 3. dataset snapshot を `dataset.db` から `dataset.duckdb + parquet + manifest` へ移し、snapshot resolver を一本化する。
 4. `backtest_executor_mixin.py` を分割し、`data loading`, `signal compilation`, `execution policy`, `portfolio assembly` を別モジュールに分ける。

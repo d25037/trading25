@@ -1,34 +1,21 @@
 #!/usr/bin/env python3
-"""Detect research workflow regressions in playground notebooks.
-
-This checker enforces the current runner-first / viewer-only workflow for
-`apps/bt/notebooks/playground`:
-
-- every playground notebook must use the shared viewer helper
-- playground notebooks must not import or call `run_*_research(...)` directly
-- every notebook-declared `runner_path` must point at a real runner script
-"""
+"""Detect research workflow regressions in runner / bundle / docs surfaces."""
 
 from __future__ import annotations
 
 import argparse
-import ast
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAYGROUND_ROOT = Path("apps/bt/notebooks/playground")
-SHARED_VIEWER_MODULE = "src.shared.research_notebook_viewer"
-RUN_RESEARCH_NAME_RE = re.compile(r"^run_[a-z0-9_]+_research$")
-RUNNER_PATH_RE = re.compile(
-    r"runner_path\s*=\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)"
-)
-DOCS_README_PATH_RE = re.compile(
-    r"docs_readme_path\s*=\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)"
-)
+EXPERIMENT_DOCS_ROOT = Path("apps/bt/docs/experiments")
+FORBIDDEN_DOC_PATTERNS = {
+    "legacy-notebook-reference": "apps/bt/notebooks/playground",
+    "legacy-marimo-command": "marimo edit",
+}
 
 
 @dataclass(frozen=True)
@@ -42,8 +29,8 @@ class ResearchGuardrailFinding:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Fail when playground notebooks regress from the current "
-            "runner-first / viewer-only research workflow."
+            "Fail when research surfaces regress from the current "
+            "runner-first / bundle-backed workflow."
         )
     )
     parser.add_argument(
@@ -77,199 +64,81 @@ def list_playground_files(root: Path) -> list[Path]:
     )
 
 
+def list_experiment_readmes(root: Path) -> list[Path]:
+    docs_dir = root / EXPERIMENT_DOCS_ROOT
+    if not docs_dir.exists():
+        return []
+    return sorted(
+        path.relative_to(root)
+        for path in docs_dir.rglob("README.md")
+        if path.is_file()
+    )
+
+
 def _line_number_for_offset(text: str, start_offset: int) -> int:
     return text.count("\n", 0, start_offset) + 1
 
 
-def _is_shared_viewer_import(node: ast.AST) -> bool:
-    if isinstance(node, ast.ImportFrom):
-        return node.module == SHARED_VIEWER_MODULE
-    if isinstance(node, ast.Import):
-        return any(alias.name == SHARED_VIEWER_MODULE for alias in node.names)
-    return False
+def _is_legacy_playground_path(relative_path: Path) -> bool:
+    return (
+        relative_path.suffix == ".py"
+        and relative_path.as_posix().startswith(f"{PLAYGROUND_ROOT.as_posix()}/")
+    )
 
 
-def _extract_call_name(func: ast.expr) -> str | None:
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return None
-
-
-def find_guardrail_findings_in_text(
-    root: Path,
+def find_docs_guardrail_findings_in_text(
     relative_path: Path,
     text: str,
 ) -> list[ResearchGuardrailFinding]:
     findings: list[ResearchGuardrailFinding] = []
-
-    if not relative_path.name.endswith("_playground.py"):
-        findings.append(
-            ResearchGuardrailFinding(
-                relative_path=relative_path,
-                line_number=1,
-                rule_name="playground-name",
-                message="Playground notebook filenames must end with `_playground.py`.",
-            )
-        )
-
-    runner_matches = list(RUNNER_PATH_RE.finditer(text))
-    if not runner_matches:
-        findings.append(
-            ResearchGuardrailFinding(
-                relative_path=relative_path,
-                line_number=1,
-                rule_name="missing-runner-path",
-                message="Playground notebooks must declare a canonical `runner_path`.",
-            )
-        )
-
-    for match in runner_matches:
-        runner_path = Path(match.group("path"))
-        line_number = _line_number_for_offset(text, match.start())
-        if not runner_path.as_posix().startswith("apps/bt/scripts/research/run_"):
+    for rule_name, pattern in FORBIDDEN_DOC_PATTERNS.items():
+        start = text.find(pattern)
+        if start >= 0:
             findings.append(
                 ResearchGuardrailFinding(
                     relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="runner-path-prefix",
+                    line_number=_line_number_for_offset(text, start),
+                    rule_name=rule_name,
                     message=(
-                        "Playground `runner_path` must point to "
-                        "`apps/bt/scripts/research/run_*.py`."
+                        "Experiment docs must use runner / bundle / canonical note "
+                        "reproduction paths, not notebook runtime paths."
                     ),
                 )
             )
-        if runner_path.suffix != ".py":
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="runner-path-extension",
-                    message="Playground `runner_path` must point to a Python file.",
-                )
-            )
-        if not (root / runner_path).is_file():
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="missing-runner-script",
-                    message=f"Declared runner path was not found: {runner_path.as_posix()}",
-                )
-            )
-
-    for match in DOCS_README_PATH_RE.finditer(text):
-        docs_readme_path = Path(match.group("path"))
-        line_number = _line_number_for_offset(text, match.start())
-        if not docs_readme_path.as_posix().startswith("apps/bt/docs/experiments/"):
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="docs-readme-prefix",
-                    message=(
-                        "Playground `docs_readme_path` must point to "
-                        "`apps/bt/docs/experiments/.../README.md`."
-                    ),
-                )
-            )
-        if docs_readme_path.name != "README.md":
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="docs-readme-name",
-                    message="Playground `docs_readme_path` must point to a README.md file.",
-                )
-            )
-        if not (root / docs_readme_path).is_file():
-            findings.append(
-                ResearchGuardrailFinding(
-                    relative_path=relative_path,
-                    line_number=line_number,
-                    rule_name="missing-docs-readme",
-                    message=(
-                        "Declared docs readme path was not found: "
-                        f"{docs_readme_path.as_posix()}"
-                    ),
-                )
-            )
-
-    try:
-        tree = ast.parse(text)
-    except SyntaxError as exc:
-        findings.append(
-            ResearchGuardrailFinding(
-                relative_path=relative_path,
-                line_number=exc.lineno or 1,
-                rule_name="syntax-error",
-                message=str(exc),
-            )
-        )
-        return findings
-
-    if not any(_is_shared_viewer_import(node) for node in ast.walk(tree)):
-        findings.append(
-            ResearchGuardrailFinding(
-                relative_path=relative_path,
-                line_number=1,
-                rule_name="missing-shared-viewer-import",
-                message=(
-                    "Playground notebooks must use "
-                    "`src.shared.research_notebook_viewer`."
-                ),
-            )
-        )
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if RUN_RESEARCH_NAME_RE.match(alias.name):
-                    findings.append(
-                        ResearchGuardrailFinding(
-                            relative_path=relative_path,
-                            line_number=node.lineno,
-                            rule_name="direct-research-import",
-                            message=(
-                                "Playground notebooks must not import "
-                                f"`{alias.name}` directly; use bundles via the runner."
-                            ),
-                        )
-                    )
-        elif isinstance(node, ast.Call):
-            call_name = _extract_call_name(node.func)
-            if call_name and RUN_RESEARCH_NAME_RE.match(call_name):
-                findings.append(
-                    ResearchGuardrailFinding(
-                        relative_path=relative_path,
-                        line_number=node.lineno,
-                        rule_name="direct-research-call",
-                        message=(
-                            "Playground notebooks must not execute "
-                            f"`{call_name}(...)` directly."
-                        ),
-                    )
-                )
-
     return findings
 
 
-def scan_playground_files(root: Path, files: list[Path]) -> list[ResearchGuardrailFinding]:
+def scan_research_files(root: Path, files: list[Path]) -> list[ResearchGuardrailFinding]:
     findings: list[ResearchGuardrailFinding] = []
     for relative_path in files:
         absolute_path = root / relative_path
         if not absolute_path.is_file():
             continue
-        text = absolute_path.read_text(encoding="utf-8", errors="ignore")
-        findings.extend(find_guardrail_findings_in_text(root, relative_path, text))
+
+        if _is_legacy_playground_path(relative_path):
+            findings.append(
+                ResearchGuardrailFinding(
+                    relative_path=relative_path,
+                    line_number=1,
+                    rule_name="legacy-playground-file",
+                    message=(
+                        "Research playground notebooks were removed from the active "
+                        "repo surface; use runner scripts and bundle outputs instead."
+                    ),
+                )
+            )
+            continue
+
+        if relative_path.name == "README.md":
+            text = absolute_path.read_text(encoding="utf-8", errors="ignore")
+            findings.extend(find_docs_guardrail_findings_in_text(relative_path, text))
     return findings
 
 
 def format_findings(findings: list[ResearchGuardrailFinding]) -> str:
     lines = [
         "[research-guardrails] Found research workflow regressions.",
-        "Playground notebooks must stay viewer-only and point at a real runner.",
+        "Research surfaces must stay runner-first and bundle-backed.",
         "",
     ]
     for finding in findings:
@@ -286,9 +155,9 @@ def main(argv: list[str] | None = None) -> int:
     files = (
         [_normalize_relative_path(root, path) for path in args.files]
         if args.files
-        else list_playground_files(root)
+        else [*list_playground_files(root), *list_experiment_readmes(root)]
     )
-    findings = scan_playground_files(root, files)
+    findings = scan_research_files(root, files)
     if findings:
         print(format_findings(findings), file=sys.stderr)
         return 1

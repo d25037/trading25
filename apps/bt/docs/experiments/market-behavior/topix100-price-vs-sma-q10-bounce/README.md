@@ -36,8 +36,6 @@ TOPIX100 の `price / SMA20|50|100` 研究から、`Q10` 側の bounce 仮説だ
 
 - Runner:
   - `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py`
-- Notebook viewer:
-  - `apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`
@@ -65,12 +63,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
   apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce.py
 ```
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_price_vs_sma_q10_bounce_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 notebook は latest bundle を既定で読みます。新規 run は notebook ではなく runner script から実行します。
 

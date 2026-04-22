@@ -36,8 +36,6 @@
 
 - Runner:
   - `apps/bt/scripts/research/run_topix100_sma50_raw_vs_atr_q10_bounce.py`
-- Notebook viewer:
-  - `apps/bt/notebooks/playground/topix100_sma50_raw_vs_atr_q10_bounce_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_sma50_raw_vs_atr_q10_bounce.py`
   - `apps/bt/src/domains/analytics/topix_rank_future_close_core.py`
@@ -62,12 +60,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
   apps/bt/scripts/research/run_topix100_sma50_raw_vs_atr_q10_bounce.py
 ```
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_sma50_raw_vs_atr_q10_bounce_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 notebook は latest bundle を既定で読みます。fresh analysis は `Mode = Run Fresh Analysis` に切り替えたときだけ実行されます。
 

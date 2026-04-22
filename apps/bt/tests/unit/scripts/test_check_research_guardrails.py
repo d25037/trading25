@@ -19,124 +19,64 @@ def _load_module():
     return module
 
 
-def test_find_guardrail_findings_detects_viewer_only_regressions(tmp_path: Path) -> None:
-    module = _load_module()
-    relative_path = Path("apps/bt/notebooks/playground/demo_playground.py")
-    text = """
-@app.cell
-def _():
-    from src.domains.analytics.demo import run_demo_research
-    result = run_demo_research("/tmp/market.duckdb")
-    return result
-""".strip()
-
-    findings = module.find_guardrail_findings_in_text(
-        tmp_path,
-        relative_path,
-        text,
-    )
-
-    rule_names = {finding.rule_name for finding in findings}
-    assert "missing-shared-viewer-import" in rule_names
-    assert "missing-runner-path" in rule_names
-    assert "direct-research-import" in rule_names
-    assert "direct-research-call" in rule_names
-
-
-def test_scan_playground_files_detects_missing_runner_script(tmp_path: Path) -> None:
+def test_scan_research_files_detects_legacy_playground_file(tmp_path: Path) -> None:
     module = _load_module()
     notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
     notebook.parent.mkdir(parents=True)
-    notebook.write_text(
-        """
-@app.cell
-def _():
-    from src.shared.research_notebook_viewer import build_bundle_viewer_controls
-    return build_bundle_viewer_controls
+    notebook.write_text("# legacy notebook\n", encoding="utf-8")
 
-@app.cell
-def _(build_bundle_viewer_controls, mo):
-    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
-        mo,
-        latest_run_id="",
-        latest_bundle_path_str="",
-        runner_path="apps/bt/scripts/research/run_missing.py",
-    )
-    return bundle_path, run_id
-""".strip()
-    )
-
-    findings = module.scan_playground_files(
+    findings = module.scan_research_files(
         tmp_path,
         [Path("apps/bt/notebooks/playground/demo_playground.py")],
     )
 
     assert len(findings) == 1
-    assert findings[0].rule_name == "missing-runner-script"
+    assert findings[0].rule_name == "legacy-playground-file"
 
 
-def test_scan_playground_files_detects_missing_docs_readme(tmp_path: Path) -> None:
+def test_scan_research_files_detects_legacy_notebook_doc_reference(tmp_path: Path) -> None:
     module = _load_module()
-    runner = tmp_path / "apps" / "bt" / "scripts" / "research" / "run_demo.py"
-    runner.parent.mkdir(parents=True)
-    runner.write_text("#!/usr/bin/env python3\n")
-
-    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
-    notebook.parent.mkdir(parents=True, exist_ok=True)
-    notebook.write_text(
+    readme = tmp_path / "apps" / "bt" / "docs" / "experiments" / "demo" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text(
         """
-@app.cell
-def _():
-    from src.shared.research_notebook_viewer import build_bundle_viewer_controls
-    return build_bundle_viewer_controls
+# Demo
 
-@app.cell
-def _(build_bundle_viewer_controls, mo):
-    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
-        mo,
-        latest_run_id="",
-        latest_bundle_path_str="",
-        runner_path="apps/bt/scripts/research/run_demo.py",
-        docs_readme_path="apps/bt/docs/experiments/demo/README.md",
-    )
-    return bundle_path, run_id
-""".strip()
+```bash
+uv run --project apps/bt marimo edit \\
+  apps/bt/notebooks/playground/demo_playground.py
+```
+""".strip(),
+        encoding="utf-8",
     )
 
-    findings = module.scan_playground_files(
+    findings = module.scan_research_files(
         tmp_path,
-        [Path("apps/bt/notebooks/playground/demo_playground.py")],
+        [Path("apps/bt/docs/experiments/demo/README.md")],
     )
 
-    assert len(findings) == 1
-    assert findings[0].rule_name == "missing-docs-readme"
+    rule_names = {finding.rule_name for finding in findings}
+    assert "legacy-notebook-reference" in rule_names
+    assert "legacy-marimo-command" in rule_names
 
 
-def test_main_accepts_clean_viewer_only_notebook(tmp_path: Path, capsys) -> None:
+def test_main_accepts_clean_runner_bundle_docs(tmp_path: Path, capsys) -> None:
     module = _load_module()
-    runner = tmp_path / "apps" / "bt" / "scripts" / "research" / "run_demo.py"
-    runner.parent.mkdir(parents=True)
-    runner.write_text("#!/usr/bin/env python3\n")
-
-    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
-    notebook.parent.mkdir(parents=True, exist_ok=True)
-    notebook.write_text(
+    readme = tmp_path / "apps" / "bt" / "docs" / "experiments" / "demo" / "README.md"
+    readme.parent.mkdir(parents=True)
+    readme.write_text(
         """
-@app.cell
-def _():
-    from src.shared.research_notebook_viewer import build_bundle_viewer_controls
-    return build_bundle_viewer_controls
+# Demo
 
-@app.cell
-def _(build_bundle_viewer_controls, mo):
-    run_id, bundle_path, controls_view = build_bundle_viewer_controls(
-        mo,
-        latest_run_id="",
-        latest_bundle_path_str="",
-        runner_path="apps/bt/scripts/research/run_demo.py",
-    )
-    return bundle_path, run_id
-""".strip()
+## Reproduce
+
+```bash
+uv run --project apps/bt python apps/bt/scripts/research/run_demo.py
+```
+
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
+""".strip(),
+        encoding="utf-8",
     )
 
     exit_code = module.main(["--root", str(tmp_path)])
@@ -144,3 +84,16 @@ def _(build_bundle_viewer_controls, mo):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "[research-guardrails] OK" in captured.out
+
+
+def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> None:
+    module = _load_module()
+    notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
+    notebook.parent.mkdir(parents=True)
+    notebook.write_text("# legacy notebook\n", encoding="utf-8")
+
+    exit_code = module.main(["--root", str(tmp_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "legacy-playground-file" in captured.err

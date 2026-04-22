@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 from loguru import logger
 
 
-def generate_optimization_notebook(
+def generate_optimization_report(
     results: List[Dict[str, Any]],
     output_path: str,
     strategy_name: str,

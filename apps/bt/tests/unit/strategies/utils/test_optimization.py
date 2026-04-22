@@ -676,8 +676,17 @@ class TestPlotOptimizationSurface:
             savefig=lambda path: saved_paths.append(path),
             show=lambda: None,
         )
+        fake_matplotlib = types.ModuleType("matplotlib")
+        fake_matplotlib.pyplot = fake_plt
+        fake_mpl_toolkits = types.ModuleType("mpl_toolkits")
+        fake_mplot3d = types.ModuleType("mpl_toolkits.mplot3d")
+        fake_mplot3d.Axes3D = object
+        fake_mpl_toolkits.mplot3d = fake_mplot3d
+
+        monkeypatch.setitem(sys.modules, "matplotlib", fake_matplotlib)
         monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
-        monkeypatch.setitem(sys.modules, "mpl_toolkits.mplot3d", types.SimpleNamespace(Axes3D=object))
+        monkeypatch.setitem(sys.modules, "mpl_toolkits", fake_mpl_toolkits)
+        monkeypatch.setitem(sys.modules, "mpl_toolkits.mplot3d", fake_mplot3d)
 
         opt.plot_optimization_surface(result, "x", "y", save_path=str(save_path))
 

@@ -23,7 +23,7 @@ def test_find_privacy_leaks_detects_repo_and_local_data_paths() -> None:
     module = _load_module()
     text = "\n".join(
         [
-            'note = "/Users/alice/dev/trading25/apps/bt/notebooks/playground/demo.py"',
+            'note = "/Users/alice/dev/trading25/apps/bt/docs/experiments/demo/README.md"',
             'db = "/Users/alice/.local/share/trading25/market-timeseries/market.duckdb"',
             'agent = "/Users/alice/.codex/worktrees/ab12/trading25/apps/bt/tests/unit/test_x.py"',
         ]

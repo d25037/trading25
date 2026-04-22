@@ -29,8 +29,6 @@
 
 - Runner:
   - `apps/bt/scripts/research/run_stock_intraday_overnight_share.py`
-- Notebook:
-  - `apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/stock_intraday_overnight_share.py`
 - Tests:
@@ -60,12 +58,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
 `~/.local/share/trading25/research/market-behavior/stock-intraday-overnight-share/<run_id>/`
 へ bundle を保存します。
 
-Notebook で確認する場合:
-
-```bash
-uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/stock_intraday_overnight_share_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 ## Next Questions
 

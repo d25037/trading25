@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from src.domains.optimization.notebook_generator import (
+from src.domains.optimization.optimization_report_renderer import (
     _save_results_as_json,
-    generate_optimization_notebook,
+    generate_optimization_report,
 )
 
 
@@ -166,10 +166,10 @@ class TestSaveResultsAsJson:
         assert "trade_count" not in loaded_data[0]["metric_values"]
 
 
-class TestNotebookGeneratorStaticHtml:
+class TestOptimizationReportRendererStaticHtml:
     """静的HTML生成機能のテスト"""
 
-    def test_generate_notebook_writes_static_html(
+    def test_generate_report_writes_static_html(
         self,
         sample_optimization_results,
         sample_parameter_ranges,
@@ -179,7 +179,7 @@ class TestNotebookGeneratorStaticHtml:
         """最適化結果を静的HTMLとして保存する"""
         output_path = tmp_path / "test_output.html"
 
-        result_path = generate_optimization_notebook(
+        result_path = generate_optimization_report(
             results=sample_optimization_results,
             output_path=str(output_path),
             strategy_name="test_strategy",
@@ -208,7 +208,7 @@ class TestNotebookGeneratorStaticHtml:
         output_dir = tmp_path / "optimization/test_strategy"
         output_path = output_dir / "test_output.html"
 
-        generate_optimization_notebook(
+        generate_optimization_report(
             results=sample_optimization_results,
             output_path=str(output_path),
             strategy_name="test_strategy",
@@ -231,7 +231,7 @@ class TestNotebookGeneratorStaticHtml:
         """strategy / combination / scoring metadataをHTMLへ埋め込む"""
         output_path = tmp_path / "test_output.html"
 
-        generate_optimization_notebook(
+        generate_optimization_report(
             results=sample_optimization_results,
             output_path=str(output_path),
             strategy_name="range_break_v6",
@@ -265,7 +265,7 @@ class TestNotebookGeneratorStaticHtml:
         monkeypatch.setattr(Path, "write_text", fail_write_text)
 
         with pytest.raises(OSError, match="write failed"):
-            generate_optimization_notebook(
+            generate_optimization_report(
                 results=sample_optimization_results,
                 output_path=str(output_path),
                 strategy_name="test_strategy",

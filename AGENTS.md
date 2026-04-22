@@ -117,7 +117,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 - `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.dataset` は空欄 baseline とする。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
 
 ## bt (Python / uv)
-VectorBT基盤の高速バックテスト・runner-first research bundle・optional Marimo viewer システム。
+VectorBT基盤の高速バックテスト・runner-first research bundle・static HTML report システム。
 FastAPI サーバー（:3002）とtyper CLI を提供。
 
 ```bash

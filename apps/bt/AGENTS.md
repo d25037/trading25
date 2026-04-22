@@ -1,7 +1,7 @@
 # Trading Backtesting
 
 ## プロジェクト概要
-**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、Marimo は viewer-only notebook として扱う。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
+**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、結果確認は runner bundle / canonical docs / static HTML report に寄せる。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
 
 ## 重要原則
 - **表面的なごまかしを絶対に行わない。根本的な解決ができないときは、「今は○○の理由で解決できなかった」と素直に言う**
@@ -77,7 +77,6 @@
 
 ### 主要ライブラリ
 - **vectorbt** (>=0.26.0): 高速ベクトル化バックテストフレームワーク
-- **marimo** (>=0.10.0): 静的HTML出力対応Notebookフレームワーク
 - **pydantic** (>=2.0.0): データバリデーション
 - **pandas/numpy**: データ処理・数値計算
 - **fastapi** (>=0.115.0): バックテストAPI サーバー

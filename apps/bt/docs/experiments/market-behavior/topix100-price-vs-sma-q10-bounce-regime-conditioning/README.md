@@ -30,8 +30,6 @@
 
 - Runner:
   - `apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
-- Notebook viewer:
-  - `apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce_regime_conditioning.py`
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_q10_bounce.py`
@@ -58,12 +56,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
   apps/bt/scripts/research/run_topix100_price_vs_sma_q10_bounce_regime_conditioning.py
 ```
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_price_vs_sma50_q10_bounce_regime_conditioning_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 notebook は latest bundle を既定で読みます。新規 run は notebook ではなく runner script から実行します。
 

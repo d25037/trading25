@@ -291,7 +291,7 @@ def test_optimize_success_returns_best_result(monkeypatch):
         "normalize_and_recalculate_scores",
         lambda results, _weights: list(results),
     )
-    monkeypatch.setattr(engine, "_generate_visualization_notebook", lambda _results, _combos: "/tmp/result.html")
+    monkeypatch.setattr(engine, "_generate_visualization_report", lambda _results, _combos: "/tmp/result.html")
 
     result = engine.optimize()
 
@@ -696,43 +696,43 @@ def test_run_kelly_backtest_works_without_prefetched_data(monkeypatch):
     assert strategy.benchmark_data is None
 
 
-def test_generate_visualization_notebook_handles_unknown_dataset(monkeypatch, tmp_path):
+def test_generate_visualization_report_handles_unknown_dataset(monkeypatch, tmp_path):
     engine = _make_engine()
     engine.shared_config_dict = {}
 
-    import src.domains.optimization.notebook_generator as notebook_mod
+    import src.domains.optimization.optimization_report_renderer as report_mod
     import src.shared.paths as paths_mod
 
     out_dir = tmp_path / "optimization"
     monkeypatch.setattr(paths_mod, "get_optimization_results_dir", lambda _strategy: out_dir)
     monkeypatch.setattr(
-        notebook_mod,
-        "generate_optimization_notebook",
+        report_mod,
+        "generate_optimization_report",
         lambda **kwargs: kwargs["output_path"],
     )
 
-    out = engine._generate_visualization_notebook([{"score": 1.0}], [{"id": 1}])
+    out = engine._generate_visualization_report([{"score": 1.0}], [{"id": 1}])
     assert Path(out).parent == out_dir
     assert Path(out).name.startswith("unknown_")
     assert out.endswith(".html")
 
 
-def test_generate_visualization_notebook_uses_dataset_stem(monkeypatch, tmp_path):
+def test_generate_visualization_report_uses_dataset_stem(monkeypatch, tmp_path):
     engine = _make_engine()
     engine.shared_config_dict = {"dataset": "datasets/primeExTopix500.db"}
 
-    import src.domains.optimization.notebook_generator as notebook_mod
+    import src.domains.optimization.optimization_report_renderer as report_mod
     import src.shared.paths as paths_mod
 
     out_dir = tmp_path / "optimization"
     monkeypatch.setattr(paths_mod, "get_optimization_results_dir", lambda _strategy: out_dir)
     monkeypatch.setattr(
-        notebook_mod,
-        "generate_optimization_notebook",
+        report_mod,
+        "generate_optimization_report",
         lambda **kwargs: kwargs["output_path"],
     )
 
-    out = engine._generate_visualization_notebook([{"score": 1.0}], [{"id": 1}])
+    out = engine._generate_visualization_report([{"score": 1.0}], [{"id": 1}])
     assert Path(out).name.startswith("primeExTopix500_")
     assert out.endswith(".html")
 

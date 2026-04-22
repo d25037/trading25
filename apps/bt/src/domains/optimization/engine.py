@@ -277,7 +277,7 @@ class ParameterOptimizationEngine:
         )
 
         # 8. 可視化HTML生成
-        html_path = self._generate_visualization_notebook(
+        html_path = self._generate_visualization_report(
             sorted_results, combinations
         )
 
@@ -636,7 +636,7 @@ class ParameterOptimizationEngine:
         scoring_weights = self.optimization_config["scoring_weights"]
         return collect_optimization_metrics(portfolio, scoring_weights)
 
-    def _generate_visualization_notebook(
+    def _generate_visualization_report(
         self, sorted_results: List[Dict], combinations: List[Dict]
     ) -> str:
         """
@@ -651,7 +651,7 @@ class ParameterOptimizationEngine:
         """
         from datetime import datetime
 
-        from .notebook_generator import generate_optimization_notebook
+        from .optimization_report_renderer import generate_optimization_report
         from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
         dataset = self.shared_config_dict.get("dataset", "")
@@ -668,7 +668,7 @@ class ParameterOptimizationEngine:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # HTML生成（ベース名を使用）
-        result = generate_optimization_notebook(
+        result = generate_optimization_report(
             results=sorted_results,
             output_path=output_path,
             strategy_name=self.strategy_basename,

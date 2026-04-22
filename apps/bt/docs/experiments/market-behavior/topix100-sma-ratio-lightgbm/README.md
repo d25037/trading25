@@ -41,8 +41,6 @@ TOPIX100 の `price/volume SMA ratio` 6 特徴を使い、既存の hand-crafted
   - `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close_lightgbm.py`
 - Baseline runner:
   - `apps/bt/scripts/research/run_topix100_sma_ratio_rank_future_close.py`
-- Notebook:
-  - `apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py`
   - `apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py`
@@ -72,14 +70,9 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt --group research python \
 bundle は `~/.local/share/trading25/research/market-behavior/topix100-sma-ratio-lightgbm/<run_id>/`
 に `manifest.json`, `results.duckdb`, `summary.md`, `summary.json` として保存されます。
 
-Notebook で確認する場合:
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_sma_ratio_rank_future_close_playground.py
-```
-
-この notebook は baseline bundle viewer で、LightGBM 側の再計算は行いません。LightGBM の bundle 再現は上の dedicated runner を使います。
+LightGBM の bundle 再現は上の dedicated runner を使います。
 
 ## Next Questions
 

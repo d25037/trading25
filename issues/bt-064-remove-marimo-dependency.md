@@ -41,14 +41,14 @@ parent: null
   - [x] `apps/bt/notebooks/templates/strategy_analysis.py` の表示責務を、payload-driven な HTML renderer に移す。
   - [x] `result.html` は metrics / manifest / report payload を読む静的 HTML とし、失敗時も manifest の `report_status` / `render_error` を維持する。
   - [x] `tests/unit/backtest/test_marimo_executor.py` は削除し、新 renderer の入出力契約テストへ置き換える。
-- [ ] Phase 3: optimization report を notebook generator から外す
-  - [x] `apps/bt/src/domains/optimization/notebook_generator.py` の実装を Marimo 実行から静的 HTML writer へ置き換える。
+- [x] Phase 3: optimization report を旧 notebook generator 名から外す
+  - [x] `apps/bt/src/domains/optimization/optimization_report_renderer.py` の実装を Marimo 実行から静的 HTML writer へ置き換える。
   - [x] `apps/bt/notebooks/templates/optimization_analysis.py` 依存を削除する。
-  - [ ] 公開名を `optimization_report_renderer.py` へ整理し、旧 `notebook_generator` 名を撤去する。
-- [ ] Phase 4: playground notebook を optional / archive へ移す
-  - `apps/bt/notebooks/playground/*_playground.py` を `apps/bt/docs/experiments` と runner bundle から辿る optional reference に格下げするか、削除する。
-  - `scripts/check-research-guardrails.py` は notebook 検査ではなく docs / runner / bundle surface 検査へ寄せる。
-  - docs の `marimo edit` 再現コマンドを runner / bundle / docs の導線へ置き換える。
+  - [x] 公開名を `optimization_report_renderer.py` へ整理し、旧 `notebook_generator` 名を撤去する。
+- [x] Phase 4: playground notebook を optional / archive へ移す
+  - [x] `apps/bt/notebooks/playground/*_playground.py` を削除し、research 再現導線を docs / runner bundle へ一本化する。
+  - [x] `scripts/check-research-guardrails.py` は notebook 検査ではなく docs / runner / bundle surface 検査へ寄せる。
+  - [x] docs の `marimo edit` 再現コマンドを runner / bundle / docs の導線へ置き換える。
 - [x] Phase 5: dependency と CI から marimo を削除する
   - [x] `apps/bt/pyproject.toml` から `marimo` と mypy override を削除する。
   - [x] `apps/bt/uv.lock` から marimo tree を落とす。
@@ -56,11 +56,11 @@ parent: null
   - [x] Dependabot の marimo 更新 PR が出ない状態にする。
 
 ## 受け入れ条件
-- [ ] `uv run --project apps/bt pytest` が marimo 未インストール環境で通る。
-- [ ] `uv run --project apps/bt pyright apps/bt/src` が marimo 未インストール環境で通る。
+- [x] `uv run --project apps/bt pytest` が marimo 未インストール環境で通る。
+- [x] `uv run --project apps/bt pyright apps/bt/src` が marimo 未インストール環境で通る。
 - [ ] `bt backtest <strategy>` が `result.html` / metrics / manifest / simulation payload / report payload を生成する。
 - [ ] `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` が既存成果物から summary を再解決できる。
-- [ ] research runner / bundle / canonical note の再現導線が notebook runtime に依存しない。
+- [x] research runner / bundle / canonical note の再現導線が notebook runtime に依存しない。
 - [x] `apps/bt/pyproject.toml` と `apps/bt/uv.lock` に marimo が残っていない。
 
 ## 進捗
@@ -73,6 +73,11 @@ parent: null
 - 2026-04-22: optimization report generator を Marimo template 実行から静的 HTML writer へ切り替え、関連 unit test を static HTML 前提へ更新した。
 - 2026-04-22: 参照が無くなった `apps/bt/src/domains/backtest/core/marimo_executor.py` と旧 executor 専用テストを削除した。
 - 2026-04-22: `apps/bt/pyproject.toml` / `apps/bt/uv.lock` / Dependabot grouping から marimo を削除した。旧 template import test も削除し、pytest 側が marimo runtime を import しないようにした。
+- 2026-04-22: `apps/bt/src/domains/optimization/notebook_generator.py` を `optimization_report_renderer.py` へ改名し、`generate_optimization_notebook` / `_generate_visualization_notebook` の旧公開名を削除した。
+- 2026-04-22: `apps/bt/notebooks/templates/*.py` と `apps/bt/notebooks/playground/*_playground.py` を active repo surface から削除した。
+- 2026-04-22: research README / baseline note / skills / AGENTS / docs を runner bundle + static HTML report 前提へ更新した。
+- 2026-04-22: `scripts/check-research-guardrails.py` を legacy playground file と docs 内 notebook runtime reference の検出へ切り替えた。
+- 2026-04-22: `uv run pytest` の全体実行で既存の matplotlib fake module 注入テストが1件落ちたため、`tests/unit/strategies/utils/test_optimization.py` を修正し、再実行で `5380 passed, 1 skipped` を確認した。
 
 ## 注意点
 - 一括削除は blast radius が大きい。まず renderer 分離で `BacktestRunner` の report rendering を差し替え、その後 notebook / docs / tests を削る。

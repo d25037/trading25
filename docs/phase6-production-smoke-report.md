@@ -47,6 +47,6 @@ uv run --project apps/bt python scripts/collect-production-smoke-baseline.py \
 ```
 
 注記:
-- backtest は marimo export 実行時にローカル socket を利用する。
+- backtest は static HTML report を生成し、notebook runtime は使わない。
 - 制限環境では実行権限が必要な場合がある。
 - `scripts/collect-production-smoke-baseline.py` は現在 `--dataset-preset topix100` を使った end-to-end dataset build を出力する。下記の throughput 数値を current baseline として使う場合は JSON を再生成すること。

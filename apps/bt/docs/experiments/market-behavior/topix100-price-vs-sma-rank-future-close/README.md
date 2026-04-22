@@ -33,8 +33,6 @@ TOPIX100 の `price / SMA20|50|100` を単独特徴として使い、decile と 
 
 - Runner:
   - `apps/bt/scripts/research/run_topix100_price_vs_sma_rank_future_close.py`
-- Notebook:
-  - `apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py`
 - Domain logic:
   - `apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py`
   - `apps/bt/src/domains/analytics/research_bundle.py`
@@ -70,12 +68,7 @@ UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt python \
 この command は `~/.local/share/trading25/research/market-behavior/topix100-price-vs-sma-rank-future-close/<run_id>/`
 へ `manifest.json + results.duckdb + summary.md` を保存します。
 
-Notebook で確認する場合:
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache uv run --project apps/bt marimo edit \
-  apps/bt/notebooks/playground/topix100_price_vs_sma_rank_future_close_playground.py
-```
+結果確認は runner が出力する bundle の `summary.md` と `results.duckdb` を参照します。
 
 notebook は latest bundle を既定で読みます。新規 run は notebook ではなく runner script から実行します。
 
