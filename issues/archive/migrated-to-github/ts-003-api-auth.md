@@ -1,7 +1,10 @@
 ---
 id: ts-003
 title: "API 認証/認可の導入"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/352
+migrated_at: 2026-04-22
 priority: medium
 labels: []
 project: ts

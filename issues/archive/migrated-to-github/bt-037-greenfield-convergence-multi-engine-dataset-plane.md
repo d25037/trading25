@@ -1,7 +1,10 @@
 ---
 id: bt-037
 title: "Greenfield convergence: multi-engine execution と dataset plane 統合"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/346
+migrated_at: 2026-04-22
 priority: high
 labels: [greenfield, architecture, backtest, dataset, engine, bt]
 project: bt

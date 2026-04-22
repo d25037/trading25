@@ -207,8 +207,9 @@
 
 - [x] 「同一入力で同一結果」が主要ユースケースで再現できる。
   - 2026-03-02 検証: Golden dataset 回帰テスト（indicator/resample）を CI 必須ゲート化。
-- [x] 既知制約と次アクションが `issues/` に登録済み。
+- [x] 既知制約と次アクションが GitHub Issues に登録済み。
   - 2026-03-02 登録: `bt-035`（本番相当 smoke/perf baseline）/ `bt-036`（backtest/optimize job duration metrics 拡張）。
+  - 2026-04-22 移行: `bt-036` は [#345](https://github.com/d25037/trading25/issues/345) として GitHub Issues 管理に移行。
 
 ---
 

@@ -1,7 +1,10 @@
 ---
 id: bt-030
 title: "Phase 5C: 新規インジケータ追加"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/344
+migrated_at: 2026-04-22
 priority: medium
 labels: [indicators, phase5]
 project: bt

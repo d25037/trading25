@@ -1,7 +1,10 @@
 ---
 id: bt-055
 title: "LightGBM の project-wide 展開候補を段階管理する"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/348
+migrated_at: 2026-04-22
 priority: high
 labels: [bt, analytics, lightgbm, research, ranking, signals]
 project: bt

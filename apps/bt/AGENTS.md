@@ -212,13 +212,14 @@ uv run pytest tests/
 
 ### User-Level Skills
 ユーザーレベルのスキル（`~/.codex/skills/`）も利用可能:
-- **`local-issues`** — ファイルベースのIssue管理。`issues/` ディレクトリ内のMarkdownファイルでIssueを管理する。操作: open, list, show, edit, start, close, wontfix, deps, summary。Issueの作成・更新・クローズ時はこのスキルのフォーマットに従うこと。
+- **`local-issues`** — legacy archive 参照用。active/open task の SoT は GitHub Issues なので、新規・更新・クローズの管理には使わない。
 - **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。
 
 ### Issue管理
-- **ディレクトリ**: プロジェクトルート `../../issues/`（オープンIssue）、`../../issues/done/`（クローズ済み）
-- **フォーマット**: `{id}-{slug}.md`（例: `bt-016-test-coverage-70.md`）
-- **/finish 時**: オープンIssueを確認し、該当するものがあればクローズまたは進捗更新する
+- **SoT**: GitHub Issues (`https://github.com/d25037/trading25/issues`)
+- **運用**: 新規 task は GitHub Issue を作成し、PR では `Closes #<number>` / `Fixes #<number>` を使う
+- **ローカル**: `../../issues/done/` と `../../issues/archive/migrated-to-github/` は過去の local issue archive。active backlog として扱わない
+- **/finish 時**: 関連する GitHub Issue を確認し、該当するものがあれば close または進捗コメントを残す
 
 ### ドキュメント
 - **戦略一覧**: `docs/strategies.md`

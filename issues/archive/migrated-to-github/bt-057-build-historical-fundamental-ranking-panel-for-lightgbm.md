@@ -1,7 +1,10 @@
 ---
 id: bt-057
 title: "fundamental ranking を historical panel 化して LightGBM 候補を検証する"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/350
+migrated_at: 2026-04-22
 priority: medium
 labels: [bt, analytics, lightgbm, fundamentals, ranking, screening]
 project: bt

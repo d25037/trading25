@@ -1,7 +1,10 @@
 ---
 id: ts-127
 title: "Web E2E rollout hardening (post-smoke)"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/361
+migrated_at: 2026-04-22
 priority: medium
 labels: [test, e2e]
 project: ts

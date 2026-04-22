@@ -109,7 +109,7 @@ contracts/
   openapi/
   schemas/
 docs/
-issues/
+issues/                  # local issue archive; active tasks live in GitHub Issues
 ```
 
 ---

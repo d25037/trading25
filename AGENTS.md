@@ -207,8 +207,11 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 
 ## Issue管理
 
-プロジェクトルートの `issues/`（オープン）、`issues/done/`（クローズ済み）で管理。
-フォーマット: `{id}-{slug}.md`（例: `bt-016-test-coverage-70.md`）
+Open / active task tracking の SoT は GitHub Issues（`https://github.com/d25037/trading25/issues`）。
+- 新規の実行タスクは GitHub Issue として作成し、PR では `Closes #<number>` / `Fixes #<number>` を使って close する
+- repo 内 Markdown は active queue にしない。長文の設計・研究計画が必要な場合は `docs/` や `apps/bt/docs/experiments/` に spec/note を置き、GitHub Issue からリンクする
+- local archive は `issues/done/`（local issue 時代の closed archive）と `issues/archive/migrated-to-github/`（2026-04-22 に GitHub Issues へ移行した元 local issue）
+- 旧 local issue ID（例: `bt-027`）は GitHub Issue タイトルや本文に残し、検索キーとして使う
 
 ## Skills ガバナンス
 
@@ -230,5 +233,5 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 ## ロードマップ
 
 現行インデックスは [`docs/unified-roadmap.md`](docs/unified-roadmap.md) を参照。  
-Phase 1-4 の大規模リファクタリングは完了し、実行タスクは `issues/`（open）/`issues/done/`（closed）で管理する。  
+Phase 1-4 の大規模リファクタリングは完了し、実行タスクは GitHub Issues で管理する。
 旧統合ロードマップ本文は `docs/archive/unified-roadmap-2026-02-10.md` に archive 済み。

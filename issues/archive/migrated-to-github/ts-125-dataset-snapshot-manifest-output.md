@@ -1,7 +1,10 @@
 ---
 id: ts-125
 title: "Dataset snapshot manifest 出力の実装"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/359
+migrated_at: 2026-04-22
 priority: medium
 labels: [contracts, dataset, roadmap-migration]
 project: ts

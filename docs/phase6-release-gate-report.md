@@ -59,11 +59,11 @@ Phase 6 のリリースゲートとして、以下を実装した。
 差分要約:
 - CI に release gate（contract/golden/coverage）を追加し、Phase 0-5 の成果を保護する検査線を固定。
 - baseline 計測手順を `scripts/collect-performance-baseline.py` と JSON成果物で再現可能化。
-- 残制約は `issues/` に登録し、次フェーズに引き継ぐ。
+- 残制約は GitHub Issues に登録し、次フェーズに引き継ぐ。
 
 ## 4. 既知制約と次アクション
 
 - 本番相当データ量での smoke/perf baseline は bt-035 で実施済み
   - [`issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md`](../issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md)
 - job duration メトリクスは screening 以外（backtest/optimize）に未展開
-  - [`issues/bt-036-phase6-extend-job-duration-metrics.md`](../issues/bt-036-phase6-extend-job-duration-metrics.md)
+  - [#345](https://github.com/d25037/trading25/issues/345)

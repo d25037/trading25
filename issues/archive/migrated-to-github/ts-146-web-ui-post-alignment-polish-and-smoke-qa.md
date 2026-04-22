@@ -1,7 +1,10 @@
 ---
 id: ts-146
 title: "Analyst Desk 移行後の web UI polish と smoke QA を行う"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/362
+migrated_at: 2026-04-22
 priority: low
 labels: [frontend, qa, polish, ui]
 project: ts

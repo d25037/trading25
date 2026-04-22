@@ -1,7 +1,10 @@
 ---
 id: bt-027
 title: "Phase 1A: TA 回帰監視基盤の実装"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/341
+migrated_at: 2026-04-22
 priority: medium
 labels: [quality, monitoring, ta]
 project: bt

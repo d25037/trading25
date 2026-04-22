@@ -1,7 +1,10 @@
 ---
 id: bt-036
 title: "Phase 6: job duration metrics を backtest/optimize へ拡張"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/345
+migrated_at: 2026-04-22
 priority: medium
 labels: [phase6, observability, metrics, bt]
 project: bt

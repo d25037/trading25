@@ -1,7 +1,10 @@
 ---
 id: ts-108
 title: "Backtest 結果エクスポート"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/357
+migrated_at: 2026-04-22
 priority: medium
 labels: []
 project: ts

@@ -1,7 +1,10 @@
 ---
 id: ts-011
 title: "運用 Runbook"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/353
+migrated_at: 2026-04-22
 priority: medium
 labels: []
 project: ts

@@ -1,7 +1,10 @@
 ---
 id: bt-058
 title: "price_vs_sma bounce / regime research に LightGBM を exploratory 導入する"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/351
+migrated_at: 2026-04-22
 priority: low
 labels: [bt, analytics, lightgbm, research, price-vs-sma, regime]
 project: bt

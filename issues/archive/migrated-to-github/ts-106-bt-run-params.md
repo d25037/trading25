@@ -1,7 +1,10 @@
 ---
 id: ts-106
 title: "Backtest 実行パラメータ拡張"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/356
+migrated_at: 2026-04-22
 priority: medium
 labels: []
 project: ts

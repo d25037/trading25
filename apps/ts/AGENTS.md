@@ -121,5 +121,5 @@ APIエンドポイントの確認・デバッグ時は正式名の **`ts-api-end
 
 ユーザーレベルのスキル（`~/.codex/skills/`）も利用可能:
 
-- **`local-issues`** — ファイルベースのIssue管理。`issues/` ディレクトリ内のMarkdownファイルでIssueを管理する。操作: open, list, show, edit, start, close, wontfix, deps, summary。Issueの作成・更新・クローズ時はこのスキルのフォーマットに従うこと。
+- **`local-issues`** — legacy archive 参照用。active/open task の SoT は GitHub Issues なので、新規・更新・クローズの管理には使わない。
 - **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。

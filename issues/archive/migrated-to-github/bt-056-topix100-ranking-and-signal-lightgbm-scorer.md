@@ -1,7 +1,10 @@
 ---
 id: bt-056
 title: "TOPIX100 ranking と universe signal に LightGBM scorer を接続する"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/349
+migrated_at: 2026-04-22
 priority: high
 labels: [bt, analytics, lightgbm, ranking, signals, runtime]
 project: bt

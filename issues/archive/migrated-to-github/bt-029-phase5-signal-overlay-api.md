@@ -1,7 +1,10 @@
 ---
 id: bt-029
 title: "Phase 5A: Signal Overlay API 実装"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/343
+migrated_at: 2026-04-22
 priority: medium
 labels: [api, signals, phase5]
 project: bt

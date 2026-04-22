@@ -1,7 +1,10 @@
 ---
 id: bt-028
 title: "Dataset snapshot reader とスキーマ検証の実装"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/342
+migrated_at: 2026-04-22
 priority: medium
 labels: [contracts, dataset, roadmap-migration]
 project: bt

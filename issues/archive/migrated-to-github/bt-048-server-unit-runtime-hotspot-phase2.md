@@ -1,7 +1,10 @@
 ---
 id: bt-048
 title: "server unit test の残 hotspot を phase2 で削減"
-status: in-progress
+status: migrated
+original_status: in-progress
+github_issue: https://github.com/d25037/trading25/issues/347
+migrated_at: 2026-04-22
 priority: medium
 labels: [bt, testing, performance]
 project: bt

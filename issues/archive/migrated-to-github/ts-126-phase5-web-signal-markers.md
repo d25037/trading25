@@ -1,7 +1,10 @@
 ---
 id: ts-126
 title: "Phase 5B: Web シグナルマーカー表示"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/360
+migrated_at: 2026-04-22
 priority: medium
 labels: [web, signals, phase5]
 project: ts

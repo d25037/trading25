@@ -1,7 +1,10 @@
 ---
 id: ts-013
 title: "機密情報管理の強化"
-status: open
+status: migrated
+original_status: open
+github_issue: https://github.com/d25037/trading25/issues/354
+migrated_at: 2026-04-22
 priority: medium
 labels: []
 project: ts
