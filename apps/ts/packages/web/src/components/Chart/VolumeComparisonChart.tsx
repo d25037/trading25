@@ -159,7 +159,7 @@ export function VolumeComparisonChart({
   }, []);
 
   return (
-    <div className="h-full">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="p-2 text-sm font-medium text-muted-foreground border-b border-border/30 flex items-center gap-2 flex-wrap">
         <span>{title || 'Volume Comparison'}</span>
         <span className="text-[#F59E0B]">{shortPeriod} SMA</span>
@@ -174,7 +174,7 @@ export function VolumeComparisonChart({
           </>
         )}
       </div>
-      <div ref={chartContainerRef} className="flex-1 h-full" />
+      <div ref={chartContainerRef} className="min-h-0 flex-1" />
     </div>
   );
 }

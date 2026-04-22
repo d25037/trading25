@@ -122,13 +122,13 @@ export function TradingValueMAChart({ data, title, period = 15 }: TradingValueMA
   }, []);
 
   return (
-    <div className="h-full">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="p-2 text-sm font-medium text-muted-foreground border-b border-border/30 flex items-center gap-2">
         <span>{title || 'Trading Value MA'}</span>
         <span className="text-[#2962FF]">{period}</span>
         {latestValue > 0 && <span className="text-[#2962FF]">{formatInteger(latestValue)}</span>}
       </div>
-      <div ref={chartContainerRef} className="flex-1 h-full" />
+      <div ref={chartContainerRef} className="min-h-0 flex-1" />
     </div>
   );
 }

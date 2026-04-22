@@ -165,7 +165,7 @@ describe('RiskAdjustedReturnChart', () => {
       />
     );
 
-    const chartContainer = container.querySelector('.flex-1.h-full') as HTMLDivElement;
+    const chartContainer = container.querySelector('.min-h-0.flex-1') as HTMLDivElement;
     Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 320 });
     Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 160 });
 

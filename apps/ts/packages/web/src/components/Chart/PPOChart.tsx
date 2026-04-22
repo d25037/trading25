@@ -269,9 +269,9 @@ export function PPOChart({ data, title }: PPOChartProps) {
   }, []);
 
   return (
-    <div className="h-full">
+    <div className="flex h-full min-h-0 flex-col">
       {title && <div className="p-2 text-sm font-medium text-muted-foreground border-b border-border/30">{title}</div>}
-      <div ref={chartContainerRef} className="flex-1 h-full" />
+      <div ref={chartContainerRef} className="min-h-0 flex-1" />
     </div>
   );
 }

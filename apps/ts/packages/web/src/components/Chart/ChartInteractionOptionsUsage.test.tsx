@@ -204,7 +204,7 @@ describe('page scroll chart interaction options', () => {
 
     expect(screen.getByText('PPO')).toBeInTheDocument();
 
-    const chartContainer = container.querySelector('.flex-1.h-full') as HTMLDivElement;
+    const chartContainer = container.querySelector('.min-h-0.flex-1') as HTMLDivElement;
     Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 400 });
     Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 180 });
 
@@ -251,7 +251,7 @@ describe('page scroll chart interaction options', () => {
 
   it('handles empty VolumeComparisonChart data and only resizes for valid dimensions', () => {
     const { container } = render(<VolumeComparisonChart data={[]} />);
-    const chartContainer = container.querySelector('.flex-1.h-full') as HTMLDivElement;
+    const chartContainer = container.querySelector('.min-h-0.flex-1') as HTMLDivElement;
 
     Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 0 });
     Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 80 });
@@ -282,7 +282,7 @@ describe('page scroll chart interaction options', () => {
 
   it('handles empty TradingValueMAChart data and only resizes for valid dimensions', () => {
     const { container } = render(<TradingValueMAChart data={[]} />);
-    const chartContainer = container.querySelector('.flex-1.h-full') as HTMLDivElement;
+    const chartContainer = container.querySelector('.min-h-0.flex-1') as HTMLDivElement;
 
     Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 0 });
     Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 90 });
