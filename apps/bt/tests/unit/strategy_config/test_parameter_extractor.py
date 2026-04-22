@@ -12,7 +12,6 @@ from src.domains.strategy.runtime.parameter_extractor import (
     extract_exit_trigger_params,
     get_execution_config,
     get_output_directory,
-    get_template_notebook_path,
     merge_shared_config,
 )
 
@@ -65,9 +64,9 @@ class TestDeepMergeDict:
 class TestGetExecutionConfig:
     def test_merges_configs(self) -> None:
         strategy = {"execution": {"output_directory": "/custom"}}
-        default = {"execution": {"template_notebook": "default.py"}}
+        default = {"execution": {"create_output_dir": True}}
         result = get_execution_config(strategy, default)
-        assert result["template_notebook"] == "default.py"
+        assert result["create_output_dir"] is True
         assert result["output_directory"] == "/custom"
 
     def test_empty_configs(self) -> None:
@@ -75,20 +74,10 @@ class TestGetExecutionConfig:
         assert result == {}
 
     def test_strategy_overrides_default(self) -> None:
-        strategy = {"execution": {"template_notebook": "custom.py"}}
-        default = {"execution": {"template_notebook": "default.py"}}
+        strategy = {"execution": {"create_output_dir": False}}
+        default = {"execution": {"create_output_dir": True}}
         result = get_execution_config(strategy, default)
-        assert result["template_notebook"] == "custom.py"
-
-
-class TestGetTemplateNotebookPath:
-    def test_custom_path(self) -> None:
-        result = get_template_notebook_path({"template_notebook": "custom/path.py"})
-        assert result == Path("custom/path.py")
-
-    def test_default_path(self) -> None:
-        result = get_template_notebook_path({})
-        assert result == Path("notebooks/templates/strategy_analysis.py")
+        assert result["create_output_dir"] is False
 
 
 class TestGetOutputDirectory:

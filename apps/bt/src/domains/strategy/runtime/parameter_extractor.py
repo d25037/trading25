@@ -45,14 +45,6 @@ def get_execution_config(
     return execution_config
 
 
-def get_template_notebook_path(execution_config: dict[str, Any]) -> Path:
-    """Legacy report template pathを取得する。"""
-    template_path = execution_config.get(
-        "template_notebook", "notebooks/templates/strategy_analysis.py"
-    )
-    return Path(template_path)
-
-
 def get_output_directory(execution_config: dict[str, Any]) -> Path:
     """出力ディレクトリのパスを取得"""
     output_dir = execution_config.get("output_directory")

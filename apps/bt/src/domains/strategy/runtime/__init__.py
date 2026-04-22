@@ -34,7 +34,6 @@ from src.domains.strategy.runtime.parameter_extractor import (
     extract_exit_trigger_params,
     get_execution_config,
     get_output_directory,
-    get_template_notebook_path,
     merge_shared_config,
 )
 from src.domains.strategy.runtime.path_resolver import (
@@ -76,7 +75,6 @@ __all__ = [
     "extract_exit_trigger_params",
     "get_execution_config",
     "get_output_directory",
-    "get_template_notebook_path",
     "merge_shared_config",
     "delete_strategy_file",
     "duplicate_to_experimental",

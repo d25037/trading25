@@ -78,13 +78,13 @@ class TestStrategyEditorContext:
     def test_success(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {
             "shared_config": {"dataset": "custom-dataset"},
-            "execution": {"template_notebook": "custom.py"},
+            "execution": {"output_directory": "/tmp/custom"},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "extra_block": {"keep": True},
         }
         mock_config_loader.resolve_strategy_category.return_value = "experimental"
         mock_config_loader.default_config = {
-            "execution": {"template_notebook": "default.py"},
+            "execution": {"output_directory": None, "create_output_dir": True},
             "parameters": {
                 "shared_config": {
                     "dataset": "default-dataset",
@@ -101,8 +101,7 @@ class TestStrategyEditorContext:
             "stock_codes": ["all"],
         }
         mock_config_loader.get_execution_config.return_value = {
-            "template_notebook": "custom.py",
-            "output_directory": None,
+            "output_directory": "/tmp/custom",
             "create_output_dir": True,
         }
 
@@ -145,8 +144,8 @@ class TestDefaultStructuredHelpers:
     def test_patch_mapping_updates_nested_and_prunes_removed_keys(self):
         target = CommentedMap(
             {
-                "template_notebook": "old.py",
                 "output_directory": "/tmp/out",
+                "create_output_dir": True,
                 "nested": CommentedMap({"keep": 1, "drop": 2}),
             }
         )
@@ -154,18 +153,18 @@ class TestDefaultStructuredHelpers:
         strategies_mod._patch_mapping(
             target,
             {
-                "template_notebook": "new.py",
+                "output_directory": "/tmp/new",
                 "nested": {"keep": 3, "added": 4},
             },
         )
 
-        assert "output_directory" not in target
-        assert target["template_notebook"] == "new.py"
+        assert "create_output_dir" not in target
+        assert target["output_directory"] == "/tmp/new"
         assert target["nested"] == {"keep": 3, "added": 4}
 
     def test_validate_default_structured_request_rejects_invalid_shared_config(self):
         request = strategies_mod.DefaultConfigStructuredUpdateRequest(
-            execution={"template_notebook": "custom.py"},
+            execution={"output_directory": "/tmp/out"},
             shared_config={"initial_cash": "not-a-number"},
         )
 
@@ -775,7 +774,7 @@ class TestDefaultConfig:
                 "default:\n"
                 "  extra_note: keep me\n"
                 "  execution:\n"
-                "    template_notebook: notebooks/templates/strategy_analysis.py\n"
+                "    output_directory: /tmp/backtest\n"
                 "  parameters:\n"
                 "    shared_config:\n"
                 "      dataset: prime_20260316\n"
@@ -789,7 +788,7 @@ class TestDefaultConfig:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["raw_execution"]["template_notebook"] == "notebooks/templates/strategy_analysis.py"
+        assert data["raw_execution"]["output_directory"] == "/tmp/backtest"
         assert data["raw_shared_config"]["dataset"] == "prime_20260316"
         assert data["advanced_only_paths"] == ["default.extra_note"]
 
@@ -864,7 +863,7 @@ class TestDefaultConfig:
                 "  # keep note\n"
                 "  extra_note: keep me\n"
                 "  execution:\n"
-                "    template_notebook: old.py  # exec comment\n"
+                "    output_directory: /tmp/old  # exec comment\n"
                 "  parameters:\n"
                 "    shared_config:\n"
                 "      dataset: old-dataset  # dataset comment\n"
@@ -878,7 +877,7 @@ class TestDefaultConfig:
         resp = client.put(
             "/api/config/default/structured",
             json={
-                "execution": {"template_notebook": "new.py"},
+                "execution": {"output_directory": "/tmp/new"},
                 "shared_config": {
                     "dataset": "new-dataset",
                     "benchmark_table": "topix",
@@ -892,7 +891,7 @@ class TestDefaultConfig:
         assert "# top comment" in saved
         assert "# keep note" in saved
         assert "extra_note: keep me" in saved
-        assert "template_notebook: new.py" in saved
+        assert "output_directory: /tmp/new" in saved
         assert "dataset: new-dataset" in saved
         mock_config_loader.reload_default_config.assert_called_once()
 
@@ -903,7 +902,7 @@ class TestDefaultConfig:
             (
                 "default:\n"
                 "  execution:\n"
-                "    template_notebook: old.py\n"
+                "    output_directory: /tmp/old\n"
                 "  parameters:\n"
                 "    shared_config:\n"
                 "      dataset: baseline-dataset\n"
@@ -917,7 +916,7 @@ class TestDefaultConfig:
         resp = client.put(
             "/api/config/default/structured",
             json={
-                "execution": {"template_notebook": "override.py"},
+                "execution": {"output_directory": "/tmp/override"},
                 "shared_config": {"dataset": "override-dataset"},
             },
         )
@@ -925,7 +924,7 @@ class TestDefaultConfig:
         assert resp.status_code == 200
         assert baseline_path.read_text(encoding="utf-8").find("baseline-dataset") >= 0
         saved = override_path.read_text(encoding="utf-8")
-        assert "template_notebook: override.py" in saved
+        assert "output_directory: /tmp/override" in saved
         assert "dataset: override-dataset" in saved
 
     def test_structured_update_rejects_unknown_execution_field(

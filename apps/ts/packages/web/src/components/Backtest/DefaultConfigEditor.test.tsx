@@ -13,7 +13,7 @@ const mockState = {
   context: {
     raw_yaml: `default:
   execution:
-    template_notebook: notebooks/templates/strategy_analysis.py
+    output_directory: /tmp/backtest
   parameters:
     shared_config:
       dataset: prime_20260316
@@ -23,7 +23,7 @@ const mockState = {
       default: {
         extra_note: 'keep me',
         execution: {
-          template_notebook: 'notebooks/templates/strategy_analysis.py',
+          output_directory: '/tmp/backtest',
         },
         parameters: {
           shared_config: {
@@ -34,14 +34,14 @@ const mockState = {
       },
     },
     raw_execution: {
-      template_notebook: 'notebooks/templates/strategy_analysis.py',
+      output_directory: '/tmp/backtest',
     },
     raw_shared_config: {
       dataset: 'prime_20260316',
       benchmark_table: 'topix',
     },
     effective_execution: {
-      template_notebook: 'notebooks/templates/strategy_analysis.py',
+      output_directory: '/tmp/backtest',
     },
     effective_shared_config: {
       dataset: 'prime_20260316',
@@ -91,15 +91,15 @@ const mockState = {
     ],
     execution_fields: [
       {
-        path: 'template_notebook',
+        path: 'output_directory',
         section: 'execution',
         group: 'execution',
-        label: 'Template Notebook',
+        label: 'Output Directory',
         type: 'string',
         widget: 'text',
-        description: 'Template path',
-        summary: 'Notebook template',
-        default: 'notebooks/templates/strategy_analysis.py',
+        description: 'Output path',
+        summary: 'Artifact output directory',
+        default: null,
         options: null,
         constraints: null,
         placeholder: null,
@@ -239,7 +239,7 @@ describe('DefaultConfigEditor', () => {
     expect(mockStructuredMutate).toHaveBeenCalledWith(
       {
         execution: {
-          template_notebook: 'notebooks/templates/strategy_analysis.py',
+          output_directory: '/tmp/backtest',
         },
         shared_config: {
           dataset: 'prime_20260316',
@@ -276,7 +276,7 @@ describe('DefaultConfigEditor', () => {
     expect(mockStructuredMutate).toHaveBeenCalledWith(
       {
         execution: {
-          template_notebook: 'notebooks/templates/strategy_analysis.py',
+          output_directory: '/tmp/backtest',
         },
         shared_config: {
           dataset: 'default-dataset',
@@ -311,7 +311,7 @@ describe('DefaultConfigEditor', () => {
       target: {
         value: `default:
   execution:
-    template_notebook: custom_template.py
+    output_directory: /tmp/custom
   parameters:
     shared_config:
       dataset: switched_dataset`,
@@ -351,7 +351,7 @@ describe('DefaultConfigEditor', () => {
 
     expect(mockRawMutate).toHaveBeenCalledWith(
       {
-        content: expect.stringContaining('template_notebook'),
+        content: expect.stringContaining('output_directory'),
       },
       expect.any(Object)
     );

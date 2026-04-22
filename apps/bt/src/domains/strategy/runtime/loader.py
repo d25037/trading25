@@ -26,7 +26,6 @@ from src.domains.strategy.runtime.parameter_extractor import (
     extract_exit_trigger_params,
     get_execution_config,
     get_output_directory,
-    get_template_notebook_path,
     merge_shared_config,
 )
 from src.domains.strategy.runtime.path_resolver import (
@@ -206,11 +205,6 @@ class ConfigLoader:
     def validate_strategy_config(self, config: dict[str, Any]) -> bool:
         """戦略設定の妥当性をチェック"""
         return validate_strategy_config(config)
-
-    def get_template_notebook_path(self, strategy_config: dict[str, Any]) -> Path:
-        """テンプレートNotebookのパスを取得"""
-        execution_config = self.get_execution_config(strategy_config)
-        return get_template_notebook_path(execution_config)
 
     def get_output_directory(self, strategy_config: dict[str, Any]) -> Path:
         """出力ディレクトリのパスを取得"""

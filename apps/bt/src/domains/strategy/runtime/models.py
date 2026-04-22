@@ -17,10 +17,6 @@ from src.shared.models.signals import SignalParams
 class ExecutionConfig(BaseModel):
     """実行設定"""
 
-    template_notebook: str = Field(
-        default="notebooks/templates/strategy_analysis.py",
-        description="Legacy report template path",
-    )
     output_directory: str | None = Field(
         default=None, description="出力ディレクトリ（Noneでデフォルト）"
     )

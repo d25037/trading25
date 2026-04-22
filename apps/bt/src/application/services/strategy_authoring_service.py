@@ -304,12 +304,6 @@ _SHARED_FIELD_OVERRIDES: dict[str, dict[str, Any]] = {
 }
 
 _EXECUTION_FIELD_OVERRIDES: dict[str, dict[str, Any]] = {
-    "template_notebook": {
-        "group": "execution",
-        "label": "Template Notebook",
-        "summary": "Notebook template used for HTML report generation.",
-        "placeholder": "notebooks/templates/strategy_analysis.py",
-    },
     "output_directory": {
         "group": "execution",
         "label": "Output Directory",

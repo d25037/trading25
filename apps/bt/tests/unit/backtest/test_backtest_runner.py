@@ -143,15 +143,9 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
         lambda strategy: {
             "shared_config": {"dataset": "sample"},
             "execution": {
-                "template_notebook": "custom_template.py",
                 "output_directory": str(tmp_path),
             },
         },
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("custom_template.py"),
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -183,11 +177,6 @@ def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
         runner.config_loader,
         "load_strategy_config",
         lambda _strategy: {"shared_config": {"dataset": "sample"}},
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -247,11 +236,6 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
     )
     monkeypatch.setattr(
         runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
         "get_output_directory",
         lambda _: tmp_path,
     )
@@ -285,11 +269,6 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
         runner.config_loader,
         "load_strategy_config",
         lambda _strategy: {"shared_config": {"dataset": "sample"}},
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -356,11 +335,6 @@ def test_backtest_runner_preserves_core_artifacts_when_html_render_fails(monkeyp
     )
     monkeypatch.setattr(
         runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
         "get_output_directory",
         lambda _: tmp_path,
     )
@@ -390,11 +364,6 @@ def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
         runner.config_loader,
         "load_strategy_config",
         lambda _strategy: {"shared_config": {"dataset": "sample"}},
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -455,11 +424,6 @@ def test_backtest_runner_elapsed_time_includes_report_render_time(monkeypatch, t
         runner.config_loader,
         "load_strategy_config",
         lambda _strategy: {"shared_config": {"dataset": "sample"}},
-    )
-    monkeypatch.setattr(
-        runner.config_loader,
-        "get_template_notebook_path",
-        lambda _: Path("template.py"),
     )
     monkeypatch.setattr(
         runner.config_loader,

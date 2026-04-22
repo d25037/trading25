@@ -1,7 +1,7 @@
 ---
 id: bt-064
 title: "marimo 依存を repo から撤去する"
-status: open
+status: done
 priority: medium
 labels: [bt, dependencies, reports, research, cleanup]
 project: bt
@@ -58,8 +58,8 @@ parent: null
 ## 受け入れ条件
 - [x] `uv run --project apps/bt pytest` が marimo 未インストール環境で通る。
 - [x] `uv run --project apps/bt pyright apps/bt/src` が marimo 未インストール環境で通る。
-- [ ] `bt backtest <strategy>` が `result.html` / metrics / manifest / simulation payload / report payload を生成する。
-- [ ] `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` が既存成果物から summary を再解決できる。
+- [x] `bt backtest <strategy>` が `result.html` / metrics / manifest / simulation payload / report payload を生成する。
+- [x] `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` が既存成果物から summary を再解決できる。
 - [x] research runner / bundle / canonical note の再現導線が notebook runtime に依存しない。
 - [x] `apps/bt/pyproject.toml` と `apps/bt/uv.lock` に marimo が残っていない。
 
@@ -78,6 +78,9 @@ parent: null
 - 2026-04-22: research README / baseline note / skills / AGENTS / docs を runner bundle + static HTML report 前提へ更新した。
 - 2026-04-22: `scripts/check-research-guardrails.py` を legacy playground file と docs 内 notebook runtime reference の検出へ切り替えた。
 - 2026-04-22: `uv run pytest` の全体実行で既存の matplotlib fake module 注入テストが1件落ちたため、`tests/unit/strategies/utils/test_optimization.py` を修正し、再実行で `5380 passed, 1 skipped` を確認した。
+- 2026-04-22: 残っていた `template_notebook` / `notebooks/templates` の active 設定・schema・web test 参照を削除し、default config editor の実行設定を output directory のみへ整理した。
+- 2026-04-22: 一時 default config を使って `bt backtest reference/buy_and_hold` を実行し、`result.html` / `.metrics.json` / `.manifest.json` / `.simulation.pkl` / `.report.json` の生成を確認した。
+- 2026-04-22: `/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` の artifact summary 再解決 unit tests を実行し、既存成果物から summary を再解決できることを確認した。
 
 ## 注意点
 - 一括削除は blast radius が大きい。まず renderer 分離で `BacktestRunner` の report rendering を差し替え、その後 notebook / docs / tests を削る。

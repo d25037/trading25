@@ -97,7 +97,7 @@ const mockState: MockState = {
         execution_policy: { mode: 'standard' },
       },
       execution: {
-        template_notebook: 'custom.py',
+        output_directory: '/tmp/custom',
       },
       entry_filter_params: {
         volume_ratio_above: {
@@ -119,7 +119,7 @@ const mockState: MockState = {
       execution_policy: { mode: 'standard' },
     },
     default_execution: {
-      template_notebook: 'default.py',
+      output_directory: null,
     },
     effective_shared_config: {
       dataset: 'custom-dataset',
@@ -128,7 +128,7 @@ const mockState: MockState = {
       execution_policy: { mode: 'standard' },
     },
     effective_execution: {
-      template_notebook: 'custom.py',
+      output_directory: '/tmp/custom',
     },
     shared_config_provenance: [],
     execution_provenance: [],
@@ -545,7 +545,7 @@ describe('StrategyEditor', () => {
           execution_policy: { mode: 'standard' },
         },
         execution: {
-          template_notebook: 'custom.py',
+          output_directory: '/tmp/custom',
         },
         entry_filter_params: {
           volume_ratio_above: {
@@ -567,7 +567,7 @@ describe('StrategyEditor', () => {
         execution_policy: { mode: 'standard' },
       },
       effective_execution: {
-        template_notebook: 'custom.py',
+        output_directory: '/tmp/custom',
       },
     };
     mockValidateMutateAsync.mockResolvedValue({

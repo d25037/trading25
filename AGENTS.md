@@ -146,7 +146,7 @@ uv run pyright src/              # 型チェック
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う
 - Lab `optimize`（Optuna）は依存パラメータ制約付きサンプリング（`long>short` / `slow>fast` / `max>min`）を適用し、`n_trials>=40` では `stage1(広域)+stage2(局所)` の2段階探索を行う
 - Lab `optimize` は `GET /api/lab/optimize/recommendation` を提供し、戦略の探索次元数から `minimum/recommended/high_quality` trial 推奨値を返す。web の Optimize form は `target_scope` / `allowed_categories` 選択に追従して推奨値を再取得し、最低推奨未満を警告表示する
-- Optimization HTML（`notebooks/templates/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
+- Optimization HTML（`src/domains/optimization/optimization_report_renderer.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
 - `/api/optimize/jobs/{id}` は `best_score` / `total_combinations` に加えて `best_params` / `worst_score` / `worst_params` を返し、最適化ジョブ結果カードで best/worst 条件を比較表示できる
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する
 - Fundamental signal は `forecast_eps_above_recent_fy_actuals`（最新予想EPS > 直近FY X回の実績EPS最大値）をサポートし、`lookback_fy_count` で比較年数を指定できる。forecast revision 読み込み（screening/lab/optimization/backtest）を有効化する
