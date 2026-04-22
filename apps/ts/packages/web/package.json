@@ -41,7 +41,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.2",
+    "@tailwindcss/vite": "^4.2.4",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/js-yaml": "^4.0.9",
@@ -49,11 +49,11 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/coverage-v8": "^4.1.4",
-    "@vitest/ui": "^4.1.4",
-    "happy-dom": "^20.8.9",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/ui": "^4.1.5",
+    "happy-dom": "^20.9.0",
     "tailwindcss": "^4.2.2",
-    "vite": "^8.0.8",
-    "vitest": "^4.1.4"
+    "vite": "^8.0.9",
+    "vitest": "^4.1.5"
   }
 }
