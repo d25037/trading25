@@ -161,3 +161,45 @@ def test_missing_referenced_path_is_rejected(tmp_path: Path) -> None:
     errors = module.validate_skill_file(skill_file, tmp_path)
 
     assert any("Referenced path not found" in error for error in errors)
+
+
+def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "scripts/check-research-guardrails.py", "# guardrail script\n")
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-research-workflow/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                "name: bt-research-workflow",
+                "description: Canonical skill.",
+                "---",
+                "",
+                "# bt-research-workflow",
+                "",
+                "## When to use",
+                "",
+                "- research workflow",
+                "",
+                "## Source of Truth",
+                "",
+                "- `apps/bt/src/domains`",
+                "",
+                "## Workflow",
+                "",
+                "1. run the guardrail.",
+                "",
+                "## Guardrails",
+                "",
+                "- `scripts/check-research-guardrails.py` prevents stale surfaces.",
+                "",
+                "## Verification",
+                "",
+                "- `python3 scripts/check-research-guardrails.py`",
+                "",
+            ]
+        ),
+    )
+    _write(tmp_path / "apps/bt/src/domains/.gitkeep", "")
+
+    assert module.validate_skill_file(skill_file, tmp_path) == []

@@ -136,6 +136,8 @@ def _resolve_path_candidates(token: str, skill_file: Path, repo_root: Path) -> l
         return [Path(token)]
     if token in LOCAL_FILE_NAMES:
         return [skill_file.parent / token, repo_root / token]
+    if token.startswith("scripts/"):
+        return [skill_file.parent / token, repo_root / token]
     if token.startswith(("./", "../")) or token.startswith(SKILL_LOCAL_PREFIXES):
         return [skill_file.parent / token]
     return [repo_root / token]
