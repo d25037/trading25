@@ -85,6 +85,7 @@ export default defineConfig({
 		],
 	},
 	server: {
+		host: '0.0.0.0',
 		port: WEB_PORT,
 		strictPort: true,
 		proxy: {
