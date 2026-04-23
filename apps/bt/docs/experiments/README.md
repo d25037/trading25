@@ -41,6 +41,8 @@
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。
 - [market-behavior/annual-first-open-last-close-fundamental-panel/](./market-behavior/annual-first-open-last-close-fundamental-panel/README.md)
   - 各銘柄を大発会 `Open` で買って大納会 `Close` で売る年次保有 return を、買付時点 FY ファンダメンタルと株式数補正付きで観察する実験。
+- [market-behavior/annual-fundamental-confounder-analysis/](./market-behavior/annual-fundamental-confounder-analysis/README.md)
+  - 年次保有ファンダメンタル panel を土台に、低PBR・小型・低forward PER・低ADVなどの交絡と独立効果を統計的に分解する実験。
 - [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)
   - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
 - [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)
