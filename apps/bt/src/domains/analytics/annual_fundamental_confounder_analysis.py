@@ -31,6 +31,7 @@ ANNUAL_FUNDAMENTAL_CONFOUNDER_ANALYSIS_EXPERIMENT_ID = (
 DEFAULT_WINSOR_LOWER = 0.01
 DEFAULT_WINSOR_UPPER = 0.99
 DEFAULT_MIN_OBSERVATIONS = 80
+POSITIVE_RATIO_ONLY_COLUMNS: tuple[str, ...] = ("pbr", "forward_per")
 _MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth")
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "prepared_panel_df",
@@ -78,6 +79,9 @@ class AnnualFundamentalConfounderAnalysisResult:
     winsor_lower: float
     winsor_upper: float
     min_observations: int
+    required_positive_columns: tuple[str, ...]
+    input_realized_event_count: int
+    analysis_event_count: int
     score_policy: str
     prepared_panel_df: pd.DataFrame
     factor_coverage_df: pd.DataFrame
@@ -184,6 +188,18 @@ def _empty_df(columns: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(columns=list(columns))
 
 
+def _normalize_required_positive_columns(columns: Sequence[str]) -> tuple[str, ...]:
+    valid_columns = {spec.source_column for spec in FACTOR_SPECS}
+    normalized: list[str] = []
+    for raw_column in columns:
+        column = str(raw_column).strip()
+        if column not in valid_columns:
+            raise ValueError(f"Unsupported required positive column: {column}")
+        if column not in normalized:
+            normalized.append(column)
+    return tuple(normalized)
+
+
 def _is_finite_number(value: object) -> bool:
     try:
         number = float(cast(float, value))
@@ -268,6 +284,7 @@ def _prepare_panel_df(
     *,
     winsor_lower: float,
     winsor_upper: float,
+    required_positive_columns: Sequence[str] = (),
 ) -> pd.DataFrame:
     required_columns = {
         "status",
@@ -288,6 +305,13 @@ def _prepare_panel_df(
     realized["market"] = realized["market"].astype(str)
     realized["sector_33_name"] = realized["sector_33_name"].fillna("unknown").astype(str)
     realized["event_return_pct"] = pd.to_numeric(realized["event_return_pct"], errors="coerce")
+    normalized_positive_columns = _normalize_required_positive_columns(required_positive_columns)
+    for column in normalized_positive_columns:
+        if column not in realized.columns:
+            realized[column] = np.nan
+        realized = realized[pd.to_numeric(realized[column], errors="coerce") > 0].copy()
+    if realized.empty:
+        return _empty_df([])
     realized["event_return_winsor_pct"] = _winsorize(
         realized["event_return_pct"],
         winsor_lower,
@@ -848,11 +872,13 @@ def run_annual_fundamental_confounder_analysis(
     winsor_lower: float = DEFAULT_WINSOR_LOWER,
     winsor_upper: float = DEFAULT_WINSOR_UPPER,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
+    required_positive_columns: Sequence[str] = (),
 ) -> AnnualFundamentalConfounderAnalysisResult:
     if not (0.0 <= winsor_lower < winsor_upper <= 1.0):
         raise ValueError("winsor bounds must satisfy 0 <= lower < upper <= 1")
     if min_observations < 5:
         raise ValueError("min_observations must be >= 5")
+    normalized_positive_columns = _normalize_required_positive_columns(required_positive_columns)
     resolved_input = resolve_required_bundle_path(
         input_bundle_path,
         latest_bundle_resolver=lambda: get_annual_first_open_last_close_fundamental_panel_latest_bundle_path(
@@ -865,10 +891,12 @@ def run_annual_fundamental_confounder_analysis(
     )
     input_info = load_research_bundle_info(resolved_input)
     tables = load_research_bundle_tables(resolved_input, table_names=("event_ledger_df",))
+    realized_count = int((tables["event_ledger_df"]["status"].astype(str) == "realized").sum())
     panel_df = _prepare_panel_df(
         tables["event_ledger_df"],
         winsor_lower=winsor_lower,
         winsor_upper=winsor_upper,
+        required_positive_columns=normalized_positive_columns,
     )
     return AnnualFundamentalConfounderAnalysisResult(
         db_path=str(resolved_input),
@@ -880,9 +908,17 @@ def run_annual_fundamental_confounder_analysis(
         winsor_lower=winsor_lower,
         winsor_upper=winsor_upper,
         min_observations=min_observations,
+        required_positive_columns=normalized_positive_columns,
+        input_realized_event_count=realized_count,
+        analysis_event_count=int(len(panel_df)),
         score_policy=(
             "factor scores are within year x current-market percentile scores; "
             "higher score means stronger preferred direction"
+            + (
+                f"; required positive columns: {', '.join(normalized_positive_columns)}"
+                if normalized_positive_columns
+                else ""
+            )
         ),
         prepared_panel_df=panel_df,
         factor_coverage_df=_build_factor_coverage_df(panel_df),
@@ -931,6 +967,14 @@ def _build_summary_markdown(result: AnnualFundamentalConfounderAnalysisResult) -
         f"- Analysis period: `{result.analysis_start_date}` to `{result.analysis_end_date}`",
         f"- Winsorized return bounds: `{result.winsor_lower}` / `{result.winsor_upper}`",
         f"- Minimum observations: `{result.min_observations}`",
+        f"- Input realized events: `{result.input_realized_event_count}`",
+        f"- Analysis events: `{result.analysis_event_count}`",
+        (
+            "- Required positive columns: "
+            f"`{', '.join(result.required_positive_columns)}`"
+            if result.required_positive_columns
+            else "- Required positive columns: none"
+        ),
         f"- Score policy: {result.score_policy}.",
         "",
         "## Extended Panel Regression",
@@ -981,6 +1025,9 @@ def _build_published_summary(result: AnnualFundamentalConfounderAnalysisResult) 
         "winsorLower": result.winsor_lower,
         "winsorUpper": result.winsor_upper,
         "minObservations": result.min_observations,
+        "requiredPositiveColumns": list(result.required_positive_columns),
+        "inputRealizedEventCount": result.input_realized_event_count,
+        "analysisEventCount": result.analysis_event_count,
         "panelRegression": result.panel_regression_df.to_dict(orient="records"),
         "famaMacbeth": result.fama_macbeth_df.to_dict(orient="records"),
         "incrementalSelection": result.incremental_selection_df.to_dict(orient="records"),
@@ -1003,6 +1050,7 @@ def write_annual_fundamental_confounder_analysis_bundle(
             "winsor_lower": result.winsor_lower,
             "winsor_upper": result.winsor_upper,
             "min_observations": result.min_observations,
+            "required_positive_columns": list(result.required_positive_columns),
         },
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,

@@ -139,3 +139,39 @@ def test_write_and_load_annual_fundamental_confounder_analysis_bundle(tmp_path: 
         check_dtype=False,
     )
 
+
+def test_run_annual_fundamental_confounder_analysis_can_require_positive_pbr_and_forward_per(
+    tmp_path: Path,
+) -> None:
+    ledger = _sample_event_ledger()
+    ledger.loc[ledger.index[0], "pbr"] = -0.3
+    ledger.loc[ledger.index[1], "forward_per"] = -1.5
+    source_file = tmp_path / "source-positive-ratio.duckdb"
+    source_file.write_text("fixture", encoding="utf-8")
+    bundle = write_research_bundle(
+        experiment_id=ANNUAL_FIRST_OPEN_LAST_CLOSE_FUNDAMENTAL_PANEL_EXPERIMENT_ID,
+        module="tests.fixture",
+        function="build",
+        params={},
+        db_path=str(source_file),
+        analysis_start_date="2021-01-04",
+        analysis_end_date="2024-12-30",
+        result_metadata={"db_path": str(source_file)},
+        result_tables={"event_ledger_df": ledger},
+        summary_markdown="# fixture\n",
+        output_root=tmp_path,
+        run_id="input-panel-positive-ratio",
+    )
+
+    result = run_annual_fundamental_confounder_analysis(
+        bundle.bundle_dir,
+        output_root=tmp_path,
+        min_observations=8,
+        required_positive_columns=("pbr", "forward_per"),
+    )
+
+    assert result.required_positive_columns == ("pbr", "forward_per")
+    assert result.input_realized_event_count == len(ledger)
+    assert result.analysis_event_count == len(ledger) - 2
+    assert (pd.to_numeric(result.prepared_panel_df["pbr"], errors="coerce") > 0).all()
+    assert (pd.to_numeric(result.prepared_panel_df["forward_per"], errors="coerce") > 0).all()

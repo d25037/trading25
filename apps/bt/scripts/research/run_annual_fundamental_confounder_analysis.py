@@ -27,6 +27,7 @@ from src.domains.analytics.annual_fundamental_confounder_analysis import (  # no
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_WINSOR_LOWER,
     DEFAULT_WINSOR_UPPER,
+    POSITIVE_RATIO_ONLY_COLUMNS,
     run_annual_fundamental_confounder_analysis,
     write_annual_fundamental_confounder_analysis_bundle,
 )
@@ -65,6 +66,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_MIN_OBSERVATIONS,
         help=f"Minimum observations for regression/spread cells. Default: {DEFAULT_MIN_OBSERVATIONS}.",
     )
+    parser.add_argument(
+        "--require-positive-pbr-and-forward-per",
+        action="store_true",
+        help=(
+            "Filter realized events to rows where both PBR and forward PER are "
+            f"strictly positive ({', '.join(POSITIVE_RATIO_ONLY_COLUMNS)})."
+        ),
+    )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
@@ -78,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
         winsor_lower=args.winsor_lower,
         winsor_upper=args.winsor_upper,
         min_observations=args.min_observations,
+        required_positive_columns=(
+            POSITIVE_RATIO_ONLY_COLUMNS if args.require_positive_pbr_and_forward_per else ()
+        ),
     )
     bundle = write_annual_fundamental_confounder_analysis_bundle(
         result,
@@ -91,4 +103,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

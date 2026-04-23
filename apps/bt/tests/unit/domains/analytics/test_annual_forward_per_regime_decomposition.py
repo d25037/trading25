@@ -8,13 +8,13 @@ import pandas as pd
 from src.domains.analytics.annual_first_open_last_close_fundamental_panel import (
     ANNUAL_FIRST_OPEN_LAST_CLOSE_FUNDAMENTAL_PANEL_EXPERIMENT_ID,
 )
-from src.domains.analytics.annual_value_composite_selection import (
-    ANNUAL_VALUE_COMPOSITE_SELECTION_EXPERIMENT_ID,
-    get_annual_value_composite_selection_bundle_path_for_run_id,
-    get_annual_value_composite_selection_latest_bundle_path,
-    load_annual_value_composite_selection_bundle,
-    run_annual_value_composite_selection,
-    write_annual_value_composite_selection_bundle,
+from src.domains.analytics.annual_forward_per_regime_decomposition import (
+    ANNUAL_FORWARD_PER_REGIME_DECOMPOSITION_EXPERIMENT_ID,
+    get_annual_forward_per_regime_decomposition_bundle_path_for_run_id,
+    get_annual_forward_per_regime_decomposition_latest_bundle_path,
+    load_annual_forward_per_regime_decomposition_bundle,
+    run_annual_forward_per_regime_decomposition,
+    write_annual_forward_per_regime_decomposition_bundle,
 )
 from src.domains.analytics.research_bundle import write_research_bundle
 
@@ -25,17 +25,21 @@ _MARKET_NAMES = {"prime": "Prime", "standard": "Standard", "growth": "Growth"}
 
 def _sample_event_ledger() -> pd.DataFrame:
     records: list[dict[str, object]] = []
+    forward_per_patterns = {
+        "prime": [-2.0, 2.0, 3.0, 4.0, 5.0, 7.0, 9.0],
+        "standard": [-3.0, -1.0, 1.5, 2.0, 4.0, 7.0, 8.5],
+        "growth": [-4.0, -2.0, -0.5, 3.0, 6.0, 9.0, 11.0],
+    }
     for year_index, year in enumerate(("2021", "2022", "2023", "2024")):
         for market_index, market in enumerate(("prime", "standard", "growth")):
-            for rank in range(12):
+            for rank, forward_per in enumerate(forward_per_patterns[market]):
                 code = f"{market_index + 1}{year_index}{rank:02d}"
-                value_strength = 11 - rank
-                return_pct = (
-                    -6.0
-                    + value_strength * 2.1
-                    + (2.0 if market == "standard" else 0.0)
-                    + year_index * 0.4
-                )
+                if forward_per <= 0:
+                    return_pct = 16.0 - rank * 0.6 + (2.0 if market == "standard" else 0.0)
+                elif forward_per <= 2.0:
+                    return_pct = 12.0 - rank * 0.4 + (2.0 if market == "standard" else 0.0)
+                else:
+                    return_pct = 4.0 - rank * 0.5 + (1.0 if market == "standard" else 0.0)
                 entry_open = 100.0
                 entry_close = entry_open * (1.0 + return_pct / 300.0)
                 mid_close = entry_open * (1.0 + return_pct / 200.0)
@@ -58,15 +62,15 @@ def _sample_event_ledger() -> pd.DataFrame:
                         "exit_close": exit_close,
                         "holding_trading_days": 3,
                         "event_return_pct": return_pct,
-                        "pbr": 0.4 + rank * 0.12,
-                        "forward_per": 4.0 + rank * 0.8,
-                        "per": 5.0 + rank * 0.9,
-                        "market_cap_bil_jpy": 3.0 + rank * 5.0,
-                        "avg_trading_value_60d_mil_jpy": 5.0 + rank * 4.0,
-                        "forecast_dividend_yield_pct": 0.2 + value_strength * 0.15,
-                        "dividend_yield_pct": 0.1 + value_strength * 0.12,
-                        "cfo_yield_pct": 1.0 + value_strength * 0.3,
-                        "forward_eps_to_actual_eps": 0.8 + rank * 0.04,
+                        "pbr": 0.4 + rank * 0.10,
+                        "forward_per": forward_per,
+                        "per": max(1.0, forward_per + 1.0),
+                        "market_cap_bil_jpy": 2.0 + rank * 3.0,
+                        "avg_trading_value_60d_mil_jpy": 6.0 + rank * 3.0,
+                        "forecast_dividend_yield_pct": 0.1 + (5 - rank) * 0.10,
+                        "dividend_yield_pct": 0.1 + (5 - rank) * 0.08,
+                        "cfo_yield_pct": 1.0 + (5 - rank) * 0.2,
+                        "forward_eps_to_actual_eps": 0.9 + rank * 0.05,
                     }
                 )
     return pd.DataFrame(records)
@@ -198,90 +202,71 @@ def _write_input_bundle(tmp_path: Path, db_path: str, event_ledger_df: pd.DataFr
     return bundle.bundle_dir
 
 
-def test_run_annual_value_composite_selection_builds_portfolio_tables(tmp_path: Path) -> None:
+def test_run_annual_forward_per_regime_decomposition_builds_tables(tmp_path: Path) -> None:
     event_ledger_df = _sample_event_ledger()
     db_path = _build_market_db(tmp_path / "market.duckdb", event_ledger_df)
     input_bundle = _write_input_bundle(tmp_path, db_path, event_ledger_df)
 
-    result = run_annual_value_composite_selection(
-        input_bundle,
-        output_root=tmp_path,
-        selection_fractions=(0.10, 0.20),
-        min_train_observations=8,
-    )
-
-    assert result.input_run_id == "input-panel"
-    assert {"equal_weight_score", "bucket_sum_score"}.issubset(result.scored_panel_df.columns)
-    assert not result.walkforward_weight_df.empty
-    assert not result.selected_event_df.empty
-    assert not result.selection_summary_df.empty
-    assert not result.portfolio_daily_df.empty
-    assert not result.portfolio_summary_df.empty
-
-    focus = result.portfolio_summary_df[
-        (result.portfolio_summary_df["market_scope"].astype(str) == "standard")
-        & (result.portfolio_summary_df["score_method"].astype(str) == "equal_weight")
-        & (result.portfolio_summary_df["liquidity_scenario"].astype(str) == "adv10m")
-        & (result.portfolio_summary_df["selection_fraction"].astype(float) == 0.10)
-    ]
-    assert len(focus) == 1
-    assert float(focus.iloc[0]["total_return_pct"]) > 0.0
-    assert int(focus.iloc[0]["realized_event_count"]) == 4
-
-
-def test_write_and_load_annual_value_composite_selection_bundle(tmp_path: Path) -> None:
-    event_ledger_df = _sample_event_ledger()
-    db_path = _build_market_db(tmp_path / "market.duckdb", event_ledger_df)
-    input_bundle = _write_input_bundle(tmp_path, db_path, event_ledger_df)
-    result = run_annual_value_composite_selection(
+    result = run_annual_forward_per_regime_decomposition(
         input_bundle,
         output_root=tmp_path,
         selection_fractions=(0.10,),
-        min_train_observations=8,
+        min_train_observations=6,
     )
 
-    bundle = write_annual_value_composite_selection_bundle(
+    assert result.input_run_id == "input-panel"
+    assert "positive_low_forward_per_score" in result.prepared_panel_df.columns
+    assert "forward_per_regime" in result.prepared_panel_df.columns
+    assert not result.regime_coverage_df.empty
+    assert not result.regime_return_summary_df.empty
+    assert not result.conditional_regime_summary_df.empty
+    assert not result.panel_regression_df.empty
+    assert not result.selected_event_df.empty
+    assert not result.selection_mix_df.empty
+    assert not result.portfolio_daily_df.empty
+    assert not result.portfolio_summary_df.empty
+    assert not result.portfolio_regime_contribution_df.empty
+
+    standard_regimes = set(
+        result.prepared_panel_df[
+            result.prepared_panel_df["market"].astype(str) == "standard"
+        ]["forward_per_regime"].astype(str)
+    )
+    assert {"non_positive", "positive_low", "positive_other"}.issubset(standard_regimes)
+
+
+def test_write_and_load_annual_forward_per_regime_decomposition_bundle(tmp_path: Path) -> None:
+    event_ledger_df = _sample_event_ledger()
+    db_path = _build_market_db(tmp_path / "market.duckdb", event_ledger_df)
+    input_bundle = _write_input_bundle(tmp_path, db_path, event_ledger_df)
+    result = run_annual_forward_per_regime_decomposition(
+        input_bundle,
+        output_root=tmp_path,
+        selection_fractions=(0.10,),
+        min_train_observations=6,
+    )
+
+    bundle = write_annual_forward_per_regime_decomposition_bundle(
         result,
         output_root=tmp_path,
-        run_id="value-composite-test",
+        run_id="forward-per-regime-test",
     )
-    loaded = load_annual_value_composite_selection_bundle(bundle.bundle_dir)
+    loaded = load_annual_forward_per_regime_decomposition_bundle(bundle.bundle_dir)
 
-    assert bundle.experiment_id == ANNUAL_VALUE_COMPOSITE_SELECTION_EXPERIMENT_ID
+    assert bundle.experiment_id == ANNUAL_FORWARD_PER_REGIME_DECOMPOSITION_EXPERIMENT_ID
     assert (
-        get_annual_value_composite_selection_bundle_path_for_run_id(
-            "value-composite-test",
+        get_annual_forward_per_regime_decomposition_bundle_path_for_run_id(
+            "forward-per-regime-test",
             output_root=tmp_path,
         )
         == bundle.bundle_dir
     )
-    assert get_annual_value_composite_selection_latest_bundle_path(output_root=tmp_path) == bundle.bundle_dir
+    assert (
+        get_annual_forward_per_regime_decomposition_latest_bundle_path(output_root=tmp_path)
+        == bundle.bundle_dir
+    )
     pd.testing.assert_frame_equal(
         loaded.portfolio_summary_df.reset_index(drop=True),
         result.portfolio_summary_df.reset_index(drop=True),
         check_dtype=False,
     )
-
-
-def test_run_annual_value_composite_selection_can_require_positive_pbr_and_forward_per(
-    tmp_path: Path,
-) -> None:
-    event_ledger_df = _sample_event_ledger()
-    event_ledger_df.loc[event_ledger_df.index[0], "pbr"] = -0.4
-    event_ledger_df.loc[event_ledger_df.index[1], "forward_per"] = -2.0
-    db_path = _build_market_db(tmp_path / "market-positive-ratio.duckdb", event_ledger_df)
-    input_bundle = _write_input_bundle(tmp_path, db_path, event_ledger_df)
-
-    result = run_annual_value_composite_selection(
-        input_bundle,
-        output_root=tmp_path,
-        selection_fractions=(0.10,),
-        min_train_observations=8,
-        required_positive_columns=("pbr", "forward_per"),
-    )
-
-    assert result.required_positive_columns == ("pbr", "forward_per")
-    assert result.input_realized_event_count == len(event_ledger_df)
-    assert result.scored_event_count == len(event_ledger_df) - 2
-    assert (pd.to_numeric(result.scored_panel_df["pbr"], errors="coerce") > 0).all()
-    assert (pd.to_numeric(result.scored_panel_df["forward_per"], errors="coerce") > 0).all()

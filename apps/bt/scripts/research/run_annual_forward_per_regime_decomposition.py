@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runner-first entrypoint for annual value composite selection research."""
+"""Runner-first entrypoint for annual forward PER regime decomposition research."""
 
 from __future__ import annotations
 
@@ -23,24 +23,23 @@ from scripts.research.common import (  # noqa: E402
     emit_bundle_payload,
     ensure_bt_workdir,
 )
+from src.domains.analytics.annual_forward_per_regime_decomposition import (  # noqa: E402
+    DEFAULT_MIN_TRAIN_OBSERVATIONS,
+    DEFAULT_SELECTION_FRACTIONS,
+    run_annual_forward_per_regime_decomposition,
+    write_annual_forward_per_regime_decomposition_bundle,
+)
 from src.domains.analytics.annual_fundamental_confounder_analysis import (  # noqa: E402
     DEFAULT_WINSOR_LOWER,
     DEFAULT_WINSOR_UPPER,
-    POSITIVE_RATIO_ONLY_COLUMNS,
-)
-from src.domains.analytics.annual_value_composite_selection import (  # noqa: E402
-    DEFAULT_MIN_TRAIN_OBSERVATIONS,
-    DEFAULT_SELECTION_FRACTIONS,
-    run_annual_value_composite_selection,
-    write_annual_value_composite_selection_bundle,
 )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Score annual first-open last-close events with a low-PBR, small-cap, "
-            "low-forward-PER composite and evaluate top-N selection portfolios."
+            "Decompose low forward PER into positive-low and non-positive regimes "
+            "and compare event-level plus portfolio-level behavior."
         )
     )
     parser.add_argument(
@@ -91,14 +90,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             f"Default: {DEFAULT_MIN_TRAIN_OBSERVATIONS}."
         ),
     )
-    parser.add_argument(
-        "--require-positive-pbr-and-forward-per",
-        action="store_true",
-        help=(
-            "Filter realized events to rows where both PBR and forward PER are "
-            f"strictly positive ({', '.join(POSITIVE_RATIO_ONLY_COLUMNS)})."
-        ),
-    )
     add_bundle_output_arguments(parser)
     return parser.parse_args(argv)
 
@@ -106,7 +97,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     ensure_bt_workdir(_BT_ROOT)
     args = parse_args(argv)
-    result = run_annual_value_composite_selection(
+    result = run_annual_forward_per_regime_decomposition(
         args.input_bundle,
         db_path=args.db_path,
         output_root=args.output_root,
@@ -114,11 +105,8 @@ def main(argv: list[str] | None = None) -> int:
         winsor_lower=args.winsor_lower,
         winsor_upper=args.winsor_upper,
         min_train_observations=args.min_train_observations,
-        required_positive_columns=(
-            POSITIVE_RATIO_ONLY_COLUMNS if args.require_positive_pbr_and_forward_per else ()
-        ),
     )
-    bundle = write_annual_value_composite_selection_bundle(
+    bundle = write_annual_forward_per_regime_decomposition_bundle(
         result,
         output_root=args.output_root,
         run_id=args.run_id,

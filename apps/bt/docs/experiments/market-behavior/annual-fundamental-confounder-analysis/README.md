@@ -51,10 +51,17 @@
 
 ## Current Findings
 
-Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+Baseline results:
+
+- [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+- [`baseline-2026-04-24.md`](./baseline-2026-04-24.md)
+  (`PBR > 0` and `forward PER > 0` practical rerun)
 
 - Low `PBR`, small market cap, and low `forward PER` remained independent after
   controlling for each other plus year / market / sector fixed effects.
+- The positive-ratio-only rerun did not change the main result in `all`,
+  `prime`, or `standard`. It mainly removed distressed negative-denominator
+  names and made the `growth` low-`forward PER` effect disappear.
 - Low `ADV60` did not survive as a clean independent factor. In `prime`, its
   coefficient turned strongly negative after controlling for market cap, which
   means the earlier low-ADV edge mostly overlapped with small-cap exposure.
@@ -71,6 +78,14 @@ uv run --project apps/bt python apps/bt/scripts/research/run_annual_fundamental_
   --output-root /tmp/trading25-research
 ```
 
+Practical rerun:
+
+```bash
+uv run --project apps/bt python apps/bt/scripts/research/run_annual_fundamental_confounder_analysis.py \
+  --output-root /tmp/trading25-research \
+  --require-positive-pbr-and-forward-per
+```
+
 出力先:
 
 `/tmp/trading25-research/market-behavior/annual-fundamental-confounder-analysis/<run_id>/`
@@ -84,4 +99,3 @@ uv run --project apps/bt python apps/bt/scripts/research/run_annual_fundamental_
   sign stability and leave-one-year-out behavior.
 - Incremental selection rows are event-return summaries, not capacity-checked
   executable portfolio simulations.
-

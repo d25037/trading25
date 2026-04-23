@@ -25,6 +25,7 @@ from src.domains.analytics.annual_fundamental_confounder_analysis import (
     DEFAULT_WINSOR_UPPER,
     _ols_fit,
     _prepare_panel_df,
+    _normalize_required_positive_columns,
 )
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
@@ -93,6 +94,9 @@ class AnnualValueCompositeSelectionResult:
     winsor_upper: float
     selection_fractions: tuple[float, ...]
     min_train_observations: int
+    required_positive_columns: tuple[str, ...]
+    input_realized_event_count: int
+    scored_event_count: int
     score_policy: str
     scored_panel_df: pd.DataFrame
     walkforward_weight_df: pd.DataFrame
@@ -189,11 +193,13 @@ def _build_scored_panel_df(
     *,
     winsor_lower: float,
     winsor_upper: float,
+    required_positive_columns: Sequence[str] = (),
 ) -> pd.DataFrame:
     panel = _prepare_panel_df(
         event_ledger_df,
         winsor_lower=winsor_lower,
         winsor_upper=winsor_upper,
+        required_positive_columns=required_positive_columns,
     )
     if panel.empty:
         return panel
@@ -820,12 +826,14 @@ def run_annual_value_composite_selection(
     winsor_lower: float = DEFAULT_WINSOR_LOWER,
     winsor_upper: float = DEFAULT_WINSOR_UPPER,
     min_train_observations: int = DEFAULT_MIN_TRAIN_OBSERVATIONS,
+    required_positive_columns: Sequence[str] = (),
 ) -> AnnualValueCompositeSelectionResult:
     if not (0.0 <= winsor_lower < winsor_upper <= 1.0):
         raise ValueError("winsor bounds must satisfy 0 <= lower < upper <= 1")
     if min_train_observations < 5:
         raise ValueError("min_train_observations must be >= 5")
     normalized_fractions = _normalize_selection_fractions(selection_fractions)
+    normalized_positive_columns = _normalize_required_positive_columns(required_positive_columns)
     resolved_input = resolve_required_bundle_path(
         input_bundle_path,
         latest_bundle_resolver=lambda: get_annual_first_open_last_close_fundamental_panel_latest_bundle_path(
@@ -839,10 +847,12 @@ def run_annual_value_composite_selection(
     input_info = load_research_bundle_info(resolved_input)
     resolved_db_path = str(Path(db_path).expanduser()) if db_path is not None else input_info.db_path
     tables = load_research_bundle_tables(resolved_input, table_names=("event_ledger_df",))
+    realized_count = int((tables["event_ledger_df"]["status"].astype(str) == "realized").sum())
     scored_panel_df = _build_scored_panel_df(
         tables["event_ledger_df"],
         winsor_lower=winsor_lower,
         winsor_upper=winsor_upper,
+        required_positive_columns=normalized_positive_columns,
     )
     walkforward_weight_df = _build_walkforward_weight_df(
         scored_panel_df,
@@ -870,9 +880,17 @@ def run_annual_value_composite_selection(
         winsor_upper=winsor_upper,
         selection_fractions=normalized_fractions,
         min_train_observations=min_train_observations,
+        required_positive_columns=normalized_positive_columns,
+        input_realized_event_count=realized_count,
+        scored_event_count=int(len(scored_panel_df)),
         score_policy=(
             "core scores are within year x current-market percentiles; composite uses "
             "low PBR, small market cap, and low forward PER"
+            + (
+                f"; required positive columns: {', '.join(normalized_positive_columns)}"
+                if normalized_positive_columns
+                else ""
+            )
         ),
         scored_panel_df=scored_panel_df,
         walkforward_weight_df=walkforward_weight_df,
@@ -905,6 +923,14 @@ def _build_summary_markdown(result: AnnualValueCompositeSelectionResult) -> str:
         f"- Input run id: `{result.input_run_id}`",
         f"- Analysis period: `{result.analysis_start_date}` to `{result.analysis_end_date}`",
         f"- Selection fractions: `{', '.join(_fmt(v, 2) for v in result.selection_fractions)}`",
+        f"- Input realized events: `{result.input_realized_event_count}`",
+        f"- Scored events: `{result.scored_event_count}`",
+        (
+            "- Required positive columns: "
+            f"`{', '.join(result.required_positive_columns)}`"
+            if result.required_positive_columns
+            else "- Required positive columns: none"
+        ),
         f"- Score policy: {result.score_policy}.",
         "",
         "## Top Portfolio Rows",
@@ -941,6 +967,9 @@ def _build_published_summary(result: AnnualValueCompositeSelectionResult) -> dic
         "inputRunId": result.input_run_id,
         "analysisStartDate": result.analysis_start_date,
         "analysisEndDate": result.analysis_end_date,
+        "requiredPositiveColumns": list(result.required_positive_columns),
+        "inputRealizedEventCount": result.input_realized_event_count,
+        "scoredEventCount": result.scored_event_count,
         "selectionFractions": list(result.selection_fractions),
         "scorePolicy": result.score_policy,
         "selectionSummary": result.selection_summary_df.to_dict(orient="records"),
@@ -966,6 +995,7 @@ def write_annual_value_composite_selection_bundle(
             "winsor_lower": result.winsor_lower,
             "winsor_upper": result.winsor_upper,
             "min_train_observations": result.min_train_observations,
+            "required_positive_columns": list(result.required_positive_columns),
         },
         result=result,
         table_field_names=_RESULT_TABLE_NAMES,
@@ -1007,4 +1037,3 @@ def get_annual_value_composite_selection_bundle_path_for_run_id(
         run_id,
         output_root=output_root,
     )
-

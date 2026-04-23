@@ -53,13 +53,29 @@
 
 ## Current Findings
 
-Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+Baseline results:
+
+- [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+- [`baseline-2026-04-24.md`](./baseline-2026-04-24.md)
+  (`PBR > 0` and `forward PER > 0` practical rerun)
+
+The practical rerun keeps the same main read: `standard` is still the cleanest
+market, small cap stays first, low `PBR` stays second, and low `forward PER`
+still adds value once obviously distressed negative-ratio names are excluded.
 
 ## Run
 
 ```bash
 uv run --project apps/bt python apps/bt/scripts/research/run_annual_value_composite_selection.py \
   --output-root /tmp/trading25-research
+```
+
+Practical rerun:
+
+```bash
+uv run --project apps/bt python apps/bt/scripts/research/run_annual_value_composite_selection.py \
+  --output-root /tmp/trading25-research \
+  --require-positive-pbr-and-forward-per
 ```
 
 出力先:
