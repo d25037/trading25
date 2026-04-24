@@ -108,6 +108,21 @@ describe('AnalyticsClient', () => {
     );
   });
 
+  test('getValueCompositeRanking builds query parameters', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ items: [] }));
+
+    await client.getValueCompositeRanking({
+      date: '2026-04-24',
+      limit: 50,
+      markets: 'standard',
+      scoreMethod: 'equal_weight',
+    });
+
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/value-composite-ranking?date=2026-04-24&limit=50&markets=standard&scoreMethod=equal_weight'
+    );
+  });
+
   test('fundamentals and margin endpoints use expected paths', async () => {
     fetchSpy.mockImplementation((() => Promise.resolve(createMockResponse({ ok: true }))) as typeof fetch);
 

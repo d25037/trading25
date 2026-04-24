@@ -27,6 +27,8 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100RankingMetric,
     Topix100RankingResponse,
     Topix100StudyMode,
+    ValueCompositeRankingResponse,
+    ValueCompositeScoreMethod,
 )
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
@@ -166,6 +168,47 @@ async def get_fundamental_ranking(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get fundamental rankings: {e}",
+        )
+
+
+@router.get(
+    "/api/analytics/value-composite-ranking",
+    response_model=ValueCompositeRankingResponse,
+    summary="Get value-composite rankings",
+    description=(
+        "Get the standard-market value composite ranking based on small market cap, "
+        "low PBR, and low forward PER. The score intentionally does not apply an ADV60 floor."
+    ),
+)
+async def get_value_composite_ranking(
+    request: Request,
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    limit: int = Query(50, ge=1, le=200),
+    markets: str = Query("standard"),
+    scoreMethod: ValueCompositeScoreMethod = Query("walkforward_regression_weight"),
+) -> ValueCompositeRankingResponse:
+    """小型バリュー複合スコアランキングを取得"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+
+    service = RankingService(reader)
+    try:
+        return service.get_value_composite_ranking(
+            date=date,
+            limit=limit,
+            markets=markets,
+            score_method=scoreMethod,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Value composite ranking error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get value composite rankings: {e}",
         )
 
 

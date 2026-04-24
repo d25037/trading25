@@ -519,6 +519,48 @@ class TestFundamentalRanking:
             assert resp.status_code == 422
 
 
+class TestValueCompositeRanking:
+    def test_200_default(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["metricKey"] == "standard_value_composite"
+        assert data["scoreMethod"] == "walkforward_regression_weight"
+        assert data["markets"] == ["standard"]
+        assert "no ADV60 floor" in data["scorePolicy"]
+        assert data["weights"] == {
+            "smallMarketCap": 0.55,
+            "lowPbr": 0.25,
+            "lowForwardPer": 0.2,
+        }
+        assert "items" in data
+        assert "lastUpdated" in data
+
+    def test_with_limit(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?limit=1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) <= 1
+
+    def test_equal_weight_score_method(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=equal_weight")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scoreMethod"] == "equal_weight"
+        assert data["weights"] == {
+            "smallMarketCap": pytest.approx(1 / 3),
+            "lowPbr": pytest.approx(1 / 3),
+            "lowForwardPer": pytest.approx(1 / 3),
+        }
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/value-composite-ranking")
+            assert resp.status_code == 422
+
+
 # --- Factor Regression Tests ---
 
 

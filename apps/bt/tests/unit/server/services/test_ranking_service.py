@@ -965,6 +965,205 @@ class TestGetFundamentalRankings:
         reader.close()
 
 
+class TestGetValueCompositeRanking:
+    def test_default_standard_value_score_uses_research_formula_without_adv_floor(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "77770",
+                    "Large Standard",
+                    "LSTD",
+                    "standard",
+                    "S",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "88880",
+                    "Mid Standard",
+                    "MSTD",
+                    "standard",
+                    "S",
+                    "S17",
+                    "サービス",
+                    "S33",
+                    "サービス業",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            for code, price, volume in [
+                ("77770", 1000.0, 10_000_000),
+                ("88880", 800.0, 20_000_000),
+            ]:
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (code, "2024-01-19", price, price, price, price, volume, 1.0, None),
+                )
+            for code, eps, forecast, bps, shares in [
+                ("99840", 50.0, 104.0, 1000.0, 10_000_000.0),
+                ("77770", 80.0, 50.0, 800.0, 50_000_000.0),
+                ("88880", 70.0, 80.0, 1000.0, 20_000_000.0),
+            ]:
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        next_year_forecast_earnings_per_share, bps, shares_outstanding
+                    )
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (code, "2024-01-10", eps, "FY", forecast, bps, shares),
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(limit=10)
+        reader.close()
+
+        assert result.date == "2024-01-19"
+        assert result.markets == ["standard"]
+        assert result.metricKey == "standard_value_composite"
+        assert result.scoreMethod == "walkforward_regression_weight"
+        assert "no ADV60 floor" in result.scorePolicy
+        assert result.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
+        assert [item.code for item in result.items] == ["99840", "88880", "77770"]
+        assert result.items[0].score > result.items[-1].score
+        assert result.items[0].pbr == pytest.approx(0.52)
+        assert result.items[0].forwardPer == pytest.approx(5.0)
+        assert result.items[0].marketCapBilJpy == pytest.approx(5.2)
+
+    def test_value_composite_ranking_ignores_future_disclosures(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("99840", "2024-12-31", 50.0, "FY", 999.0, 10.0, 10_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(limit=10)
+        reader.close()
+
+        item = next((row for row in result.items if row.code == "99840"), None)
+        assert item is not None
+        assert item.latestFyDisclosedDate == "2024-01-10"
+        assert item.pbr == pytest.approx(0.52)
+        assert item.forwardPer == pytest.approx(5.0)
+
+    def test_value_composite_ranking_equal_weight_score_method_changes_order(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            for row in [
+                (
+                    "66660",
+                    "Tiny Expensive Standard",
+                    "TINY",
+                    "standard",
+                    "S",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+                (
+                    "77770",
+                    "Large Cheap Standard",
+                    "CHEAP",
+                    "standard",
+                    "S",
+                    "S17",
+                    "サービス",
+                    "S33",
+                    "サービス業",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            ]:
+                conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+            for code, price, volume in [
+                ("66660", 100.0, 10_000_000),
+                ("77770", 1000.0, 20_000_000),
+            ]:
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (code, "2024-01-19", price, price, price, price, volume, 1.0, None),
+                )
+            for code, forecast, bps, shares in [
+                ("99840", 104.0, 1000.0, 10_000_000.0),
+                ("66660", 2.0, 50.0, 1_000_000.0),
+                ("77770", 500.0, 5000.0, 100_000_000.0),
+            ]:
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        next_year_forecast_earnings_per_share, bps, shares_outstanding
+                    )
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (code, "2024-01-10", 50.0, "FY", forecast, bps, shares),
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        walkforward = svc.get_value_composite_ranking(limit=10)
+        equal = svc.get_value_composite_ranking(limit=10, score_method="equal_weight")
+        reader.close()
+
+        assert walkforward.scoreMethod == "walkforward_regression_weight"
+        assert equal.scoreMethod == "equal_weight"
+        assert equal.weights == {
+            "smallMarketCap": pytest.approx(1 / 3),
+            "lowPbr": pytest.approx(1 / 3),
+            "lowForwardPer": pytest.approx(1 / 3),
+        }
+        assert [item.code for item in walkforward.items[:3]] == ["66660", "99840", "77770"]
+        assert [item.code for item in equal.items[:3]] == ["77770", "99840", "66660"]
+
+
 class _BadFloat:
     def __float__(self) -> float:
         raise TypeError("cannot cast")

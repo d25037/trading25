@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ValueCompositeScoreMethod = Literal["equal_weight", "walkforward_regression_weight"]
+
 
 class RankingItem(BaseModel):
     """ランキング項目"""
@@ -171,4 +173,42 @@ class MarketFundamentalRankingResponse(BaseModel):
     markets: list[str]
     metricKey: str
     rankings: FundamentalRankings
+    lastUpdated: str
+
+
+class ValueCompositeRankingItem(BaseModel):
+    """Standard value-composite ranking item."""
+
+    rank: int
+    code: str
+    companyName: str
+    marketCode: str
+    sector33Name: str
+    currentPrice: float
+    volume: float
+    score: float
+    lowPbrScore: float
+    smallMarketCapScore: float
+    lowForwardPerScore: float
+    pbr: float
+    forwardPer: float
+    marketCapBilJpy: float
+    bps: float | None = None
+    forwardEps: float | None = None
+    latestFyDisclosedDate: str | None = None
+    forwardEpsDisclosedDate: str | None = None
+    forwardEpsSource: Literal["revised", "fy"] | None = None
+
+
+class ValueCompositeRankingResponse(BaseModel):
+    """Value-composite ranking response."""
+
+    date: str
+    markets: list[str]
+    metricKey: Literal["standard_value_composite"] = "standard_value_composite"
+    scoreMethod: ValueCompositeScoreMethod
+    scorePolicy: str
+    weights: dict[str, float]
+    itemCount: int
+    items: list[ValueCompositeRankingItem] = Field(default_factory=list)
     lastUpdated: str

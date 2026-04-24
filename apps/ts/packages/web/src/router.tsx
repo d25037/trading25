@@ -23,6 +23,7 @@ import { RankingPage } from '@/pages/RankingPage';
 import { ResearchPage } from '@/pages/ResearchPage';
 import { ScreeningPage } from '@/pages/ScreeningPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS } from '@/stores/screeningStore';
 
 const CANONICAL_SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
 
@@ -126,7 +127,10 @@ export const screeningRoute = createRoute({
     if (search.tab === 'ranking' || search.tab === 'fundamentalRanking') {
       throw redirect({
         to: '/ranking',
-        search: serializeRankingSearch(getRankingStateFromScreeningSearch(search)),
+        search: serializeRankingSearch({
+          ...getRankingStateFromScreeningSearch(search),
+          valueCompositeRankingParams: DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS,
+        }),
       });
     }
   },

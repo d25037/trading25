@@ -274,6 +274,32 @@ describe('routeSearch', () => {
     });
   });
 
+  it('roundtrips value composite ranking route state', () => {
+    const rankingSearch = validateRankingSearch({
+      tab: 'valueComposite',
+      valueDate: '2026-04-24',
+      valueMarkets: 'standard',
+      valueLimit: '100',
+      valueScoreMethod: 'equal_weight',
+    });
+
+    const rankingState = getRankingStateFromSearch(rankingSearch);
+
+    expect(rankingState.activeSubTab).toBe('valueComposite');
+    expect(rankingState.valueCompositeRankingParams).toEqual({
+      date: '2026-04-24',
+      markets: 'standard',
+      limit: 100,
+      scoreMethod: 'equal_weight',
+    });
+    expect(serializeRankingSearch(rankingState)).toEqual({
+      tab: 'valueComposite',
+      valueDate: '2026-04-24',
+      valueLimit: 100,
+      valueScoreMethod: 'equal_weight',
+    });
+  });
+
   it('validates and serializes backtest route state', () => {
     const search = validateBacktestSearch({
       tab: 'lab',

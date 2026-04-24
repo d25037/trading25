@@ -36,6 +36,7 @@ import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
+import type { ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
 
 const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
 
@@ -300,6 +301,8 @@ export function useRankingRouteState(): {
   setRankingParams: (params: RankingParams) => void;
   fundamentalRankingParams: FundamentalRankingParams;
   setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
+  valueCompositeRankingParams: ValueCompositeRankingParams;
+  setValueCompositeRankingParams: (params: ValueCompositeRankingParams) => void;
 } {
   const navigate = useNavigate();
   const search = rankingRoute.useSearch();
@@ -312,11 +315,13 @@ export function useRankingRouteState(): {
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
+        valueCompositeRankingParams: ValueCompositeRankingParams;
       }) => {
         activeSubTab: RankingPageTab;
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
+        valueCompositeRankingParams: ValueCompositeRankingParams;
       }
     ) => {
       void navigate({
@@ -337,6 +342,8 @@ export function useRankingRouteState(): {
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
     setFundamentalRankingParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
+    setValueCompositeRankingParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, valueCompositeRankingParams: params })),
   };
 }
 

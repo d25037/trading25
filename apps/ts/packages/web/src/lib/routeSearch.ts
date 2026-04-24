@@ -9,6 +9,7 @@ import {
   DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
+  DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS,
   type ScreeningSubTab,
 } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
@@ -24,6 +25,7 @@ import type {
   Topix100PriceBucketFilter,
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
+import type { ValueCompositeRankingParams, ValueCompositeScoreMethod } from '@/types/valueCompositeRanking';
 
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
 
@@ -109,6 +111,10 @@ export interface RankingRouteSearch {
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
   forecastLookbackFyCount?: number;
+  valueDate?: string;
+  valueLimit?: number;
+  valueMarkets?: string;
+  valueScoreMethod?: ValueCompositeScoreMethod;
 }
 
 export interface BacktestRouteSearch {
@@ -130,7 +136,11 @@ const SCREENING_SUB_TABS: ScreeningSubTab[] = [
   'ranking',
   'fundamentalRanking',
 ];
-const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking'];
+const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking', 'valueComposite'];
+const VALUE_COMPOSITE_SCORE_METHOD_VALUES: ValueCompositeScoreMethod[] = [
+  'equal_weight',
+  'walkforward_regression_weight',
+];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'];
 const LEGACY_TOPIX100_RANKING_METRIC = 'price_vs_sma20_gap';
 const TOPIX100_STUDY_MODE_VALUES: Topix100StudyMode[] = ['intraday', 'swing_5d'];
@@ -254,6 +264,10 @@ function normalizeRankingPageTab(value: unknown): RankingPageTab | undefined {
 
 function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined {
   return normalizeEnum(normalizeString(value), RANKING_DAILY_VIEWS);
+}
+
+function normalizeValueCompositeScoreMethod(value: unknown): ValueCompositeScoreMethod | undefined {
+  return normalizeEnum(normalizeString(value), VALUE_COMPOSITE_SCORE_METHOD_VALUES);
 }
 
 function normalizeTopix100PriceBucketFilter(value: unknown): Topix100PriceBucketFilter | undefined {
@@ -658,6 +672,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
+  valueCompositeRankingParams: ValueCompositeRankingParams;
 } {
   const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
     ['date', search.rankingDate],
@@ -686,6 +701,12 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
       ['markets', search.fundamentalMarkets],
       ['forecastAboveRecentFyActuals', search.forecastAboveRecentFyActuals],
       ['forecastLookbackFyCount', search.forecastLookbackFyCount],
+    ]),
+    valueCompositeRankingParams: assignSearchParams({ ...DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS }, [
+      ['date', search.valueDate],
+      ['limit', search.valueLimit],
+      ['markets', search.valueMarkets],
+      ['scoreMethod', search.valueScoreMethod],
     ]),
   };
 }
@@ -871,7 +892,6 @@ export function serializeScreeningSearch(state: {
       : undefined,
     DEFAULT_FUNDAMENTAL_RANKING_PARAMS.forecastLookbackFyCount
   );
-
   return next;
 }
 
@@ -903,7 +923,10 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
   assignIfDefined(next, 'forecastLookbackFyCount', normalizePositiveInt(search.forecastLookbackFyCount));
-
+  assignIfDefined(next, 'valueDate', normalizeString(search.valueDate));
+  assignIfDefined(next, 'valueLimit', normalizePositiveInt(search.valueLimit));
+  assignIfDefined(next, 'valueMarkets', normalizeString(search.valueMarkets));
+  assignIfDefined(next, 'valueScoreMethod', normalizeValueCompositeScoreMethod(search.valueScoreMethod));
   return next;
 }
 
@@ -912,6 +935,7 @@ export function serializeRankingSearch(state: {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
+  valueCompositeRankingParams: ValueCompositeRankingParams;
 }): RankingRouteSearch {
   const next: RankingRouteSearch = {};
 
@@ -1004,6 +1028,25 @@ export function serializeRankingSearch(state: {
       ? state.fundamentalRankingParams.forecastLookbackFyCount
       : undefined,
     DEFAULT_FUNDAMENTAL_RANKING_PARAMS.forecastLookbackFyCount
+  );
+  assignIfDefined(next, 'valueDate', normalizeString(state.valueCompositeRankingParams.date));
+  assignIfDefinedAndNotDefault(
+    next,
+    'valueLimit',
+    typeof state.valueCompositeRankingParams.limit === 'number' ? state.valueCompositeRankingParams.limit : undefined,
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.limit
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'valueMarkets',
+    normalizeString(state.valueCompositeRankingParams.markets),
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.markets
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'valueScoreMethod',
+    state.valueCompositeRankingParams.scoreMethod,
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.scoreMethod
   );
 
   return next;
@@ -1114,7 +1157,6 @@ export function extractLegacyScreeningSearch(state: Record<string, unknown>): Sc
   const fundamentalRankingParams = isRecord(state.fundamentalRankingParams)
     ? (state.fundamentalRankingParams as FundamentalRankingParams)
     : DEFAULT_FUNDAMENTAL_RANKING_PARAMS;
-
   return serializeScreeningSearch({
     activeSubTab: normalizeScreeningSubTab(state.activeSubTab) ?? 'preOpenScreening',
     preOpenScreeningParams: {

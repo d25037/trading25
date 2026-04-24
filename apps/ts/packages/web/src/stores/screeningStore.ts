@@ -4,6 +4,7 @@ import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
+import type { ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
 
 export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
 
@@ -41,6 +42,12 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
   limit: 20,
   forecastAboveRecentFyActuals: false,
   forecastLookbackFyCount: 3,
+};
+
+export const DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS: ValueCompositeRankingParams = {
+  markets: 'standard',
+  limit: 50,
+  scoreMethod: 'walkforward_regression_weight',
 };
 
 interface ScreeningState {

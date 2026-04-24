@@ -16774,6 +16774,211 @@
         "title": "ValidationSampleWindows",
         "type": "object"
       },
+      "ValueCompositeRankingItem": {
+        "description": "Standard value-composite ranking item.",
+        "properties": {
+          "bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bps"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "companyName": {
+            "title": "Companyname",
+            "type": "string"
+          },
+          "currentPrice": {
+            "title": "Currentprice",
+            "type": "number"
+          },
+          "forwardEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardeps"
+          },
+          "forwardEpsDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardepsdiscloseddate"
+          },
+          "forwardEpsSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "revised",
+                  "fy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardepssource"
+          },
+          "forwardPer": {
+            "title": "Forwardper",
+            "type": "number"
+          },
+          "latestFyDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestfydiscloseddate"
+          },
+          "lowForwardPerScore": {
+            "title": "Lowforwardperscore",
+            "type": "number"
+          },
+          "lowPbrScore": {
+            "title": "Lowpbrscore",
+            "type": "number"
+          },
+          "marketCapBilJpy": {
+            "title": "Marketcapbiljpy",
+            "type": "number"
+          },
+          "marketCode": {
+            "title": "Marketcode",
+            "type": "string"
+          },
+          "pbr": {
+            "title": "Pbr",
+            "type": "number"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "sector33Name": {
+            "title": "Sector33Name",
+            "type": "string"
+          },
+          "smallMarketCapScore": {
+            "title": "Smallmarketcapscore",
+            "type": "number"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "code",
+          "companyName",
+          "marketCode",
+          "sector33Name",
+          "currentPrice",
+          "volume",
+          "score",
+          "lowPbrScore",
+          "smallMarketCapScore",
+          "lowForwardPerScore",
+          "pbr",
+          "forwardPer",
+          "marketCapBilJpy"
+        ],
+        "title": "ValueCompositeRankingItem",
+        "type": "object"
+      },
+      "ValueCompositeRankingResponse": {
+        "description": "Value-composite ranking response.",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "itemCount": {
+            "title": "Itemcount",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ValueCompositeRankingItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "markets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Markets",
+            "type": "array"
+          },
+          "metricKey": {
+            "const": "standard_value_composite",
+            "default": "standard_value_composite",
+            "title": "Metrickey",
+            "type": "string"
+          },
+          "scoreMethod": {
+            "enum": [
+              "equal_weight",
+              "walkforward_regression_weight"
+            ],
+            "title": "Scoremethod",
+            "type": "string"
+          },
+          "scorePolicy": {
+            "title": "Scorepolicy",
+            "type": "string"
+          },
+          "weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Weights",
+            "type": "object"
+          }
+        },
+        "required": [
+          "date",
+          "markets",
+          "scoreMethod",
+          "scorePolicy",
+          "weights",
+          "itemCount",
+          "lastUpdated"
+        ],
+        "title": "ValueCompositeRankingResponse",
+        "type": "object"
+      },
       "VerificationCandidateStatus": {
         "description": "Verification state of a single fast-path candidate.",
         "enum": [
@@ -19186,6 +19391,123 @@
           }
         },
         "summary": "Get TOPIX100 ranking snapshot",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/value-composite-ranking": {
+      "get": {
+        "description": "Get the standard-market value composite ranking based on small market cap, low PBR, and low forward PER. The score intentionally does not apply an ADV60 floor.",
+        "operationId": "get_value_composite_ranking_api_analytics_value_composite_ranking_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "markets",
+            "required": false,
+            "schema": {
+              "default": "standard",
+              "title": "Markets",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scoreMethod",
+            "required": false,
+            "schema": {
+              "default": "walkforward_regression_weight",
+              "enum": [
+                "equal_weight",
+                "walkforward_regression_weight"
+              ],
+              "title": "Scoremethod",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueCompositeRankingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get value-composite rankings",
         "tags": [
           "Analytics"
         ]

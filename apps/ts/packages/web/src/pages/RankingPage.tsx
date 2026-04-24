@@ -28,18 +28,26 @@ import {
   resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
 } from '@/components/Ranking/topix100RankingMetric';
+import {
+  ValueCompositeRankingFilters,
+  ValueCompositeRankingSummary,
+  ValueCompositeRankingTable,
+} from '@/components/ValueCompositeRanking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { useTopix100Ranking } from '@/hooks/useTopix100Ranking';
+import { useValueCompositeRanking } from '@/hooks/useValueCompositeRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
+import type { ValueCompositeRankingParams, ValueCompositeScoreMethod } from '@/types/valueCompositeRanking';
 
 const subTabs = [
   { value: 'ranking' as RankingPageTab, label: 'Daily Ranking', icon: BarChart3 },
   { value: 'fundamentalRanking' as RankingPageTab, label: 'Fundamental Ranking', icon: TrendingUp },
+  { value: 'valueComposite' as RankingPageTab, label: 'Value Scores', icon: TrendingUp },
 ];
 
 const dailyViewTabs = [
@@ -48,15 +56,21 @@ const dailyViewTabs = [
   { value: 'topix100' as RankingDailyView, label: 'TOPIX100 Study' },
 ];
 
+function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | undefined): string {
+  return method === 'equal_weight' ? 'Equal-weight value score' : 'Walk-forward value score';
+}
+
 interface RankingSidebarProps {
   activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
+  valueCompositeRankingParams: ValueCompositeRankingParams;
   setActiveSubTab: (tab: RankingPageTab) => void;
   setActiveDailyView: (view: RankingDailyView) => void;
   setRankingParams: (params: RankingParams) => void;
   setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
+  setValueCompositeRankingParams: (params: ValueCompositeRankingParams) => void;
 }
 
 interface IndexPerformanceSidebarProps {
@@ -72,6 +86,7 @@ interface RankingContentProps {
   rankingQuery: ReturnType<typeof useRanking>;
   topix100RankingQuery: ReturnType<typeof useTopix100Ranking>;
   fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
+  valueCompositeRankingQuery: ReturnType<typeof useValueCompositeRanking>;
   onStockClick: (code: string) => void;
   onIndexClick: (code: string) => void;
 }
@@ -116,10 +131,12 @@ function RankingSidebar({
   activeDailyView,
   rankingParams,
   fundamentalRankingParams,
+  valueCompositeRankingParams,
   setActiveSubTab,
   setActiveDailyView,
   setRankingParams,
   setFundamentalRankingParams,
+  setValueCompositeRankingParams,
 }: RankingSidebarProps) {
   return (
     <div className="space-y-3">
@@ -159,6 +176,11 @@ function RankingSidebar({
         ) : (
           <RankingFilters params={rankingParams} onChange={setRankingParams} />
         )
+      ) : activeSubTab === 'valueComposite' ? (
+        <ValueCompositeRankingFilters
+          params={valueCompositeRankingParams}
+          onChange={setValueCompositeRankingParams}
+        />
       ) : (
         <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />
       )}
@@ -170,12 +192,19 @@ function buildIntroMetaItems(
   activeSubTab: RankingPageTab,
   activeDailyView: RankingDailyView,
   rankingParams: RankingParams,
-  fundamentalRankingParams: FundamentalRankingParams
+  fundamentalRankingParams: FundamentalRankingParams,
+  valueCompositeRankingParams: ValueCompositeRankingParams
 ) {
   if (activeSubTab === 'fundamentalRanking') {
     return [
       { label: 'Mode', value: 'Forecast / actual EPS' },
       { label: 'Markets', value: formatMarketsLabel((fundamentalRankingParams.markets ?? 'prime').split(',')) },
+    ];
+  }
+  if (activeSubTab === 'valueComposite') {
+    return [
+      { label: 'Mode', value: getValueCompositeScoreMethodLabel(valueCompositeRankingParams.scoreMethod) },
+      { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
     ];
   }
   if (activeDailyView === 'topix100') {
@@ -210,6 +239,7 @@ function RankingContent({
   rankingQuery,
   topix100RankingQuery,
   fundamentalRankingQuery,
+  valueCompositeRankingQuery,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
@@ -227,6 +257,20 @@ function RankingContent({
           onStockClick={onStockClick}
         />
         <FundamentalRankingSummary data={fundamentalRankingQuery.data} />
+      </>
+    );
+  }
+
+  if (activeSubTab === 'valueComposite') {
+    return (
+      <>
+        <ValueCompositeRankingTable
+          data={valueCompositeRankingQuery.data}
+          isLoading={valueCompositeRankingQuery.isLoading}
+          error={valueCompositeRankingQuery.error}
+          onStockClick={onStockClick}
+        />
+        <ValueCompositeRankingSummary data={valueCompositeRankingQuery.data} />
       </>
     );
   }
@@ -284,10 +328,12 @@ export function RankingPage() {
     activeDailyView,
     rankingParams,
     fundamentalRankingParams,
+    valueCompositeRankingParams,
     setActiveSubTab,
     setActiveDailyView,
     setRankingParams,
     setFundamentalRankingParams,
+    setValueCompositeRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
   const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
@@ -305,7 +351,17 @@ export function RankingPage() {
     fundamentalRankingParams,
     activeSubTab === 'fundamentalRanking'
   );
-  const introMetaItems = buildIntroMetaItems(activeSubTab, activeDailyView, rankingParams, fundamentalRankingParams);
+  const valueCompositeRankingQuery = useValueCompositeRanking(
+    valueCompositeRankingParams,
+    activeSubTab === 'valueComposite'
+  );
+  const introMetaItems = buildIntroMetaItems(
+    activeSubTab,
+    activeDailyView,
+    rankingParams,
+    fundamentalRankingParams,
+    valueCompositeRankingParams
+  );
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -335,7 +391,7 @@ export function RankingPage() {
             <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-xs text-muted-foreground sm:text-sm">
-                Daily ranking, index performance, TOPIX100 SMA divergence, and forecast/actual EPS ratios.
+                Daily ranking, index performance, TOPIX100 SMA divergence, forecast/actual EPS ratios, and value scores.
               </p>
             </div>
           </div>
@@ -350,10 +406,12 @@ export function RankingPage() {
             activeDailyView={activeDailyView}
             rankingParams={rankingParams}
             fundamentalRankingParams={fundamentalRankingParams}
+            valueCompositeRankingParams={valueCompositeRankingParams}
             setActiveSubTab={setActiveSubTab}
             setActiveDailyView={setActiveDailyView}
             setRankingParams={setRankingParams}
             setFundamentalRankingParams={setFundamentalRankingParams}
+            setValueCompositeRankingParams={setValueCompositeRankingParams}
           />
         </SplitSidebar>
 
@@ -366,6 +424,7 @@ export function RankingPage() {
             rankingQuery={rankingQuery}
             topix100RankingQuery={topix100RankingQuery}
             fundamentalRankingQuery={fundamentalRankingQuery}
+            valueCompositeRankingQuery={valueCompositeRankingQuery}
             onStockClick={handleStockClick}
             onIndexClick={handleIndexClick}
           />

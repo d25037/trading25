@@ -7,9 +7,12 @@ Hono MarketRankingService 互換。
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from collections.abc import Mapping
 from typing import Any, Literal, cast
+
+import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
@@ -19,9 +22,18 @@ from src.domains.analytics.fundamental_ranking import (
     ForecastValue as _ForecastValue,
     LatestFyRow as _LatestFyRow,
     StatementRow as _StatementRow,
+    adjust_per_share_value as _adjust_per_share_value,
+    is_valid_share_count as _is_valid_share_count,
     normalize_period_label as _normalize_period_label,
     resolve_fy_cycle_key as _resolve_fy_cycle_key,
     to_nullable_float as _to_nullable_float,
+)
+from src.domains.analytics.annual_value_composite_selection import (
+    EQUAL_VALUE_COMPOSITE_WEIGHTS,
+    FIXED_VALUE_COMPOSITE_SCORE_COLUMN,
+    FIXED_VALUE_COMPOSITE_WEIGHTS,
+    VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+    build_value_composite_score_frame,
 )
 from src.domains.analytics.topix100_streak_353_transfer import (
     DEFAULT_LONG_WINDOW_STREAKS,
@@ -48,6 +60,9 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100PriceSmaWindow,
     Topix100RankingResponse,
     Topix100StudyMode,
+    ValueCompositeRankingItem,
+    ValueCompositeRankingResponse,
+    ValueCompositeScoreMethod,
 )
 
 
@@ -88,6 +103,47 @@ def _normalized_code_sql(column_ref: str) -> str:
 
 def _prefer_4digit_order_sql(column_ref: str) -> str:
     return f"CASE WHEN length({column_ref}) = 4 THEN 0 ELSE 1 END"
+
+
+def _canonical_market_label(market_code: str) -> str:
+    if market_code in {"prime", "0111"}:
+        return "prime"
+    if market_code in {"standard", "0112"}:
+        return "standard"
+    if market_code in {"growth", "0113"}:
+        return "growth"
+    return market_code
+
+
+def _positive_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None:
+        return None
+    if denominator <= 0:
+        return None
+    ratio = numerator / denominator
+    return ratio if ratio > 0 else None
+
+
+def _finite_or_none(value: Any) -> float | None:
+    number = _to_nullable_float(value)
+    if number is None or not math.isfinite(number):
+        return None
+    return number
+
+
+def _str_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return str(value)
+
+
+def _normalize_value_composite_weights(weights: Mapping[str, float]) -> dict[str, float]:
+    weight_sum = sum(float(value) for value in weights.values())
+    if not math.isfinite(weight_sum) or weight_sum <= 0:
+        raise ValueError("value composite weights must sum to a positive finite value")
+    return {column: float(value) / weight_sum for column, value in weights.items()}
 
 
 def _stocks_canonical_cte() -> str:
@@ -160,6 +216,24 @@ FUNDAMENTAL_BASE_COLUMNS = (
 _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
+_VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
+_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
+    "requires PBR > 0 and forward PER > 0; no ADV60 floor"
+)
+_VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[ValueCompositeScoreMethod, dict[str, float]] = {
+    "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
+    "walkforward_regression_weight": FIXED_VALUE_COMPOSITE_WEIGHTS,
+}
+_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
+    "equal_weight": (
+        "Equal weight across small market cap, low PBR, and low forward PER; "
+        f"{_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
+    "walkforward_regression_weight": (
+        "Walk-forward research weights: 55% small market cap + 25% low PBR + "
+        f"20% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
+}
 
 
 def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
@@ -642,6 +716,154 @@ class RankingService:
             lastUpdated=_now_iso(),
         )
 
+    def get_value_composite_ranking(
+        self,
+        date: str | None = None,
+        limit: int = 50,
+        markets: str = "standard",
+        score_method: ValueCompositeScoreMethod = "walkforward_regression_weight",
+    ) -> ValueCompositeRankingResponse:
+        """Standard市場向けの小型バリュー複合スコアランキングを取得"""
+
+        if score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
+            raise ValueError(f"Unsupported scoreMethod: {score_method}")
+        weights = _normalize_value_composite_weights(_VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method])
+        requested_market_codes, query_market_codes = resolve_market_codes(
+            markets,
+            fallback=["standard"],
+        )
+        if date:
+            target_date = date
+        else:
+            date_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+            if date_row is None or date_row["max_date"] is None:
+                raise ValueError("No trading data available in database")
+            target_date = date_row["max_date"]
+
+        stock_rows = self._load_fundamental_stock_rows(target_date, query_market_codes)
+        statement_rows = self._load_fundamental_statement_rows(target_date, query_market_codes)
+
+        statements_by_code: dict[str, list[_StatementRow]] = {}
+        raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
+        for row in statement_rows:
+            code = str(row["code"])
+            period_type = _normalize_period_label(row["type_of_current_period"])
+            statements_by_code.setdefault(code, []).append(
+                _StatementRow(
+                    code=code,
+                    disclosed_date=str(row["disclosed_date"]),
+                    period_type=period_type,
+                    earnings_per_share=_to_nullable_float(row["earnings_per_share"]),
+                    forecast_eps=_to_nullable_float(row["forecast_eps"]),
+                    next_year_forecast_earnings_per_share=_to_nullable_float(
+                        row["next_year_forecast_earnings_per_share"]
+                    ),
+                    shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
+                    fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
+                )
+            )
+            raw_statements_by_code.setdefault(code, []).append(row)
+
+        records: list[dict[str, Any]] = []
+        for stock in stock_rows:
+            code = str(stock["code"])
+            statements = statements_by_code.get(code)
+            raw_statements = raw_statements_by_code.get(code, [])
+            if not statements:
+                continue
+            price = _to_nullable_float(stock["current_price"])
+            volume = _to_nullable_float(stock["volume"])
+            if price is None or price <= 0:
+                continue
+
+            baseline_shares = self._resolve_baseline_shares(
+                statements,
+                as_of_date=target_date,
+            )
+            forecast_snapshot = self._resolve_latest_forecast_snapshot(
+                statements,
+                baseline_shares,
+                as_of_date=target_date,
+            )
+            latest_fy = self._latest_value_fy_statement(raw_statements, as_of_date=target_date)
+            if latest_fy is None:
+                continue
+
+            bps = _adjust_per_share_value(
+                _to_nullable_float(latest_fy["bps"]),
+                _to_nullable_float(latest_fy["shares_outstanding"]),
+                baseline_shares,
+            )
+            forward_eps = forecast_snapshot.value if forecast_snapshot is not None else None
+            market_cap_bil_jpy = (
+                price * baseline_shares / 1_000_000_000.0
+                if baseline_shares is not None and _is_valid_share_count(baseline_shares)
+                else None
+            )
+            pbr = _positive_ratio(price, bps)
+            forward_per = _positive_ratio(price, forward_eps)
+
+            records.append(
+                {
+                    "code": code,
+                    "company_name": str(stock["company_name"]),
+                    "market_code": str(stock["market_code"]),
+                    "market": _canonical_market_label(str(stock["market_code"])),
+                    "sector_33_name": str(stock["sector_33_name"]),
+                    "current_price": price,
+                    "volume": volume if volume is not None else 0.0,
+                    "pbr": pbr,
+                    "forward_per": forward_per,
+                    "market_cap_bil_jpy": market_cap_bil_jpy,
+                    "bps": bps,
+                    "forward_eps": forward_eps,
+                    "latest_fy_disclosed_date": str(latest_fy["disclosed_date"]),
+                    "forward_eps_disclosed_date": (
+                        forecast_snapshot.disclosed_date if forecast_snapshot is not None else None
+                    ),
+                    "forward_eps_source": forecast_snapshot.source if forecast_snapshot is not None else None,
+                }
+            )
+
+        if records:
+            scored = build_value_composite_score_frame(
+                pd.DataFrame.from_records(records),
+                group_columns=("market",),
+                required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+                weights=weights,
+            )
+            scored = scored[
+                pd.to_numeric(scored[FIXED_VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
+            ].copy()
+            scored = scored.sort_values(
+                [FIXED_VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+                ascending=[False, True],
+                kind="stable",
+            ).head(limit)
+        else:
+            scored = pd.DataFrame()
+
+        items = [
+            self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
+        ]
+
+        return ValueCompositeRankingResponse(
+            date=target_date,
+            markets=requested_market_codes,
+            metricKey=_VALUE_COMPOSITE_METRIC_KEY,
+            scoreMethod=score_method,
+            scorePolicy=_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method],
+            weights={
+                "smallMarketCap": weights["small_market_cap_score"],
+                "lowPbr": weights["low_pbr_score"],
+                "lowForwardPer": weights["low_forward_per_score"],
+            },
+            itemCount=len(items),
+            items=items,
+            lastUpdated=_now_iso(),
+        )
+
     # --- Private ranking methods ---
 
     def _resolve_topix100_ranking_date(self, date: str | None) -> str:
@@ -1107,6 +1329,7 @@ class RankingService:
                     disclosed_date,
                     type_of_current_period,
                     earnings_per_share,
+                    bps,
                     forecast_eps,
                     next_year_forecast_earnings_per_share,
                     shares_outstanding
@@ -1116,6 +1339,7 @@ class RankingService:
                         disclosed_date,
                         type_of_current_period,
                         earnings_per_share,
+                        bps,
                         forecast_eps,
                         next_year_forecast_earnings_per_share,
                         shares_outstanding,
@@ -1132,6 +1356,7 @@ class RankingService:
                 st.disclosed_date,
                 st.type_of_current_period,
                 st.earnings_per_share,
+                st.bps,
                 st.forecast_eps,
                 st.next_year_forecast_earnings_per_share,
                 st.shares_outstanding
@@ -1280,6 +1505,51 @@ class RankingService:
                 )
             )
         return ranked
+
+    def _latest_value_fy_statement(
+        self,
+        rows: list[Mapping[str, Any]],
+        *,
+        as_of_date: str,
+    ) -> Mapping[str, Any] | None:
+        eligible = [
+            row
+            for row in rows
+            if _normalize_period_label(row["type_of_current_period"]) == "FY"
+            and str(row["disclosed_date"]) <= str(as_of_date)
+        ]
+        if not eligible:
+            return None
+        return sorted(eligible, key=lambda row: str(row["disclosed_date"]))[-1]
+
+    def _build_value_composite_item(
+        self,
+        row: Mapping[str, Any],
+        rank: int,
+    ) -> ValueCompositeRankingItem:
+        raw_source = _str_or_none(row.get("forward_eps_source"))
+        source = raw_source if raw_source in {"revised", "fy"} else None
+        return ValueCompositeRankingItem(
+            rank=rank,
+            code=str(row["code"]),
+            companyName=str(row["company_name"]),
+            marketCode=str(row["market_code"]),
+            sector33Name=str(row["sector_33_name"]),
+            currentPrice=float(row["current_price"]),
+            volume=float(row["volume"]),
+            score=float(row[FIXED_VALUE_COMPOSITE_SCORE_COLUMN]),
+            lowPbrScore=float(row["low_pbr_score"]),
+            smallMarketCapScore=float(row["small_market_cap_score"]),
+            lowForwardPerScore=float(row["low_forward_per_score"]),
+            pbr=float(row["pbr"]),
+            forwardPer=float(row["forward_per"]),
+            marketCapBilJpy=float(row["market_cap_bil_jpy"]),
+            bps=_finite_or_none(row.get("bps")),
+            forwardEps=_finite_or_none(row.get("forward_eps")),
+            latestFyDisclosedDate=_str_or_none(row.get("latest_fy_disclosed_date")),
+            forwardEpsDisclosedDate=_str_or_none(row.get("forward_eps_disclosed_date")),
+            forwardEpsSource=cast(Literal["revised", "fy"] | None, source),
+        )
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         """N営業日前の取引日を取得"""

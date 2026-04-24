@@ -366,6 +366,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/value-composite-ranking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get value-composite rankings
+         * @description Get the standard-market value composite ranking based on small market cap, low PBR, and low forward PER. The score intentionally does not apply an ADV60 floor.
+         */
+        get: operations["get_value_composite_ranking_api_analytics_value_composite_ranking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/attribution-files": {
         parameters: {
             query?: never;
@@ -10572,6 +10592,83 @@ export interface components {
             stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];
         };
         /**
+         * ValueCompositeRankingItem
+         * @description Standard value-composite ranking item.
+         */
+        ValueCompositeRankingItem: {
+            /** Bps */
+            bps?: number | null;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Currentprice */
+            currentPrice: number;
+            /** Forwardeps */
+            forwardEps?: number | null;
+            /** Forwardepsdiscloseddate */
+            forwardEpsDisclosedDate?: string | null;
+            /** Forwardepssource */
+            forwardEpsSource?: ("revised" | "fy") | null;
+            /** Forwardper */
+            forwardPer: number;
+            /** Latestfydiscloseddate */
+            latestFyDisclosedDate?: string | null;
+            /** Lowforwardperscore */
+            lowForwardPerScore: number;
+            /** Lowpbrscore */
+            lowPbrScore: number;
+            /** Marketcapbiljpy */
+            marketCapBilJpy: number;
+            /** Marketcode */
+            marketCode: string;
+            /** Pbr */
+            pbr: number;
+            /** Rank */
+            rank: number;
+            /** Score */
+            score: number;
+            /** Sector33Name */
+            sector33Name: string;
+            /** Smallmarketcapscore */
+            smallMarketCapScore: number;
+            /** Volume */
+            volume: number;
+        };
+        /**
+         * ValueCompositeRankingResponse
+         * @description Value-composite ranking response.
+         */
+        ValueCompositeRankingResponse: {
+            /** Date */
+            date: string;
+            /** Itemcount */
+            itemCount: number;
+            /** Items */
+            items?: components["schemas"]["ValueCompositeRankingItem"][];
+            /** Lastupdated */
+            lastUpdated: string;
+            /** Markets */
+            markets: string[];
+            /**
+             * Metrickey
+             * @default standard_value_composite
+             * @constant
+             */
+            metricKey: "standard_value_composite";
+            /**
+             * Scoremethod
+             * @enum {string}
+             */
+            scoreMethod: "equal_weight" | "walkforward_regression_weight";
+            /** Scorepolicy */
+            scorePolicy: string;
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+        };
+        /**
          * VerificationCandidateStatus
          * @description Verification state of a single fast-path candidate.
          * @enum {string}
@@ -11911,6 +12008,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Topix100RankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_value_composite_ranking_api_analytics_value_composite_ranking_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                limit?: number;
+                markets?: string;
+                scoreMethod?: "equal_weight" | "walkforward_regression_weight";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValueCompositeRankingResponse"];
                 };
             };
             /** @description Bad Request */

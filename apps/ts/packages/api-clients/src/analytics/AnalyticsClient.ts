@@ -22,6 +22,8 @@ import type {
   SectorStocksParams,
   Topix100RankingParams,
   Topix100RankingResponse,
+  ValueCompositeRankingParams,
+  ValueCompositeRankingResponse,
 } from './types.js';
 
 function normalizeConfig(config?: string | Partial<AnalyticsClientConfig>): AnalyticsClientConfig {
@@ -88,6 +90,17 @@ export class AnalyticsClient {
       studyMode: params.studyMode,
       metric: params.metric,
       smaWindow: params.smaWindow,
+    });
+  }
+
+  async getValueCompositeRanking(
+    params: ValueCompositeRankingParams = {}
+  ): Promise<ValueCompositeRankingResponse> {
+    return this.request<ValueCompositeRankingResponse>('/api/analytics/value-composite-ranking', undefined, {
+      date: params.date,
+      limit: params.limit,
+      markets: params.markets,
+      scoreMethod: params.scoreMethod,
     });
   }
 

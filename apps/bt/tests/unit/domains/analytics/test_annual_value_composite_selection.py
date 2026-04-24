@@ -10,6 +10,8 @@ from src.domains.analytics.annual_first_open_last_close_fundamental_panel import
 )
 from src.domains.analytics.annual_value_composite_selection import (
     ANNUAL_VALUE_COMPOSITE_SELECTION_EXPERIMENT_ID,
+    FIXED_VALUE_COMPOSITE_SCORE_COLUMN,
+    build_value_composite_score_frame,
     get_annual_value_composite_selection_bundle_path_for_run_id,
     get_annual_value_composite_selection_latest_bundle_path,
     load_annual_value_composite_selection_bundle,
@@ -211,7 +213,9 @@ def test_run_annual_value_composite_selection_builds_portfolio_tables(tmp_path: 
     )
 
     assert result.input_run_id == "input-panel"
-    assert {"equal_weight_score", "bucket_sum_score"}.issubset(result.scored_panel_df.columns)
+    assert {"equal_weight_score", "bucket_sum_score", FIXED_VALUE_COMPOSITE_SCORE_COLUMN}.issubset(
+        result.scored_panel_df.columns
+    )
     assert not result.walkforward_weight_df.empty
     assert not result.selected_event_df.empty
     assert not result.selection_summary_df.empty
@@ -227,6 +231,56 @@ def test_run_annual_value_composite_selection_builds_portfolio_tables(tmp_path: 
     assert len(focus) == 1
     assert float(focus.iloc[0]["total_return_pct"]) > 0.0
     assert int(focus.iloc[0]["realized_event_count"]) == 4
+
+
+def test_build_value_composite_score_frame_reuses_research_score_orientation() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "market": "standard",
+                "code": "1111",
+                "pbr": 0.5,
+                "forward_per": 5.0,
+                "market_cap_bil_jpy": 3.0,
+                "avg_trading_value_60d_mil_jpy": 1.0,
+            },
+            {
+                "market": "standard",
+                "code": "2222",
+                "pbr": 0.8,
+                "forward_per": 8.0,
+                "market_cap_bil_jpy": 9.0,
+                "avg_trading_value_60d_mil_jpy": 100.0,
+            },
+            {
+                "market": "standard",
+                "code": "3333",
+                "pbr": 1.2,
+                "forward_per": 12.0,
+                "market_cap_bil_jpy": 30.0,
+                "avg_trading_value_60d_mil_jpy": 300.0,
+            },
+            {
+                "market": "standard",
+                "code": "4444",
+                "pbr": -0.2,
+                "forward_per": 2.0,
+                "market_cap_bil_jpy": 1.0,
+                "avg_trading_value_60d_mil_jpy": 500.0,
+            },
+        ]
+    )
+
+    scored = build_value_composite_score_frame(
+        frame,
+        group_columns=("market",),
+        required_positive_columns=("pbr", "forward_per"),
+    ).sort_values(FIXED_VALUE_COMPOSITE_SCORE_COLUMN, ascending=False)
+
+    assert scored["code"].tolist() == ["1111", "2222", "3333"]
+    assert "avg_trading_value_60d_mil_jpy" in scored.columns
+    assert scored.iloc[0][FIXED_VALUE_COMPOSITE_SCORE_COLUMN] == 1.0
+    assert scored.iloc[-1][FIXED_VALUE_COMPOSITE_SCORE_COLUMN] == 0.0
 
 
 def test_write_and_load_annual_value_composite_selection_bundle(tmp_path: Path) -> None:

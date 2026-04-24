@@ -62,6 +62,9 @@ Baseline results:
 The practical rerun keeps the same main read: `standard` is still the cleanest
 market, small cap stays first, low `PBR` stays second, and low `forward PER`
 still adds value once obviously distressed negative-ratio names are excluded.
+The deployable score should not include an `ADV60` floor: the capacity checks
+show that even `ADV60 >= 10mn JPY` materially lowers return, so liquidity should
+remain a side diagnostic rather than part of the rank score.
 
 ## Run
 

@@ -276,6 +276,49 @@ export interface FundamentalRankingParams {
   forecastAboveAllActuals?: boolean;
 }
 
+export type ValueCompositeScoreMethod = 'equal_weight' | 'walkforward_regression_weight';
+
+export interface ValueCompositeRankingItem {
+  rank: number;
+  code: string;
+  companyName: string;
+  marketCode: string;
+  sector33Name: string;
+  currentPrice: number;
+  volume: number;
+  score: number;
+  lowPbrScore: number;
+  smallMarketCapScore: number;
+  lowForwardPerScore: number;
+  pbr: number;
+  forwardPer: number;
+  marketCapBilJpy: number;
+  bps?: number | null;
+  forwardEps?: number | null;
+  latestFyDisclosedDate?: string | null;
+  forwardEpsDisclosedDate?: string | null;
+  forwardEpsSource?: FundamentalRankingSource | null;
+}
+
+export interface ValueCompositeRankingResponse {
+  date: string;
+  markets: string[];
+  metricKey: 'standard_value_composite';
+  scoreMethod: ValueCompositeScoreMethod;
+  scorePolicy: string;
+  weights: Record<string, number>;
+  itemCount: number;
+  items: ValueCompositeRankingItem[];
+  lastUpdated: string;
+}
+
+export interface ValueCompositeRankingParams {
+  date?: string;
+  limit?: number;
+  markets?: string;
+  scoreMethod?: ValueCompositeScoreMethod;
+}
+
 // ===== SCREENING TYPES =====
 
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
