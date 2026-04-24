@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
 
+import duckdb
 import numpy as np
 import pandas as pd
 
@@ -37,6 +39,7 @@ from src.infrastructure.data_access.loaders import (
 )
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.shared.models.signals import SignalParams
+from src.shared.paths import get_data_dir
 
 RatioType = Literal["sharpe", "sortino"]
 FORWARD_EPS_TRADE_ARCHETYPE_DECOMPOSITION_EXPERIMENT_ID = (
@@ -65,6 +68,26 @@ _FEATURE_COLUMNS = (
     "topix_risk_adjusted_return_60",
     "topix_close_vs_sma200_pct",
 )
+_VALUE_FEATURE_COLUMNS = (
+    "pbr",
+    "forward_per",
+    "market_cap_bil_jpy",
+    "value_composite_score",
+)
+_VALUE_RAW_COLUMNS = (
+    "pbr",
+    "forward_per",
+    "market_cap_bil_jpy",
+)
+_MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth", "unknown")
+_MARKET_SCOPE_BY_CODE: dict[str, str] = {
+    "prime": "prime",
+    "0111": "prime",
+    "standard": "standard",
+    "0112": "standard",
+    "growth": "growth",
+    "0113": "growth",
+}
 
 
 @dataclass(frozen=True)
@@ -81,8 +104,11 @@ class ForwardEpsTradeArchetypeDecompositionResult:
     scenario_summary_df: pd.DataFrame
     trade_ledger_df: pd.DataFrame
     enriched_trade_df: pd.DataFrame
+    market_scope_summary_df: pd.DataFrame
     feature_bucket_summary_df: pd.DataFrame
+    value_feature_bucket_summary_df: pd.DataFrame
     overlay_candidate_summary_df: pd.DataFrame
+    value_overlay_candidate_summary_df: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -124,12 +150,25 @@ def run_forward_eps_trade_archetype_decomposition(
         dataset_name=dataset_name,
         parameters=parameters,
     )
+    market_scope_summary_df = _build_market_scope_summary_df(
+        enriched_trade_df=enriched_trade_df,
+        severe_loss_threshold_pct=severe_loss_threshold_pct,
+    )
     feature_bucket_summary_df = _build_feature_bucket_summary_df(
         enriched_trade_df=enriched_trade_df,
         quantile_bucket_count=quantile_bucket_count,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
     )
+    value_feature_bucket_summary_df = _build_value_feature_bucket_summary_df(
+        enriched_trade_df=enriched_trade_df,
+        quantile_bucket_count=quantile_bucket_count,
+        severe_loss_threshold_pct=severe_loss_threshold_pct,
+    )
     overlay_candidate_summary_df = _build_overlay_candidate_summary_df(
+        enriched_trade_df=enriched_trade_df,
+        severe_loss_threshold_pct=severe_loss_threshold_pct,
+    )
+    value_overlay_candidate_summary_df = _build_value_overlay_summary_df(
         enriched_trade_df=enriched_trade_df,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
     )
@@ -147,8 +186,11 @@ def run_forward_eps_trade_archetype_decomposition(
         scenario_summary_df=trade_quality_result.scenario_summary_df.copy(),
         trade_ledger_df=trade_ledger_df,
         enriched_trade_df=enriched_trade_df,
+        market_scope_summary_df=market_scope_summary_df,
         feature_bucket_summary_df=feature_bucket_summary_df,
+        value_feature_bucket_summary_df=value_feature_bucket_summary_df,
         overlay_candidate_summary_df=overlay_candidate_summary_df,
+        value_overlay_candidate_summary_df=value_overlay_candidate_summary_df,
     )
 
 
@@ -188,10 +230,14 @@ def write_forward_eps_trade_archetype_decomposition_bundle(
             "scenario_summary_df": result.scenario_summary_df,
             "trade_ledger_df": result.trade_ledger_df,
             "enriched_trade_df": result.enriched_trade_df,
+            "market_scope_summary_df": result.market_scope_summary_df,
             "feature_bucket_summary_df": result.feature_bucket_summary_df,
+            "value_feature_bucket_summary_df": result.value_feature_bucket_summary_df,
             "overlay_candidate_summary_df": result.overlay_candidate_summary_df,
+            "value_overlay_candidate_summary_df": result.value_overlay_candidate_summary_df,
         },
         summary_markdown=_build_summary_markdown(result),
+        published_summary=_build_published_summary(result),
         output_root=output_root,
         run_id=run_id,
         notes=notes,
@@ -217,8 +263,17 @@ def load_forward_eps_trade_archetype_decomposition_bundle(
         scenario_summary_df=tables["scenario_summary_df"],
         trade_ledger_df=tables["trade_ledger_df"],
         enriched_trade_df=tables["enriched_trade_df"],
+        market_scope_summary_df=tables.get("market_scope_summary_df", pd.DataFrame()),
         feature_bucket_summary_df=tables["feature_bucket_summary_df"],
+        value_feature_bucket_summary_df=tables.get(
+            "value_feature_bucket_summary_df",
+            pd.DataFrame(),
+        ),
         overlay_candidate_summary_df=tables["overlay_candidate_summary_df"],
+        value_overlay_candidate_summary_df=tables.get(
+            "value_overlay_candidate_summary_df",
+            pd.DataFrame(),
+        ),
     )
 
 
@@ -266,6 +321,7 @@ def _build_enriched_trade_df(
 
     signal_params = SignalParams.model_validate(parameters.get("entry_filter_params", {}))
     symbol_feature_cache: dict[str, dict[str, Any]] = {}
+    stock_metadata_by_code = _load_dataset_stock_metadata(dataset_name)
 
     rows: list[dict[str, Any]] = []
     with data_access_mode_context("direct"):
@@ -309,13 +365,25 @@ def _build_enriched_trade_df(
                 cast(pd.DataFrame, symbol_features["fundamental_features"]),
                 fundamental_feature_date,
             )
+            stock_metadata = stock_metadata_by_code.get(symbol, {})
             disclosed_date = _coerce_timestamp(
                 None if fundamental_row is None else fundamental_row.get("disclosed_date")
+            )
+            entry_price = _coerce_float(getattr(trade, "avg_entry_price", None))
+            value_features = _build_value_feature_row(
+                fundamental_row=fundamental_row,
+                entry_price=entry_price,
             )
             rows.append(
                 {
                     **trade._asdict(),
                     "entry_date": entry_date.strftime("%Y-%m-%d"),
+                    "market_code": stock_metadata.get("market_code"),
+                    "market_name": stock_metadata.get("market_name"),
+                    "market_scope": stock_metadata.get(
+                        "market_scope",
+                        _infer_market_scope_from_dataset_name(dataset_name),
+                    ),
                     "market_feature_date": _fmt_timestamp(market_feature_date),
                     "fundamental_feature_date": _fmt_timestamp(fundamental_feature_date),
                     "market_feature_lag_days": (
@@ -343,11 +411,14 @@ def _build_enriched_trade_df(
                     **_pick_market_feature_columns(market_row),
                     **_pick_topix_feature_columns(topix_row),
                     **_pick_fundamental_feature_columns(fundamental_row),
+                    **value_features,
                 }
             )
 
     enriched_trade_df = pd.DataFrame(rows)
-    return enriched_trade_df
+    if enriched_trade_df.empty:
+        return enriched_trade_df
+    return _with_value_composite_score(enriched_trade_df)
 
 
 def _build_symbol_feature_payload(
@@ -430,6 +501,9 @@ def _build_symbol_feature_payload(
         .std()
         * 100.0
     )
+    market_features["avg_trading_value_60d_mil_jpy"] = (
+        close.astype(float) * volume.astype(float)
+    ).rolling(60, min_periods=20).mean() / 1_000_000.0
 
     base_col = _select_forward_base_eps_column(
         signal_params,
@@ -450,6 +524,19 @@ def _build_symbol_feature_payload(
         forward_eps_growth_value - forward_eps_threshold
         if forward_eps_threshold is not None
         else np.nan
+    )
+    fundamental_features["forward_base_eps"] = base_eps
+    fundamental_features["forward_forecast_eps"] = forecast_eps
+    fundamental_features["adjusted_bps"] = _coerce_numeric_series(
+        statements_df,
+        "AdjustedBPS",
+        "BPS",
+    )
+    fundamental_features["raw_eps"] = _coerce_numeric_series(statements_df, "EPS")
+    fundamental_features["adjusted_eps"] = _coerce_numeric_series(statements_df, "AdjustedEPS")
+    fundamental_features["shares_outstanding"] = _coerce_numeric_series(
+        statements_df,
+        "SharesOutstanding",
     )
     fundamental_features["disclosed_date"] = pd.to_datetime(
         statements_df["DisclosedDate"], errors="coerce"
@@ -606,6 +693,346 @@ def _build_overlay_candidate_summary_df(
     return summary_df
 
 
+def _build_market_scope_summary_df(
+    *,
+    enriched_trade_df: pd.DataFrame,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frame = _prepare_value_frame(enriched_trade_df)
+    rows: list[dict[str, Any]] = []
+    for group_payload, group_frame in _iter_market_scope_groups(frame):
+        metrics = _build_trade_metrics(
+            group_frame,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+        )
+        rows.append(
+            {
+                **group_payload,
+                **metrics,
+                "traded_symbol_count": int(group_frame["symbol"].nunique())
+                if "symbol" in group_frame.columns
+                else 0,
+                "median_pbr": _numeric_median(group_frame, "pbr"),
+                "median_forward_per": _numeric_median(group_frame, "forward_per"),
+                "median_market_cap_bil_jpy": _numeric_median(
+                    group_frame,
+                    "market_cap_bil_jpy",
+                ),
+                "median_forward_eps_growth_value": _numeric_median(
+                    group_frame,
+                    "forward_eps_growth_value",
+                ),
+                "median_avg_trading_value_60d_mil_jpy": _numeric_median(
+                    group_frame,
+                    "avg_trading_value_60d_mil_jpy",
+                ),
+            }
+        )
+    return _sort_market_scope_summary(pd.DataFrame(rows))
+
+
+def _build_value_feature_bucket_summary_df(
+    *,
+    enriched_trade_df: pd.DataFrame,
+    quantile_bucket_count: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frame = _prepare_value_frame(enriched_trade_df)
+    rows: list[dict[str, Any]] = []
+    for group_payload, group_frame_raw in _iter_market_scope_groups(frame):
+        group_frame = _with_group_value_composite_score(group_frame_raw)
+        total_trade_count = len(group_frame)
+        for feature_name in _VALUE_FEATURE_COLUMNS:
+            if feature_name not in group_frame.columns:
+                continue
+            valid = group_frame.dropna(subset=[feature_name]).copy()
+            if valid.empty:
+                continue
+            bucket_count = min(quantile_bucket_count, len(valid))
+            valid["bucket_rank"] = _assign_value_quantile_bucket(
+                pd.to_numeric(valid[feature_name], errors="coerce"),
+                bucket_count=bucket_count,
+            )
+            for bucket_rank, bucket_frame in valid.groupby("bucket_rank", dropna=False):
+                bucket_rank_int = _coerce_int(bucket_rank)
+                metrics = _build_trade_metrics(
+                    bucket_frame,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+                rows.append(
+                    {
+                        **group_payload,
+                        "feature_name": feature_name,
+                        "bucket_rank": bucket_rank_int,
+                        "bucket_count": bucket_count,
+                        "bucket_label": f"Q{bucket_rank_int}/{bucket_count}",
+                        "coverage_pct": (
+                            (metrics["trade_count"] / total_trade_count) * 100.0
+                            if total_trade_count > 0
+                            else np.nan
+                        ),
+                        "feature_min": float(
+                            pd.to_numeric(bucket_frame[feature_name], errors="coerce").min()
+                        ),
+                        "feature_median": float(
+                            pd.to_numeric(bucket_frame[feature_name], errors="coerce").median()
+                        ),
+                        "feature_max": float(
+                            pd.to_numeric(bucket_frame[feature_name], errors="coerce").max()
+                        ),
+                        **metrics,
+                    }
+                )
+    return _sort_market_scope_summary(pd.DataFrame(rows))
+
+
+def _build_value_overlay_summary_df(
+    *,
+    enriched_trade_df: pd.DataFrame,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frame = _prepare_value_frame(enriched_trade_df)
+    rows: list[dict[str, Any]] = []
+    for group_payload, group_frame_raw in _iter_market_scope_groups(frame):
+        group_frame = _with_group_value_composite_score(group_frame_raw)
+        total_trade_count = len(group_frame)
+        predicates = _build_value_overlay_predicates(group_frame)
+        for candidate_name, candidate_description, selected_mask in predicates:
+            selected = group_frame[selected_mask.fillna(False).astype(bool)].copy()
+            metrics = _build_trade_metrics(
+                selected,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+            )
+            rows.append(
+                {
+                    **group_payload,
+                    "candidate_name": candidate_name,
+                    "candidate_family": "value",
+                    "candidate_description": candidate_description,
+                    "trade_count": metrics["trade_count"],
+                    "coverage_pct": (
+                        (metrics["trade_count"] / total_trade_count) * 100.0
+                        if total_trade_count > 0
+                        else np.nan
+                    ),
+                    "median_pbr": _numeric_median(selected, "pbr"),
+                    "median_forward_per": _numeric_median(selected, "forward_per"),
+                    "median_market_cap_bil_jpy": _numeric_median(
+                        selected,
+                        "market_cap_bil_jpy",
+                    ),
+                    **metrics,
+                }
+            )
+
+    summary_df = _sort_market_scope_summary(pd.DataFrame(rows))
+    if summary_df.empty:
+        return summary_df
+
+    baseline_df = summary_df[summary_df["candidate_name"] == "baseline_all"][
+        [
+            "dataset_name",
+            "window_label",
+            "market_scope",
+            "avg_trade_return_pct",
+            "win_rate_pct",
+            "severe_loss_rate_pct",
+            "worst_trade_return_pct",
+        ]
+    ].rename(
+        columns={
+            "avg_trade_return_pct": "baseline_avg_trade_return_pct",
+            "win_rate_pct": "baseline_win_rate_pct",
+            "severe_loss_rate_pct": "baseline_severe_loss_rate_pct",
+            "worst_trade_return_pct": "baseline_worst_trade_return_pct",
+        }
+    )
+    summary_df = summary_df.merge(
+        baseline_df,
+        on=["dataset_name", "window_label", "market_scope"],
+        how="left",
+    )
+    summary_df["delta_avg_trade_return_pct"] = (
+        summary_df["avg_trade_return_pct"] - summary_df["baseline_avg_trade_return_pct"]
+    )
+    summary_df["delta_win_rate_pct"] = (
+        summary_df["win_rate_pct"] - summary_df["baseline_win_rate_pct"]
+    )
+    summary_df["delta_severe_loss_rate_pct"] = (
+        summary_df["severe_loss_rate_pct"] - summary_df["baseline_severe_loss_rate_pct"]
+    )
+    return _sort_market_scope_summary(summary_df)
+
+
+def _build_value_overlay_predicates(
+    frame: pd.DataFrame,
+) -> tuple[tuple[str, str, pd.Series], ...]:
+    low_pbr = _value_low_quantile_mask(frame, "pbr")
+    low_forward_per = _value_low_quantile_mask(frame, "forward_per")
+    small_market_cap = _value_low_quantile_mask(frame, "market_cap_bil_jpy")
+    value_composite = _value_low_quantile_mask(frame, "value_composite_score")
+    baseline = pd.Series(True, index=frame.index, dtype=bool)
+    return (
+        (
+            "baseline_all",
+            "No additional value overlay; keep every forward_eps_driven trade.",
+            baseline,
+        ),
+        (
+            "low_pbr_q1",
+            "Keep the lowest-third PBR trades inside the same dataset/window/market scope.",
+            low_pbr,
+        ),
+        (
+            "low_forward_per_q1",
+            "Keep the lowest-third forward PER trades inside the same dataset/window/market scope.",
+            low_forward_per,
+        ),
+        (
+            "small_market_cap_q1",
+            "Keep the smallest-third market-cap trades inside the same dataset/window/market scope.",
+            small_market_cap,
+        ),
+        (
+            "value_composite_q1",
+            "Keep the lowest-third composite of PBR, forward PER, and market cap.",
+            value_composite,
+        ),
+        (
+            "value_core_low_pbr_low_fper_small_cap",
+            "Keep only trades that are simultaneously low PBR, low forward PER, and small cap.",
+            low_pbr & low_forward_per & small_market_cap,
+        ),
+    )
+
+
+def _prepare_value_frame(enriched_trade_df: pd.DataFrame) -> pd.DataFrame:
+    frame = enriched_trade_df.copy()
+    if frame.empty:
+        return frame
+    if "dataset_name" not in frame.columns:
+        frame["dataset_name"] = "unknown"
+    if "window_label" not in frame.columns:
+        frame["window_label"] = "full"
+    if "market_scope" not in frame.columns:
+        frame["market_scope"] = "unknown"
+    for column in _VALUE_RAW_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = np.nan
+    return _with_value_composite_score(frame)
+
+
+def _with_value_composite_score(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    group_columns = [
+        column
+        for column in ("dataset_name", "window_label", "market_scope")
+        if column in frame.columns
+    ]
+    if not group_columns:
+        return _with_group_value_composite_score(frame)
+    groups = [
+        _with_group_value_composite_score(group)
+        for _, group in frame.groupby(group_columns, dropna=False, sort=False)
+    ]
+    if not groups:
+        return frame.copy()
+    return pd.concat(groups, ignore_index=True)
+
+
+def _with_group_value_composite_score(frame: pd.DataFrame) -> pd.DataFrame:
+    scored = frame.copy()
+    score_parts: list[pd.Series] = []
+    for column in _VALUE_RAW_COLUMNS:
+        if column not in scored.columns:
+            continue
+        values = pd.to_numeric(scored[column], errors="coerce")
+        score_parts.append(values.rank(method="average", pct=True))
+    if score_parts:
+        scored["value_composite_score"] = pd.concat(score_parts, axis=1).mean(axis=1)
+    else:
+        scored["value_composite_score"] = np.nan
+    return scored
+
+
+def _iter_market_scope_groups(
+    frame: pd.DataFrame,
+) -> list[tuple[dict[str, Any], pd.DataFrame]]:
+    if frame.empty:
+        return []
+    group_columns = ["dataset_name", "window_label"]
+    rows: list[tuple[dict[str, Any], pd.DataFrame]] = []
+    for keys, base_group in frame.groupby(group_columns, dropna=False, sort=False):
+        dataset_name, window_label = cast(tuple[Any, Any], keys)
+        base_payload = {
+            "dataset_name": dataset_name,
+            "window_label": window_label,
+            "market_scope": "all",
+        }
+        rows.append((base_payload, base_group.copy()))
+        for market_scope, market_group in base_group.groupby(
+            "market_scope",
+            dropna=False,
+            sort=False,
+        ):
+            rows.append(
+                (
+                    {
+                        "dataset_name": dataset_name,
+                        "window_label": window_label,
+                        "market_scope": str(market_scope),
+                    },
+                    market_group.copy(),
+                )
+            )
+    return rows
+
+
+def _value_low_quantile_mask(frame: pd.DataFrame, column: str) -> pd.Series:
+    values = _get_numeric_column(frame, column)
+    valid = values.dropna()
+    if valid.empty:
+        return pd.Series(False, index=frame.index, dtype=bool)
+    threshold = valid.quantile(1.0 / 3.0)
+    return values <= threshold
+
+
+def _numeric_median(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return np.nan
+    value = pd.to_numeric(frame[column], errors="coerce").median()
+    return float(value) if pd.notna(value) else np.nan
+
+
+def _sort_market_scope_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    sorted_frame = frame.copy()
+    if "market_scope" in sorted_frame.columns:
+        sorted_frame["_market_scope_order"] = sorted_frame["market_scope"].map(
+            {scope: idx for idx, scope in enumerate(_MARKET_SCOPE_ORDER)}
+        ).fillna(len(_MARKET_SCOPE_ORDER))
+    sort_columns = [
+        column
+        for column in (
+            "dataset_name",
+            "window_label",
+            "_market_scope_order",
+            "market_scope",
+            "feature_name",
+            "candidate_name",
+            "bucket_rank",
+        )
+        if column in sorted_frame.columns
+    ]
+    if sort_columns:
+        sorted_frame = sorted_frame.sort_values(sort_columns, kind="stable")
+    return sorted_frame.drop(columns=["_market_scope_order"], errors="ignore").reset_index(
+        drop=True
+    )
+
+
 def _overlay_candidates() -> tuple[_OverlayCandidate, ...]:
     return (
         _OverlayCandidate(
@@ -718,6 +1145,19 @@ def _assign_quantile_bucket(series: pd.Series, *, bucket_count: int) -> pd.Serie
     return cast(pd.Series, bucket.astype(int))
 
 
+def _assign_value_quantile_bucket(series: pd.Series, *, bucket_count: int) -> pd.Series:
+    valid = pd.to_numeric(series, errors="coerce")
+    ranks = valid.rank(method="first", ascending=True)
+    valid_count = int(valid.notna().sum())
+    if valid_count == 0:
+        return pd.Series(np.nan, index=series.index)
+    bucket = (((ranks - 1) * bucket_count / valid_count).apply(np.floor) + 1).clip(
+        1,
+        bucket_count,
+    )
+    return cast(pd.Series, bucket.astype(int))
+
+
 def _resolve_previous_index_value(
     index: pd.DatetimeIndex,
     target: pd.Timestamp,
@@ -760,6 +1200,7 @@ def _pick_market_feature_columns(row: dict[str, Any] | None) -> dict[str, Any]:
             "stock_return_20d_pct": np.nan,
             "stock_return_60d_pct": np.nan,
             "stock_volatility_20d_pct": np.nan,
+            "avg_trading_value_60d_mil_jpy": np.nan,
         }
     return {
         key: row.get(key, np.nan)
@@ -772,6 +1213,7 @@ def _pick_market_feature_columns(row: dict[str, Any] | None) -> dict[str, Any]:
             "stock_return_20d_pct",
             "stock_return_60d_pct",
             "stock_volatility_20d_pct",
+            "avg_trading_value_60d_mil_jpy",
         )
     }
 
@@ -808,6 +1250,128 @@ def _pick_fundamental_feature_columns(row: dict[str, Any] | None) -> dict[str, A
             "forward_eps_growth_margin",
         )
     }
+
+
+def _build_value_feature_row(
+    *,
+    fundamental_row: dict[str, Any] | None,
+    entry_price: float | None,
+) -> dict[str, Any]:
+    if fundamental_row is None or entry_price is None:
+        return {
+            "pbr": np.nan,
+            "forward_per": np.nan,
+            "market_cap_bil_jpy": np.nan,
+            "adjusted_share_baseline": np.nan,
+        }
+
+    adjusted_bps = _coerce_float(fundamental_row.get("adjusted_bps"))
+    forward_forecast_eps = _coerce_float(fundamental_row.get("forward_forecast_eps"))
+    adjusted_share_baseline = _infer_adjusted_share_baseline(fundamental_row)
+    market_cap = (
+        entry_price * adjusted_share_baseline
+        if adjusted_share_baseline is not None and entry_price > 0
+        else np.nan
+    )
+    return {
+        "pbr": _safe_ratio(entry_price, adjusted_bps),
+        "forward_per": _safe_ratio(entry_price, forward_forecast_eps),
+        "market_cap_bil_jpy": market_cap / 1_000_000_000.0
+        if pd.notna(market_cap)
+        else np.nan,
+        "adjusted_share_baseline": adjusted_share_baseline
+        if adjusted_share_baseline is not None
+        else np.nan,
+    }
+
+
+def _infer_adjusted_share_baseline(row: dict[str, Any]) -> float | None:
+    shares = _coerce_float(row.get("shares_outstanding"))
+    raw_eps = _coerce_float(row.get("raw_eps"))
+    adjusted_eps = _coerce_float(row.get("adjusted_eps"))
+    if (
+        shares is not None
+        and shares > 0
+        and raw_eps is not None
+        and adjusted_eps is not None
+        and adjusted_eps != 0
+    ):
+        baseline = raw_eps * shares / adjusted_eps
+        if math.isfinite(baseline) and baseline > 0:
+            return float(baseline)
+    return shares if shares is not None and shares > 0 else None
+
+
+def _safe_ratio(numerator: float | None, denominator: float | None) -> float:
+    if numerator is None or denominator is None or denominator <= 0:
+        return np.nan
+    return numerator / denominator
+
+
+def _coerce_numeric_series(df: pd.DataFrame, *columns: str) -> pd.Series:
+    for column in columns:
+        if column in df.columns:
+            return pd.to_numeric(df[column], errors="coerce")
+    return pd.Series(np.nan, index=df.index)
+
+
+def _load_dataset_stock_metadata(dataset_name: str) -> dict[str, dict[str, str]]:
+    duckdb_path = get_data_dir() / "datasets" / dataset_name / "dataset.duckdb"
+    if not duckdb_path.exists():
+        return {}
+    try:
+        conn = duckdb.connect(str(duckdb_path), read_only=True)
+        try:
+            rows = conn.execute(
+                """
+                SELECT code, market_code, market_name
+                FROM stocks
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return {}
+
+    metadata: dict[str, dict[str, str]] = {}
+    for code, market_code, market_name in rows:
+        normalized_code = str(code)
+        normalized_market_code = str(market_code or "")
+        normalized_market_name = str(market_name or "")
+        metadata[normalized_code] = {
+            "market_code": normalized_market_code,
+            "market_name": normalized_market_name,
+            "market_scope": _normalize_market_scope(
+                normalized_market_code,
+                normalized_market_name,
+            ),
+        }
+    return metadata
+
+
+def _normalize_market_scope(market_code: str | None, market_name: str | None) -> str:
+    code = str(market_code or "").strip().lower()
+    if code in _MARKET_SCOPE_BY_CODE:
+        return _MARKET_SCOPE_BY_CODE[code]
+    name = str(market_name or "").strip().lower()
+    if "プライム" in name or "prime" in name:
+        return "prime"
+    if "スタンダード" in name or "standard" in name:
+        return "standard"
+    if "グロース" in name or "growth" in name:
+        return "growth"
+    return "unknown"
+
+
+def _infer_market_scope_from_dataset_name(dataset_name: str) -> str:
+    lowered = dataset_name.lower()
+    if "standard" in lowered:
+        return "standard"
+    if "growth" in lowered:
+        return "growth"
+    if "prime" in lowered or "topix" in lowered:
+        return "prime"
+    return "unknown"
 
 
 def _extract_forward_eps_growth_threshold(parameters: dict[str, Any]) -> float | None:
@@ -913,6 +1477,16 @@ def _coerce_int(value: Any) -> int:
     return int(float(value))
 
 
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
 def _coerce_timestamp(value: Any) -> pd.Timestamp | None:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return None
@@ -931,6 +1505,10 @@ def _build_summary_markdown(
 ) -> str:
     overlay_df = result.overlay_candidate_summary_df.copy()
     overlay_df = overlay_df[overlay_df["candidate_name"] != "baseline_all"]
+    value_overlay_df = result.value_overlay_candidate_summary_df.copy()
+    value_overlay_df = value_overlay_df[
+        value_overlay_df["candidate_name"] != "baseline_all"
+    ] if not value_overlay_df.empty else value_overlay_df
 
     holdout_note = _pick_overlay_note(
         overlay_df=overlay_df,
@@ -945,6 +1523,17 @@ def _build_summary_markdown(
         candidate_name="fresh_disclosure_3d",
         window_label="full",
     )
+    prime_value_holdout_note = _pick_value_overlay_note(
+        overlay_df=value_overlay_df,
+        market_scope="prime",
+        window_label=f"holdout_{result.holdout_months}m",
+    )
+    standard_value_holdout_note = _pick_value_overlay_note(
+        overlay_df=value_overlay_df,
+        market_scope="standard",
+        window_label=f"holdout_{result.holdout_months}m",
+    )
+    market_scope_lines = _build_market_scope_summary_lines(result.market_scope_summary_df)
 
     return "\n".join(
         [
@@ -964,6 +1553,9 @@ def _build_summary_markdown(
             f"- Fresh disclosure (<=3d) share in full-history trades: `{fresh_coverage}`",
             f"- Best high-coverage holdout overlay: {holdout_note}",
             f"- Best high-coverage full-history overlay: {full_note}",
+            f"- Prime holdout value overlay: {prime_value_holdout_note}",
+            f"- Standard holdout value overlay: {standard_value_holdout_note}",
+            *market_scope_lines,
             "",
             "## Artifact Tables",
             "",
@@ -971,8 +1563,11 @@ def _build_summary_markdown(
             "- `scenario_summary_df`",
             "- `trade_ledger_df`",
             "- `enriched_trade_df`",
+            "- `market_scope_summary_df`",
             "- `feature_bucket_summary_df`",
+            "- `value_feature_bucket_summary_df`",
             "- `overlay_candidate_summary_df`",
+            "- `value_overlay_candidate_summary_df`",
         ]
     )
 
@@ -1011,6 +1606,89 @@ def _safe_overlay_coverage(
     if matched.empty:
         return "N/A"
     return f"{matched.iloc[0]['coverage_pct']:.1f}%"
+
+
+def _pick_value_overlay_note(
+    *,
+    overlay_df: pd.DataFrame,
+    market_scope: str,
+    window_label: str,
+) -> str:
+    if overlay_df.empty:
+        return "`No value overlay rows were produced.`"
+    window_df = overlay_df[
+        (overlay_df["window_label"] == window_label)
+        & (overlay_df["market_scope"] == market_scope)
+        & (overlay_df["trade_count"] >= 1)
+    ].copy()
+    if window_df.empty:
+        return "`No trades for this market scope in the selected dataset/window.`"
+    window_df = window_df.sort_values(
+        ["delta_avg_trade_return_pct", "avg_trade_return_pct"],
+        ascending=[False, False],
+    )
+    best = window_df.iloc[0]
+    return (
+        f"`{best['candidate_name']}` "
+        f"(trades `{int(best['trade_count'])}`, "
+        f"coverage `{best['coverage_pct']:.1f}%`, "
+        f"avg trade `{best['avg_trade_return_pct']:.2f}%`, "
+        f"delta `{best['delta_avg_trade_return_pct']:.2f}%`)"
+    )
+
+
+def _build_market_scope_summary_lines(summary_df: pd.DataFrame) -> list[str]:
+    if summary_df.empty:
+        return ["- Market scope summary: `No market-scope rows were produced.`"]
+    full_rows = summary_df[summary_df["window_label"] == "full"].copy()
+    if full_rows.empty:
+        return []
+    lines: list[str] = []
+    for market_scope in ("prime", "standard"):
+        matched = full_rows[full_rows["market_scope"] == market_scope]
+        if matched.empty:
+            lines.append(
+                f"- `{market_scope}` full-history trade coverage: `0 trades` "
+                "(not available in the selected dataset)."
+            )
+            continue
+        row = matched.iloc[0]
+        lines.append(
+            (
+                f"- `{market_scope}` full-history trades: `{int(row['trade_count'])}`, "
+                f"avg `{row['avg_trade_return_pct']:.2f}%`, "
+                f"median PBR `{row['median_pbr']:.2f}`, "
+                f"median forward PER `{row['median_forward_per']:.2f}`, "
+                f"median mcap `{row['median_market_cap_bil_jpy']:.1f}bn JPY`."
+            )
+        )
+    return lines
+
+
+def _build_published_summary(
+    result: ForwardEpsTradeArchetypeDecompositionResult,
+) -> dict[str, Any]:
+    published: dict[str, Any] = {
+        "strategyName": result.strategy_name,
+        "datasetName": result.dataset_name,
+        "holdoutMonths": result.holdout_months,
+        "analysisStartDate": result.analysis_start_date,
+        "analysisEndDate": result.analysis_end_date,
+        "tradeCount": int(len(result.trade_ledger_df)),
+    }
+    if not result.market_scope_summary_df.empty:
+        published["marketScopeSummary"] = result.market_scope_summary_df[
+            result.market_scope_summary_df["window_label"].isin(
+                ["full", f"holdout_{result.holdout_months}m"]
+            )
+        ].to_dict(orient="records")
+    if not result.value_overlay_candidate_summary_df.empty:
+        value_core = result.value_overlay_candidate_summary_df[
+            result.value_overlay_candidate_summary_df["candidate_name"]
+            == "value_core_low_pbr_low_fper_small_cap"
+        ]
+        published["valueCoreSummary"] = value_core.to_dict(orient="records")
+    return published
 
 
 __all__ = [

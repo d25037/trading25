@@ -45,6 +45,8 @@
   - 年次保有ファンダメンタル panel を土台に、低PBR・小型・低forward PER・低ADVなどの交絡と独立効果を統計的に分解する実験。
 - [market-behavior/annual-value-composite-selection/](./market-behavior/annual-value-composite-selection/README.md)
   - 低PBR・小型・低forward PER を composite score に落とし、top% selection と liquidity/capacity floor を portfolio lens で評価する実験。
+- [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
+  - `forward_eps_driven` の実トレード台帳を起点に、forward EPS 成長・出来高・地合い・低PBR/低forward PER/小型の価値露出を市場別に分解する実験。
 - [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)
   - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
 - [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)

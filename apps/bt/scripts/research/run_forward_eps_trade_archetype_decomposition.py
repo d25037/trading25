@@ -38,7 +38,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Decompose forward_eps_driven trades into entry-time archetypes and "
-            "candidate overlay regimes."
+            "candidate overlay regimes, including value-factor exposure "
+            "(PBR / forward PER / market cap) by market scope."
         )
     )
     parser.add_argument(
