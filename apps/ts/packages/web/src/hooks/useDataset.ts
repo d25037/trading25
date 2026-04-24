@@ -50,8 +50,7 @@ interface LegacyDatasetListItem {
   lastModified: string;
   preset?: string | null;
   createdAt?: string | null;
-  backend?: DatasetListItem['backend'];
-  hasCompatibilityArtifact?: boolean;
+  backend?: string;
 }
 
 type DatasetStorage = DatasetInfoResponse['storage'];
@@ -65,15 +64,19 @@ type DatasetJobResponsePayload = Omit<DatasetJobResponse, 'result'> & {
   result?: DatasetJobResultPayload | null;
 };
 
-function inferLegacyStorage(path: string): DatasetStorage {
-  const isLegacySqlite = path.endsWith('.db');
+const UNSUPPORTED_LEGACY_DATASET_ERROR =
+  'Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.';
+
+function isUnsupportedLegacyDatasetPath(path: string): boolean {
+  return path.endsWith('.db');
+}
+
+function normalizeDuckDbStorage(path: string, storage: DatasetStorage | null | undefined): DatasetStorage {
   return {
-    backend: isLegacySqlite ? 'sqlite-legacy' : 'duckdb-parquet',
-    primaryPath: path,
-    duckdbPath: null,
-    compatibilityDbPath: null,
-    manifestPath: null,
-    hasCompatibilityArtifact: false,
+    backend: 'duckdb-parquet',
+    primaryPath: storage?.primaryPath ?? path,
+    duckdbPath: storage?.duckdbPath ?? null,
+    manifestPath: storage?.manifestPath ?? null,
   };
 }
 
@@ -81,15 +84,12 @@ function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoRes
   return 'stats' in value && 'validation' in value;
 }
 
-function normalizeStorage(path: string, storage: DatasetStorage | null | undefined): DatasetStorage {
-  // Keep web resilient during rolling deploys and when viewing historical dataset payloads.
-  const fallback = inferLegacyStorage(path);
+function markUnsupportedLegacyValidation(validation: DatasetInfoResponse['validation']): DatasetInfoResponse['validation'] {
   return {
-    ...fallback,
-    ...storage,
-    compatibilityDbPath: storage?.compatibilityDbPath ?? fallback.compatibilityDbPath,
-    manifestPath: storage?.manifestPath ?? fallback.manifestPath,
-    hasCompatibilityArtifact: storage?.hasCompatibilityArtifact ?? fallback.hasCompatibilityArtifact,
+    ...validation,
+    isValid: false,
+    errors: [UNSUPPORTED_LEGACY_DATASET_ERROR, ...(validation.errors ?? [])],
+    warnings: validation.warnings ?? [],
   };
 }
 
@@ -115,7 +115,7 @@ function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): D
     path: value.path,
     fileSize: value.fileSize,
     lastModified: value.lastModified,
-    storage: inferLegacyStorage(value.path),
+    storage: normalizeDuckDbStorage(value.path, null),
     snapshot: {
       preset: snapshot.preset ?? null,
       createdAt: snapshot.createdAt ?? null,
@@ -134,8 +134,8 @@ function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): D
       statementsFieldCoverage: null,
     },
     validation: {
-      isValid: validation.isValid ?? true,
-      errors: validation.errors ?? [],
+      isValid: false,
+      errors: [UNSUPPORTED_LEGACY_DATASET_ERROR, ...(validation.errors ?? [])],
       warnings: validation.warnings ?? [],
       details: {
         dataCoverage: {
@@ -151,24 +151,35 @@ function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): D
 
 function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
   if (isDatasetInfoResponse(value)) {
+    const backend = typeof value.storage?.backend === 'string' ? value.storage.backend : 'duckdb-parquet';
+    const isUnsupported = backend !== 'duckdb-parquet' || isUnsupportedLegacyDatasetPath(value.path);
     return {
       ...value,
-      storage: normalizeStorage(value.path, value.storage),
+      storage: normalizeDuckDbStorage(value.path, value.storage),
+      validation: isUnsupported ? markUnsupportedLegacyValidation(value.validation) : value.validation,
     };
   }
 
   return normalizeLegacyDatasetInfoResponse(value);
 }
 
-function normalizeDatasetListItem(value: DatasetListItem | LegacyDatasetListItem): DatasetListItem {
+function normalizeDatasetListItem(value: DatasetListItem | LegacyDatasetListItem): DatasetListItem | null {
   const legacyPath = 'path' in value ? value.path : undefined;
-  const inferredStorage = inferLegacyStorage(legacyPath ?? value.name);
+  const path = legacyPath ?? value.name;
+  if (value.backend && value.backend !== 'duckdb-parquet') {
+    logger.debug('Skipping unsupported dataset backend', { name: value.name, backend: value.backend });
+    return null;
+  }
+  if (isUnsupportedLegacyDatasetPath(path)) {
+    logger.debug('Skipping unsupported legacy dataset snapshot', { name: value.name, path });
+    return null;
+  }
   return {
     ...value,
+    path,
     preset: value.preset ?? null,
     createdAt: value.createdAt ?? null,
-    backend: value.backend ?? inferredStorage.backend,
-    hasCompatibilityArtifact: value.hasCompatibilityArtifact ?? inferredStorage.hasCompatibilityArtifact,
+    backend: 'duckdb-parquet',
   };
 }
 
@@ -190,7 +201,7 @@ function normalizeDatasetJobResponse(value: DatasetJobResponsePayload): DatasetJ
 
 function fetchDatasets(): Promise<DatasetListResponse> {
   return apiGet<DatasetListResponse | LegacyDatasetListItem[]>('/api/dataset').then((items) =>
-    items.map(normalizeDatasetListItem)
+    items.map(normalizeDatasetListItem).filter((item): item is DatasetListItem => item !== null)
   );
 }
 

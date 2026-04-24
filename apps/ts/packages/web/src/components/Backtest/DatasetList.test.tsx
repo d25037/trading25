@@ -54,44 +54,21 @@ function createDatasets(): DatasetListItem[] {
   return [
     {
       name: 'beta',
+      path: '/tmp/beta',
       preset: null,
       fileSize: 3000,
       lastModified: '2026-01-01T00:00:00.000Z',
       createdAt: '2026-01-01T00:00:00.000Z',
       backend: 'duckdb-parquet',
-      hasCompatibilityArtifact: false,
     },
     {
       name: 'alpha',
+      path: '/tmp/alpha',
       preset: 'primeMarket',
       fileSize: 1000,
       lastModified: '2026-01-02T00:00:00.000Z',
       createdAt: '2026-01-02T00:00:00.000Z',
       backend: 'duckdb-parquet',
-      hasCompatibilityArtifact: true,
-    },
-  ];
-}
-
-function createLegacyDatasets(): DatasetListItem[] {
-  return [
-    {
-      name: 'compat',
-      preset: null,
-      fileSize: 5000,
-      lastModified: '2026-01-03T00:00:00.000Z',
-      createdAt: '2026-01-03T00:00:00.000Z',
-      backend: 'duckdb-parquet',
-      hasCompatibilityArtifact: true,
-    },
-    {
-      name: 'sqlite-only',
-      preset: null,
-      fileSize: 2000,
-      lastModified: '2026-01-01T00:00:00.000Z',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      backend: 'sqlite-compatibility',
-      hasCompatibilityArtifact: false,
     },
   ];
 }
@@ -189,9 +166,8 @@ describe('DatasetList', () => {
 
     render(<DatasetList />);
 
-    expect(screen.getByText('DuckDB snapshot + legacy compat')).toBeInTheDocument();
-    expect(screen.getByText('dataset.duckdb + parquet/ + manifest.v2.json + legacy dataset.db')).toBeInTheDocument();
-    expect(screen.getByText('Legacy dataset.db compatibility')).toBeInTheDocument();
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('dataset.duckdb + parquet/ + manifest.v2.json').length).toBeGreaterThanOrEqual(1);
     await user.click(getFirstByTitle('詳細'));
     expect(screen.getByText('info:alpha')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'close-info' }));
@@ -220,17 +196,4 @@ describe('DatasetList', () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('renders legacy sqlite-only snapshots as historical storage', () => {
-    setDatasetsQueryState({ data: createLegacyDatasets() });
-
-    render(<DatasetList />);
-
-    expect(screen.getByText('compat')).toBeInTheDocument();
-    expect(screen.getByText('DuckDB snapshot + legacy compat')).toBeInTheDocument();
-    expect(screen.getByText('Legacy dataset.db compatibility')).toBeInTheDocument();
-    expect(screen.getByText('dataset.duckdb + parquet/ + manifest.v2.json + legacy dataset.db')).toBeInTheDocument();
-    expect(screen.getByText('sqlite-only')).toBeInTheDocument();
-    expect(screen.getByText('Legacy SQLite snapshot')).toBeInTheDocument();
-    expect(screen.getByText('legacy dataset.db snapshot')).toBeInTheDocument();
-  });
 });

@@ -77,9 +77,7 @@ describe('DatasetInfoDialog', () => {
         backend: 'duckdb-parquet',
         primaryPath: '/tmp/quickTesting/dataset.duckdb',
         duckdbPath: '/tmp/quickTesting/dataset.duckdb',
-        compatibilityDbPath: '/tmp/quickTesting/dataset.db',
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
-        hasCompatibilityArtifact: true,
       },
       snapshot: {
         preset: 'quickTesting',
@@ -118,11 +116,8 @@ describe('DatasetInfoDialog', () => {
     render(<DatasetInfoDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting.db" />);
 
     expect(screen.getByText('quickTesting')).toBeInTheDocument();
-    expect(screen.getAllByText('DuckDB snapshot + legacy compat').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('/tmp/quickTesting/dataset.duckdb').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('/tmp/quickTesting/dataset.db')).toBeInTheDocument();
-    expect(screen.getByText('legacy dataset.db compatibility')).toBeInTheDocument();
-    expect(screen.getByText('Legacy SQLite compat')).toBeInTheDocument();
     expect(screen.getByText('Quotes')).toBeInTheDocument();
     expect(screen.getByText('90 / 100')).toBeInTheDocument();
     expect(screen.getAllByText('Statements').length).toBeGreaterThanOrEqual(1);
@@ -142,9 +137,7 @@ describe('DatasetInfoDialog', () => {
         backend: 'duckdb-parquet',
         primaryPath: '/tmp/quickTesting/dataset.duckdb',
         duckdbPath: '/tmp/quickTesting/dataset.duckdb',
-        compatibilityDbPath: null,
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
-        hasCompatibilityArtifact: false,
       },
       snapshot: {
         preset: null,
@@ -194,15 +187,13 @@ describe('DatasetInfoDialog', () => {
     expect(screen.getByText('FK integrity')).toBeInTheDocument();
   });
 
-  it('renders historical sqlite-only snapshots explicitly as legacy storage', () => {
+  it('renders unsupported legacy dataset diagnostics from the hook', () => {
     mockState.data = {
       storage: {
-        backend: 'sqlite-compatibility',
+        backend: 'duckdb-parquet',
         primaryPath: '/tmp/sqlite-only/dataset.db',
         duckdbPath: null,
-        compatibilityDbPath: '/tmp/sqlite-only/dataset.db',
         manifestPath: null,
-        hasCompatibilityArtifact: false,
       },
       snapshot: {
         preset: null,
@@ -221,8 +212,8 @@ describe('DatasetInfoDialog', () => {
         statementsFieldCoverage: null,
       },
       validation: {
-        isValid: true,
-        errors: [],
+        isValid: false,
+        errors: ['Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.'],
         warnings: [],
         details: null,
       },
@@ -230,8 +221,10 @@ describe('DatasetInfoDialog', () => {
 
     render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="sqlite-only.db" />);
 
-    expect(screen.getAllByText('Legacy SQLite snapshot').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Legacy SQLite compat')).toBeInTheDocument();
-    expect(screen.getAllByText('/tmp/sqlite-only/dataset.db').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('/tmp/sqlite-only/dataset.db')).toBeInTheDocument();
+    expect(
+      screen.getByText('Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.')
+    ).toBeInTheDocument();
   });
 });
