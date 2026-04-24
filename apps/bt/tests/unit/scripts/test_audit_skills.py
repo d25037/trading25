@@ -203,3 +203,54 @@ def test_repo_root_scripts_path_is_allowed_from_skill(tmp_path: Path) -> None:
     _write(tmp_path / "apps/bt/src/domains/.gitkeep", "")
 
     assert module.validate_skill_file(skill_file, tmp_path) == []
+
+
+def test_legacy_claude_paths_are_rejected_by_strict_audit(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    _write(tmp_path / "CLAUDE.md", "legacy")
+    _write(tmp_path / "apps/ts/.claude/settings.json", "{}")
+
+    assert module.find_legacy_paths(tmp_path) == ["CLAUDE.md", "apps/ts/.claude"]
+    assert "CLAUDE.md" not in module.LOCAL_FILE_NAMES
+
+
+def test_claude_references_are_rejected_in_skill_content(tmp_path: Path) -> None:
+    module = _load_audit_module()
+    skill_file = _write(
+        tmp_path / ".codex/skills/bt-api-architecture/SKILL.md",
+        "\n".join(
+            [
+                "---",
+                "name: bt-api-architecture",
+                "description: Canonical skill.",
+                "---",
+                "",
+                "# bt-api-architecture",
+                "",
+                "## When to use",
+                "",
+                "- backend api work",
+                "",
+                "## Source of Truth",
+                "",
+                "- Read `CLAUDE.md` first.",
+                "",
+                "## Workflow",
+                "",
+                "1. inspect route",
+                "",
+                "## Guardrails",
+                "",
+                "- keep FastAPI as backend",
+                "",
+                "## Verification",
+                "",
+                "- `python3 scripts/skills/refresh_skill_references.py --check`",
+                "",
+            ]
+        ),
+    )
+
+    errors = module.validate_skill_file(skill_file, tmp_path)
+
+    assert any("CLAUDE" in error for error in errors)

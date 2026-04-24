@@ -186,7 +186,7 @@ src/domains/strategy/signals/
 
 ## 📚 参考ドキュメント
 
-- **[CLAUDE.md](../CLAUDE.md)**: プロジェクト統合ドキュメント
+- **[AGENTS.md](../AGENTS.md)**: プロジェクト統合ドキュメント
 - **[migration-roadmap.md](refactoring/migration-roadmap.md)**: アーキテクチャ移行完了レポート
 - **[VectorBTドキュメント](vectorbt/)**: VectorBT使用方法・最適化技法
 - **設定ファイル例**: `config/strategies/` 内の各戦略YAML

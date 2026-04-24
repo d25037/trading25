@@ -216,9 +216,10 @@ Open / active task tracking の SoT は GitHub Issues（`https://github.com/d250
 ## Skills ガバナンス
 
 - プロジェクト正本のスキルは `/.codex/skills` に配置する
-- `apps/ts/.claude` と `apps/bt/.claude` は廃止し、モノレポ正本の `/.codex/skills` のみを参照する
+- repo 内の agent-facing instruction は `AGENTS.md`、プロジェクトスキルは `/.codex/skills` を唯一の SoT とする
+- `CLAUDE.md` / `.claude/` / `.agents/` は非対応。互換 symlink や mirror directory を追加しない
 - 参照生成: `scripts/skills/refresh_skill_references.py`
-- 監査: `scripts/skills/audit_skills.py --strict-legacy`（legacy ディレクトリ再混入の検知）
+- 監査: `scripts/skills/audit_skills.py --strict-legacy`（legacy Claude/agents path 再混入の検知）
 
 ## CI
 

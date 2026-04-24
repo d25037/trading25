@@ -14,15 +14,27 @@ BANNED_PATTERNS = [
     re.compile(r"localhost:3001"),
     re.compile(r"\b3001\b"),
     re.compile(r"\bHono\b"),
+    re.compile(r"\bCLAUDE\.md\b"),
+    re.compile(r"\.claude(?:/|$)"),
     re.compile(r"apps/ts/packages/api(?:/|$)"),
     re.compile(r"apps/bt/src/server/"),
     re.compile(r"apps/bt/src/lib/"),
     re.compile(r"Compatibility alias"),
 ]
 
-LEGACY_DIRS = (
+LEGACY_PATHS = (
+    ".claude",
+    ".agents",
+    "CLAUDE.md",
     "apps/ts/.claude",
+    "apps/ts/.agents",
+    "apps/ts/CLAUDE.md",
     "apps/bt/.claude",
+    "apps/bt/.agents",
+    "apps/bt/CLAUDE.md",
+    "apps/ts/packages/web/.claude",
+    "apps/ts/packages/web/.agents",
+    "apps/ts/packages/web/CLAUDE.md",
 )
 
 WORKFLOW_SKILLS = {
@@ -78,7 +90,7 @@ SKILL_LOCAL_PREFIXES = (
     "scripts/",
     "assets/",
 )
-LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "CLAUDE.md", "SKILL.md"}
+LOCAL_FILE_NAMES = {"AGENTS.md", "README.md", "SKILL.md"}
 CODE_SPAN_PATTERN = re.compile(r"`([^`\n]+)`")
 
 
@@ -193,6 +205,14 @@ def validate_skill_file(skill_file: Path, repo_root: Path) -> list[str]:
     return errors
 
 
+def find_legacy_paths(repo_root: Path) -> list[str]:
+    return sorted(
+        legacy_path
+        for legacy_path in LEGACY_PATHS
+        if (repo_root / legacy_path).exists()
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--strict-legacy", action="store_true", help="Fail if legacy skill directories exist")
@@ -219,9 +239,8 @@ def main() -> int:
             errors.append(refresh.stderr.strip())
 
     if args.strict_legacy:
-        for legacy_dir in LEGACY_DIRS:
-            if (repo_root / legacy_dir).exists():
-                errors.append(f"Legacy skill directory must not exist: {legacy_dir}")
+        for legacy_path in find_legacy_paths(repo_root):
+            errors.append(f"Legacy Claude/agents path must not exist: {legacy_path}")
 
     if errors:
         print("Skill audit failed:")

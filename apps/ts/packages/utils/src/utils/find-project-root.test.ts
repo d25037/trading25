@@ -61,8 +61,8 @@ describe('findProjectRoot', () => {
     expect(result).toBe(testDir);
   });
 
-  test('finds root via CLAUDE.md', () => {
-    writeFileSync(join(testDir, 'CLAUDE.md'), '# Project');
+  test('finds root via AGENTS.md', () => {
+    writeFileSync(join(testDir, 'AGENTS.md'), '# Project');
     const result = findProjectRoot(testDir);
     expect(result).toBe(testDir);
   });

@@ -51,11 +51,7 @@ htmlcov/
 **/.trading25.key
 
 # === AI / Editor configs ===
-**/.claude/settings.json
 .mcp.json
-.agent/
-apps/**/.claude/
-apps/**/.agents/
 **/.codex/
 !/.codex/
 !/.codex/**

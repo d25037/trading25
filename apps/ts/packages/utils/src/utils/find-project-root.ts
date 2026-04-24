@@ -60,8 +60,8 @@ function checkForProjectIndicators(dir: string): boolean {
 
   // Fallback indicators (less reliable in CI/Docker environments)
   const envPath = path.join(dir, '.env');
-  const claudeMdPath = path.join(dir, 'CLAUDE.md');
-  return fs.existsSync(envPath) || fs.existsSync(claudeMdPath);
+  const agentsMdPath = path.join(dir, 'AGENTS.md');
+  return fs.existsSync(envPath) || fs.existsSync(agentsMdPath);
 }
 
 /**
@@ -81,7 +81,7 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
   }
 
   throw new Error(
-    `Could not find project root starting from ${startDir}. Looked for .git, package.json with workspaces, pnpm-workspace.yaml, .env, or CLAUDE.md`
+    `Could not find project root starting from ${startDir}. Looked for .git, package.json with workspaces, pnpm-workspace.yaml, .env, or AGENTS.md`
   );
 }
 

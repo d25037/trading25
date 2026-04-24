@@ -5,7 +5,6 @@
 ## Primary References
 
 - [AGENTS.md](../AGENTS.md): 運用ルール・責務・開発ガイド
-- [CLAUDE.md](../CLAUDE.md): プロジェクト補足ドキュメント（AGENTS.md へのシンボリックリンク）
 - [experiments/](./experiments/README.md): runner / bundle / notebook / baseline 実験の索引
 - [vectorbt/](./vectorbt/README.md): VectorBT 関連リファレンス
 
