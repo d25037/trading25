@@ -47,6 +47,7 @@ const mockChartStore = {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRecentReturnChart: false,
     showCMF: false,
     showChaikinOscillator: false,
     showOBVFlowScore: false,
@@ -87,6 +88,10 @@ const mockChartStore = {
     },
     tradingValueMA: {
       period: 15,
+    },
+    recentReturn: {
+      shortPeriod: 20,
+      longPeriod: 60,
     },
     accumulationFlow: {
       cmfPeriod: 20,
@@ -178,6 +183,11 @@ describe('ChartControls', () => {
       ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     };
     mockChartStore.settings.signalOverlay.signals = [];
+    mockChartStore.settings.showRecentReturnChart = false;
+    mockChartStore.settings.recentReturn = {
+      shortPeriod: 20,
+      longPeriod: 60,
+    };
     mockChartStore.settings.showCMF = false;
     mockChartStore.settings.showChaikinOscillator = false;
     mockChartStore.settings.showOBVFlowScore = false;
@@ -525,9 +535,22 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
+  it('toggles recent return sub-chart', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('switch', { name: /recent return/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRecentReturnChart: true });
+  });
+
   it('updates sub-chart indicator numeric settings', async () => {
     const user = userEvent.setup();
     mockChartStore.settings.showRiskAdjustedReturnChart = true;
+    mockChartStore.settings.showRecentReturnChart = true;
     mockChartStore.settings.showVolumeComparison = true;
     mockChartStore.settings.showTradingValueMA = true;
     mockChartStore.settings.showCMF = true;
@@ -543,6 +566,8 @@ describe('ChartControls', () => {
 
     fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '80' } });
     fireEvent.change(screen.getByLabelText('Threshold'), { target: { value: '1.5' } });
+    fireEvent.change(screen.getByLabelText('Short Lookback'), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText('Long Lookback'), { target: { value: '55' } });
     fireEvent.change(screen.getByLabelText('Short Period'), { target: { value: '25' } });
     fireEvent.change(screen.getByLabelText('Long Period'), { target: { value: '120' } });
     fireEvent.change(screen.getByLabelText('Lower Mult.'), { target: { value: '1.2' } });
@@ -558,6 +583,12 @@ describe('ChartControls', () => {
     });
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
       riskAdjustedReturn: expect.objectContaining({ threshold: 1.5 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      recentReturn: expect.objectContaining({ shortPeriod: 15 }),
+    });
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      recentReturn: expect.objectContaining({ longPeriod: 55 }),
     });
     expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ shortPeriod: 25 });
     expect(mockChartStore.updateVolumeComparison).toHaveBeenCalledWith({ longPeriod: 120 });

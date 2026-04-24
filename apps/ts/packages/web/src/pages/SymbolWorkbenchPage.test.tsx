@@ -83,6 +83,10 @@ const mockSettings = {
   tradingValueMA: {
     period: 15,
   },
+  recentReturn: {
+    shortPeriod: 20,
+    longPeriod: 60,
+  },
   accumulationFlow: {
     cmfPeriod: 20,
     chaikinFastPeriod: 3,
@@ -100,6 +104,7 @@ const mockSettings = {
   showPPOChart: true,
   showVolumeComparison: true,
   showTradingValueMA: true,
+  showRecentReturnChart: true,
   showCMF: true,
   showChaikinOscillator: true,
   showOBVFlowScore: true,
@@ -145,6 +150,10 @@ vi.mock('@/components/Chart/StockChart', () => ({
 
 vi.mock('@/components/Chart/PPOChart', () => ({
   PPOChart: () => <div>PPO Chart</div>,
+}));
+
+vi.mock('@/components/Chart/RecentReturnChart', () => ({
+  RecentReturnChart: () => <div>Recent Return Chart</div>,
 }));
 
 vi.mock('@/components/Chart/RiskAdjustedReturnChart', () => ({
@@ -283,6 +292,7 @@ describe('SymbolWorkbenchPage', () => {
     mockSettings.showPPOChart = true;
     mockSettings.showVolumeComparison = true;
     mockSettings.showTradingValueMA = true;
+    mockSettings.showRecentReturnChart = true;
     mockSettings.showRiskAdjustedReturnChart = true;
     mockSettings.showFundamentalsPanel = true;
     mockSettings.showFundamentalsHistoryPanel = true;
@@ -490,6 +500,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
     expect(screen.getByText('Stock Chart')).toBeInTheDocument();
     expect(screen.getByText('PPO Chart')).toBeInTheDocument();
+    expect(screen.getByText('Recent Return Chart')).toBeInTheDocument();
     expect(screen.getByText('Risk Adjusted Return Chart')).toBeInTheDocument();
     expect(screen.getByText('Volume Comparison')).toBeInTheDocument();
     expect(screen.getByText('Trading Value MA')).toBeInTheDocument();

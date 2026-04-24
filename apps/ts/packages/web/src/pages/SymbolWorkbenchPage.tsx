@@ -10,6 +10,7 @@ import { FundamentalsPanel } from '@/components/Chart/FundamentalsPanel';
 import { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { MarginPressureChart } from '@/components/Chart/MarginPressureChart';
 import { PPOChart } from '@/components/Chart/PPOChart';
+import { RecentReturnChart } from '@/components/Chart/RecentReturnChart';
 import { RiskAdjustedReturnChart } from '@/components/Chart/RiskAdjustedReturnChart';
 import { SingleValueIndicatorChart } from '@/components/Chart/SingleValueIndicatorChart';
 import { StockChart } from '@/components/Chart/StockChart';
@@ -33,6 +34,7 @@ import type {
   IndicatorValue,
   MarginPressureIndicatorsResponse,
   PPOIndicatorData,
+  RecentReturnData,
   RiskAdjustedReturnData,
   TradingValueMAData,
   VolumeComparisonData,
@@ -66,6 +68,10 @@ interface ChartRefreshFeedback {
 interface ChartHeaderMarketCaps {
   freeFloat: number | null;
   issuedShares: number | null;
+}
+
+function formatDisplayTimeframeLabel(timeframe: ChartSettings['displayTimeframe']): string {
+  return timeframe.charAt(0).toUpperCase() + timeframe.slice(1);
 }
 
 function resolveLatestMarketCaps(
@@ -741,6 +747,157 @@ function ChartHeader({
   );
 }
 
+type TimeframeChartData = ReturnType<typeof useMultiTimeframeChart>['chartData'][ChartSettings['displayTimeframe']];
+
+interface WorkbenchSubChartGroupProps {
+  settings: ChartSettings;
+  currentChartData: TimeframeChartData;
+  timeframeLabel: string;
+}
+
+function ReturnSubCharts({ settings, currentChartData, timeframeLabel }: WorkbenchSubChartGroupProps) {
+  return (
+    <>
+      {settings.showPPOChart && (
+        <Surface className="h-96 shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <PPOChart
+              data={(currentChartData?.indicators.ppo as PPOIndicatorData[]) || []}
+              title={`${timeframeLabel} PPO`}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showRiskAdjustedReturnChart && (
+        <Surface className="h-[240px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <RiskAdjustedReturnChart
+              data={(currentChartData?.indicators.riskAdjustedReturn as RiskAdjustedReturnData[]) || []}
+              lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
+              ratioType={settings.riskAdjustedReturn.ratioType}
+              threshold={settings.riskAdjustedReturn.threshold}
+              condition={settings.riskAdjustedReturn.condition}
+              title={`${timeframeLabel} Risk Adjusted Return`}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showRecentReturnChart && (
+        <Surface className="h-[240px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <RecentReturnChart
+              shortData={
+                (currentChartData?.indicators[
+                  `recentReturn${settings.recentReturn.shortPeriod}`
+                ] as RecentReturnData[]) || []
+              }
+              longData={
+                (currentChartData?.indicators[
+                  `recentReturn${settings.recentReturn.longPeriod}`
+                ] as RecentReturnData[]) || []
+              }
+              shortPeriod={settings.recentReturn.shortPeriod}
+              longPeriod={settings.recentReturn.longPeriod}
+              title={`${timeframeLabel} Recent Return`}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+    </>
+  );
+}
+
+function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: WorkbenchSubChartGroupProps) {
+  return (
+    <>
+      {settings.showVolumeComparison && (
+        <Surface className="h-[240px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <VolumeComparisonChart
+              data={(currentChartData?.volumeComparison as VolumeComparisonData[]) || []}
+              shortPeriod={settings.volumeComparison.shortPeriod}
+              longPeriod={settings.volumeComparison.longPeriod}
+              lowerMultiplier={settings.volumeComparison.lowerMultiplier}
+              higherMultiplier={settings.volumeComparison.higherMultiplier}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showCMF && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(currentChartData?.indicators.cmf as IndicatorValue[]) || []}
+              title={`${timeframeLabel} CMF`}
+              periodLabel={`${settings.accumulationFlow.cmfPeriod}`}
+              accentColor="#0EA5E9"
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showChaikinOscillator && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(currentChartData?.indicators.chaikinOscillator as IndicatorValue[]) || []}
+              title={`${timeframeLabel} Chaikin Oscillator`}
+              periodLabel={`${settings.accumulationFlow.chaikinFastPeriod}/${settings.accumulationFlow.chaikinSlowPeriod}`}
+              accentColor="#14B8A6"
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showOBVFlowScore && (
+        <Surface className="h-[220px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <SingleValueIndicatorChart
+              data={(currentChartData?.indicators.obvFlowScore as IndicatorValue[]) || []}
+              title={`${timeframeLabel} OBV Flow Score`}
+              periodLabel={`${settings.accumulationFlow.obvLookbackPeriod}`}
+              accentColor="#A855F7"
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+
+      {settings.showTradingValueMA && (
+        <Surface className="h-[200px] shrink-0 overflow-hidden">
+          <ErrorBoundary>
+            <TradingValueMAChart
+              data={(currentChartData?.tradingValueMA as TradingValueMAData[]) || []}
+              period={settings.tradingValueMA.period}
+            />
+          </ErrorBoundary>
+        </Surface>
+      )}
+    </>
+  );
+}
+
+function WorkbenchSubCharts({
+  settings,
+  chartData,
+}: {
+  settings: ChartSettings;
+  chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
+}) {
+  const timeframe = settings.displayTimeframe;
+  const timeframeLabel = formatDisplayTimeframeLabel(timeframe);
+  const currentChartData = chartData[timeframe];
+
+  return (
+    <>
+      <ReturnSubCharts settings={settings} currentChartData={currentChartData} timeframeLabel={timeframeLabel} />
+      <VolumeFlowSubCharts settings={settings} currentChartData={currentChartData} timeframeLabel={timeframeLabel} />
+    </>
+  );
+}
+
 function SymbolWorkbenchPanelsContent({
   settings,
   selectedSymbol,
@@ -797,97 +954,7 @@ function SymbolWorkbenchPanelsContent({
         </div>
       </Surface>
 
-      {settings.showPPOChart && (
-        <Surface className="h-96 shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <PPOChart
-              data={(chartData[settings.displayTimeframe]?.indicators.ppo as PPOIndicatorData[]) || []}
-              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} PPO`}
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showRiskAdjustedReturnChart && (
-        <Surface className="h-[240px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <RiskAdjustedReturnChart
-              data={
-                (chartData[settings.displayTimeframe]?.indicators.riskAdjustedReturn as RiskAdjustedReturnData[]) || []
-              }
-              lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
-              ratioType={settings.riskAdjustedReturn.ratioType}
-              threshold={settings.riskAdjustedReturn.threshold}
-              condition={settings.riskAdjustedReturn.condition}
-              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Risk Adjusted Return`}
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showVolumeComparison && (
-        <Surface className="h-[240px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <VolumeComparisonChart
-              data={(chartData[settings.displayTimeframe]?.volumeComparison as VolumeComparisonData[]) || []}
-              shortPeriod={settings.volumeComparison.shortPeriod}
-              longPeriod={settings.volumeComparison.longPeriod}
-              lowerMultiplier={settings.volumeComparison.lowerMultiplier}
-              higherMultiplier={settings.volumeComparison.higherMultiplier}
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showCMF && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <SingleValueIndicatorChart
-              data={(chartData[settings.displayTimeframe]?.indicators.cmf as IndicatorValue[]) || []}
-              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} CMF`}
-              periodLabel={`${settings.accumulationFlow.cmfPeriod}`}
-              accentColor="#0EA5E9"
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showChaikinOscillator && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <SingleValueIndicatorChart
-              data={(chartData[settings.displayTimeframe]?.indicators.chaikinOscillator as IndicatorValue[]) || []}
-              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Chaikin Oscillator`}
-              periodLabel={`${settings.accumulationFlow.chaikinFastPeriod}/${settings.accumulationFlow.chaikinSlowPeriod}`}
-              accentColor="#14B8A6"
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showOBVFlowScore && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <SingleValueIndicatorChart
-              data={(chartData[settings.displayTimeframe]?.indicators.obvFlowScore as IndicatorValue[]) || []}
-              title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} OBV Flow Score`}
-              periodLabel={`${settings.accumulationFlow.obvLookbackPeriod}`}
-              accentColor="#A855F7"
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
-
-      {settings.showTradingValueMA && (
-        <Surface className="h-[200px] shrink-0 overflow-hidden">
-          <ErrorBoundary>
-            <TradingValueMAChart
-              data={(chartData[settings.displayTimeframe]?.tradingValueMA as TradingValueMAData[]) || []}
-              period={settings.tradingValueMA.period}
-            />
-          </ErrorBoundary>
-        </Surface>
-      )}
+      <WorkbenchSubCharts settings={settings} chartData={chartData} />
 
       {settings.fundamentalsPanelOrder
         .filter((panelId) => panelVisibilityById[panelId])

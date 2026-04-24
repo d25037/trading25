@@ -167,6 +167,12 @@ class RiskAdjustedReturnParams(BaseModel):
     )
 
 
+class RecentReturnParams(BaseModel):
+    """直近リターンパラメータ"""
+
+    lookback_period: int = Field(default=20, ge=1, le=500, description="リターン計算期間")
+
+
 # ===== Indicator Spec (Discriminated Union) =====
 
 INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
@@ -187,6 +193,7 @@ INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
     "chaikin_oscillator": ChaikinOscillatorParams,
     "obv": OBVParams,
     "obv_flow_score": VolumeFlowScoreParams,
+    "recent_return": RecentReturnParams,
     "risk_adjusted_return": RiskAdjustedReturnParams,
 }
 
@@ -208,6 +215,7 @@ INDICATOR_TYPES = Literal[
     "chaikin_oscillator",
     "obv",
     "obv_flow_score",
+    "recent_return",
     "risk_adjusted_return",
 ]
 

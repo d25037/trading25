@@ -5599,7 +5599,7 @@ export interface components {
              * @description インジケータータイプ
              * @enum {string}
              */
-            type: "sma" | "ema" | "vwema" | "rsi" | "macd" | "ppo" | "bollinger" | "atr" | "atr_support" | "nbar_support" | "volume_comparison" | "trading_value_ma" | "cmf" | "adl" | "chaikin_oscillator" | "obv" | "obv_flow_score" | "risk_adjusted_return";
+            type: "sma" | "ema" | "vwema" | "rsi" | "macd" | "ppo" | "bollinger" | "atr" | "atr_support" | "nbar_support" | "volume_comparison" | "trading_value_ma" | "cmf" | "adl" | "chaikin_oscillator" | "obv" | "obv_flow_score" | "recent_return" | "risk_adjusted_return";
         };
         /**
          * IndicesListResponse

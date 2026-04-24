@@ -11,6 +11,7 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { MarginPressureChart } from './MarginPressureChart';
 import { PPOChart } from './PPOChart';
+import { RecentReturnChart } from './RecentReturnChart';
 import { RiskAdjustedReturnChart } from './RiskAdjustedReturnChart';
 import { TradingValueMAChart } from './TradingValueMAChart';
 import { VolumeComparisonChart } from './VolumeComparisonChart';
@@ -24,6 +25,7 @@ const mockChartStore = {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRecentReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
     showCostStructurePanel: true,
@@ -60,6 +62,10 @@ const mockChartStore = {
     },
     tradingValueMA: {
       period: 15,
+    },
+    recentReturn: {
+      shortPeriod: 20,
+      longPeriod: 60,
     },
     accumulationFlow: {
       cmfPeriod: 20,
@@ -324,6 +330,21 @@ describe('page scroll chart interaction options', () => {
 
     expectLatestChartToUsePageScrollOptions();
     expect(screen.getByText('RAR')).toBeInTheDocument();
+  });
+
+  it('applies page-scroll interaction options to RecentReturnChart', () => {
+    render(
+      <RecentReturnChart
+        title="Recent"
+        shortData={[{ time: '2024-01-01', value: 2.5 }]}
+        longData={[{ time: '2024-01-01', value: 6.5 }]}
+        shortPeriod={20}
+        longPeriod={60}
+      />
+    );
+
+    expectLatestChartToUsePageScrollOptions();
+    expect(screen.getByText('Recent')).toBeInTheDocument();
   });
 
   it('renders RiskAdjustedReturnChart without a latest value pill when data is empty', () => {

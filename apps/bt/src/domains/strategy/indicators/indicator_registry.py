@@ -19,6 +19,7 @@ from src.domains.strategy.indicators import (
     compute_nbar_support,
     compute_on_balance_volume,
     compute_on_balance_volume_score,
+    compute_recent_return,
     compute_risk_adjusted_return,
     compute_rsi,
     compute_trading_value_ma,
@@ -329,6 +330,18 @@ def _compute_obv_flow_score(
     return key, _series_to_records(score, nan_handling)
 
 
+def _compute_recent_return(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    lookback_period = params.get("lookback_period", 20)
+    recent_return = compute_recent_return(
+        close=ohlcv["Close"],
+        lookback_period=lookback_period,
+    )
+    key = _make_key("recent_return", lookback=lookback_period)
+    return key, _series_to_records(recent_return, nan_handling)
+
+
 def _compute_risk_adjusted_return(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -365,5 +378,6 @@ INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "chaikin_oscillator": _compute_chaikin_oscillator,
     "obv": _compute_obv,
     "obv_flow_score": _compute_obv_flow_score,
+    "recent_return": _compute_recent_return,
     "risk_adjusted_return": _compute_risk_adjusted_return,
 }

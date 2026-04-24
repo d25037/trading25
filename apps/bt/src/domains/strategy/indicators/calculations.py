@@ -291,6 +291,19 @@ def compute_on_balance_volume_score(
     return compute_volume_flow_score(obv, volume, lookback_period)
 
 
+def compute_recent_return(
+    close: pd.Series[float],
+    lookback_period: int = 20,
+) -> pd.Series[float]:
+    """指定 lookback の終値リターンを percent 単位で計算する。"""
+    if lookback_period < 1:
+        raise ValueError("lookback_period must be >= 1")
+
+    close_clean = close.replace([np.inf, -np.inf], np.nan)
+    base_close = close_clean.shift(lookback_period).replace(0, np.nan)
+    return (close_clean / base_close - 1.0) * 100.0
+
+
 def compute_nbar_support(
     low: pd.Series[float],
     period: int,

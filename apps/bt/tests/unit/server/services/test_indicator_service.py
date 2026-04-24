@@ -151,14 +151,14 @@ class TestIndicatorRegistry:
     """インジケーターレジストリテスト"""
 
     def test_registry_has_expected_entries(self):
-        assert len(INDICATOR_REGISTRY) == 18
+        assert len(INDICATOR_REGISTRY) == 19
 
     def test_all_types_registered(self):
         expected = {
             "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
             "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
-            "obv_flow_score", "risk_adjusted_return",
+            "obv_flow_score", "recent_return", "risk_adjusted_return",
         }
         assert set(INDICATOR_REGISTRY.keys()) == expected
 
@@ -374,6 +374,20 @@ class TestComputeRiskAdjustedReturn:
         )
         assert key == "risk_adjusted_return_60_sortino"
         assert len(records) == 200
+        assert "value" in records[-1]
+
+
+class TestComputeRecentReturn:
+    def test_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["recent_return"](
+            ohlcv,
+            {"lookback_period": 20},
+            "include",
+        )
+        assert key == "recent_return_20"
+        assert len(records) == 200
+        assert records[0]["value"] is None
         assert "value" in records[-1]
 
 

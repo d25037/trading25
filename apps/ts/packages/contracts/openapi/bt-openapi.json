@@ -5539,6 +5539,7 @@
               "chaikin_oscillator",
               "obv",
               "obv_flow_score",
+              "recent_return",
               "risk_adjusted_return"
             ],
             "title": "Type",

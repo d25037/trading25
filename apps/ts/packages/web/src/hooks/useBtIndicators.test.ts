@@ -41,6 +41,7 @@ describe('buildIndicatorSpecs', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    recentReturn: { shortPeriod: 20, longPeriod: 60 },
     accumulationFlow: { cmfPeriod: 20, chaikinFastPeriod: 3, chaikinSlowPeriod: 10, obvLookbackPeriod: 20 },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
@@ -53,6 +54,7 @@ describe('buildIndicatorSpecs', () => {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRecentReturnChart: false,
     showCMF: false,
     showChaikinOscillator: false,
     showOBVFlowScore: false,
@@ -175,6 +177,13 @@ describe('buildIndicatorSpecs', () => {
     const settings = { ...baseSettings, showTradingValueMA: true, tradingValueMA: { period: 30 } };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({ type: 'trading_value_ma', params: { period: 30 } });
+  });
+
+  it('should include recent_return for short and long periods when enabled', () => {
+    const settings = { ...baseSettings, showRecentReturnChart: true, recentReturn: { shortPeriod: 20, longPeriod: 60 } };
+    const specs = buildIndicatorSpecs(settings);
+    expect(specs).toContainEqual({ type: 'recent_return', params: { lookback_period: 20 } });
+    expect(specs).toContainEqual({ type: 'recent_return', params: { lookback_period: 60 } });
   });
 
   it('should include accumulation-flow sub-chart indicators when enabled', () => {
@@ -361,6 +370,21 @@ describe('mapBtResponseToChartData', () => {
     expect(result.indicators.riskAdjustedReturn).toEqual([{ time: '2024-01-01', value: 1.25 }]);
   });
 
+  it('should transform recent_return records into period-specific indicators', () => {
+    const response = {
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        recent_return_20: [{ date: '2024-01-01', value: 4.25 }],
+        recent_return_60: [{ date: '2024-01-01', value: 12.5 }],
+      },
+    };
+    const result = mapBtResponseToChartData(response);
+    expect(result.indicators.recentReturn20).toEqual([{ time: '2024-01-01', value: 4.25 }]);
+    expect(result.indicators.recentReturn60).toEqual([{ time: '2024-01-01', value: 12.5 }]);
+  });
+
   it('should transform accumulation-flow records into indicators', () => {
     const response = {
       stock_code: '7203',
@@ -406,6 +430,7 @@ describe('useBtIndicators', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    recentReturn: { shortPeriod: 20, longPeriod: 60 },
     accumulationFlow: { cmfPeriod: 20, chaikinFastPeriod: 3, chaikinSlowPeriod: 10, obvLookbackPeriod: 20 },
     riskAdjustedReturn: {
       lookbackPeriod: 60,
@@ -418,6 +443,7 @@ describe('useBtIndicators', () => {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRecentReturnChart: false,
     showCMF: false,
     showChaikinOscillator: false,
     showOBVFlowScore: false,

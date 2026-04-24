@@ -69,6 +69,10 @@ export interface ChartSettings {
   tradingValueMA: {
     period: number;
   };
+  recentReturn: {
+    shortPeriod: number;
+    longPeriod: number;
+  };
   accumulationFlow: {
     cmfPeriod: number;
     chaikinFastPeriod: number;
@@ -86,6 +90,7 @@ export interface ChartSettings {
   showPPOChart: boolean;
   showVolumeComparison: boolean;
   showTradingValueMA: boolean;
+  showRecentReturnChart: boolean;
   showCMF: boolean;
   showChaikinOscillator: boolean;
   showOBVFlowScore: boolean;
@@ -175,6 +180,10 @@ export const defaultSettings: ChartSettings = {
   tradingValueMA: {
     period: 15,
   },
+  recentReturn: {
+    shortPeriod: 20,
+    longPeriod: 60,
+  },
   accumulationFlow: {
     cmfPeriod: 20,
     chaikinFastPeriod: 3,
@@ -192,6 +201,7 @@ export const defaultSettings: ChartSettings = {
   showPPOChart: false,
   showVolumeComparison: false,
   showTradingValueMA: false,
+  showRecentReturnChart: false,
   showCMF: false,
   showChaikinOscillator: false,
   showOBVFlowScore: false,
@@ -325,6 +335,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
   const partialIndicators = toPartialRecord<ChartSettings['indicators']>(partial.indicators);
   const partialVolumeComparison = toPartialRecord<ChartSettings['volumeComparison']>(partial.volumeComparison);
   const partialTradingValueMA = toPartialRecord<ChartSettings['tradingValueMA']>(partial.tradingValueMA);
+  const partialRecentReturn = toPartialRecord<ChartSettings['recentReturn']>(partial.recentReturn);
   const partialAccumulationFlow = toPartialRecord<ChartSettings['accumulationFlow']>(partial.accumulationFlow);
   const partialRiskAdjustedReturn = toPartialRecord<ChartSettings['riskAdjustedReturn']>(partial.riskAdjustedReturn);
   const partialSignalOverlay = toPartialRecord<ChartSettings['signalOverlay']>(partial.signalOverlay);
@@ -404,6 +415,10 @@ function normalizeSettings(settings: unknown): ChartSettings {
     tradingValueMA: {
       period: normalizePositiveInt(partialTradingValueMA.period, defaultSettings.tradingValueMA.period),
     },
+    recentReturn: {
+      shortPeriod: normalizePositiveInt(partialRecentReturn.shortPeriod, defaultSettings.recentReturn.shortPeriod),
+      longPeriod: normalizePositiveInt(partialRecentReturn.longPeriod, defaultSettings.recentReturn.longPeriod),
+    },
     accumulationFlow: {
       cmfPeriod: normalizePositiveInt(partialAccumulationFlow.cmfPeriod, defaultSettings.accumulationFlow.cmfPeriod),
       chaikinFastPeriod: normalizePositiveInt(
@@ -446,6 +461,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
     showPPOChart: normalizeBoolean(partial.showPPOChart, defaultSettings.showPPOChart),
     showVolumeComparison: normalizeBoolean(partial.showVolumeComparison, defaultSettings.showVolumeComparison),
     showTradingValueMA: normalizeBoolean(partial.showTradingValueMA, defaultSettings.showTradingValueMA),
+    showRecentReturnChart: normalizeBoolean(partial.showRecentReturnChart, defaultSettings.showRecentReturnChart),
     showCMF: normalizeBoolean(partial.showCMF, defaultSettings.showCMF),
     showChaikinOscillator: normalizeBoolean(partial.showChaikinOscillator, defaultSettings.showChaikinOscillator),
     showOBVFlowScore: normalizeBoolean(partial.showOBVFlowScore, defaultSettings.showOBVFlowScore),

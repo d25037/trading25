@@ -9,6 +9,7 @@ import type {
   IndicatorValue,
   MACDIndicatorData,
   PPOIndicatorData,
+  RecentReturnData,
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
@@ -53,6 +54,13 @@ export const btIndicatorKeys = {
 };
 
 // ===== Spec Builder =====
+
+function buildRecentReturnSpecs(settings: ChartSettings): BtIndicatorSpec[] {
+  if (!settings.showRecentReturnChart) return [];
+
+  const periods = Array.from(new Set([settings.recentReturn.shortPeriod, settings.recentReturn.longPeriod]));
+  return periods.map((period) => ({ type: 'recent_return', params: { lookback_period: period } }));
+}
 
 export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] {
   const specs: BtIndicatorSpec[] = [];
@@ -122,6 +130,7 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
   if (settings.showTradingValueMA) {
     specs.push({ type: 'trading_value_ma', params: { period: settings.tradingValueMA.period } });
   }
+  specs.push(...buildRecentReturnSpecs(settings));
   if (settings.showCMF) {
     specs.push({ type: 'cmf', params: { period: settings.accumulationFlow.cmfPeriod } });
   }
@@ -234,7 +243,7 @@ type IndicatorTransformResult =
 
 const INDICATOR_KEY_TRANSFORMS: Array<{
   prefix: string;
-  transform: (records: BtIndicatorRecord[]) => IndicatorTransformResult;
+  transform: (records: BtIndicatorRecord[], key: string) => IndicatorTransformResult;
 }> = [
   { prefix: 'sma_', transform: (r) => ({ target: 'indicator', name: 'sma', data: transformSingleValueRecords(r) }) },
   { prefix: 'ema_', transform: (r) => ({ target: 'indicator', name: 'ema', data: transformSingleValueRecords(r) }) },
@@ -261,6 +270,14 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
     prefix: 'trading_value_ma_',
     transform: (r) => ({ target: 'tradingValueMA', data: transformTradingValueMARecords(r) }),
   },
+  {
+    prefix: 'recent_return_',
+    transform: (r, key) => ({
+      target: 'indicator',
+      name: resolveRecentReturnIndicatorName(key),
+      data: transformSingleValueRecords(r) as RecentReturnData[],
+    }),
+  },
   { prefix: 'cmf_', transform: (r) => ({ target: 'indicator', name: 'cmf', data: transformSingleValueRecords(r) }) },
   {
     prefix: 'chaikin_oscillator_',
@@ -276,9 +293,14 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
   },
 ];
 
+function resolveRecentReturnIndicatorName(key: string): string {
+  const match = /^recent_return_(\d+)$/.exec(key);
+  return match ? `recentReturn${match[1]}` : 'recentReturn';
+}
+
 function transformIndicatorKey(key: string, records: BtIndicatorRecord[]): IndicatorTransformResult | null {
   const entry = INDICATOR_KEY_TRANSFORMS.find((e) => key.startsWith(e.prefix));
-  return entry ? entry.transform(records) : null;
+  return entry ? entry.transform(records, key) : null;
 }
 
 export function mapBtResponseToChartData(response: BtIndicatorComputeResponse): Omit<ChartData, 'candlestickData'> {

@@ -352,6 +352,18 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
     [settings.riskAdjustedReturn, updateSettings]
   );
 
+  const updateRecentReturn = useCallback(
+    (newSettings: Partial<ChartSettings['recentReturn']>) => {
+      updateSettings({
+        recentReturn: {
+          ...settings.recentReturn,
+          ...newSettings,
+        },
+      });
+    },
+    [settings.recentReturn, updateSettings]
+  );
+
   const updateAccumulationFlow = useCallback(
     (newSettings: Partial<ChartSettings['accumulationFlow']>) => {
       updateSettings({
@@ -745,6 +757,27 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="Recent Return"
+              enabled={settings.showRecentReturnChart}
+              onToggle={(checked) => updateSettings({ showRecentReturnChart: checked })}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberInput
+                  label="Short Lookback"
+                  value={settings.recentReturn.shortPeriod}
+                  onChange={(shortPeriod) => updateRecentReturn({ shortPeriod })}
+                  defaultValue={20}
+                />
+                <NumberInput
+                  label="Long Lookback"
+                  value={settings.recentReturn.longPeriod}
+                  onChange={(longPeriod) => updateRecentReturn({ longPeriod })}
+                  defaultValue={60}
+                />
               </div>
             </IndicatorToggle>
 

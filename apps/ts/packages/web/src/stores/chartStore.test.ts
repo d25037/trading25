@@ -407,6 +407,15 @@ describe('chartStore', () => {
     });
   });
 
+  it('defaults recent return chart settings', () => {
+    const settings = useChartStore.getState().settings;
+    expect(settings.showRecentReturnChart).toBe(false);
+    expect(settings.recentReturn).toEqual({
+      shortPeriod: 20,
+      longPeriod: 60,
+    });
+  });
+
   it('defaults accumulation-flow chart settings', () => {
     const settings = useChartStore.getState().settings;
     expect(settings.showCMF).toBe(false);
@@ -479,6 +488,33 @@ describe('chartStore', () => {
     const settings = useChartStore.getState().settings;
     expect(settings.showRiskAdjustedReturnChart).toBe(defaultSettings.showRiskAdjustedReturnChart);
     expect(settings.riskAdjustedReturn).toEqual(defaultSettings.riskAdjustedReturn);
+  });
+
+  it('sanitizes invalid persisted recent return settings during rehydrate', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          settings: {
+            showRecentReturnChart: 'true',
+            recentReturn: {
+              shortPeriod: 'x',
+              longPeriod: 0,
+            },
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const settings = useChartStore.getState().settings;
+    expect(settings.showRecentReturnChart).toBe(defaultSettings.showRecentReturnChart);
+    expect(settings.recentReturn).toEqual({
+      shortPeriod: defaultSettings.recentReturn.shortPeriod,
+      longPeriod: 1,
+    });
   });
 
   it('sanitizes persisted fundamentals panel order during rehydrate', async () => {

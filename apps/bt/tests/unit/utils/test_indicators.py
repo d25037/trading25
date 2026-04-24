@@ -17,6 +17,7 @@ from src.domains.strategy.indicators.calculations import (
     compute_nbar_support,
     compute_on_balance_volume,
     compute_on_balance_volume_score,
+    compute_recent_return,
     compute_risk_adjusted_return,
     compute_rsi,
     compute_trading_value_ma,
@@ -345,3 +346,22 @@ class TestComputeRiskAdjustedReturn:
                 lookback_period=3,
                 ratio_type="omega",  # type: ignore[arg-type]
             )
+
+
+class TestComputeRecentReturn:
+    def setup_method(self):
+        self.close = pd.Series([100.0, 110.0, 121.0, 115.0])
+
+    def test_returns_percent_change_over_lookback(self):
+        result = compute_recent_return(self.close, lookback_period=2)
+
+        assert isinstance(result, pd.Series)
+        assert result.index.equals(self.close.index)
+        assert pd.isna(result.iloc[0])
+        assert pd.isna(result.iloc[1])
+        assert result.iloc[2] == pytest.approx(21.0)
+        assert result.iloc[3] == pytest.approx(4.5454545)
+
+    def test_invalid_lookback_raises(self):
+        with pytest.raises(ValueError, match="lookback_period"):
+            compute_recent_return(self.close, lookback_period=0)

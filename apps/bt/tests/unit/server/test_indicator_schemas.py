@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.indicators import (
     OBVParams,
     OHLCVResampleRequest,
     PPOParams,
+    RecentReturnParams,
     RSIParams,
     RiskAdjustedReturnParams,
     SMAParams,
@@ -150,6 +151,16 @@ class TestParamsModels:
         with pytest.raises(ValidationError):
             RiskAdjustedReturnParams(ratio_type=cast(Any, "invalid"))
 
+    def test_recent_return_params_default(self):
+        p = RecentReturnParams()
+        assert p.lookback_period == 20
+
+    def test_recent_return_params_boundary(self):
+        RecentReturnParams(lookback_period=1)
+        RecentReturnParams(lookback_period=500)
+        with pytest.raises(ValidationError):
+            RecentReturnParams(lookback_period=0)
+
 
 class TestIndicatorSpec:
     """IndicatorSpec バリデーションテスト"""
@@ -179,7 +190,7 @@ class TestIndicatorSpec:
             "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
             "trading_value_ma", "cmf", "adl", "chaikin_oscillator", "obv",
-            "obv_flow_score", "risk_adjusted_return",
+            "obv_flow_score", "recent_return", "risk_adjusted_return",
         ]
         for t in types:
             spec = IndicatorSpec(
