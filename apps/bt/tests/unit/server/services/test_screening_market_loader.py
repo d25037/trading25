@@ -293,9 +293,32 @@ def test_load_daily_by_code_with_date_filters() -> None:
     sql, params = reader.calls[0]
     assert "date >= ?" in sql
     assert "date <= ?" in sql
-    assert params == ("7203", "2026-01-01", "2026-01-31")
+    assert params == ("7203", "72030", "2026-01-01", "2026-01-31")
     assert "7203" in data
     assert len(data["7203"]) == 2
+
+
+def test_load_daily_by_code_queries_alternate_code_forms_and_groups_normalized() -> None:
+    reader = DummyReader(
+        rows=[
+            {
+                "code": "72030",
+                "date": "2026-01-01",
+                "open": 1.0,
+                "high": 1.1,
+                "low": 0.9,
+                "close": 1.0,
+                "volume": 100,
+            },
+        ]
+    )
+
+    data = _load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
+
+    _sql, params = reader.calls[0]
+    assert params == ("7203", "72030")
+    assert list(data.keys()) == ["7203"]
+    assert len(data["7203"]) == 1
 
 
 def test_load_daily_by_code_without_date_filters() -> None:
@@ -308,7 +331,7 @@ def test_load_daily_by_code_without_date_filters() -> None:
     sql, params = reader.calls[0]
     assert "date >= ?" not in sql
     assert "date <= ?" not in sql
-    assert params == ("7203",)
+    assert params == ("7203", "72030")
 
 
 def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -451,8 +474,17 @@ def test_query_margin_rows_with_date_filters() -> None:
     sql, params = reader.calls[0]
     assert "date >= ?" in sql
     assert "date <= ?" in sql
-    assert params == ("7203", "2026-01-01", "2026-01-31")
+    assert params == ("7203", "72030", "2026-01-01", "2026-01-31")
     assert rows[0]["code"] == "7203"
+
+
+def test_query_margin_rows_queries_alternate_code_forms() -> None:
+    reader = DummyReader(rows=[])
+
+    _query_margin_rows(reader, ["7203"], start_date=None, end_date=None)
+
+    _sql, params = reader.calls[0]
+    assert params == ("7203", "72030")
 
 
 def test_group_margin_rows_normalizes_and_sorts_index() -> None:
@@ -701,8 +733,24 @@ def test_query_statements_rows_builds_filters() -> None:
     assert "disclosed_date <= ?" in sql
     assert "type_of_current_period IN" in sql
     assert "earnings_per_share IS NOT NULL" in sql
-    assert params[0:3] == ("7203", "2026-01-01", "2026-01-31")
+    assert params[0:4] == ("7203", "72030", "2026-01-01", "2026-01-31")
     assert "1Q" in params and "Q1" in params
+
+
+def test_query_statements_rows_queries_alternate_code_forms() -> None:
+    reader = DummyReader()
+
+    _query_statements_rows(
+        reader,
+        ["7203"],
+        start_date=None,
+        end_date=None,
+        period_type="all",
+        actual_only=False,
+    )
+
+    _sql, params = reader.calls[0]
+    assert params == ("7203", "72030")
 
 
 def test_query_statements_rows_without_optional_filters() -> None:
@@ -720,7 +768,7 @@ def test_query_statements_rows_without_optional_filters() -> None:
     assert "disclosed_date <= ?" not in sql
     assert "type_of_current_period IN" not in sql
     assert "earnings_per_share IS NOT NULL" not in sql
-    assert params == ("7203",)
+    assert params == ("7203", "72030")
 
 
 @pytest.mark.parametrize(

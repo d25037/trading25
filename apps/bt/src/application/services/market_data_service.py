@@ -94,18 +94,24 @@ class MarketDataService:
         codes = _stock_code_candidates(code)
         placeholders = ",".join("?" for _ in codes)
 
-        # 銘柄存在確認
-        row = self._reader.query_one(
-            f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
-            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
-            tuple(codes),
-        )
-        if row is None:
-            return None
-        db_code = row["code"]
-
-        sql = "SELECT date, open, high, low, close, volume FROM stock_data WHERE code = ?"
-        params: list[str] = [db_code]
+        sql = f"""
+            SELECT date, open, high, low, close, volume
+            FROM (
+                SELECT
+                    date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
+                    ) AS rn
+                FROM stock_data
+                WHERE code IN ({placeholders})
+        """
+        params: list[str] = list(codes)
 
         if start_date:
             sql += " AND date >= ?"
@@ -114,9 +120,27 @@ class MarketDataService:
             sql += " AND date <= ?"
             params.append(end_date)
 
-        sql += " ORDER BY date"
+        sql += """
+            )
+            WHERE rn = 1
+            ORDER BY date
+        """
 
         rows = self._reader.query(sql, tuple(params))
+        if not rows:
+            row = self._reader.query_one(
+                f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
+                "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+                tuple(codes),
+            )
+            if row is None:
+                row = self._reader.query_one(
+                    f"SELECT code FROM stock_data WHERE code IN ({placeholders}) LIMIT 1",
+                    tuple(codes),
+                )
+            if row is None:
+                return None
+
         return [
             MarketOHLCVRecord(
                 date=row["date"],

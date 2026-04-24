@@ -9,7 +9,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -1285,6 +1285,7 @@ async def test_build_dataset_overwrite_removes_legacy_db_artifact(
     result = await _build_dataset(job, resolver, reader)
 
     assert result.success is True
+    assert resolver.method_calls[0] == call.evict("overwrite")
     assert legacy_db.exists() is False
 
 
