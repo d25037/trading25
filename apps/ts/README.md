@@ -77,7 +77,7 @@ bun run workspace:build
 
 ## API / Type Sync
 
-- Web は `/api` を `http://localhost:3002` にプロキシ
+- Web は `/api` を `BT_API_URL` にプロキシ（default: `http://localhost:3002`）
 - API ドキュメントは FastAPI 側 `http://localhost:3002/doc`
 - `bt:sync` はサーバー起動不要（`apps/bt` ソースから OpenAPI 生成）。生成不能時のみ FastAPI 取得にフォールバック
 - スキーマ変更時は以下を実行
@@ -98,8 +98,7 @@ bun run --filter @trading25/contracts bt:sync
 ```bash
 JQUANTS_API_KEY
 JQUANTS_PLAN
-API_BASE_URL         # default: http://localhost:3002
-BT_API_URL           # backtest client base URL (default: http://localhost:3002)
+BT_API_URL           # bt FastAPI URL for TS clients, OpenAPI fallback, and Vite proxy (default: http://localhost:3002)
 LOG_LEVEL
 NODE_ENV
 ```

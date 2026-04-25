@@ -1,9 +1,12 @@
+import { resolve } from 'node:path';
 import { $ } from 'bun';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, type PluginOption } from 'vite';
+import { defineConfig, loadEnv, type PluginOption } from 'vite';
+import { resolveBtApiUrl } from './src/lib/btApiUrl';
 
 const WEB_PORT = 5173;
+const REPO_ROOT = resolve(import.meta.dirname, '../../../..');
 const MANUAL_CHUNK_GROUPS = [
 	{ name: 'react-vendor', packages: ['react', 'react-dom'] },
 	{ name: 'charts', packages: ['lightweight-charts'] },
@@ -65,44 +68,50 @@ function resolveManualChunk(id: string): string | undefined {
 	return undefined;
 }
 
-export default defineConfig({
-	plugins: [killPortPlugin(), react(), tailwindcss()],
-	resolve: {
-		alias: [
-			{ find: /^@\//, replacement: `${import.meta.dirname}/src/` },
-			{
-				find: /^@trading25\/api-clients\/(.*)$/,
-				replacement: `${import.meta.dirname}/../api-clients/src/$1`,
-			},
-			{ find: '@trading25/api-clients', replacement: `${import.meta.dirname}/../api-clients/src` },
-			{
-				find: /^@trading25\/contracts\/(.*)$/,
-				replacement: `${import.meta.dirname}/../contracts/src/$1`,
-			},
-			{ find: '@trading25/contracts', replacement: `${import.meta.dirname}/../contracts/src` },
-			{ find: /^@trading25\/utils\/(.*)$/, replacement: `${import.meta.dirname}/../utils/src/$1` },
-			{ find: '@trading25/utils', replacement: `${import.meta.dirname}/../utils/src` },
-		],
-	},
-	server: {
-		host: '0.0.0.0',
-		allowedHosts: ['mba-m4', 'hx90'],
-		port: WEB_PORT,
-		strictPort: true,
-		proxy: {
-			'/api': {
-				target: 'http://localhost:3002',
-				changeOrigin: true,
+export default defineConfig(({ mode }) => {
+	const env = { ...loadEnv(mode, REPO_ROOT, ''), ...process.env };
+	const btApiUrl = resolveBtApiUrl(env);
+
+	return {
+		envDir: REPO_ROOT,
+		plugins: [killPortPlugin(), react(), tailwindcss()],
+		resolve: {
+			alias: [
+				{ find: /^@\//, replacement: `${import.meta.dirname}/src/` },
+				{
+					find: /^@trading25\/api-clients\/(.*)$/,
+					replacement: `${import.meta.dirname}/../api-clients/src/$1`,
+				},
+				{ find: '@trading25/api-clients', replacement: `${import.meta.dirname}/../api-clients/src` },
+				{
+					find: /^@trading25\/contracts\/(.*)$/,
+					replacement: `${import.meta.dirname}/../contracts/src/$1`,
+				},
+				{ find: '@trading25/contracts', replacement: `${import.meta.dirname}/../contracts/src` },
+				{ find: /^@trading25\/utils\/(.*)$/, replacement: `${import.meta.dirname}/../utils/src/$1` },
+				{ find: '@trading25/utils', replacement: `${import.meta.dirname}/../utils/src` },
+			],
+		},
+		server: {
+			host: '0.0.0.0',
+			allowedHosts: ['mba-m4', 'hx90'],
+			port: WEB_PORT,
+			strictPort: true,
+			proxy: {
+				'/api': {
+					target: btApiUrl,
+					changeOrigin: true,
+				},
 			},
 		},
-	},
-	build: {
-		outDir: 'dist',
-		chunkSizeWarningLimit: 800,
-		rollupOptions: {
-			output: {
-				manualChunks: resolveManualChunk,
+		build: {
+			outDir: 'dist',
+			chunkSizeWarningLimit: 800,
+			rollupOptions: {
+				output: {
+					manualChunks: resolveManualChunk,
+				},
 			},
 		},
-	},
+	};
 });

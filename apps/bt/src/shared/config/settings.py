@@ -38,9 +38,7 @@ def _default_data_dir() -> str:
 class Settings(BaseModel):
     """アプリケーション設定"""
 
-    api_base_url: str = Field(
-        default="http://localhost:3002", alias="API_BASE_URL"
-    )
+    bt_api_url: str = Field(default="http://localhost:3002", alias="BT_API_URL")
     api_timeout: float = Field(default=30.0, alias="API_TIMEOUT")
     log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
     backtest_job_timeout_seconds: int = Field(

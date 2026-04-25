@@ -35,7 +35,7 @@ bt-api-types, backtest/generated
 
 | ファイル | 対象 | メカニズム |
 |---------|------|-----------|
-| `apps/bt/src/config/settings.py` | api_base_url 設定 | `http://localhost:3001` デフォルト |
+| `apps/bt/src/config/settings.py` | backend URL 設定 | `http://localhost:3001` デフォルト |
 | `apps/bt/src/api/client.py` | BaseAPIClient | httpx HTTP クライアント |
 | `apps/bt/src/api/market_client.py` | MarketAPIClient | `/api/market/*` |
 | `apps/bt/src/api/portfolio_client.py` | PortfolioAPIClient | `/api/portfolio/*` |

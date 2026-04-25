@@ -21,7 +21,7 @@ from src.shared.observability.correlation import CORRELATION_ID_HEADER, get_corr
 T = TypeVar("T", bound=BaseModel)
 
 _settings = get_settings()
-DEFAULT_BASE_URL = _settings.api_base_url
+DEFAULT_BASE_URL = _settings.bt_api_url
 DEFAULT_TIMEOUT = _settings.api_timeout
 
 

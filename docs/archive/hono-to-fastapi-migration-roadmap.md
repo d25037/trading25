@@ -143,7 +143,7 @@
 - 目的: bt 側が Hono を経由せずに market.db / datasets / portfolio.db / JQuants に直接アクセス
 
 実施ステップ:
-- bt 側の `API_BASE_URL` 依存を撤去
+- bt 側の旧汎用 backend URL 依存を撤去
 - bt 側に Python で market.db / datasets / portfolio.db 直接アクセス層を実装
 - bt 側の `src/api/*` と loader をローカルDB読み取りに切替
 - JQuants 呼び出しは bt 側で直接実行 (既存 `JQuantsAPIClient` を利用)

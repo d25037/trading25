@@ -30,8 +30,9 @@ apps/ts/packages/web/src/types/backtest.ts
 # PR #research-ui: research web types wrap bt OpenAPI schemas for published analytics views
 apps/ts/packages/web/src/types/research.ts
 
-# Vite proxy config (localhost:3002 reference)
-apps/ts/packages/web/vite.config.ts
+# Vite proxy config env resolver (BT_API_URL is the backend URL SoT)
+apps/ts/packages/web/src/lib/btApiUrl.ts
+apps/ts/packages/web/src/lib/btApiUrl.test.ts
 
 # PR #150: web BacktestClient re-export keeps bt endpoint/client references centralized
 apps/ts/packages/web/src/lib/backtest-client.ts

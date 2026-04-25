@@ -70,7 +70,7 @@
 
 ### Phase C (nice-to-have)
 6. Add `.env.example` (no real secrets) documenting required vars:
-   - `JQUANTS_API_KEY`, `JQUANTS_PLAN`, `API_BASE_URL`, `BT_API_URL`.
+   - `JQUANTS_API_KEY`, `JQUANTS_PLAN`, `BT_API_URL`.
 7. Add a short `docs/security/public-repo-hardening.md` runbook for maintainers.
 
 ## Notes

@@ -9,6 +9,7 @@ from src.shared.config.settings import get_settings, reload_settings
 
 def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("API_BASE_URL", raising=False)
+    monkeypatch.delenv("BT_API_URL", raising=False)
     monkeypatch.delenv("API_TIMEOUT", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", raising=False)
@@ -17,7 +18,7 @@ def test_settings_defaults(monkeypatch):
 
     settings = reload_settings()
 
-    assert settings.api_base_url == "http://localhost:3002"
+    assert settings.bt_api_url == "http://localhost:3002"
     assert settings.api_timeout == 30.0
     assert settings.log_level == "WARNING"
     assert settings.backtest_job_timeout_seconds == 3600
@@ -26,7 +27,7 @@ def test_settings_defaults(monkeypatch):
 
 
 def test_settings_env_override(monkeypatch):
-    monkeypatch.setenv("API_BASE_URL", "http://example:3002")
+    monkeypatch.setenv("BT_API_URL", "http://example:3002")
     monkeypatch.setenv("API_TIMEOUT", "12.5")
     monkeypatch.setenv("LOG_LEVEL", "info")
     monkeypatch.setenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", "1800")
@@ -35,7 +36,7 @@ def test_settings_env_override(monkeypatch):
 
     settings = reload_settings()
 
-    assert settings.api_base_url == "http://example:3002"
+    assert settings.bt_api_url == "http://example:3002"
     assert settings.api_timeout == 12.5
     assert settings.log_level == "info"
     assert settings.backtest_job_timeout_seconds == 1800
@@ -44,12 +45,21 @@ def test_settings_env_override(monkeypatch):
 
 
 def test_settings_cache(monkeypatch):
-    monkeypatch.setenv("API_BASE_URL", "http://cache-test")
+    monkeypatch.setenv("BT_API_URL", "http://cache-test")
     settings = reload_settings()
-    assert settings.api_base_url == "http://cache-test"
+    assert settings.bt_api_url == "http://cache-test"
 
-    monkeypatch.setenv("API_BASE_URL", "http://cache-updated")
-    assert get_settings().api_base_url == "http://cache-test"
+    monkeypatch.setenv("BT_API_URL", "http://cache-updated")
+    assert get_settings().bt_api_url == "http://cache-test"
+
+
+def test_settings_ignores_legacy_api_base_url(monkeypatch):
+    monkeypatch.delenv("BT_API_URL", raising=False)
+    monkeypatch.setenv("API_BASE_URL", "http://legacy.example:3002")
+
+    settings = reload_settings()
+
+    assert settings.bt_api_url == "http://localhost:3002"
 
 
 def test_settings_module_loads_dotenv():

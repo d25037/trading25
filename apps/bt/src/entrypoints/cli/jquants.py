@@ -18,9 +18,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from src.shared.config.settings import get_settings
+
 console = Console()
 
-DEFAULT_BT_API_URL = os.getenv("BT_API_URL", "http://localhost:3002")
+DEFAULT_BT_API_URL = get_settings().bt_api_url
 DEFAULT_OUTPUT_DIR = Path("data")
 
 jquants_app = typer.Typer(
