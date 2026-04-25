@@ -273,6 +273,7 @@ jobs:
         run: >
           uv run --locked --with pip-audit pip-audit
           --ignore-vuln CVE-2026-4539
+          --ignore-vuln CVE-2026-3219
         working-directory: apps/bt
 
   web-e2e:

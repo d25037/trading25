@@ -12,40 +12,16 @@ import { DatasetInfoDialog } from './DatasetInfoDialog';
 type SortKey = 'name' | 'backend' | 'preset' | 'fileSize' | 'lastModified';
 type SortDir = 'asc' | 'desc';
 
-function storageLabel(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      return item.hasCompatibilityArtifact ? 'DuckDB snapshot + legacy compat' : 'DuckDB snapshot';
-    case 'sqlite-compatibility':
-      return 'Legacy SQLite snapshot';
-    case 'sqlite-legacy':
-      return 'Legacy SQLite';
-  }
+function storageLabel(): string {
+  return 'DuckDB snapshot';
 }
 
-function storageDetail(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      if (item.hasCompatibilityArtifact) {
-        return 'dataset.duckdb + parquet/ + manifest.v2.json + legacy dataset.db';
-      }
-      return 'dataset.duckdb + parquet/ + manifest.v2.json';
-    case 'sqlite-compatibility':
-      return 'legacy dataset.db snapshot';
-    case 'sqlite-legacy':
-      return 'historical single .db file';
-  }
+function storageDetail(): string {
+  return 'dataset.duckdb + parquet/ + manifest.v2.json';
 }
 
-function storageClass(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      return 'bg-emerald-500/10 text-emerald-600';
-    case 'sqlite-compatibility':
-      return 'bg-amber-500/10 text-amber-600';
-    case 'sqlite-legacy':
-      return 'bg-slate-500/10 text-slate-600';
-  }
+function storageClass(): string {
+  return 'bg-emerald-500/10 text-emerald-600';
 }
 
 function compareItems(a: DatasetListItem, b: DatasetListItem, key: SortKey, dir: SortDir): number {
@@ -55,7 +31,7 @@ function compareItems(a: DatasetListItem, b: DatasetListItem, key: SortKey, dir:
       cmp = a.name.localeCompare(b.name);
       break;
     case 'backend':
-      cmp = storageLabel(a).localeCompare(storageLabel(b));
+      cmp = 0;
       break;
     case 'preset':
       cmp = (a.preset ?? '').localeCompare(b.preset ?? '');
@@ -165,18 +141,15 @@ export function DatasetList() {
                   <TableRow key={item.name}>
                     <TableCell className="font-medium">
                       <div>{item.name}</div>
-                      {item.hasCompatibilityArtifact && item.backend === 'duckdb-parquet' && (
-                        <div className="text-xs text-muted-foreground">Legacy dataset.db compatibility</div>
-                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">
                         <span
-                          className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${storageClass(item)}`}
+                          className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${storageClass()}`}
                         >
-                          {storageLabel(item)}
+                          {storageLabel()}
                         </span>
-                        <span className="text-xs text-muted-foreground">{storageDetail(item)}</span>
+                        <span className="text-xs text-muted-foreground">{storageDetail()}</span>
                       </div>
                     </TableCell>
                     <TableCell>{item.preset ?? '-'}</TableCell>

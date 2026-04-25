@@ -287,8 +287,6 @@ async def _build_dataset(
     """データセットをビルドする実際のロジック"""
     name = job.data.name
     preset_name = job.data.preset
-    snapshot_path = resolver.get_dataset_path(name)
-    snapshot_dir = snapshot_dir_for_path(snapshot_path)
     warnings: list[str] = []
     errors: list[str] = []
 
@@ -297,7 +295,11 @@ async def _build_dataset(
         return DatasetResult(success=False, errors=[f"Unknown preset: {preset_name}"])
 
     if job.data.overwrite:
+        resolver.evict(name)
         _delete_dataset_artifacts(resolver, name)
+
+    snapshot_path = resolver.get_dataset_path(name)
+    snapshot_dir = snapshot_dir_for_path(snapshot_path)
 
     if source_duckdb_path is not None and not Path(source_duckdb_path).exists():
         raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")

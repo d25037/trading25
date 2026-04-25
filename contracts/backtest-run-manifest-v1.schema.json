@@ -40,7 +40,7 @@
     "versions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["python", "vectorbt", "marimo", "pydantic"],
+      "required": ["python", "vectorbt", "pydantic"],
       "properties": {
         "python": {
           "type": ["string", "null"]

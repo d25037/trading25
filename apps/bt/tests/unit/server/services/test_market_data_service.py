@@ -120,6 +120,60 @@ class TestGetStockOhlcv:
         assert result[0].date == "2024-01-15"
         assert result[0].volume == 0
 
+    def test_reads_stock_data_when_stocks_metadata_missing(self):
+        class MockReader:
+            def query_one(self, sql, _params=()):
+                if "FROM stocks" in sql:
+                    return None
+                return {"code": "72030"}
+
+            def query(self, _sql, _params=()):
+                return [
+                    {
+                        "date": "2024-01-15",
+                        "open": 100.0,
+                        "high": 110.0,
+                        "low": 95.0,
+                        "close": 105.0,
+                        "volume": 1000,
+                    }
+                ]
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        result = svc.get_stock_ohlcv("7203")
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].date == "2024-01-15"
+
+    def test_reads_alternate_stock_data_code_form(self):
+        class MockReader:
+            def query_one(self, sql, _params=()):
+                if "FROM stocks" in sql:
+                    return {"code": "7203"}
+                return {"code": "72030"}
+
+            def query(self, _sql, params=()):
+                if "72030" not in params:
+                    return []
+                return [
+                    {
+                        "date": "2024-01-15",
+                        "open": 100.0,
+                        "high": 110.0,
+                        "low": 95.0,
+                        "close": 105.0,
+                        "volume": 1000,
+                    }
+                ]
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+        result = svc.get_stock_ohlcv("7203")
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].date == "2024-01-15"
+
 
 class TestGetAllStocks:
     def test_prime_market(self, service):

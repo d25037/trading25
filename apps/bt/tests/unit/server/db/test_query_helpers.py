@@ -15,6 +15,7 @@ from src.infrastructure.db.market.query_helpers import (
     ohlcv_query,
     stock_lookup,
     stock_code_candidates,
+    stock_code_query_candidates,
     trading_date_before,
 )
 
@@ -73,6 +74,19 @@ class TestStockCodeCandidates:
 
     def test_single_candidate_when_expansion_is_unnecessary(self) -> None:
         assert stock_code_candidates("720") == ("720",)
+
+
+class TestStockCodeQueryCandidates:
+    def test_expands_multiple_codes_preserving_first_seen_order(self) -> None:
+        assert stock_code_query_candidates(["72030", "25935"]) == (
+            "7203",
+            "72030",
+            "25935",
+            "259350",
+        )
+
+    def test_dedupes_overlapping_code_forms(self) -> None:
+        assert stock_code_query_candidates(["72030", "7203", "72030"]) == ("7203", "72030")
 
 
 class TestIsValidStockCode:

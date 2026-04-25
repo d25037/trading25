@@ -163,26 +163,12 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
   );
 }
 
-function storageLabel(info: DatasetInfoResponse): string {
-  switch (info.storage.backend) {
-    case 'duckdb-parquet':
-      return info.storage.hasCompatibilityArtifact ? 'DuckDB snapshot + legacy compat' : 'DuckDB snapshot';
-    case 'sqlite-compatibility':
-      return 'Legacy SQLite snapshot';
-    case 'sqlite-legacy':
-      return 'Legacy SQLite';
-  }
+function storageLabel(): string {
+  return 'DuckDB snapshot';
 }
 
-function storageClass(info: DatasetInfoResponse): string {
-  switch (info.storage.backend) {
-    case 'duckdb-parquet':
-      return 'bg-emerald-500/10 text-emerald-600';
-    case 'sqlite-compatibility':
-      return 'bg-amber-500/10 text-amber-600';
-    case 'sqlite-legacy':
-      return 'bg-slate-500/10 text-slate-600';
-  }
+function storageClass(): string {
+  return 'bg-emerald-500/10 text-emerald-600';
 }
 
 function StorageSection({ info }: { info: DatasetInfoResponse }) {
@@ -191,12 +177,7 @@ function StorageSection({ info }: { info: DatasetInfoResponse }) {
       <h4 className="font-medium mb-2">Storage</h4>
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${storageClass(info)}`}>{storageLabel(info)}</span>
-          {info.storage.hasCompatibilityArtifact && (
-            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              legacy dataset.db compatibility
-            </span>
-          )}
+          <span className={`rounded px-2 py-0.5 text-xs font-medium ${storageClass()}`}>{storageLabel()}</span>
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="text-muted-foreground">Primary</div>
@@ -205,12 +186,6 @@ function StorageSection({ info }: { info: DatasetInfoResponse }) {
             <>
               <div className="text-muted-foreground">DuckDB</div>
               <div className="break-all font-mono">{info.storage.duckdbPath}</div>
-            </>
-          )}
-          {info.storage.compatibilityDbPath && (
-            <>
-              <div className="text-muted-foreground">Legacy SQLite compat</div>
-              <div className="break-all font-mono">{info.storage.compatibilityDbPath}</div>
             </>
           )}
           {info.storage.manifestPath && (
@@ -253,7 +228,7 @@ export function DatasetInfoDialog({ open, onOpenChange, datasetName }: DatasetIn
               <div className="text-muted-foreground">Preset</div>
               <div>{info.snapshot.preset ?? 'N/A'}</div>
               <div className="text-muted-foreground">Storage</div>
-              <div>{storageLabel(info)}</div>
+              <div>{storageLabel()}</div>
               <div className="text-muted-foreground">ファイルサイズ</div>
               <div>{formatBytes(info.fileSize)}</div>
               <div className="text-muted-foreground">作成日時</div>

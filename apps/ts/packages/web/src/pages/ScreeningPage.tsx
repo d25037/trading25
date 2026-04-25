@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { Filter } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -453,7 +454,8 @@ interface ScreeningController {
 }
 
 function isStaleScreeningJobError(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
+  if (error instanceof ApiError) return error.status === 404;
+  return error instanceof HttpRequestError && error.kind === 'http' && error.status === 404;
 }
 
 function resolveScreeningError(

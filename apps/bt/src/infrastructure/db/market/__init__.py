@@ -14,6 +14,7 @@ from src.infrastructure.db.market.query_helpers import (
     normalize_stock_code,
     ohlcv_query,
     stock_code_candidates,
+    stock_code_query_candidates,
     stock_lookup,
     trading_date_before,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "normalize_stock_code",
     "ohlcv_query",
     "stock_code_candidates",
+    "stock_code_query_candidates",
     "stock_lookup",
     "trading_date_before",
 ]

@@ -19,7 +19,7 @@ from src.infrastructure.data_access.loaders.statements_loaders import (
     transform_statements_df,
 )
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import normalize_stock_code, stock_code_query_candidates
 from src.shared.models.types import normalize_period_type
 
 _LEGACY_PERIOD_TYPE_MAP = {
@@ -244,13 +244,14 @@ def _load_daily_by_code(
     start_date: str | None,
     end_date: str | None,
 ) -> dict[str, pd.DataFrame]:
-    placeholders = ",".join("?" for _ in stock_codes)
+    query_codes = stock_code_query_candidates(stock_codes)
+    placeholders = ",".join("?" for _ in query_codes)
     sql = f"""
         SELECT code, date, open, high, low, close, volume
         FROM stock_data
         WHERE code IN ({placeholders})
     """
-    params: list[str] = list(stock_codes)
+    params: list[str] = list(query_codes)
     conds: list[str] = []
 
     if start_date:
@@ -267,7 +268,7 @@ def _load_daily_by_code(
 
     grouped: dict[str, list[Any]] = {}
     for row in rows:
-        grouped.setdefault(str(row["code"]), []).append(row)
+        grouped.setdefault(normalize_stock_code(str(row["code"])), []).append(row)
 
     return {
         code: _rows_to_ohlcv_df(grouped.get(code, []))
@@ -410,7 +411,8 @@ def _query_statements_rows(
     period_type: APIPeriodType | str,
     actual_only: bool,
 ) -> list[Any]:
-    placeholders = ",".join("?" for _ in stock_codes)
+    query_codes = stock_code_query_candidates(stock_codes)
+    placeholders = ",".join("?" for _ in query_codes)
     sql = f"""
         SELECT
             code,
@@ -442,7 +444,7 @@ def _query_statements_rows(
         FROM statements
         WHERE code IN ({placeholders})
     """
-    params: list[Any] = list(stock_codes)
+    params: list[Any] = list(query_codes)
 
     if start_date:
         sql += " AND disclosed_date >= ?"
@@ -477,7 +479,8 @@ def _query_margin_rows(
     start_date: str | None,
     end_date: str | None,
 ) -> list[Any]:
-    placeholders = ",".join("?" for _ in stock_codes)
+    query_codes = stock_code_query_candidates(stock_codes)
+    placeholders = ",".join("?" for _ in query_codes)
     sql = f"""
         SELECT
             code,
@@ -487,7 +490,7 @@ def _query_margin_rows(
         FROM margin_data
         WHERE code IN ({placeholders})
     """
-    params: list[Any] = list(stock_codes)
+    params: list[Any] = list(query_codes)
 
     if start_date:
         sql += " AND date >= ?"

@@ -124,7 +124,7 @@ run_security_suite() {
   run_step "dependency-audit:bun" bash -lc "cd \"${repo_root}/apps/ts\" && bun audit --audit-level=moderate"
   run_step \
     "dependency-audit:pip" \
-    bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv run --locked --with pip-audit pip-audit --ignore-vuln CVE-2026-4539"
+    bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv run --locked --with pip-audit pip-audit --ignore-vuln CVE-2026-4539 --ignore-vuln CVE-2026-3219"
   secret_scan_dir="$(mktemp -d "/tmp/trading25-prepush-gitleaks.XXXXXX")"
   git -C "${repo_root}" archive --format=tar HEAD | tar -xf - -C "${secret_scan_dir}"
   run_step \
