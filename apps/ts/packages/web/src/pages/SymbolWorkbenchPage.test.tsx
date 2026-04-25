@@ -14,7 +14,6 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { ApiError } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
-import { logger } from '@/utils/logger';
 import { SymbolWorkbenchPage } from './SymbolWorkbenchPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
@@ -431,7 +430,6 @@ describe('SymbolWorkbenchPage', () => {
   });
 
   it('renders empty state when no symbol selected', () => {
-    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
     mockSymbolWorkbenchRouteState.selectedSymbol = null;
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
@@ -449,7 +447,7 @@ describe('SymbolWorkbenchPage', () => {
     renderSymbolWorkbenchPage();
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '7203' }));
-    expect(debugSpy).toHaveBeenCalledWith('Symbol selected from popular list', { symbol: '7203' });
+    expect(mockSymbolWorkbenchRouteState.setSelectedSymbol).toHaveBeenCalledWith('7203');
   });
 
   it('renders generic error message when error is not an Error instance', () => {

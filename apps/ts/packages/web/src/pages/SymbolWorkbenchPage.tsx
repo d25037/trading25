@@ -557,7 +557,7 @@ function ErrorState({ error }: { error: unknown }) {
   );
 }
 
-function EmptyState() {
+function EmptyState({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) {
   return (
     <Surface className="flex min-h-[24rem] items-center justify-center px-6 py-12">
       <div className="max-w-lg space-y-6 text-center">
@@ -582,6 +582,7 @@ function EmptyState() {
                 size="sm"
                 onClick={() => {
                   logger.debug('Symbol selected from popular list', { symbol });
+                  onSelectSymbol(symbol);
                 }}
               >
                 {symbol}
@@ -1093,7 +1094,7 @@ export function SymbolWorkbenchPage() {
         )}
         {error && <ErrorState error={error} />}
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
-        {showEmptyState && <EmptyState />}
+        {showEmptyState && <EmptyState onSelectSymbol={setSelectedSymbol} />}
         {showChartPanels && (
           <SymbolWorkbenchPanelsContent
             settings={settings}

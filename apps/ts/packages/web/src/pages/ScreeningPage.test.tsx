@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
@@ -503,6 +504,26 @@ describe('ScreeningPage', () => {
         ]),
       })
     );
+  });
+
+  it('clears stale screening job id when api-clients returns a 404 HttpRequestError', async () => {
+    useScreeningStore.setState({
+      activePreOpenScreeningJobId: 'stale-job',
+    });
+    mockUseScreeningJobStatus.mockReturnValue({
+      data: null,
+      error: new HttpRequestError('ジョブが見つかりません: stale-job', 'http', { status: 404 }),
+    });
+    mockUseScreeningResult.mockReturnValue({
+      data: createCachedScreeningResult(),
+      error: null,
+    });
+
+    render(<ScreeningPage />);
+
+    await waitFor(() => {
+      expect(useScreeningStore.getState().activePreOpenScreeningJobId).toBeNull();
+    });
   });
 
   it('shows completed screening job status inline beside the run action', () => {
