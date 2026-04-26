@@ -236,11 +236,14 @@ describe('ChartControls', () => {
     }));
   });
 
-  it('renders symbol search input and search button', () => {
+  it('renders symbol search as the primary sidebar action', () => {
     renderChartControls();
 
+    expect(screen.getByText('Main action')).toBeInTheDocument();
+    expect(screen.getByText('Symbol Search')).toBeInTheDocument();
+    expect(screen.getByText('銘柄コード・会社名でワークベンチを切り替え')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('銘柄コードまたは会社名で検索...')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /検索/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Symbol を開く/i })).toBeInTheDocument();
   });
 
   it('uses non-password-search input attributes for symbol search', () => {
@@ -267,7 +270,7 @@ describe('ChartControls', () => {
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7203');
-    await user.click(screen.getByRole('button', { name: /検索/i }));
+    await user.click(screen.getByRole('button', { name: /Symbol を開く/i }));
 
     expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
   });
@@ -805,7 +808,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: /検索/i }));
+    await user.click(screen.getByRole('button', { name: /Symbol を開く/i }));
 
     expect(mockOnSelectSymbol).not.toHaveBeenCalled();
   });

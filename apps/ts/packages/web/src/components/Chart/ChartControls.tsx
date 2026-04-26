@@ -959,34 +959,42 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
-      <ChartPresetSelector />
-
-      <section className="space-y-3 border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
-        <SectionHeader icon={Search} title="Symbol Search" />
-        <div className="space-y-2">
-          <form onSubmit={handleSymbolSubmit} className="space-y-2" autoComplete="off">
-            <StockSearchInput
-              id={symbolSearchId}
-              name="symbol-search"
-              value={symbolInput}
-              onValueChange={setSymbolInput}
-              onSelect={handleSelectStock}
-              className="border-border/60 bg-transparent focus:border-primary/50 transition-colors"
-              searchLimit={50}
-            />
-            <Button type="submit" size="sm" className="w-full">
-              <Search className="h-3.5 w-3.5 mr-1.5" />
-              検索
-            </Button>
-          </form>
-          {selectedSymbol && (
-            <div className="flex items-center gap-1.5 rounded-xl border border-border/60 bg-[var(--app-surface-muted)] px-2.5 py-2">
-              <TrendingUp className="h-3 w-3 text-primary" />
-              <span className="text-xs font-medium text-primary">選択中: {selectedSymbol}</span>
-            </div>
-          )}
+      <section className="rounded-2xl border border-primary/25 bg-primary/5 p-3.5 shadow-sm shadow-primary/5">
+        <div className="mb-3 flex items-start gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Search className="h-4.5 w-4.5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Main action</p>
+            <h2 className="text-base font-semibold text-foreground">Symbol Search</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">銘柄コード・会社名でワークベンチを切り替え</p>
+          </div>
         </div>
+
+        <form onSubmit={handleSymbolSubmit} className="space-y-2" autoComplete="off">
+          <StockSearchInput
+            id={symbolSearchId}
+            name="symbol-search"
+            value={symbolInput}
+            onValueChange={setSymbolInput}
+            onSelect={handleSelectStock}
+            className="h-11 border-primary/30 bg-background text-base shadow-sm transition-colors placeholder:text-muted-foreground/70 focus:border-primary/70 focus:ring-primary/20"
+            searchLimit={50}
+          />
+          <Button type="submit" className="h-10 w-full shadow-sm">
+            <Search className="mr-1.5 h-4 w-4" />
+            Symbol を開く
+          </Button>
+        </form>
+        {selectedSymbol && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-primary/20 bg-background/80 px-3 py-2">
+            <TrendingUp className="h-3.5 w-3.5 text-primary" />
+            <span className="text-xs font-medium text-primary">選択中: {selectedSymbol}</span>
+          </div>
+        )}
       </section>
+
+      <ChartPresetSelector />
 
       <section className="space-y-3 border-t border-border/60 pt-4">
         <SectionHeader icon={SettingsIcon} title="Settings" />
