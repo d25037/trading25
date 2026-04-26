@@ -192,7 +192,6 @@ type SettingDialogId =
   | 'fundamentalMetrics'
   | 'fundamentalsHistoryMetrics'
   | 'overlayIndicators'
-  | 'subChartIndicators'
   | 'signalOverlay';
 
 interface SettingDialogDefinition {
@@ -232,12 +231,6 @@ const SETTING_DIALOGS: SettingDialogDefinition[] = [
     title: 'Overlay Indicators',
     description: 'Configure overlays rendered on the price chart.',
     icon: TrendingUp,
-  },
-  {
-    id: 'subChartIndicators',
-    title: 'Sub-Chart Indicators',
-    description: 'Configure additional panels rendered below the chart.',
-    icon: BarChart3,
   },
   {
     id: 'signalOverlay',
@@ -461,6 +454,184 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
     [settings.accumulationFlow, updateSettings]
   );
 
+  const renderSubChartPanelSettings = (panelId: WorkbenchPanelId) => {
+    switch (panelId) {
+      case 'riskAdjustedReturn':
+        return (
+          <div className="grid grid-cols-2 gap-1.5 border-t border-border/60 pt-2">
+            <NumberInput
+              label="Lookback"
+              value={settings.riskAdjustedReturn.lookbackPeriod}
+              onChange={(lookbackPeriod) => updateRiskAdjustedReturn({ lookbackPeriod })}
+              defaultValue={60}
+            />
+            <NumberInput
+              label="Threshold"
+              value={settings.riskAdjustedReturn.threshold}
+              onChange={(threshold) => updateRiskAdjustedReturn({ threshold })}
+              step="0.1"
+              defaultValue={1.0}
+            />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Ratio Type</Label>
+              <Select
+                value={settings.riskAdjustedReturn.ratioType}
+                onValueChange={(ratioType) =>
+                  updateRiskAdjustedReturn({
+                    ratioType: ratioType as ChartSettings['riskAdjustedReturn']['ratioType'],
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 border-border/50 bg-transparent text-xs focus:border-primary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                  <SelectItem value="sortino" className="text-xs">
+                    sortino
+                  </SelectItem>
+                  <SelectItem value="sharpe" className="text-xs">
+                    sharpe
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Condition</Label>
+              <Select
+                value={settings.riskAdjustedReturn.condition}
+                onValueChange={(condition) =>
+                  updateRiskAdjustedReturn({
+                    condition: condition as ChartSettings['riskAdjustedReturn']['condition'],
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 border-border/50 bg-transparent text-xs focus:border-primary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                  <SelectItem value="above" className="text-xs">
+                    above
+                  </SelectItem>
+                  <SelectItem value="below" className="text-xs">
+                    below
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+      case 'recentReturn':
+        return (
+          <div className="grid grid-cols-2 gap-1.5 border-t border-border/60 pt-2">
+            <NumberInput
+              label="Short Lookback"
+              value={settings.recentReturn.shortPeriod}
+              onChange={(shortPeriod) => updateRecentReturn({ shortPeriod })}
+              defaultValue={20}
+            />
+            <NumberInput
+              label="Long Lookback"
+              value={settings.recentReturn.longPeriod}
+              onChange={(longPeriod) => updateRecentReturn({ longPeriod })}
+              defaultValue={60}
+            />
+          </div>
+        );
+      case 'volumeComparison':
+        return (
+          <div className="grid grid-cols-2 gap-1.5 border-t border-border/60 pt-2">
+            <NumberInput
+              label="Short Period"
+              value={settings.volumeComparison.shortPeriod}
+              onChange={(shortPeriod) => updateVolumeComparison({ shortPeriod })}
+              defaultValue={20}
+            />
+            <NumberInput
+              label="Long Period"
+              value={settings.volumeComparison.longPeriod}
+              onChange={(longPeriod) => updateVolumeComparison({ longPeriod })}
+              defaultValue={100}
+            />
+            <NumberInput
+              label="Lower Mult."
+              value={settings.volumeComparison.lowerMultiplier}
+              onChange={(lowerMultiplier) => updateVolumeComparison({ lowerMultiplier })}
+              step="0.1"
+              defaultValue={1.0}
+            />
+            <NumberInput
+              label="Higher Mult."
+              value={settings.volumeComparison.higherMultiplier}
+              onChange={(higherMultiplier) => updateVolumeComparison({ higherMultiplier })}
+              step="0.1"
+              defaultValue={1.5}
+            />
+          </div>
+        );
+      case 'cmf':
+        return (
+          <div className="border-t border-border/60 pt-2">
+            <NumberInput
+              label="CMF Period"
+              value={settings.accumulationFlow.cmfPeriod}
+              onChange={(cmfPeriod) => updateAccumulationFlow({ cmfPeriod })}
+              defaultValue={20}
+            />
+          </div>
+        );
+      case 'chaikinOscillator':
+        return (
+          <div className="grid grid-cols-2 gap-2 border-t border-border/60 pt-2">
+            <NumberInput
+              label="Chaikin Fast"
+              value={settings.accumulationFlow.chaikinFastPeriod}
+              onChange={(chaikinFastPeriod) =>
+                updateAccumulationFlow({
+                  chaikinFastPeriod,
+                  chaikinSlowPeriod: Math.max(settings.accumulationFlow.chaikinSlowPeriod, chaikinFastPeriod + 1),
+                })
+              }
+              defaultValue={3}
+            />
+            <NumberInput
+              label="Chaikin Slow"
+              value={settings.accumulationFlow.chaikinSlowPeriod}
+              onChange={(chaikinSlowPeriod) =>
+                updateAccumulationFlow({
+                  chaikinSlowPeriod: Math.max(chaikinSlowPeriod, settings.accumulationFlow.chaikinFastPeriod + 1),
+                })
+              }
+              defaultValue={10}
+            />
+          </div>
+        );
+      case 'obvFlowScore':
+        return (
+          <div className="border-t border-border/60 pt-2">
+            <NumberInput
+              label="OBV Score Lookback"
+              value={settings.accumulationFlow.obvLookbackPeriod}
+              onChange={(obvLookbackPeriod) => updateAccumulationFlow({ obvLookbackPeriod })}
+              defaultValue={20}
+            />
+          </div>
+        );
+      case 'tradingValueMA':
+        return (
+          <div className="border-t border-border/60 pt-2">
+            <NumberInput
+              label="Period"
+              value={settings.tradingValueMA.period}
+              onChange={(period) => updateTradingValueMA({ period })}
+              defaultValue={15}
+            />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   const renderDialogBody = (dialogId: SettingDialogId) => {
     switch (dialogId) {
       case 'chartSettings':
@@ -579,6 +750,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                       Down
                     </Button>
                   </div>
+                  {toggle.kind === 'subChart' && renderSubChartPanelSettings(panelId)}
                 </div>
               );
             })}
@@ -776,207 +948,6 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                   defaultValue={2.0}
                 />
               </div>
-            </IndicatorToggle>
-          </div>
-        );
-
-      case 'subChartIndicators':
-        return (
-          <div className="space-y-2">
-            <IndicatorToggle
-              label="Risk Adjusted Return"
-              enabled={settings.showRiskAdjustedReturnChart}
-              onToggle={(checked) => updateSettings({ showRiskAdjustedReturnChart: checked })}
-              meta={getPanelSignalMeta('riskAdjustedReturn')}
-            >
-              <div className="grid grid-cols-2 gap-1.5">
-                <NumberInput
-                  label="Lookback"
-                  value={settings.riskAdjustedReturn.lookbackPeriod}
-                  onChange={(lookbackPeriod) => updateRiskAdjustedReturn({ lookbackPeriod })}
-                  defaultValue={60}
-                />
-                <NumberInput
-                  label="Threshold"
-                  value={settings.riskAdjustedReturn.threshold}
-                  onChange={(threshold) => updateRiskAdjustedReturn({ threshold })}
-                  step="0.1"
-                  defaultValue={1.0}
-                />
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Ratio Type</Label>
-                  <Select
-                    value={settings.riskAdjustedReturn.ratioType}
-                    onValueChange={(ratioType) =>
-                      updateRiskAdjustedReturn({
-                        ratioType: ratioType as ChartSettings['riskAdjustedReturn']['ratioType'],
-                      })
-                    }
-                  >
-                    <SelectTrigger className="h-7 border-border/50 bg-transparent text-xs focus:border-primary/50">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
-                      <SelectItem value="sortino" className="text-xs">
-                        sortino
-                      </SelectItem>
-                      <SelectItem value="sharpe" className="text-xs">
-                        sharpe
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Condition</Label>
-                  <Select
-                    value={settings.riskAdjustedReturn.condition}
-                    onValueChange={(condition) =>
-                      updateRiskAdjustedReturn({
-                        condition: condition as ChartSettings['riskAdjustedReturn']['condition'],
-                      })
-                    }
-                  >
-                    <SelectTrigger className="h-7 border-border/50 bg-transparent text-xs focus:border-primary/50">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
-                      <SelectItem value="above" className="text-xs">
-                        above
-                      </SelectItem>
-                      <SelectItem value="below" className="text-xs">
-                        below
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="Recent Return"
-              enabled={settings.showRecentReturnChart}
-              onToggle={(checked) => updateSettings({ showRecentReturnChart: checked })}
-            >
-              <div className="grid grid-cols-2 gap-1.5">
-                <NumberInput
-                  label="Short Lookback"
-                  value={settings.recentReturn.shortPeriod}
-                  onChange={(shortPeriod) => updateRecentReturn({ shortPeriod })}
-                  defaultValue={20}
-                />
-                <NumberInput
-                  label="Long Lookback"
-                  value={settings.recentReturn.longPeriod}
-                  onChange={(longPeriod) => updateRecentReturn({ longPeriod })}
-                  defaultValue={60}
-                />
-              </div>
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="Volume Comparison"
-              enabled={settings.showVolumeComparison}
-              onToggle={(checked) => updateSettings({ showVolumeComparison: checked })}
-              meta={getPanelSignalMeta('volumeComparison')}
-            >
-              <div className="grid grid-cols-2 gap-1.5">
-                <NumberInput
-                  label="Short Period"
-                  value={settings.volumeComparison.shortPeriod}
-                  onChange={(shortPeriod) => updateVolumeComparison({ shortPeriod })}
-                  defaultValue={20}
-                />
-                <NumberInput
-                  label="Long Period"
-                  value={settings.volumeComparison.longPeriod}
-                  onChange={(longPeriod) => updateVolumeComparison({ longPeriod })}
-                  defaultValue={100}
-                />
-                <NumberInput
-                  label="Lower Mult."
-                  value={settings.volumeComparison.lowerMultiplier}
-                  onChange={(lowerMultiplier) => updateVolumeComparison({ lowerMultiplier })}
-                  step="0.1"
-                  defaultValue={1.0}
-                />
-                <NumberInput
-                  label="Higher Mult."
-                  value={settings.volumeComparison.higherMultiplier}
-                  onChange={(higherMultiplier) => updateVolumeComparison({ higherMultiplier })}
-                  step="0.1"
-                  defaultValue={1.5}
-                />
-              </div>
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="CMF"
-              enabled={settings.showCMF}
-              onToggle={(checked) => updateSettings({ showCMF: checked })}
-            >
-              <NumberInput
-                label="CMF Period"
-                value={settings.accumulationFlow.cmfPeriod}
-                onChange={(cmfPeriod) => updateAccumulationFlow({ cmfPeriod })}
-                defaultValue={20}
-              />
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="Chaikin Oscillator"
-              enabled={settings.showChaikinOscillator}
-              onToggle={(checked) => updateSettings({ showChaikinOscillator: checked })}
-            >
-              <div className="grid grid-cols-2 gap-2">
-                <NumberInput
-                  label="Chaikin Fast"
-                  value={settings.accumulationFlow.chaikinFastPeriod}
-                  onChange={(chaikinFastPeriod) =>
-                    updateAccumulationFlow({
-                      chaikinFastPeriod,
-                      chaikinSlowPeriod: Math.max(settings.accumulationFlow.chaikinSlowPeriod, chaikinFastPeriod + 1),
-                    })
-                  }
-                  defaultValue={3}
-                />
-                <NumberInput
-                  label="Chaikin Slow"
-                  value={settings.accumulationFlow.chaikinSlowPeriod}
-                  onChange={(chaikinSlowPeriod) =>
-                    updateAccumulationFlow({
-                      chaikinSlowPeriod: Math.max(chaikinSlowPeriod, settings.accumulationFlow.chaikinFastPeriod + 1),
-                    })
-                  }
-                  defaultValue={10}
-                />
-              </div>
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="OBV Flow Score"
-              enabled={settings.showOBVFlowScore}
-              onToggle={(checked) => updateSettings({ showOBVFlowScore: checked })}
-            >
-              <NumberInput
-                label="OBV Score Lookback"
-                value={settings.accumulationFlow.obvLookbackPeriod}
-                onChange={(obvLookbackPeriod) => updateAccumulationFlow({ obvLookbackPeriod })}
-                defaultValue={20}
-              />
-            </IndicatorToggle>
-
-            <IndicatorToggle
-              label="Trading Value MA"
-              enabled={settings.showTradingValueMA}
-              onToggle={(checked) => updateSettings({ showTradingValueMA: checked })}
-              meta={getPanelSignalMeta('tradingValueMA')}
-            >
-              <NumberInput
-                label="Period"
-                value={settings.tradingValueMA.period}
-                onChange={(period) => updateTradingValueMA({ period })}
-                defaultValue={15}
-              />
             </IndicatorToggle>
           </div>
         );

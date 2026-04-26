@@ -582,13 +582,15 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });
 
-  it('opens sub-chart indicators dialog and toggles risk adjusted return', async () => {
+  it('toggles risk adjusted return from panel layout', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    expect(screen.queryByRole('button', { name: 'Sub-Chart Indicators' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
@@ -600,13 +602,13 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     await user.click(screen.getByRole('switch', { name: /recent return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRecentReturnChart: true });
   });
 
-  it('updates sub-chart indicator numeric settings', async () => {
+  it('updates sub-chart numeric settings from panel layout', async () => {
     const user = userEvent.setup();
     mockChartStore.settings.showRiskAdjustedReturnChart = true;
     mockChartStore.settings.showRecentReturnChart = true;
@@ -621,7 +623,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
 
     fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '80' } });
     fireEvent.change(screen.getByLabelText('Threshold'), { target: { value: '1.5' } });
@@ -677,7 +679,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
 
     const dialog = screen.getByRole('dialog');
     const [ratioTypeSelect, conditionSelect] = within(dialog).getAllByRole('combobox');
@@ -737,7 +739,7 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('vwema', { enabled: true });
   });
 
-  it('shows signal metadata in sub-chart indicators when reference API is available', async () => {
+  it('shows signal metadata in panel layout when reference API is available', async () => {
     const user = userEvent.setup();
     mockChartStore.settings.signalOverlay.signals = [
       { type: 'volume_ratio_above', enabled: true, mode: 'entry', params: {} },
@@ -765,7 +767,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     expect(screen.getAllByText('Signal req: volume | Signals: volume_ratio_above').length).toBeGreaterThan(0);
   });
 
@@ -781,7 +783,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     expect(screen.queryByText(/Signal req:/i)).not.toBeInTheDocument();
   });
 
