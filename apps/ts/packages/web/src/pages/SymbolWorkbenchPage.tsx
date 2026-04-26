@@ -21,6 +21,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
@@ -1184,25 +1185,21 @@ function SymbolWorkbenchPanelsContent({
                 {activeMobilePanel?.kind ?? 'Primary'}
               </p>
             </div>
-            <fieldset className="flex snap-x gap-2 overflow-x-auto pb-1">
-              <legend className="sr-only">Workbench panels</legend>
-              {panelOptions.map((option) => {
-                const isActive = option.id === activeMobilePanelId;
-                return (
-                  <Button
-                    key={option.id}
-                    type="button"
-                    variant={isActive ? 'default' : 'outline'}
-                    size="sm"
-                    className="shrink-0 snap-start"
-                    aria-pressed={isActive}
-                    onClick={() => setActiveMobilePanelId(option.id)}
-                  >
-                    {option.label}
-                  </Button>
-                );
-              })}
-            </fieldset>
+            <Select
+              value={activeMobilePanel?.id ?? 'primary'}
+              onValueChange={(value) => setActiveMobilePanelId(value as WorkbenchDisplayPanelId)}
+            >
+              <SelectTrigger aria-label="Workbench panel">
+                <SelectValue placeholder="Select panel" />
+              </SelectTrigger>
+              <SelectContent>
+                {panelOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label} · {option.kind}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Surface>
 
           {!activeMobilePanel || activeMobilePanel.id === 'primary'
