@@ -16919,6 +16919,14 @@
             "title": "Date",
             "type": "string"
           },
+          "forwardEpsMode": {
+            "enum": [
+              "latest",
+              "fy"
+            ],
+            "title": "Forwardepsmode",
+            "type": "string"
+          },
           "itemCount": {
             "title": "Itemcount",
             "type": "integer"
@@ -16971,6 +16979,7 @@
           "date",
           "markets",
           "scoreMethod",
+          "forwardEpsMode",
           "scorePolicy",
           "weights",
           "itemCount",
@@ -19451,6 +19460,20 @@
                 "walkforward_regression_weight"
               ],
               "title": "Scoremethod",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "forwardEpsMode",
+            "required": false,
+            "schema": {
+              "default": "latest",
+              "enum": [
+                "latest",
+                "fy"
+              ],
+              "title": "Forwardepsmode",
               "type": "string"
             }
           }

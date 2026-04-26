@@ -157,6 +157,7 @@ export interface MarketFundamentalRankingResponse {
 }
 
 export type ValueCompositeScoreMethod = 'equal_weight' | 'walkforward_regression_weight';
+export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
 
 export interface ValueCompositeRankingItem {
   rank: number;
@@ -185,6 +186,7 @@ export interface ValueCompositeRankingResponse {
   markets: string[];
   metricKey: 'standard_value_composite';
   scoreMethod: ValueCompositeScoreMethod;
+  forwardEpsMode: ValueCompositeForwardEpsMode;
   scorePolicy: string;
   weights: Record<string, number>;
   itemCount: number;

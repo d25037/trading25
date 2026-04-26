@@ -1,6 +1,10 @@
 import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
-import type { ValueCompositeRankingParams, ValueCompositeScoreMethod } from '@/types/valueCompositeRanking';
+import type {
+  ValueCompositeForwardEpsMode,
+  ValueCompositeRankingParams,
+  ValueCompositeScoreMethod,
+} from '@/types/valueCompositeRanking';
 
 const VALUE_COMPOSITE_MARKET_OPTIONS = [
   { value: 'standard', label: 'Standard' },
@@ -18,6 +22,11 @@ const LIMIT_OPTIONS = [
 const SCORE_METHOD_OPTIONS = [
   { value: 'walkforward_regression_weight' as ValueCompositeScoreMethod, label: 'Walk-forward' },
   { value: 'equal_weight' as ValueCompositeScoreMethod, label: 'Equal weight' },
+];
+
+const FORWARD_EPS_MODE_OPTIONS = [
+  { value: 'latest' as ValueCompositeForwardEpsMode, label: 'Latest EPS' },
+  { value: 'fy' as ValueCompositeForwardEpsMode, label: 'FY EPS' },
 ];
 
 interface ValueCompositeRankingFiltersProps {
@@ -47,6 +56,19 @@ export function ValueCompositeRankingFilters({ params, onChange }: ValueComposit
             className="grid grid-cols-2 gap-1"
             itemClassName="h-8 justify-center rounded-lg px-2 py-1.5 text-xs"
           />
+        </div>
+        <div className="space-y-2">
+          <SectionEyebrow className="mb-0">Forward EPS Basis</SectionEyebrow>
+          <SegmentedTabs
+            items={FORWARD_EPS_MODE_OPTIONS}
+            value={params.forwardEpsMode ?? 'latest'}
+            onChange={(forwardEpsMode) => updateParam('forwardEpsMode', forwardEpsMode)}
+            className="grid grid-cols-2 gap-1"
+            itemClassName="h-8 justify-center rounded-lg px-2 py-1.5 text-xs"
+          />
+          <p className="text-xs text-muted-foreground">
+            Latest EPS uses revised quarterly forecasts when available; FY EPS pins the latest FY forecast.
+          </p>
         </div>
         <MarketsSelect
           value={params.markets || 'standard'}

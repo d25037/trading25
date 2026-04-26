@@ -28,6 +28,7 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100RankingResponse,
     Topix100StudyMode,
     ValueCompositeRankingResponse,
+    ValueCompositeForwardEpsMode,
     ValueCompositeScoreMethod,
 )
 from src.entrypoints.http.schemas.screening import (
@@ -186,6 +187,7 @@ async def get_value_composite_ranking(
     limit: int = Query(50, ge=1, le=200),
     markets: str = Query("standard"),
     scoreMethod: ValueCompositeScoreMethod = Query("walkforward_regression_weight"),
+    forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
 ) -> ValueCompositeRankingResponse:
     """小型バリュー複合スコアランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -201,6 +203,7 @@ async def get_value_composite_ranking(
             limit=limit,
             markets=markets,
             score_method=scoreMethod,
+            forward_eps_mode=forwardEpsMode,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -10661,6 +10661,11 @@ export interface components {
              * @enum {string}
              */
             scoreMethod: "equal_weight" | "walkforward_regression_weight";
+            /**
+             * Forwardepsmode
+             * @enum {string}
+             */
+            forwardEpsMode: "latest" | "fy";
             /** Scorepolicy */
             scorePolicy: string;
             /** Weights */
@@ -12055,6 +12060,7 @@ export interface operations {
                 limit?: number;
                 markets?: string;
                 scoreMethod?: "equal_weight" | "walkforward_regression_weight";
+                forwardEpsMode?: "latest" | "fy";
             };
             header?: never;
             path?: never;

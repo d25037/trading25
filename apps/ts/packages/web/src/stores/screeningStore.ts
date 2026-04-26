@@ -48,6 +48,7 @@ export const DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS: ValueCompositeRankingParams
   markets: 'standard',
   limit: 50,
   scoreMethod: 'walkforward_regression_weight',
+  forwardEpsMode: 'latest',
 };
 
 interface ScreeningState {

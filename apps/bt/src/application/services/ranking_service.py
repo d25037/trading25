@@ -62,6 +62,7 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100StudyMode,
     ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
+    ValueCompositeForwardEpsMode,
     ValueCompositeScoreMethod,
 )
 
@@ -233,6 +234,10 @@ _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = 
         "Walk-forward research weights: 55% small market cap + 25% low PBR + "
         f"20% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
+}
+_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str] = {
+    "latest": "latest revised forecast EPS when available, otherwise FY forecast EPS",
+    "fy": "latest FY forecast EPS only",
 }
 
 
@@ -722,11 +727,14 @@ class RankingService:
         limit: int = 50,
         markets: str = "standard",
         score_method: ValueCompositeScoreMethod = "walkforward_regression_weight",
+        forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
     ) -> ValueCompositeRankingResponse:
         """Standard市場向けの小型バリュー複合スコアランキングを取得"""
 
         if score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
             raise ValueError(f"Unsupported scoreMethod: {score_method}")
+        if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
+            raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
         weights = _normalize_value_composite_weights(_VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method])
         requested_market_codes, query_market_codes = resolve_market_codes(
             markets,
@@ -780,9 +788,10 @@ class RankingService:
                 statements,
                 as_of_date=target_date,
             )
-            forecast_snapshot = self._resolve_latest_forecast_snapshot(
+            forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
                 statements,
                 baseline_shares,
+                forward_eps_mode=forward_eps_mode,
                 as_of_date=target_date,
             )
             latest_fy = self._latest_value_fy_statement(raw_statements, as_of_date=target_date)
@@ -853,7 +862,11 @@ class RankingService:
             markets=requested_market_codes,
             metricKey=_VALUE_COMPOSITE_METRIC_KEY,
             scoreMethod=score_method,
-            scorePolicy=_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method],
+            forwardEpsMode=forward_eps_mode,
+            scorePolicy=(
+                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+            ),
             weights={
                 "smallMarketCap": weights["small_market_cap_score"],
                 "lowPbr": weights["low_pbr_score"],
@@ -1457,6 +1470,23 @@ class RankingService:
             baseline_shares,
             as_of_date=as_of_date,
         )
+
+    def _resolve_value_composite_forecast_snapshot(
+        self,
+        rows: list[_StatementRow],
+        baseline_shares: float | None,
+        *,
+        forward_eps_mode: ValueCompositeForwardEpsMode,
+        as_of_date: str | None = None,
+    ) -> _ForecastValue | None:
+        if forward_eps_mode == "latest":
+            return self._resolve_latest_forecast_snapshot(
+                rows,
+                baseline_shares,
+                as_of_date=as_of_date,
+            )
+        latest_fy = self._fundamental_calculator.resolve_latest_fy_row(rows, as_of_date=as_of_date)
+        return self._resolve_latest_fy_forecast_snapshot(latest_fy, baseline_shares)
 
     def _resolve_latest_ratio_snapshot(
         self,

@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ValueCompositeScoreMethod = Literal["equal_weight", "walkforward_regression_weight"]
+ValueCompositeForwardEpsMode = Literal["latest", "fy"]
 
 
 class RankingItem(BaseModel):
@@ -207,6 +208,7 @@ class ValueCompositeRankingResponse(BaseModel):
     markets: list[str]
     metricKey: Literal["standard_value_composite"] = "standard_value_composite"
     scoreMethod: ValueCompositeScoreMethod
+    forwardEpsMode: ValueCompositeForwardEpsMode
     scorePolicy: str
     weights: dict[str, float]
     itemCount: int

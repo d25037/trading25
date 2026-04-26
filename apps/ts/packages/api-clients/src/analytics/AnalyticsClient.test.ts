@@ -116,10 +116,11 @@ describe('AnalyticsClient', () => {
       limit: 50,
       markets: 'standard',
       scoreMethod: 'equal_weight',
+      forwardEpsMode: 'fy',
     });
 
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/value-composite-ranking?date=2026-04-24&limit=50&markets=standard&scoreMethod=equal_weight'
+      'http://localhost:3002/api/analytics/value-composite-ranking?date=2026-04-24&limit=50&markets=standard&scoreMethod=equal_weight&forwardEpsMode=fy'
     );
   });
 
@@ -175,9 +176,7 @@ describe('AnalyticsClient', () => {
     );
 
     await client.getCostStructureAnalysis({ symbol: '7203' });
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/stocks/7203/cost-structure'
-    );
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/analytics/stocks/7203/cost-structure');
 
     await client.getCostStructureAnalysis({ symbol: '7203', view: 'same_quarter', windowQuarters: 20 });
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(

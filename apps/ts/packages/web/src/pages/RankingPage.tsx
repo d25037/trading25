@@ -60,6 +60,10 @@ function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | u
   return method === 'equal_weight' ? 'Equal-weight value score' : 'Walk-forward value score';
 }
 
+function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {
+  return mode === 'fy' ? 'FY forecast EPS' : 'Latest revised forward EPS';
+}
+
 interface RankingSidebarProps {
   activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
@@ -201,6 +205,7 @@ function buildIntroMetaItems(
   if (activeSubTab === 'valueComposite') {
     return [
       { label: 'Mode', value: getValueCompositeScoreMethodLabel(valueCompositeRankingParams.scoreMethod) },
+      { label: 'EPS Basis', value: getValueCompositeForwardEpsModeLabel(valueCompositeRankingParams.forwardEpsMode) },
       { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
     ];
   }

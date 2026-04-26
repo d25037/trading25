@@ -1048,6 +1048,50 @@ class TestGetValueCompositeRanking:
         assert result.items[0].forwardPer == pytest.approx(5.0)
         assert result.items[0].marketCapBilJpy == pytest.approx(5.2)
 
+    def test_value_composite_ranking_can_use_latest_revised_forward_eps(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?)
+                """,
+                ("99840", "2024-01-18", "1Q", 130.0, 10_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        latest = svc.get_value_composite_ranking(limit=10)
+        fy_only = svc.get_value_composite_ranking(limit=10, forward_eps_mode="fy")
+        reader.close()
+
+        latest_item = next((row for row in latest.items if row.code == "99840"), None)
+        fy_item = next((row for row in fy_only.items if row.code == "99840"), None)
+        assert latest.forwardEpsMode == "latest"
+        assert fy_only.forwardEpsMode == "fy"
+        assert latest_item is not None
+        assert fy_item is not None
+        assert latest_item.forwardEpsSource == "revised"
+        assert latest_item.forwardEps == pytest.approx(130.0)
+        assert latest_item.forwardPer == pytest.approx(4.0)
+        assert fy_item.forwardEpsSource == "fy"
+        assert fy_item.forwardEps == pytest.approx(104.0)
+        assert fy_item.forwardPer == pytest.approx(5.0)
+
     def test_value_composite_ranking_ignores_future_disclosures(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
