@@ -61,7 +61,7 @@ function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | u
 }
 
 function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {
-  return mode === 'fy' ? 'FY forecast EPS' : 'Latest revised forward EPS';
+  return mode === 'fy' ? 'FY-only forecast EPS' : 'Latest revised EPS (previous default)';
 }
 
 interface RankingSidebarProps {

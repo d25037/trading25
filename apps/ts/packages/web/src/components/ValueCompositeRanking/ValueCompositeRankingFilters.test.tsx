@@ -40,7 +40,7 @@ describe('ValueCompositeRankingFilters', () => {
       />
     );
 
-    await user.click(screen.getByRole('button', { name: 'FY EPS' }));
+    await user.click(screen.getByRole('button', { name: 'FY-only EPS' }));
 
     expect(onChange).toHaveBeenCalledWith({
       markets: 'standard',

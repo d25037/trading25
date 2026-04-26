@@ -25,8 +25,8 @@ const SCORE_METHOD_OPTIONS = [
 ];
 
 const FORWARD_EPS_MODE_OPTIONS = [
-  { value: 'latest' as ValueCompositeForwardEpsMode, label: 'Latest EPS' },
-  { value: 'fy' as ValueCompositeForwardEpsMode, label: 'FY EPS' },
+  { value: 'latest' as ValueCompositeForwardEpsMode, label: 'Latest revised EPS' },
+  { value: 'fy' as ValueCompositeForwardEpsMode, label: 'FY-only EPS' },
 ];
 
 interface ValueCompositeRankingFiltersProps {
@@ -67,7 +67,8 @@ export function ValueCompositeRankingFilters({ params, onChange }: ValueComposit
             itemClassName="h-8 justify-center rounded-lg px-2 py-1.5 text-xs"
           />
           <p className="text-xs text-muted-foreground">
-            Latest EPS uses revised quarterly forecasts when available; FY EPS pins the latest FY forecast.
+            Latest revised EPS matches the previous default: revised quarterly forecasts when available, otherwise FY.
+            FY-only pins the latest FY forecast.
           </p>
         </div>
         <MarketsSelect
