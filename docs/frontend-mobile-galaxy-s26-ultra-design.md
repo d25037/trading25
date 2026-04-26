@@ -33,6 +33,7 @@ Observed patterns in `apps/ts/packages/web/src`:
 - On mobile, many pages collapse to `flex-col`, but the sidebar remains a full-width block above the content.
 - Tables and virtualized lists are central to Ranking / Screening / Portfolio / Watchlist flows.
 - Symbol Workbench has a large primary chart (`min-h-[34rem]`) plus many sub-panels; this is expensive in vertical space.
+- The global/page header can become hard to read on phone widths: titles, nav items, action buttons, status text, and current context compete for one narrow row.
 - Settings and control panels often use desktop-like density and long dialogs.
 
 This means the first mobile problem is not simply breakpoint support. It is **task prioritization**: on a phone, the user needs one active task surface at a time.
@@ -84,7 +85,31 @@ Instead:
 - Keep primary decision data visible: symbol, latest price/date, key signal state, selected timeframe.
 - Use progressive disclosure for API diagnostics, provenance, warnings, and advanced settings.
 
-### 4. Charts need mobile-specific interaction contracts
+### 4. Header readability must be treated as a first-class mobile problem
+
+On a 412 px-wide phone, the header cannot carry the same amount of information as desktop. The failure mode is usually not complete breakage; it is **low readability**: compressed titles, wrapped controls, hidden context, and action buttons that visually compete with the page title.
+
+Recommended header contract:
+
+- Use a two-tier mobile header instead of one overloaded row:
+  - Tier 1: app/page identity and primary navigation/menu affordance.
+  - Tier 2: page-specific context such as selected symbol, timeframe, refresh status, or active filter count.
+- Keep the visible title short. Move long route names, descriptions, and diagnostics into a details sheet or page body.
+- Collapse secondary actions behind a `More`/kebab menu or bottom sheet.
+- Use icon+label only for the most important action; use icon-only with accessible labels for secondary actions if space is tight.
+- Make sticky headers compact and translucent/solid enough to preserve chart/table readability beneath them.
+- Test text scaling and Japanese labels; Japanese route/action labels can be wider than expected even when character count is low.
+
+For Symbol Workbench, the mobile header should prioritize:
+
+1. selected symbol / company name,
+2. timeframe,
+3. refresh/data status,
+4. settings/panel picker access.
+
+Everything else should be demoted below the chart or into a sheet.
+
+### 5. Charts need mobile-specific interaction contracts
 
 For chart panels:
 
@@ -103,7 +128,7 @@ For Galaxy S26 Ultra portrait, a good chart target is:
 
 The current `min-h-[34rem]` primary chart is close to a full screen by itself on mobile; that is acceptable only if the page intentionally becomes a chart-first screen.
 
-### 5. Tables need card or hybrid views
+### 6. Tables need card or hybrid views
 
 Dense financial tables are the hardest mobile surface.
 
@@ -122,7 +147,7 @@ Recommended approach:
 
 Avoid forcing users to horizontally scan 10+ columns on a 412 px viewport.
 
-### 6. Dialogs should become sheets on mobile
+### 7. Dialogs should become sheets on mobile
 
 Current dialogs are fine on desktop, but on phone:
 
@@ -133,7 +158,7 @@ Current dialogs are fine on desktop, but on phone:
 
 For Symbol Workbench settings, the recent unification of panel/sub-chart settings into Panel Layout is a good direction. On mobile, make that layout a bottom sheet with per-panel accordions.
 
-### 7. Use safe-area and browser chrome aware spacing
+### 8. Use safe-area and browser chrome aware spacing
 
 Add mobile shell spacing with modern viewport units:
 
@@ -141,13 +166,14 @@ Add mobile shell spacing with modern viewport units:
 - Add `env(safe-area-inset-bottom)` to bottom nav/sheets.
 - Keep primary bottom actions above the gesture navigation area.
 
-### 8. Maintain desktop behavior by introducing mobile-only components gradually
+### 9. Maintain desktop behavior by introducing mobile-only components gradually
 
 Do not rewrite every page at once. Add reusable primitives and migrate page by page.
 
 Candidate primitives:
 
 - `MobilePageShell`
+- `MobileHeader` / `MobileContextBar`
 - `MobileControlSheet`
 - `MobileSegmentedSurface`
 - `ResponsiveDataView` (`table` desktop, `cards` mobile)
@@ -278,6 +304,7 @@ Useful patterns:
 A page is S26 Ultra-ready when:
 
 - It works at `412 × 892` without unintended horizontal page scroll.
+- Header content remains readable: no cramped title/action row, no important context hidden behind wrapping, and no accidental overlap with browser safe areas.
 - Primary task content appears above or near the first fold.
 - Touch targets are at least ~44 px where practical.
 - Dialogs/sheets can be completed with one thumb and do not trap nested scroll awkwardly.
