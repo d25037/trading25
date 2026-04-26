@@ -1,4 +1,5 @@
 import { TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
@@ -18,6 +19,29 @@ interface IndexPerformanceTableProps {
 const VIRTUALIZATION_THRESHOLD = 120;
 const INDEX_ROW_HEIGHT = 34;
 const INDEX_VIEWPORT_HEIGHT = 560;
+
+function getIsMobileIndexLayout(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 1023px)').matches
+  );
+}
+
+function useIsMobileIndexLayout(): boolean {
+  const [isMobileIndexLayout, setIsMobileIndexLayout] = useState(getIsMobileIndexLayout);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const updateLayout = () => setIsMobileIndexLayout(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener('change', updateLayout);
+    return () => mediaQuery.removeEventListener('change', updateLayout);
+  }, []);
+
+  return isMobileIndexLayout;
+}
 
 function formatIndexLevel(value: number): string {
   return value.toLocaleString('ja-JP', {
@@ -61,6 +85,56 @@ function IndexPerformanceRow({
   );
 }
 
+function IndexPerformanceCard({
+  item,
+  onIndexClick,
+  lookbackDays,
+}: {
+  item: IndexPerformanceItem;
+  onIndexClick: (code: string) => void;
+  lookbackDays: number;
+}) {
+  const isPositive = item.changePercentage >= 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onIndexClick(item.code)}
+      className="w-full rounded-2xl border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-sm font-semibold text-primary">{item.code}</p>
+          <p className="mt-1 truncate text-sm font-semibold text-foreground">{item.name}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {INDEX_CATEGORY_LABELS[item.category] ?? item.category}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'shrink-0 text-sm font-semibold tabular-nums',
+            isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          )}
+        >
+          {formatPercentage(item.changePercentage)}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Close</p>
+          <p className="mt-0.5 font-semibold tabular-nums text-foreground">{formatIndexLevel(item.currentClose)}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{item.currentDate}</p>
+        </div>
+        <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2">
+          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Base / {lookbackDays}D</p>
+          <p className="mt-0.5 font-semibold tabular-nums text-foreground">{formatIndexLevel(item.baseClose)}</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{item.baseDate}</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export function IndexPerformanceTable({
   items,
   isLoading,
@@ -82,6 +156,7 @@ export function IndexPerformanceTable({
     return left.code.localeCompare(right.code);
   });
   const shouldVirtualize = rows.length >= VIRTUALIZATION_THRESHOLD;
+  const isMobileIndexLayout = useIsMobileIndexLayout();
   const virtual = useVirtualizedRows(rows, {
     enabled: shouldVirtualize,
     rowHeight: INDEX_ROW_HEIGHT,
@@ -117,34 +192,47 @@ export function IndexPerformanceTable({
           emptyIcon={<TrendingUp className="h-8 w-8" />}
           height="h-full min-h-[18rem]"
         >
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
-              <tr>
-                <th className="w-20 px-2 py-1.5 text-left">Code</th>
-                <th className="px-2 py-1.5 text-left">Index</th>
-                <th className="w-28 px-2 py-1.5 text-right">Close</th>
-                <th className="w-24 px-2 py-1.5 text-left">Date</th>
-                <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
-                <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
-                <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shouldVirtualize && virtual.paddingTop > 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
-                </tr>
-              ) : null}
+          {isMobileIndexLayout ? (
+            <div className="space-y-2 p-3">
               {virtual.visibleItems.map((item) => (
-                <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
+                <IndexPerformanceCard
+                  key={item.code}
+                  item={item}
+                  onIndexClick={onIndexClick}
+                  lookbackDays={lookbackDays}
+                />
               ))}
-              {shouldVirtualize && virtual.paddingBottom > 0 ? (
+            </div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
                 <tr>
-                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+                  <th className="w-20 px-2 py-1.5 text-left">Code</th>
+                  <th className="px-2 py-1.5 text-left">Index</th>
+                  <th className="w-28 px-2 py-1.5 text-right">Close</th>
+                  <th className="w-24 px-2 py-1.5 text-left">Date</th>
+                  <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
+                  <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
+                  <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {shouldVirtualize && virtual.paddingTop > 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
+                  </tr>
+                ) : null}
+                {virtual.visibleItems.map((item) => (
+                  <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
+                ))}
+                {shouldVirtualize && virtual.paddingBottom > 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          )}
         </DataStateWrapper>
       </div>
     </Surface>
