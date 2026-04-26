@@ -526,7 +526,7 @@ describe('SymbolWorkbenchPage', () => {
     renderSymbolWorkbenchPage();
 
     expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
-    expect(screen.getByText('Stock Chart')).toBeInTheDocument();
+    expect(screen.getAllByText('Stock Chart').length).toBeGreaterThan(0);
     expect(screen.getByText('PPO Chart')).toBeInTheDocument();
     expect(screen.getByText('Recent Return Chart')).toBeInTheDocument();
     expect(screen.getByText('Risk Adjusted Return Chart')).toBeInTheDocument();
@@ -555,6 +555,30 @@ describe('SymbolWorkbenchPage', () => {
       symbol: '7203',
       enabled: false,
     });
+  });
+
+  it('opens chart controls from the mobile settings action', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+
+    renderSymbolWorkbenchPage();
+
+    fireEvent.click(screen.getByRole('button', { name: '設定' }));
+
+    expect(screen.getByRole('dialog', { name: 'Symbol Workbench Settings' })).toBeInTheDocument();
+    expect(screen.getAllByText('Chart Controls').length).toBeGreaterThan(1);
   });
 
   it('passes screening verification context into chart rendering and symbol changes', async () => {
@@ -589,8 +613,8 @@ describe('SymbolWorkbenchPage', () => {
     renderSymbolWorkbenchPage();
 
     expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', 'production/demo');
-    expect(screen.getByText('production/demo (strategy)')).toBeInTheDocument();
-    expect(screen.getByText('2026-03-14')).toBeInTheDocument();
+    expect(screen.getAllByText('production/demo (strategy)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2026-03-14').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Select 6758' }));
 

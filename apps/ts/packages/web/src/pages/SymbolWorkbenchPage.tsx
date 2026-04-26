@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
-import { AlertCircle, BookOpen, Loader2, RotateCcw, TrendingUp, Wallet } from 'lucide-react';
+import { AlertCircle, BookOpen, Loader2, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { CostStructurePanel } from '@/components/Chart/CostStructurePanel';
@@ -20,6 +20,7 @@ import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
@@ -49,6 +50,7 @@ import { formatMarketCap } from '@/utils/formatters';
 import { logger } from '@/utils/logger';
 
 type ChartSettings = ReturnType<typeof useChartStore.getState>['settings'];
+type WorkbenchDisplayPanelId = 'primary' | WorkbenchPanelId;
 
 interface LazySectionState {
   sectionRef: (node: HTMLDivElement | null) => void;
@@ -73,6 +75,64 @@ interface ChartRefreshFeedback {
 interface ChartHeaderMarketCaps {
   freeFloat: number | null;
   issuedShares: number | null;
+}
+
+interface WorkbenchPanelOption {
+  id: WorkbenchDisplayPanelId;
+  label: string;
+  kind: 'Primary' | 'Sub-chart' | 'Panel';
+}
+
+const WORKBENCH_PANEL_LABELS: Record<WorkbenchPanelId, string> = {
+  ppo: 'PPO',
+  riskAdjustedReturn: 'Risk',
+  recentReturn: 'Recent',
+  volumeComparison: 'Volume',
+  cmf: 'CMF',
+  chaikinOscillator: 'Chaikin',
+  obvFlowScore: 'OBV',
+  tradingValueMA: 'Trading Value',
+  fundamentals: 'Fundamentals',
+  fundamentalsHistory: 'FY History',
+  costStructure: 'Cost',
+  marginPressure: 'Margin',
+  factorRegression: 'Factor',
+};
+
+function isSubChartPanel(panelId: WorkbenchPanelId): boolean {
+  return (
+    panelId === 'ppo' ||
+    panelId === 'riskAdjustedReturn' ||
+    panelId === 'recentReturn' ||
+    panelId === 'volumeComparison' ||
+    panelId === 'cmf' ||
+    panelId === 'chaikinOscillator' ||
+    panelId === 'obvFlowScore' ||
+    panelId === 'tradingValueMA'
+  );
+}
+
+function getIsMobileWorkbenchLayout(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 1023px)').matches
+  );
+}
+
+function useIsMobileWorkbenchLayout(): boolean {
+  const [isMobileWorkbenchLayout, setIsMobileWorkbenchLayout] = useState(getIsMobileWorkbenchLayout);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const updateLayout = () => setIsMobileWorkbenchLayout(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener('change', updateLayout);
+    return () => mediaQuery.removeEventListener('change', updateLayout);
+  }, []);
+
+  return isMobileWorkbenchLayout;
 }
 
 function formatDisplayTimeframeLabel(timeframe: ChartSettings['displayTimeframe']): string {
@@ -362,6 +422,52 @@ function resolveFundamentalPanelVisibility(settings: ChartSettings): Record<Fund
   };
 }
 
+function isWorkbenchPanelVisible(
+  panelId: WorkbenchPanelId,
+  settings: ChartSettings,
+  panelVisibilityById: Record<FundamentalsPanelId, boolean>
+): boolean {
+  switch (panelId) {
+    case 'ppo':
+      return settings.showPPOChart;
+    case 'riskAdjustedReturn':
+      return settings.showRiskAdjustedReturnChart;
+    case 'recentReturn':
+      return settings.showRecentReturnChart;
+    case 'volumeComparison':
+      return settings.showVolumeComparison;
+    case 'cmf':
+      return settings.showCMF;
+    case 'chaikinOscillator':
+      return settings.showChaikinOscillator;
+    case 'obvFlowScore':
+      return settings.showOBVFlowScore;
+    case 'tradingValueMA':
+      return settings.showTradingValueMA;
+    default:
+      return panelVisibilityById[panelId];
+  }
+}
+
+function buildWorkbenchPanelOptions(
+  settings: ChartSettings,
+  panelVisibilityById: Record<FundamentalsPanelId, boolean>
+): WorkbenchPanelOption[] {
+  const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
+  return [
+    { id: 'primary', label: 'Primary', kind: 'Primary' },
+    ...workbenchPanelOrder
+      .filter((panelId) => isWorkbenchPanelVisible(panelId, settings, panelVisibilityById))
+      .map(
+        (panelId): WorkbenchPanelOption => ({
+          id: panelId,
+          label: WORKBENCH_PANEL_LABELS[panelId],
+          kind: isSubChartPanel(panelId) ? 'Sub-chart' : 'Panel',
+        })
+      ),
+  ];
+}
+
 function renderOrderedPanelSection({
   panelId,
   selectedSymbol,
@@ -627,6 +733,7 @@ function ChartHeader({
   refreshFeedback,
   isRefreshing,
   onRefresh,
+  onOpenMobileSettings,
 }: {
   settings: ChartSettings;
   selectedSymbol: string;
@@ -640,6 +747,7 @@ function ChartHeader({
   refreshFeedback: ChartRefreshFeedback | null;
   isRefreshing: boolean;
   onRefresh: () => void;
+  onOpenMobileSettings: () => void;
 }) {
   const mergedLoadedDomains = mergeUniqueStrings(
     signalProvenance?.loaded_domains,
@@ -656,16 +764,16 @@ function ChartHeader({
 
   return (
     <div className="space-y-3">
-      <Surface className="px-5 py-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <Surface className="px-3 py-3 sm:px-5 sm:py-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--app-surface-muted)] text-primary">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="hidden h-10 w-10 items-center justify-center rounded-2xl bg-[var(--app-surface-muted)] text-primary sm:flex">
                 <TrendingUp className="h-5 w-5" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <SectionEyebrow>Symbol Workbench</SectionEyebrow>
-                <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">
+                <h2 className="truncate text-lg font-semibold tracking-tight text-foreground sm:text-2xl">
                   {selectedSymbol}
                   {stockInfo?.companyName && (
                     <span className="ml-2 font-medium text-foreground">{stockInfo.companyName}</span>
@@ -673,13 +781,27 @@ function ChartHeader({
                   {settings.relativeMode && <span className="font-medium text-muted-foreground"> / TOPIX</span>}
                 </h2>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 lg:hidden"
+                onClick={onOpenMobileSettings}
+              >
+                <SettingsIcon className="mr-1 h-4 w-4" />
+                設定
+              </Button>
             </div>
 
-            <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <div className="hidden flex-wrap gap-x-5 gap-y-2 sm:flex">
               <ChartHeaderMetaChip label="Overlay" value={overlayLabel} />
               <ChartHeaderMetaChip label="Matched Date" value={formatOptionalDate(matchedDate)} />
               <ChartHeaderMetaChip label="Market Snapshot" value={marketSnapshotId} />
               <ChartHeaderMetaChip label="Signal Domains" value={formatList(mergedLoadedDomains)} />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs sm:hidden">
+              <ChartHeaderMetaChip label="Overlay" value={overlayLabel} />
+              <ChartHeaderMetaChip label="Date" value={formatOptionalDate(matchedDate)} />
             </div>
           </div>
 
@@ -687,6 +809,7 @@ function ChartHeader({
             <Button
               variant="outline"
               size="sm"
+              className="hidden sm:inline-flex"
               onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
               title="四季報を開く"
             >
@@ -696,13 +819,20 @@ function ChartHeader({
             <Button
               variant="outline"
               size="sm"
+              className="hidden sm:inline-flex"
               onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
               title="Buffett Codeを開く"
             >
               <Wallet className="mr-1 h-4 w-4" />
               B.C.
             </Button>
-            <Button variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+            >
               {isRefreshing ? (
                 <>
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -719,7 +849,7 @@ function ChartHeader({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 xl:grid-cols-6">
           <ChartHeaderInfoField label="市場" value={formatMarketLabel(stockInfo)} />
           <ChartHeaderInfoField label="指数採用" value={formatScaleCategoryLabel(stockInfo?.scaleCategory)} />
           <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
@@ -932,6 +1062,46 @@ function renderOrderedWorkbenchSection({
   }
 }
 
+function renderPrimaryChartSection({
+  settings,
+  chartData,
+  signalMarkers,
+  mobile = false,
+}: {
+  settings: ChartSettings;
+  chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
+  signalMarkers: ReturnType<typeof useMultiTimeframeChart>['signalMarkers'];
+  mobile?: boolean;
+}) {
+  return (
+    <Surface
+      className={cn(
+        'overflow-hidden',
+        mobile ? 'h-[min(58dvh,34rem)] min-h-[26rem]' : 'min-h-[34rem] lg:min-h-[40rem]'
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+        <div>
+          <SectionEyebrow>Primary</SectionEyebrow>
+          <h3 className="text-base font-semibold capitalize text-foreground">{settings.displayTimeframe} Chart</h3>
+        </div>
+      </div>
+      <div className="h-[calc(100%-4.25rem)]">
+        <ErrorBoundary>
+          <StockChart
+            data={chartData[settings.displayTimeframe]?.candlestickData || []}
+            atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
+            nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
+            bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
+            vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
+            signalMarkers={signalMarkers?.[settings.displayTimeframe]}
+          />
+        </ErrorBoundary>
+      </div>
+    </Surface>
+  );
+}
+
 function SymbolWorkbenchPanelsContent({
   settings,
   selectedSymbol,
@@ -965,49 +1135,85 @@ function SymbolWorkbenchPanelsContent({
   marginPressureLoading: boolean;
   marginPressureError: Error | null;
 }) {
+  const isMobileWorkbenchLayout = useIsMobileWorkbenchLayout();
   const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
+  const panelOptions = useMemo(
+    () => buildWorkbenchPanelOptions(settings, panelVisibilityById),
+    [settings, panelVisibilityById]
+  );
+  const [activeMobilePanelId, setActiveMobilePanelId] = useState<WorkbenchDisplayPanelId>('primary');
+
+  useEffect(() => {
+    if (!panelOptions.some((option) => option.id === activeMobilePanelId)) {
+      setActiveMobilePanelId('primary');
+    }
+  }, [activeMobilePanelId, panelOptions]);
+
+  const activeMobilePanel = panelOptions.find((option) => option.id === activeMobilePanelId) ?? panelOptions[0];
+
+  const renderWorkbenchPanel = (panelId: WorkbenchPanelId) =>
+    renderOrderedWorkbenchSection({
+      panelId,
+      selectedSymbol,
+      settings,
+      chartData,
+      panelVisibilityById,
+      fundamentalsPanelHeight,
+      tradingValuePeriod,
+      fundamentalsPanelSection,
+      fundamentalsHistorySection,
+      costStructureSection,
+      marginSection,
+      factorSection,
+      marginPressureData,
+      marginPressureLoading,
+      marginPressureError,
+    });
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <Surface className="min-h-[34rem] overflow-hidden lg:min-h-[40rem]">
-        <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
-          <div>
-            <SectionEyebrow>Primary</SectionEyebrow>
-            <h3 className="text-base font-semibold capitalize text-foreground">{settings.displayTimeframe} Chart</h3>
-          </div>
-        </div>
-        <div className="h-[calc(100%-4.25rem)]">
-          <ErrorBoundary>
-            <StockChart
-              data={chartData[settings.displayTimeframe]?.candlestickData || []}
-              atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
-              nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
-              bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
-              vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
-              signalMarkers={signalMarkers?.[settings.displayTimeframe]}
-            />
-          </ErrorBoundary>
-        </div>
-      </Surface>
+      {isMobileWorkbenchLayout ? (
+        <div className="flex flex-col gap-3">
+          <Surface className="px-3 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <SectionEyebrow>Panel</SectionEyebrow>
+                <p className="text-sm font-semibold text-foreground">{activeMobilePanel?.label ?? 'Primary'}</p>
+              </div>
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                {activeMobilePanel?.kind ?? 'Primary'}
+              </p>
+            </div>
+            <fieldset className="flex snap-x gap-2 overflow-x-auto pb-1">
+              <legend className="sr-only">Workbench panels</legend>
+              {panelOptions.map((option) => {
+                const isActive = option.id === activeMobilePanelId;
+                return (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    variant={isActive ? 'default' : 'outline'}
+                    size="sm"
+                    className="shrink-0 snap-start"
+                    aria-pressed={isActive}
+                    onClick={() => setActiveMobilePanelId(option.id)}
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </fieldset>
+          </Surface>
 
-      {workbenchPanelOrder.map((panelId) =>
-        renderOrderedWorkbenchSection({
-          panelId,
-          selectedSymbol,
-          settings,
-          chartData,
-          panelVisibilityById,
-          fundamentalsPanelHeight,
-          tradingValuePeriod,
-          fundamentalsPanelSection,
-          fundamentalsHistorySection,
-          costStructureSection,
-          marginSection,
-          factorSection,
-          marginPressureData,
-          marginPressureLoading,
-          marginPressureError,
-        })
+          {!activeMobilePanel || activeMobilePanel.id === 'primary'
+            ? renderPrimaryChartSection({ settings, chartData, signalMarkers, mobile: true })
+            : renderWorkbenchPanel(activeMobilePanel.id)}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {renderPrimaryChartSection({ settings, chartData, signalMarkers })}
+          {workbenchPanelOrder.map((panelId) => renderWorkbenchPanel(panelId))}
+        </div>
       )}
     </div>
   );
@@ -1028,8 +1234,10 @@ export function SymbolWorkbenchPage() {
     strategyName
   );
   const { settings } = useChartStore();
+  const isMobileWorkbenchLayout = useIsMobileWorkbenchLayout();
   const refreshStocks = useRefreshStocks();
   const [refreshFeedback, setRefreshFeedback] = useState<ChartRefreshFeedback | null>(null);
+  const [isMobileSettingsOpen, setIsMobileSettingsOpen] = useState(false);
   const shouldFetchMarginPressure = settings.showMarginPressurePanel && marginSection.isVisible;
   const shouldFetchFundamentals = selectedSymbol != null;
   const {
@@ -1098,15 +1306,29 @@ export function SymbolWorkbenchPage() {
   }, [queryClient, refreshStocks, selectedSymbol]);
 
   return (
-    <SplitLayout className="min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:flex-row lg:items-stretch lg:overflow-hidden">
+    <SplitLayout className="min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 sm:p-4 lg:flex-row lg:items-stretch lg:overflow-hidden">
       <h1 className="sr-only">Symbol Workbench</h1>
-      <SplitSidebar className="w-full lg:w-[18rem]">
-        <Surface className="h-full min-h-0 overflow-hidden">
-          <ErrorBoundary>
+      {!isMobileWorkbenchLayout || !selectedSymbol ? (
+        <SplitSidebar className="w-full lg:w-[18rem]">
+          <Surface className="h-full min-h-0 overflow-hidden">
+            <ErrorBoundary>
+              <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
+            </ErrorBoundary>
+          </Surface>
+        </SplitSidebar>
+      ) : null}
+
+      <Dialog open={isMobileSettingsOpen} onOpenChange={setIsMobileSettingsOpen}>
+        <DialogContent className="h-[calc(100dvh-1.5rem)] max-h-none max-w-none translate-y-[-50%] overflow-hidden p-0 sm:max-w-lg sm:rounded-lg lg:hidden">
+          <DialogHeader className="border-b border-border/60 px-4 py-3 text-left">
+            <DialogTitle>Symbol Workbench Settings</DialogTitle>
+            <DialogDescription>Search, chart settings, panel order, and signal controls.</DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 overflow-y-auto">
             <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
-          </ErrorBoundary>
-        </Surface>
-      </SplitSidebar>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <SplitMain className="min-h-0 gap-3 lg:overflow-y-auto lg:pr-1">
         {selectedSymbol && (
@@ -1123,6 +1345,7 @@ export function SymbolWorkbenchPage() {
             refreshFeedback={refreshFeedback}
             isRefreshing={refreshStocks.isPending}
             onRefresh={handleRefresh}
+            onOpenMobileSettings={() => setIsMobileSettingsOpen(true)}
           />
         )}
         {error && <ErrorState error={error} />}
