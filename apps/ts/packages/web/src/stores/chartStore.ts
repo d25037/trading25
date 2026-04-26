@@ -25,6 +25,16 @@ export type FundamentalsPanelId =
   | 'costStructure'
   | 'marginPressure'
   | 'factorRegression';
+export type SubChartPanelId =
+  | 'ppo'
+  | 'riskAdjustedReturn'
+  | 'recentReturn'
+  | 'volumeComparison'
+  | 'cmf'
+  | 'chaikinOscillator'
+  | 'obvFlowScore'
+  | 'tradingValueMA';
+export type WorkbenchPanelId = SubChartPanelId | FundamentalsPanelId;
 
 export const DEFAULT_FUNDAMENTALS_PANEL_ORDER: FundamentalsPanelId[] = [
   'fundamentals',
@@ -32,6 +42,22 @@ export const DEFAULT_FUNDAMENTALS_PANEL_ORDER: FundamentalsPanelId[] = [
   'costStructure',
   'marginPressure',
   'factorRegression',
+];
+
+export const DEFAULT_SUB_CHART_PANEL_ORDER: SubChartPanelId[] = [
+  'ppo',
+  'riskAdjustedReturn',
+  'recentReturn',
+  'volumeComparison',
+  'cmf',
+  'chaikinOscillator',
+  'obvFlowScore',
+  'tradingValueMA',
+];
+
+export const DEFAULT_WORKBENCH_PANEL_ORDER: WorkbenchPanelId[] = [
+  ...DEFAULT_SUB_CHART_PANEL_ORDER,
+  ...DEFAULT_FUNDAMENTALS_PANEL_ORDER,
 ];
 
 // Signal Overlay Types
@@ -101,6 +127,7 @@ export interface ChartSettings {
   showMarginPressurePanel: boolean;
   showFactorRegressionPanel: boolean;
   fundamentalsPanelOrder: FundamentalsPanelId[];
+  workbenchPanelOrder?: WorkbenchPanelId[];
   fundamentalsMetricOrder: FundamentalMetricId[];
   fundamentalsMetricVisibility: Record<FundamentalMetricId, boolean>;
   fundamentalsHistoryMetricOrder: FundamentalsHistoryMetricId[];
@@ -212,6 +239,7 @@ export const defaultSettings: ChartSettings = {
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
   fundamentalsPanelOrder: [...DEFAULT_FUNDAMENTALS_PANEL_ORDER],
+  workbenchPanelOrder: [...DEFAULT_WORKBENCH_PANEL_ORDER],
   fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
   fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
   fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -306,6 +334,23 @@ function isValidFundamentalsPanelId(value: unknown): value is FundamentalsPanelI
   );
 }
 
+function isValidSubChartPanelId(value: unknown): value is SubChartPanelId {
+  return (
+    value === 'ppo' ||
+    value === 'riskAdjustedReturn' ||
+    value === 'recentReturn' ||
+    value === 'volumeComparison' ||
+    value === 'cmf' ||
+    value === 'chaikinOscillator' ||
+    value === 'obvFlowScore' ||
+    value === 'tradingValueMA'
+  );
+}
+
+function isValidWorkbenchPanelId(value: unknown): value is WorkbenchPanelId {
+  return isValidSubChartPanelId(value) || isValidFundamentalsPanelId(value);
+}
+
 function normalizeFundamentalsPanelOrder(value: unknown): FundamentalsPanelId[] {
   const normalizedOrder: FundamentalsPanelId[] = [];
   const seen = new Set<FundamentalsPanelId>();
@@ -320,6 +365,31 @@ function normalizeFundamentalsPanelOrder(value: unknown): FundamentalsPanelId[] 
 
   for (const panelId of DEFAULT_FUNDAMENTALS_PANEL_ORDER) {
     if (seen.has(panelId)) continue;
+    normalizedOrder.push(panelId);
+  }
+
+  return normalizedOrder;
+}
+
+function normalizeWorkbenchPanelOrder(value: unknown, legacyFundamentalsOrder: unknown): WorkbenchPanelId[] {
+  const normalizedOrder: WorkbenchPanelId[] = [];
+  const seen = new Set<WorkbenchPanelId>();
+
+  if (Array.isArray(value)) {
+    for (const panelId of value) {
+      if (!isValidWorkbenchPanelId(panelId) || seen.has(panelId)) continue;
+      seen.add(panelId);
+      normalizedOrder.push(panelId);
+    }
+  }
+
+  const fallbackOrder = Array.isArray(value)
+    ? DEFAULT_WORKBENCH_PANEL_ORDER
+    : [...DEFAULT_SUB_CHART_PANEL_ORDER, ...normalizeFundamentalsPanelOrder(legacyFundamentalsOrder)];
+
+  for (const panelId of fallbackOrder) {
+    if (seen.has(panelId)) continue;
+    seen.add(panelId);
     normalizedOrder.push(panelId);
   }
 
@@ -481,6 +551,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
       defaultSettings.showFactorRegressionPanel
     ),
     fundamentalsPanelOrder: normalizeFundamentalsPanelOrder(partial.fundamentalsPanelOrder),
+    workbenchPanelOrder: normalizeWorkbenchPanelOrder(partial.workbenchPanelOrder, partial.fundamentalsPanelOrder),
     fundamentalsMetricOrder: normalizeFundamentalMetricOrder(partial.fundamentalsMetricOrder),
     fundamentalsMetricVisibility: normalizeFundamentalMetricVisibility(partial.fundamentalsMetricVisibility),
     fundamentalsHistoryMetricOrder: normalizeFundamentalsHistoryMetricOrder(partial.fundamentalsHistoryMetricOrder),

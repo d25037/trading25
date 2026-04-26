@@ -28,8 +28,13 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { useSignalReference } from '@/hooks/useBacktest';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
-import type { ChartSettings, FundamentalsPanelId } from '@/stores/chartStore';
-import { useChartStore } from '@/stores/chartStore';
+import {
+  type ChartSettings,
+  DEFAULT_WORKBENCH_PANEL_ORDER,
+  type FundamentalsPanelId,
+  useChartStore,
+  type WorkbenchPanelId,
+} from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
 import { ChartPresetSelector } from './ChartPresetSelector';
 import { IndicatorToggle, NumberInput } from './IndicatorToggle';
@@ -46,6 +51,14 @@ const VISIBLE_BAR_OPTIONS = [
 ] as const;
 
 type PanelVisibilitySettingKey =
+  | 'showPPOChart'
+  | 'showRiskAdjustedReturnChart'
+  | 'showRecentReturnChart'
+  | 'showVolumeComparison'
+  | 'showCMF'
+  | 'showChaikinOscillator'
+  | 'showOBVFlowScore'
+  | 'showTradingValueMA'
   | 'showFundamentalsPanel'
   | 'showFundamentalsHistoryPanel'
   | 'showCostStructurePanel'
@@ -56,16 +69,78 @@ interface PanelVisibilityToggle {
   id: string;
   label: string;
   settingKey: PanelVisibilitySettingKey;
-  panelId: FundamentalsPanelId;
+  panelId: WorkbenchPanelId;
+  kind: 'subChart' | 'panel';
   linkPanel?: SignalLinkedPanel;
 }
 
 const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
   {
+    id: 'show-ppo-chart',
+    label: 'PPO',
+    settingKey: 'showPPOChart',
+    panelId: 'ppo',
+    kind: 'subChart',
+    linkPanel: 'ppo',
+  },
+  {
+    id: 'show-risk-adjusted-return-chart',
+    label: 'Risk Adjusted Return',
+    settingKey: 'showRiskAdjustedReturnChart',
+    panelId: 'riskAdjustedReturn',
+    kind: 'subChart',
+    linkPanel: 'riskAdjustedReturn',
+  },
+  {
+    id: 'show-recent-return-chart',
+    label: 'Recent Return',
+    settingKey: 'showRecentReturnChart',
+    panelId: 'recentReturn',
+    kind: 'subChart',
+  },
+  {
+    id: 'show-volume-comparison-chart',
+    label: 'Volume Comparison',
+    settingKey: 'showVolumeComparison',
+    panelId: 'volumeComparison',
+    kind: 'subChart',
+    linkPanel: 'volumeComparison',
+  },
+  {
+    id: 'show-cmf-chart',
+    label: 'CMF',
+    settingKey: 'showCMF',
+    panelId: 'cmf',
+    kind: 'subChart',
+  },
+  {
+    id: 'show-chaikin-oscillator-chart',
+    label: 'Chaikin Oscillator',
+    settingKey: 'showChaikinOscillator',
+    panelId: 'chaikinOscillator',
+    kind: 'subChart',
+  },
+  {
+    id: 'show-obv-flow-score-chart',
+    label: 'OBV Flow Score',
+    settingKey: 'showOBVFlowScore',
+    panelId: 'obvFlowScore',
+    kind: 'subChart',
+  },
+  {
+    id: 'show-trading-value-ma-chart',
+    label: 'Trading Value MA',
+    settingKey: 'showTradingValueMA',
+    panelId: 'tradingValueMA',
+    kind: 'subChart',
+    linkPanel: 'tradingValueMA',
+  },
+  {
     id: 'show-fundamentals-panel',
     label: 'Fundamentals',
     settingKey: 'showFundamentalsPanel',
     panelId: 'fundamentals',
+    kind: 'panel',
     linkPanel: 'fundamentals',
   },
   {
@@ -73,6 +148,7 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     label: 'FY History',
     settingKey: 'showFundamentalsHistoryPanel',
     panelId: 'fundamentalsHistory',
+    kind: 'panel',
     linkPanel: 'fundamentalsHistory',
   },
   {
@@ -80,12 +156,14 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     label: 'Cost Structure',
     settingKey: 'showCostStructurePanel',
     panelId: 'costStructure',
+    kind: 'panel',
   },
   {
     id: 'show-margin-pressure-panel',
     label: 'Margin Pressure',
     settingKey: 'showMarginPressurePanel',
     panelId: 'marginPressure',
+    kind: 'panel',
     linkPanel: 'marginPressure',
   },
   {
@@ -93,13 +171,14 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     label: 'Factor Regression',
     settingKey: 'showFactorRegressionPanel',
     panelId: 'factorRegression',
+    kind: 'panel',
     linkPanel: 'factorRegression',
   },
 ];
 
 const PANEL_TOGGLE_BY_ID = Object.fromEntries(
   PANEL_VISIBILITY_TOGGLES.map((toggle) => [toggle.panelId, toggle])
-) as Record<FundamentalsPanelId, PanelVisibilityToggle>;
+) as Record<WorkbenchPanelId, PanelVisibilityToggle>;
 const FUNDAMENTAL_METRIC_LABEL_BY_ID = Object.fromEntries(
   FUNDAMENTAL_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
 ) as Record<FundamentalMetricId, string>;
@@ -205,6 +284,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
     [settings.signalOverlay?.signals, signalReferenceData?.signals]
   );
   const showSignalMeta = !!signalReferenceData && !signalReferenceError;
+  const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
 
   const getPanelSignalMeta = useCallback(
     (panel: SignalLinkedPanel): string | undefined => {
@@ -243,8 +323,8 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
   );
 
   const movePanelOrder = useCallback(
-    (panelId: FundamentalsPanelId, direction: 'up' | 'down') => {
-      const currentOrder = settings.fundamentalsPanelOrder;
+    (panelId: WorkbenchPanelId, direction: 'up' | 'down') => {
+      const currentOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
       const currentIndex = currentOrder.indexOf(panelId);
       if (currentIndex < 0) return;
 
@@ -257,9 +337,14 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
       if (!currentPanel || !targetPanel) return;
       nextOrder[currentIndex] = targetPanel;
       nextOrder[targetIndex] = currentPanel;
-      updateSettings({ fundamentalsPanelOrder: nextOrder });
+      updateSettings({
+        workbenchPanelOrder: nextOrder,
+        fundamentalsPanelOrder: nextOrder.filter(
+          (id): id is FundamentalsPanelId => PANEL_TOGGLE_BY_ID[id].kind === 'panel'
+        ),
+      });
     },
-    [settings.fundamentalsPanelOrder, updateSettings]
+    [settings.workbenchPanelOrder, updateSettings]
   );
 
   const updateFundamentalMetricVisibility = useCallback(
@@ -438,7 +523,12 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
       case 'panelLayout':
         return (
           <div className="space-y-2">
-            {settings.fundamentalsPanelOrder.map((panelId, index) => {
+            <div className="rounded-xl border border-border/60 bg-[var(--app-surface-muted)] p-2.5">
+              <p className="text-xs text-muted-foreground">
+                Sub-charts and fundamentals panels share one display order below the primary chart.
+              </p>
+            </div>
+            {workbenchPanelOrder.map((panelId, index) => {
               const toggle = PANEL_TOGGLE_BY_ID[panelId];
               const panelMeta = toggle.linkPanel ? getPanelSignalMeta(toggle.linkPanel) : undefined;
               const isVisible = settings[toggle.settingKey];
@@ -449,7 +539,9 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">Order {index + 1}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Order {index + 1} · {toggle.kind === 'subChart' ? 'Sub-chart' : 'Panel'}
+                      </p>
                       <Label htmlFor={toggle.id} className="text-sm font-medium cursor-pointer">
                         {toggle.label}
                       </Label>
@@ -481,7 +573,7 @@ export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsP
                       size="sm"
                       className="h-7 px-2"
                       onClick={() => movePanelOrder(panelId, 'down')}
-                      disabled={index === settings.fundamentalsPanelOrder.length - 1}
+                      disabled={index === workbenchPanelOrder.length - 1}
                     >
                       <ArrowDown className="h-3.5 w-3.5 mr-1" />
                       Down

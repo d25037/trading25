@@ -64,6 +64,21 @@ const mockChartStore = {
       'marginPressure',
       'factorRegression',
     ],
+    workbenchPanelOrder: [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -170,6 +185,21 @@ describe('ChartControls', () => {
     mockChartStore.settings.showMarginPressurePanel = true;
     mockChartStore.settings.showFactorRegressionPanel = true;
     mockChartStore.settings.fundamentalsPanelOrder = [
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ];
+    mockChartStore.settings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
       'costStructure',
@@ -322,14 +352,41 @@ describe('ChartControls', () => {
     await user.click(firstDownButton);
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
-      fundamentalsPanelOrder: [
-        'fundamentalsHistory',
+      workbenchPanelOrder: [
+        'riskAdjustedReturn',
+        'ppo',
+        'recentReturn',
+        'volumeComparison',
+        'cmf',
+        'chaikinOscillator',
+        'obvFlowScore',
+        'tradingValueMA',
         'fundamentals',
+        'fundamentalsHistory',
+        'costStructure',
+        'marginPressure',
+        'factorRegression',
+      ],
+      fundamentalsPanelOrder: [
+        'fundamentals',
+        'fundamentalsHistory',
         'costStructure',
         'marginPressure',
         'factorRegression',
       ],
     });
+  });
+
+  it('toggles sub-chart visibility from panel layout dialog', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    await user.click(screen.getByRole('switch', { name: /^Risk Adjusted Return$/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
   it('opens panel layout dialog and toggles cost structure panel visibility', async () => {
@@ -357,11 +414,19 @@ describe('ChartControls', () => {
     expect(downButton).toBeDefined();
     if (!upButton || !downButton) return;
 
-    mockChartStore.settings.fundamentalsPanelOrder = [];
+    mockChartStore.settings.workbenchPanelOrder = [];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
-    mockChartStore.settings.fundamentalsPanelOrder = [
+    mockChartStore.settings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
       'costStructure',
@@ -372,13 +437,7 @@ describe('ChartControls', () => {
     fireEvent.click(upButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
-    mockChartStore.settings.fundamentalsPanelOrder = [
-      'fundamentals',
-      undefined as unknown as 'fundamentalsHistory',
-      'costStructure',
-      'marginPressure',
-      'factorRegression',
-    ];
+    mockChartStore.settings.workbenchPanelOrder = ['ppo', undefined as unknown as 'riskAdjustedReturn'];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });

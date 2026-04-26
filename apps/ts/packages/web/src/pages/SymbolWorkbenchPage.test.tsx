@@ -120,6 +120,21 @@ const mockSettings = {
     'marginPressure',
     'factorRegression',
   ],
+  workbenchPanelOrder: [
+    'ppo',
+    'riskAdjustedReturn',
+    'recentReturn',
+    'volumeComparison',
+    'cmf',
+    'chaikinOscillator',
+    'obvFlowScore',
+    'tradingValueMA',
+    'fundamentals',
+    'fundamentalsHistory',
+    'costStructure',
+    'marginPressure',
+    'factorRegression',
+  ],
   fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
   fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
   fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -299,6 +314,21 @@ describe('SymbolWorkbenchPage', () => {
     mockSettings.showMarginPressurePanel = true;
     mockSettings.showFactorRegressionPanel = true;
     mockSettings.fundamentalsPanelOrder = [
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ];
+    mockSettings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
       'costStructure',
@@ -748,6 +778,21 @@ describe('SymbolWorkbenchPage', () => {
 
   it('renders panel sections based on configured order', () => {
     mockSettings.fundamentalsPanelOrder = [
+      'marginPressure',
+      'fundamentalsHistory',
+      'factorRegression',
+      'costStructure',
+      'fundamentals',
+    ];
+    mockSettings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'marginPressure',
       'fundamentalsHistory',
       'factorRegression',

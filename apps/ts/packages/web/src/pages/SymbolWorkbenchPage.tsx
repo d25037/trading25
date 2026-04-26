@@ -28,7 +28,12 @@ import { useMigrateSymbolWorkbenchRouteState, useSymbolWorkbenchRouteState } fro
 import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
-import { type FundamentalsPanelId, useChartStore } from '@/stores/chartStore';
+import {
+  DEFAULT_WORKBENCH_PANEL_ORDER,
+  type FundamentalsPanelId,
+  useChartStore,
+  type WorkbenchPanelId,
+} from '@/stores/chartStore';
 import type {
   BollingerBandsData,
   IndicatorValue,
@@ -748,19 +753,49 @@ function ChartHeader({
   );
 }
 
-type TimeframeChartData = ReturnType<typeof useMultiTimeframeChart>['chartData'][ChartSettings['displayTimeframe']];
-
-interface WorkbenchSubChartGroupProps {
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: keeps each persisted workbench panel id mapped in one renderer.
+function renderOrderedWorkbenchSection({
+  panelId,
+  selectedSymbol,
+  settings,
+  chartData,
+  panelVisibilityById,
+  fundamentalsPanelHeight,
+  tradingValuePeriod,
+  fundamentalsPanelSection,
+  fundamentalsHistorySection,
+  costStructureSection,
+  marginSection,
+  factorSection,
+  marginPressureData,
+  marginPressureLoading,
+  marginPressureError,
+}: {
+  panelId: WorkbenchPanelId;
+  selectedSymbol: string | null;
   settings: ChartSettings;
-  currentChartData: TimeframeChartData;
-  timeframeLabel: string;
-}
+  chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
+  panelVisibilityById: Record<FundamentalsPanelId, boolean>;
+  fundamentalsPanelHeight: number;
+  tradingValuePeriod: number;
+  fundamentalsPanelSection: LazySectionState;
+  fundamentalsHistorySection: LazySectionState;
+  costStructureSection: LazySectionState;
+  marginSection: LazySectionState;
+  factorSection: LazySectionState;
+  marginPressureData: MarginPressureIndicatorsResponse | undefined;
+  marginPressureLoading: boolean;
+  marginPressureError: Error | null;
+}) {
+  const timeframe = settings.displayTimeframe;
+  const timeframeLabel = formatDisplayTimeframeLabel(timeframe);
+  const currentChartData = chartData[timeframe];
 
-function ReturnSubCharts({ settings, currentChartData, timeframeLabel }: WorkbenchSubChartGroupProps) {
-  return (
-    <>
-      {settings.showPPOChart && (
-        <Surface className="h-96 shrink-0 overflow-hidden">
+  switch (panelId) {
+    case 'ppo':
+      if (!settings.showPPOChart) return null;
+      return (
+        <Surface key={panelId} className="h-96 shrink-0 overflow-hidden">
           <ErrorBoundary>
             <PPOChart
               data={(currentChartData?.indicators.ppo as PPOIndicatorData[]) || []}
@@ -768,10 +803,11 @@ function ReturnSubCharts({ settings, currentChartData, timeframeLabel }: Workben
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showRiskAdjustedReturnChart && (
-        <Surface className="h-[240px] shrink-0 overflow-hidden">
+      );
+    case 'riskAdjustedReturn':
+      if (!settings.showRiskAdjustedReturnChart) return null;
+      return (
+        <Surface key={panelId} className="h-[240px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <RiskAdjustedReturnChart
               data={(currentChartData?.indicators.riskAdjustedReturn as RiskAdjustedReturnData[]) || []}
@@ -783,10 +819,11 @@ function ReturnSubCharts({ settings, currentChartData, timeframeLabel }: Workben
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showRecentReturnChart && (
-        <Surface className="h-[240px] shrink-0 overflow-hidden">
+      );
+    case 'recentReturn':
+      if (!settings.showRecentReturnChart) return null;
+      return (
+        <Surface key={panelId} className="h-[240px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <RecentReturnChart
               shortData={
@@ -805,16 +842,11 @@ function ReturnSubCharts({ settings, currentChartData, timeframeLabel }: Workben
             />
           </ErrorBoundary>
         </Surface>
-      )}
-    </>
-  );
-}
-
-function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: WorkbenchSubChartGroupProps) {
-  return (
-    <>
-      {settings.showVolumeComparison && (
-        <Surface className="h-[240px] shrink-0 overflow-hidden">
+      );
+    case 'volumeComparison':
+      if (!settings.showVolumeComparison) return null;
+      return (
+        <Surface key={panelId} className="h-[240px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <VolumeComparisonChart
               data={(currentChartData?.volumeComparison as VolumeComparisonData[]) || []}
@@ -825,10 +857,11 @@ function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: Wor
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showCMF && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
+      );
+    case 'cmf':
+      if (!settings.showCMF) return null;
+      return (
+        <Surface key={panelId} className="h-[220px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <SingleValueIndicatorChart
               data={(currentChartData?.indicators.cmf as IndicatorValue[]) || []}
@@ -838,10 +871,11 @@ function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: Wor
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showChaikinOscillator && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
+      );
+    case 'chaikinOscillator':
+      if (!settings.showChaikinOscillator) return null;
+      return (
+        <Surface key={panelId} className="h-[220px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <SingleValueIndicatorChart
               data={(currentChartData?.indicators.chaikinOscillator as IndicatorValue[]) || []}
@@ -851,10 +885,11 @@ function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: Wor
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showOBVFlowScore && (
-        <Surface className="h-[220px] shrink-0 overflow-hidden">
+      );
+    case 'obvFlowScore':
+      if (!settings.showOBVFlowScore) return null;
+      return (
+        <Surface key={panelId} className="h-[220px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <SingleValueIndicatorChart
               data={(currentChartData?.indicators.obvFlowScore as IndicatorValue[]) || []}
@@ -864,10 +899,11 @@ function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: Wor
             />
           </ErrorBoundary>
         </Surface>
-      )}
-
-      {settings.showTradingValueMA && (
-        <Surface className="h-[200px] shrink-0 overflow-hidden">
+      );
+    case 'tradingValueMA':
+      if (!settings.showTradingValueMA) return null;
+      return (
+        <Surface key={panelId} className="h-[200px] shrink-0 overflow-hidden">
           <ErrorBoundary>
             <TradingValueMAChart
               data={(currentChartData?.tradingValueMA as TradingValueMAData[]) || []}
@@ -875,28 +911,25 @@ function VolumeFlowSubCharts({ settings, currentChartData, timeframeLabel }: Wor
             />
           </ErrorBoundary>
         </Surface>
-      )}
-    </>
-  );
-}
-
-function WorkbenchSubCharts({
-  settings,
-  chartData,
-}: {
-  settings: ChartSettings;
-  chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
-}) {
-  const timeframe = settings.displayTimeframe;
-  const timeframeLabel = formatDisplayTimeframeLabel(timeframe);
-  const currentChartData = chartData[timeframe];
-
-  return (
-    <>
-      <ReturnSubCharts settings={settings} currentChartData={currentChartData} timeframeLabel={timeframeLabel} />
-      <VolumeFlowSubCharts settings={settings} currentChartData={currentChartData} timeframeLabel={timeframeLabel} />
-    </>
-  );
+      );
+    default:
+      if (!panelVisibilityById[panelId]) return null;
+      return renderOrderedPanelSection({
+        panelId,
+        selectedSymbol,
+        settings,
+        fundamentalsPanelHeight,
+        tradingValuePeriod,
+        fundamentalsPanelSection,
+        fundamentalsHistorySection,
+        costStructureSection,
+        marginSection,
+        factorSection,
+        marginPressureData,
+        marginPressureLoading,
+        marginPressureError,
+      });
+  }
 }
 
 function SymbolWorkbenchPanelsContent({
@@ -932,6 +965,8 @@ function SymbolWorkbenchPanelsContent({
   marginPressureLoading: boolean;
   marginPressureError: Error | null;
 }) {
+  const workbenchPanelOrder = settings.workbenchPanelOrder ?? DEFAULT_WORKBENCH_PANEL_ORDER;
+
   return (
     <div className="flex h-full flex-col gap-3">
       <Surface className="min-h-[34rem] overflow-hidden lg:min-h-[40rem]">
@@ -955,27 +990,25 @@ function SymbolWorkbenchPanelsContent({
         </div>
       </Surface>
 
-      <WorkbenchSubCharts settings={settings} chartData={chartData} />
-
-      {settings.fundamentalsPanelOrder
-        .filter((panelId) => panelVisibilityById[panelId])
-        .map((panelId) =>
-          renderOrderedPanelSection({
-            panelId,
-            selectedSymbol,
-            settings,
-            fundamentalsPanelHeight,
-            tradingValuePeriod,
-            fundamentalsPanelSection,
-            fundamentalsHistorySection,
-            costStructureSection,
-            marginSection,
-            factorSection,
-            marginPressureData,
-            marginPressureLoading,
-            marginPressureError,
-          })
-        )}
+      {workbenchPanelOrder.map((panelId) =>
+        renderOrderedWorkbenchSection({
+          panelId,
+          selectedSymbol,
+          settings,
+          chartData,
+          panelVisibilityById,
+          fundamentalsPanelHeight,
+          tradingValuePeriod,
+          fundamentalsPanelSection,
+          fundamentalsHistorySection,
+          costStructureSection,
+          marginSection,
+          factorSection,
+          marginPressureData,
+          marginPressureLoading,
+          marginPressureError,
+        })
+      )}
     </div>
   );
 }
