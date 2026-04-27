@@ -174,9 +174,9 @@ function ChartHeaderInfoField({ label, value }: { label: string; value: string }
 
 function ChartHeaderMetaChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="inline-flex items-center gap-2 text-xs">
-      <span className="uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
+    <div className="flex min-w-0 items-center gap-2 text-xs">
+      <span className="shrink-0 uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate font-medium text-foreground">{value}</span>
     </div>
   );
 }
@@ -1316,12 +1316,12 @@ export function SymbolWorkbenchPage() {
       ) : null}
 
       <Dialog open={isMobileSettingsOpen} onOpenChange={setIsMobileSettingsOpen}>
-        <DialogContent className="h-[calc(100dvh-1.5rem)] max-h-none max-w-none translate-y-[-50%] overflow-hidden p-0 sm:max-w-lg sm:rounded-lg lg:hidden">
+        <DialogContent className="flex h-[calc(100dvh-1.5rem)] max-h-none max-w-none translate-y-[-50%] flex-col overflow-hidden p-0 sm:max-w-lg sm:rounded-lg lg:hidden">
           <DialogHeader className="border-b border-border/60 px-4 py-3 text-left">
             <DialogTitle>Symbol Workbench Settings</DialogTitle>
             <DialogDescription>Search, chart settings, panel order, and signal controls.</DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
           </div>
         </DialogContent>

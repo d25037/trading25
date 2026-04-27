@@ -113,6 +113,33 @@ describe('IndexPerformanceTable', () => {
     expect(onIndexClick).toHaveBeenCalledWith('N225');
   });
 
+  it('keeps mobile virtualized index cards scrollable for long lists', () => {
+    mockIndexMediaQuery(true);
+    const items = Array.from({ length: 121 }, (_, index) =>
+      createItem({
+        code: `IDX${String(index).padStart(3, '0')}`,
+        name: `Index ${index}`,
+        category: index % 2 === 0 ? 'market' : 'style',
+        changePercentage: 121 - index,
+        currentClose: 1000 + index,
+        baseClose: 900 + index,
+      })
+    );
+    const { container } = render(
+      <IndexPerformanceTable items={items} isLoading={false} error={null} onIndexClick={vi.fn()} />
+    );
+    const scrollArea = container.querySelector('.overflow-auto');
+
+    expect(scrollArea).not.toBeNull();
+    expect(screen.getByText('IDX000')).toBeInTheDocument();
+    expect(screen.queryByText('IDX120')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"][style*="height"]')).not.toBeNull();
+
+    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 120 * 116 } });
+
+    expect(screen.getByText('IDX120')).toBeInTheDocument();
+  });
+
   it('virtualizes long lists', () => {
     const items = Array.from({ length: 121 }, (_, index) =>
       createItem({

@@ -26,6 +26,7 @@ const rankingTabs: { id: RankingType; label: string; icon: typeof DollarSign }[]
 
 const VIRTUALIZATION_THRESHOLD = 120;
 const RANKING_ROW_HEIGHT = 36;
+const RANKING_CARD_ROW_HEIGHT = 128;
 const RANKING_VIEWPORT_HEIGHT = 520;
 
 function getIsMobileRankingLayout(): boolean {
@@ -106,7 +107,7 @@ function RankingCard({
     <button
       type="button"
       onClick={() => onStockClick(item.code)}
-      className="w-full rounded-2xl border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
+      className="min-h-[7.5rem] w-full rounded-2xl border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -155,6 +156,99 @@ function RankingCard({
   );
 }
 
+interface RankingVirtualRows {
+  visibleItems: RankingItem[];
+  paddingTop: number;
+  paddingBottom: number;
+}
+
+function VirtualSpacer({ height }: { height: number }) {
+  if (height <= 0) return null;
+  return <div aria-hidden="true" className="shrink-0" style={{ height }} />;
+}
+
+function RankingCardList({
+  virtual,
+  shouldVirtualize,
+  onStockClick,
+  showChange,
+  isPeriodType,
+}: {
+  virtual: RankingVirtualRows;
+  shouldVirtualize: boolean;
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  isPeriodType: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-3">
+      {shouldVirtualize ? <VirtualSpacer height={virtual.paddingTop} /> : null}
+      {virtual.visibleItems.map((item) => (
+        <RankingCard
+          key={`${item.code}-${item.rank}`}
+          item={item}
+          onStockClick={onStockClick}
+          showChange={showChange}
+          isPeriodType={isPeriodType}
+        />
+      ))}
+      {shouldVirtualize ? <VirtualSpacer height={virtual.paddingBottom} /> : null}
+    </div>
+  );
+}
+
+function RankingRowsTable({
+  virtual,
+  shouldVirtualize,
+  onStockClick,
+  showChange,
+  isPeriodType,
+  columnCount,
+}: {
+  virtual: RankingVirtualRows;
+  shouldVirtualize: boolean;
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  isPeriodType: boolean;
+  columnCount: number;
+}) {
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
+        <tr>
+          <th className="text-center px-2 py-1.5 w-12">#</th>
+          <th className="text-left px-2 py-1.5 w-16">Code</th>
+          <th className="text-left px-2 py-1.5">Company</th>
+          <th className="text-left px-2 py-1.5 w-24">Sector</th>
+          <th className="text-right px-2 py-1.5 w-24">Price</th>
+          {showChange && <th className="text-right px-2 py-1.5 w-20">{isPeriodType ? 'Break %' : 'Change'}</th>}
+          <th className="text-right px-2 py-1.5 w-24">Trading Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {shouldVirtualize && virtual.paddingTop > 0 && (
+          <tr>
+            <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingTop }} />
+          </tr>
+        )}
+        {virtual.visibleItems.map((item) => (
+          <RankingRow
+            key={`${item.code}-${item.rank}`}
+            item={item}
+            onStockClick={onStockClick}
+            showChange={showChange}
+          />
+        ))}
+        {shouldVirtualize && virtual.paddingBottom > 0 && (
+          <tr>
+            <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingBottom }} />
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
 export function RankingTable({ rankings, isLoading, error, onStockClick, periodDays }: RankingTableProps) {
   const [activeRankingType, setActiveRankingType] = useState<RankingType>('tradingValue');
   const isMobileRankingLayout = useIsMobileRankingLayout();
@@ -165,7 +259,7 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
   const shouldVirtualize = currentItems.length >= VIRTUALIZATION_THRESHOLD;
   const virtual = useVirtualizedRows(currentItems, {
     enabled: shouldVirtualize,
-    rowHeight: RANKING_ROW_HEIGHT,
+    rowHeight: isMobileRankingLayout ? RANKING_CARD_ROW_HEIGHT : RANKING_ROW_HEIGHT,
     viewportHeight: RANKING_VIEWPORT_HEIGHT,
   });
   const columnCount = showChange ? 7 : 6;
@@ -216,51 +310,22 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
           height="h-full min-h-[18rem]"
         >
           {isMobileRankingLayout ? (
-            <div className="space-y-2 p-3">
-              {virtual.visibleItems.map((item) => (
-                <RankingCard
-                  key={`${item.code}-${item.rank}`}
-                  item={item}
-                  onStockClick={onStockClick}
-                  showChange={showChange}
-                  isPeriodType={isPeriodType}
-                />
-              ))}
-            </div>
+            <RankingCardList
+              virtual={virtual}
+              shouldVirtualize={shouldVirtualize}
+              onStockClick={onStockClick}
+              showChange={showChange}
+              isPeriodType={isPeriodType}
+            />
           ) : (
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
-                <tr>
-                  <th className="text-center px-2 py-1.5 w-12">#</th>
-                  <th className="text-left px-2 py-1.5 w-16">Code</th>
-                  <th className="text-left px-2 py-1.5">Company</th>
-                  <th className="text-left px-2 py-1.5 w-24">Sector</th>
-                  <th className="text-right px-2 py-1.5 w-24">Price</th>
-                  {showChange && <th className="text-right px-2 py-1.5 w-20">{isPeriodType ? 'Break %' : 'Change'}</th>}
-                  <th className="text-right px-2 py-1.5 w-24">Trading Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shouldVirtualize && virtual.paddingTop > 0 && (
-                  <tr>
-                    <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingTop }} />
-                  </tr>
-                )}
-                {virtual.visibleItems.map((item) => (
-                  <RankingRow
-                    key={`${item.code}-${item.rank}`}
-                    item={item}
-                    onStockClick={onStockClick}
-                    showChange={showChange}
-                  />
-                ))}
-                {shouldVirtualize && virtual.paddingBottom > 0 && (
-                  <tr>
-                    <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingBottom }} />
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <RankingRowsTable
+              virtual={virtual}
+              shouldVirtualize={shouldVirtualize}
+              onStockClick={onStockClick}
+              showChange={showChange}
+              isPeriodType={isPeriodType}
+              columnCount={columnCount}
+            />
           )}
         </DataStateWrapper>
       </div>

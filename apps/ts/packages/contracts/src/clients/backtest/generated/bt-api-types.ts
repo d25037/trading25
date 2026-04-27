@@ -10642,6 +10642,11 @@ export interface components {
         ValueCompositeRankingResponse: {
             /** Date */
             date: string;
+            /**
+             * Forwardepsmode
+             * @enum {string}
+             */
+            forwardEpsMode: "latest" | "fy";
             /** Itemcount */
             itemCount: number;
             /** Items */
@@ -10661,11 +10666,6 @@ export interface components {
              * @enum {string}
              */
             scoreMethod: "equal_weight" | "walkforward_regression_weight";
-            /**
-             * Forwardepsmode
-             * @enum {string}
-             */
-            forwardEpsMode: "latest" | "fy";
             /** Scorepolicy */
             scorePolicy: string;
             /** Weights */

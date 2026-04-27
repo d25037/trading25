@@ -18,6 +18,7 @@ interface IndexPerformanceTableProps {
 
 const VIRTUALIZATION_THRESHOLD = 120;
 const INDEX_ROW_HEIGHT = 34;
+const INDEX_CARD_ROW_HEIGHT = 120;
 const INDEX_VIEWPORT_HEIGHT = 560;
 
 function getIsMobileIndexLayout(): boolean {
@@ -100,7 +101,7 @@ function IndexPerformanceCard({
     <button
       type="button"
       onClick={() => onIndexClick(item.code)}
-      className="w-full rounded-2xl border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
+      className="min-h-[7rem] w-full rounded-2xl border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -135,6 +136,82 @@ function IndexPerformanceCard({
   );
 }
 
+interface IndexVirtualRows {
+  visibleItems: IndexPerformanceItem[];
+  paddingTop: number;
+  paddingBottom: number;
+}
+
+function VirtualSpacer({ height }: { height: number }) {
+  if (height <= 0) return null;
+  return <div aria-hidden="true" className="shrink-0" style={{ height }} />;
+}
+
+function IndexPerformanceCardList({
+  virtual,
+  shouldVirtualize,
+  onIndexClick,
+  lookbackDays,
+}: {
+  virtual: IndexVirtualRows;
+  shouldVirtualize: boolean;
+  onIndexClick: (code: string) => void;
+  lookbackDays: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-3">
+      {shouldVirtualize ? <VirtualSpacer height={virtual.paddingTop} /> : null}
+      {virtual.visibleItems.map((item) => (
+        <IndexPerformanceCard key={item.code} item={item} onIndexClick={onIndexClick} lookbackDays={lookbackDays} />
+      ))}
+      {shouldVirtualize ? <VirtualSpacer height={virtual.paddingBottom} /> : null}
+    </div>
+  );
+}
+
+function IndexPerformanceRowsTable({
+  virtual,
+  shouldVirtualize,
+  onIndexClick,
+  lookbackDays,
+}: {
+  virtual: IndexVirtualRows;
+  shouldVirtualize: boolean;
+  onIndexClick: (code: string) => void;
+  lookbackDays: number;
+}) {
+  return (
+    <table className="w-full text-xs">
+      <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
+        <tr>
+          <th className="w-20 px-2 py-1.5 text-left">Code</th>
+          <th className="px-2 py-1.5 text-left">Index</th>
+          <th className="w-28 px-2 py-1.5 text-right">Close</th>
+          <th className="w-24 px-2 py-1.5 text-left">Date</th>
+          <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
+          <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
+          <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
+        </tr>
+      </thead>
+      <tbody>
+        {shouldVirtualize && virtual.paddingTop > 0 ? (
+          <tr>
+            <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
+          </tr>
+        ) : null}
+        {virtual.visibleItems.map((item) => (
+          <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
+        ))}
+        {shouldVirtualize && virtual.paddingBottom > 0 ? (
+          <tr>
+            <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+          </tr>
+        ) : null}
+      </tbody>
+    </table>
+  );
+}
+
 export function IndexPerformanceTable({
   items,
   isLoading,
@@ -159,7 +236,7 @@ export function IndexPerformanceTable({
   const isMobileIndexLayout = useIsMobileIndexLayout();
   const virtual = useVirtualizedRows(rows, {
     enabled: shouldVirtualize,
-    rowHeight: INDEX_ROW_HEIGHT,
+    rowHeight: isMobileIndexLayout ? INDEX_CARD_ROW_HEIGHT : INDEX_ROW_HEIGHT,
     viewportHeight: INDEX_VIEWPORT_HEIGHT,
   });
   const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;
@@ -193,45 +270,19 @@ export function IndexPerformanceTable({
           height="h-full min-h-[18rem]"
         >
           {isMobileIndexLayout ? (
-            <div className="space-y-2 p-3">
-              {virtual.visibleItems.map((item) => (
-                <IndexPerformanceCard
-                  key={item.code}
-                  item={item}
-                  onIndexClick={onIndexClick}
-                  lookbackDays={lookbackDays}
-                />
-              ))}
-            </div>
+            <IndexPerformanceCardList
+              virtual={virtual}
+              shouldVirtualize={shouldVirtualize}
+              onIndexClick={onIndexClick}
+              lookbackDays={lookbackDays}
+            />
           ) : (
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
-                <tr>
-                  <th className="w-20 px-2 py-1.5 text-left">Code</th>
-                  <th className="px-2 py-1.5 text-left">Index</th>
-                  <th className="w-28 px-2 py-1.5 text-right">Close</th>
-                  <th className="w-24 px-2 py-1.5 text-left">Date</th>
-                  <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
-                  <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
-                  <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shouldVirtualize && virtual.paddingTop > 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
-                  </tr>
-                ) : null}
-                {virtual.visibleItems.map((item) => (
-                  <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
-                ))}
-                {shouldVirtualize && virtual.paddingBottom > 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+            <IndexPerformanceRowsTable
+              virtual={virtual}
+              shouldVirtualize={shouldVirtualize}
+              onIndexClick={onIndexClick}
+              lookbackDays={lookbackDays}
+            />
           )}
         </DataStateWrapper>
       </div>

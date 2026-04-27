@@ -102,7 +102,7 @@ function HeaderMenu({
   return (
     <div
       id={id}
-      className="absolute right-0 top-full z-30 mt-2 w-64 rounded-2xl border border-border/70 bg-background/98 p-2 shadow-lg backdrop-blur-xl"
+      className="absolute right-0 top-full z-30 mt-2 max-h-[calc(100dvh-4rem)] w-64 overflow-y-auto rounded-2xl border border-border/70 bg-background/98 p-2 shadow-lg backdrop-blur-xl"
     >
       {showMobileLabel ? (
         <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">

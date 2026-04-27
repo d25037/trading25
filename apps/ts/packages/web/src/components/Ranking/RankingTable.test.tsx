@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Rankings } from '@/types/ranking';
@@ -89,6 +89,23 @@ describe('RankingTable', () => {
 
     await user.click(screen.getByRole('button', { name: /7000/ }));
     expect(onStockClick).toHaveBeenCalledWith('7000');
+  });
+
+  it('keeps mobile virtualized ranking cards scrollable for long lists', () => {
+    mockRankingMediaQuery(true);
+    const { container } = render(
+      <RankingTable rankings={createRankings(130)} isLoading={false} error={null} onStockClick={vi.fn()} />
+    );
+    const scrollArea = container.querySelector('.overflow-auto');
+
+    expect(scrollArea).not.toBeNull();
+    expect(screen.getByText('Company 1')).toBeInTheDocument();
+    expect(screen.queryByText('Company 130')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"][style*="height"]')).not.toBeNull();
+
+    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 128 * 125 } });
+
+    expect(screen.getByText('Company 130')).toBeInTheDocument();
   });
 
   it('calls onStockClick when row is clicked', async () => {
