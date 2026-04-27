@@ -20,6 +20,10 @@ from src.domains.analytics.falling_knife_reversal_study import (
     get_falling_knife_reversal_study_latest_bundle_path,
     load_falling_knife_reversal_study_bundle,
 )
+from src.domains.analytics.readonly_duckdb_support import (
+    normalize_code_sql,
+    open_readonly_analysis_connection,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
@@ -96,6 +100,139 @@ class FallingKnifeNonReboundFundamentalProfileResult:
 
 def _empty_df(columns: tuple[str, ...]) -> pd.DataFrame:
     return pd.DataFrame(columns=list(columns))
+
+
+def _return_column(horizon_days: int) -> str:
+    if horizon_days < 1:
+        raise ValueError("horizon_days must be a positive integer")
+    return f"catch_return_{int(horizon_days)}d"
+
+
+def _positive_ratio(numerator: object, denominator: object) -> float | None:
+    try:
+        num = float(numerator)  # type: ignore[arg-type]
+        den = float(denominator)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(num) or not math.isfinite(den) or num <= 0.0 or den <= 0.0:
+        return None
+    return num / den
+
+
+def _valuation_bucket(value: object, breakpoints: tuple[float, ...]) -> str:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "missing"
+    if not math.isfinite(number):
+        return "missing"
+    previous = 0.0
+    for breakpoint in breakpoints:
+        if number < breakpoint:
+            if math.isclose(previous, 0.0):
+                return f"<{breakpoint:g}x"
+            return f"{previous:g}-{breakpoint:g}x"
+        previous = breakpoint
+    return f">={breakpoints[-1]:g}x"
+
+
+def _query_latest_bps_features(db_path: str, event_key_df: pd.DataFrame) -> pd.DataFrame:
+    if event_key_df.empty:
+        return _empty_df(("event_id", "bps"))
+    normalized_code_sql = normalize_code_sql("s.code")
+    with open_readonly_analysis_connection(
+        db_path,
+        snapshot_prefix="falling-knife-non-rebound-valuation-",
+    ) as ctx:
+        ctx.connection.register("_event_keys", event_key_df)
+        try:
+            return ctx.connection.execute(
+                f"""
+                WITH statement_candidates AS (
+                    SELECT
+                        e.event_id,
+                        CAST(s.bps AS DOUBLE) AS bps,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY e.event_id
+                            ORDER BY s.disclosed_date DESC, s.type_of_current_period DESC
+                        ) AS row_priority
+                    FROM _event_keys e
+                    JOIN statements s
+                        ON {normalized_code_sql} = e.code
+                       AND s.disclosed_date <= e.signal_date
+                )
+                SELECT event_id, bps
+                FROM statement_candidates
+                WHERE row_priority = 1
+                ORDER BY event_id
+                """
+            ).fetchdf()
+        finally:
+            ctx.connection.unregister("_event_keys")
+
+
+def _add_valuation_features(
+    enriched_event_df: pd.DataFrame,
+    event_df: pd.DataFrame,
+    *,
+    db_path: str,
+    horizon_days: int,
+) -> pd.DataFrame:
+    if enriched_event_df.empty:
+        return enriched_event_df.copy()
+    return_column = _return_column(horizon_days)
+    base_event_df = event_df[
+        pd.to_numeric(event_df[return_column], errors="coerce").notna()
+    ].copy()
+    base_event_df = base_event_df.reset_index(drop=True)
+    base_event_df["event_id"] = range(len(base_event_df))
+    price_df = base_event_df[["event_id", "close"]].copy()
+    event_key_df = base_event_df[["event_id", "code", "signal_date"]].copy()
+    event_key_df["event_id"] = pd.to_numeric(
+        event_key_df["event_id"],
+        errors="raise",
+    ).astype(int)
+    event_key_df["code"] = event_key_df["code"].astype(str)
+    event_key_df["signal_date"] = event_key_df["signal_date"].astype(str)
+    bps_df = _query_latest_bps_features(db_path, event_key_df)
+    frame = enriched_event_df.merge(price_df, on="event_id", how="left")
+    frame = frame.merge(bps_df, on="event_id", how="left")
+    frame["pbr"] = [
+        _positive_ratio(close, bps)
+        for close, bps in zip(frame["close"], frame["bps"], strict=False)
+    ]
+    frame["per"] = [
+        _positive_ratio(close, eps)
+        for close, eps in zip(frame["close"], frame["eps"], strict=False)
+    ]
+    frame["forward_per"] = [
+        _positive_ratio(close, forecast_eps)
+        for close, forecast_eps in zip(
+            frame["close"],
+            frame["forecast_eps"],
+            strict=False,
+        )
+    ]
+    frame["pbr_bucket"] = [
+        _valuation_bucket(value, (0.5, 1.0, 1.5, 3.0)) for value in frame["pbr"]
+    ]
+    frame["per_bucket"] = [
+        _valuation_bucket(value, (10.0, 15.0, 25.0, 40.0)) for value in frame["per"]
+    ]
+    frame["forward_per_bucket"] = [
+        _valuation_bucket(value, (10.0, 15.0, 25.0, 40.0))
+        for value in frame["forward_per"]
+    ]
+    frame["pbr_lt1"] = pd.to_numeric(frame["pbr"], errors="coerce") < 1.0
+    frame["pbr_ge3"] = pd.to_numeric(frame["pbr"], errors="coerce") >= 3.0
+    frame["per_ge40"] = pd.to_numeric(frame["per"], errors="coerce") >= 40.0
+    frame["forward_per_ge40"] = (
+        pd.to_numeric(frame["forward_per"], errors="coerce") >= 40.0
+    )
+    frame["forward_per_lt15"] = (
+        pd.to_numeric(frame["forward_per"], errors="coerce") < 15.0
+    )
+    return frame
 
 
 def _summary_stats(
@@ -209,6 +346,9 @@ def _build_profile_summary_df(
         "cfo_sign",
         "fcf_sign",
         "equity_ratio_bucket",
+        "pbr_bucket",
+        "per_bucket",
+        "forward_per_bucket",
         "risk_adjusted_bucket",
     )
     for feature_name in segment_columns:
@@ -309,6 +449,11 @@ def _feature_specs(min_quality_score: int) -> tuple[tuple[str, str, str], ...]:
         ("fcf_non_positive", "simple FCF margin <= 0", "fcf_sign == 'fcf_non_positive'"),
         ("equity_ratio_lt30", "equity ratio < 30%", "equity_ratio_lt30 == True"),
         ("cfo_to_profit_lt1", "CFO / Profit < 1", "cfo_to_profit_lt1 == True"),
+        ("pbr_lt1", "PBR < 1x", "pbr_lt1 == True"),
+        ("pbr_ge3", "PBR >= 3x", "pbr_ge3 == True"),
+        ("per_ge40", "PER >= 40x", "per_ge40 == True"),
+        ("forward_per_ge40", "forward PER >= 40x", "forward_per_ge40 == True"),
+        ("forward_per_lt15", "forward PER < 15x", "forward_per_lt15 == True"),
         ("growth_market", "Growth market", "market_name == 'グロース'"),
         (
             "growth_low_quality",
@@ -436,6 +581,12 @@ def run_falling_knife_non_rebound_fundamental_profile(
         db_path=input_result.db_path,
         horizon_days=horizon_days,
         min_quality_score=min_quality_score,
+    )
+    enriched_event_df = _add_valuation_features(
+        enriched_event_df,
+        input_result.event_df,
+        db_path=input_result.db_path,
+        horizon_days=horizon_days,
     )
     enriched_event_df = _add_non_rebound_labels(
         enriched_event_df,

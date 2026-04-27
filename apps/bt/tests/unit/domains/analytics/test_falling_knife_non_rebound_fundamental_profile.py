@@ -38,20 +38,21 @@ def _create_statement_db(db_path: Path) -> None:
                 operating_cash_flow DOUBLE,
                 investing_cash_flow DOUBLE,
                 equity DOUBLE,
-                total_assets DOUBLE
+                total_assets DOUBLE,
+                bps DOUBLE
             )
             """
         )
         rows = [
-            ("1001", "2025-12-20", "FY", "FY", 10, 15, 14, 100, 1000, 120, -20, 500, 900),
-            ("1001", "2026-01-20", "FY", "FY", -5, -2, -3, -50, 800, -60, -70, 100, 1000),
-            ("1002", "2025-12-25", "FY", "FY", -1, -4, -4, -30, 600, -40, -50, 80, 1000),
-            ("1003", "2025-12-25", "FY", "FY", 3, 3, 3, 20, 500, -10, -30, 120, 1000),
-            ("1004", "2025-12-25", "FY", "FY", 5, 6, 6, 30, 700, 40, 5, 600, 1000),
-            ("1005", "2025-12-25", "FY", "FY", -2, -1, -1, -10, 400, 5, -20, 60, 1000),
+            ("1001", "2025-12-20", "FY", "FY", 10, 15, 14, 100, 1000, 120, -20, 500, 900, 100),
+            ("1001", "2026-01-20", "FY", "FY", -5, -2, -3, -50, 800, -60, -70, 100, 1000, 20),
+            ("1002", "2025-12-25", "FY", "FY", -1, -4, -4, -30, 600, -40, -50, 80, 1000, 10),
+            ("1003", "2025-12-25", "FY", "FY", 3, 3, 3, 20, 500, -10, -30, 120, 1000, 80),
+            ("1004", "2025-12-25", "FY", "FY", 5, 6, 6, 30, 700, 40, 5, 600, 1000, 200),
+            ("1005", "2025-12-25", "FY", "FY", -2, -1, -1, -10, 400, 5, -20, 60, 1000, 40),
         ]
         conn.executemany(
-            "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     finally:
@@ -70,6 +71,7 @@ def _build_input_result(db_path: str) -> FallingKnifeReversalStudyResult:
             ],
             "code": ["1001", "1002", "1003", "1004", "1005"],
             "market_name": ["プライム", "グロース", "グロース", "スタンダード", "グロース"],
+            "close": [100.0, 120.0, 60.0, 180.0, 80.0],
             "risk_adjusted_bucket": ["Q2", "Q5_highest", "Q3", "Q5_highest", "Q2"],
             "condition_count": [2, 4, 3, 2, 2],
             "catch_return_20d": [0.05, -0.02, -0.12, 0.03, -0.01],
@@ -131,6 +133,8 @@ def test_non_rebound_profile_labels_and_scores_features(tmp_path: Path) -> None:
     row_1001 = result.enriched_event_df[result.enriched_event_df["code"] == "1001"].iloc[0]
     assert row_1001["disclosed_date"] == "2025-12-20"
     assert not bool(row_1001["non_rebound"])
+    assert float(row_1001["pbr"]) == 1.0
+    assert float(row_1001["forward_per"]) == 100.0 / 15.0
     growth_row = result.fundamental_profile_summary_df[
         (result.fundamental_profile_summary_df["feature_name"] == "market_name")
         & (result.fundamental_profile_summary_df["feature_value"] == "グロース")
@@ -141,6 +145,10 @@ def test_non_rebound_profile_labels_and_scores_features(tmp_path: Path) -> None:
     ].iloc[0]
     assert int(low_quality["non_rebound_count"]) == 3
     assert float(low_quality["prevalence_in_non_rebound_pct"]) == 100.0
+    pbr_ge3 = result.feature_lift_summary_df[
+        result.feature_lift_summary_df["feature_name"] == "pbr_ge3"
+    ].iloc[0]
+    assert int(pbr_ge3["non_rebound_count"]) == 1
 
 
 def test_non_rebound_profile_bundle_roundtrip(tmp_path: Path) -> None:
