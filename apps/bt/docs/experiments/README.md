@@ -41,6 +41,8 @@
   - falling knife のリバウンド exposure を残しながら severe loss を下げる除外ルールを比較する実験。
 - [market-behavior/falling-knife-fundamental-quality-pruning/](./market-behavior/falling-knife-fundamental-quality-pruning/README.md)
   - Growth market の bad tail が市場区分そのものか、PIT-safe なファンダ quality proxy で説明できるかを分解する実験。
+- [market-behavior/falling-knife-non-rebound-fundamental-profile/](./market-behavior/falling-knife-non-rebound-fundamental-profile/README.md)
+  - falling knife のうち、リバウンドしない銘柄にどんな PIT-safe ファンダ特徴があるかを特徴分析として観察する実験。
 - [market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/](./market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/README.md)
   - TOPIX を long-only で持つ前提で、downside return standard deviation と trend / breadth confirmation を使う fixed overlay を committee 化し、walk-forward と pure OOS で評価する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
