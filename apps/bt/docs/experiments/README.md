@@ -51,6 +51,8 @@
   - 各銘柄を大発会 `Open` で買って大納会 `Close` で売る年次保有 return を、買付時点 FY ファンダメンタルと株式数補正付きで観察する実験。
 - [market-behavior/annual-fundamental-confounder-analysis/](./market-behavior/annual-fundamental-confounder-analysis/README.md)
   - 年次保有ファンダメンタル panel を土台に、低PBR・小型・低forward PER・低ADVなどの交絡と独立効果を統計的に分解する実験。
+- [market-behavior/annual-market-fundamental-divergence/](./market-behavior/annual-market-fundamental-divergence/README.md)
+  - 年次保有ファンダメンタル panel を土台に、Prime / Standard / Growth 間でどのファンダメンタル指標の水準差が大きいかを分解する実験。
 - [market-behavior/annual-value-composite-selection/](./market-behavior/annual-value-composite-selection/README.md)
   - 低PBR・小型・低forward PER を composite score に落とし、top% selection と liquidity/capacity floor を portfolio lens で評価する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
