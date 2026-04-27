@@ -93,14 +93,13 @@ export class AnalyticsClient {
     });
   }
 
-  async getValueCompositeRanking(
-    params: ValueCompositeRankingParams = {}
-  ): Promise<ValueCompositeRankingResponse> {
+  async getValueCompositeRanking(params: ValueCompositeRankingParams = {}): Promise<ValueCompositeRankingResponse> {
     return this.request<ValueCompositeRankingResponse>('/api/analytics/value-composite-ranking', undefined, {
       date: params.date,
       limit: params.limit,
       markets: params.markets,
       scoreMethod: params.scoreMethod,
+      forwardEpsMode: params.forwardEpsMode,
     });
   }
 

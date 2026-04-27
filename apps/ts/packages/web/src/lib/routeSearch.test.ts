@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractLegacyBacktestSearch,
-  extractLegacySymbolWorkbenchSearch,
   extractLegacyIndicesSearch,
   extractLegacyPortfolioSearch,
   extractLegacyScreeningSearch,
+  extractLegacySymbolWorkbenchSearch,
   getRankingStateFromScreeningSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
@@ -14,17 +14,17 @@ import {
   serializeIndicesSearch,
   serializeOptions225Search,
   serializePortfolioSearch,
-  serializeResearchSearch,
   serializeRankingSearch,
+  serializeResearchSearch,
   serializeScreeningSearch,
   validateBacktestSearch,
-  validateSymbolWorkbenchSearch,
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
-  validateResearchSearch,
   validateRankingSearch,
+  validateResearchSearch,
   validateScreeningSearch,
+  validateSymbolWorkbenchSearch,
 } from './routeSearch';
 
 function createMemoryStorage(initial: Record<string, string> = {}): Storage {
@@ -281,6 +281,7 @@ describe('routeSearch', () => {
       valueMarkets: 'standard',
       valueLimit: '100',
       valueScoreMethod: 'equal_weight',
+      valueForwardEpsMode: 'fy',
     });
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
@@ -291,12 +292,14 @@ describe('routeSearch', () => {
       markets: 'standard',
       limit: 100,
       scoreMethod: 'equal_weight',
+      forwardEpsMode: 'fy',
     });
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'valueComposite',
       valueDate: '2026-04-24',
       valueLimit: 100,
       valueScoreMethod: 'equal_weight',
+      valueForwardEpsMode: 'fy',
     });
   });
 

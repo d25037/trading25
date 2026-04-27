@@ -39,9 +39,26 @@ vi.mock('@/components/ui/theme-toggle', () => ({
   ThemeToggle: () => <button type="button">ThemeToggle</button>,
 }));
 
+function mockHeaderMediaQuery(matches: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  );
+}
+
 describe('Header', () => {
   beforeEach(() => {
     pathname = '/symbol-workbench';
+    vi.unstubAllGlobals();
   });
 
   it('renders logo, primary navigation items, and overflow navigation trigger', () => {
@@ -67,6 +84,27 @@ describe('Header', () => {
 
     expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Market DB' })).toBeInTheDocument();
+  });
+
+  it('uses a current-page mobile navigation trigger and moves all destinations into the menu', async () => {
+    const user = userEvent.setup();
+    mockHeaderMediaQuery(true);
+
+    pathname = '/portfolio';
+    render(<Header />);
+
+    const mobileTrigger = screen.getByRole('button', { name: 'Portfolio' });
+    expect(mobileTrigger).toHaveAttribute('data-state', 'active');
+    expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+
+    await user.click(mobileTrigger);
+
+    expect(screen.getByText('Navigation')).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Symbol Workbench' }).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole('link', { name: 'Portfolio' }).some((link) => link.getAttribute('aria-current') === 'page')
+    ).toBe(true);
     expect(screen.getByRole('link', { name: 'Market DB' })).toBeInTheDocument();
   });
 

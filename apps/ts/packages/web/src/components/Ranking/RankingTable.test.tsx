@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Rankings } from '@/types/ranking';
 import { RankingTable } from './RankingTable';
 
@@ -34,7 +34,26 @@ function createRankings(count: number): Rankings {
   };
 }
 
+function mockRankingMediaQuery(matches: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  );
+}
+
 describe('RankingTable', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
   it('renders trading value rows by default', () => {
     render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={vi.fn()} />);
     expect(screen.getByText('Company 1')).toBeInTheDocument();
@@ -56,6 +75,37 @@ describe('RankingTable', () => {
     await user.click(screen.getByRole('combobox'));
     await user.click(screen.getByRole('option', { name: '30D High' }));
     expect(screen.getByText('Break %')).toBeInTheDocument();
+  });
+
+  it('renders mobile ranking cards and keeps stock navigation', async () => {
+    const user = userEvent.setup();
+    const onStockClick = vi.fn();
+    mockRankingMediaQuery(true);
+
+    render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
+
+    expect(screen.queryByRole('columnheader', { name: 'Code' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /7000/ })).toHaveTextContent('Company 1');
+
+    await user.click(screen.getByRole('button', { name: /7000/ }));
+    expect(onStockClick).toHaveBeenCalledWith('7000');
+  });
+
+  it('keeps mobile virtualized ranking cards scrollable for long lists', () => {
+    mockRankingMediaQuery(true);
+    const { container } = render(
+      <RankingTable rankings={createRankings(130)} isLoading={false} error={null} onStockClick={vi.fn()} />
+    );
+    const scrollArea = container.querySelector('.overflow-auto');
+
+    expect(scrollArea).not.toBeNull();
+    expect(screen.getByText('Company 1')).toBeInTheDocument();
+    expect(screen.queryByText('Company 130')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"][style*="height"]')).not.toBeNull();
+
+    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 128 * 125 } });
+
+    expect(screen.getByText('Company 130')).toBeInTheDocument();
   });
 
   it('calls onStockClick when row is clicked', async () => {

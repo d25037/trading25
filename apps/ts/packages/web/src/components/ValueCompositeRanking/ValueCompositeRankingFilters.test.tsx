@@ -23,4 +23,30 @@ describe('ValueCompositeRankingFilters', () => {
       scoreMethod: 'equal_weight',
     });
   });
+
+  it('changes forward EPS basis with the segmented toggle', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(
+      <ValueCompositeRankingFilters
+        params={{
+          markets: 'standard',
+          limit: 50,
+          scoreMethod: 'walkforward_regression_weight',
+          forwardEpsMode: 'latest',
+        }}
+        onChange={onChange}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'FY-only EPS' }));
+
+    expect(onChange).toHaveBeenCalledWith({
+      markets: 'standard',
+      limit: 50,
+      scoreMethod: 'walkforward_regression_weight',
+      forwardEpsMode: 'fy',
+    });
+  });
 });

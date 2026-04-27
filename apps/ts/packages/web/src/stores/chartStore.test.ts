@@ -390,6 +390,21 @@ describe('chartStore', () => {
       'marginPressure',
       'factorRegression',
     ]);
+    expect(settings.workbenchPanelOrder).toEqual([
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ]);
     expect(settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
     expect(settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
     expect(settings.fundamentalsHistoryMetricOrder).toEqual(defaultSettings.fundamentalsHistoryMetricOrder);
@@ -544,6 +559,21 @@ describe('chartStore', () => {
 
     const settings = useChartStore.getState().settings;
     expect(settings.fundamentalsPanelOrder).toEqual([
+      'marginPressure',
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'factorRegression',
+    ]);
+    expect(settings.workbenchPanelOrder).toEqual([
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'marginPressure',
       'fundamentals',
       'fundamentalsHistory',

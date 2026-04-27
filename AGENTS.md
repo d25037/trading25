@@ -213,6 +213,15 @@ Open / active task tracking の SoT は GitHub Issues（`https://github.com/d250
 - local archive は `issues/done/`（local issue 時代の closed archive）と `issues/archive/migrated-to-github/`（2026-04-22 に GitHub Issues へ移行した元 local issue）
 - 旧 local issue ID（例: `bt-027`）は GitHub Issue タイトルや本文に残し、検索キーとして使う
 
+## OpenClaw guardrails
+
+OpenClaw 固有の詳細運用メモは repo 外（例: `/home/open_shiro/.openclaw/workspace/notes/openclaw/openclaw-agent-ops.md`）に置き、プロダクト repo の履歴には混ぜない。ただし、この repo で OpenClaw が作業する場合は以下を必ず守る。
+
+- OpenClaw が GitHub に push する remote branch は必ず `openclaw/*` にする。`feature/*` / `fix/*` / `docs/*` 等はローカル作業名としてのみ使い、直接 remote push しない。
+- `git push` / PR 作成 / merge は project owner の明示指示がある場合のみ行う。
+- Git commit author は `open-shiro <279403866+open-shiro@users.noreply.github.com>` を使う。
+- repo と無関係な OpenClaw 個人運用メモや外部サービス調査メモは repo 外へ置く。
+
 ## Skills ガバナンス
 
 - プロジェクト正本のスキルは `/.codex/skills` に配置する

@@ -1,9 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { analyticsClient } from '@/lib/analytics-client';
-import type {
-  ValueCompositeRankingParams,
-  ValueCompositeRankingResponse,
-} from '@/types/valueCompositeRanking';
+import type { ValueCompositeRankingParams, ValueCompositeRankingResponse } from '@/types/valueCompositeRanking';
 import { logger } from '@/utils/logger';
 
 function fetchValueCompositeRanking(params: ValueCompositeRankingParams): Promise<ValueCompositeRankingResponse> {
@@ -12,6 +9,7 @@ function fetchValueCompositeRanking(params: ValueCompositeRankingParams): Promis
     limit: params.limit,
     markets: params.markets,
     scoreMethod: params.scoreMethod,
+    forwardEpsMode: params.forwardEpsMode,
   };
 
   logger.debug('Fetching value composite ranking data', { query });

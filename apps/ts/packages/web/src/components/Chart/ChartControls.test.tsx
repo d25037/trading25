@@ -64,6 +64,21 @@ const mockChartStore = {
       'marginPressure',
       'factorRegression',
     ],
+    workbenchPanelOrder: [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
@@ -176,6 +191,21 @@ describe('ChartControls', () => {
       'marginPressure',
       'factorRegression',
     ];
+    mockChartStore.settings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
+      'fundamentals',
+      'fundamentalsHistory',
+      'costStructure',
+      'marginPressure',
+      'factorRegression',
+    ];
     mockChartStore.settings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
     mockChartStore.settings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
     mockChartStore.settings.fundamentalsHistoryMetricOrder = [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER];
@@ -206,11 +236,14 @@ describe('ChartControls', () => {
     }));
   });
 
-  it('renders symbol search input and search button', () => {
+  it('renders symbol search as the primary sidebar action', () => {
     renderChartControls();
 
+    expect(screen.getByText('Main action')).toBeInTheDocument();
+    expect(screen.getByText('Symbol Search')).toBeInTheDocument();
+    expect(screen.getByText('銘柄コード・会社名でワークベンチを切り替え')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('銘柄コードまたは会社名で検索...')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /検索/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Symbol を開く/i })).toBeInTheDocument();
   });
 
   it('uses non-password-search input attributes for symbol search', () => {
@@ -237,7 +270,7 @@ describe('ChartControls', () => {
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7203');
-    await user.click(screen.getByRole('button', { name: /検索/i }));
+    await user.click(screen.getByRole('button', { name: /Symbol を開く/i }));
 
     expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
   });
@@ -322,14 +355,41 @@ describe('ChartControls', () => {
     await user.click(firstDownButton);
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
-      fundamentalsPanelOrder: [
-        'fundamentalsHistory',
+      workbenchPanelOrder: [
+        'riskAdjustedReturn',
+        'ppo',
+        'recentReturn',
+        'volumeComparison',
+        'cmf',
+        'chaikinOscillator',
+        'obvFlowScore',
+        'tradingValueMA',
         'fundamentals',
+        'fundamentalsHistory',
+        'costStructure',
+        'marginPressure',
+        'factorRegression',
+      ],
+      fundamentalsPanelOrder: [
+        'fundamentals',
+        'fundamentalsHistory',
         'costStructure',
         'marginPressure',
         'factorRegression',
       ],
     });
+  });
+
+  it('toggles sub-chart visibility from panel layout dialog', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    renderChartControls();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    await user.click(screen.getByRole('switch', { name: /^Risk Adjusted Return$/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
   it('opens panel layout dialog and toggles cost structure panel visibility', async () => {
@@ -357,11 +417,19 @@ describe('ChartControls', () => {
     expect(downButton).toBeDefined();
     if (!upButton || !downButton) return;
 
-    mockChartStore.settings.fundamentalsPanelOrder = [];
+    mockChartStore.settings.workbenchPanelOrder = [];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
-    mockChartStore.settings.fundamentalsPanelOrder = [
+    mockChartStore.settings.workbenchPanelOrder = [
+      'ppo',
+      'riskAdjustedReturn',
+      'recentReturn',
+      'volumeComparison',
+      'cmf',
+      'chaikinOscillator',
+      'obvFlowScore',
+      'tradingValueMA',
       'fundamentals',
       'fundamentalsHistory',
       'costStructure',
@@ -372,13 +440,7 @@ describe('ChartControls', () => {
     fireEvent.click(upButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
 
-    mockChartStore.settings.fundamentalsPanelOrder = [
-      'fundamentals',
-      undefined as unknown as 'fundamentalsHistory',
-      'costStructure',
-      'marginPressure',
-      'factorRegression',
-    ];
+    mockChartStore.settings.workbenchPanelOrder = ['ppo', undefined as unknown as 'riskAdjustedReturn'];
     fireEvent.click(downButton);
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });
@@ -523,13 +585,15 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateSettings).not.toHaveBeenCalled();
   });
 
-  it('opens sub-chart indicators dialog and toggles risk adjusted return', async () => {
+  it('toggles risk adjusted return from panel layout', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    expect(screen.queryByRole('button', { name: 'Sub-Chart Indicators' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
@@ -541,13 +605,13 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     await user.click(screen.getByRole('switch', { name: /recent return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRecentReturnChart: true });
   });
 
-  it('updates sub-chart indicator numeric settings', async () => {
+  it('updates sub-chart numeric settings from panel layout', async () => {
     const user = userEvent.setup();
     mockChartStore.settings.showRiskAdjustedReturnChart = true;
     mockChartStore.settings.showRecentReturnChart = true;
@@ -562,7 +626,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
 
     fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '80' } });
     fireEvent.change(screen.getByLabelText('Threshold'), { target: { value: '1.5' } });
@@ -618,7 +682,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
 
     const dialog = screen.getByRole('dialog');
     const [ratioTypeSelect, conditionSelect] = within(dialog).getAllByRole('combobox');
@@ -678,7 +742,7 @@ describe('ChartControls', () => {
     expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('vwema', { enabled: true });
   });
 
-  it('shows signal metadata in sub-chart indicators when reference API is available', async () => {
+  it('shows signal metadata in panel layout when reference API is available', async () => {
     const user = userEvent.setup();
     mockChartStore.settings.signalOverlay.signals = [
       { type: 'volume_ratio_above', enabled: true, mode: 'entry', params: {} },
@@ -706,7 +770,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     expect(screen.getAllByText('Signal req: volume | Signals: volume_ratio_above').length).toBeGreaterThan(0);
   });
 
@@ -722,7 +786,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     expect(screen.queryByText(/Signal req:/i)).not.toBeInTheDocument();
   });
 
@@ -744,7 +808,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: /検索/i }));
+    await user.click(screen.getByRole('button', { name: /Symbol を開く/i }));
 
     expect(mockOnSelectSymbol).not.toHaveBeenCalled();
   });

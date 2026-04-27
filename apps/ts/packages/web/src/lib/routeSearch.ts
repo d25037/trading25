@@ -18,14 +18,18 @@ import type {
   RankingDailyView,
   RankingPageTab,
   RankingParams,
-  Topix100PriceSmaWindow,
-  Topix100RankingSortKey,
-  Topix100RankingMetric,
-  Topix100StudyMode,
   Topix100PriceBucketFilter,
+  Topix100PriceSmaWindow,
+  Topix100RankingMetric,
+  Topix100RankingSortKey,
+  Topix100StudyMode,
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
-import type { ValueCompositeRankingParams, ValueCompositeScoreMethod } from '@/types/valueCompositeRanking';
+import type {
+  ValueCompositeForwardEpsMode,
+  ValueCompositeRankingParams,
+  ValueCompositeScoreMethod,
+} from '@/types/valueCompositeRanking';
 
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
 
@@ -115,6 +119,7 @@ export interface RankingRouteSearch {
   valueLimit?: number;
   valueMarkets?: string;
   valueScoreMethod?: ValueCompositeScoreMethod;
+  valueForwardEpsMode?: ValueCompositeForwardEpsMode;
 }
 
 export interface BacktestRouteSearch {
@@ -141,6 +146,7 @@ const VALUE_COMPOSITE_SCORE_METHOD_VALUES: ValueCompositeScoreMethod[] = [
   'equal_weight',
   'walkforward_regression_weight',
 ];
+const VALUE_COMPOSITE_FORWARD_EPS_MODE_VALUES: ValueCompositeForwardEpsMode[] = ['latest', 'fy'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'];
 const LEGACY_TOPIX100_RANKING_METRIC = 'price_vs_sma20_gap';
 const TOPIX100_STUDY_MODE_VALUES: Topix100StudyMode[] = ['intraday', 'swing_5d'];
@@ -268,6 +274,10 @@ function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined
 
 function normalizeValueCompositeScoreMethod(value: unknown): ValueCompositeScoreMethod | undefined {
   return normalizeEnum(normalizeString(value), VALUE_COMPOSITE_SCORE_METHOD_VALUES);
+}
+
+function normalizeValueCompositeForwardEpsMode(value: unknown): ValueCompositeForwardEpsMode | undefined {
+  return normalizeEnum(normalizeString(value), VALUE_COMPOSITE_FORWARD_EPS_MODE_VALUES);
 }
 
 function normalizeTopix100PriceBucketFilter(value: unknown): Topix100PriceBucketFilter | undefined {
@@ -707,6 +717,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
       ['limit', search.valueLimit],
       ['markets', search.valueMarkets],
       ['scoreMethod', search.valueScoreMethod],
+      ['forwardEpsMode', search.valueForwardEpsMode],
     ]),
   };
 }
@@ -927,6 +938,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'valueLimit', normalizePositiveInt(search.valueLimit));
   assignIfDefined(next, 'valueMarkets', normalizeString(search.valueMarkets));
   assignIfDefined(next, 'valueScoreMethod', normalizeValueCompositeScoreMethod(search.valueScoreMethod));
+  assignIfDefined(next, 'valueForwardEpsMode', normalizeValueCompositeForwardEpsMode(search.valueForwardEpsMode));
   return next;
 }
 
@@ -1047,6 +1059,12 @@ export function serializeRankingSearch(state: {
     'valueScoreMethod',
     state.valueCompositeRankingParams.scoreMethod,
     DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.scoreMethod
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'valueForwardEpsMode',
+    state.valueCompositeRankingParams.forwardEpsMode,
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.forwardEpsMode
   );
 
   return next;

@@ -526,6 +526,7 @@ class TestValueCompositeRanking:
         data = resp.json()
         assert data["metricKey"] == "standard_value_composite"
         assert data["scoreMethod"] == "walkforward_regression_weight"
+        assert data["forwardEpsMode"] == "latest"
         assert data["markets"] == ["standard"]
         assert "no ADV60 floor" in data["scorePolicy"]
         assert data["weights"] == {
@@ -541,6 +542,13 @@ class TestValueCompositeRanking:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) <= 1
+
+    def test_forward_eps_mode_parameter(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?forwardEpsMode=fy")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["forwardEpsMode"] == "fy"
+        assert "FY forecast EPS" in data["scorePolicy"]
 
     def test_equal_weight_score_method(self, analytics_client):
         resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=equal_weight")

@@ -28,12 +28,12 @@ import {
   resolveTopix100PriceSmaWindow,
   resolveTopix100RankingMetric,
 } from '@/components/Ranking/topix100RankingMetric';
+import { DateInput, NumberSelect } from '@/components/shared/filters';
 import {
   ValueCompositeRankingFilters,
   ValueCompositeRankingSummary,
   ValueCompositeRankingTable,
 } from '@/components/ValueCompositeRanking';
-import { DateInput, NumberSelect } from '@/components/shared/filters';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
@@ -58,6 +58,10 @@ const dailyViewTabs = [
 
 function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | undefined): string {
   return method === 'equal_weight' ? 'Equal-weight value score' : 'Walk-forward value score';
+}
+
+function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {
+  return mode === 'fy' ? 'FY-only forecast EPS' : 'Latest revised EPS (previous default)';
 }
 
 interface RankingSidebarProps {
@@ -150,8 +154,8 @@ function RankingSidebar({
             items={subTabs}
             value={activeSubTab}
             onChange={setActiveSubTab}
-            className="flex-col"
-            itemClassName="h-8 justify-start rounded-lg px-3 py-1.5 text-xs"
+            className="overflow-x-auto lg:flex-col"
+            itemClassName="h-8 shrink-0 justify-start rounded-lg px-3 py-1.5 text-xs"
           />
           {activeSubTab === 'ranking' ? (
             <div className="space-y-2 border-t border-border/60 pt-3">
@@ -160,8 +164,8 @@ function RankingSidebar({
                 items={dailyViewTabs}
                 value={activeDailyView}
                 onChange={setActiveDailyView}
-                className="flex-col"
-                itemClassName="h-8 justify-start rounded-lg px-3 py-1.5 text-xs"
+                className="overflow-x-auto lg:flex-col"
+                itemClassName="h-8 shrink-0 justify-start rounded-lg px-3 py-1.5 text-xs"
               />
             </div>
           ) : null}
@@ -177,10 +181,7 @@ function RankingSidebar({
           <RankingFilters params={rankingParams} onChange={setRankingParams} />
         )
       ) : activeSubTab === 'valueComposite' ? (
-        <ValueCompositeRankingFilters
-          params={valueCompositeRankingParams}
-          onChange={setValueCompositeRankingParams}
-        />
+        <ValueCompositeRankingFilters params={valueCompositeRankingParams} onChange={setValueCompositeRankingParams} />
       ) : (
         <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />
       )}
@@ -204,6 +205,7 @@ function buildIntroMetaItems(
   if (activeSubTab === 'valueComposite') {
     return [
       { label: 'Mode', value: getValueCompositeScoreMethodLabel(valueCompositeRankingParams.scoreMethod) },
+      { label: 'EPS Basis', value: getValueCompositeForwardEpsModeLabel(valueCompositeRankingParams.forwardEpsMode) },
       { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
     ];
   }
@@ -399,7 +401,7 @@ export function RankingPage() {
         </div>
       </Surface>
 
-      <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch">
+      <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch lg:overflow-hidden">
         <SplitSidebar className="w-full lg:h-full lg:w-40 lg:overflow-auto xl:w-44 2xl:w-48">
           <RankingSidebar
             activeSubTab={activeSubTab}

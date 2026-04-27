@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IndexPerformanceItem } from '@/types/ranking';
 import { IndexPerformanceTable } from './IndexPerformanceTable';
 
@@ -19,7 +19,26 @@ function createItem(overrides: Partial<IndexPerformanceItem>): IndexPerformanceI
   };
 }
 
+function mockIndexMediaQuery(matches: boolean) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  );
+}
+
 describe('IndexPerformanceTable', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+  });
   it('renders empty state with selected lookback days', () => {
     render(
       <IndexPerformanceTable items={[]} isLoading={false} error={null} onIndexClick={vi.fn()} lookbackDays={10} />
@@ -74,6 +93,51 @@ describe('IndexPerformanceTable', () => {
 
     fireEvent.click(jpx400Row);
     expect(onIndexClick).toHaveBeenCalledWith('JPX400');
+  });
+
+  it('renders mobile index cards and keeps index navigation', () => {
+    const onIndexClick = vi.fn();
+    mockIndexMediaQuery(true);
+
+    render(
+      <IndexPerformanceTable
+        items={[createItem({ code: 'N225', name: 'Nikkei 225', category: 'market', changePercentage: 2.5 })]}
+        isLoading={false}
+        error={null}
+        onIndexClick={onIndexClick}
+      />
+    );
+
+    expect(screen.queryByRole('columnheader', { name: 'Code' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /N225/ }));
+    expect(onIndexClick).toHaveBeenCalledWith('N225');
+  });
+
+  it('keeps mobile virtualized index cards scrollable for long lists', () => {
+    mockIndexMediaQuery(true);
+    const items = Array.from({ length: 121 }, (_, index) =>
+      createItem({
+        code: `IDX${String(index).padStart(3, '0')}`,
+        name: `Index ${index}`,
+        category: index % 2 === 0 ? 'market' : 'style',
+        changePercentage: 121 - index,
+        currentClose: 1000 + index,
+        baseClose: 900 + index,
+      })
+    );
+    const { container } = render(
+      <IndexPerformanceTable items={items} isLoading={false} error={null} onIndexClick={vi.fn()} />
+    );
+    const scrollArea = container.querySelector('.overflow-auto');
+
+    expect(scrollArea).not.toBeNull();
+    expect(screen.getByText('IDX000')).toBeInTheDocument();
+    expect(screen.queryByText('IDX120')).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"][style*="height"]')).not.toBeNull();
+
+    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 120 * 116 } });
+
+    expect(screen.getByText('IDX120')).toBeInTheDocument();
   });
 
   it('virtualizes long lists', () => {

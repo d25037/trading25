@@ -94,7 +94,7 @@ export default defineConfig(({ mode }) => {
 		},
 		server: {
 			host: '0.0.0.0',
-			allowedHosts: ['mba-m4', 'hx90'],
+			allowedHosts: ['mba-m4', 'hx90', 'hx90.tailb95be2.ts.net', 'mba-m4.tailb95be2.ts.net'],
 			port: WEB_PORT,
 			strictPort: true,
 			proxy: {
