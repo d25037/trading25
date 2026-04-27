@@ -18,6 +18,9 @@ Primary label は `catch_return_{horizon}d <= rebound_threshold`。Default で�
   - PBR: latest FY BPS disclosed on or before `signal_date`
   - PER: latest FY actual EPS disclosed on or before `signal_date`
   - forward PER: latest non-null forecast EPS disclosed on or before `signal_date`
+  - PER / forward PER with non-positive denominator are kept as separate
+    `non_positive_eps` / `non_positive_forecast_eps` buckets instead of being
+    mixed into `missing`.
 - `quality_score >= 3` を default の `high_quality` とする
 
 ## Runner

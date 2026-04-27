@@ -119,9 +119,27 @@ def _positive_ratio(numerator: object, denominator: object) -> float | None:
     return num / den
 
 
-def _valuation_bucket(value: object, breakpoints: tuple[float, ...]) -> str:
+def _valuation_ratio_bucket(
+    *,
+    numerator: object,
+    denominator: object,
+    ratio_value: object,
+    breakpoints: tuple[float, ...],
+    non_positive_label: str,
+) -> str:
     try:
-        number = float(value)  # type: ignore[arg-type]
+        num = float(numerator)  # type: ignore[arg-type]
+        den = float(denominator)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "missing"
+    if not math.isfinite(num) or not math.isfinite(den):
+        return "missing"
+    if num <= 0.0:
+        return "missing_price"
+    if den <= 0.0:
+        return non_positive_label
+    try:
+        number = float(ratio_value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return "missing"
     if not math.isfinite(number):
@@ -266,14 +284,49 @@ def _add_valuation_features(
         )
     ]
     frame["pbr_bucket"] = [
-        _valuation_bucket(value, (0.5, 1.0, 1.5, 3.0)) for value in frame["pbr"]
+        _valuation_ratio_bucket(
+            numerator=close,
+            denominator=bps,
+            ratio_value=pbr,
+            breakpoints=(0.5, 1.0, 1.5, 3.0),
+            non_positive_label="non_positive_bps",
+        )
+        for close, bps, pbr in zip(
+            frame["close"],
+            frame["bps"],
+            frame["pbr"],
+            strict=False,
+        )
     ]
     frame["per_bucket"] = [
-        _valuation_bucket(value, (10.0, 15.0, 25.0, 40.0)) for value in frame["per"]
+        _valuation_ratio_bucket(
+            numerator=close,
+            denominator=eps,
+            ratio_value=per,
+            breakpoints=(10.0, 15.0, 25.0, 40.0),
+            non_positive_label="non_positive_eps",
+        )
+        for close, eps, per in zip(
+            frame["close"],
+            frame["actual_eps"],
+            frame["per"],
+            strict=False,
+        )
     ]
     frame["forward_per_bucket"] = [
-        _valuation_bucket(value, (10.0, 15.0, 25.0, 40.0))
-        for value in frame["forward_per"]
+        _valuation_ratio_bucket(
+            numerator=close,
+            denominator=forecast_eps,
+            ratio_value=forward_per,
+            breakpoints=(10.0, 15.0, 25.0, 40.0),
+            non_positive_label="non_positive_forecast_eps",
+        )
+        for close, forecast_eps, forward_per in zip(
+            frame["close"],
+            frame["valuation_forecast_eps"],
+            frame["forward_per"],
+            strict=False,
+        )
     ]
     frame["pbr_lt1"] = pd.to_numeric(frame["pbr"], errors="coerce") < 1.0
     frame["pbr_ge3"] = pd.to_numeric(frame["pbr"], errors="coerce") >= 3.0
@@ -283,6 +336,12 @@ def _add_valuation_features(
     )
     frame["forward_per_lt15"] = (
         pd.to_numeric(frame["forward_per"], errors="coerce") < 15.0
+    )
+    frame["actual_eps_non_positive"] = (
+        pd.to_numeric(frame["actual_eps"], errors="coerce") <= 0.0
+    )
+    frame["valuation_forecast_eps_non_positive"] = (
+        pd.to_numeric(frame["valuation_forecast_eps"], errors="coerce") <= 0.0
     )
     return frame
 
@@ -506,6 +565,12 @@ def _feature_specs(min_quality_score: int) -> tuple[tuple[str, str, str], ...]:
         ("per_ge40", "PER >= 40x", "per_ge40 == True"),
         ("forward_per_ge40", "forward PER >= 40x", "forward_per_ge40 == True"),
         ("forward_per_lt15", "forward PER < 15x", "forward_per_lt15 == True"),
+        ("actual_eps_non_positive", "FY actual EPS <= 0", "actual_eps_non_positive == True"),
+        (
+            "valuation_forecast_eps_non_positive",
+            "valuation forecast EPS <= 0",
+            "valuation_forecast_eps_non_positive == True",
+        ),
         ("growth_market", "Growth market", "market_name == 'グロース'"),
         (
             "growth_low_quality",

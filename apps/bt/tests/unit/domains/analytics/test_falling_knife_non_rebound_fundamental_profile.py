@@ -137,6 +137,9 @@ def test_non_rebound_profile_labels_and_scores_features(tmp_path: Path) -> None:
     assert float(row_1001["pbr"]) == 1.0
     assert float(row_1001["per"]) == 10.0
     assert float(row_1001["forward_per"]) == 100.0 / 15.0
+    row_1002 = result.enriched_event_df[result.enriched_event_df["code"] == "1002"].iloc[0]
+    assert row_1002["per_bucket"] == "non_positive_eps"
+    assert row_1002["forward_per_bucket"] == "non_positive_forecast_eps"
     growth_row = result.fundamental_profile_summary_df[
         (result.fundamental_profile_summary_df["feature_name"] == "market_name")
         & (result.fundamental_profile_summary_df["feature_value"] == "グロース")
