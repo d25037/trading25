@@ -5,7 +5,7 @@ description = "バックテストツール"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "vectorbt>=0.26.0",
+    "vectorbt>=1.0.0",
     "pandas>=2.0.0",
     "numpy>=1.20.0",
     "lightgbm>=4.0.0",
