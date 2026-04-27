@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { FileSearch, Filter, Loader2, Search } from 'lucide-react';
+import { ArrowUpRight, FileSearch, Filter, Loader2, Search } from 'lucide-react';
 import { type ChangeEvent, useDeferredValue, useMemo, useState } from 'react';
 import {
   PageIntro,
@@ -8,22 +8,41 @@ import {
   SectionHeading,
   Surface,
 } from '@/components/Layout/Workspace';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useResearchCatalog } from '@/hooks/useResearch';
 import { serializeResearchSearch } from '@/lib/routeSearch';
-import type { ResearchCatalogItem } from '@/types/research';
 import { cn } from '@/lib/utils';
+import type { ResearchCatalogItem, ResearchDecisionStatus } from '@/types/research';
 
-const CURATED_TOPIX_MODE_EXPERIMENTS = [
-  'market-behavior/topix-extreme-mode-mean-reversion-comparison',
-  'market-behavior/topix-extreme-close-to-close-mode',
-  'market-behavior/topix-streak-extreme-mode',
-  'market-behavior/topix-streak-multi-timeframe-mode',
-  'market-behavior/topix100-streak-3-53-transfer',
-  'market-behavior/topix100-q10-bounce-streak-3-53-conditioning',
-  'market-behavior/topix100-strongest-setup-q10-threshold',
-  'market-behavior/topix100-short-side-streak-3-53-scan',
-  'market-behavior/topix100-streak-3-53-multivariate-priority',
-] as const;
+type FilterValue = 'all' | string;
+type StatusFilterValue = 'all' | ResearchDecisionStatus;
+
+const STATUS_LABELS: Record<ResearchDecisionStatus, string> = {
+  observed: 'Observed',
+  robust: 'Robust',
+  candidate: 'Candidate',
+  ranking_surface: 'Ranking',
+  strategy_draft: 'Strategy Draft',
+  production: 'Production',
+  rejected: 'Rejected',
+};
+
+const STATUS_CLASSES: Record<ResearchDecisionStatus, string> = {
+  observed: 'border-border/70 bg-[var(--app-surface-muted)] text-muted-foreground',
+  robust: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  candidate: 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  ranking_surface: 'border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300',
+  strategy_draft: 'border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300',
+  production: 'border-primary/20 bg-primary/10 text-primary',
+  rejected: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
+};
 
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
@@ -32,140 +51,201 @@ function formatTimestamp(value?: string | null): string {
   return parsed.toLocaleDateString();
 }
 
+function formatRange(item: ResearchCatalogItem): string {
+  if (!item.analysisStartDate || !item.analysisEndDate) return 'n/a';
+  return `${item.analysisStartDate} -> ${item.analysisEndDate}`;
+}
+
+function buildUniqueList(items: ResearchCatalogItem[], getValue: (item: ResearchCatalogItem) => string): string[] {
+  return Array.from(new Set(items.map(getValue).filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
 function buildTagList(items: ResearchCatalogItem[]): string[] {
   return Array.from(new Set(items.flatMap((item) => item.tags))).sort((left, right) => left.localeCompare(right));
 }
 
 function matchesQuery(item: ResearchCatalogItem, query: string): boolean {
-  if (!query) {
-    return true;
-  }
-  const haystack = [item.title, item.objective, item.headline, item.experimentId, item.tags.join(' ')]
+  if (!query) return true;
+  const haystack = [
+    item.title,
+    item.objective,
+    item.headline,
+    item.experimentId,
+    item.family,
+    item.status,
+    item.decision,
+    item.promotedSurface,
+    item.tags.join(' '),
+    item.riskFlags.join(' '),
+  ]
     .filter((value): value is string => Boolean(value))
     .join(' ')
     .toLowerCase();
   return haystack.includes(query);
 }
 
-function collectCuratedStudies(items: ResearchCatalogItem[]): ResearchCatalogItem[] {
-  const itemMap = new Map(items.map((item) => [item.experimentId, item]));
-  return CURATED_TOPIX_MODE_EXPERIMENTS.map((experimentId) => itemMap.get(experimentId)).filter(
-    (item): item is ResearchCatalogItem => Boolean(item)
+function buildCatalogViewModel(
+  items: ResearchCatalogItem[],
+  activeFamily: FilterValue,
+  activeStatus: StatusFilterValue,
+  activeTag: FilterValue,
+  deferredQuery: string
+) {
+  return items.filter((item) => {
+    if (activeFamily !== 'all' && item.family !== activeFamily) return false;
+    if (activeStatus !== 'all' && item.status !== activeStatus) return false;
+    if (activeTag !== 'all' && !item.tags.includes(activeTag)) return false;
+    return matchesQuery(item, deferredQuery);
+  });
+}
+
+function StatusBadge({ status }: { status: ResearchDecisionStatus }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap',
+        STATUS_CLASSES[status]
+      )}
+    >
+      {STATUS_LABELS[status]}
+    </span>
   );
 }
 
-function buildCatalogViewModel(
-  items: ResearchCatalogItem[],
-  activeTag: 'all' | string,
-  deferredQuery: string
-) {
-  const filteredItems = items.filter((item) => {
-    if (activeTag !== 'all' && !item.tags.includes(activeTag)) {
-      return false;
-    }
-    return matchesQuery(item, deferredQuery);
-  });
-  const curatedItems = collectCuratedStudies(filteredItems);
-  const curatedExperimentIds = new Set(curatedItems.map((item) => item.experimentId));
-  const libraryCandidates = filteredItems.filter((item) => !curatedExperimentIds.has(item.experimentId));
-  const featuredItem = libraryCandidates[0] ?? null;
-
-  return {
-    filteredItems,
-    curatedItems,
-    featuredItem,
-    remainingItems: featuredItem ? libraryCandidates.slice(1) : libraryCandidates,
-  };
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+  formatOption = (option) => option,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  formatOption?: (value: string) => string;
+}) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 rounded-xl border border-border/70 bg-[var(--app-surface-muted)] px-3 text-sm text-foreground outline-none"
+      >
+        <option value="all">All</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {formatOption(option)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
-function ResearchCard({
-  item,
-  featured = false,
+function EvidenceMatrix({
+  items,
   onOpen,
 }: {
-  item: ResearchCatalogItem;
-  featured?: boolean;
+  items: ResearchCatalogItem[];
   onOpen: (item: ResearchCatalogItem) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(item)}
-      className={cn(
-        'app-interactive group w-full text-left',
-        featured ? 'rounded-[32px]' : 'rounded-[26px]'
-      )}
-    >
-      <Surface
-        className={cn(
-          'h-full overflow-hidden border transition-colors',
-          featured
-            ? 'rounded-[32px] border-amber-500/20 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.12),transparent_36%)] px-6 py-6 sm:px-7'
-            : 'rounded-[26px] border-border/70 bg-[var(--app-surface-muted)] px-5 py-5 group-hover:bg-[var(--app-surface-emphasis)]'
-        )}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]',
-                  featured
-                    ? 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                    : 'border-border/70 bg-background/70 text-muted-foreground'
+    <Surface className="overflow-hidden rounded-[24px] border border-border/70">
+      <div className="border-b border-border/60 px-5 py-4 sm:px-6">
+        <SectionHeading
+          eyebrow="Evidence Matrix"
+          title="Research Workspace"
+          description="Compare published findings by family, state, decision, surface, range, and run before opening the detail reader."
+        />
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-[var(--app-surface-muted)] hover:bg-[var(--app-surface-muted)]">
+            <TableHead className="w-[9rem] whitespace-nowrap">Status</TableHead>
+            <TableHead className="w-[11rem] whitespace-nowrap">Family</TableHead>
+            <TableHead className="min-w-[24rem]">Finding</TableHead>
+            <TableHead className="min-w-[16rem]">Decision</TableHead>
+            <TableHead className="w-[9rem] whitespace-nowrap">Surface</TableHead>
+            <TableHead className="min-w-[12rem]">Risk</TableHead>
+            <TableHead className="w-[13rem] whitespace-nowrap">Range</TableHead>
+            <TableHead className="w-[11rem] whitespace-nowrap">Run</TableHead>
+            <TableHead className="w-[5rem] text-right">Open</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow key={item.experimentId} className="align-top">
+              <TableCell>
+                <StatusBadge status={item.status} />
+              </TableCell>
+              <TableCell className="text-sm font-medium text-foreground">{item.family}</TableCell>
+              <TableCell>
+                <div className="space-y-2">
+                  <div>
+                    <p className="font-semibold leading-5 text-foreground">{item.title}</p>
+                    <p className="mt-1 text-xs font-mono text-muted-foreground">{item.experimentId}</p>
+                  </div>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {item.headline ?? item.objective ?? 'Published research bundle.'}
+                  </p>
+                  {item.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.tags.slice(0, 4).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </TableCell>
+              <TableCell className="text-sm leading-6 text-muted-foreground">
+                {item.decision ?? 'No explicit decision recorded.'}
+              </TableCell>
+              <TableCell className="text-sm font-medium text-foreground">{item.promotedSurface ?? 'Research'}</TableCell>
+              <TableCell>
+                {item.riskFlags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.riskFlags.map((flag) => (
+                      <span
+                        key={flag}
+                        className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                      >
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">None</span>
                 )}
-              >
-                {featured ? 'Latest' : item.hasStructuredSummary ? 'Structured' : 'Markdown'}
-              </span>
-              <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                {formatTimestamp(item.createdAt)}
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              <h2 className={cn('font-semibold tracking-tight text-foreground', featured ? 'text-3xl sm:text-[2.15rem]' : 'text-xl')}>
-                {item.title}
-              </h2>
-              <p className={cn('max-w-3xl leading-6 text-muted-foreground', featured ? 'text-base' : 'text-sm')}>
-                {item.headline ?? item.objective ?? 'Published playground analysis.'}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {item.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatRange(item)}</TableCell>
+              <TableCell>
+                <div className="space-y-1">
+                  <p className="font-mono text-xs text-foreground">{item.runId}</p>
+                  <p className="text-xs text-muted-foreground">{formatTimestamp(item.createdAt)}</p>
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <button
+                  type="button"
+                  onClick={() => onOpen(item)}
+                  className="app-interactive inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-[var(--app-surface-muted)] text-muted-foreground hover:text-foreground"
+                  aria-label={`Open ${item.title}`}
                 >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="hidden rounded-full border border-border/70 px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground md:block">
-            Open
-          </div>
-        </div>
-
-        <div className={cn('mt-5 grid gap-3', featured ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
-          <div className="rounded-2xl border border-white/20 bg-white/55 px-4 py-3 dark:border-white/6 dark:bg-white/4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Experiment</p>
-            <p className="mt-2 font-mono text-xs text-foreground">{item.experimentId}</p>
-          </div>
-          <div className="rounded-2xl border border-white/20 bg-white/55 px-4 py-3 dark:border-white/6 dark:bg-white/4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Analysis Range</p>
-            <p className="mt-2 text-sm font-medium text-foreground">
-              {item.analysisStartDate && item.analysisEndDate ? `${item.analysisStartDate} -> ${item.analysisEndDate}` : 'n/a'}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-white/20 bg-white/55 px-4 py-3 dark:border-white/6 dark:bg-white/4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Run</p>
-            <p className="mt-2 font-mono text-xs text-foreground">{item.runId}</p>
-          </div>
-        </div>
-      </Surface>
-    </button>
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Surface>
   );
 }
 
@@ -173,99 +253,50 @@ function ResearchCatalogContent({
   isLoading,
   errorMessage,
   filteredItems,
-  curatedItems,
-  featuredItem,
-  remainingItems,
   onOpen,
 }: {
-  isLoading: boolean
-  errorMessage: string | null
-  filteredItems: ResearchCatalogItem[]
-  curatedItems: ResearchCatalogItem[]
-  featuredItem: ResearchCatalogItem | null
-  remainingItems: ResearchCatalogItem[]
-  onOpen: (item: ResearchCatalogItem) => void
+  isLoading: boolean;
+  errorMessage: string | null;
+  filteredItems: ResearchCatalogItem[];
+  onOpen: (item: ResearchCatalogItem) => void;
 }) {
   if (isLoading) {
     return (
-      <Surface className="flex min-h-[24rem] items-center justify-center rounded-[30px]">
+      <Surface className="flex min-h-[24rem] items-center justify-center rounded-[24px]">
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading research catalog...
+          Loading research workspace...
         </div>
       </Surface>
-    )
+    );
   }
 
   if (errorMessage) {
     return (
-      <Surface className="rounded-[30px] px-6 py-6">
-        <p className="text-sm font-semibold text-foreground">Catalog load failed</p>
+      <Surface className="rounded-[24px] px-6 py-6">
+        <p className="text-sm font-semibold text-foreground">Research load failed</p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{errorMessage}</p>
       </Surface>
-    )
+    );
   }
 
   if (filteredItems.length === 0) {
     return (
-      <Surface className="rounded-[30px] px-6 py-10 text-center">
+      <Surface className="rounded-[24px] px-6 py-10 text-center">
         <div className="mx-auto flex max-w-xl flex-col items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-border/70 bg-[var(--app-surface-muted)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-[var(--app-surface-muted)]">
             <FileSearch className="h-5 w-5 text-primary" />
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">No matching analyses</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">No matching research</h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Adjust the search or tag filter. The catalog is now designed to scale by narrowing first, then opening detail.
+            Adjust the query, family, status, or tag filter.
           </p>
         </div>
       </Surface>
-    )
+    );
   }
 
-  return (
-    <div className="space-y-6">
-      {curatedItems.length > 0 ? (
-        <section className="space-y-3">
-          <SectionHeading
-            eyebrow="Curated"
-            title="TOPIX Mode Studies"
-            description="These studies belong together: the normal daily mode, the standalone streak mode, the streak multi-timeframe pair scan, the direct mean-reversion comparison, the TOPIX100 transfer read, and the TOPIX100 bucket fusion read."
-          />
-          <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr))]">
-            {curatedItems.map((item) => (
-              <ResearchCard key={item.experimentId} item={item} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {featuredItem ? (
-        <section className="space-y-3">
-          <SectionHeading
-            eyebrow="Featured"
-            title="Start With The Latest High-Signal Bundle"
-            description="The newest matching bundle gets the widest treatment so the catalog still reads clearly as it grows."
-          />
-          <ResearchCard item={featuredItem} featured onOpen={onOpen} />
-        </section>
-      ) : null}
-
-      {remainingItems.length > 0 ? (
-        <section className="space-y-3">
-          <SectionHeading
-            eyebrow="Library"
-            title="More Published Analyses"
-            description="Everything below keeps the same open flow, but in a denser discovery grid."
-          />
-          <div className="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr))]">
-            {remainingItems.map((item) => (
-              <ResearchCard key={item.experimentId} item={item} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </div>
-  )
+  return <EvidenceMatrix items={filteredItems} onOpen={onOpen} />;
 }
 
 export function ResearchPage() {
@@ -273,19 +304,28 @@ export function ResearchPage() {
   const catalogQuery = useResearchCatalog();
   const items = catalogQuery.data?.items ?? [];
   const [query, setQuery] = useState('');
-  const [activeTag, setActiveTag] = useState<'all' | string>('all');
+  const [activeFamily, setActiveFamily] = useState<FilterValue>('all');
+  const [activeStatus, setActiveStatus] = useState<StatusFilterValue>('all');
+  const [activeTag, setActiveTag] = useState<FilterValue>('all');
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
+  const availableFamilies = useMemo(() => buildUniqueList(items, (item) => item.family), [items]);
+  const availableStatuses = useMemo(
+    () => Array.from(new Set(items.map((item) => item.status))).sort((left, right) => left.localeCompare(right)),
+    [items]
+  );
   const availableTags = useMemo(() => buildTagList(items), [items]);
-  const { filteredItems, curatedItems, featuredItem, remainingItems } = useMemo(
-    () => buildCatalogViewModel(items, activeTag, deferredQuery),
-    [activeTag, deferredQuery, items]
+  const filteredItems = useMemo(
+    () => buildCatalogViewModel(items, activeFamily, activeStatus, activeTag, deferredQuery),
+    [activeFamily, activeStatus, activeTag, deferredQuery, items]
   );
 
+  const promotedCount = items.filter((item) => item.promotedSurface && item.promotedSurface !== 'Research').length;
   const metaItems = [
-    { label: 'Published Experiments', value: String(items.length) },
-    { label: 'Visible Results', value: String(filteredItems.length) },
-    { label: 'Structured Summaries', value: String(items.filter((item) => item.hasStructuredSummary).length) },
+    { label: 'Experiments', value: String(items.length) },
+    { label: 'Visible', value: String(filteredItems.length) },
+    { label: 'Families', value: String(availableFamilies.length) },
+    { label: 'Promoted', value: String(promotedCount) },
   ];
 
   const openDetail = (item: ResearchCatalogItem) => {
@@ -300,71 +340,54 @@ export function ResearchPage() {
 
   return (
     <div className="min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5">
-      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5">
         <PageIntro
-          eyebrow="Research Library"
-          title="Playground Analyses"
-          description="Use this library view to find a study first. The detail view is now dedicated to reading the result and consideration sections without catalog noise."
+          eyebrow="Research Workspace"
+          title="Evidence Matrix"
+          description="Review research by thesis family, decision state, promoted surface, and risk flags before opening the detail reader."
           meta={<PageIntroMetaList items={metaItems} />}
         />
 
-        <Surface className="rounded-[30px] border border-border/70 px-5 py-5 sm:px-6">
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-2">
-                <SectionEyebrow>Catalog Controls</SectionEyebrow>
-                <h2 className="text-2xl font-semibold tracking-tight text-foreground">Search, Filter, Then Open</h2>
-                <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                  This page is intentionally optimized for discovery. Open a detail page only after narrowing the catalog.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[minmax(18rem,26rem)_auto]">
-                <label className="flex items-center gap-3 rounded-full border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3">
-                  <Search className="h-4 w-4 text-muted-foreground" />
-                  <input
-                    value={query}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
-                    placeholder="Search title, takeaway, experiment id, or tag"
-                    className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                  />
-                </label>
-                <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3 text-sm text-muted-foreground">
-                  <Filter className="h-4 w-4" />
-                  {activeTag === 'all' ? 'All tags' : activeTag}
-                </div>
-              </div>
+        <Surface className="rounded-[24px] border border-border/70 px-5 py-4 sm:px-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(18rem,1fr)_auto] lg:items-end">
+            <div className="space-y-2">
+              <SectionEyebrow>Workspace Filters</SectionEyebrow>
+              <label className="flex items-center gap-3 rounded-xl border border-border/70 bg-[var(--app-surface-muted)] px-3 py-2.5">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <input
+                  value={query}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
+                  placeholder="Search title, finding, decision, experiment id, tag, or risk"
+                  className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                />
+              </label>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveTag('all')}
-                className={cn(
-                  'app-interactive rounded-full border px-3 py-1.5 text-sm',
-                  activeTag === 'all'
-                    ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground'
-                    : 'border-border/60 bg-[var(--app-surface-muted)] text-muted-foreground hover:text-foreground'
-                )}
-              >
-                All
-              </button>
-              {availableTags.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => setActiveTag(tag)}
-                  className={cn(
-                    'app-interactive rounded-full border px-3 py-1.5 text-sm',
-                    activeTag === tag
-                      ? 'border-border/70 bg-[var(--app-surface-emphasis)] text-foreground'
-                      : 'border-border/60 bg-[var(--app-surface-muted)] text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  {tag}
-                </button>
-              ))}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <FilterSelect
+                label="Family"
+                value={activeFamily}
+                options={availableFamilies}
+                onChange={(value) => setActiveFamily(value)}
+              />
+              <FilterSelect
+                label="Status"
+                value={activeStatus}
+                options={availableStatuses}
+                onChange={(value) => setActiveStatus(value as StatusFilterValue)}
+                formatOption={(value) => STATUS_LABELS[value as ResearchDecisionStatus] ?? value}
+              />
+              <FilterSelect label="Tag" value={activeTag} options={availableTags} onChange={setActiveTag} />
             </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <Filter className="h-4 w-4" />
+            <span>
+              {activeFamily === 'all' ? 'All families' : activeFamily} /{' '}
+              {activeStatus === 'all' ? 'All statuses' : STATUS_LABELS[activeStatus]} /{' '}
+              {activeTag === 'all' ? 'All tags' : activeTag}
+            </span>
           </div>
         </Surface>
 
@@ -372,9 +395,6 @@ export function ResearchPage() {
           isLoading={catalogQuery.isLoading}
           errorMessage={catalogQuery.error?.message ?? null}
           filteredItems={filteredItems}
-          curatedItems={curatedItems}
-          featuredItem={featuredItem}
-          remainingItems={remainingItems}
           onOpen={openDetail}
         />
       </div>

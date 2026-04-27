@@ -7615,18 +7615,34 @@ export interface components {
         PublishedResearchSummary: {
             /** Considerations */
             considerations?: string[];
+            /** Decision */
+            decision?: string | null;
+            /** Family */
+            family?: string | null;
             /** Highlights */
             highlights?: components["schemas"]["ResearchHighlight"][];
             /** Method */
             method?: string[];
+            /** Promotedsurface */
+            promotedSurface?: string | null;
             /** Purpose */
             purpose: string;
+            /** Relatedexperiments */
+            relatedExperiments?: string[];
             /** Resultbullets */
             resultBullets?: string[];
             /** Resultheadline */
             resultHeadline?: string | null;
+            /** Riskflags */
+            riskFlags?: string[];
             /** Selectedparameters */
             selectedParameters?: components["schemas"]["ResearchLabelValue"][];
+            /**
+             * Status
+             * @default observed
+             * @enum {string}
+             */
+            status: "observed" | "robust" | "candidate" | "ranking_surface" | "strategy_draft" | "production" | "rejected";
             /** Tablehighlights */
             tableHighlights?: components["schemas"]["ResearchTableHighlight"][];
             /** Tags */
@@ -7862,10 +7878,14 @@ export interface components {
             analysisStartDate?: string | null;
             /** Createdat */
             createdAt: string;
+            /** Decision */
+            decision?: string | null;
             /** Docsreadmepath */
             docsReadmePath?: string | null;
             /** Experimentid */
             experimentId: string;
+            /** Family */
+            family: string;
             /** Gitcommit */
             gitCommit?: string | null;
             /**
@@ -7877,8 +7897,20 @@ export interface components {
             headline?: string | null;
             /** Objective */
             objective?: string | null;
+            /** Promotedsurface */
+            promotedSurface?: string | null;
+            /** Relatedexperiments */
+            relatedExperiments?: string[];
+            /** Riskflags */
+            riskFlags?: string[];
             /** Runid */
             runId: string;
+            /**
+             * Status
+             * @default observed
+             * @enum {string}
+             */
+            status: "observed" | "robust" | "candidate" | "ranking_surface" | "strategy_draft" | "production" | "rejected";
             /** Tags */
             tags?: string[];
             /** Title */

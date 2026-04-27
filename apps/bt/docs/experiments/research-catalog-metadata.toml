@@ -1,0 +1,32 @@
+[experiments."market-behavior/annual-value-composite-selection"]
+family = "Annual Fundamentals"
+status = "ranking_surface"
+decision = "Use Ranking as the research display surface; keep Screening for production execution."
+promotedSurface = "Ranking"
+riskFlags = ["portfolio-lens"]
+relatedExperiments = [
+  "market-behavior/annual-fundamental-confounder-analysis",
+  "market-behavior/annual-forward-per-regime-decomposition",
+]
+
+[experiments."strategy-audit/forward-eps-trade-archetype-decomposition"]
+family = "Strategy Audit"
+status = "strategy_draft"
+decision = "Use as production strategy decomposition evidence before changing forward_eps_driven."
+promotedSurface = "Strategy"
+riskFlags = ["live-strategy-context"]
+relatedExperiments = [
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-fundamental-confounder-analysis",
+]
+
+[experiments."market-behavior/falling-knife-bad-tail-pruning"]
+family = "Falling Knife"
+status = "candidate"
+decision = "Compare tail pruning rules before promoting any execution rule."
+promotedSurface = "Research"
+riskFlags = ["tail-risk"]
+relatedExperiments = [
+  "market-behavior/falling-knife-reversal-study",
+  "market-behavior/falling-knife-fundamental-quality-pruning",
+]

@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { buildResearchReadingModel } from './researchReading';
 import type { ResearchDetailResponse } from '@/types/research';
 
+const baseResearchMetadata = {
+  family: 'Market Regime',
+  status: 'observed' as const,
+  decision: null,
+  promotedSurface: 'Research',
+  riskFlags: [],
+  relatedExperiments: [],
+};
+
 function createDetail(overrides: Partial<ResearchDetailResponse>): ResearchDetailResponse {
   return {
     item: {
@@ -16,6 +25,7 @@ function createDetail(overrides: Partial<ResearchDetailResponse>): ResearchDetai
       gitCommit: '58c1fd4a',
       tags: ['example'],
       hasStructuredSummary: false,
+      ...baseResearchMetadata,
     },
     summary: null,
     summaryMarkdown: '# Example Research',
@@ -42,6 +52,7 @@ describe('buildResearchReadingModel', () => {
           gitCommit: '58c1fd4a',
           tags: ['fallback'],
           hasStructuredSummary: false,
+          ...baseResearchMetadata,
         },
         summaryMarkdown: `# Markdown Research
 
@@ -90,6 +101,7 @@ Short intro paragraph.
           gitCommit: '58c1fd4a',
           tags: [],
           hasStructuredSummary: false,
+          ...baseResearchMetadata,
         },
         summaryMarkdown: `# Accumulation Flow Followthrough
 
@@ -128,10 +140,17 @@ Short intro paragraph.
           gitCommit: '58c1fd4a',
           tags: ['structured'],
           hasStructuredSummary: true,
+          ...baseResearchMetadata,
         },
         summary: {
           title: 'Structured Research',
           tags: ['structured'],
+          family: 'Market Regime',
+          status: 'observed',
+          decision: null,
+          promotedSurface: 'Research',
+          riskFlags: [],
+          relatedExperiments: [],
           purpose: 'Explain the analysis intent.',
           method: ['Evaluate discovery score.', 'Compare validation forward returns.'],
           resultHeadline: 'Streak mode separates segments but mean-reverts.',

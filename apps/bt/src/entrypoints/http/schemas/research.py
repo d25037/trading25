@@ -8,6 +8,15 @@ from pydantic import BaseModel, Field
 
 
 ResearchHighlightTone = Literal["neutral", "accent", "success", "warning", "danger"]
+ResearchDecisionStatus = Literal[
+    "observed",
+    "robust",
+    "candidate",
+    "ranking_surface",
+    "strategy_draft",
+    "production",
+    "rejected",
+]
 
 
 class ResearchLabelValue(BaseModel):
@@ -31,6 +40,12 @@ class ResearchTableHighlight(BaseModel):
 class PublishedResearchSummary(BaseModel):
     title: str
     tags: list[str] = Field(default_factory=list)
+    family: str | None = None
+    status: ResearchDecisionStatus = "observed"
+    decision: str | None = None
+    promotedSurface: str | None = None
+    riskFlags: list[str] = Field(default_factory=list)
+    relatedExperiments: list[str] = Field(default_factory=list)
     purpose: str
     method: list[str] = Field(default_factory=list)
     resultHeadline: str | None = None
@@ -47,6 +62,12 @@ class ResearchCatalogItem(BaseModel):
     title: str
     objective: str | None = None
     headline: str | None = None
+    family: str
+    status: ResearchDecisionStatus = "observed"
+    decision: str | None = None
+    promotedSurface: str | None = None
+    riskFlags: list[str] = Field(default_factory=list)
+    relatedExperiments: list[str] = Field(default_factory=list)
     docsReadmePath: str | None = None
     createdAt: str
     analysisStartDate: str | None = None

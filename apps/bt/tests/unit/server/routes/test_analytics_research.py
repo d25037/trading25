@@ -45,6 +45,12 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         published_summary={
             "title": "Alpha Research",
             "tags": ["TOPIX", "published"],
+            "family": "Market Regime",
+            "status": "robust",
+            "decision": "Keep as regime context.",
+            "promotedSurface": "Research",
+            "riskFlags": ["portfolio-lens-needed"],
+            "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
             "purpose": "Alpha purpose paragraph.",
             "method": ["Alpha method"],
             "resultHeadline": "Alpha headline",
@@ -70,6 +76,12 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         published_summary={
             "title": "Alpha Research Latest",
             "tags": ["TOPIX", "published"],
+            "family": "Market Regime",
+            "status": "robust",
+            "decision": "Keep as regime context.",
+            "promotedSurface": "Research",
+            "riskFlags": ["portfolio-lens-needed"],
+            "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
             "purpose": "Latest alpha purpose.",
             "method": ["Latest alpha method"],
             "resultHeadline": "Latest alpha headline",
@@ -128,6 +140,14 @@ def test_list_research_catalog_returns_latest_per_experiment(
     assert published_item["runId"] == "20260405_110000_alpha0002"
     assert published_item["title"] == "Alpha Research Latest"
     assert published_item["hasStructuredSummary"] is True
+    assert published_item["family"] == "Market Regime"
+    assert published_item["status"] == "robust"
+    assert published_item["decision"] == "Keep as regime context."
+    assert published_item["promotedSurface"] == "Research"
+    assert published_item["riskFlags"] == ["portfolio-lens-needed"]
+    assert published_item["relatedExperiments"] == [
+        "market-behavior/topix-close-stock-overnight"
+    ]
     assert (
         published_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
@@ -139,6 +159,9 @@ def test_list_research_catalog_returns_latest_per_experiment(
     )
     assert fallback_item["title"] == "Beta Research"
     assert fallback_item["hasStructuredSummary"] is False
+    assert fallback_item["family"] == "Market Regime"
+    assert fallback_item["status"] == "observed"
+    assert "markdown-only" in fallback_item["riskFlags"]
     assert (
         fallback_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
@@ -161,6 +184,14 @@ def test_get_research_detail_returns_structured_summary_and_run_history(
         == "apps/bt/docs/experiments/market-behavior/topix-gap-intraday-distribution/README.md"
     )
     assert payload["summary"]["title"] == "Alpha Research Latest"
+    assert payload["summary"]["family"] == "Market Regime"
+    assert payload["summary"]["status"] == "robust"
+    assert payload["summary"]["decision"] == "Keep as regime context."
+    assert payload["summary"]["promotedSurface"] == "Research"
+    assert payload["summary"]["riskFlags"] == ["portfolio-lens-needed"]
+    assert payload["summary"]["relatedExperiments"] == [
+        "market-behavior/topix-close-stock-overnight"
+    ]
     assert payload["summary"]["purpose"] == "Latest alpha purpose."
     assert payload["summary"]["resultHeadline"] == "Latest alpha headline"
     assert payload["summary"]["selectedParameters"] == [{"label": "Window", "value": "5"}]
@@ -237,6 +268,55 @@ def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
     detail_payload = detail_response.json()
     assert detail_payload["summary"] is None
     assert detail_payload["summaryMarkdown"].startswith("# Raw Result Summary")
+
+
+def test_research_catalog_metadata_overlay_takes_precedence(
+    research_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    write_research_bundle(
+        experiment_id="market-behavior/annual-value-composite-selection",
+        module="tests.value",
+        function="run_value",
+        params={"top_pct": 10},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date="2020-01-01",
+        analysis_end_date="2025-12-31",
+        result_metadata={"source_mode": "snapshot"},
+        result_tables={"summary_df": pd.DataFrame([{"value": 5}])},
+        summary_markdown="# Value Composite\n\nValue purpose.\n\n- Value result\n",
+        published_summary={
+            "title": "Value Composite",
+            "tags": ["value"],
+            "family": "Bundle Family",
+            "status": "observed",
+            "decision": "Bundle decision",
+            "promotedSurface": "Research",
+            "riskFlags": ["bundle-risk"],
+            "purpose": "Value purpose.",
+            "method": ["Value method"],
+            "resultHeadline": "Value headline",
+            "resultBullets": ["Value result"],
+            "considerations": ["Value caution"],
+        },
+        run_id="20260405_140000_value0001",
+    )
+
+    response = research_client.get(
+        "/api/analytics/research/detail",
+        params={"experimentId": "market-behavior/annual-value-composite-selection"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item"]["family"] == "Annual Fundamentals"
+    assert payload["item"]["status"] == "ranking_surface"
+    assert payload["item"]["decision"].startswith("Use Ranking")
+    assert payload["item"]["promotedSurface"] == "Ranking"
+    assert payload["item"]["riskFlags"] == ["portfolio-lens", "bundle-risk"]
+    assert payload["summary"]["family"] == "Annual Fundamentals"
+    assert payload["summary"]["status"] == "ranking_surface"
+    assert payload["summary"]["promotedSurface"] == "Ranking"
 
 
 def test_get_research_detail_returns_404_when_missing(

@@ -1,6 +1,7 @@
 import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 
 export type ResearchHighlightTone = components['schemas']['ResearchHighlight']['tone'];
+export type ResearchDecisionStatus = components['schemas']['ResearchCatalogItem']['status'];
 
 export type ApiResearchLabelValue = components['schemas']['ResearchLabelValue'];
 export type ApiResearchHighlight = components['schemas']['ResearchHighlight'];
@@ -22,7 +23,15 @@ export type ResearchTableHighlight = ApiResearchTableHighlight;
 export interface PublishedResearchSummary
   extends Omit<
     ApiPublishedResearchSummary,
-    'tags' | 'method' | 'resultBullets' | 'considerations' | 'selectedParameters' | 'highlights' | 'tableHighlights'
+    | 'tags'
+    | 'method'
+    | 'resultBullets'
+    | 'considerations'
+    | 'selectedParameters'
+    | 'highlights'
+    | 'tableHighlights'
+    | 'riskFlags'
+    | 'relatedExperiments'
   > {
   tags: string[];
   method: string[];
@@ -31,10 +40,16 @@ export interface PublishedResearchSummary
   selectedParameters: ResearchLabelValue[];
   highlights: ResearchHighlight[];
   tableHighlights: ResearchTableHighlight[];
+  riskFlags: string[];
+  relatedExperiments: string[];
 }
 
-export interface ResearchCatalogItem extends Omit<ApiResearchCatalogItem, 'tags'> {
+export interface ResearchCatalogItem extends Omit<ApiResearchCatalogItem, 'tags' | 'riskFlags' | 'relatedExperiments'> {
   tags: string[];
+  family: string;
+  status: ResearchDecisionStatus;
+  riskFlags: string[];
+  relatedExperiments: string[];
 }
 
 export type ResearchRunReference = ApiResearchRunReference;

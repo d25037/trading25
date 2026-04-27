@@ -158,7 +158,18 @@ const catalogItems = [
     tags: ['fallback'],
     hasStructuredSummary: false,
   },
-];
+].map((item) => ({
+  ...item,
+  family: item.experimentId === 'market-behavior/unstructured-beta' ? 'Fallback' : 'Market Regime',
+  status: item.experimentId === 'market-behavior/unstructured-beta' ? 'candidate' : 'observed',
+  decision:
+    item.experimentId === 'market-behavior/unstructured-beta'
+      ? 'Needs a structured summary before promotion.'
+      : 'Keep as research evidence.',
+  promotedSurface: 'Research',
+  riskFlags: item.hasStructuredSummary ? [] : ['markdown-only'],
+  relatedExperiments: [],
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -170,23 +181,19 @@ beforeEach(() => {
 });
 
 describe('ResearchPage', () => {
-  it('renders curated TOPIX mode studies alongside the discovery-focused catalog', () => {
+  it('renders a table-first evidence matrix for research browsing', () => {
     render(<ResearchPage />);
 
-    expect(screen.getByText('Playground Analyses')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX Mode Studies')).toBeInTheDocument();
+    expect(screen.getAllByText('Evidence Matrix').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Research Workspace').length).toBeGreaterThan(0);
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Family' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Decision' })).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Mode Mean-Reversion Comparison')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX Streak Multi-Timeframe Mode')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Streak 3/53 Transfer Study')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Q10 Bounce x Streak 3/53 Conditioning')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Strongest Setup vs Q10 Threshold')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Short Side Streak 3/53 Scan')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Streak 3/53 Multivariate Priority')).toBeInTheDocument();
-    expect(screen.getByText('Start With The Latest High-Signal Bundle')).toBeInTheDocument();
-    expect(screen.getByText('More Published Analyses')).toBeInTheDocument();
-    expect(screen.getAllByText('TOPIX Streak Extreme Mode').length).toBeGreaterThan(0);
-    expect(screen.getByText('TOPIX Close Return Streaks')).toBeInTheDocument();
+    expect(screen.getAllByText('Observed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Candidate').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Market Regime').length).toBeGreaterThan(0);
   });
 
   it('filters the catalog by query and tag', async () => {
@@ -194,15 +201,62 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    await user.type(screen.getByPlaceholderText('Search title, takeaway, experiment id, or tag'), 'close return');
+    const searchInput = screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk');
+
+    await user.type(searchInput, 'close return');
     expect(screen.getByText('TOPIX Close Return Streaks')).toBeInTheDocument();
     expect(screen.queryByText('Beta Research')).not.toBeInTheDocument();
 
-    await user.clear(screen.getByPlaceholderText('Search title, takeaway, experiment id, or tag'));
-    await user.click(screen.getByRole('button', { name: 'fallback' }));
+    await user.clear(searchInput);
+    await user.selectOptions(screen.getByLabelText('Tag'), 'fallback');
 
     expect(screen.getByText('Beta Research')).toBeInTheDocument();
     expect(screen.queryByText('TOPIX Close Return Streaks')).not.toBeInTheDocument();
+  });
+
+  it('filters the evidence matrix by family and status', async () => {
+    const user = userEvent.setup();
+
+    render(<ResearchPage />);
+
+    await user.selectOptions(screen.getByLabelText('Family'), 'Fallback');
+    expect(screen.getByText('Beta Research')).toBeInTheDocument();
+    expect(screen.queryByText('TOPIX Close Return Streaks')).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Family'), 'all');
+    await user.selectOptions(screen.getByLabelText('Status'), 'candidate');
+    expect(screen.getByText('Beta Research')).toBeInTheDocument();
+    expect(screen.queryByText('TOPIX Close Return Streaks')).not.toBeInTheDocument();
+  });
+
+  it('renders loading, error, and empty workspace states', async () => {
+    const user = userEvent.setup();
+
+    mockUseResearchCatalog.mockReturnValueOnce({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
+    const { rerender } = render(<ResearchPage />);
+    expect(screen.getByText('Loading research workspace...')).toBeInTheDocument();
+
+    mockUseResearchCatalog.mockReturnValueOnce({
+      data: undefined,
+      isLoading: false,
+      error: new Error('catalog unavailable'),
+    });
+    rerender(<ResearchPage />);
+    expect(screen.getByText('Research load failed')).toBeInTheDocument();
+    expect(screen.getByText('catalog unavailable')).toBeInTheDocument();
+
+    mockUseResearchCatalog.mockReturnValueOnce({
+      data: { items: catalogItems, lastUpdated: '2026-04-06T00:00:00+00:00' },
+      isLoading: false,
+      error: null,
+    });
+    rerender(<ResearchPage />);
+    await user.type(screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk'), 'no hit');
+    expect(screen.getByText('No matching research')).toBeInTheDocument();
   });
 
   it('opens the selected analysis in the detail route', async () => {
@@ -210,7 +264,7 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    await user.click(screen.getByText('TOPIX Close Return Streaks'));
+    await user.click(screen.getByRole('button', { name: 'Open TOPIX Close Return Streaks' }));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/research/detail',

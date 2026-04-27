@@ -19,6 +19,10 @@ function normalizeResearchCatalogItem(item: ApiResearchCatalogItem): ResearchCat
   return {
     ...item,
     tags: item.tags ?? [],
+    family: item.family ?? item.experimentId.split('/')[0]?.replaceAll('-', ' ') ?? 'Research',
+    status: item.status ?? 'observed',
+    riskFlags: item.riskFlags ?? [],
+    relatedExperiments: item.relatedExperiments ?? [],
   };
 }
 
@@ -48,6 +52,8 @@ function normalizeResearchSummary(summary: ApiPublishedResearchSummary | null | 
       })
     ),
     tableHighlights: summary.tableHighlights ?? [],
+    riskFlags: summary.riskFlags ?? [],
+    relatedExperiments: summary.relatedExperiments ?? [],
   };
 }
 

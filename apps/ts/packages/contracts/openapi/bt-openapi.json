@@ -9998,6 +9998,28 @@
             "title": "Considerations",
             "type": "array"
           },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family"
+          },
           "highlights": {
             "items": {
               "$ref": "#/components/schemas/ResearchHighlight"
@@ -10012,9 +10034,27 @@
             "title": "Method",
             "type": "array"
           },
+          "promotedSurface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotedsurface"
+          },
           "purpose": {
             "title": "Purpose",
             "type": "string"
+          },
+          "relatedExperiments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Relatedexperiments",
+            "type": "array"
           },
           "resultBullets": {
             "items": {
@@ -10034,12 +10074,33 @@
             ],
             "title": "Resultheadline"
           },
+          "riskFlags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Riskflags",
+            "type": "array"
+          },
           "selectedParameters": {
             "items": {
               "$ref": "#/components/schemas/ResearchLabelValue"
             },
             "title": "Selectedparameters",
             "type": "array"
+          },
+          "status": {
+            "default": "observed",
+            "enum": [
+              "observed",
+              "robust",
+              "candidate",
+              "ranking_surface",
+              "strategy_draft",
+              "production",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "tableHighlights": {
             "items": {
@@ -10932,6 +10993,17 @@
             "title": "Createdat",
             "type": "string"
           },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
           "docsReadmePath": {
             "anyOf": [
               {
@@ -10945,6 +11017,10 @@
           },
           "experimentId": {
             "title": "Experimentid",
+            "type": "string"
+          },
+          "family": {
+            "title": "Family",
             "type": "string"
           },
           "gitCommit": {
@@ -10985,8 +11061,47 @@
             ],
             "title": "Objective"
           },
+          "promotedSurface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotedsurface"
+          },
+          "relatedExperiments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Relatedexperiments",
+            "type": "array"
+          },
+          "riskFlags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Riskflags",
+            "type": "array"
+          },
           "runId": {
             "title": "Runid",
+            "type": "string"
+          },
+          "status": {
+            "default": "observed",
+            "enum": [
+              "observed",
+              "robust",
+              "candidate",
+              "ranking_surface",
+              "strategy_draft",
+              "production",
+              "rejected"
+            ],
+            "title": "Status",
             "type": "string"
           },
           "tags": {
@@ -11005,6 +11120,7 @@
           "experimentId",
           "runId",
           "title",
+          "family",
           "createdAt"
         ],
         "title": "ResearchCatalogItem",
