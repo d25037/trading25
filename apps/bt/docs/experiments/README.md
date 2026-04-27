@@ -39,6 +39,8 @@
   - 「落ちるナイフを掴むな」を、急落 overlap と Daily Risk Adjusted Return で定義し、即時買いと安定化確認後の買いを比較する実験。
 - [market-behavior/falling-knife-bad-tail-pruning/](./market-behavior/falling-knife-bad-tail-pruning/README.md)
   - falling knife のリバウンド exposure を残しながら severe loss を下げる除外ルールを比較する実験。
+- [market-behavior/falling-knife-fundamental-quality-pruning/](./market-behavior/falling-knife-fundamental-quality-pruning/README.md)
+  - Growth market の bad tail が市場区分そのものか、PIT-safe なファンダ quality proxy で説明できるかを分解する実験。
 - [market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/](./market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/README.md)
   - TOPIX を long-only で持つ前提で、downside return standard deviation と trend / breadth confirmation を使う fixed overlay を committee 化し、walk-forward と pure OOS で評価する実験。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
