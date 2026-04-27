@@ -136,9 +136,12 @@ def _valuation_bucket(value: object, breakpoints: tuple[float, ...]) -> str:
     return f">={breakpoints[-1]:g}x"
 
 
-def _query_latest_bps_features(db_path: str, event_key_df: pd.DataFrame) -> pd.DataFrame:
+def _query_latest_valuation_features(
+    db_path: str,
+    event_key_df: pd.DataFrame,
+) -> pd.DataFrame:
     if event_key_df.empty:
-        return _empty_df(("event_id", "bps"))
+        return _empty_df(("event_id", "bps", "actual_eps", "valuation_forecast_eps"))
     normalized_code_sql = normalize_code_sql("s.code")
     with open_readonly_analysis_connection(
         db_path,
@@ -148,7 +151,7 @@ def _query_latest_bps_features(db_path: str, event_key_df: pd.DataFrame) -> pd.D
         try:
             return ctx.connection.execute(
                 f"""
-                WITH statement_candidates AS (
+                WITH bps_candidates AS (
                     SELECT
                         e.event_id,
                         CAST(s.bps AS DOUBLE) AS bps,
@@ -160,11 +163,60 @@ def _query_latest_bps_features(db_path: str, event_key_df: pd.DataFrame) -> pd.D
                     JOIN statements s
                         ON {normalized_code_sql} = e.code
                        AND s.disclosed_date <= e.signal_date
+                    WHERE s.type_of_current_period = 'FY'
+                      AND s.bps IS NOT NULL
+                ),
+                actual_eps_candidates AS (
+                    SELECT
+                        e.event_id,
+                        CAST(s.earnings_per_share AS DOUBLE) AS actual_eps,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY e.event_id
+                            ORDER BY s.disclosed_date DESC, s.type_of_current_period DESC
+                        ) AS row_priority
+                    FROM _event_keys e
+                    JOIN statements s
+                        ON {normalized_code_sql} = e.code
+                       AND s.disclosed_date <= e.signal_date
+                    WHERE s.type_of_current_period = 'FY'
+                      AND s.earnings_per_share IS NOT NULL
+                ),
+                forecast_eps_candidates AS (
+                    SELECT
+                        e.event_id,
+                        CAST(COALESCE(
+                            s.next_year_forecast_earnings_per_share,
+                            s.forecast_eps
+                        ) AS DOUBLE) AS valuation_forecast_eps,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY e.event_id
+                            ORDER BY s.disclosed_date DESC, s.type_of_current_period DESC
+                        ) AS row_priority
+                    FROM _event_keys e
+                    JOIN statements s
+                        ON {normalized_code_sql} = e.code
+                       AND s.disclosed_date <= e.signal_date
+                    WHERE COALESCE(
+                        s.next_year_forecast_earnings_per_share,
+                        s.forecast_eps
+                    ) IS NOT NULL
                 )
-                SELECT event_id, bps
-                FROM statement_candidates
-                WHERE row_priority = 1
-                ORDER BY event_id
+                SELECT
+                    e.event_id,
+                    b.bps,
+                    a.actual_eps,
+                    f.valuation_forecast_eps
+                FROM _event_keys e
+                LEFT JOIN bps_candidates b
+                    ON b.event_id = e.event_id
+                   AND b.row_priority = 1
+                LEFT JOIN actual_eps_candidates a
+                    ON a.event_id = e.event_id
+                   AND a.row_priority = 1
+                LEFT JOIN forecast_eps_candidates f
+                    ON f.event_id = e.event_id
+                   AND f.row_priority = 1
+                ORDER BY e.event_id
                 """
             ).fetchdf()
         finally:
@@ -194,22 +246,22 @@ def _add_valuation_features(
     ).astype(int)
     event_key_df["code"] = event_key_df["code"].astype(str)
     event_key_df["signal_date"] = event_key_df["signal_date"].astype(str)
-    bps_df = _query_latest_bps_features(db_path, event_key_df)
+    valuation_df = _query_latest_valuation_features(db_path, event_key_df)
     frame = enriched_event_df.merge(price_df, on="event_id", how="left")
-    frame = frame.merge(bps_df, on="event_id", how="left")
+    frame = frame.merge(valuation_df, on="event_id", how="left")
     frame["pbr"] = [
         _positive_ratio(close, bps)
         for close, bps in zip(frame["close"], frame["bps"], strict=False)
     ]
     frame["per"] = [
         _positive_ratio(close, eps)
-        for close, eps in zip(frame["close"], frame["eps"], strict=False)
+        for close, eps in zip(frame["close"], frame["actual_eps"], strict=False)
     ]
     frame["forward_per"] = [
         _positive_ratio(close, forecast_eps)
         for close, forecast_eps in zip(
             frame["close"],
-            frame["forecast_eps"],
+            frame["valuation_forecast_eps"],
             strict=False,
         )
     ]

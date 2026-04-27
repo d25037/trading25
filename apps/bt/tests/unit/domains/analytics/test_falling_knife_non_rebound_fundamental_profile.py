@@ -45,6 +45,7 @@ def _create_statement_db(db_path: Path) -> None:
         )
         rows = [
             ("1001", "2025-12-20", "FY", "FY", 10, 15, 14, 100, 1000, 120, -20, 500, 900, 100),
+            ("1001", "2026-01-05", "1Q", "1Q", 2, None, None, 20, 200, 30, -5, 520, 930, None),
             ("1001", "2026-01-20", "FY", "FY", -5, -2, -3, -50, 800, -60, -70, 100, 1000, 20),
             ("1002", "2025-12-25", "FY", "FY", -1, -4, -4, -30, 600, -40, -50, 80, 1000, 10),
             ("1003", "2025-12-25", "FY", "FY", 3, 3, 3, 20, 500, -10, -30, 120, 1000, 80),
@@ -131,9 +132,10 @@ def test_non_rebound_profile_labels_and_scores_features(tmp_path: Path) -> None:
     assert result.rebound_count == 2
     assert result.non_rebound_rate_pct == 60.0
     row_1001 = result.enriched_event_df[result.enriched_event_df["code"] == "1001"].iloc[0]
-    assert row_1001["disclosed_date"] == "2025-12-20"
+    assert row_1001["disclosed_date"] == "2026-01-05"
     assert not bool(row_1001["non_rebound"])
     assert float(row_1001["pbr"]) == 1.0
+    assert float(row_1001["per"]) == 10.0
     assert float(row_1001["forward_per"]) == 100.0 / 15.0
     growth_row = result.fundamental_profile_summary_df[
         (result.fundamental_profile_summary_df["feature_name"] == "market_name")
