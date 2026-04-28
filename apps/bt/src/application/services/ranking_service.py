@@ -218,14 +218,14 @@ _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
 
 
 def _resolve_latest_stock_master_date(reader: MarketDbReadable) -> str:
-    if not _reader_table_exists(reader, "stock_master_daily"):
-        row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_data")
-        if row is None or row["max_date"] is None:
-            raise ValueError("No stock master or stock_data date available in database")
-        return str(row["max_date"])
-    row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_master_daily")
+    if _reader_table_exists(reader, "stock_master_daily"):
+        row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_master_daily")
+        if row is not None and row["max_date"] is not None:
+            return str(row["max_date"])
+
+    row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_data")
     if row is None or row["max_date"] is None:
-        raise ValueError("No stock_master_daily data available in database")
+        raise ValueError("No stock master or stock_data date available in database")
     return str(row["max_date"])
 
 
@@ -244,7 +244,12 @@ def _reader_table_exists(reader: MarketDbReadable, table_name: str) -> bool:
 
 def _stock_master_source(reader: MarketDbReadable, as_of_date: str) -> tuple[str, str, tuple[str, ...]]:
     if _reader_table_exists(reader, "stock_master_daily"):
-        return "stock_master_daily", "date = ? AND ", (as_of_date,)
+        row = reader.query_one(
+            "SELECT 1 AS exists FROM stock_master_daily WHERE date = ? LIMIT 1",
+            (as_of_date,),
+        )
+        if row is not None:
+            return "stock_master_daily", "date = ? AND ", (as_of_date,)
     return "stocks", "", ()
 
 

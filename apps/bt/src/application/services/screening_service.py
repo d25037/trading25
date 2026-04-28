@@ -458,16 +458,17 @@ class ScreeningService:
 
         return response
 
-    def _load_stock_universe(self, market_codes: list[str], as_of_date: str) -> list[StockUniverseItem]:
+    def _load_stock_universe(self, market_codes: list[str], as_of_date: str | None = None) -> list[StockUniverseItem]:
         """市場フィルタ済み銘柄母集団を読み込む。"""
         if not market_codes:
             return []
 
+        effective_as_of_date = as_of_date or self._get_latest_stock_master_date() or self._get_latest_market_date()
         placeholders = ",".join("?" for _ in market_codes)
-        if self._table_exists("stock_master_daily"):
+        if effective_as_of_date is not None and self._stock_master_daily_has_date(effective_as_of_date):
             source_table = "stock_master_daily"
             date_clause = "date = ? AND "
-            params = (as_of_date, *market_codes)
+            params = (effective_as_of_date, *market_codes)
         else:
             # Legacy/unit-test DBs may not have the v3 daily master yet.  Real v3
             # databases resolve PIT universes from stock_master_daily above.
@@ -1248,6 +1249,18 @@ class ScreeningService:
                 LIMIT 1
                 """,
                 (table_name,),
+            )
+        except Exception:
+            return False
+        return row is not None
+
+    def _stock_master_daily_has_date(self, as_of_date: str) -> bool:
+        if not self._table_exists("stock_master_daily"):
+            return False
+        try:
+            row = self._reader.query_one(
+                "SELECT 1 AS exists FROM stock_master_daily WHERE date = ? LIMIT 1",
+                (as_of_date,),
             )
         except Exception:
             return False
