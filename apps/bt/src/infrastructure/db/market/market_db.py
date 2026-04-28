@@ -563,6 +563,7 @@ class MarketDb:
         interval_count = self._count_rows("stock_master_intervals")
         latest_count = self._count_rows("stocks_latest")
         membership_count = self._count_rows("index_membership_daily")
+        missing_dates_count = self.get_missing_stock_master_dates_count()
         row = None
         if self._table_exists("stock_master_daily"):
             row = self._fetchone(
@@ -580,6 +581,8 @@ class MarketDb:
             "dateMax": str(row[1]) if row and row[1] is not None else None,
             "dateCount": int(row[2] or 0) if row else 0,
             "codeCount": int(row[3] or 0) if row else 0,
+            "missingTopixDatesCount": missing_dates_count,
+            "missingTopixDates": self.get_missing_stock_master_dates(limit=20),
         }
 
     def validate_schema(self) -> dict[str, Any]:
@@ -663,6 +666,50 @@ class MarketDb:
         sql += " ORDER BY date"
         rows = self._fetchall(sql, params)
         return [str(row[0]) for row in rows if row and row[0]]
+
+    def get_latest_stock_master_date(self) -> str | None:
+        """stock_master_daily の最新スナップショット日を取得。"""
+        if not self._table_exists("stock_master_daily"):
+            return None
+        row = self._fetchone("SELECT MAX(date) FROM stock_master_daily")
+        return str(row[0]) if row and row[0] is not None else None
+
+    def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]:
+        """TOPIX 取引日のうち daily master が存在しない日付を取得。"""
+        if not self._table_exists("topix_data") or not self._table_exists("stock_master_daily"):
+            return []
+        sql = """
+            SELECT t.date
+            FROM topix_data t
+            LEFT JOIN stock_master_daily m ON m.date = t.date
+            GROUP BY t.date
+            HAVING COUNT(m.code) = 0
+            ORDER BY t.date
+        """
+        params: list[Any] = []
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(max(limit, 0))
+        rows = self._fetchall(sql, params)
+        return [str(row[0]) for row in rows if row and row[0]]
+
+    def get_missing_stock_master_dates_count(self) -> int:
+        """TOPIX 取引日のうち daily master が存在しない日付数。"""
+        if not self._table_exists("topix_data") or not self._table_exists("stock_master_daily"):
+            return 0
+        row = self._fetchone(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT t.date
+                FROM topix_data t
+                LEFT JOIN stock_master_daily m ON m.date = t.date
+                GROUP BY t.date
+                HAVING COUNT(m.code) = 0
+            ) missing
+            """
+        )
+        return int(row[0] or 0) if row else 0
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""
@@ -886,6 +933,168 @@ class MarketDb:
             params,
         )
         return len(rows)
+
+    def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> int:
+        """stock_master_daily に日次 PIT 銘柄マスタを upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+        params = [
+            (
+                snapshot_date,
+                row.get("code"),
+                row.get("company_name"),
+                row.get("company_name_english"),
+                row.get("market_code"),
+                row.get("market_name"),
+                row.get("sector_17_code"),
+                row.get("sector_17_name"),
+                row.get("sector_33_code"),
+                row.get("sector_33_name"),
+                row.get("scale_category"),
+                row.get("listed_date"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (date, code) DO UPDATE
+            SET company_name = excluded.company_name,
+                company_name_english = excluded.company_name_english,
+                market_code = excluded.market_code,
+                market_name = excluded.market_name,
+                sector_17_code = excluded.sector_17_code,
+                sector_17_name = excluded.sector_17_name,
+                sector_33_code = excluded.sector_33_code,
+                sector_33_name = excluded.sector_33_name,
+                scale_category = excluded.scale_category,
+                listed_date = excluded.listed_date,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
+
+    def rebuild_stock_master_intervals(self) -> int:
+        """daily master から同一属性が続く PIT interval を再構築。"""
+        self._assert_writable()
+        if not self._table_exists("stock_master_daily"):
+            return 0
+        self._execute("DELETE FROM stock_master_intervals")
+        self._execute(
+            """
+            INSERT INTO stock_master_intervals (
+                code, valid_from, valid_to, fingerprint, company_name, company_name_english,
+                market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
+                sector_33_name, scale_category, listed_date, created_at
+            )
+            WITH fingerprinted AS (
+                SELECT
+                    *,
+                    md5(concat_ws('|',
+                        coalesce(company_name, ''), coalesce(company_name_english, ''),
+                        coalesce(market_code, ''), coalesce(market_name, ''),
+                        coalesce(sector_17_code, ''), coalesce(sector_17_name, ''),
+                        coalesce(sector_33_code, ''), coalesce(sector_33_name, ''),
+                        coalesce(scale_category, ''), coalesce(listed_date, '')
+                    )) AS fingerprint
+                FROM stock_master_daily
+            ), marked AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN lag(fingerprint) OVER (PARTITION BY code ORDER BY date) = fingerprint
+                        THEN 0 ELSE 1
+                    END AS starts_new_group
+                FROM fingerprinted
+            ), grouped AS (
+                SELECT
+                    *,
+                    sum(starts_new_group) OVER (PARTITION BY code ORDER BY date) AS interval_group
+                FROM marked
+            )
+            SELECT
+                code,
+                min(date) AS valid_from,
+                max(date) AS valid_to,
+                fingerprint,
+                any_value(company_name),
+                any_value(company_name_english),
+                any_value(market_code),
+                any_value(market_name),
+                any_value(sector_17_code),
+                any_value(sector_17_name),
+                any_value(sector_33_code),
+                any_value(sector_33_name),
+                any_value(scale_category),
+                any_value(listed_date),
+                max(created_at)
+            FROM grouped
+            GROUP BY code, interval_group, fingerprint
+            """
+        )
+        return self._count_rows("stock_master_intervals")
+
+    def rebuild_stocks_latest(self) -> int:
+        """最新 daily master から stocks_latest と legacy stocks を再構築。"""
+        self._assert_writable()
+        latest_date = self.get_latest_stock_master_date()
+        if latest_date is None:
+            return 0
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        self._execute("DELETE FROM stocks_latest")
+        self._execute(
+            """
+            INSERT INTO stocks_latest (
+                code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date, source_date, created_at, updated_at
+            )
+            SELECT
+                code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date, date, created_at, ?
+            FROM stock_master_daily
+            WHERE date = ?
+            """,
+            [now_iso, latest_date],
+        )
+        rows = self._fetchall(
+            """
+            SELECT
+                code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date, created_at
+            FROM stocks_latest
+            """
+        )
+        self.upsert_stocks(
+            [
+                {
+                    "code": row[0],
+                    "company_name": row[1],
+                    "company_name_english": row[2],
+                    "market_code": row[3],
+                    "market_name": row[4],
+                    "sector_17_code": row[5],
+                    "sector_17_name": row[6],
+                    "sector_33_code": row[7],
+                    "sector_33_name": row[8],
+                    "scale_category": row[9],
+                    "listed_date": row[10],
+                    "created_at": row[11],
+                }
+                for row in rows
+            ]
+        )
+        return self._count_rows("stocks_latest")
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
         """stock_data_raw と stock_data に upsert。"""

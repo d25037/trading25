@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # --- Common ---
@@ -74,6 +74,8 @@ class StockMasterCoverageStats(BaseModel):
     dateRange: DateRange | None = None
     dateCount: int = 0
     codeCount: int = 0
+    missingTopixDatesCount: int = 0
+    missingTopixDates: list[str] = Field(default_factory=list)
 
 
 class StockDataStats(BaseModel):
@@ -130,13 +132,15 @@ class FundamentalsStats(BaseModel):
 
 
 class MarketStatsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     initialized: bool
     lastSync: str | None = None
     lastIntradaySync: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
     storage: StorageStats
-    schema: MarketSchemaStats = Field(default_factory=MarketSchemaStats)
+    schema_: MarketSchemaStats = Field(default_factory=MarketSchemaStats, alias="schema")
     stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
     topix: TopixStats
     stocks: StockStats
@@ -227,6 +231,7 @@ class ValidationSampleWindow(BaseModel):
 
 class ValidationSampleWindows(BaseModel):
     stockDataMissingDates: ValidationSampleWindow
+    stockMasterMissingTopixDates: ValidationSampleWindow
     failedDates: ValidationSampleWindow
     adjustmentEvents: ValidationSampleWindow
     stocksNeedingRefresh: ValidationSampleWindow
@@ -246,6 +251,8 @@ class ValidationHealthDomains(BaseModel):
 
 
 class MarketValidationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     status: Literal["healthy", "warning", "error"]
     healthDomains: ValidationHealthDomains
     initialized: bool
@@ -253,7 +260,7 @@ class MarketValidationResponse(BaseModel):
     lastIntradaySync: str | None = None
     lastStocksRefresh: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
-    schema: MarketSchemaStats = Field(default_factory=MarketSchemaStats)
+    schema_: MarketSchemaStats = Field(default_factory=MarketSchemaStats, alias="schema")
     stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
     topix: TopixStats
     stocks: StockStats

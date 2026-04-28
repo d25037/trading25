@@ -50,6 +50,7 @@ from src.application.services.sync_strategies import (
     _publish_topix_rows,
     _resolve_bulk_fallback_reason,
     _enforce_stock_bulk_plan_available,
+    _sync_daily_stock_master,
     _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
@@ -75,6 +76,9 @@ class DummyMarketDb:
         else:
             self.latest_indices_data_dates = {}
         self.stocks_rows: list[dict[str, Any]] = []
+        self.stock_master_daily_rows: list[dict[str, Any]] = []
+        self.stock_master_interval_rebuilds = 0
+        self.stocks_latest_rebuilds = 0
         self.stock_rows: list[dict[str, Any]] = []
         self.topix_rows: list[dict[str, Any]] = []
         self.index_master_rows: list[dict[str, Any]] = []
@@ -246,6 +250,45 @@ class DummyMarketDb:
             if str(row.get("market_code", "")).lower() in {"0111", "0112", "0113", "prime", "standard", "growth"} and row.get("code"):
                 self._fundamentals_target_codes.add(str(row["code"]))
         return len(rows)
+
+    def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> int:
+        self.stock_master_daily_rows = [
+            row
+            for row in self.stock_master_daily_rows
+            if str(row.get("date")) != snapshot_date
+        ]
+        for row in rows:
+            enriched = dict(row)
+            enriched["date"] = snapshot_date
+            self.stock_master_daily_rows.append(enriched)
+        return len(rows)
+
+    def rebuild_stock_master_intervals(self) -> int:
+        self.stock_master_interval_rebuilds += 1
+        return len(self.stock_master_daily_rows)
+
+    def rebuild_stocks_latest(self) -> int:
+        self.stocks_latest_rebuilds += 1
+        latest_date = max(
+            (str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")),
+            default=None,
+        )
+        if latest_date is None:
+            return 0
+        latest_rows = [
+            {key: value for key, value in row.items() if key != "date"}
+            for row in self.stock_master_daily_rows
+            if row.get("date") == latest_date
+        ]
+        self.upsert_stocks(latest_rows)
+        return len(latest_rows)
+
+    def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]:
+        master_dates = {str(row["date"]) for row in self.stock_master_daily_rows if row.get("date")}
+        missing = [date for date in self.get_topix_dates() if date not in master_dates]
+        if limit is None:
+            return missing
+        return missing[:limit]
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
         upserted = {
@@ -724,7 +767,21 @@ class DummyClient:
 
             return []
         if path == "/equities/master":
-            return self.master_quotes or []
+            if self.master_quotes is not None:
+                return self.master_quotes
+            return [
+                {
+                    "Code": "72030",
+                    "CoName": "トヨタ自動車",
+                    "Mkt": "0111",
+                    "MktNm": "プライム",
+                    "S17": "6",
+                    "S17Nm": "輸送用機器",
+                    "S33": "3700",
+                    "S33Nm": "輸送用機器",
+                    "Date": "1949-05-16",
+                }
+            ]
         if path == "/markets/margin-interest":
             code = str((params or {}).get("code", ""))
             if code and code in self.margin_by_code:
@@ -896,6 +953,38 @@ def test_enforce_stock_bulk_plan_available_accepts_non_empty_bulk_plan_files() -
         market_db=DummyMarketDb(),
         enforce_bulk_for_stock_data=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_latest() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10"])
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06", "2026-02-10"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 2
+    assert result["api_calls"] == 2
+    assert market_db.stock_master_interval_rebuilds == 1
+    assert market_db.stocks_latest_rebuilds == 1
+    assert {row["date"] for row in market_db.stock_master_daily_rows} == {
+        "2026-02-06",
+        "2026-02-10",
+    }
+    assert [
+        params for path, params in client.calls if path == "/equities/master"
+    ] == [{"date": "20260206"}, {"date": "20260210"}]
+    assert METADATA_KEYS["LAST_STOCKS_REFRESH"] in market_db.metadata
 
     _enforce_stock_bulk_plan_available(
         ctx,

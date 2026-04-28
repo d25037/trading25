@@ -245,7 +245,7 @@ def get_market_stats(
         timeSeriesSource=inspection.source,
         databaseSize=storage.duckdbBytes,
         storage=storage,
-        schema=MarketSchemaStats(
+        schema_=MarketSchemaStats(
             version=market_db.get_market_schema_version(),
             current=market_db.is_market_schema_current(),
         ),
@@ -262,6 +262,8 @@ def get_market_stats(
             else None,
             dateCount=int(master_coverage.get("dateCount", 0) or 0),
             codeCount=int(master_coverage.get("codeCount", 0) or 0),
+            missingTopixDatesCount=int(master_coverage.get("missingTopixDatesCount", 0) or 0),
+            missingTopixDates=[str(d) for d in master_coverage.get("missingTopixDates", [])],
         ),
         topix=topix,
         stocks=stocks_stats,

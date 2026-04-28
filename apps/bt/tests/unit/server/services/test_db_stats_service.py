@@ -44,6 +44,8 @@ class DummyMarketDb:
             "dateMax": None,
             "dateCount": 0,
             "codeCount": 0,
+            "missingTopixDatesCount": 0,
+            "missingTopixDates": [],
         }
 
     def get_stock_count_by_market(self) -> dict[str, int]:

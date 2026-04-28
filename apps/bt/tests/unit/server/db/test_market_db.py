@@ -97,6 +97,42 @@ class TestMarketDbBasics:
         assert coverage["dateCount"] == 2
         assert coverage["codeCount"] == 1
 
+    def test_stock_master_missing_dates_and_latest_are_derived_from_daily_master(self, market_db: MarketDb) -> None:
+        market_db.upsert_topix_data([
+            {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
+            {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
+        ])
+        market_db.upsert_stock_master_daily(
+            "2024-01-05",
+            [
+                {
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "company_name_english": "TOYOTA",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Core30",
+                    "listed_date": "1949-05-16",
+                    "created_at": "now",
+                }
+            ],
+        )
+
+        assert market_db.get_missing_stock_master_dates() == ["2024-01-04"]
+        assert market_db.get_missing_stock_master_dates_count() == 1
+        assert market_db.rebuild_stock_master_intervals() == 1
+        assert market_db.rebuild_stocks_latest() == 1
+
+        coverage = market_db.get_stock_master_coverage()
+        assert coverage["latestCount"] == 1
+        assert coverage["intervalCount"] == 1
+        assert coverage["missingTopixDatesCount"] == 1
+        assert coverage["missingTopixDates"] == ["2024-01-04"]
+
     def test_sync_metadata_roundtrip(self, market_db: MarketDb) -> None:
         assert market_db.get_sync_metadata("nonexistent") is None
 
