@@ -120,7 +120,7 @@ def test_resolve_prime_ex_topix500_subtracts_exact_membership(market_db: MarketD
         """
         INSERT INTO index_membership_daily (date, index_code, code, created_at)
         VALUES
-            ('2024-01-05', 'TOPIX500', '7203', 'now'),
+            ('2024-01-05', 'TOPIX500', '72030', 'now'),
             ('2024-01-05', 'TOPIX500', '6758', 'now')
         """
     )

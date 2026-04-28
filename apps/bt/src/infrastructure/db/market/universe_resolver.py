@@ -40,13 +40,13 @@ def dataset_to_universe_preset(dataset: str | None) -> str | None:
 
 
 class UniverseResolverDbLike(Protocol):
-    def get_stock_master_rows_for_date(
+    def get_stock_master_codes_for_date(
         self,
         as_of_date: str,
         *,
         market_codes: list[str] | None = None,
         scale_categories: list[str] | None = None,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[str]: ...
 
     def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]: ...
 
@@ -135,16 +135,16 @@ def _resolve_market_code_universe(
     market_code: str,
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    rows = db.get_stock_master_rows_for_date(as_of_date, market_codes=[market_code])
-    warnings = _coverage_warnings(rows, as_of_date=as_of_date, preset=preset)
-    codes = _apply_code_filters(_codes_from_rows(rows), filters)
+    base_codes = db.get_stock_master_codes_for_date(as_of_date, market_codes=[market_code])
+    warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset=preset)
+    codes = _apply_code_filters(base_codes, filters)
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
             sourceTable="stock_master_daily",
             asOfDate=as_of_date,
             preset=preset,
-            rowCount=len(rows),
+            rowCount=len(base_codes),
             resolvedCount=len(codes),
             filters={"marketCodes": [market_code], **filters},
             warnings=warnings,
@@ -158,19 +158,19 @@ def _resolve_topix100_universe(
     as_of_date: str,
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    rows = db.get_stock_master_rows_for_date(
+    base_codes = db.get_stock_master_codes_for_date(
         as_of_date,
         scale_categories=list(_TOPIX100_SCALE_CATEGORIES),
     )
-    warnings = _coverage_warnings(rows, as_of_date=as_of_date, preset="topix100")
-    codes = _apply_code_filters(_codes_from_rows(rows), filters)
+    warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset="topix100")
+    codes = _apply_code_filters(base_codes, filters)
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
             sourceTable="stock_master_daily",
             asOfDate=as_of_date,
             preset="topix100",
-            rowCount=len(rows),
+            rowCount=len(base_codes),
             resolvedCount=len(codes),
             filters={"scaleCategories": list(_TOPIX100_SCALE_CATEGORIES), **filters},
             warnings=warnings,
@@ -256,10 +256,6 @@ def _resolve_custom_universe(*, as_of_date: str, filters: dict[str, Any]) -> Uni
     )
 
 
-def _codes_from_rows(rows: list[dict[str, Any]]) -> list[str]:
-    return _normalize_codes([row.get("code") for row in rows])
-
-
 def _normalize_codes(raw_codes: list[Any]) -> list[str]:
     codes: list[str] = []
     seen: set[str] = set()
@@ -284,8 +280,8 @@ def _apply_code_filters(codes: list[str], filters: dict[str, Any]) -> list[str]:
     return sorted(dict.fromkeys(filtered))
 
 
-def _coverage_warnings(rows: list[dict[str, Any]], *, as_of_date: str, preset: str) -> list[str]:
-    if rows:
+def _coverage_warnings(codes: list[str], *, as_of_date: str, preset: str) -> list[str]:
+    if codes:
         return []
     return [
         f"stock_master_daily has no exact rows for preset={preset} as_of_date={as_of_date}; latest fallback was not used"

@@ -581,7 +581,7 @@ class ScreeningService:
                 )
             topix500_rows = self._reader.query(
                 """
-                SELECT constituent_code AS code
+                SELECT code
                 FROM index_membership_daily
                 WHERE date = ? AND index_code = 'TOPIX500'
                 """,

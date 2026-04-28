@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+from src.infrastructure.db.market.query_helpers import normalize_stock_code
+
 # Hono 互換 metadata キー
 METADATA_KEYS = {
     "INIT_COMPLETED": "init_completed",
@@ -761,6 +763,37 @@ class MarketDb:
             for row in rows
         ]
 
+    def get_stock_master_codes_for_date(
+        self,
+        as_of_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+    ) -> list[str]:
+        """指定日の PIT 銘柄コードだけを取得。latest fallback はしない。"""
+        if not self._table_exists("stock_master_daily"):
+            return []
+        conditions = ["date = ?"]
+        params: list[Any] = [as_of_date]
+        if market_codes:
+            placeholders = ", ".join("?" for _ in market_codes)
+            conditions.append(f"market_code IN ({placeholders})")
+            params.extend(market_codes)
+        if scale_categories:
+            placeholders = ", ".join("?" for _ in scale_categories)
+            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
+            params.extend(scale_categories)
+        rows = self._fetchall(
+            f"""
+            SELECT code
+            FROM stock_master_daily
+            WHERE {' AND '.join(conditions)}
+            ORDER BY code
+            """,
+            params,
+        )
+        return [code for row in rows if row and (code := normalize_stock_code(row[0]))]
+
     def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]:
         """指定日の指数 membership code set。latest fallback はしない。"""
         if not self._table_exists("index_membership_daily"):
@@ -774,7 +807,7 @@ class MarketDb:
             """,
             [as_of_date, index_code],
         )
-        return {str(row[0]) for row in rows if row and row[0]}
+        return {code for row in rows if row and (code := normalize_stock_code(row[0]))}
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""

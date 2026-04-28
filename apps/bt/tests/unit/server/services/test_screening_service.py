@@ -126,6 +126,55 @@ def test_load_stock_universe_uses_stock_master_daily_as_of_date(tmp_path):
     assert universe[0].company_name == "Historical Prime"
 
 
+def test_resolve_prime_ex_topix500_screening_universe_uses_index_membership_code(tmp_path):
+    db_path = str(tmp_path / "screening-prime-ex.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE index_membership_daily (
+            date TEXT NOT NULL,
+            index_code TEXT NOT NULL,
+            code TEXT NOT NULL,
+            created_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '13010', 'Prime Small', '0111', 'TOPIX Small 1', '水産・農林業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '72030', 'Toyota', '0111', 'TOPIX Core30', '輸送用機器')"
+    )
+    conn.execute(
+        "INSERT INTO index_membership_daily VALUES ('2024-01-15', 'TOPIX500', '72030', 'now')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        codes = service._resolve_universe_codes_from_stock_master(
+            preset="primeExTopix500",
+            as_of_date="2024-01-15",
+        )
+    finally:
+        reader.close()
+
+    assert codes == {"1301"}
+
+
 def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) -> StrategyRuntime:
     shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
     if shared_overrides:
