@@ -54,6 +54,12 @@ class ResearchTableHighlightItem:
 
 
 @dataclass(frozen=True)
+class PublishedReadoutSectionData:
+    title: str
+    items: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PublishedResearchSummaryData:
     title: str
     tags: tuple[str, ...]
@@ -66,8 +72,7 @@ class PublishedResearchSummaryData:
     purpose: str
     method: tuple[str, ...]
     result_headline: str | None
-    result_bullets: tuple[str, ...]
-    considerations: tuple[str, ...]
+    readout_sections: tuple[PublishedReadoutSectionData, ...]
     selected_parameters: tuple[ResearchLabelValueItem, ...]
     highlights: tuple[ResearchHighlightItem, ...]
     table_highlights: tuple[ResearchTableHighlightItem, ...]
@@ -276,11 +281,7 @@ def _build_docs_catalog_entry(experiment_id: str, readme_path: Path) -> Research
     risk_flags = _merge_unique_strings(
         _normalize_string_tuple(metadata.get("riskFlags")),
         published_summary.risk_flags if published_summary is not None else (),
-        (
-            ("docs-only",)
-            if published_summary is not None
-            else ("docs-only", "markdown-only", "needs-publication-summary")
-        ),
+        () if published_summary is not None else ("needs-publication-summary",),
     )
 
     return ResearchCatalogEntry(
@@ -370,10 +371,8 @@ def _load_published_summary(
     if payload is None:
         return None
 
-    # Older bundles can use summary.json for raw result metadata. Only payloads
-    # with an explicit purpose are part of the published-summary surface.
-    purpose = _normalize_optional_string(payload.get("purpose"))
-    if purpose is None:
+    readout_sections = _normalize_readout_sections(payload)
+    if not readout_sections:
         return None
 
     metadata = _load_research_catalog_metadata().get(info.experiment_id, {})
@@ -381,6 +380,12 @@ def _load_published_summary(
         summary_markdown,
         info,
     )
+    decision = _normalize_optional_string(metadata.get("decision")) or _first_section_item(
+        readout_sections,
+        "Decision",
+    )
+    purpose_items = _section_items_by_title(readout_sections, "Why This Research Was Run")
+    method = _section_items_by_title(readout_sections, "Data Scope / PIT Assumptions")
     return PublishedResearchSummaryData(
         title=title,
         tags=_normalize_string_tuple(payload.get("tags")),
@@ -388,8 +393,7 @@ def _load_published_summary(
         or _normalize_optional_string(payload.get("family")),
         status=_normalize_optional_status(metadata.get("status"))
         or _normalize_status(payload.get("status")),
-        decision=_normalize_optional_string(metadata.get("decision"))
-        or _normalize_optional_string(payload.get("decision")),
+        decision=decision,
         promoted_surface=_normalize_optional_string(metadata.get("promotedSurface"))
         or _normalize_optional_string(payload.get("promotedSurface")),
         risk_flags=_merge_unique_strings(
@@ -398,11 +402,10 @@ def _load_published_summary(
         ),
         related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments"))
         or _normalize_string_tuple(payload.get("relatedExperiments")),
-        purpose=purpose,
-        method=_normalize_string_tuple(payload.get("method")),
-        result_headline=_normalize_optional_string(payload.get("resultHeadline")),
-        result_bullets=_normalize_string_tuple(payload.get("resultBullets")),
-        considerations=_normalize_string_tuple(payload.get("considerations")),
+        purpose=" ".join(purpose_items) or decision or "Published research.",
+        method=method,
+        result_headline=decision or _first_section_item(readout_sections, "Main Findings"),
+        readout_sections=readout_sections,
         selected_parameters=_normalize_label_value_items(payload.get("selectedParameters")),
         highlights=_normalize_highlight_items(payload.get("highlights")),
         table_highlights=_normalize_table_highlight_items(payload.get("tableHighlights")),
@@ -418,6 +421,26 @@ _PUBLISHED_READOUT_REQUIRED_SECTIONS = {
     "caveats",
     "source artifacts",
 }
+_PUBLISHED_READOUT_SECTION_TITLES = {
+    "decision": "Decision",
+    "why this research was run": "Why This Research Was Run",
+    "data scope / pit assumptions": "Data Scope / PIT Assumptions",
+    "main findings": "Main Findings",
+    "interpretation": "Interpretation",
+    "production implication": "Production Implication",
+    "caveats": "Caveats",
+    "source artifacts": "Source Artifacts",
+}
+_PUBLISHED_READOUT_SECTION_ORDER = (
+    "decision",
+    "why this research was run",
+    "data scope / pit assumptions",
+    "main findings",
+    "interpretation",
+    "production implication",
+    "caveats",
+    "source artifacts",
+)
 
 
 def _load_markdown_published_summary(
@@ -440,22 +463,13 @@ def _load_markdown_published_summary(
         readout_sections,
         "decision",
     )
-    result_bullets = tuple(readout_sections.get("main findings", ()))
-    considerations = _merge_unique_strings(
-        tuple(readout_sections.get("interpretation", ())),
-        tuple(readout_sections.get("production implication", ())),
-        tuple(readout_sections.get("caveats", ())),
-    )
     purpose_items = _merge_unique_strings(
         tuple(readout_sections.get("why this research was run", ())),
-        tuple(readout_sections.get("why", ())),
-        tuple(readout_sections.get("purpose", ())),
     )
     method = _merge_unique_strings(
         tuple(readout_sections.get("data scope / pit assumptions", ())),
-        tuple(readout_sections.get("data scope", ())),
-        tuple(readout_sections.get("method", ())),
     )
+    canonical_readout_sections = _to_canonical_readout_sections(readout_sections)
 
     return PublishedResearchSummaryData(
         title=_normalize_optional_string(metadata.get("title"))
@@ -470,8 +484,7 @@ def _load_markdown_published_summary(
         purpose=" ".join(purpose_items) or _extract_first_paragraph(markdown) or decision or "Published research.",
         method=method,
         result_headline=decision or _first_readout_item(readout_sections, "main findings"),
-        result_bullets=result_bullets,
-        considerations=considerations,
+        readout_sections=canonical_readout_sections,
         selected_parameters=(),
         highlights=(),
         table_highlights=(),
@@ -515,6 +528,68 @@ def _normalize_readout_line(value: str) -> str | None:
     if stripped.startswith("- "):
         stripped = stripped[2:].strip()
     return stripped or None
+
+
+def _to_canonical_readout_sections(
+    sections: dict[str, tuple[str, ...]],
+) -> tuple[PublishedReadoutSectionData, ...]:
+    result: list[PublishedReadoutSectionData] = []
+    seen_titles: set[str] = set()
+    for key in _PUBLISHED_READOUT_SECTION_ORDER:
+        items = _section_items(sections, key)
+        if not items:
+            continue
+        title = _PUBLISHED_READOUT_SECTION_TITLES[key]
+        if title in seen_titles:
+            continue
+        result.append(PublishedReadoutSectionData(title=title, items=items))
+        seen_titles.add(title)
+    return tuple(result)
+
+
+def _section_items(
+    sections: dict[str, tuple[str, ...]],
+    key: str,
+) -> tuple[str, ...]:
+    return tuple(sections.get(key, ()))
+
+
+def _section_items_by_title(
+    sections: tuple[PublishedReadoutSectionData, ...],
+    title: str,
+) -> tuple[str, ...]:
+    normalized_title = _normalize_heading_key(title)
+    for section in sections:
+        if _normalize_heading_key(section.title) == normalized_title:
+            return section.items
+    return ()
+
+
+def _first_section_item(
+    sections: tuple[PublishedReadoutSectionData, ...],
+    title: str,
+) -> str | None:
+    items = _section_items_by_title(sections, title)
+    if not items:
+        return None
+    return items[0]
+
+
+def _normalize_readout_sections(payload: dict[str, Any]) -> tuple[PublishedReadoutSectionData, ...]:
+    readout_sections = payload.get("readoutSections")
+    if not isinstance(readout_sections, list):
+        return ()
+
+    normalized_sections: list[PublishedReadoutSectionData] = []
+    for item in readout_sections:
+        if not isinstance(item, dict):
+            continue
+        title = _normalize_optional_string(item.get("title"))
+        items = _normalize_string_tuple(item.get("items"))
+        if title is None or not items:
+            continue
+        normalized_sections.append(PublishedReadoutSectionData(title=title, items=items))
+    return tuple(normalized_sections)
 
 
 def _has_complete_published_readout(sections: dict[str, tuple[str, ...]]) -> bool:
@@ -689,7 +764,6 @@ def _derive_risk_flags(
 ) -> tuple[str, ...]:
     flags: list[str] = []
     if not has_structured_summary:
-        flags.append("markdown-only")
         flags.append("needs-publication-summary")
     if resolve_research_experiment_docs_readme_path(info.experiment_id) is None:
         flags.append("docs-missing")

@@ -48,15 +48,20 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
             "tags": ["TOPIX", "published"],
             "family": "Market Regime",
             "status": "robust",
-            "decision": "Keep as regime context.",
+            "decision": "Legacy top-level decision must not win.",
             "promotedSurface": "Research",
             "riskFlags": ["portfolio-lens-needed"],
             "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
-            "purpose": "Alpha purpose paragraph.",
-            "method": ["Alpha method"],
-            "resultHeadline": "Alpha headline",
-            "resultBullets": ["Alpha result bullet"],
-            "considerations": ["Alpha caution"],
+            "readoutSections": [
+                {"title": "Decision", "items": ["Keep as regime context."]},
+                {"title": "Why This Research Was Run", "items": ["Alpha purpose paragraph."]},
+                {"title": "Data Scope / PIT Assumptions", "items": ["Alpha method"]},
+                {"title": "Main Findings", "items": ["Alpha result bullet"]},
+                {"title": "Interpretation", "items": ["Alpha caution"]},
+                {"title": "Production Implication", "items": ["Use as research context."]},
+                {"title": "Caveats", "items": ["Portfolio lens needed."]},
+                {"title": "Source Artifacts", "items": ["`summary_df`"]},
+            ],
             "selectedParameters": [{"label": "Window", "value": "3"}],
             "highlights": [{"label": "Alpha metric", "value": "+1.23%", "tone": "success"}],
             "tableHighlights": [{"name": "summary_df", "label": "Alpha summary"}],
@@ -79,15 +84,20 @@ def research_client(tmp_path: Path) -> Generator[TestClient, None, None]:
             "tags": ["TOPIX", "published"],
             "family": "Market Regime",
             "status": "robust",
-            "decision": "Keep as regime context.",
+            "decision": "Legacy top-level decision must not win.",
             "promotedSurface": "Research",
             "riskFlags": ["portfolio-lens-needed"],
             "relatedExperiments": ["market-behavior/topix-close-stock-overnight"],
-            "purpose": "Latest alpha purpose.",
-            "method": ["Latest alpha method"],
-            "resultHeadline": "Latest alpha headline",
-            "resultBullets": ["Latest alpha result bullet"],
-            "considerations": ["Latest alpha caution"],
+            "readoutSections": [
+                {"title": "Decision", "items": ["Keep as regime context."]},
+                {"title": "Why This Research Was Run", "items": ["Latest alpha purpose."]},
+                {"title": "Data Scope / PIT Assumptions", "items": ["Latest alpha method"]},
+                {"title": "Main Findings", "items": ["Latest alpha result bullet"]},
+                {"title": "Interpretation", "items": ["Latest alpha caution"]},
+                {"title": "Production Implication", "items": ["Use as research context."]},
+                {"title": "Caveats", "items": ["Portfolio lens needed."]},
+                {"title": "Source Artifacts", "items": ["`summary_df`"]},
+            ],
             "selectedParameters": [{"label": "Window", "value": "5"}],
             "highlights": [{"label": "Alpha metric", "value": "+2.34%", "tone": "success"}],
             "tableHighlights": [{"name": "summary_df", "label": "Alpha summary"}],
@@ -162,7 +172,7 @@ def test_list_research_catalog_returns_latest_per_experiment(
     assert fallback_item["hasStructuredSummary"] is False
     assert fallback_item["family"] == "Market Regime"
     assert fallback_item["status"] == "observed"
-    assert "markdown-only" in fallback_item["riskFlags"]
+    assert fallback_item["riskFlags"] == ["needs-publication-summary"]
     assert (
         fallback_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
@@ -175,9 +185,9 @@ def test_list_research_catalog_returns_latest_per_experiment(
     assert docs_item["runId"] == "docs"
     assert docs_item["title"] == "Annual Market Fundamental Divergence"
     assert docs_item["headline"] != "Domain:"
-    assert docs_item["hasStructuredSummary"] is False
-    assert "docs-only" in docs_item["riskFlags"]
-    assert "needs-publication-summary" in docs_item["riskFlags"]
+    assert docs_item["hasStructuredSummary"] is True
+    assert "docs-only" not in docs_item["riskFlags"]
+    assert "needs-publication-summary" not in docs_item["riskFlags"]
     assert (
         docs_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/annual-market-fundamental-divergence/README.md"
@@ -208,8 +218,12 @@ def test_get_research_detail_returns_structured_summary_and_run_history(
     assert payload["summary"]["relatedExperiments"] == [
         "market-behavior/topix-close-stock-overnight"
     ]
-    assert payload["summary"]["purpose"] == "Latest alpha purpose."
-    assert payload["summary"]["resultHeadline"] == "Latest alpha headline"
+    assert payload["summary"]["readoutSections"][:4] == [
+        {"title": "Decision", "items": ["Keep as regime context."]},
+        {"title": "Why This Research Was Run", "items": ["Latest alpha purpose."]},
+        {"title": "Data Scope / PIT Assumptions", "items": ["Latest alpha method"]},
+        {"title": "Main Findings", "items": ["Latest alpha result bullet"]},
+    ]
     assert payload["summary"]["selectedParameters"] == [{"label": "Window", "value": "5"}]
     assert [item["runId"] for item in payload["availableRuns"]] == [
         "20260405_110000_alpha0002",
@@ -239,7 +253,7 @@ def test_get_research_detail_returns_markdown_fallback_for_unstructured_bundle(
     assert payload["outputTables"] == ["summary_df"]
 
 
-def test_get_research_detail_returns_docs_only_publication(
+def test_get_research_detail_returns_docs_publication(
     research_client: TestClient,
 ) -> None:
     response = research_client.get(
@@ -251,10 +265,12 @@ def test_get_research_detail_returns_docs_only_publication(
     payload = response.json()
     assert payload["item"]["runId"] == "docs"
     assert payload["item"]["title"] == "Annual Market Fundamental Divergence"
-    assert payload["summary"] is None
+    assert payload["summary"] is not None
+    assert payload["summary"]["readoutSections"][0]["title"] == "Decision"
     assert payload["summaryMarkdown"].startswith("# Annual Market Fundamental Divergence")
     assert payload["outputTables"] == []
-    assert "needs-publication-summary" in payload["item"]["riskFlags"]
+    assert "docs-only" not in payload["item"]["riskFlags"]
+    assert "needs-publication-summary" not in payload["item"]["riskFlags"]
     assert payload["availableRuns"] == [
         {
             "runId": "docs",
@@ -336,11 +352,16 @@ def test_research_catalog_metadata_overlay_takes_precedence(
             "decision": "Bundle decision",
             "promotedSurface": "Research",
             "riskFlags": ["bundle-risk"],
-            "purpose": "Value purpose.",
-            "method": ["Value method"],
-            "resultHeadline": "Value headline",
-            "resultBullets": ["Value result"],
-            "considerations": ["Value caution"],
+            "readoutSections": [
+                {"title": "Decision", "items": ["Bundle decision"]},
+                {"title": "Why This Research Was Run", "items": ["Value purpose."]},
+                {"title": "Data Scope / PIT Assumptions", "items": ["Value method"]},
+                {"title": "Main Findings", "items": ["Value result"]},
+                {"title": "Interpretation", "items": ["Value caution"]},
+                {"title": "Production Implication", "items": ["Use as ranking research input."]},
+                {"title": "Caveats", "items": ["Bundle caution."]},
+                {"title": "Source Artifacts", "items": ["`summary_df`"]},
+            ],
         },
         run_id="20260405_140000_value0001",
     )
@@ -410,11 +431,39 @@ Intro paragraph.
     assert summary.purpose == "The catalog needed a human-readable conclusion."
     assert summary.method == ("Uses PIT-safe annual joins.",)
     assert summary.result_headline == "Metadata decision takes precedence."
-    assert summary.result_bullets == ("Primary result was +12.3%.",)
-    assert summary.considerations == (
-        "The effect is observational.",
-        "Use as a ranking diagnostic, not a direct trade rule.",
-        "Capacity needs a follow-up.",
+    assert summary.readout_sections == (
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Decision",
+            items=("Keep this as the canonical readout.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Why This Research Was Run",
+            items=("The catalog needed a human-readable conclusion.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Data Scope / PIT Assumptions",
+            items=("Uses PIT-safe annual joins.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Main Findings",
+            items=("Primary result was +12.3%.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Interpretation",
+            items=("The effect is observational.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Production Implication",
+            items=("Use as a ranking diagnostic, not a direct trade rule.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Caveats",
+            items=("Capacity needs a follow-up.",),
+        ),
+        research_catalog_service.PublishedReadoutSectionData(
+            title="Source Artifacts",
+            items=("`results.duckdb`",),
+        ),
     )
 
 

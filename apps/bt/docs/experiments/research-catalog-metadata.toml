@@ -1,3 +1,25 @@
+[experiments."market-behavior/annual-market-fundamental-divergence"]
+family = "Annual Fundamentals"
+status = "observed"
+decision = "Growth の弱さは高PBRだけでなく、赤字・非正の予想PER・予想欠損・弱いCFO/配当指標が重なった市場区分差として扱う。単独alphaではなく、market split と quality filter の研究前提に使う。"
+promotedSurface = "Research"
+riskFlags = ["retrospective-market-split", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/annual-first-open-last-close-fundamental-panel",
+  "market-behavior/annual-value-composite-selection",
+]
+
+[experiments."market-behavior/falling-knife-reversal-study"]
+family = "Falling Knife"
+status = "observed"
+decision = "落ちるナイフは単純な即時買い/安定化待ちの優劣ではなく、左尾・大損失リスクとして扱う。実行ルール化は後続の tail pruning と fundamental profile を待つ。"
+promotedSurface = "Research"
+riskFlags = ["tail-risk", "execution-rule-unproven"]
+relatedExperiments = [
+  "market-behavior/falling-knife-bad-tail-pruning",
+  "market-behavior/falling-knife-non-rebound-fundamental-profile",
+]
+
 [experiments."market-behavior/annual-value-composite-selection"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
@@ -23,9 +45,32 @@ relatedExperiments = [
 [experiments."market-behavior/falling-knife-bad-tail-pruning"]
 family = "Falling Knife"
 status = "candidate"
-decision = "Compare tail pruning rules before promoting any execution rule."
+decision = "リバウンド右尾を残しながら severe loss を削る除外ルール候補として扱う。単独で確定せず、quality 分解と portfolio lens で確認してから昇格する。"
 promotedSurface = "Research"
-riskFlags = ["tail-risk"]
+riskFlags = ["tail-risk", "candidate-rule"]
+relatedExperiments = [
+  "market-behavior/falling-knife-reversal-study",
+  "market-behavior/falling-knife-fundamental-quality-pruning",
+]
+
+[experiments."market-behavior/falling-knife-fundamental-quality-pruning"]
+family = "Falling Knife"
+status = "candidate"
+decision = "低qualityは悪い左尾の一部を説明するが、Growth リスクを完全には説明しない。現時点の候補は「低qualityかつ Growth または Daily RAR Q5」を除外する方向。"
+promotedSurface = "Research"
+riskFlags = ["tail-risk", "quality-filter-candidate"]
+relatedExperiments = [
+  "market-behavior/falling-knife-reversal-study",
+  "market-behavior/falling-knife-bad-tail-pruning",
+  "market-behavior/falling-knife-non-rebound-fundamental-profile",
+]
+
+[experiments."market-behavior/falling-knife-non-rebound-fundamental-profile"]
+family = "Falling Knife"
+status = "observed"
+decision = "非リバウンド銘柄は Growth、赤字、低quality、高PBR、高forward PER、非正EPS/予想EPSに偏る。まず特徴プロファイルとして使い、除外ルールは別研究で検証する。"
+promotedSurface = "Research"
+riskFlags = ["descriptive-profile", "tail-risk"]
 relatedExperiments = [
   "market-behavior/falling-knife-reversal-study",
   "market-behavior/falling-knife-fundamental-quality-pruning",

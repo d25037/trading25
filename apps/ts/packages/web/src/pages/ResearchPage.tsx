@@ -32,6 +32,8 @@ const STATUS_CLASSES: Record<ResearchDecisionStatus, string> = {
   rejected: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
 };
 
+const SYSTEM_RISK_FLAGS = new Set(['needs-publication-summary', 'docs-only', 'markdown-only']);
+
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
   const parsed = new Date(value);
@@ -70,7 +72,7 @@ function matchesQuery(item: ResearchCatalogItem, query: string): boolean {
     item.decision,
     item.promotedSurface,
     item.tags.join(' '),
-    item.riskFlags.join(' '),
+    item.riskFlags.filter((flag) => !SYSTEM_RISK_FLAGS.has(flag)).join(' '),
   ]
     .filter((value): value is string => Boolean(value))
     .join(' ')
@@ -119,13 +121,13 @@ function PublicationBadge({ item }: { item: ResearchCatalogItem }) {
   if (item.hasStructuredSummary) {
     return (
       <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-        publication-ready
+        Published Readout
       </span>
     );
   }
   return (
     <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300">
-      needs-publication-summary
+      Needs Readout
     </span>
   );
 }
@@ -136,12 +138,14 @@ function FilterSelect({
   options,
   onChange,
   formatOption = (option) => option,
+  includeAll = true,
 }: {
   label: string;
   value: string;
   options: string[];
   onChange: (value: string) => void;
   formatOption?: (value: string) => string;
+  includeAll?: boolean;
 }) {
   return (
     <label className="grid gap-1.5">
@@ -151,7 +155,7 @@ function FilterSelect({
         onChange={(event) => onChange(event.target.value)}
         className="h-10 rounded-xl border border-border/70 bg-[var(--app-surface-muted)] px-3 text-sm text-foreground outline-none"
       >
-        <option value="all">All</option>
+        {includeAll ? <option value="all">All</option> : null}
         {options.map((option) => (
           <option key={option} value={option}>
             {formatOption(option)}
@@ -175,21 +179,21 @@ function EvidenceMatrix({
         <SectionHeading
           eyebrow="Evidence Matrix"
           title="Research Workspace"
-          description="Compare published findings by state, decision, risk, and research date before opening the detail reader."
+          description="Compare each research title and decision against its state, publication status, risk flags, and research date."
         />
       </div>
       <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-[var(--app-surface-muted)] hover:bg-[var(--app-surface-muted)]">
             <TableHead className="w-[9rem] whitespace-nowrap">State</TableHead>
-            <TableHead>Finding</TableHead>
-            <TableHead className="w-[18rem]">Decision & Risk</TableHead>
+            <TableHead>Findings</TableHead>
+            <TableHead className="w-[14rem]">Readout & Risk</TableHead>
             <TableHead className="w-[14rem] whitespace-nowrap">Date</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((item) => {
-            const visibleRiskFlags = item.riskFlags.filter((flag) => flag !== 'needs-publication-summary');
+            const visibleRiskFlags = item.riskFlags.filter((flag) => !SYSTEM_RISK_FLAGS.has(flag));
             return (
               <TableRow
                 key={item.experimentId}
@@ -220,7 +224,7 @@ function EvidenceMatrix({
                       <p className="mt-1 truncate text-xs font-mono text-muted-foreground">{item.experimentId}</p>
                     </div>
                     <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                      {item.headline ?? item.objective ?? 'Published research bundle.'}
+                      {item.decision ?? 'No explicit decision recorded.'}
                     </p>
                     {item.tags.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
@@ -237,7 +241,6 @@ function EvidenceMatrix({
                   </div>
                 </TableCell>
                 <TableCell className="space-y-3 text-sm leading-6 text-muted-foreground">
-                  <p className="line-clamp-3">{item.decision ?? 'No explicit decision recorded.'}</p>
                   <div className="flex flex-wrap gap-1.5">
                     <PublicationBadge item={item} />
                   </div>
@@ -253,7 +256,7 @@ function EvidenceMatrix({
                       ))}
                     </div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">None</span>
+                    <span className="text-sm text-muted-foreground">No extra risk</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -376,7 +379,7 @@ export function ResearchPage() {
         <PageIntro
           eyebrow="Research Workspace"
           title="Evidence Matrix"
-          description="Review research by thesis family, decision state, promoted surface, and risk flags before opening the detail reader."
+          description="Review research by title, decision, state, publication status, and risk flags before opening the detail reader."
           meta={<PageIntroMetaList items={metaItems} />}
         />
 
@@ -389,7 +392,7 @@ export function ResearchPage() {
                 <input
                   value={query}
                   onChange={(event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)}
-                  placeholder="Search title, finding, decision, experiment id, tag, or risk"
+                  placeholder="Search title, decision, experiment id, tag, or risk"
                   className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </label>
@@ -416,6 +419,7 @@ export function ResearchPage() {
                 options={['newest', 'oldest']}
                 onChange={(value) => setDateSort(value as DateSortValue)}
                 formatOption={(value) => (value === 'newest' ? 'Newest date' : 'Oldest date')}
+                includeAll={false}
               />
             </div>
           </div>

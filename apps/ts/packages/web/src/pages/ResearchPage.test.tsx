@@ -169,7 +169,7 @@ const catalogItems = [
       ? 'Needs a structured summary before promotion.'
       : 'Keep as research evidence.',
   promotedSurface: 'Research',
-  riskFlags: item.hasStructuredSummary ? [] : ['markdown-only', 'needs-publication-summary'],
+  riskFlags: item.hasStructuredSummary ? [] : ['needs-publication-summary'],
   relatedExperiments: [],
 }));
 
@@ -197,16 +197,18 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('Evidence Matrix').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Research Workspace').length).toBeGreaterThan(0);
     expect(screen.getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Finding' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Decision & Risk' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Findings' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Readout & Risk' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Date' })).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Mode Mean-Reversion Comparison')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
     expect(screen.getAllByText('Observed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Candidate').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Market Regime').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('publication-ready').length).toBeGreaterThan(0);
-    expect(screen.getByText('needs-publication-summary')).toBeInTheDocument();
+    expect(screen.getAllByText('Published Readout').length).toBeGreaterThan(0);
+    expect(screen.getByText('Needs Readout')).toBeInTheDocument();
+    expect(screen.queryByText('needs-publication-summary')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Keep as research evidence.').length).toBeGreaterThan(0);
   });
 
   it('filters the catalog by query and tag', async () => {
@@ -214,7 +216,7 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    const searchInput = screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk');
+    const searchInput = screen.getByPlaceholderText('Search title, decision, experiment id, tag, or risk');
 
     await user.type(searchInput, 'close return');
     expect(screen.getByText('TOPIX Close Return Streaks')).toBeInTheDocument();
@@ -280,10 +282,7 @@ describe('ResearchPage', () => {
       error: null,
     });
     rerender(<ResearchPage />);
-    await user.type(
-      screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk'),
-      'no hit'
-    );
+    await user.type(screen.getByPlaceholderText('Search title, decision, experiment id, tag, or risk'), 'no hit');
     expect(screen.getByText('No matching research')).toBeInTheDocument();
   });
 

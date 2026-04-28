@@ -25,14 +25,47 @@
 
 ### Main Findings
 
-| Lens | Result |
+#### Full-market baseline は年次保有の比較基準として有効だが、単体で十分な選別力はない。
+
+| Scope | CAGR | Sharpe | Sortino | Calmar | MaxDD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Full market baseline | `11.4%` | `0.76` | `0.86` | `0.32` | `-36.2%` |
+
+#### broad market lens では `standard` が最も良い。
+
+| Market | CAGR | Sharpe |
+| --- | ---: | ---: |
+| `standard` | `12.6%` | `0.87` |
+
+#### 再利用しやすい単独 factor は低 `PBR`、低 `forward PER`、低 `PER`、高配当/高予想配当利回り。
+
+| Factor family | Readout |
 | --- | --- |
-| Full-market baseline | CAGR `11.4%`, Sharpe `0.76`, Sortino `0.86`, Calmar `0.32`, maxDD `-36.2%` |
-| Best broad market | `standard`, with CAGR `12.6%` and Sharpe `0.87` |
-| Strong factor families | Low `PBR`, low `forward PER`, low `PER`, high dividend yield / forecast dividend yield |
-| Weak broad selector | `forward_eps_to_actual_eps`; high Q5 ratio did not beat Q1 for `all`, `standard`, or `growth` |
-| Strongest cross condition | `standard` `PBR Q1 + market-cap Q1`: CAGR `37.7%`, Sharpe `2.16`, Sortino `2.40`, Calmar `1.18`, maxDD `-31.9%` |
-| Share adjustment impact | `5,336` realized events had `share_adjustment_applied = true` |
+| low `PBR` | factor bucket summary の上位に残った |
+| low `forward PER` | factor bucket summary の上位に残った |
+| low `PER` | factor bucket summary の上位に残った |
+| high dividend / forecast dividend yield | factor bucket summary の上位に残った |
+
+#### `forward_eps_to_actual_eps` は広い selector としては弱い。
+
+| Market lens | Q5 high ratio vs Q1 low ratio |
+| --- | --- |
+| `all` | Q5 が Q1 を上回らない |
+| `standard` | Q5 が Q1 を上回らない |
+| `growth` | Q5 が Q1 を上回らない |
+| `prime` | Q5 に小さな positive tilt |
+
+#### 最強の cross condition は低 `PBR + small cap` だが、capacity risk が大きい。
+
+| Condition | CAGR | Sharpe | Sortino | Calmar | MaxDD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `standard` `PBR Q1 + market-cap Q1` | `37.7%` | `2.16` | `2.40` | `1.18` | `-31.9%` |
+
+#### per-share adjustment は省略できない。
+
+| Metric | Value |
+| --- | ---: |
+| realized events with `share_adjustment_applied = true` | `5,336` |
 
 ### Interpretation
 

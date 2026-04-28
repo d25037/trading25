@@ -7623,28 +7623,27 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** PublishedReadoutSection */
+        PublishedReadoutSection: {
+            /** Items */
+            items?: string[];
+            /** Title */
+            title: string;
+        };
         /** PublishedResearchSummary */
         PublishedResearchSummary: {
-            /** Considerations */
-            considerations?: string[];
             /** Decision */
             decision?: string | null;
             /** Family */
             family?: string | null;
             /** Highlights */
             highlights?: components["schemas"]["ResearchHighlight"][];
-            /** Method */
-            method?: string[];
             /** Promotedsurface */
             promotedSurface?: string | null;
-            /** Purpose */
-            purpose: string;
+            /** Readoutsections */
+            readoutSections?: components["schemas"]["PublishedReadoutSection"][];
             /** Relatedexperiments */
             relatedExperiments?: string[];
-            /** Resultbullets */
-            resultBullets?: string[];
-            /** Resultheadline */
-            resultHeadline?: string | null;
             /** Riskflags */
             riskFlags?: string[];
             /** Selectedparameters */

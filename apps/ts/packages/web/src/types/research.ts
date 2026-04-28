@@ -20,28 +20,29 @@ export interface ResearchHighlight extends Omit<ApiResearchHighlight, 'tone'> {
 
 export type ResearchTableHighlight = ApiResearchTableHighlight;
 
+export interface PublishedReadoutSection {
+  title: string;
+  items: string[];
+}
+
 export interface PublishedResearchSummary
   extends Omit<
     ApiPublishedResearchSummary,
     | 'tags'
-    | 'method'
-    | 'resultBullets'
-    | 'considerations'
     | 'selectedParameters'
     | 'highlights'
     | 'tableHighlights'
     | 'riskFlags'
     | 'relatedExperiments'
+    | 'readoutSections'
   > {
   tags: string[];
-  method: string[];
-  resultBullets: string[];
-  considerations: string[];
   selectedParameters: ResearchLabelValue[];
   highlights: ResearchHighlight[];
   tableHighlights: ResearchTableHighlight[];
   riskFlags: string[];
   relatedExperiments: string[];
+  readoutSections: PublishedReadoutSection[];
 }
 
 export interface ResearchCatalogItem extends Omit<ApiResearchCatalogItem, 'tags' | 'riskFlags' | 'relatedExperiments'> {

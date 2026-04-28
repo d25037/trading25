@@ -10010,15 +10010,28 @@
         "title": "PortfolioUpdateRequest",
         "type": "object"
       },
-      "PublishedResearchSummary": {
+      "PublishedReadoutSection": {
         "properties": {
-          "considerations": {
+          "items": {
             "items": {
               "type": "string"
             },
-            "title": "Considerations",
+            "title": "Items",
             "type": "array"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "PublishedReadoutSection",
+        "type": "object"
+      },
+      "PublishedResearchSummary": {
+        "properties": {
           "decision": {
             "anyOf": [
               {
@@ -10048,13 +10061,6 @@
             "title": "Highlights",
             "type": "array"
           },
-          "method": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Method",
-            "type": "array"
-          },
           "promotedSurface": {
             "anyOf": [
               {
@@ -10066,9 +10072,12 @@
             ],
             "title": "Promotedsurface"
           },
-          "purpose": {
-            "title": "Purpose",
-            "type": "string"
+          "readoutSections": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedReadoutSection"
+            },
+            "title": "Readoutsections",
+            "type": "array"
           },
           "relatedExperiments": {
             "items": {
@@ -10076,24 +10085,6 @@
             },
             "title": "Relatedexperiments",
             "type": "array"
-          },
-          "resultBullets": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Resultbullets",
-            "type": "array"
-          },
-          "resultHeadline": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resultheadline"
           },
           "riskFlags": {
             "items": {
@@ -10143,8 +10134,7 @@
           }
         },
         "required": [
-          "title",
-          "purpose"
+          "title"
         ],
         "title": "PublishedResearchSummary",
         "type": "object"

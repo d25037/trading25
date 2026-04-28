@@ -117,7 +117,29 @@ function parseMarkdownTable(lines: string[]): MarkdownTable | null {
 }
 
 function isNumericMarkdownCell(value: string): boolean {
-  return /^[-+]?(\d+|\d*\.\d+)(e[-+]?\d+)?%?$/i.test(value.replace(/,/g, '').trim());
+  return /^[-+]?(\d+|\d*\.\d+)(e[-+]?\d+)?%?$/i.test(value.replace(/[` ,]/g, '').trim());
+}
+
+function InlineMarkdownText({ value }: { value: string }) {
+  const segments = value.split(/(`[^`]+`)/g).filter((segment) => segment.length > 0);
+  const seen = new Map<string, number>();
+  return (
+    <>
+      {segments.map((segment) => {
+        const occurrence = seen.get(segment) ?? 0;
+        seen.set(segment, occurrence + 1);
+        const key = `${segment}:${occurrence}`;
+        if (segment.startsWith('`') && segment.endsWith('`')) {
+          return (
+            <code key={key} className="rounded bg-[var(--app-surface-emphasis)] px-1 py-0.5 font-mono text-[0.92em]">
+              {segment.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={key}>{segment}</span>;
+      })}
+    </>
+  );
 }
 
 function MarkdownTableBlock({ table }: { table: MarkdownTable }) {
@@ -136,7 +158,7 @@ function MarkdownTableBlock({ table }: { table: MarkdownTable }) {
                     isNumericMarkdownCell(header.label) ? 'text-right' : 'text-left'
                   )}
                 >
-                  {header.label}
+                  <InlineMarkdownText value={header.label} />
                 </th>
               ))}
             </tr>
@@ -154,7 +176,7 @@ function MarkdownTableBlock({ table }: { table: MarkdownTable }) {
                         isNumeric ? 'text-right font-mono tabular-nums' : 'text-left'
                       )}
                     >
-                      {cell.value}
+                      <InlineMarkdownText value={cell.value} />
                     </td>
                   );
                 })}
@@ -173,6 +195,52 @@ function buildContentKey(prefix: string, value: string, seen: Map<string, number
   return `${prefix}:${value}:${count}`;
 }
 
+function parseMarkdownHeading(value: string): { depth: number; text: string } | null {
+  const match = /^(#{1,6})\s+(.+)$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  const marker = match[1] ?? '';
+  const text = match[2] ?? '';
+  return { depth: marker.length, text: text.trim() };
+}
+
+function getMarkdownHeadingClassName(depth: number): string {
+  switch (depth) {
+    case 1:
+      return 'text-xl font-semibold tracking-tight text-foreground';
+    case 2:
+      return 'text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground';
+    case 3:
+      return 'text-base font-semibold leading-6 text-foreground';
+    default:
+      return 'text-sm font-semibold leading-6 text-foreground';
+  }
+}
+
+function MarkdownHeadingBlock({ depth, text }: { depth: number; text: string }) {
+  const className = getMarkdownHeadingClassName(depth);
+  if (depth === 1) {
+    return (
+      <h2 className={className}>
+        <InlineMarkdownText value={text} />
+      </h2>
+    );
+  }
+  if (depth === 2) {
+    return (
+      <h3 className={className}>
+        <InlineMarkdownText value={text} />
+      </h3>
+    );
+  }
+  return (
+    <h4 className={className}>
+      <InlineMarkdownText value={text} />
+    </h4>
+  );
+}
+
 function renderMarkdownItemBlocks(items: string[], keyPrefix: string): ReactNode[] {
   const blocks: ReactNode[] = [];
   const seen = new Map<string, number>();
@@ -181,7 +249,7 @@ function renderMarkdownItemBlocks(items: string[], keyPrefix: string): ReactNode
   const appendParagraph = (item: string) => {
     blocks.push(
       <p key={buildContentKey(`${keyPrefix}:paragraph`, item, seen)} className="text-sm leading-6 text-foreground">
-        {item}
+        <InlineMarkdownText value={item} />
       </p>
     );
   };
@@ -207,6 +275,17 @@ function renderMarkdownItemBlocks(items: string[], keyPrefix: string): ReactNode
       continue;
     }
     flushTable();
+    const heading = parseMarkdownHeading(item);
+    if (heading) {
+      blocks.push(
+        <MarkdownHeadingBlock
+          key={buildContentKey(`${keyPrefix}:heading`, item, seen)}
+          depth={heading.depth}
+          text={heading.text}
+        />
+      );
+      continue;
+    }
     appendParagraph(item);
   }
 
@@ -214,26 +293,8 @@ function renderMarkdownItemBlocks(items: string[], keyPrefix: string): ReactNode
   return blocks;
 }
 
-function isRawMarkdownTableText(value?: string | null): boolean {
-  return value ? isPotentialMarkdownTableLine(value.trim()) : false;
-}
-
-function getDetailDescription(detail: ResearchDetailResponse, reading: ResearchReadingModel): string {
-  if (detail.summary) {
-    return (
-      detail.item.headline ??
-      detail.item.objective ??
-      'Read the latest published analytics bundle with the result and interpretation surfaced first.'
-    );
-  }
-
-  if (detail.item.objective && !isRawMarkdownTableText(detail.item.objective)) {
-    return detail.item.objective;
-  }
-  if (reading.headline !== detail.item.title) {
-    return reading.headline;
-  }
-  return 'Read the latest published analytics bundle with the result and interpretation surfaced first.';
+function getDetailDescription(reading: ResearchReadingModel): string {
+  return reading.headline;
 }
 
 function MarkdownSummary({ markdown }: { markdown: string }) {
@@ -271,34 +332,28 @@ function MarkdownSummary({ markdown }: { markdown: string }) {
             <ul key={blockKey} className="space-y-2 text-sm leading-6 text-foreground">
               {lines.map((line) => (
                 <li key={line} className="rounded-2xl border border-border/60 bg-[var(--app-surface-muted)] px-4 py-3">
-                  {line.slice(2)}
+                  <InlineMarkdownText value={line.slice(2)} />
                 </li>
               ))}
             </ul>
           );
         }
-        if (firstLine.startsWith('## ')) {
+        const heading = parseMarkdownHeading(firstLine);
+        if (heading) {
           return (
             <div key={blockKey} className="space-y-2">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                {firstLine.slice(3)}
-              </h3>
+              <MarkdownHeadingBlock depth={heading.depth} text={heading.text} />
               {lines.slice(1).length > 0 ? (
-                <p className="text-sm leading-6 text-foreground">{lines.slice(1).join(' ')}</p>
+                <p className="text-sm leading-6 text-foreground">
+                  <InlineMarkdownText value={lines.slice(1).join(' ')} />
+                </p>
               ) : null}
             </div>
           );
         }
-        if (firstLine.startsWith('# ')) {
-          return (
-            <h2 key={blockKey} className="text-xl font-semibold tracking-tight text-foreground">
-              {firstLine.slice(2)}
-            </h2>
-          );
-        }
         return (
           <p key={blockKey} className="text-sm leading-6 text-foreground">
-            {lines.join(' ')}
+            <InlineMarkdownText value={lines.join(' ')} />
           </p>
         );
       })}
@@ -329,9 +384,11 @@ function DetailMetrics({ highlights }: { highlights: ResearchHighlight[] }) {
 function ReadingSectionBlock({
   section,
   tone = 'result',
+  showTitle = true,
 }: {
   section: ResearchReadingSection;
   tone?: 'result' | 'consideration' | 'context';
+  showTitle?: boolean;
 }) {
   return (
     <div
@@ -344,50 +401,103 @@ function ReadingSectionBlock({
             : 'border-border/60 bg-[var(--app-surface-muted)]'
       )}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{section.title}</p>
-      <div className="mt-2.5 space-y-2.5">{renderMarkdownItemBlocks(section.items, `section:${section.title}`)}</div>
+      {showTitle ? (
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{section.title}</p>
+      ) : null}
+      <div className={cn('space-y-2.5', showTitle ? 'mt-2.5' : null)}>
+        {renderMarkdownItemBlocks(section.items, `section:${section.title}`)}
+      </div>
     </div>
   );
 }
 
+function MissingPublishedReadout({ reading }: { reading: ResearchReadingModel }) {
+  return (
+    <Surface className="rounded-[24px] border border-amber-500/25 bg-amber-500/[0.045] px-5 py-5 sm:px-6">
+      <div className="flex gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+        <div>
+          <SectionHeading
+            eyebrow="Published Readout"
+            title="Needs Published Readout"
+            description="This research is not promoted into the main reader until the source README or summary.json publishes the full readout contract."
+          />
+          <div className="mt-4 rounded-[18px] border border-amber-500/25 bg-background/45 px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Missing Sections
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {reading.missingSections.map((section) => (
+                <span
+                  key={section}
+                  className="rounded-full border border-amber-500/30 bg-amber-500/[0.06] px-3 py-1.5 text-xs font-medium text-foreground"
+                >
+                  {section}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Surface>
+  );
+}
+
 function ResearchReadingSections({ reading }: { reading: ResearchReadingModel }) {
+  if (!reading.hasPublishedReadout) {
+    return <MissingPublishedReadout reading={reading} />;
+  }
+
   return (
     <div className="space-y-5">
       <Surface className="rounded-[24px] border border-border/70 px-5 py-5 sm:px-6">
-        <SectionHeading eyebrow="Readout" title="Research Findings" description={reading.headline} />
+        <SectionHeading
+          eyebrow="Published Readout"
+          title="Decision"
+          description="The durable decision and findings from the source Published Readout."
+        />
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
-          <div className="space-y-3">
-            {reading.resultSections.map((section) => (
-              <ReadingSectionBlock key={section.title} section={section} tone="result" />
-            ))}
+        <div className="mt-4 space-y-4">
+          {reading.decisionSections.map((section) => (
+            <ReadingSectionBlock key={section.title} section={section} tone="result" showTitle={false} />
+          ))}
 
-            {reading.highlights.length > 0 ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <DetailMetrics highlights={reading.highlights} />
-              </div>
-            ) : null}
-          </div>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
+            <div className="space-y-3">
+              {reading.resultSections.map((section) => (
+                <ReadingSectionBlock key={section.title} section={section} tone="result" />
+              ))}
 
-          <div className="space-y-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Reading Notes</p>
-            {reading.considerationSections.map((section) => (
-              <ReadingSectionBlock key={section.title} section={section} tone="consideration" />
-            ))}
+              {reading.highlights.length > 0 ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <DetailMetrics highlights={reading.highlights} />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-3">
+              {reading.interpretationSections.map((section) => (
+                <ReadingSectionBlock key={section.title} section={section} tone="consideration" />
+              ))}
+            </div>
           </div>
         </div>
       </Surface>
 
-      {reading.contextSections.length > 0 || reading.parameters.length > 0 ? (
+      {reading.contextSections.length > 0 || reading.artifactSections.length > 0 || reading.parameters.length > 0 ? (
         <Surface className="rounded-[24px] px-5 py-5 sm:px-6">
           <SectionHeading
             eyebrow="Context"
-            title="Study Setup"
-            description="Scope, method, and configuration behind the findings."
+            title="Scope And Source"
+            description="Why the study was run, PIT scope, and source artifacts behind the published readout."
           />
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             {reading.contextSections.map((section) => (
+              <ReadingSectionBlock key={section.title} section={section} tone="context" />
+            ))}
+
+            {reading.artifactSections.map((section) => (
               <ReadingSectionBlock key={section.title} section={section} tone="context" />
             ))}
 
@@ -412,28 +522,6 @@ function ResearchReadingSections({ reading }: { reading: ResearchReadingModel })
         </Surface>
       ) : null}
     </div>
-  );
-}
-
-function PublicationNotice({ detail }: { detail: ResearchDetailResponse }) {
-  if (!detail.item.riskFlags?.includes('needs-publication-summary')) {
-    return null;
-  }
-
-  return (
-    <Surface className="rounded-[24px] border border-amber-500/25 bg-amber-500/[0.045] px-5 py-4 sm:px-6">
-      <div className="flex gap-3">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-foreground">Needs publication summary</p>
-          <p className="text-sm leading-6 text-muted-foreground">
-            This source markdown has not published a complete Published Readout yet. The reader can show available
-            notes, but the durable decision, findings, interpretation, production implication, caveats, and source
-            artifacts should be written back to the research README or summary.json.
-          </p>
-        </div>
-      </div>
-    </Surface>
   );
 }
 
@@ -514,15 +602,13 @@ export function ResearchDetailView({ detail, onBack, onSelectRun }: ResearchDeta
       <PageIntro
         eyebrow="Published Research"
         title={detail.item.title}
-        description={getDetailDescription(detail, reading)}
+        description={getDetailDescription(reading)}
         meta={<PageIntroMetaList items={metaItems} />}
       />
 
       {detail.availableRuns.length > 1 ? (
         <RunSelector runs={detail.availableRuns} activeRunId={activeRunId} onSelect={onSelectRun} />
       ) : null}
-
-      <PublicationNotice detail={detail} />
 
       <ResearchReadingSections reading={reading} />
 

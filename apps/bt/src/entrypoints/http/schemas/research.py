@@ -37,6 +37,11 @@ class ResearchTableHighlight(BaseModel):
     description: str | None = None
 
 
+class PublishedReadoutSection(BaseModel):
+    title: str
+    items: list[str] = Field(default_factory=list)
+
+
 class PublishedResearchSummary(BaseModel):
     title: str
     tags: list[str] = Field(default_factory=list)
@@ -46,11 +51,7 @@ class PublishedResearchSummary(BaseModel):
     promotedSurface: str | None = None
     riskFlags: list[str] = Field(default_factory=list)
     relatedExperiments: list[str] = Field(default_factory=list)
-    purpose: str
-    method: list[str] = Field(default_factory=list)
-    resultHeadline: str | None = None
-    resultBullets: list[str] = Field(default_factory=list)
-    considerations: list[str] = Field(default_factory=list)
+    readoutSections: list[PublishedReadoutSection] = Field(default_factory=list)
     selectedParameters: list[ResearchLabelValue] = Field(default_factory=list)
     highlights: list[ResearchHighlight] = Field(default_factory=list)
     tableHighlights: list[ResearchTableHighlight] = Field(default_factory=list)

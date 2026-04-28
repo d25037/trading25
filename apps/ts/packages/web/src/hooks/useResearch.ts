@@ -33,7 +33,9 @@ function normalizeResearchRunReference(item: ApiResearchRunReference): ResearchR
   };
 }
 
-function normalizeResearchSummary(summary: ApiPublishedResearchSummary | null | undefined): PublishedResearchSummary | null {
+function normalizeResearchSummary(
+  summary: ApiPublishedResearchSummary | null | undefined
+): PublishedResearchSummary | null {
   if (!summary) {
     return null;
   }
@@ -41,9 +43,6 @@ function normalizeResearchSummary(summary: ApiPublishedResearchSummary | null | 
   return {
     ...summary,
     tags: summary.tags ?? [],
-    method: summary.method ?? [],
-    resultBullets: summary.resultBullets ?? [],
-    considerations: summary.considerations ?? [],
     selectedParameters: summary.selectedParameters ?? [],
     highlights: (summary.highlights ?? []).map(
       (item): ResearchHighlight => ({
@@ -54,6 +53,10 @@ function normalizeResearchSummary(summary: ApiPublishedResearchSummary | null | 
     tableHighlights: summary.tableHighlights ?? [],
     riskFlags: summary.riskFlags ?? [],
     relatedExperiments: summary.relatedExperiments ?? [],
+    readoutSections: (summary.readoutSections ?? []).map((section) => ({
+      title: section.title,
+      items: section.items ?? [],
+    })),
   };
 }
 

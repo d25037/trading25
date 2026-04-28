@@ -16,6 +16,7 @@ from src.application.services.research_catalog_service import (
 )
 from src.entrypoints.http.schemas.research import (
     PublishedResearchSummary,
+    PublishedReadoutSection,
     ResearchCatalogItem,
     ResearchCatalogResponse,
     ResearchDetailResponse,
@@ -63,11 +64,10 @@ def _to_summary(summary: PublishedResearchSummaryData | None) -> PublishedResear
         promotedSurface=summary.promoted_surface,
         riskFlags=list(summary.risk_flags),
         relatedExperiments=list(summary.related_experiments),
-        purpose=summary.purpose,
-        method=list(summary.method),
-        resultHeadline=summary.result_headline,
-        resultBullets=list(summary.result_bullets),
-        considerations=list(summary.considerations),
+        readoutSections=[
+            PublishedReadoutSection(title=section.title, items=list(section.items))
+            for section in summary.readout_sections
+        ],
         selectedParameters=[
             ResearchLabelValue(label=item.label, value=item.value)
             for item in summary.selected_parameters

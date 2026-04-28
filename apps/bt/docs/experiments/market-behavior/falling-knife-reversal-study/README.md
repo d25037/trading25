@@ -1,5 +1,74 @@
 # Falling Knife Reversal Study
 
+## Published Readout
+
+### Decision
+
+この研究結果だけでは、落ちるナイフを機械的に翌営業日寄りで拾う production rule は採用しない。`wait_for_stabilization` も全体で安定して優位ではなく、tested rule では「待てば改善する」とは言えない。production では、急落イベントを単純な買いシグナルではなく、左尾リスクを診断して除外・縮小するための stress regime signal として扱う。
+
+### Why This Research Was Run
+
+急落後に即時反発を狙うべきか、安定化確認まで待つべきかを、日足 OHLC だけで PIT-safe に検証するために実行した。特に、平均リターンではなく、10%超の severe loss、p10、market bucket、Daily Risk Adjusted Return bucket の差を見て、production strategy の悪いサブセットを見つける材料にすることを目的にした。
+
+### Data Scope / PIT Assumptions
+
+入力は `/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb` から作った一時 snapshot で、利用可能範囲は `2016-03-25 -> 2026-04-24`、分析範囲は `2016-04-21 -> 2026-04-23`。対象市場は `0111` プライム、`0112` スタンダード、`0113` グロースで、source rows は `8,068,767`、falling-knife events は `157,374`、stabilization entry を持つ event は `150,266`。signal 条件は signal date close までに観測できる `5d <= -10%`、`20d <= -20%`、`60d high から -25%以下`、SMA downtrend、`60d sortino <= 0.00` の overlap で、最小 overlap は `2`、同一銘柄 signal cooldown は `20` sessions。entry は常に翌営業日 open で、wait rule は最大 `10` sessions 内の安定化確認後の翌営業日 open。
+
+### Main Findings
+
+#### `catch_next_open` は平均ではプラスだが、horizon が長いほど左尾が重くなる。
+
+| Horizon | Mean | Median | P10 | Severe loss |
+| --- | ---: | ---: | ---: | ---: |
+| 5d | `0.35%` | `0.07%` | `-5.44%` | `3.20%` |
+| 20d | `1.29%` | `0.50%` | `-10.42%` | `10.50%` |
+| 60d | `3.35%` | `0.87%` | `-16.80%` | `18.81%` |
+
+#### グロースは反発の右尾が残る一方で、20d の左尾が明確に悪い。
+
+| Market | Horizon | Mean | Median | Severe loss |
+| --- | --- | ---: | ---: | ---: |
+| Prime | 20d | `1.60%` | `1.16%` | `8.41%` |
+| Standard | 20d | `1.13%` | `0.24%` | `9.56%` |
+| Growth | 20d | `0.88%` | `-0.78%` | `20.03%` |
+
+#### tested rule では `wait_for_stabilization` は `catch_next_open` を上回らない。
+
+| Horizon | `wait - catch` mean | `wait - catch` median | Wait better |
+| --- | ---: | ---: | ---: |
+| 5d | `-0.30%` | `-0.49%` | `42.85%` |
+| 20d | `-0.39%` | `-0.68%` | `40.52%` |
+| 60d | `-0.55%` | `-0.65%` | `41.30%` |
+
+#### event の多くは risk-adjusted return 悪化と downtrend で拾われるが、深い drawdown 条件は頻度が低くても左尾が重い。
+
+| Condition | Event rate | Severe loss |
+| --- | ---: | ---: |
+| `poor_risk_adjusted_return` | `92.70%` | n/a |
+| `downtrend_sma` | `81.81%` | n/a |
+| `deep_60d_drawdown` | `22.72%` | `7.15%` |
+| `deep_20d_drop` | `5.77%` | `8.66%` |
+
+### Interpretation
+
+急落イベントは平均ではプラスを残すが、production 上の問題は期待値そのものより左尾の集中にある。特にグロースと深い drawdown 条件では、20d/60d horizon の p10 と severe loss が大きく悪化する。安定化待ちは entry を遅らせることで一部の短期 left-tail を抑える局面はあるが、tested rule では機会損失が大きく、event-matched で wait better rate が 40%台前半に留まった。
+
+### Production Implication
+
+この結果は「急落を買う」rule の採用根拠ではなく、急落局面で size を落とす、対象市場を分ける、または bad-tail pruning を追加する根拠として使う。特に 20d severe loss がプライム `8.41%` に対してグロース `20.03%` まで上がるため、市場をまとめた single threshold は避ける。次段では `catch_next_open` の rebound exposure を固定したまま、グロース、Daily Risk Adjusted Return bucket、deep drawdown 条件による除外 rule を検証する。
+
+### Caveats
+
+この readout は `20260427_110323_78e01df6` bundle の単一 run に基づく。source snapshot は local DuckDB からの temporary copy で、manifest は `git_dirty: true` を示している。約定は翌営業日 open / horizon close の research approximation で、手数料、スリッページ、板流動性、実運用の同時保有制約は評価していない。Daily Risk Adjusted Return は `60d sortino` の bucket と閾値 `0.00` に依存するため、別 lookback や market-specific threshold では結果が変わりうる。
+
+### Source Artifacts
+
+- Bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6`
+- Summary: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/summary.md`
+- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/summary.json`
+- Tables: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/results.duckdb` (`event_df`, `trade_summary_df`, `paired_delta_df`, `condition_profile_df`)
+- Manifest: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/manifest.json`
+
 ## Purpose
 
 投資格言「落ちるナイフを掴むな」を、急落中の即時買いと安定化確認後の買いの比較として検証する。
