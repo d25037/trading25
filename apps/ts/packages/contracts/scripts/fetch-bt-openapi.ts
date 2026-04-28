@@ -193,7 +193,7 @@ export async function tryFetchFromServer(
   const deps = { ...defaultDeps(), ...depsOverrides };
   deps.logger.log(`Fetching OpenAPI schema from ${config.openapiUrl} ...`);
   try {
-    const res = await deps.fetch(config.openapiUrl, { signal: AbortSignal.timeout(5000) });
+    const res = await deps.fetch(config.openapiUrl, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
