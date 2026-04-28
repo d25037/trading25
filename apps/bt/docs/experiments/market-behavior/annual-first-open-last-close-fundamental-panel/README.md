@@ -4,6 +4,63 @@
 で買い、大納会（その年の最後の取引日）の `Close` で売った場合の年次保有
 リターンを、買付時点で利用可能な FY ファンダメンタル指標と結合して見る研究。
 
+## Published Readout
+
+### Decision
+
+- Low `PBR + small cap` is the strongest reusable annual cross-section readout from this run, but it stays a research/ranking diagnostic until capacity, liquidity floors, turnover, and execution cost checks are added.
+
+### Why This Research Was Run
+
+- Annual first-open to last-close holding returns provide a clean calendar-year lens for testing whether PIT-safe FY fundamentals explain broad cross-sectional return differences.
+- The study also checks whether per-share adjustment and entry-price-dependent valuation materially change factor buckets.
+
+### Data Scope / PIT Assumptions
+
+- Complete years `2017-2025`; `29,294` realized stock-year events.
+- Entry is the first trading day `Open`; exit is the same calendar year last trading day `Close`.
+- FY fundamentals are selected only when disclosed on or before the entry date.
+- EPS, BPS, forward EPS, and dividend per share are adjusted to the latest entry-date share-count baseline.
+- Market split uses the current `stocks.market_code` snapshot as a retrospective proxy because historical market migration is not stored.
+
+### Main Findings
+
+| Lens | Result |
+| --- | --- |
+| Full-market baseline | CAGR `11.4%`, Sharpe `0.76`, Sortino `0.86`, Calmar `0.32`, maxDD `-36.2%` |
+| Best broad market | `standard`, with CAGR `12.6%` and Sharpe `0.87` |
+| Strong factor families | Low `PBR`, low `forward PER`, low `PER`, high dividend yield / forecast dividend yield |
+| Weak broad selector | `forward_eps_to_actual_eps`; high Q5 ratio did not beat Q1 for `all`, `standard`, or `growth` |
+| Strongest cross condition | `standard` `PBR Q1 + market-cap Q1`: CAGR `37.7%`, Sharpe `2.16`, Sortino `2.40`, Calmar `1.18`, maxDD `-31.9%` |
+| Share adjustment impact | `5,336` realized events had `share_adjustment_applied = true` |
+
+### Interpretation
+
+- The strongest signal is not simply "cheap" or "small"; it is the interaction where very low valuation and very small market cap concentrate the annual return edge.
+- `standard` looks better than `growth` on risk-adjusted annual holding metrics in this run, but the market split is retrospective and should not be treated as a historical membership truth.
+- `forward EPS / actual EPS` is weaker than expected as a broad selector. The ratio is not useless, but it does not dominate the simpler low valuation families.
+- The share-count adjustment is not cosmetic: without it, EPS/BPS/forward EPS valuation buckets would be materially distorted for thousands of events.
+
+### Production Implication
+
+- Use this as a ranking research input for value/composite ranking, especially low `PBR`, low `forward PER`, and market-cap interaction diagnostics.
+- Do not promote the strongest `small-cap + low-PBR` branch directly into production before liquidity floors, turnover/capacity modeling, and realistic execution cost checks.
+- Treat ADV as a capacity/execution diagnostic, not as the source of alpha.
+
+### Caveats
+
+- Factor buckets are observational and must not be copied directly into live thresholds.
+- Historical market migration is unavailable, so market split is a current-snapshot proxy.
+- The strongest branch is exposed to small-cap / low-ADV implementation risk.
+- Current-year incomplete annual returns are excluded by default.
+
+### Source Artifacts
+
+- Domain: `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
+- Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
+- Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+- Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`, `summary.json`
+
 ## Current Surface
 
 - Domain:

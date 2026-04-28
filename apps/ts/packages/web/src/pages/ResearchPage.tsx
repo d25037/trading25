@@ -115,6 +115,21 @@ function StatusBadge({ status }: { status: ResearchDecisionStatus }) {
   );
 }
 
+function PublicationBadge({ item }: { item: ResearchCatalogItem }) {
+  if (item.hasStructuredSummary) {
+    return (
+      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+        publication-ready
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300">
+      needs-publication-summary
+    </span>
+  );
+}
+
 function FilterSelect({
   label,
   value,
@@ -173,86 +188,94 @@ function EvidenceMatrix({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
-            <TableRow
-              key={item.experimentId}
-              tabIndex={0}
-              onClick={() => onOpen(item)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onOpen(item);
-                }
-              }}
-              aria-label={`Open ${item.title}`}
-              className="app-interactive cursor-pointer align-top hover:bg-[var(--app-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            >
-              <TableCell>
-                <div className="space-y-2">
-                  <StatusBadge status={item.status} />
-                  <p className="text-xs font-medium text-foreground">{item.family}</p>
-                  <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                    {item.promotedSurface ?? 'Research'}
-                  </p>
-                </div>
-              </TableCell>
-              <TableCell className="min-w-0">
-                <div className="space-y-2">
-                  <div>
-                    <p className="font-semibold leading-5 text-foreground">{item.title}</p>
-                    <p className="mt-1 truncate text-xs font-mono text-muted-foreground">{item.experimentId}</p>
+          {items.map((item) => {
+            const visibleRiskFlags = item.riskFlags.filter((flag) => flag !== 'needs-publication-summary');
+            return (
+              <TableRow
+                key={item.experimentId}
+                tabIndex={0}
+                onClick={() => onOpen(item)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpen(item);
+                  }
+                }}
+                aria-label={`Open ${item.title}`}
+                className="app-interactive cursor-pointer align-top hover:bg-[var(--app-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              >
+                <TableCell>
+                  <div className="space-y-2">
+                    <StatusBadge status={item.status} />
+                    <p className="text-xs font-medium text-foreground">{item.family}</p>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                      {item.promotedSurface ?? 'Research'}
+                    </p>
                   </div>
-                  <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-                    {item.headline ?? item.objective ?? 'Published research bundle.'}
-                  </p>
-                  {item.tags.length > 0 ? (
+                </TableCell>
+                <TableCell className="min-w-0">
+                  <div className="space-y-2">
+                    <div>
+                      <p className="font-semibold leading-5 text-foreground">{item.title}</p>
+                      <p className="mt-1 truncate text-xs font-mono text-muted-foreground">{item.experimentId}</p>
+                    </div>
+                    <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
+                      {item.headline ?? item.objective ?? 'Published research bundle.'}
+                    </p>
+                    {item.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.tags.slice(0, 4).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </TableCell>
+                <TableCell className="space-y-3 text-sm leading-6 text-muted-foreground">
+                  <p className="line-clamp-3">{item.decision ?? 'No explicit decision recorded.'}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <PublicationBadge item={item} />
+                  </div>
+                  {visibleRiskFlags.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
-                      {item.tags.slice(0, 4).map((tag) => (
+                      {visibleRiskFlags.map((flag) => (
                         <span
-                          key={tag}
-                          className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                          key={flag}
+                          className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
                         >
-                          {tag}
+                          {flag}
                         </span>
                       ))}
                     </div>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p className="line-clamp-3">{item.decision ?? 'No explicit decision recorded.'}</p>
-                {item.riskFlags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.riskFlags.map((flag) => (
-                      <span
-                        key={flag}
-                        className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
-                      >
-                        {flag}
-                      </span>
-                    ))}
+                  ) : (
+                    <span className="text-sm text-muted-foreground">None</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Created
+                      </p>
+                      <p className="text-sm font-medium text-foreground">{formatTimestamp(item.createdAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Range
+                      </p>
+                      <p className="text-xs text-muted-foreground">{formatRange(item)}</p>
+                    </div>
+                    <p className="font-mono text-xs text-foreground">{item.runId}</p>
                   </div>
-                ) : (
-                  <span className="text-sm text-muted-foreground">None</span>
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="space-y-2">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                      Created
-                    </p>
-                    <p className="text-sm font-medium text-foreground">{formatTimestamp(item.createdAt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Range</p>
-                    <p className="text-xs text-muted-foreground">{formatRange(item)}</p>
-                  </div>
-                  <p className="font-mono text-xs text-foreground">{item.runId}</p>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </Surface>

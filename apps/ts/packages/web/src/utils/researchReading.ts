@@ -27,6 +27,8 @@ interface ParsedMarkdownSection {
 
 const RESULT_SECTION_PATTERNS = [
   /current read/i,
+  /current finding/i,
+  /finding/i,
   /readout/i,
   /forward/i,
   /validation/i,
@@ -50,7 +52,7 @@ const CONSIDERATION_SECTION_PATTERNS = [
 
 const CONTEXT_SECTION_PATTERNS = [/snapshot/i, /purpose/i, /method/i, /setup/i, /universe/i, /background/i];
 
-const APPENDIX_SECTION_PATTERNS = [/artifact/i, /appendix/i, /stored table/i];
+const APPENDIX_SECTION_PATTERNS = [/artifact/i, /appendix/i, /stored table/i, /current surface/i, /^run$/i];
 
 function cleanMarkdownText(value: string): string {
   return value
@@ -86,7 +88,45 @@ function nonTableText(value?: string | null): string | undefined {
   if (!value) {
     return undefined;
   }
-  return isMarkdownTableLine(cleanMarkdownText(value)) ? undefined : value;
+  const cleanedValue = cleanMarkdownText(value);
+  return isMarkdownTableLine(cleanedValue) || isWeakHeadline(cleanedValue) ? undefined : value;
+}
+
+function isWeakHeadline(value: string): boolean {
+  const normalized = cleanMarkdownText(value).toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  return (
+    normalized.endsWith(':') ||
+    normalized.startsWith('baseline result:') ||
+    normalized === 'domain:' ||
+    normalized === 'runner:' ||
+    normalized === 'bundle:' ||
+    normalized === 'manifest.json' ||
+    normalized === 'results.duckdb' ||
+    normalized === 'summary.md' ||
+    normalized === 'summary.json'
+  );
+}
+
+function isWeakPromotedItem(value: string): boolean {
+  const normalized = cleanMarkdownText(value).toLowerCase();
+  if (!normalized || isMarkdownTableLine(normalized)) {
+    return false;
+  }
+  return (
+    isWeakHeadline(normalized) ||
+    normalized.startsWith('apps/bt/') ||
+    normalized.startsWith('./') ||
+    normalized.endsWith('.duckdb') ||
+    normalized.endsWith('.json') ||
+    normalized.endsWith('.md')
+  );
+}
+
+function filterPromotedItems(items: string[]): string[] {
+  return items.filter((item) => !isWeakPromotedItem(item));
 }
 
 function containsCleanedItem(sections: ResearchReadingSection[], value?: string | null): boolean {
@@ -151,9 +191,7 @@ function parseMarkdownSections(markdown: string): {
   };
 }
 
-function classifyMarkdownSection(
-  section: ParsedMarkdownSection
-): 'result' | 'consideration' | 'context' | 'appendix' {
+function classifyMarkdownSection(section: ParsedMarkdownSection): 'result' | 'consideration' | 'context' | 'appendix' {
   if (APPENDIX_SECTION_PATTERNS.some((pattern) => pattern.test(section.title))) {
     return 'appendix';
   }
@@ -186,7 +224,9 @@ function buildStructuredReadingModel(detail: ResearchDetailResponse): ResearchRe
       : [
           {
             title: 'Reading Note',
-            items: ['This bundle did not publish explicit consideration notes. Read the result panel as the primary takeaway.'],
+            items: [
+              'This bundle did not publish explicit consideration notes. Read the result panel as the primary takeaway.',
+            ],
           },
         ];
 
@@ -209,6 +249,37 @@ function buildStructuredReadingModel(detail: ResearchDetailResponse): ResearchRe
   };
 }
 
+function appendFallbackSection(
+  section: ParsedMarkdownSection,
+  resultSections: ResearchReadingSection[],
+  considerationSections: ResearchReadingSection[],
+  contextSections: ResearchReadingSection[]
+) {
+  const normalizedSection: ResearchReadingSection = {
+    title: section.title,
+    items: section.items,
+  };
+  const sectionKind = classifyMarkdownSection(section);
+  if (sectionKind === 'appendix') {
+    return;
+  }
+  if (sectionKind === 'context') {
+    contextSections.push(normalizedSection);
+    return;
+  }
+
+  const promotedItems = filterPromotedItems(section.items);
+  if (promotedItems.length === 0) {
+    return;
+  }
+  const promotedSection = { ...normalizedSection, items: promotedItems };
+  if (sectionKind === 'result') {
+    resultSections.push(promotedSection);
+    return;
+  }
+  considerationSections.push(promotedSection);
+}
+
 function buildFallbackReadingModel(detail: ResearchDetailResponse): ResearchReadingModel {
   const parsed = parseMarkdownSections(detail.summaryMarkdown);
   const resultSections: ResearchReadingSection[] = [];
@@ -220,22 +291,7 @@ function buildFallbackReadingModel(detail: ResearchDetailResponse): ResearchRead
   }
 
   for (const section of parsed.sections) {
-    const normalizedSection: ResearchReadingSection = {
-      title: section.title,
-      items: section.items,
-    };
-    const sectionKind = classifyMarkdownSection(section);
-    if (sectionKind === 'result') {
-      resultSections.push(normalizedSection);
-      continue;
-    }
-    if (sectionKind === 'consideration') {
-      considerationSections.push(normalizedSection);
-      continue;
-    }
-    if (sectionKind === 'context') {
-      contextSections.push(normalizedSection);
-    }
+    appendFallbackSection(section, resultSections, considerationSections, contextSections);
   }
 
   if (resultSections.length === 0) {
@@ -254,11 +310,19 @@ function buildFallbackReadingModel(detail: ResearchDetailResponse): ResearchRead
     });
   }
 
+  const cleanedCatalogHeadline = cleanMarkdownText(detail.item.headline ?? '');
   const catalogHeadline =
-    containsCleanedItem(contextSections, detail.item.headline) || isMarkdownTableLine(cleanMarkdownText(detail.item.headline ?? ''))
+    containsCleanedItem(contextSections, detail.item.headline) ||
+    isMarkdownTableLine(cleanedCatalogHeadline) ||
+    isWeakHeadline(cleanedCatalogHeadline)
       ? undefined
       : detail.item.headline;
-  const headline = catalogHeadline ?? firstTextItem(resultSections) ?? nonTableText(detail.item.objective) ?? parsed.title ?? detail.item.title;
+  const headline =
+    catalogHeadline ??
+    firstTextItem(resultSections) ??
+    nonTableText(detail.item.objective) ??
+    parsed.title ??
+    detail.item.title;
 
   return {
     headline,

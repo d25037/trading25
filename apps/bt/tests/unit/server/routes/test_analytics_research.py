@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.services import research_catalog_service
 from src.domains.analytics.research_bundle import write_research_bundle
 from src.entrypoints.http.app import create_app
 
@@ -173,8 +174,10 @@ def test_list_research_catalog_returns_latest_per_experiment(
     )
     assert docs_item["runId"] == "docs"
     assert docs_item["title"] == "Annual Market Fundamental Divergence"
+    assert docs_item["headline"] != "Domain:"
     assert docs_item["hasStructuredSummary"] is False
     assert "docs-only" in docs_item["riskFlags"]
+    assert "needs-publication-summary" in docs_item["riskFlags"]
     assert (
         docs_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/annual-market-fundamental-divergence/README.md"
@@ -251,6 +254,7 @@ def test_get_research_detail_returns_docs_only_publication(
     assert payload["summary"] is None
     assert payload["summaryMarkdown"].startswith("# Annual Market Fundamental Divergence")
     assert payload["outputTables"] == []
+    assert "needs-publication-summary" in payload["item"]["riskFlags"]
     assert payload["availableRuns"] == [
         {
             "runId": "docs",
@@ -296,6 +300,7 @@ def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
     assert raw_item["hasStructuredSummary"] is False
     assert raw_item["objective"] is None
     assert raw_item["headline"] == "Scope: topix500"
+    assert "needs-publication-summary" in raw_item["riskFlags"]
 
     detail_response = research_client.get(
         "/api/analytics/research/detail",
@@ -355,6 +360,62 @@ def test_research_catalog_metadata_overlay_takes_precedence(
     assert payload["summary"]["family"] == "Annual Fundamentals"
     assert payload["summary"]["status"] == "ranking_surface"
     assert payload["summary"]["promotedSurface"] == "Ranking"
+
+
+def test_markdown_published_readout_becomes_structured_summary() -> None:
+    summary = research_catalog_service._load_markdown_published_summary(
+        "market-behavior/published-docs",
+        """
+# Published Docs
+
+Intro paragraph.
+
+## Published Readout
+
+### Decision
+- Keep this as the canonical readout.
+
+### Why This Research Was Run
+- The catalog needed a human-readable conclusion.
+
+### Data Scope / PIT Assumptions
+- Uses PIT-safe annual joins.
+
+### Main Findings
+- Primary result was +12.3%.
+
+### Interpretation
+- The effect is observational.
+
+### Production Implication
+- Use as a ranking diagnostic, not a direct trade rule.
+
+### Caveats
+- Capacity needs a follow-up.
+
+### Source Artifacts
+- `results.duckdb`
+""",
+        {
+            "decision": "Metadata decision takes precedence.",
+            "promotedSurface": "Ranking",
+            "tags": ["publication"],
+        },
+    )
+
+    assert summary is not None
+    assert summary.title == "Published Docs"
+    assert summary.status == "ranking_surface"
+    assert summary.decision == "Metadata decision takes precedence."
+    assert summary.purpose == "The catalog needed a human-readable conclusion."
+    assert summary.method == ("Uses PIT-safe annual joins.",)
+    assert summary.result_headline == "Metadata decision takes precedence."
+    assert summary.result_bullets == ("Primary result was +12.3%.",)
+    assert summary.considerations == (
+        "The effect is observational.",
+        "Use as a ranking diagnostic, not a direct trade rule.",
+        "Capacity needs a follow-up.",
+    )
 
 
 def test_get_research_detail_returns_404_when_missing(

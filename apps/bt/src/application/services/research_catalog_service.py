@@ -250,41 +250,75 @@ def _build_catalog_entry(info: ResearchBundleInfo) -> ResearchCatalogEntry:
 def _build_docs_catalog_entry(experiment_id: str, readme_path: Path) -> ResearchCatalogEntry:
     summary_markdown = readme_path.read_text(encoding="utf-8")
     metadata = _load_research_catalog_metadata().get(experiment_id, {})
-    tags = _normalize_string_tuple(metadata.get("tags"))
+    published_summary = _load_markdown_published_summary(
+        experiment_id,
+        summary_markdown,
+        metadata,
+    )
+    tags = (
+        published_summary.tags
+        if published_summary is not None
+        else _normalize_string_tuple(metadata.get("tags"))
+    )
     promoted_surface = (
         _normalize_optional_string(metadata.get("promotedSurface"))
+        or (published_summary.promoted_surface if published_summary is not None else None)
         or _derive_promoted_surface_for_experiment(experiment_id, tags)
     )
-    status = _normalize_optional_status(metadata.get("status")) or _derive_status_for_experiment(
-        experiment_id,
-        promoted_surface=promoted_surface,
+    status = (
+        _normalize_optional_status(metadata.get("status"))
+        or (published_summary.status if published_summary is not None else None)
+        or _derive_status_for_experiment(
+            experiment_id,
+            promoted_surface=promoted_surface,
+        )
     )
     risk_flags = _merge_unique_strings(
         _normalize_string_tuple(metadata.get("riskFlags")),
-        ("docs-only", "markdown-only"),
+        published_summary.risk_flags if published_summary is not None else (),
+        (
+            ("docs-only",)
+            if published_summary is not None
+            else ("docs-only", "markdown-only", "needs-publication-summary")
+        ),
     )
 
     return ResearchCatalogEntry(
         experiment_id=experiment_id,
         run_id="docs",
-        title=_normalize_optional_string(metadata.get("title"))
-        or _extract_title_from_markdown(summary_markdown, experiment_id),
-        objective=_extract_first_paragraph(summary_markdown),
-        headline=_extract_first_bullet(summary_markdown),
+        title=(
+            published_summary.title
+            if published_summary is not None
+            else _normalize_optional_string(metadata.get("title"))
+            or _extract_title_from_markdown(summary_markdown, experiment_id)
+        ),
+        objective=(
+            published_summary.purpose
+            if published_summary is not None
+            else _extract_first_paragraph(summary_markdown)
+        ),
+        headline=(
+            published_summary.result_headline
+            if published_summary is not None
+            else _extract_docs_headline(summary_markdown)
+        ),
         family=_normalize_optional_string(metadata.get("family"))
+        or (published_summary.family if published_summary is not None else None)
         or _derive_research_family_for_experiment(experiment_id, tags),
         status=status,
-        decision=_normalize_optional_string(metadata.get("decision")),
+        decision=_normalize_optional_string(metadata.get("decision"))
+        or (published_summary.decision if published_summary is not None else None),
         promoted_surface=promoted_surface,
         risk_flags=risk_flags,
-        related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments")),
+        related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments"))
+        or (published_summary.related_experiments if published_summary is not None else ()),
         docs_readme_path=resolve_research_experiment_docs_readme_path(experiment_id),
         created_at=_latest_docs_modified_at(readme_path.parent),
         analysis_start_date=None,
         analysis_end_date=None,
         git_commit=None,
         tags=tags,
-        has_structured_summary=False,
+        has_structured_summary=published_summary is not None,
     )
 
 
@@ -304,9 +338,14 @@ def _get_docs_research_publication(
 
     entry = _build_docs_catalog_entry(experiment_id, readme_path)
     summary_markdown = readme_path.read_text(encoding="utf-8")
+    published_summary = _load_markdown_published_summary(
+        experiment_id,
+        summary_markdown,
+        _load_research_catalog_metadata().get(experiment_id, {}),
+    )
     return ResearchPublication(
         item=entry,
-        summary=None,
+        summary=published_summary,
         summary_markdown=summary_markdown,
         output_tables=(),
         available_runs=(
@@ -368,6 +407,128 @@ def _load_published_summary(
         highlights=_normalize_highlight_items(payload.get("highlights")),
         table_highlights=_normalize_table_highlight_items(payload.get("tableHighlights")),
     )
+
+
+_PUBLISHED_READOUT_HEADING = "published readout"
+_PUBLISHED_READOUT_REQUIRED_SECTIONS = {
+    "decision",
+    "main findings",
+    "interpretation",
+    "production implication",
+    "caveats",
+    "source artifacts",
+}
+
+
+def _load_markdown_published_summary(
+    experiment_id: str,
+    markdown: str,
+    metadata: dict[str, Any],
+) -> PublishedResearchSummaryData | None:
+    readout_sections = _extract_published_readout_sections(markdown)
+    if not _has_complete_published_readout(readout_sections):
+        return None
+
+    tags = _normalize_string_tuple(metadata.get("tags"))
+    family = _normalize_optional_string(metadata.get("family"))
+    promoted_surface = _normalize_optional_string(metadata.get("promotedSurface"))
+    status = _normalize_optional_status(metadata.get("status")) or _derive_status_for_experiment(
+        experiment_id,
+        promoted_surface=promoted_surface,
+    )
+    decision = _normalize_optional_string(metadata.get("decision")) or _first_readout_item(
+        readout_sections,
+        "decision",
+    )
+    result_bullets = tuple(readout_sections.get("main findings", ()))
+    considerations = _merge_unique_strings(
+        tuple(readout_sections.get("interpretation", ())),
+        tuple(readout_sections.get("production implication", ())),
+        tuple(readout_sections.get("caveats", ())),
+    )
+    purpose_items = _merge_unique_strings(
+        tuple(readout_sections.get("why this research was run", ())),
+        tuple(readout_sections.get("why", ())),
+        tuple(readout_sections.get("purpose", ())),
+    )
+    method = _merge_unique_strings(
+        tuple(readout_sections.get("data scope / pit assumptions", ())),
+        tuple(readout_sections.get("data scope", ())),
+        tuple(readout_sections.get("method", ())),
+    )
+
+    return PublishedResearchSummaryData(
+        title=_normalize_optional_string(metadata.get("title"))
+        or _extract_title_from_markdown(markdown, experiment_id),
+        tags=tags,
+        family=family,
+        status=status,
+        decision=decision,
+        promoted_surface=promoted_surface,
+        risk_flags=_normalize_string_tuple(metadata.get("riskFlags")),
+        related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments")),
+        purpose=" ".join(purpose_items) or _extract_first_paragraph(markdown) or decision or "Published research.",
+        method=method,
+        result_headline=decision or _first_readout_item(readout_sections, "main findings"),
+        result_bullets=result_bullets,
+        considerations=considerations,
+        selected_parameters=(),
+        highlights=(),
+        table_highlights=(),
+    )
+
+
+def _extract_published_readout_sections(markdown: str) -> dict[str, tuple[str, ...]]:
+    sections: dict[str, list[str]] = {}
+    in_readout = False
+    current_section: str | None = None
+
+    for raw_line in markdown.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("## "):
+            heading = _normalize_heading_key(stripped[3:])
+            in_readout = heading == _PUBLISHED_READOUT_HEADING
+            current_section = None
+            continue
+        if not in_readout:
+            continue
+        if stripped.startswith("### "):
+            current_section = _normalize_heading_key(stripped[4:])
+            sections.setdefault(current_section, [])
+            continue
+        if current_section is None:
+            continue
+
+        item = _normalize_readout_line(stripped)
+        if item is not None:
+            sections[current_section].append(item)
+
+    return {key: tuple(value) for key, value in sections.items()}
+
+
+def _normalize_readout_line(value: str) -> str | None:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if stripped.startswith("- "):
+        stripped = stripped[2:].strip()
+    return stripped or None
+
+
+def _has_complete_published_readout(sections: dict[str, tuple[str, ...]]) -> bool:
+    return all(sections.get(section) for section in _PUBLISHED_READOUT_REQUIRED_SECTIONS)
+
+
+def _first_readout_item(
+    sections: dict[str, tuple[str, ...]],
+    section_name: str,
+) -> str | None:
+    items = sections.get(section_name)
+    if not items:
+        return None
+    return items[0]
 
 
 def _normalize_optional_string(value: Any) -> str | None:
@@ -529,6 +690,7 @@ def _derive_risk_flags(
     flags: list[str] = []
     if not has_structured_summary:
         flags.append("markdown-only")
+        flags.append("needs-publication-summary")
     if resolve_research_experiment_docs_readme_path(info.experiment_id) is None:
         flags.append("docs-missing")
     return tuple(flags)
@@ -639,6 +801,51 @@ def _extract_first_bullet(summary_markdown: str) -> str | None:
             bullet = stripped[2:].strip()
             return bullet or None
     return None
+
+
+def _extract_docs_headline(summary_markdown: str) -> str | None:
+    current_section: str | None = None
+    preferred_headline: str | None = None
+    fallback_headline: str | None = None
+
+    for line in summary_markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current_section = _normalize_heading_key(stripped[3:])
+            continue
+        if not stripped.startswith("- "):
+            continue
+
+        bullet = stripped[2:].strip()
+        if not _is_informative_docs_bullet(bullet):
+            continue
+        if fallback_headline is None:
+            fallback_headline = bullet
+        if current_section in {"current findings", "current read", "findings", "results"}:
+            preferred_headline = bullet
+            break
+
+    return preferred_headline or fallback_headline
+
+
+def _normalize_heading_key(value: str) -> str:
+    return value.strip().lower()
+
+
+def _is_informative_docs_bullet(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if stripped.endswith(":"):
+        return False
+    if lowered.startswith("baseline result:"):
+        return False
+    if lowered in {"manifest.json", "results.duckdb", "summary.md", "summary.json"}:
+        return False
+    if "/" in stripped and stripped.startswith("`apps/"):
+        return False
+    return True
 
 
 def _info_sort_key(info: ResearchBundleInfo) -> tuple[datetime, str]:

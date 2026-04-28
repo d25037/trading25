@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildResearchReadingModel } from './researchReading';
 import type { ResearchDetailResponse } from '@/types/research';
+import { buildResearchReadingModel } from './researchReading';
 
 const baseResearchMetadata = {
   family: 'Market Regime',
@@ -80,7 +80,10 @@ Short intro paragraph.
     );
 
     expect(model.headline).toBe('Fallback headline');
-    expect(model.resultSections.map((section) => section.title)).toEqual(['Current Read', 'Validation Forward Snapshot']);
+    expect(model.resultSections.map((section) => section.title)).toEqual([
+      'Current Read',
+      'Validation Forward Snapshot',
+    ]);
     expect(model.contextSections.map((section) => section.title)).toContain('Snapshot');
     expect(model.considerationSections[0]?.title).toBe('Reading Note');
   });
@@ -169,5 +172,53 @@ Short intro paragraph.
       'Use as a regime label, not a direct trend-following signal.'
     );
     expect(model.parameters[0]?.value).toBe('3 streaks');
+  });
+
+  it('promotes docs-only current findings over implementation surface bullets', () => {
+    const model = buildResearchReadingModel(
+      createDetail({
+        item: {
+          experimentId: 'market-behavior/annual-first-open-last-close-fundamental-panel',
+          runId: 'docs',
+          title: 'Annual First-Open Last-Close Fundamental Panel',
+          objective: 'Annual holding return study.',
+          headline: 'Domain:',
+          createdAt: '2026-04-23T00:00:00+00:00',
+          analysisStartDate: null,
+          analysisEndDate: null,
+          gitCommit: null,
+          tags: [],
+          hasStructuredSummary: false,
+          ...baseResearchMetadata,
+        },
+        summaryMarkdown: `# Annual First-Open Last-Close Fundamental Panel
+
+Annual holding return study.
+
+## Current Surface
+
+- Domain:
+  - \`apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py\`
+- Runner:
+  - \`apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py\`
+
+## Current Findings
+
+- Baseline result: \`baseline-2026-04-23.md\`
+- Low PBR + small cap was the strongest cross condition.
+
+## Caveats
+
+- Factor buckets are observational.
+`,
+      })
+    );
+
+    expect(model.headline).toBe('Low PBR + small cap was the strongest cross condition.');
+    expect(model.resultSections.map((section) => section.title)).toEqual(['Current Findings']);
+    expect(model.resultSections[0]?.items).not.toContain('Baseline result: baseline-2026-04-23.md');
+    expect(model.resultSections[0]?.items).toContain('Low PBR + small cap was the strongest cross condition.');
+    expect(model.contextSections.map((section) => section.title)).not.toContain('Current Surface');
+    expect(model.considerationSections[0]?.title).toBe('Caveats');
   });
 });

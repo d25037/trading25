@@ -16,6 +16,15 @@ FORBIDDEN_DOC_PATTERNS = {
     "legacy-notebook-reference": "apps/bt/notebooks/playground",
     "legacy-marimo-command": "marimo edit",
 }
+PUBLISHED_READOUT_HEADING = "published readout"
+PUBLISHED_READOUT_REQUIRED_SECTIONS = {
+    "decision",
+    "main findings",
+    "interpretation",
+    "production implication",
+    "caveats",
+    "source artifacts",
+}
 
 
 @dataclass(frozen=True)
@@ -105,7 +114,59 @@ def find_docs_guardrail_findings_in_text(
                     ),
                 )
             )
+    findings.extend(find_published_readout_findings(relative_path, text))
     return findings
+
+
+def find_published_readout_findings(
+    relative_path: Path,
+    text: str,
+) -> list[ResearchGuardrailFinding]:
+    section_has_content: dict[str, bool] = {}
+    in_readout = False
+    readout_line_number: int | None = None
+    current_section: str | None = None
+
+    for line_number, raw_line in enumerate(text.splitlines(), start=1):
+        stripped = raw_line.strip()
+        if stripped.startswith("## "):
+            heading = stripped[3:].strip().lower()
+            in_readout = heading == PUBLISHED_READOUT_HEADING
+            if in_readout:
+                readout_line_number = line_number
+            current_section = None
+            continue
+        if not in_readout:
+            continue
+        if stripped.startswith("### "):
+            current_section = stripped[4:].strip().lower()
+            section_has_content.setdefault(current_section, False)
+            continue
+        if current_section is not None and stripped:
+            section_has_content[current_section] = True
+
+    if readout_line_number is None:
+        return []
+
+    missing_sections = sorted(
+        section
+        for section in PUBLISHED_READOUT_REQUIRED_SECTIONS
+        if not section_has_content.get(section)
+    )
+    if not missing_sections:
+        return []
+
+    return [
+        ResearchGuardrailFinding(
+            relative_path=relative_path,
+            line_number=readout_line_number,
+            rule_name="incomplete-published-readout",
+            message=(
+                "Published Readout is present but missing required sections: "
+                + ", ".join(missing_sections)
+            ),
+        )
+    ]
 
 
 def scan_research_files(root: Path, files: list[Path]) -> list[ResearchGuardrailFinding]:

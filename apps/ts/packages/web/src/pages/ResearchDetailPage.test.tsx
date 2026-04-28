@@ -120,8 +120,91 @@ Beta fallback paragraph.
 - \`summary_df\`
 `,
           outputTables: ['summary_df'],
-          availableRuns: [{ runId: '20260405_120000_beta0001', createdAt: '2026-04-05T12:00:00+00:00', isLatest: true }],
+          availableRuns: [
+            { runId: '20260405_120000_beta0001', createdAt: '2026-04-05T12:00:00+00:00', isLatest: true },
+          ],
           resultMetadata: {},
+        },
+        isLoading: false,
+        error: null,
+      };
+    }
+
+    if (experimentId === 'market-behavior/annual-first-open-last-close-fundamental-panel') {
+      return {
+        data: {
+          item: {
+            experimentId: 'market-behavior/annual-first-open-last-close-fundamental-panel',
+            runId: 'docs',
+            title: 'Annual First-Open Last-Close Fundamental Panel',
+            objective: 'Annual holding return study with PIT-safe FY fundamentals.',
+            headline: 'Low PBR + small cap was the strongest cross condition.',
+            createdAt: '2026-04-23T08:38:01+00:00',
+            analysisStartDate: null,
+            analysisEndDate: null,
+            gitCommit: null,
+            tags: [],
+            family: 'Annual Fundamentals',
+            status: 'observed',
+            decision: 'Keep low PBR + small cap as a ranking diagnostic until liquidity and cost checks are complete.',
+            promotedSurface: 'Research',
+            riskFlags: ['docs-only'],
+            relatedExperiments: [],
+            hasStructuredSummary: true,
+          },
+          summary: {
+            title: 'Annual First-Open Last-Close Fundamental Panel',
+            tags: [],
+            family: 'Annual Fundamentals',
+            status: 'observed',
+            decision: 'Keep low PBR + small cap as a ranking diagnostic until liquidity and cost checks are complete.',
+            promotedSurface: 'Research',
+            riskFlags: ['docs-only'],
+            relatedExperiments: [],
+            purpose: 'Annual holding return study with PIT-safe FY fundamentals.',
+            method: ['Complete years 2017-2025.', 'FY fundamentals are selected as of the entry date.'],
+            resultHeadline:
+              'Keep low PBR + small cap as a ranking diagnostic until liquidity and cost checks are complete.',
+            resultBullets: [
+              'Full-market baseline: CAGR 11.4%, Sharpe 0.76, maxDD -36.2%.',
+              'Standard PBR Q1 + market-cap Q1: CAGR 37.7%, Sharpe 2.16.',
+            ],
+            considerations: [
+              'The strongest branch is exposed to small-cap and low-ADV implementation risk.',
+              'Use as ranking research input before production promotion.',
+            ],
+            selectedParameters: [],
+            highlights: [],
+            tableHighlights: [],
+          },
+          summaryMarkdown: `# Annual First-Open Last-Close Fundamental Panel
+
+Annual holding return study.
+
+## Current Surface
+
+- Domain:
+  - \`apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py\`
+- Runner:
+  - \`apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py\`
+
+## Design
+
+- Entry: first trading day open.
+- Exit: last trading day close.
+
+## Current Findings
+
+- Baseline result: [baseline-2026-04-23.md](./baseline-2026-04-23.md)
+- Low PBR + small cap was the strongest cross condition.
+
+## Caveats
+
+- Factor bucket is observational.
+`,
+          outputTables: [],
+          availableRuns: [{ runId: 'docs', createdAt: '2026-04-23T08:38:01+00:00', isLatest: true }],
+          resultMetadata: { source: 'docs' },
         },
         isLoading: false,
         error: null,
@@ -141,8 +224,8 @@ describe('ResearchDetailPage', () => {
     render(<ResearchDetailPage />);
 
     expect(screen.getByText('Back to catalog')).toBeInTheDocument();
-    expect(screen.getByText('What It Found')).toBeInTheDocument();
-    expect(screen.getAllByText('How To Read It').length).toBeGreaterThan(0);
+    expect(screen.getByText('Research Findings')).toBeInTheDocument();
+    expect(screen.getByText('Reading Notes')).toBeInTheDocument();
     expect(screen.getByText('Selected X=3 streaks.')).toBeInTheDocument();
     expect(screen.getByText('Raw Bundle Markdown')).toBeInTheDocument();
   });
@@ -167,10 +250,26 @@ describe('ResearchDetailPage', () => {
     render(<ResearchDetailPage />);
 
     expect(screen.getAllByText('Beta Research').length).toBeGreaterThan(0);
-    expect(screen.getByText('What It Found')).toBeInTheDocument();
+    expect(screen.getByText('Research Findings')).toBeInTheDocument();
     expect(screen.getAllByText('Current Read').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Beta fallback takeaway.').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('How To Read It').length).toBeGreaterThan(0);
+    expect(screen.getByText('Reading Notes')).toBeInTheDocument();
+  });
+
+  it('renders docs-only research as a dense findings-first page', () => {
+    currentSearch = {
+      experimentId: 'market-behavior/annual-first-open-last-close-fundamental-panel',
+      runId: 'docs',
+    };
+
+    render(<ResearchDetailPage />);
+
+    expect(screen.getByText('Research Findings')).toBeInTheDocument();
+    expect(screen.getByText('Key Takeaways')).toBeInTheDocument();
+    expect(screen.getByText('Standard PBR Q1 + market-cap Q1: CAGR 37.7%, Sharpe 2.16.')).toBeInTheDocument();
+    expect(screen.queryByText('Needs publication summary')).not.toBeInTheDocument();
+    expect(screen.getByText('Study Setup')).toBeInTheDocument();
+    expect(screen.getByText('Source Markdown')).toBeInTheDocument();
   });
 
   it('renders promoted fallback markdown tables as structured tables', () => {

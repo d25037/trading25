@@ -169,7 +169,7 @@ const catalogItems = [
       ? 'Needs a structured summary before promotion.'
       : 'Keep as research evidence.',
   promotedSurface: 'Research',
-  riskFlags: item.hasStructuredSummary ? [] : ['markdown-only'],
+  riskFlags: item.hasStructuredSummary ? [] : ['markdown-only', 'needs-publication-summary'],
   relatedExperiments: [],
 }));
 
@@ -205,6 +205,8 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('Observed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Candidate').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Market Regime').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('publication-ready').length).toBeGreaterThan(0);
+    expect(screen.getByText('needs-publication-summary')).toBeInTheDocument();
   });
 
   it('filters the catalog by query and tag', async () => {
