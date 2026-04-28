@@ -1472,7 +1472,7 @@ requires-dist = [
     { name = "sse-starlette", specifier = ">=3.4.1" },
     { name = "typer", specifier = ">=0.25.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.45.0" },
-    { name = "vectorbt", specifier = ">=0.26.0" },
+    { name = "vectorbt", specifier = ">=1.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1614,7 +1614,7 @@ wheels = [
 
 [[package]]
 name = "vectorbt"
-version = "0.28.5"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anywidget" },
@@ -1635,9 +1635,9 @@ dependencies = [
     { name = "scipy" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/11/92/d8f895bf16daac55311b8e218ccd84f6cf3a3e0a10d8b69282494fdff55f/vectorbt-0.28.5.tar.gz", hash = "sha256:79009c1048b80b4744d29abea3198fe8ec06acea66a42ae583745e8ac4c85fe1", size = 498084, upload-time = "2026-03-26T22:18:01.501Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/55/257d9217301d0817b4b0b2ed74e8949d1084d6457ad032c13ab81e652c3a/vectorbt-1.0.0.tar.gz", hash = "sha256:e42cd61ecdabb165bf7a482516f15f48b0173ad17629c875916dacfdc39b8fb0", size = 546226, upload-time = "2026-04-22T13:30:02.032Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/61/558641336106d99b8437415ddde6dd49c3c2342fccb9df481bedff989266/vectorbt-0.28.5-py3-none-any.whl", hash = "sha256:8820f2d13472947d0207f931ec1b0e041fc797aaf3db8eccd43cacd00663b894", size = 421680, upload-time = "2026-03-26T22:18:00.07Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/08/c15c7ade057b0633ac39fe6f5fffa37c306304745538c4f9187a05e9aa69/vectorbt-1.0.0-py3-none-any.whl", hash = "sha256:c596e11bdad985181150f3b3c8db0a7322c738fbb64c7a919a0418e99326cc13", size = 451657, upload-time = "2026-04-22T13:29:59.982Z" },
 ]
 
 [[package]]
