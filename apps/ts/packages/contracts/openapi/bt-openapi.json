@@ -2250,7 +2250,7 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "description": "Dataset snapshot name (e.g. 'primeMarket')",
+            "description": "Export/repro dataset snapshot name (not normal backtest SoT; e.g. 'primeMarket')",
             "maxLength": 255,
             "minLength": 1,
             "title": "Name",
@@ -2263,7 +2263,7 @@
             "type": "boolean"
           },
           "preset": {
-            "description": "Preset config name",
+            "description": "Export/repro preset config name",
             "title": "Preset",
             "type": "string"
           }
@@ -6184,7 +6184,7 @@
                 "type": "null"
               }
             ],
-            "description": "データセット名（未指定時は XDG default config を使用）",
+            "description": "Deprecated compatibility alias for universe_preset.",
             "title": "Dataset"
           },
           "direction": {
@@ -6243,6 +6243,18 @@
             "minimum": 1,
             "title": "Top",
             "type": "integer"
+          },
+          "universe_preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "market.duckdb universe preset for generated-strategy evaluation (prime/standard/growth/topix100/primeExTopix500).",
+            "title": "Universe Preset"
           }
         },
         "title": "LabGenerateRequest",
@@ -7676,6 +7688,33 @@
         "title": "MarketRankingResponse",
         "type": "object"
       },
+      "MarketSchemaStats": {
+        "properties": {
+          "current": {
+            "default": false,
+            "title": "Current",
+            "type": "boolean"
+          },
+          "requiredVersion": {
+            "default": 3,
+            "title": "Requiredversion",
+            "type": "integer"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "MarketSchemaStats",
+        "type": "object"
+      },
       "MarketScreeningResponse": {
         "description": "マーケットスクリーニングレスポンス",
         "properties": {
@@ -7824,8 +7863,14 @@
           "options225": {
             "$ref": "#/components/schemas/Options225Stats"
           },
+          "schema": {
+            "$ref": "#/components/schemas/MarketSchemaStats"
+          },
           "stockData": {
             "$ref": "#/components/schemas/StockDataStats"
+          },
+          "stockMaster": {
+            "$ref": "#/components/schemas/StockMasterCoverageStats"
           },
           "stockMinuteData": {
             "$ref": "#/components/schemas/StockMinuteDataStats"
@@ -7997,6 +8042,9 @@
           "sampleWindows": {
             "$ref": "#/components/schemas/ValidationSampleWindows"
           },
+          "schema": {
+            "$ref": "#/components/schemas/MarketSchemaStats"
+          },
           "status": {
             "enum": [
               "healthy",
@@ -8008,6 +8056,9 @@
           },
           "stockData": {
             "$ref": "#/components/schemas/StockDataValidation"
+          },
+          "stockMaster": {
+            "$ref": "#/components/schemas/StockMasterCoverageStats"
           },
           "stockMinuteData": {
             "$ref": "#/components/schemas/StockMinuteDataValidation"
@@ -14533,6 +14584,64 @@
         "title": "StockListItem",
         "type": "object"
       },
+      "StockMasterCoverageStats": {
+        "properties": {
+          "codeCount": {
+            "default": 0,
+            "title": "Codecount",
+            "type": "integer"
+          },
+          "dailyCount": {
+            "default": 0,
+            "title": "Dailycount",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "indexMembershipDailyCount": {
+            "default": 0,
+            "title": "Indexmembershipdailycount",
+            "type": "integer"
+          },
+          "intervalCount": {
+            "default": 0,
+            "title": "Intervalcount",
+            "type": "integer"
+          },
+          "latestCount": {
+            "default": 0,
+            "title": "Latestcount",
+            "type": "integer"
+          },
+          "missingTopixDates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missingtopixdates",
+            "type": "array"
+          },
+          "missingTopixDatesCount": {
+            "default": 0,
+            "title": "Missingtopixdatescount",
+            "type": "integer"
+          }
+        },
+        "title": "StockMasterCoverageStats",
+        "type": "object"
+      },
       "StockMinuteDataStats": {
         "properties": {
           "averageBarsPerDay": {
@@ -16932,12 +17041,16 @@
           "stockDataMissingDates": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           },
+          "stockMasterMissingTopixDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
           "stocksNeedingRefresh": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           }
         },
         "required": [
           "stockDataMissingDates",
+          "stockMasterMissingTopixDates",
           "failedDates",
           "adjustmentEvents",
           "stocksNeedingRefresh",
@@ -21767,7 +21880,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "List available datasets",
+        "summary": "List export/repro dataset snapshots",
         "tags": [
           "Dataset"
         ]
@@ -21836,7 +21949,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Create a new dataset (background job)",
+        "summary": "Create a dataset snapshot for export/repro fixtures (background job)",
         "tags": [
           "Dataset"
         ]
@@ -26723,6 +26836,25 @@
             "schema": {
               "title": "Code",
               "type": "string"
+            }
+          },
+          {
+            "description": "PIT master date (YYYY-MM-DD); omitted uses stocks_latest",
+            "in": "query",
+            "name": "asOfDate",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "PIT master date (YYYY-MM-DD); omitted uses stocks_latest",
+              "title": "Asofdate"
             }
           }
         ],

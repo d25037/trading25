@@ -953,6 +953,39 @@ def test_enforce_stock_bulk_plan_available_accepts_non_empty_bulk_plan_files() -
         market_db=DummyMarketDb(),
         enforce_bulk_for_stock_data=True,
     )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=10,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint="/equities/bars/daily",
+            files=[
+                BulkFileInfo(
+                    key="test.csv.gz",
+                    last_modified="2026-03-19T00:00:00Z",
+                    size=123,
+                    range_start=None,
+                    range_end=None,
+                )
+            ],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=0,
+        ),
+        reason="unspecified",
+    )
+
+    _enforce_stock_bulk_plan_available(
+        ctx,
+        decision=decision,
+        endpoint="/equities/bars/daily",
+        progress_stage="stock_data",
+        current=2,
+        total=5,
+        target_count=3,
+    )
 
 
 @pytest.mark.asyncio
