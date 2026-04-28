@@ -16,6 +16,10 @@ from src.infrastructure.db.market.market_db import MarketDb
 from src.shared.config.settings import get_settings
 
 
+class DatasetSnapshotRuntimeError(ValueError):
+    """Raised when a normal run tries to use a physical dataset snapshot as SoT."""
+
+
 def _market_db_path() -> Path:
     settings = get_settings()
     market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
@@ -25,16 +29,30 @@ def _market_db_path() -> Path:
 
 
 def resolve_backtest_universe_codes(shared_config: dict[str, Any]) -> list[str] | None:
-    """Resolve stock_codes=['all'] from market.duckdb when dataset is a universe preset."""
+    """Resolve stock_codes=['all'] from market.duckdb when dataset is a universe preset.
+
+    Phase 6 demotes physical dataset bundles to export/repro fixtures only.  Normal
+    all-stock backtest/research execution must choose a market-backed universe preset.
+    """
     stock_codes = shared_config.get("stock_codes", ["all"])
     if stock_codes != ["all"]:
         return None
 
-    preset = str(shared_config.get("universe_preset") or "").strip() or dataset_to_universe_preset(
-        str(shared_config.get("dataset", ""))
-    )
+    dataset_name = str(shared_config.get("dataset", "")).strip()
+    explicit_preset = str(shared_config.get("universe_preset") or "").strip()
+    preset = explicit_preset or dataset_to_universe_preset(dataset_name)
     if preset is None:
-        return None
+        if shared_config.get("static_universe") is True:
+            logger.warning(
+                "Using archived/static dataset snapshot universe for dataset={} because static_universe=true",
+                dataset_name,
+            )
+            return None
+        raise DatasetSnapshotRuntimeError(
+            "Physical dataset snapshots are no longer supported as the normal universe SoT. "
+            "Set shared_config.universe_preset (prime/standard/growth/topix100/primeExTopix500) "
+            "or set static_universe=true only for explicit archived reproducibility runs."
+        )
 
     as_of_date = str(
         shared_config.get("universe_as_of_date")

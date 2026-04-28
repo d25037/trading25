@@ -42,7 +42,14 @@ class LabGenerateRequest(BaseModel):
     timeframe: Literal["daily", "weekly"] = Field(default="daily", description="タイムフレーム")
     dataset: str | None = Field(
         default=None,
-        description="データセット名（未指定時は XDG default config を使用）",
+        description="Deprecated compatibility alias for universe_preset.",
+    )
+    universe_preset: str | None = Field(
+        default=None,
+        description=(
+            "market.duckdb universe preset for generated-strategy evaluation "
+            "(prime/standard/growth/topix100/primeExTopix500)."
+        ),
     )
     entry_filter_only: bool = Field(
         default=False,
@@ -56,6 +63,12 @@ class LabGenerateRequest(BaseModel):
         default_factory=EnginePolicy,
         description="Fast path / verification execution policy",
     )
+
+    @model_validator(mode="after")
+    def validate_universe_aliases(self):
+        if self.dataset is not None and self.universe_preset is not None:
+            raise ValueError("Use universe_preset instead of dataset; do not set both")
+        return self
 
 
 class LabEvolveRequest(BaseModel):

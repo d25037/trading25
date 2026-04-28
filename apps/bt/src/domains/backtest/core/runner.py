@@ -546,7 +546,13 @@ class BacktestRunner:
         if stock_codes == ["all"]:
             try:
                 resolved_codes = resolve_backtest_universe_codes(shared_config)
-                stock_codes = resolved_codes or get_stock_list(shared_config.get("dataset", ""))
+                if resolved_codes is not None:
+                    stock_codes = resolved_codes
+                elif shared_config.get("static_universe") is True:
+                    stock_codes = get_stock_list(shared_config.get("dataset", ""))
+                else:
+                    logger.warning("ウォークフォワード用の universe preset が解決できませんでした")
+                    return None
             except Exception as e:
                 logger.warning(f"ウォークフォワード用の銘柄取得失敗: {e}")
                 return None

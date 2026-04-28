@@ -141,7 +141,7 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
         runner.config_loader,
         "load_strategy_config",
         lambda strategy: {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "execution": {
                 "output_directory": str(tmp_path),
             },
@@ -176,7 +176,7 @@ def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -232,7 +232,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -268,7 +268,7 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -331,7 +331,7 @@ def test_backtest_runner_preserves_core_artifacts_when_html_render_fails(monkeyp
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -363,7 +363,7 @@ def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -423,7 +423,7 @@ def test_backtest_runner_elapsed_time_includes_report_render_time(monkeypatch, t
     monkeypatch.setattr(
         runner.config_loader,
         "load_strategy_config",
-        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+        lambda _strategy: {"shared_config": {"dataset": "sample", "static_universe": True}},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -694,6 +694,7 @@ def test_run_walk_forward_success_and_max_splits(monkeypatch):
                 "dataset": "sample",
                 "stock_codes": ["all"],
                 "timeframe": "daily",
+                "static_universe": True,
                 "walk_forward": {
                     "enabled": True,
                     "train_window": 10,
@@ -728,7 +729,7 @@ def test_get_execution_info_success_and_error(monkeypatch):
         runner,
         "_build_parameters",
         lambda _config, config_override=None, strategy_name=None: {
-            "shared_config": {"dataset": "sample", "initial_cash": 1000, "fees": 0.1, "kelly_fraction": 0.8}
+            "shared_config": {"dataset": "sample", "static_universe": True, "initial_cash": 1000, "fees": 0.1, "kelly_fraction": 0.8}
         },
     )
     info = runner.get_execution_info("prod/s")
@@ -745,11 +746,11 @@ def test_get_execution_info_success_and_error(monkeypatch):
 
 def test_build_parameters_rejects_production_default_dataset_inheritance(monkeypatch):
     runner = BacktestRunner()
-    monkeypatch.setattr(runner.config_loader, "default_config", {"parameters": {"shared_config": {"dataset": "default_ds"}}})
+    monkeypatch.setattr(runner.config_loader, "default_config", {"parameters": {"shared_config": {"dataset": "default_ds", "static_universe": True}}})
     monkeypatch.setattr(
         runner.config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "default_ds", "initial_cash": 1000000},
+        lambda _strategy_config: {"dataset": "default_ds", "initial_cash": 1000000, "static_universe": True},
     )
     monkeypatch.setattr(
         runner.config_loader,
@@ -772,12 +773,12 @@ class TestBuildParametersConfigOverride:
         monkeypatch.setattr(
             runner.config_loader,
             "default_config",
-            {"parameters": {"shared_config": {"dataset": "default_ds", "initial_cash": 1000000}}},
+            {"parameters": {"shared_config": {"dataset": "default_ds", "initial_cash": 1000000, "static_universe": True}}},
         )
         monkeypatch.setattr(
             runner.config_loader,
             "merge_shared_config",
-            lambda sc: {**{"dataset": "default_ds", "initial_cash": 1000000}, **sc.get("shared_config", {})},
+            lambda sc: {**{"dataset": "default_ds", "initial_cash": 1000000, "static_universe": True}, **sc.get("shared_config", {})},
         )
         return runner
 
@@ -785,7 +786,7 @@ class TestBuildParametersConfigOverride:
         """config_override なしの場合、既存設定が保持されること"""
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         params = runner._build_parameters(strategy_config, config_override=None)
@@ -796,7 +797,7 @@ class TestBuildParametersConfigOverride:
         """shared_config の部分上書きで既存設定が保持されること"""
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample", "initial_cash": 500000},
+            "shared_config": {"dataset": "sample", "static_universe": True, "initial_cash": 500000},
         }
         config_override: dict[str, Any] = {
             "shared_config": {"initial_cash": 2000000},
@@ -834,11 +835,49 @@ class TestBuildParametersConfigOverride:
         assert params["shared_config"]["stock_codes"] == ["1301", "7203"]
         assert params["shared_config"]["universe_preset"] == "prime"
 
+    def test_physical_dataset_snapshot_requires_static_universe_opt_in(self, monkeypatch: Any):
+        """normal run では物理 dataset snapshot を universe SoT にしない。"""
+        runner = self._make_runner_with_defaults(monkeypatch)
+
+        with pytest.raises(ValueError, match="Physical dataset snapshots are no longer supported"):
+            runner._build_parameters(
+                {
+                    "shared_config": {
+                        "dataset": "archived_20240101",
+                        "start_date": "2024-01-05",
+                        "stock_codes": ["all"],
+                        "static_universe": False,
+                    },
+                    "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+                },
+                config_override=None,
+            )
+
+    def test_static_universe_opt_in_keeps_archived_dataset_path(self, monkeypatch: Any):
+        """repro 明示時だけ legacy dataset snapshot universe を許可する。"""
+        runner = self._make_runner_with_defaults(monkeypatch)
+
+        params = runner._build_parameters(
+            {
+                "shared_config": {
+                    "dataset": "archived_20240101",
+                    "start_date": "2024-01-05",
+                    "stock_codes": ["all"],
+                    "static_universe": True,
+                },
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            },
+            config_override=None,
+        )
+
+        assert params["shared_config"]["stock_codes"] == ["all"]
+        assert params["shared_config"]["static_universe"] is True
+
     def test_override_entry_filter_params(self, monkeypatch: Any):
         """entry_filter_params の部分上書き"""
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {
                 "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5},
                 "fundamental": {"enabled": True},
@@ -858,7 +897,7 @@ class TestBuildParametersConfigOverride:
         """config_override で新しいキーを追加"""
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
         }
         config_override: dict[str, Any] = {
             "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
@@ -872,7 +911,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
         }
         config_override: dict[str, Any] = {
             "shared_config": "invalid_string",
@@ -886,7 +925,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         # fundamental.period_type に無効な値
@@ -906,7 +945,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
@@ -927,7 +966,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
@@ -948,7 +987,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
@@ -969,7 +1008,7 @@ class TestBuildParametersConfigOverride:
 
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
@@ -988,7 +1027,7 @@ class TestBuildParametersConfigOverride:
     ):
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"dataset": "sample", "static_universe": True},
             "entry_filter_params": {
                 "index_open_gap_regime": {"enabled": True}
             },

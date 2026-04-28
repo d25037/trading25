@@ -120,6 +120,13 @@ class SharedConfig(BaseModel):
         default_factory=dict,
         description="Additional filters for market.duckdb-backed universe resolution",
     )
+    static_universe: bool = Field(
+        default=False,
+        description=(
+            "Explicit opt-in for archived/static dataset snapshot universes. "
+            "Normal research/backtest runs should use universe_preset instead."
+        ),
+    )
     universe_provenance: dict[str, Any] = Field(
         default_factory=dict,
         description="Resolved universe provenance emitted by the backtest runner",

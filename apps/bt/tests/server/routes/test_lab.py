@@ -55,6 +55,7 @@ class TestLabGenerateRequestSchema:
         assert req.direction == "longonly"
         assert req.timeframe == "daily"
         assert req.dataset is None
+        assert req.universe_preset is None
         assert req.entry_filter_only is False
         assert req.allowed_categories is None
 
@@ -67,7 +68,7 @@ class TestLabGenerateRequestSchema:
             save=False,
             direction="both",
             timeframe="weekly",
-            dataset="custom_dataset",
+            universe_preset="prime",
             entry_filter_only=True,
             allowed_categories=["fundamental", "volume"],
         )
@@ -77,8 +78,13 @@ class TestLabGenerateRequestSchema:
         assert req.save is False
         assert req.direction == "both"
         assert req.timeframe == "weekly"
+        assert req.universe_preset == "prime"
         assert req.entry_filter_only is True
         assert req.allowed_categories == ["fundamental", "volume"]
+
+    def test_dataset_and_universe_preset_are_mutually_exclusive(self) -> None:
+        with pytest.raises(ValidationError):
+            LabGenerateRequest(dataset="legacy", universe_preset="prime")
 
     def test_count_too_small(self) -> None:
         """countが1未満でバリデーションエラー"""
@@ -758,6 +764,7 @@ class TestLabSubmitEndpoints:
                 direction="longonly",
                 timeframe="daily",
                 dataset=None,
+                universe_preset=None,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
                 engine_policy=EnginePolicy(),
@@ -1041,7 +1048,7 @@ class TestLabServiceAsync:
             assert job.run_spec.dataset_name == "xdg_dataset"
             assert job.run_spec.dataset_snapshot_id == "xdg_dataset"
             assert job.run_spec.parameters["count"] == 10
-            assert job.run_spec.parameters["dataset"] == "xdg_dataset"
+            assert job.run_spec.parameters["universe_preset"] == "xdg_dataset"
         service._executor.shutdown(wait=False)
 
     async def test_submit_evolve_creates_job(self) -> None:
