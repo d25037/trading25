@@ -33,6 +33,12 @@
   - `SMA50 Q10 Low` bounce を same-day `TOPIX close` / `NT ratio` regime で条件付けし、どの market state で反発が強いかを見る実験。
 - [market-behavior/topix100-sma50-raw-vs-atr-q10-bounce/](./market-behavior/topix100-sma50-raw-vs-atr-q10-bounce/README.md)
   - `SMA50` の plain gap と `ATR14` 正規化 gap を同じ `Q10 / middle x volume` frame で比較し、見た目の違いを volatility scale で説明できるかを見る実験。
+- [market-behavior/topix100-price-to-sma50-decile-partitions/](./market-behavior/topix100-price-to-sma50-decile-partitions/README.md)
+  - `Price / SMA50` decile を contiguous partition に分け、high / middle / low の境界を比較する実験。
+- [market-behavior/topix100-sma-ratio-rank-future-close/](./market-behavior/topix100-sma-ratio-rank-future-close/README.md)
+  - TOPIX100 の price/volume SMA ratio を cross-sectional rank と composite で比較し、future return に残る単純な ratio signal を観察する実験。
+- [market-behavior/topix100-sma-ratio-regime-conditioning/](./market-behavior/topix100-sma-ratio-regime-conditioning/README.md)
+  - SMA ratio ranking に same-day `TOPIX close` / `NT ratio` regime を重ね、`Q10 Low` bounce がどの market state で読みやすいかを見る実験。
 - [market-behavior/topix100-sma-ratio-lightgbm/](./market-behavior/topix100-sma-ratio-lightgbm/README.md)
   - TOPIX100 の 6 本の SMA ratio 特徴に対して、hand-crafted composite baseline と LightGBM ranker を walk-forward OOS で比較する実験。
 - [market-behavior/falling-knife-reversal-study/](./market-behavior/falling-knife-reversal-study/README.md)
@@ -43,8 +49,34 @@
   - Growth market の bad tail が市場区分そのものか、PIT-safe なファンダ quality proxy で説明できるかを分解する実験。
 - [market-behavior/falling-knife-non-rebound-fundamental-profile/](./market-behavior/falling-knife-non-rebound-fundamental-profile/README.md)
   - falling knife のうち、リバウンドしない銘柄にどんな PIT-safe ファンダ特徴があるかを特徴分析として観察する実験。
+- [market-behavior/topix-extreme-close-to-close-mode/](./market-behavior/topix-extreme-close-to-close-mode/README.md)
+  - TOPIX の日次 close-to-close extreme mode で bullish / bearish segment と forward return を比較する実験。
+- [market-behavior/topix-streak-extreme-mode/](./market-behavior/topix-streak-extreme-mode/README.md)
+  - future return を見た streak window selection により invalidated。PIT-safe window selection で再実行するまで market state label として使わない。
+- [market-behavior/topix-extreme-mode-mean-reversion-comparison/](./market-behavior/topix-extreme-mode-mean-reversion-comparison/README.md)
+  - future-derived streak selection を引き継ぐため invalidated。旧 streak mode 優先判断は撤回し、walk-forward rerun 待ち。
+- [market-behavior/topix-streak-multi-timeframe-mode/](./market-behavior/topix-streak-multi-timeframe-mode/README.md)
+  - future return ordering を見た pair scan により invalidated。`short=3 / long=53` 標準 pair 判断は撤回する。
+- [market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward/](./market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward/README.md)
+  - current TOPIX100 membership を過去日に固定した future leak により invalidated。PIT-safe universe で再実行するまで stock-selection evidence として使わない。
+- [market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward/](./market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward/README.md)
+  - current TOPIX100 membership を過去日に固定した future leak により invalidated。旧 5d candidate 判断は撤回し、PIT-safe rerun 待ち。
+- [market-behavior/topix100-streak-3-53-next-session-open-to-close-10d-lightgbm-walkforward/](./market-behavior/topix100-streak-3-53-next-session-open-to-close-10d-lightgbm-walkforward/README.md)
+  - current TOPIX100 membership を過去日に固定した future leak により invalidated。旧 10d sensitivity は production/ranking evidence として使わない。
+- [market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward/](./market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward/README.md)
+  - current TOPIX100 membership を過去日に固定した future leak により invalidated。旧主 candidate 判断は撤回し、PIT-safe universe で作り直す。
+- [market-behavior/topix-return-standard-deviation-exposure-timing/](./market-behavior/topix-return-standard-deviation-exposure-timing/README.md)
+  - TOPIX long-only book で return standard deviation 拡大時に exposure を落とす rule-based baseline 実験。
+- [market-behavior/topix-downside-return-standard-deviation-exposure-timing/](./market-behavior/topix-downside-return-standard-deviation-exposure-timing/README.md)
+  - TOPIX long-only book で downside return standard deviation 拡大時に exposure を落とす refined overlay 実験。
+- [market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward/](./market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward/README.md)
+  - downside stddev family 内の top-ranked committee が drawdown 改善を安定化できるかを walk-forward で確認する実験。
+- [market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay/](./market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay/README.md)
+  - downside stddev shock に trend / breadth confirmation を重ねたが、current TOPIX100 membership proxy leak により invalidated。
+- [market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay/](./market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay/README.md)
+  - trend / breadth confirmation を family vote に抽象化したが、current TOPIX100 membership proxy leak により invalidated。
 - [market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/](./market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay/README.md)
-  - TOPIX を long-only で持つ前提で、downside return standard deviation と trend / breadth confirmation を使う fixed overlay を committee 化し、walk-forward と pure OOS で評価する実験。
+  - shock confirmation committee は headline が強いが、current TOPIX100 membership proxy leak により performance evidence としては使わない。
 - [market-behavior/stock-intraday-overnight-share/](./market-behavior/stock-intraday-overnight-share/README.md)
   - 個別銘柄の値幅を `open -> close` と `close -> next open` に分解し、銘柄群ごとの intraday / overnight 構成比を観察する実験。
 - [market-behavior/annual-first-open-last-close-fundamental-panel/](./market-behavior/annual-first-open-last-close-fundamental-panel/README.md)

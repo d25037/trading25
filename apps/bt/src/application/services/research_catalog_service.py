@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path
 import tomllib
 from typing import Any, Literal, cast
@@ -166,8 +165,16 @@ def get_research_publication(
         selected_info = matched
 
     entry = _build_catalog_entry(selected_info)
-    summary_markdown = selected_info.summary_path.read_text(encoding="utf-8")
-    published_summary = _load_published_summary(selected_info, summary_markdown)
+    bundle_summary_markdown = selected_info.summary_path.read_text(encoding="utf-8")
+    docs_summary = _load_docs_published_summary_with_markdown(selected_info.experiment_id)
+    if docs_summary is None:
+        summary_markdown = bundle_summary_markdown
+        published_summary = _load_bundle_published_summary(
+            selected_info,
+            bundle_summary_markdown,
+        )
+    else:
+        published_summary, summary_markdown = docs_summary
 
     return ResearchPublication(
         item=entry,
@@ -364,6 +371,16 @@ def _load_published_summary(
     info: ResearchBundleInfo,
     summary_markdown: str,
 ) -> PublishedResearchSummaryData | None:
+    docs_summary = _load_docs_published_summary_for_experiment(info.experiment_id)
+    if docs_summary is not None:
+        return docs_summary
+    return _load_bundle_published_summary(info, summary_markdown)
+
+
+def _load_bundle_published_summary(
+    info: ResearchBundleInfo,
+    summary_markdown: str,
+) -> PublishedResearchSummaryData | None:
     try:
         payload = load_research_bundle_published_summary(info.bundle_dir)
     except ValueError:
@@ -410,6 +427,33 @@ def _load_published_summary(
         highlights=_normalize_highlight_items(payload.get("highlights")),
         table_highlights=_normalize_table_highlight_items(payload.get("tableHighlights")),
     )
+
+
+def _load_docs_published_summary_for_experiment(
+    experiment_id: str,
+) -> PublishedResearchSummaryData | None:
+    loaded = _load_docs_published_summary_with_markdown(experiment_id)
+    if loaded is None:
+        return None
+    summary, _markdown = loaded
+    return summary
+
+
+def _load_docs_published_summary_with_markdown(
+    experiment_id: str,
+) -> tuple[PublishedResearchSummaryData, str] | None:
+    readme_path = get_research_experiment_docs_readme_path(experiment_id)
+    if not readme_path.is_file():
+        return None
+    markdown = readme_path.read_text(encoding="utf-8")
+    summary = _load_markdown_published_summary(
+        experiment_id,
+        markdown,
+        _load_research_catalog_metadata().get(experiment_id, {}),
+    )
+    if summary is None:
+        return None
+    return summary, markdown
 
 
 _PUBLISHED_READOUT_HEADING = "published readout"
@@ -646,7 +690,6 @@ def _normalize_string_tuple(value: Any) -> tuple[str, ...]:
     return tuple(items)
 
 
-@lru_cache(maxsize=1)
 def _load_research_catalog_metadata() -> dict[str, dict[str, Any]]:
     try:
         raw_payload = tomllib.loads(_RESEARCH_CATALOG_METADATA_PATH.read_text(encoding="utf-8"))

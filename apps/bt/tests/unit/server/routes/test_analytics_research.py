@@ -281,6 +281,39 @@ def test_get_research_detail_returns_docs_publication(
     assert payload["resultMetadata"] == {"source": "docs"}
 
 
+def test_bundle_with_docs_published_readout_uses_docs_as_sot(
+    research_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    write_research_bundle(
+        experiment_id="market-behavior/annual-market-fundamental-divergence",
+        module="tests.docs_fallback",
+        function="run_docs_fallback",
+        params={"window": 1},
+        db_path=str(tmp_path / "market.duckdb"),
+        analysis_start_date="2024-01-01",
+        analysis_end_date="2024-12-31",
+        result_metadata={"source_mode": "snapshot"},
+        result_tables={"summary_df": pd.DataFrame([{"value": 6}])},
+        summary_markdown="# Raw Annual Bundle\n\nRaw bundle markdown.\n",
+        run_id="20260405_150000_docs0001",
+    )
+
+    response = research_client.get(
+        "/api/analytics/research/detail",
+        params={"experimentId": "market-behavior/annual-market-fundamental-divergence"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item"]["runId"] == "20260405_150000_docs0001"
+    assert payload["item"]["hasStructuredSummary"] is True
+    assert payload["summary"]["title"] == "Annual Market Fundamental Divergence"
+    assert payload["summary"]["readoutSections"][0]["title"] == "Decision"
+    assert payload["summaryMarkdown"].startswith("# Annual Market Fundamental Divergence")
+    assert payload["outputTables"] == ["summary_df"]
+
+
 def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
     research_client: TestClient,
     tmp_path: Path,
@@ -329,12 +362,12 @@ def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
     assert detail_payload["summaryMarkdown"].startswith("# Raw Result Summary")
 
 
-def test_research_catalog_metadata_overlay_takes_precedence(
+def test_research_catalog_docs_published_readout_takes_precedence(
     research_client: TestClient,
     tmp_path: Path,
 ) -> None:
     write_research_bundle(
-        experiment_id="market-behavior/annual-value-composite-selection",
+        experiment_id="market-behavior/annual-market-fundamental-divergence",
         module="tests.value",
         function="run_value",
         params={"top_pct": 10},
@@ -368,19 +401,27 @@ def test_research_catalog_metadata_overlay_takes_precedence(
 
     response = research_client.get(
         "/api/analytics/research/detail",
-        params={"experimentId": "market-behavior/annual-value-composite-selection"},
+        params={"experimentId": "market-behavior/annual-market-fundamental-divergence"},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["item"]["family"] == "Annual Fundamentals"
-    assert payload["item"]["status"] == "ranking_surface"
-    assert payload["item"]["decision"].startswith("Use Ranking")
-    assert payload["item"]["promotedSurface"] == "Ranking"
-    assert payload["item"]["riskFlags"] == ["portfolio-lens", "bundle-risk"]
+    assert payload["item"]["status"] == "observed"
+    assert payload["item"]["decision"].startswith("Growth の弱さは高PBRだけでなく")
+    assert payload["item"]["promotedSurface"] == "Research"
+    assert payload["item"]["riskFlags"] == [
+        "retrospective-market-split",
+        "not-standalone-alpha",
+    ]
     assert payload["summary"]["family"] == "Annual Fundamentals"
-    assert payload["summary"]["status"] == "ranking_surface"
-    assert payload["summary"]["promotedSurface"] == "Ranking"
+    assert payload["summary"]["status"] == "observed"
+    assert payload["summary"]["promotedSurface"] == "Research"
+    assert payload["summary"]["riskFlags"] == [
+        "retrospective-market-split",
+        "not-standalone-alpha",
+    ]
+    assert payload["summaryMarkdown"].startswith("# Annual Market Fundamental Divergence")
 
 
 def test_markdown_published_readout_becomes_structured_summary() -> None:

@@ -14,6 +14,16 @@ vi.mock('@/hooks/useResearch', () => ({
   useResearchCatalog: () => mockUseResearchCatalog(),
 }));
 
+function getCatalogItemRiskFlags(item: { experimentId: string; hasStructuredSummary: boolean }): string[] {
+  if (item.experimentId === 'market-behavior/topix-streak-multi-timeframe-mode') {
+    return ['future-leak', 'requires-walkforward-rerun'];
+  }
+  if (!item.hasStructuredSummary) {
+    return ['needs-publication-summary'];
+  }
+  return [];
+}
+
 const catalogItems = [
   {
     experimentId: 'market-behavior/topix-extreme-mode-mean-reversion-comparison',
@@ -169,7 +179,7 @@ const catalogItems = [
       ? 'Needs a structured summary before promotion.'
       : 'Keep as research evidence.',
   promotedSurface: 'Research',
-  riskFlags: item.hasStructuredSummary ? [] : ['needs-publication-summary'],
+  riskFlags: getCatalogItemRiskFlags(item),
   relatedExperiments: [],
 }));
 
@@ -208,6 +218,8 @@ describe('ResearchPage', () => {
     expect(screen.getAllByText('Published Readout').length).toBeGreaterThan(0);
     expect(screen.getByText('Needs Readout')).toBeInTheDocument();
     expect(screen.queryByText('needs-publication-summary')).not.toBeInTheDocument();
+    expect(screen.getByText('future-leak')).toHaveClass('text-red-700');
+    expect(screen.getByText('requires-walkforward-rerun')).toHaveClass('text-amber-700');
     expect(screen.getAllByText('Keep as research evidence.').length).toBeGreaterThan(0);
   });
 

@@ -34,6 +34,18 @@ const STATUS_CLASSES: Record<ResearchDecisionStatus, string> = {
 
 const SYSTEM_RISK_FLAGS = new Set(['needs-publication-summary', 'docs-only', 'markdown-only']);
 
+function isCriticalRiskFlag(flag: string): boolean {
+  const normalized = flag.toLowerCase();
+  return normalized.includes('leak') || normalized.includes('invalidated') || normalized.includes('do-not-use');
+}
+
+function getRiskFlagClassName(flag: string): string {
+  if (isCriticalRiskFlag(flag)) {
+    return 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300';
+  }
+  return 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+}
+
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
   const parsed = new Date(value);
@@ -249,7 +261,7 @@ function EvidenceMatrix({
                       {visibleRiskFlags.map((flag) => (
                         <span
                           key={flag}
-                          className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                          className={cn('rounded-full border px-2 py-0.5 text-[11px]', getRiskFlagClassName(flag))}
                         >
                           {flag}
                         </span>

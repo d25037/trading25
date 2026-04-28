@@ -1,9 +1,9 @@
 """
 Walk-forward validation for TOPIX100 streak 3/53 next-session open-to-close 5D excess-vs-TOPIX LightGBM.
 
-This defines a leak-free swing study:
+This run family is currently invalidated by a TOPIX100 future-membership leak:
 
-- features are built using information available up to signal date X
+- the TOPIX100 universe was built from current ``stocks.scale_category``
 - entry is at X+1 open
 - exit is at X+5 close
 - training target is stock return minus the aligned TOPIX return over the same hold
@@ -1371,7 +1371,7 @@ def _build_published_summary_payload(
     top_feature = _select_top_feature(result.walkforward_feature_importance_df)
 
     result_bullets = [
-        "Each split rebuilds the lookup baseline from the train window only, then retrains LightGBM on the same leak-free train block.",
+        "Invalidation: the TOPIX100 universe was built from current stocks.scale_category and then applied to past dates, so this bundle has future-membership leak even though each split retrains on train rows only.",
         "The portfolio is long-only: buy the top-ranked names at X+1 open, hold until X+5 close, and compare raw return, excess vs TOPIX, and excess vs the equal-weight TOPIX100 universe while training directly on the TOPIX excess target.",
     ]
     if comparison_row is not None:
@@ -1458,10 +1458,10 @@ def _build_published_summary_payload(
         "title": "TOPIX100 Streak 3/53 Next-Session Open-to-Close 5D Excess-vs-TOPIX LightGBM Walk-Forward",
         "tags": ["TOPIX100", "streaks", "lightgbm", "swing", "walk-forward"],
         "purpose": (
-            "Check whether a leak-free TOPIX100 streak 3 / 53 swing score can improve the primary KPI by training directly on X+1 open -> X+5 close excess return versus TOPIX, while still monitoring the equal-weight TOPIX100 universe as a secondary benchmark."
+            "Record an invalidated TOPIX100 streak 3 / 53 excess-return score. The current bundle used current TOPIX100 membership on past dates, so the headline metrics must not be used until the universe is rebuilt point-in-time."
         ),
         "method": [
-            "Build the leak-free TOPIX100 streak 3 / 53 daily state panel and align each signal date with both stock and TOPIX X+1 open -> X+5 close returns.",
+            "Build the TOPIX100 streak 3 / 53 daily state panel and align each signal date with both stock and TOPIX X+1 open -> X+5 close returns; this historical bundle is invalidated because TOPIX100 membership was not date-effective.",
             "Inside each train/test block, rebuild a lookup baseline and retrain LightGBM on the same train rows using stock excess return over TOPIX as the target, then rank only the following out-of-sample block.",
             "Evaluate top-k long books on raw return, excess vs TOPIX, and excess vs the equal-weight TOPIX100 universe.",
         ],
@@ -1470,6 +1470,7 @@ def _build_published_summary_payload(
         ),
         "resultBullets": result_bullets,
         "considerations": [
+            "P0 invalidation: current TOPIX100 membership was fixed across past dates, introducing survivorship / future membership leak.",
             "This still ignores fees, open auction slippage, and capacity constraints.",
             "The primary KPI is excess vs TOPIX; the secondary benchmark is there to detect cases where the book only rides a TOPIX100 mega-cap rebound.",
             "Train/test window lengths are still hyperparameters, so this should be read as one disciplined walk-forward configuration rather than the final answer.",

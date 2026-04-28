@@ -1,7 +1,9 @@
 """
 Feature-panel helper for TOPIX100 streak 3/53 next-session open-to-close 10D research.
 
-This keeps the leak-free point-in-time snapshot discipline:
+Known invalidation: the surrounding TOPIX100 streak study used current
+``stocks.scale_category`` as historical TOPIX100 membership, so feature panels
+must not be treated as PIT-safe until the universe is date-effective.
 
 - features are built using information available up to day X
 - entry is at X+1 open

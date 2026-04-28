@@ -53,6 +53,239 @@ relatedExperiments = [
   "market-behavior/falling-knife-fundamental-quality-pruning",
 ]
 
+[experiments."market-behavior/topix100-price-vs-sma-rank-future-close"]
+family = "TOPIX100 Regime"
+status = "observed"
+decision = "Q1 continuation ではなく、SMA50/SMA100 を大きく下回った Q10 側の mean-reversion 仮説へ進む先行研究として扱う。"
+promotedSurface = "Research"
+riskFlags = ["predecessor-study", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/topix100-price-vs-sma-q10-bounce",
+  "market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning",
+]
+
+[experiments."market-behavior/topix100-price-vs-sma-q10-bounce"]
+family = "TOPIX100 Regime"
+status = "candidate"
+decision = "SMA50 Q10 Low を後続の regime conditioning に渡す第一候補にする。ただし単独 production rule ではなく、oversold bounce の候補生成として扱う。"
+promotedSurface = "Research"
+riskFlags = ["bounce-candidate", "needs-regime-filter"]
+relatedExperiments = [
+  "market-behavior/topix100-price-vs-sma-rank-future-close",
+  "market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning",
+  "market-behavior/topix100-sma50-raw-vs-atr-q10-bounce",
+]
+
+[experiments."market-behavior/topix100-sma-ratio-rank-future-close"]
+family = "TOPIX100 Regime"
+status = "observed"
+decision = "SMA ratio family の feature shortlist として使う。Q10 Low と simple composite は候補だが、fixed split だけでは採用せず後続 OOS で再検証する。"
+promotedSurface = "Research"
+riskFlags = ["predecessor-study", "validation-needed"]
+relatedExperiments = [
+  "market-behavior/topix100-sma-ratio-regime-conditioning",
+  "market-behavior/topix100-sma-ratio-lightgbm",
+  "market-behavior/topix100-price-vs-sma-q10-bounce",
+]
+
+[experiments."market-behavior/topix100-sma-ratio-regime-conditioning"]
+family = "TOPIX100 Regime"
+status = "observed"
+decision = "nt_ratio neutral を最も clean な regime candidate として残す。topix_close strong は平均差が大きいが sample-limited な observation として扱う。"
+promotedSurface = "Research"
+riskFlags = ["regime-conditioning", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/topix100-sma-ratio-rank-future-close",
+  "market-behavior/topix100-sma-ratio-lightgbm",
+]
+
+[experiments."market-behavior/topix100-vi-change-regime-conditioning"]
+family = "TOPIX100 Regime"
+status = "observed"
+decision = "VI change は SMA Q10 Low bounce の主フィルタにはしない。volatility regime diagnostic として残す。"
+promotedSurface = "Research"
+riskFlags = ["regime-conditioning", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/topix100-price-vs-sma-q10-bounce",
+  "market-behavior/topix100-price-vs-sma-q10-bounce-regime-conditioning",
+]
+
+[experiments."market-behavior/topix100-price-to-sma50-decile-partitions"]
+family = "TOPIX100 Regime"
+status = "candidate"
+decision = "SMA50 low-ratio bounce は候補に残すが、Q10 固定ではなく partition candidate として後続の ATR 正規化・regime/OOS 検証に渡す。"
+promotedSurface = "Research"
+riskFlags = ["partition-search", "validation-needed"]
+relatedExperiments = [
+  "market-behavior/topix100-price-vs-sma-q10-bounce",
+  "market-behavior/topix100-sma50-raw-vs-atr-q10-bounce",
+]
+
+[experiments."market-behavior/topix-extreme-close-to-close-mode"]
+family = "TOPIX Regime"
+status = "observed"
+decision = "日次 extreme mode は segment diagnostic として使えるが、forward timing は bearish 後 rebound に反転するため exposure rule にはしない。"
+promotedSurface = "Research"
+riskFlags = ["regime-diagnostic", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/topix-streak-extreme-mode",
+  "market-behavior/topix-extreme-mode-mean-reversion-comparison",
+]
+
+[experiments."market-behavior/topix-streak-extreme-mode"]
+family = "TOPIX Regime"
+status = "rejected"
+decision = "future leak により invalidated。future return を見た window selection で X=3 streaks を選んでいるため、market state label や後続 TOPIX100 feature には使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "do-not-use-for-production", "requires-walkforward-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-extreme-close-to-close-mode",
+  "market-behavior/topix-streak-multi-timeframe-mode",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward",
+]
+
+[experiments."market-behavior/topix-extreme-mode-mean-reversion-comparison"]
+family = "TOPIX Regime"
+status = "rejected"
+decision = "future leak により invalidated。streak trigger selection が future-derived なので、streak mode 優先や long_on_bearish 10d headline は execution evidence として使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "do-not-use-for-production", "requires-walkforward-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-extreme-close-to-close-mode",
+  "market-behavior/topix-streak-extreme-mode",
+  "market-behavior/topix-streak-multi-timeframe-mode",
+]
+
+[experiments."market-behavior/topix-streak-multi-timeframe-mode"]
+family = "TOPIX Regime"
+status = "rejected"
+decision = "future leak により invalidated。future return ordering を見た pair scan で short=3 / long=53 を選んでいるため、TOPIX streak context の標準 pair として使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "do-not-use-for-production", "requires-walkforward-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-streak-extreme-mode",
+  "market-behavior/topix-extreme-mode-mean-reversion-comparison",
+  "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward",
+]
+
+[experiments."market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward"]
+family = "TOPIX100 Streak"
+status = "rejected"
+decision = "future leak により invalidated。current TOPIX100 membership を過去日に固定した contaminated universe なので、intraday の baseline 比較や次段判断には使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-streak-multi-timeframe-mode",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward",
+]
+
+[experiments."market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward"]
+family = "TOPIX100 Streak"
+status = "rejected"
+decision = "future leak により invalidated。current TOPIX100 membership を過去日に固定した contaminated universe なので、旧 5d candidate 判断は撤回し、PIT-safe universe で再実行するまで使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix100-streak-3-53-next-session-intraday-lightgbm-walkforward",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward",
+  "market-behavior/topix100-top1-open-to-open-5d-duplicate-policy-analysis",
+]
+
+[experiments."market-behavior/topix100-streak-3-53-next-session-open-to-close-10d-lightgbm-walkforward"]
+family = "TOPIX100 Streak"
+status = "rejected"
+decision = "future leak により invalidated。current TOPIX100 membership を過去日に固定した contaminated universe なので、旧 10d hold sensitivity は evidence として使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward",
+]
+
+[experiments."market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward"]
+family = "TOPIX100 Streak"
+status = "rejected"
+decision = "future leak により invalidated。current TOPIX100 membership を過去日に固定した contaminated universe なので、旧主 candidate 判断は撤回し、PIT-safe universe で作り直す。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-lightgbm-walkforward",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-10d-lightgbm-walkforward",
+  "market-behavior/topix100-top1-open-to-open-5d-duplicate-policy-analysis",
+]
+
+[experiments."market-behavior/topix-return-standard-deviation-exposure-timing"]
+family = "TOPIX Risk Overlay"
+status = "observed"
+decision = "通常 return stddev overlay は比較 baseline に留める。drawdown は削れるが CAGR loss が大きく、downside stddev を優先する。"
+promotedSurface = "Research"
+riskFlags = ["risk-overlay", "baseline-only"]
+relatedExperiments = [
+  "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
+  "market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward",
+]
+
+[experiments."market-behavior/topix-downside-return-standard-deviation-exposure-timing"]
+family = "TOPIX Risk Overlay"
+status = "candidate"
+decision = "downside stddev overlay は TOPIX exposure control candidate として継続する。ただし既存の trend/breadth/shock confirmation 系は TOPIX100 breadth proxy leak を含むため、confirmation layer は PIT-safe universe で作り直す。"
+promotedSurface = "Research"
+riskFlags = ["risk-overlay", "candidate-rule", "confirmation-needed"]
+relatedExperiments = [
+  "market-behavior/topix-return-standard-deviation-exposure-timing",
+  "market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward",
+  "market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay",
+  "market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay",
+  "market-behavior/topix100-streak-3-53-next-session-open-to-close-5d-excess-vs-topix-lightgbm-walkforward",
+]
+
+[experiments."market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward"]
+family = "TOPIX Risk Overlay"
+status = "observed"
+decision = "committee size 5 は drawdown 改善の diagnostic として残すが、Sharpe/CAGR lift は薄く、fold 間の rank stability も弱い。単独 production rule ではなく、PIT-safe confirmation layer の baseline として扱う。"
+promotedSurface = "Research"
+riskFlags = ["risk-overlay", "committee-diagnostic", "rank-instability"]
+relatedExperiments = [
+  "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
+  "market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay",
+  "market-behavior/topix-return-standard-deviation-exposure-timing",
+]
+
+[experiments."market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay"]
+family = "TOPIX Risk Overlay"
+status = "rejected"
+decision = "future leak により invalidated。trend/breadth confirmation の headline improvement は current TOPIX100 membership proxy を過去日に固定した contaminated universe を含むため、PIT-safe breadth universe で再実行するまで使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
+  "market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward",
+  "market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay",
+]
+
+[experiments."market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay"]
+family = "TOPIX Risk Overlay"
+status = "rejected"
+decision = "future leak により invalidated。family-level vote の発想だけを残し、current TOPIX100 membership proxy を使った performance 数値は production/ranking 判断に使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-downside-return-standard-deviation-trend-breadth-overlay",
+  "market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay",
+]
+
+[experiments."market-behavior/topix-downside-return-standard-deviation-shock-confirmation-committee-overlay"]
+family = "TOPIX Risk Overlay"
+status = "rejected"
+decision = "future leak により invalidated。committee stabilization は設計案として残すが、current TOPIX100 membership proxy を含む headline Sharpe/CAGR/DD は candidate evidence として使わない。"
+promotedSurface = "Research"
+riskFlags = ["future-leak", "current-topix100-membership-leak", "do-not-use-for-production", "requires-pit-rerun"]
+relatedExperiments = [
+  "market-behavior/topix-downside-return-standard-deviation-shock-confirmation-vote-overlay",
+  "market-behavior/topix-downside-return-standard-deviation-family-committee-walkforward",
+  "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
+]
+
 [experiments."market-behavior/falling-knife-fundamental-quality-pruning"]
 family = "Falling Knife"
 status = "candidate"

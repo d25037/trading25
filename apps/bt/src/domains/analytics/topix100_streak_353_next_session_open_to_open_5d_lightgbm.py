@@ -1,7 +1,9 @@
 """
 LightGBM runtime snapshot for TOPIX100 streak 3/53 swing ranking.
 
-This keeps the leak-free point-in-time snapshot discipline:
+Known invalidation: the surrounding TOPIX100 streak study used current
+``stocks.scale_category`` as historical TOPIX100 membership, so runtime scores
+must not be treated as PIT-safe until the universe is date-effective.
 
 - features are built using information available up to day X
 - entry is at X+1 open
