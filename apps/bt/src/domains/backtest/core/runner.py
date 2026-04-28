@@ -536,15 +536,17 @@ class BacktestRunner:
         step = walk_forward.get("step")
         max_splits = walk_forward.get("max_splits")
 
-        from src.infrastructure.data_access.loaders import get_stock_list
         from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
+        from src.infrastructure.data_access.loaders import get_stock_list
+        from src.domains.backtest.core.market_universe import resolve_backtest_universe_codes
         from src.domains.backtest.core.walkforward import generate_walkforward_splits
         from src.domains.strategy.core.factory import StrategyFactory
 
         stock_codes = shared_config.get("stock_codes", [])
         if stock_codes == ["all"]:
             try:
-                stock_codes = get_stock_list(shared_config.get("dataset", ""))
+                resolved_codes = resolve_backtest_universe_codes(shared_config)
+                stock_codes = resolved_codes or get_stock_list(shared_config.get("dataset", ""))
             except Exception as e:
                 logger.warning(f"ウォークフォワード用の銘柄取得失敗: {e}")
                 return None
@@ -731,8 +733,13 @@ class BacktestRunner:
             compile_runtime_strategy,
             resolve_round_trip_execution_mode_name,
         )
+        from src.domains.backtest.core.market_universe import resolve_backtest_universe_codes
         from src.shared.models.config import SharedConfig
         from src.shared.models.signals import SignalParams
+
+        resolved_universe_codes = resolve_backtest_universe_codes(parameters["shared_config"])
+        if resolved_universe_codes is not None:
+            parameters["shared_config"]["stock_codes"] = resolved_universe_codes
 
         try:
             shared_config_model = SharedConfig.model_validate(

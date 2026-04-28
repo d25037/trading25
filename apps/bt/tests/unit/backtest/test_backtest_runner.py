@@ -805,6 +805,35 @@ class TestBuildParametersConfigOverride:
         assert params["shared_config"]["dataset"] == "sample"  # 保持
         assert params["shared_config"]["initial_cash"] == 2000000  # 上書き
 
+    def test_market_universe_preset_resolves_stock_codes(self, monkeypatch: Any):
+        """market.duckdb universe preset は dataset snapshot ではなく resolver で stock_codes を決める。"""
+        runner = self._make_runner_with_defaults(monkeypatch)
+
+        from src.domains.backtest.core import market_universe
+
+        def fake_resolve(shared_config: dict[str, Any]) -> list[str] | None:
+            assert shared_config["dataset"] == "prime"
+            assert shared_config["start_date"] == "2024-01-05"
+            shared_config["universe_preset"] = "prime"
+            return ["1301", "7203"]
+
+        monkeypatch.setattr(market_universe, "resolve_backtest_universe_codes", fake_resolve)
+
+        params = runner._build_parameters(
+            {
+                "shared_config": {
+                    "dataset": "prime",
+                    "start_date": "2024-01-05",
+                    "stock_codes": ["all"],
+                },
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            },
+            config_override=None,
+        )
+
+        assert params["shared_config"]["stock_codes"] == ["1301", "7203"]
+        assert params["shared_config"]["universe_preset"] == "prime"
+
     def test_override_entry_filter_params(self, monkeypatch: Any):
         """entry_filter_params の部分上書き"""
         runner = self._make_runner_with_defaults(monkeypatch)

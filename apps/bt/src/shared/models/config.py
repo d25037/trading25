@@ -108,6 +108,22 @@ class SharedConfig(BaseModel):
     start_date: str | None = Field(default="", description="開始日")
     end_date: str | None = Field(default="", description="終了日")
     dataset: str = Field(default="", description="データセット名")
+    universe_preset: str | None = Field(
+        default=None,
+        description="market.duckdb-backed universe preset (prime/standard/growth/topix100/primeExTopix500)",
+    )
+    universe_as_of_date: str | None = Field(
+        default=None,
+        description="Point-in-time date used to resolve universe_preset",
+    )
+    universe_filters: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional filters for market.duckdb-backed universe resolution",
+    )
+    universe_provenance: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Resolved universe provenance emitted by the backtest runner",
+    )
     include_margin_data: bool = Field(
         default=True, description="信用残高データを含めるか"
     )

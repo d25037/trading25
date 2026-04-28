@@ -23,6 +23,7 @@ from src.infrastructure.external_api.dataset.helpers import (
 )
 from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
+from src.infrastructure.db.market.universe_resolver import dataset_to_universe_preset
 from src.shared.config.settings import get_settings
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.snapshot_ids import (
@@ -709,6 +710,74 @@ class DirectMarketClient:
         return convert_index_response(records)
 
 
+class DirectMarketDatasetClient:
+    """Dataset-client compatibility shim backed by market.duckdb."""
+
+    def __init__(self, dataset_name: str) -> None:
+        self.dataset_name = dataset_name
+        self._market = DirectMarketClient()
+
+    def __enter__(self) -> DirectMarketDatasetClient:
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: Any,
+    ) -> None:
+        return None
+
+    def get_stock_ohlcv(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        timeframe: Literal["daily", "weekly", "monthly"] = "daily",
+    ) -> pd.DataFrame:
+        return self._market.get_stock_ohlcv(stock_code, start_date, end_date, timeframe)
+
+    def get_stocks_ohlcv_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+        timeframe: Literal["daily", "weekly", "monthly"] = "daily",
+    ) -> dict[str, pd.DataFrame]:
+        return {
+            code: df
+            for code in stock_codes
+            if not (df := self.get_stock_ohlcv(code, start_date, end_date, timeframe)).empty
+        }
+
+    def get_stock_list(
+        self,
+        min_records: int = 100,
+        limit: int | None = None,
+        detail: bool = False,
+    ) -> pd.DataFrame:
+        _ = min_records, detail
+        reader = _resolve_market_reader()
+        rows = reader.query(
+            """
+            SELECT code AS stockCode, COUNT(*) AS record_count, MIN(date) AS start_date, MAX(date) AS end_date
+            FROM stock_data
+            GROUP BY code
+            ORDER BY code
+            """
+        )
+        df = pd.DataFrame([dict(row.items()) for row in rows])
+        if limit is not None and not df.empty:
+            return df.head(limit)
+        return df
+
+    def get_available_stocks(self, min_records: int = 100) -> pd.DataFrame:
+        return self.get_stock_list(min_records=min_records, detail=True)
+
+    def get_topix(self, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
+        return self._market.get_topix(start_date, end_date)
+
+
 def _create_http_dataset_client(dataset_name: str) -> DatasetAPIClient:
     return DatasetAPIClient(dataset_name)
 
@@ -717,9 +786,11 @@ def _create_http_market_client() -> MarketAPIClient:
     return MarketAPIClient()
 
 
-def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient:
+def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient | DirectMarketDatasetClient:
     """Return HTTP or direct dataset client based on active data-access mode."""
     if should_use_direct_db():
+        if dataset_to_universe_preset(dataset_name) is not None:
+            return DirectMarketDatasetClient(dataset_name)
         return DirectDatasetClient(dataset_name)
     return _create_http_dataset_client(dataset_name)
 
