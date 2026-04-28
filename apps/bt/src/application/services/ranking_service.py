@@ -14,7 +14,7 @@ from typing import Any, Literal, cast
 
 import pandas as pd
 
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbReadable, MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
@@ -215,6 +215,39 @@ FUNDAMENTAL_BASE_COLUMNS = (
     "sd.close as current_price, sd.volume"
 )
 _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
+
+
+def _resolve_latest_stock_master_date(reader: MarketDbReadable) -> str:
+    if not _reader_table_exists(reader, "stock_master_daily"):
+        row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_data")
+        if row is None or row["max_date"] is None:
+            raise ValueError("No stock master or stock_data date available in database")
+        return str(row["max_date"])
+    row = reader.query_one("SELECT MAX(date) AS max_date FROM stock_master_daily")
+    if row is None or row["max_date"] is None:
+        raise ValueError("No stock_master_daily data available in database")
+    return str(row["max_date"])
+
+
+def _reader_table_exists(reader: MarketDbReadable, table_name: str) -> bool:
+    row = reader.query_one(
+        """
+        SELECT 1 AS exists
+        FROM information_schema.tables
+        WHERE lower(table_name) = lower(?)
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    return row is not None
+
+
+def _stock_master_source(reader: MarketDbReadable, as_of_date: str) -> tuple[str, str, tuple[str, ...]]:
+    if _reader_table_exists(reader, "stock_master_daily"):
+        return "stock_master_daily", "date = ? AND ", (as_of_date,)
+    return "stocks", "", ()
+
+
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 _VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
@@ -883,6 +916,9 @@ class RankingService:
         if date:
             return date
 
+        master_table, master_date_clause, master_params = _stock_master_source(
+            self._reader, _resolve_latest_stock_master_date(self._reader)
+        )
         row = self._reader.query_one(
             f"""
             WITH topix100_stocks AS (
@@ -894,8 +930,8 @@ class RankingService:
                             PARTITION BY {_normalized_code_sql("code")}
                             ORDER BY {_prefer_4digit_order_sql("code")}
                         ) AS rn
-                    FROM stocks
-                    WHERE coalesce(scale_category, '') IN (?, ?)
+                    FROM {master_table}
+                    WHERE {master_date_clause}coalesce(scale_category, '') IN (?, ?)
                 )
                 WHERE rn = 1
             ),
@@ -917,7 +953,7 @@ class RankingService:
             FROM stock_data_dedup sd
             JOIN topix100_stocks s ON s.normalized_code = sd.normalized_code
             """,
-            _TOPIX100_SCALE_CATEGORIES,
+            (*master_params, *_TOPIX100_SCALE_CATEGORIES),
         )
         if row is None or row["max_date"] is None:
             raise ValueError("No TOPIX100 trading data available in database")
@@ -927,6 +963,9 @@ class RankingService:
         self,
         target_date: str,
     ) -> dict[str, Mapping[str, Any]]:
+        master_table, master_date_clause, master_params = _stock_master_source(
+            self._reader, target_date
+        )
         rows = self._reader.query(
             f"""
             WITH topix100_stocks AS (
@@ -941,8 +980,8 @@ class RankingService:
                             PARTITION BY {_normalized_code_sql("code")}
                             ORDER BY {_prefer_4digit_order_sql("code")}
                         ) AS rn
-                    FROM stocks
-                    WHERE coalesce(scale_category, '') IN (?, ?)
+                    FROM {master_table}
+                    WHERE {master_date_clause}coalesce(scale_category, '') IN (?, ?)
                 )
                 WHERE rn = 1
             ),
@@ -983,7 +1022,7 @@ class RankingService:
                 ON s.normalized_code = ns.normalized_code
                AND ns.session_rank = 1
             """,
-            (*_TOPIX100_SCALE_CATEGORIES, target_date),
+            (*master_params, *_TOPIX100_SCALE_CATEGORIES, target_date),
         )
         return {str(row["code"]): row for row in rows}
 
@@ -991,6 +1030,9 @@ class RankingService:
         self,
         target_date: str,
     ) -> dict[str, Mapping[str, Any]]:
+        master_table, master_date_clause, master_params = _stock_master_source(
+            self._reader, target_date
+        )
         rows = self._reader.query(
             f"""
             WITH topix100_stocks AS (
@@ -1005,8 +1047,8 @@ class RankingService:
                             PARTITION BY {_normalized_code_sql("code")}
                             ORDER BY {_prefer_4digit_order_sql("code")}
                         ) AS rn
-                    FROM stocks
-                    WHERE coalesce(scale_category, '') IN (?, ?)
+                    FROM {master_table}
+                    WHERE {master_date_clause}coalesce(scale_category, '') IN (?, ?)
                 )
                 WHERE rn = 1
             ),
@@ -1060,7 +1102,7 @@ class RankingService:
             LEFT JOIN exit_sessions x
                 ON s.normalized_code = x.normalized_code
             """,
-            (*_TOPIX100_SCALE_CATEGORIES, target_date),
+            (*master_params, *_TOPIX100_SCALE_CATEGORIES, target_date),
         )
         return {str(row["code"]): row for row in rows}
 
@@ -1147,6 +1189,9 @@ class RankingService:
         sma_window: int,
     ) -> list[Mapping[str, Any]]:
         metric_column = _TOPIX100_RANKING_METRIC_SQL[metric]
+        master_table, master_date_clause, master_params = _stock_master_source(
+            self._reader, target_date
+        )
         required_price_history_rows = 80 if metric == "price_sma_20_80" else int(sma_window)
         required_history_rows = max(
             required_price_history_rows,
@@ -1174,8 +1219,8 @@ class RankingService:
                             PARTITION BY {_normalized_code_sql("code")}
                             ORDER BY {_prefer_4digit_order_sql("code")}
                         ) AS rn
-                    FROM stocks
-                    WHERE coalesce(scale_category, '') IN (?, ?)
+                    FROM {master_table}
+                    WHERE {master_date_clause}coalesce(scale_category, '') IN (?, ?)
                 )
                 WHERE rn = 1
             ),
@@ -1299,7 +1344,7 @@ class RankingService:
             FROM bucketed
             ORDER BY rank
             """,
-            (*_TOPIX100_SCALE_CATEGORIES, target_date, target_date),
+            (*master_params, *_TOPIX100_SCALE_CATEGORIES, target_date, target_date),
         )
 
     def _load_fundamental_stock_rows(

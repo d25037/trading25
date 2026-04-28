@@ -496,7 +496,7 @@ class DirectMarketClient:
                 sector_33_name,
                 scale_category,
                 listed_date
-            FROM stocks
+            FROM stocks_latest
             WHERE code IN ({placeholders})
             ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
             LIMIT 1

@@ -38,6 +38,24 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
         )
     """)
     conn.execute("""
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            company_name_english TEXT,
+            market_code TEXT NOT NULL,
+            market_name TEXT NOT NULL,
+            sector_17_code TEXT NOT NULL,
+            sector_17_name TEXT NOT NULL,
+            sector_33_code TEXT NOT NULL,
+            sector_33_name TEXT NOT NULL,
+            scale_category TEXT,
+            listed_date TEXT NOT NULL,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+    conn.execute("""
         CREATE TABLE stock_data (
             code TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -138,6 +156,10 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
     conn.execute(
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("2024-01-15", "72030", "トヨタ自動車（履歴）", "TOYOTA MOTOR HIST", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Core30", "1949-05-16", None, None),
     )
     conn.execute(
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -433,6 +455,14 @@ class TestGetStockInfo:
         resp = client_with_market_db.get("/api/market/stocks/72030")
         assert resp.status_code == 200
         assert resp.json()["code"] == "72030"
+
+    def test_200_as_of_date_uses_stock_master_daily(self, client_with_market_db):
+        """asOfDate 指定時は日次マスターを参照する"""
+        resp = client_with_market_db.get("/api/market/stocks/72030?asOfDate=2024-01-15")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["companyName"] == "トヨタ自動車（履歴）"
+        assert data["scaleCategory"] == "TOPIX Core30"
 
     def test_404(self, client_with_market_db):
         """存在しない銘柄"""

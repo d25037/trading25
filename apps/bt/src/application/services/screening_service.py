@@ -20,6 +20,7 @@ from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.universe_resolver import dataset_to_universe_preset
 from src.domains.analytics.screening_requirements import (
     APIPeriodType,
     MultiDataRequirementKey,
@@ -293,7 +294,14 @@ class ScreeningService:
         """スクリーニングを実行"""
         run_started = perf_counter()
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
-        effective_reference_date = reference_date or self._get_latest_market_date()
+        effective_reference_date = (
+            reference_date
+            or self._get_latest_market_date()
+            or self._get_latest_stock_master_date()
+            or "9999-12-31"
+        )
+        if effective_reference_date is None:
+            raise ValueError("No market date available for screening")
         strategy_runtimes = self._resolve_strategies(
             strategies,
             entry_decidability=entry_decidability,
@@ -301,11 +309,14 @@ class ScreeningService:
         )
 
         load_stage_started = perf_counter()
-        stock_universe = self._load_stock_universe(query_market_codes)
+        stock_universe = self._load_stock_universe(query_market_codes, effective_reference_date)
         if use_strategy_dataset_universe:
             stock_universe = self._filter_stock_universe_by_codes(
                 stock_universe,
-                self._collect_dataset_universe_codes(strategy_runtimes),
+                self._collect_dataset_universe_codes_as_of(
+                    strategy_runtimes,
+                    as_of_date=effective_reference_date,
+                ),
             )
         strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
             strategy_runtimes
@@ -423,12 +434,12 @@ class ScreeningService:
             lastUpdated=_now_iso(),
             provenance=build_market_provenance(
                 reference_date=effective_reference_date,
-                loaded_domains=("stock_data", "stocks", "topix_data", "indices_data", "margin_data", "statements"),
+                loaded_domains=("stock_data", "stock_master_daily", "topix_data", "indices_data", "margin_data", "statements"),
                 warnings=summary.warnings,
             ),
             diagnostics=ResponseDiagnostics(
                 missing_required_data=[],
-                used_fields=["stock_data", "stocks", "topix_data", "indices_data", "margin_data", "statements"],
+                used_fields=["stock_data", "stock_master_daily", "topix_data", "indices_data", "margin_data", "statements"],
                 effective_period_type="multi",
                 warnings=summary.warnings,
             ),
@@ -447,20 +458,30 @@ class ScreeningService:
 
         return response
 
-    def _load_stock_universe(self, market_codes: list[str]) -> list[StockUniverseItem]:
+    def _load_stock_universe(self, market_codes: list[str], as_of_date: str) -> list[StockUniverseItem]:
         """市場フィルタ済み銘柄母集団を読み込む。"""
         if not market_codes:
             return []
 
         placeholders = ",".join("?" for _ in market_codes)
+        if self._table_exists("stock_master_daily"):
+            source_table = "stock_master_daily"
+            date_clause = "date = ? AND "
+            params = (as_of_date, *market_codes)
+        else:
+            # Legacy/unit-test DBs may not have the v3 daily master yet.  Real v3
+            # databases resolve PIT universes from stock_master_daily above.
+            source_table = "stocks"
+            date_clause = ""
+            params = tuple(market_codes)
         rows = self._reader.query(
             f"""
             SELECT code, company_name, scale_category, sector_33_name
-            FROM stocks
-            WHERE market_code IN ({placeholders})
+            FROM {source_table}
+            WHERE {date_clause}market_code IN ({placeholders})
             ORDER BY code
             """,
-            tuple(market_codes),
+            params,
         )
 
         deduped: dict[str, StockUniverseItem] = {}
@@ -500,6 +521,78 @@ class ScreeningService:
         if not has_dataset_universe:
             return None
         return frozenset(union_codes)
+
+    def _collect_dataset_universe_codes_as_of(
+        self,
+        strategy_runtimes: list[StrategyRuntime],
+        *,
+        as_of_date: str,
+    ) -> frozenset[str] | None:
+        union_codes: set[str] = set()
+        has_universe = False
+        for strategy in strategy_runtimes:
+            preset = dataset_to_universe_preset(strategy.shared_config.dataset)
+            if preset is not None and self._table_exists("stock_master_daily"):
+                codes = self._resolve_universe_codes_from_stock_master(
+                    preset=preset,
+                    as_of_date=as_of_date,
+                )
+                has_universe = True
+                union_codes.update(codes)
+                continue
+            if strategy.dataset_universe_codes is None:
+                continue
+            has_universe = True
+            union_codes.update(strategy.dataset_universe_codes)
+        if not has_universe:
+            return None
+        return frozenset(union_codes)
+
+    def _resolve_universe_codes_from_stock_master(self, *, preset: str, as_of_date: str) -> set[str]:
+        filters: list[str] = ["date = ?"]
+        params: list[str] = [as_of_date]
+        if preset == "prime":
+            filters.append("market_code = '0111'")
+        elif preset == "standard":
+            filters.append("market_code = '0112'")
+        elif preset == "growth":
+            filters.append("market_code = '0113'")
+        elif preset == "topix100":
+            filters.append("coalesce(scale_category, '') IN ('TOPIX Core30', 'TOPIX Large70')")
+        elif preset == "primeExTopix500":
+            filters.append("market_code = '0111'")
+        else:
+            return set()
+        where_clause = " AND ".join(filters)
+        rows = self._reader.query(
+            f"""
+            SELECT code
+            FROM stock_master_daily
+            WHERE {where_clause}
+            ORDER BY code
+            """,
+            tuple(params),
+        )
+        codes = {normalize_stock_code(str(row["code"])) for row in rows}
+        if preset == "primeExTopix500":
+            if not self._table_exists("index_membership_daily"):
+                raise ValueError(
+                    "Exact TOPIX500 membership is required for primeExTopix500 screening universe"
+                )
+            topix500_rows = self._reader.query(
+                """
+                SELECT constituent_code AS code
+                FROM index_membership_daily
+                WHERE date = ? AND index_code = 'TOPIX500'
+                """,
+                (as_of_date,),
+            )
+            if not topix500_rows:
+                raise ValueError(
+                    "Exact TOPIX500 membership is unavailable for primeExTopix500 screening universe"
+                )
+            codes -= {normalize_stock_code(str(row["code"])) for row in topix500_rows}
+        return codes
 
     @staticmethod
     def _resolve_scope_label(
@@ -1133,6 +1226,32 @@ class ScreeningService:
         if row is None:
             return None
         return row["max_date"]
+
+    def _get_latest_stock_master_date(self) -> str | None:
+        if not self._table_exists("stock_master_daily"):
+            return None
+        try:
+            row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_master_daily")
+        except Exception:
+            return None
+        if row is None:
+            return None
+        return row["max_date"]
+
+    def _table_exists(self, table_name: str) -> bool:
+        try:
+            row = self._reader.query_one(
+                """
+                SELECT 1 AS exists
+                FROM information_schema.tables
+                WHERE lower(table_name) = lower(?)
+                LIMIT 1
+                """,
+                (table_name,),
+            )
+        except Exception:
+            return False
+        return row is not None
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         if offset < 0:
