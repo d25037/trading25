@@ -42,6 +42,12 @@ class DummyMarketDb:
     def is_legacy_stock_price_snapshot(self) -> bool:
         return self._legacy_stock_snapshot
 
+    def get_market_schema_version(self) -> int | None:
+        return 3
+
+    def is_market_schema_current(self) -> bool:
+        return True
+
 
 class DummyTimeSeriesStore:
     def __init__(

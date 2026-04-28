@@ -60,6 +60,22 @@ class StockStats(BaseModel):
     byMarket: dict[str, int] = Field(default_factory=dict)
 
 
+class MarketSchemaStats(BaseModel):
+    version: int | None = None
+    requiredVersion: int = 3
+    current: bool = False
+
+
+class StockMasterCoverageStats(BaseModel):
+    dailyCount: int = 0
+    intervalCount: int = 0
+    latestCount: int = 0
+    indexMembershipDailyCount: int = 0
+    dateRange: DateRange | None = None
+    dateCount: int = 0
+    codeCount: int = 0
+
+
 class StockDataStats(BaseModel):
     count: int
     dateCount: int = 0
@@ -120,6 +136,8 @@ class MarketStatsResponse(BaseModel):
     timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
     storage: StorageStats
+    schema: MarketSchemaStats = Field(default_factory=MarketSchemaStats)
+    stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataStats
@@ -235,6 +253,8 @@ class MarketValidationResponse(BaseModel):
     lastIntradaySync: str | None = None
     lastStocksRefresh: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
+    schema: MarketSchemaStats = Field(default_factory=MarketSchemaStats)
+    stockMaster: StockMasterCoverageStats = Field(default_factory=StockMasterCoverageStats)
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation

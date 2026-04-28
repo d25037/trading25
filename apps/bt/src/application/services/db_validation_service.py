@@ -21,6 +21,7 @@ from src.domains.strategy.signals.feature_registry import resolve_feature_requir
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
 from src.infrastructure.db.market.time_series_store import (
@@ -34,12 +35,14 @@ from src.entrypoints.http.schemas.db import (
     IntradayFreshness,
     MarginValidation,
     MarketValidationResponse,
+    MarketSchemaStats,
     Options225Validation,
     StockMinuteDataValidation,
     ValidationSampleWindow,
     ValidationSampleWindows,
     ValidationHealthDomains,
     StockDataValidation,
+    StockMasterCoverageStats,
     StockStats,
     TopixStats,
 )
@@ -107,6 +110,9 @@ class ValidationMarketDbLike(Protocol):
     def get_stock_price_adjustment_mode(self) -> str | None: ...
     def get_sync_metadata(self, key: str) -> str | None: ...
     def get_stats(self) -> dict[str, int]: ...
+    def get_market_schema_version(self) -> int | None: ...
+    def is_market_schema_current(self) -> bool: ...
+    def get_stock_master_coverage(self) -> dict[str, Any]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def get_adjustment_events_count(self) -> int: ...
@@ -142,6 +148,9 @@ def validate_market_db(
     last_refresh = market_db.get_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"])
 
     basic = market_db.get_stats()
+    schema_version = market_db.get_market_schema_version()
+    schema_current = market_db.is_market_schema_current()
+    master_coverage = market_db.get_stock_master_coverage()
     inspection = _resolve_time_series_inspection(time_series_store)
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
@@ -256,6 +265,12 @@ def validate_market_db(
 
     # Recommendations
     recommendations: list[str] = []
+    if not schema_current:
+        observed = "missing" if schema_version is None else str(schema_version)
+        recommendations.append(
+            f"Run initial sync with reset enabled to recreate market.duckdb schema v{MARKET_SCHEMA_VERSION} "
+            f"(current schema version: {observed})"
+        )
     if legacy_stock_snapshot:
         recommendations.append(
             "Run initial sync with reset enabled, or manually reset "
@@ -317,6 +332,7 @@ def validate_market_db(
     recommendations.extend(readiness_recommendations)
 
     core_daily_status = _resolve_core_daily_status(
+        schema_current=schema_current,
         legacy_stock_snapshot=legacy_stock_snapshot,
         initialized=initialized,
         missing_dates_count=missing_dates_count,
@@ -446,6 +462,24 @@ def validate_market_db(
         lastIntradaySync=last_intraday_sync,
         lastStocksRefresh=last_refresh,
         timeSeriesSource=inspection.source,
+        schema=MarketSchemaStats(
+            version=schema_version,
+            current=schema_current,
+        ),
+        stockMaster=StockMasterCoverageStats(
+            dailyCount=int(master_coverage.get("dailyCount", 0) or 0),
+            intervalCount=int(master_coverage.get("intervalCount", 0) or 0),
+            latestCount=int(master_coverage.get("latestCount", 0) or 0),
+            indexMembershipDailyCount=int(master_coverage.get("indexMembershipDailyCount", 0) or 0),
+            dateRange=DateRange(
+                min=str(master_coverage.get("dateMin")),
+                max=str(master_coverage.get("dateMax")),
+            )
+            if master_coverage.get("dateMin") and master_coverage.get("dateMax")
+            else None,
+            dateCount=int(master_coverage.get("dateCount", 0) or 0),
+            codeCount=int(master_coverage.get("codeCount", 0) or 0),
+        ),
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
@@ -645,6 +679,7 @@ def _resolve_options_225_missing_topix_coverage_dates(
 
 def _resolve_core_daily_status(
     *,
+    schema_current: bool,
     legacy_stock_snapshot: bool,
     initialized: bool,
     missing_dates_count: int,
@@ -654,7 +689,7 @@ def _resolve_core_daily_status(
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
 ) -> Literal["healthy", "warning", "error"]:
-    if legacy_stock_snapshot or not initialized:
+    if not schema_current or legacy_stock_snapshot or not initialized:
         return "error"
     if (
         missing_dates_count > 0

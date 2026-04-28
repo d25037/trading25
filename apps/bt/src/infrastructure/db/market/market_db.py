@@ -33,12 +33,32 @@ METADATA_KEYS = {
     "LAST_INTRADAY_SYNC": "last_intraday_sync",
 }
 LOCAL_STOCK_PRICE_ADJUSTMENT_MODE = "local_projection_v1"
+MARKET_SCHEMA_VERSION = 3
+INCOMPATIBLE_MARKET_SCHEMA_VERSION = 0
 
 _STATS_TABLES: tuple[str, ...] = (
+    "market_schema_version",
     "stocks",
+    "stocks_latest",
+    "stock_master_daily",
+    "stock_master_intervals",
     "stock_data_raw",
     "stock_data",
     "stock_data_minute_raw",
+    "topix_data",
+    "indices_data",
+    "options_225_data",
+    "margin_data",
+    "statements",
+    "sync_metadata",
+    "index_master",
+    "index_membership_daily",
+)
+
+_CORE_MARKET_TABLES: tuple[str, ...] = (
+    "stocks",
+    "stock_data_raw",
+    "stock_data",
     "topix_data",
     "indices_data",
     "options_225_data",
@@ -165,10 +185,32 @@ class MarketDb:
         row = self._fetchone(f"SELECT COUNT(*) FROM {escaped}")
         return int(row[0] or 0) if row else 0
 
+    def _existing_table_names(self) -> set[str]:
+        return {
+            str(row[0])
+            for row in self._fetchall("SELECT table_name FROM information_schema.tables")
+            if row and row[0]
+        }
+
     def ensure_schema(self) -> None:
         """不足テーブルを補完する（DuckDB SoT）。"""
         self._assert_writable()
 
+        existing_before = self._existing_table_names()
+        had_schema_version = "market_schema_version" in existing_before
+        had_legacy_market_tables = any(
+            table_name in existing_before for table_name in _CORE_MARKET_TABLES
+        )
+
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL,
+                notes TEXT
+            )
+            """
+        )
         self._execute(
             """
             CREATE TABLE IF NOT EXISTS stocks (
@@ -183,6 +225,68 @@ class MarketDb:
                 sector_33_name TEXT NOT NULL,
                 scale_category TEXT,
                 listed_date TEXT NOT NULL,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_master_daily (
+                date TEXT,
+                code TEXT,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT,
+                created_at TEXT,
+                PRIMARY KEY (date, code)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_master_intervals (
+                code TEXT,
+                valid_from TEXT,
+                valid_to TEXT,
+                fingerprint TEXT,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT,
+                created_at TEXT,
+                PRIMARY KEY (code, valid_from, fingerprint)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stocks_latest (
+                code TEXT PRIMARY KEY,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT,
+                source_date TEXT,
                 created_at TEXT,
                 updated_at TEXT
             )
@@ -370,6 +474,17 @@ class MarketDb:
         )
         self._execute(
             """
+            CREATE TABLE IF NOT EXISTS index_membership_daily (
+                date TEXT,
+                index_code TEXT,
+                code TEXT,
+                created_at TEXT,
+                PRIMARY KEY (date, index_code, code)
+            )
+            """
+        )
+        self._execute(
+            """
             CREATE TABLE IF NOT EXISTS stock_adjustment_refresh_state (
                 code TEXT PRIMARY KEY,
                 resolved_adjustment_date TEXT,
@@ -377,8 +492,42 @@ class MarketDb:
             )
             """
         )
+        self._ensure_market_schema_version(
+            had_schema_version=had_schema_version,
+            had_legacy_market_tables=had_legacy_market_tables,
+        )
         self._ensure_statements_columns()
         self._ensure_stock_price_adjustment_mode_for_empty_db()
+
+    def _ensure_market_schema_version(
+        self,
+        *,
+        had_schema_version: bool,
+        had_legacy_market_tables: bool,
+    ) -> None:
+        """Record schema v3 for fresh DBs; mark pre-v3 DBs incompatible."""
+        if had_schema_version:
+            return
+        version = (
+            INCOMPATIBLE_MARKET_SCHEMA_VERSION
+            if had_legacy_market_tables
+            else MARKET_SCHEMA_VERSION
+        )
+        notes = (
+            "pre-v3 market.duckdb detected; destructive initial sync reset is required"
+            if version == INCOMPATIBLE_MARKET_SCHEMA_VERSION
+            else "market.duckdb schema v3"
+        )
+        self._execute(
+            """
+            INSERT INTO market_schema_version (version, applied_at, notes)
+            VALUES (?, ?, ?)
+            ON CONFLICT (version) DO UPDATE
+            SET applied_at = excluded.applied_at,
+                notes = excluded.notes
+            """,
+            [version, datetime.now().isoformat(), notes],
+        )
 
     def _ensure_statements_columns(self) -> None:
         """既存 statements テーブルに不足カラムを追加する。"""
@@ -399,6 +548,39 @@ class MarketDb:
     def get_stats(self) -> dict[str, Any]:
         """DB 統計情報を取得。"""
         return {table_name: self._count_rows(table_name) for table_name in _STATS_TABLES}
+
+    def get_market_schema_version(self) -> int | None:
+        if not self._table_exists("market_schema_version"):
+            return None
+        row = self._fetchone("SELECT MAX(version) FROM market_schema_version")
+        return int(row[0]) if row and row[0] is not None else None
+
+    def is_market_schema_current(self) -> bool:
+        return self.get_market_schema_version() == MARKET_SCHEMA_VERSION
+
+    def get_stock_master_coverage(self) -> dict[str, Any]:
+        daily_count = self._count_rows("stock_master_daily")
+        interval_count = self._count_rows("stock_master_intervals")
+        latest_count = self._count_rows("stocks_latest")
+        membership_count = self._count_rows("index_membership_daily")
+        row = None
+        if self._table_exists("stock_master_daily"):
+            row = self._fetchone(
+                """
+                SELECT MIN(date), MAX(date), COUNT(DISTINCT date), COUNT(DISTINCT code)
+                FROM stock_master_daily
+                """
+            )
+        return {
+            "dailyCount": daily_count,
+            "intervalCount": interval_count,
+            "latestCount": latest_count,
+            "indexMembershipDailyCount": membership_count,
+            "dateMin": str(row[0]) if row and row[0] is not None else None,
+            "dateMax": str(row[1]) if row and row[1] is not None else None,
+            "dateCount": int(row[2] or 0) if row else 0,
+            "codeCount": int(row[3] or 0) if row else 0,
+        }
 
     def validate_schema(self) -> dict[str, Any]:
         """スキーマ検証: 必要なテーブルが存在するか確認。"""

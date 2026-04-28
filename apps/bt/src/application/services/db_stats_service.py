@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.application.services.listed_market_targets import (
     build_fundamentals_coverage,
@@ -27,7 +27,9 @@ from src.entrypoints.http.schemas.db import (
     ListedMarketCoverage,
     MarginStats,
     MarketStatsResponse,
+    MarketSchemaStats,
     Options225Stats,
+    StockMasterCoverageStats,
     StockDataStats,
     StockMinuteDataStats,
     StorageStats,
@@ -40,6 +42,9 @@ class MarketDbStatsLike(Protocol):
     def is_initialized(self) -> bool: ...
     def get_sync_metadata(self, key: str) -> str | None: ...
     def get_stats(self) -> dict[str, int]: ...
+    def get_market_schema_version(self) -> int | None: ...
+    def is_market_schema_current(self) -> bool: ...
+    def get_stock_master_coverage(self) -> dict[str, Any]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_index_master_category_counts(self) -> dict[str, int]: ...
@@ -112,6 +117,7 @@ def get_market_stats(
 
     # Metadata / reference data (DuckDB metadata tables)
     basic = market_db.get_stats()
+    master_coverage = market_db.get_stock_master_coverage()
     by_market = market_db.get_stock_count_by_market()
     index_master_by_category = market_db.get_index_master_category_counts()
     statement_codes = set(inspection.statement_codes)
@@ -239,6 +245,24 @@ def get_market_stats(
         timeSeriesSource=inspection.source,
         databaseSize=storage.duckdbBytes,
         storage=storage,
+        schema=MarketSchemaStats(
+            version=market_db.get_market_schema_version(),
+            current=market_db.is_market_schema_current(),
+        ),
+        stockMaster=StockMasterCoverageStats(
+            dailyCount=int(master_coverage.get("dailyCount", 0) or 0),
+            intervalCount=int(master_coverage.get("intervalCount", 0) or 0),
+            latestCount=int(master_coverage.get("latestCount", 0) or 0),
+            indexMembershipDailyCount=int(master_coverage.get("indexMembershipDailyCount", 0) or 0),
+            dateRange=DateRange(
+                min=str(master_coverage.get("dateMin")),
+                max=str(master_coverage.get("dateMax")),
+            )
+            if master_coverage.get("dateMin") and master_coverage.get("dateMax")
+            else None,
+            dateCount=int(master_coverage.get("dateCount", 0) or 0),
+            codeCount=int(master_coverage.get("codeCount", 0) or 0),
+        ),
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data,
