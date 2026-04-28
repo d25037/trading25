@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchPage } from './ResearchPage';
@@ -97,7 +97,8 @@ const catalogItems = [
     experimentId: 'market-behavior/topix100-strongest-setup-q10-threshold',
     runId: '20260406_160500_threshold01',
     title: 'TOPIX100 Strongest Setup vs Q10 Threshold',
-    objective: 'Measure whether the strongest setup matters more than raw Q10 membership and how wide the lower-tail band can become.',
+    objective:
+      'Measure whether the strongest setup matters more than raw Q10 membership and how wide the lower-tail band can become.',
     headline: 'The strongest setup still beats non-strong Q10 alternatives even outside pure Q10.',
     createdAt: '2026-04-06T16:05:00+00:00',
     analysisStartDate: '2016-01-01',
@@ -110,7 +111,8 @@ const catalogItems = [
     experimentId: 'market-behavior/topix100-short-side-streak-3-53-scan',
     runId: '20260406_171500_shortscan01',
     title: 'TOPIX100 Short Side Streak 3/53 Scan',
-    objective: 'Scan the weakest short-side setup and the best strongest-vs-weakest pair trade under the transferred streak 3/53 state model.',
+    objective:
+      'Scan the weakest short-side setup and the best strongest-vs-weakest pair trade under the transferred streak 3/53 state model.',
     headline: 'The weak side shifts away from the original Q2-Q4 hypothesis once streak state is added.',
     createdAt: '2026-04-06T17:15:00+00:00',
     analysisStartDate: '2016-01-01',
@@ -180,15 +182,24 @@ beforeEach(() => {
   });
 });
 
+function getFirstDataRow(): HTMLElement {
+  const row = screen.getAllByRole('row').at(1);
+  if (!row) {
+    throw new Error('Expected at least one research data row');
+  }
+  return row;
+}
+
 describe('ResearchPage', () => {
   it('renders a table-first evidence matrix for research browsing', () => {
     render(<ResearchPage />);
 
     expect(screen.getAllByText('Evidence Matrix').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Research Workspace').length).toBeGreaterThan(0);
-    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Family' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Decision' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'State' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Finding' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Decision & Risk' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Date' })).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Mode Mean-Reversion Comparison')).toBeInTheDocument();
     expect(screen.getByText('TOPIX Extreme Close-to-Close Mode')).toBeInTheDocument();
     expect(screen.getAllByText('Observed').length).toBeGreaterThan(0);
@@ -229,6 +240,18 @@ describe('ResearchPage', () => {
     expect(screen.queryByText('TOPIX Close Return Streaks')).not.toBeInTheDocument();
   });
 
+  it('sorts the evidence matrix by research date', async () => {
+    const user = userEvent.setup();
+
+    render(<ResearchPage />);
+
+    expect(within(getFirstDataRow()).getByText('TOPIX100 Streak 3/53 Multivariate Priority')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Sort'), 'oldest');
+
+    expect(within(getFirstDataRow()).getByText('TOPIX Streak Extreme Mode')).toBeInTheDocument();
+  });
+
   it('renders loading, error, and empty workspace states', async () => {
     const user = userEvent.setup();
 
@@ -255,7 +278,10 @@ describe('ResearchPage', () => {
       error: null,
     });
     rerender(<ResearchPage />);
-    await user.type(screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk'), 'no hit');
+    await user.type(
+      screen.getByPlaceholderText('Search title, finding, decision, experiment id, tag, or risk'),
+      'no hit'
+    );
     expect(screen.getByText('No matching research')).toBeInTheDocument();
   });
 
@@ -264,7 +290,7 @@ describe('ResearchPage', () => {
 
     render(<ResearchPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Open TOPIX Close Return Streaks' }));
+    await user.click(screen.getByRole('row', { name: /Open TOPIX Close Return Streaks/ }));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/research/detail',

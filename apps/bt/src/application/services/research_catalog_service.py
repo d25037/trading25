@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
+    get_research_experiment_docs_readme_path,
     list_research_bundle_infos,
     load_research_bundle_published_summary,
     resolve_research_experiment_docs_readme_path,
@@ -25,6 +26,7 @@ ResearchDecisionStatus = Literal[
     "rejected",
 ]
 _BT_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_DOCS_EXPERIMENTS_ROOT = _BT_PROJECT_ROOT / "docs" / "experiments"
 _RESEARCH_CATALOG_METADATA_PATH = (
     _BT_PROJECT_ROOT / "docs" / "experiments" / "research-catalog-metadata.toml"
 )
@@ -122,6 +124,12 @@ def list_latest_research_publications() -> tuple[ResearchCatalogEntry, ...]:
         _build_catalog_entry(info)
         for info in latest_by_experiment.values()
     ]
+    bundled_experiment_ids = set(latest_by_experiment)
+    entries.extend(
+        _build_docs_catalog_entry(experiment_id, readme_path)
+        for experiment_id, readme_path in _list_research_docs_readmes().items()
+        if experiment_id not in bundled_experiment_ids
+    )
     return tuple(
         sorted(
             entries,
@@ -140,7 +148,7 @@ def get_research_publication(
         info for info in list_research_bundle_infos() if info.experiment_id == experiment_id
     ]
     if not matching_infos:
-        raise FileNotFoundError(f"Research bundle experiment was not found: {experiment_id}")
+        return _get_docs_research_publication(experiment_id, run_id=run_id)
 
     sorted_infos = sorted(matching_infos, key=_info_sort_key, reverse=True)
     selected_info = sorted_infos[0]
@@ -236,6 +244,79 @@ def _build_catalog_entry(info: ResearchBundleInfo) -> ResearchCatalogEntry:
         git_commit=info.git_commit,
         tags=tags,
         has_structured_summary=published_summary is not None,
+    )
+
+
+def _build_docs_catalog_entry(experiment_id: str, readme_path: Path) -> ResearchCatalogEntry:
+    summary_markdown = readme_path.read_text(encoding="utf-8")
+    metadata = _load_research_catalog_metadata().get(experiment_id, {})
+    tags = _normalize_string_tuple(metadata.get("tags"))
+    promoted_surface = (
+        _normalize_optional_string(metadata.get("promotedSurface"))
+        or _derive_promoted_surface_for_experiment(experiment_id, tags)
+    )
+    status = _normalize_optional_status(metadata.get("status")) or _derive_status_for_experiment(
+        experiment_id,
+        promoted_surface=promoted_surface,
+    )
+    risk_flags = _merge_unique_strings(
+        _normalize_string_tuple(metadata.get("riskFlags")),
+        ("docs-only", "markdown-only"),
+    )
+
+    return ResearchCatalogEntry(
+        experiment_id=experiment_id,
+        run_id="docs",
+        title=_normalize_optional_string(metadata.get("title"))
+        or _extract_title_from_markdown(summary_markdown, experiment_id),
+        objective=_extract_first_paragraph(summary_markdown),
+        headline=_extract_first_bullet(summary_markdown),
+        family=_normalize_optional_string(metadata.get("family"))
+        or _derive_research_family_for_experiment(experiment_id, tags),
+        status=status,
+        decision=_normalize_optional_string(metadata.get("decision")),
+        promoted_surface=promoted_surface,
+        risk_flags=risk_flags,
+        related_experiments=_normalize_string_tuple(metadata.get("relatedExperiments")),
+        docs_readme_path=resolve_research_experiment_docs_readme_path(experiment_id),
+        created_at=_latest_docs_modified_at(readme_path.parent),
+        analysis_start_date=None,
+        analysis_end_date=None,
+        git_commit=None,
+        tags=tags,
+        has_structured_summary=False,
+    )
+
+
+def _get_docs_research_publication(
+    experiment_id: str,
+    *,
+    run_id: str | None,
+) -> ResearchPublication:
+    if run_id not in (None, "docs"):
+        raise FileNotFoundError(
+            f"Research bundle run was not found: experiment={experiment_id} run_id={run_id}"
+        )
+
+    readme_path = get_research_experiment_docs_readme_path(experiment_id)
+    if not readme_path.is_file():
+        raise FileNotFoundError(f"Research bundle experiment was not found: {experiment_id}")
+
+    entry = _build_docs_catalog_entry(experiment_id, readme_path)
+    summary_markdown = readme_path.read_text(encoding="utf-8")
+    return ResearchPublication(
+        item=entry,
+        summary=None,
+        summary_markdown=summary_markdown,
+        output_tables=(),
+        available_runs=(
+            ResearchRunReference(
+                run_id=entry.run_id,
+                created_at=entry.created_at,
+                is_latest=True,
+            ),
+        ),
+        result_metadata={"source": "docs"},
     )
 
 
@@ -362,11 +443,18 @@ def _merge_unique_strings(*groups: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _derive_research_family(info: ResearchBundleInfo, tags: tuple[str, ...]) -> str:
-    experiment_id = info.experiment_id.lower()
-    tag_text = " ".join(tags).lower()
-    haystack = f"{experiment_id} {tag_text}"
+    return _derive_research_family_for_experiment(info.experiment_id, tags)
 
-    if experiment_id.startswith("strategy-audit/"):
+
+def _derive_research_family_for_experiment(
+    experiment_id: str,
+    tags: tuple[str, ...],
+) -> str:
+    normalized_experiment_id = experiment_id.lower()
+    tag_text = " ".join(tags).lower()
+    haystack = f"{normalized_experiment_id} {tag_text}"
+
+    if normalized_experiment_id.startswith("strategy-audit/"):
         return "Strategy Audit"
     if "speculative-volume-surge" in haystack:
         return "Speculative Volume Surge"
@@ -374,7 +462,7 @@ def _derive_research_family(info: ResearchBundleInfo, tags: tuple[str, ...]) -> 
         return "Falling Knife"
     if "stop-limit" in haystack:
         return "JPX Stop Limit"
-    if "annual-" in experiment_id and (
+    if "annual-" in normalized_experiment_id and (
         "fundamental" in haystack or "value" in haystack or "forward-per" in haystack
     ):
         return "Annual Fundamentals"
@@ -385,18 +473,25 @@ def _derive_research_family(info: ResearchBundleInfo, tags: tuple[str, ...]) -> 
     if "topix" in haystack or "nt-ratio" in haystack:
         return "Market Regime"
 
-    return info.experiment_id.split("/", maxsplit=1)[0].replace("-", " ").title()
+    return experiment_id.split("/", maxsplit=1)[0].replace("-", " ").title()
 
 
 def _derive_promoted_surface(
     info: ResearchBundleInfo,
     tags: tuple[str, ...],
 ) -> str | None:
-    experiment_id = info.experiment_id.lower()
+    return _derive_promoted_surface_for_experiment(info.experiment_id, tags)
+
+
+def _derive_promoted_surface_for_experiment(
+    experiment_id: str,
+    tags: tuple[str, ...],
+) -> str | None:
+    normalized_experiment_id = experiment_id.lower()
     tag_text = " ".join(tags).lower()
-    if "annual-value-composite-selection" in experiment_id:
+    if "annual-value-composite-selection" in normalized_experiment_id:
         return "Ranking"
-    if "strategy-audit" in experiment_id or "production" in tag_text:
+    if "strategy-audit" in normalized_experiment_id or "production" in tag_text:
         return "Strategy"
     return None
 
@@ -406,11 +501,22 @@ def _derive_status(
     *,
     promoted_surface: str | None,
 ) -> ResearchDecisionStatus:
+    return _derive_status_for_experiment(
+        info.experiment_id,
+        promoted_surface=promoted_surface,
+    )
+
+
+def _derive_status_for_experiment(
+    experiment_id: str,
+    *,
+    promoted_surface: str | None,
+) -> ResearchDecisionStatus:
     if promoted_surface == "Ranking":
         return "ranking_surface"
     if promoted_surface == "Strategy":
         return "strategy_draft"
-    if info.experiment_id.startswith("strategy-audit/"):
+    if experiment_id.startswith("strategy-audit/"):
         return "candidate"
     return "observed"
 
@@ -495,11 +601,15 @@ def _normalize_table_highlight_items(value: Any) -> tuple[ResearchTableHighlight
 
 
 def _extract_title(summary_markdown: str, info: ResearchBundleInfo) -> str:
+    return _extract_title_from_markdown(summary_markdown, info.experiment_id)
+
+
+def _extract_title_from_markdown(summary_markdown: str, experiment_id: str) -> str:
     for line in summary_markdown.splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
             return stripped[2:].strip()
-    last_segment = info.experiment_id.split("/")[-1]
+    last_segment = experiment_id.split("/")[-1]
     return " ".join(part.capitalize() for part in last_segment.split("-"))
 
 
@@ -540,3 +650,22 @@ def _datetime_sort_key(value: str) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return datetime.min.replace(tzinfo=UTC)
+
+
+def _list_research_docs_readmes() -> dict[str, Path]:
+    if not _DOCS_EXPERIMENTS_ROOT.exists():
+        return {}
+
+    readmes: dict[str, Path] = {}
+    for readme_path in sorted(_DOCS_EXPERIMENTS_ROOT.glob("*/*/README.md")):
+        experiment_id = readme_path.parent.relative_to(_DOCS_EXPERIMENTS_ROOT).as_posix()
+        readmes[experiment_id] = readme_path
+    return readmes
+
+
+def _latest_docs_modified_at(experiment_dir: Path) -> str:
+    latest_mtime = experiment_dir.stat().st_mtime
+    for file_path in experiment_dir.rglob("*"):
+        if file_path.is_file():
+            latest_mtime = max(latest_mtime, file_path.stat().st_mtime)
+    return datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat()

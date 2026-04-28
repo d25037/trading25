@@ -1,21 +1,8 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowUpRight, FileSearch, Filter, Loader2, Search } from 'lucide-react';
+import { FileSearch, Filter, Loader2, Search } from 'lucide-react';
 import { type ChangeEvent, useDeferredValue, useMemo, useState } from 'react';
-import {
-  PageIntro,
-  PageIntroMetaList,
-  SectionEyebrow,
-  SectionHeading,
-  Surface,
-} from '@/components/Layout/Workspace';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { PageIntro, PageIntroMetaList, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useResearchCatalog } from '@/hooks/useResearch';
 import { serializeResearchSearch } from '@/lib/routeSearch';
 import { cn } from '@/lib/utils';
@@ -23,6 +10,7 @@ import type { ResearchCatalogItem, ResearchDecisionStatus } from '@/types/resear
 
 type FilterValue = 'all' | string;
 type StatusFilterValue = 'all' | ResearchDecisionStatus;
+type DateSortValue = 'newest' | 'oldest';
 
 const STATUS_LABELS: Record<ResearchDecisionStatus, string> = {
   observed: 'Observed',
@@ -49,6 +37,12 @@ function formatTimestamp(value?: string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString();
+}
+
+function getTimestampValue(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function formatRange(item: ResearchCatalogItem): string {
@@ -89,13 +83,22 @@ function buildCatalogViewModel(
   activeFamily: FilterValue,
   activeStatus: StatusFilterValue,
   activeTag: FilterValue,
-  deferredQuery: string
+  deferredQuery: string,
+  dateSort: DateSortValue
 ) {
-  return items.filter((item) => {
+  const filtered = items.filter((item) => {
     if (activeFamily !== 'all' && item.family !== activeFamily) return false;
     if (activeStatus !== 'all' && item.status !== activeStatus) return false;
     if (activeTag !== 'all' && !item.tags.includes(activeTag)) return false;
     return matchesQuery(item, deferredQuery);
+  });
+
+  return [...filtered].sort((left, right) => {
+    const leftTime = getTimestampValue(left.createdAt);
+    const rightTime = getTimestampValue(right.createdAt);
+    const dateOrder = dateSort === 'newest' ? rightTime - leftTime : leftTime - rightTime;
+    if (dateOrder !== 0) return dateOrder;
+    return left.title.localeCompare(right.title);
   });
 }
 
@@ -157,37 +160,49 @@ function EvidenceMatrix({
         <SectionHeading
           eyebrow="Evidence Matrix"
           title="Research Workspace"
-          description="Compare published findings by family, state, decision, surface, range, and run before opening the detail reader."
+          description="Compare published findings by state, decision, risk, and research date before opening the detail reader."
         />
       </div>
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-[var(--app-surface-muted)] hover:bg-[var(--app-surface-muted)]">
-            <TableHead className="w-[9rem] whitespace-nowrap">Status</TableHead>
-            <TableHead className="w-[11rem] whitespace-nowrap">Family</TableHead>
-            <TableHead className="min-w-[24rem]">Finding</TableHead>
-            <TableHead className="min-w-[16rem]">Decision</TableHead>
-            <TableHead className="w-[9rem] whitespace-nowrap">Surface</TableHead>
-            <TableHead className="min-w-[12rem]">Risk</TableHead>
-            <TableHead className="w-[13rem] whitespace-nowrap">Range</TableHead>
-            <TableHead className="w-[11rem] whitespace-nowrap">Run</TableHead>
-            <TableHead className="w-[5rem] text-right">Open</TableHead>
+            <TableHead className="w-[9rem] whitespace-nowrap">State</TableHead>
+            <TableHead>Finding</TableHead>
+            <TableHead className="w-[18rem]">Decision & Risk</TableHead>
+            <TableHead className="w-[14rem] whitespace-nowrap">Date</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((item) => (
-            <TableRow key={item.experimentId} className="align-top">
+            <TableRow
+              key={item.experimentId}
+              tabIndex={0}
+              onClick={() => onOpen(item)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onOpen(item);
+                }
+              }}
+              aria-label={`Open ${item.title}`}
+              className="app-interactive cursor-pointer align-top hover:bg-[var(--app-surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            >
               <TableCell>
-                <StatusBadge status={item.status} />
+                <div className="space-y-2">
+                  <StatusBadge status={item.status} />
+                  <p className="text-xs font-medium text-foreground">{item.family}</p>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                    {item.promotedSurface ?? 'Research'}
+                  </p>
+                </div>
               </TableCell>
-              <TableCell className="text-sm font-medium text-foreground">{item.family}</TableCell>
-              <TableCell>
+              <TableCell className="min-w-0">
                 <div className="space-y-2">
                   <div>
                     <p className="font-semibold leading-5 text-foreground">{item.title}</p>
-                    <p className="mt-1 text-xs font-mono text-muted-foreground">{item.experimentId}</p>
+                    <p className="mt-1 truncate text-xs font-mono text-muted-foreground">{item.experimentId}</p>
                   </div>
-                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                  <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
                     {item.headline ?? item.objective ?? 'Published research bundle.'}
                   </p>
                   {item.tags.length > 0 ? (
@@ -204,11 +219,8 @@ function EvidenceMatrix({
                   ) : null}
                 </div>
               </TableCell>
-              <TableCell className="text-sm leading-6 text-muted-foreground">
-                {item.decision ?? 'No explicit decision recorded.'}
-              </TableCell>
-              <TableCell className="text-sm font-medium text-foreground">{item.promotedSurface ?? 'Research'}</TableCell>
-              <TableCell>
+              <TableCell className="space-y-3 text-sm leading-6 text-muted-foreground">
+                <p className="line-clamp-3">{item.decision ?? 'No explicit decision recorded.'}</p>
                 {item.riskFlags.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {item.riskFlags.map((flag) => (
@@ -224,22 +236,20 @@ function EvidenceMatrix({
                   <span className="text-sm text-muted-foreground">None</span>
                 )}
               </TableCell>
-              <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatRange(item)}</TableCell>
               <TableCell>
-                <div className="space-y-1">
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      Created
+                    </p>
+                    <p className="text-sm font-medium text-foreground">{formatTimestamp(item.createdAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Range</p>
+                    <p className="text-xs text-muted-foreground">{formatRange(item)}</p>
+                  </div>
                   <p className="font-mono text-xs text-foreground">{item.runId}</p>
-                  <p className="text-xs text-muted-foreground">{formatTimestamp(item.createdAt)}</p>
                 </div>
-              </TableCell>
-              <TableCell className="text-right">
-                <button
-                  type="button"
-                  onClick={() => onOpen(item)}
-                  className="app-interactive inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-[var(--app-surface-muted)] text-muted-foreground hover:text-foreground"
-                  aria-label={`Open ${item.title}`}
-                >
-                  <ArrowUpRight className="h-4 w-4" />
-                </button>
               </TableCell>
             </TableRow>
           ))}
@@ -288,9 +298,7 @@ function ResearchCatalogContent({
             <FileSearch className="h-5 w-5 text-primary" />
           </div>
           <h2 className="text-xl font-semibold tracking-tight text-foreground">No matching research</h2>
-          <p className="text-sm leading-6 text-muted-foreground">
-            Adjust the query, family, status, or tag filter.
-          </p>
+          <p className="text-sm leading-6 text-muted-foreground">Adjust the query, family, status, or tag filter.</p>
         </div>
       </Surface>
     );
@@ -307,6 +315,7 @@ export function ResearchPage() {
   const [activeFamily, setActiveFamily] = useState<FilterValue>('all');
   const [activeStatus, setActiveStatus] = useState<StatusFilterValue>('all');
   const [activeTag, setActiveTag] = useState<FilterValue>('all');
+  const [dateSort, setDateSort] = useState<DateSortValue>('newest');
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 
   const availableFamilies = useMemo(() => buildUniqueList(items, (item) => item.family), [items]);
@@ -316,8 +325,8 @@ export function ResearchPage() {
   );
   const availableTags = useMemo(() => buildTagList(items), [items]);
   const filteredItems = useMemo(
-    () => buildCatalogViewModel(items, activeFamily, activeStatus, activeTag, deferredQuery),
-    [activeFamily, activeStatus, activeTag, deferredQuery, items]
+    () => buildCatalogViewModel(items, activeFamily, activeStatus, activeTag, deferredQuery, dateSort),
+    [activeFamily, activeStatus, activeTag, dateSort, deferredQuery, items]
   );
 
   const promotedCount = items.filter((item) => item.promotedSurface && item.promotedSurface !== 'Research').length;
@@ -363,7 +372,7 @@ export function ResearchPage() {
               </label>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <FilterSelect
                 label="Family"
                 value={activeFamily}
@@ -378,6 +387,13 @@ export function ResearchPage() {
                 formatOption={(value) => STATUS_LABELS[value as ResearchDecisionStatus] ?? value}
               />
               <FilterSelect label="Tag" value={activeTag} options={availableTags} onChange={setActiveTag} />
+              <FilterSelect
+                label="Sort"
+                value={dateSort}
+                options={['newest', 'oldest']}
+                onChange={(value) => setDateSort(value as DateSortValue)}
+                formatOption={(value) => (value === 'newest' ? 'Newest date' : 'Oldest date')}
+              />
             </div>
           </div>
 
@@ -386,7 +402,7 @@ export function ResearchPage() {
             <span>
               {activeFamily === 'all' ? 'All families' : activeFamily} /{' '}
               {activeStatus === 'all' ? 'All statuses' : STATUS_LABELS[activeStatus]} /{' '}
-              {activeTag === 'all' ? 'All tags' : activeTag}
+              {activeTag === 'all' ? 'All tags' : activeTag} / {dateSort === 'newest' ? 'Newest date' : 'Oldest date'}
             </span>
           </div>
         </Surface>

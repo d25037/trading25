@@ -128,10 +128,10 @@ def test_list_research_catalog_returns_latest_per_experiment(
     assert response.status_code == 200
     payload = response.json()
     assert "lastUpdated" in payload
-    assert [item["experimentId"] for item in payload["items"]] == [
-        "market-behavior/topix-close-stock-overnight",
-        "market-behavior/topix-gap-intraday-distribution",
-    ]
+    experiment_ids = [item["experimentId"] for item in payload["items"]]
+    assert "market-behavior/topix-close-stock-overnight" in experiment_ids
+    assert "market-behavior/topix-gap-intraday-distribution" in experiment_ids
+    assert "market-behavior/annual-market-fundamental-divergence" in experiment_ids
     published_item = next(
         item
         for item in payload["items"]
@@ -165,6 +165,19 @@ def test_list_research_catalog_returns_latest_per_experiment(
     assert (
         fallback_item["docsReadmePath"]
         == "apps/bt/docs/experiments/market-behavior/topix-close-stock-overnight/README.md"
+    )
+    docs_item = next(
+        item
+        for item in payload["items"]
+        if item["experimentId"] == "market-behavior/annual-market-fundamental-divergence"
+    )
+    assert docs_item["runId"] == "docs"
+    assert docs_item["title"] == "Annual Market Fundamental Divergence"
+    assert docs_item["hasStructuredSummary"] is False
+    assert "docs-only" in docs_item["riskFlags"]
+    assert (
+        docs_item["docsReadmePath"]
+        == "apps/bt/docs/experiments/market-behavior/annual-market-fundamental-divergence/README.md"
     )
 
 
@@ -221,6 +234,31 @@ def test_get_research_detail_returns_markdown_fallback_for_unstructured_bundle(
     assert payload["summary"] is None
     assert payload["summaryMarkdown"].startswith("# Beta Research")
     assert payload["outputTables"] == ["summary_df"]
+
+
+def test_get_research_detail_returns_docs_only_publication(
+    research_client: TestClient,
+) -> None:
+    response = research_client.get(
+        "/api/analytics/research/detail",
+        params={"experimentId": "market-behavior/annual-market-fundamental-divergence"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item"]["runId"] == "docs"
+    assert payload["item"]["title"] == "Annual Market Fundamental Divergence"
+    assert payload["summary"] is None
+    assert payload["summaryMarkdown"].startswith("# Annual Market Fundamental Divergence")
+    assert payload["outputTables"] == []
+    assert payload["availableRuns"] == [
+        {
+            "runId": "docs",
+            "createdAt": payload["item"]["createdAt"],
+            "isLatest": True,
+        }
+    ]
+    assert payload["resultMetadata"] == {"source": "docs"}
 
 
 def test_research_catalog_treats_raw_summary_json_as_markdown_fallback(
