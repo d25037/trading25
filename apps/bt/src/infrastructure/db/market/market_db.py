@@ -711,6 +711,71 @@ class MarketDb:
         )
         return int(row[0] or 0) if row else 0
 
+    def get_stock_master_rows_for_date(
+        self,
+        as_of_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """指定日の PIT 銘柄マスタ行を取得。latest fallback はしない。"""
+        if not self._table_exists("stock_master_daily"):
+            return []
+        conditions = ["date = ?"]
+        params: list[Any] = [as_of_date]
+        if market_codes:
+            placeholders = ", ".join("?" for _ in market_codes)
+            conditions.append(f"market_code IN ({placeholders})")
+            params.extend(market_codes)
+        if scale_categories:
+            placeholders = ", ".join("?" for _ in scale_categories)
+            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
+            params.extend(scale_categories)
+        rows = self._fetchall(
+            f"""
+            SELECT
+                date, code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date
+            FROM stock_master_daily
+            WHERE {' AND '.join(conditions)}
+            ORDER BY code
+            """,
+            params,
+        )
+        return [
+            {
+                "date": row[0],
+                "code": row[1],
+                "company_name": row[2],
+                "company_name_english": row[3],
+                "market_code": row[4],
+                "market_name": row[5],
+                "sector_17_code": row[6],
+                "sector_17_name": row[7],
+                "sector_33_code": row[8],
+                "sector_33_name": row[9],
+                "scale_category": row[10],
+                "listed_date": row[11],
+            }
+            for row in rows
+        ]
+
+    def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]:
+        """指定日の指数 membership code set。latest fallback はしない。"""
+        if not self._table_exists("index_membership_daily"):
+            return set()
+        rows = self._fetchall(
+            """
+            SELECT code
+            FROM index_membership_daily
+            WHERE date = ? AND index_code = ?
+            ORDER BY code
+            """,
+            [as_of_date, index_code],
+        )
+        return {str(row[0]) for row in rows if row and row[0]}
+
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""
         if not self._table_exists("indices_data"):
