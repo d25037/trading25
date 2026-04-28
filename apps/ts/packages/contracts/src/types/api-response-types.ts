@@ -797,6 +797,12 @@ export interface MarketStatsResponse {
 
 export interface MarketValidationResponse {
   status: 'healthy' | 'warning' | 'error';
+  healthDomains?: {
+    coreDailyStatus: 'healthy' | 'info' | 'warning' | 'error';
+    derivativesStatus: 'healthy' | 'info' | 'warning' | 'error';
+    intradayStatus: 'healthy' | 'info' | 'warning' | 'error';
+    sourceQualityStatus: 'healthy' | 'info' | 'warning' | 'error';
+  };
   initialized: boolean;
   lastSync: string | null;
   lastStocksRefresh: string | null;
@@ -819,6 +825,8 @@ export interface MarketValidationResponse {
     count: number;
     dateCount: number;
     dateRange: { min: string; max: string } | null;
+    coverageStatus?: 'in_sync' | 'missing' | 'pending' | 'stale' | 'partial';
+    allowedTopixLagDates?: number;
     missingTopixCoverageDatesCount: number;
     missingTopixCoverageDates: string[];
     missingUnderlyingPriceDatesCount: number;

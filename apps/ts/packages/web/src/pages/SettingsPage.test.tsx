@@ -638,6 +638,164 @@ describe('SettingsPage', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('renders one-date N225 options lag as pending info with separated health domains', () => {
+    mockUseDbStats.mockReturnValue({
+      data: {
+        initialized: true,
+        lastSync: '2026-04-27T08:52:22.770995+00:00',
+        timeSeriesSource: 'duckdb-parquet',
+        databaseSize: 4096,
+        storage: {
+          duckdbBytes: 4096,
+          parquetBytes: 8192,
+          totalBytes: 12288,
+        },
+        topix: {
+          count: 2464,
+          dateRange: { min: '2016-03-25', max: '2026-04-27' },
+        },
+        stocks: {
+          total: 4476,
+          byMarket: { Prime: 1586, Standard: 1590, Growth: 602 },
+        },
+        stockData: {
+          count: 9801023,
+          dateCount: 2464,
+          dateRange: { min: '2016-03-25', max: '2026-04-27' },
+          averageStocksPerDay: 3977.69,
+        },
+        indices: {
+          masterCount: 82,
+          dataCount: 180886,
+          dateCount: 2465,
+          dateRange: { min: '2016-03-25', max: '2026-04-27' },
+          byCategory: { topix: 10, sector33: 33 },
+        },
+        options225: {
+          count: 9787956,
+          dateCount: 2463,
+          dateRange: { min: '2016-03-25', max: '2026-04-24' },
+        },
+        margin: {
+          count: 1702493,
+          uniqueStockCount: 3774,
+          dateCount: 515,
+          dateRange: { min: '2016-03-04', max: '2026-04-17' },
+        },
+        fundamentals: {
+          count: 156566,
+          uniqueStockCount: 3753,
+          latestDisclosedDate: '2026-04-24',
+          listedMarketCoverage: {
+            listedMarketStocks: 3778,
+            coveredStocks: 3759,
+            missingStocks: 0,
+            coverageRatio: 0.995,
+            issuerAliasCoveredCount: 6,
+            emptySkippedCount: 19,
+          },
+        },
+        lastUpdated: '2026-04-28T01:53:06Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'healthy',
+        healthDomains: {
+          coreDailyStatus: 'healthy',
+          derivativesStatus: 'info',
+          intradayStatus: 'warning',
+          sourceQualityStatus: 'info',
+        },
+        initialized: true,
+        lastSync: '2026-04-27T08:52:22.770995+00:00',
+        lastStocksRefresh: null,
+        timeSeriesSource: 'duckdb-parquet',
+        topix: { count: 2464, dateRange: { min: '2016-03-25', max: '2026-04-27' } },
+        stocks: { total: 4476, byMarket: { Prime: 1586 } },
+        stockData: {
+          count: 9801023,
+          dateRange: { min: '2016-03-25', max: '2026-04-27' },
+          missingDatesCount: 0,
+          missingDates: [],
+        },
+        options225: {
+          count: 9787956,
+          dateCount: 2463,
+          dateRange: { min: '2016-03-25', max: '2026-04-24' },
+          coverageStatus: 'pending',
+          allowedTopixLagDates: 1,
+          missingTopixCoverageDatesCount: 1,
+          missingTopixCoverageDates: ['2026-04-27'],
+          missingUnderlyingPriceDatesCount: 77,
+          missingUnderlyingPriceDates: ['2016-07-15'],
+          conflictingUnderlyingPriceDatesCount: 5,
+          conflictingUnderlyingPriceDates: ['2018-02-09'],
+        },
+        margin: {
+          count: 1702493,
+          uniqueStockCount: 3774,
+          dateCount: 515,
+          dateRange: { min: '2016-03-04', max: '2026-04-17' },
+          orphanCount: 0,
+          emptySkippedCount: 4,
+          emptySkippedCodes: ['554A'],
+        },
+        fundamentals: {
+          count: 156566,
+          uniqueStockCount: 3753,
+          latestDisclosedDate: '2026-04-24',
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 6,
+          emptySkippedCount: 19,
+          emptySkippedCodes: ['1773'],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
+        },
+        failedDates: [],
+        failedDatesCount: 0,
+        adjustmentEvents: [],
+        adjustmentEventsCount: 0,
+        stocksNeedingRefresh: [],
+        stocksNeedingRefreshCount: 0,
+        integrityIssues: [],
+        integrityIssuesCount: 0,
+        sampleWindows: {
+          stockDataMissingDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          failedDates: { returnedCount: 0, totalCount: 0, limit: 10, truncated: false },
+          adjustmentEvents: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          stocksNeedingRefresh: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225MissingTopixCoverageDates: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
+          options225MissingUnderlyingPriceDates: { returnedCount: 1, totalCount: 77, limit: 20, truncated: true },
+          options225ConflictingUnderlyingPriceDates: { returnedCount: 1, totalCount: 5, limit: 20, truncated: false },
+          missingListedMarketStocks: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          fundamentalsEmptySkippedCodes: { returnedCount: 1, totalCount: 19, limit: 20, truncated: true },
+          marginEmptySkippedCodes: { returnedCount: 1, totalCount: 4, limit: 20, truncated: false },
+        },
+        recommendations: ['Run intraday sync to ingest minute bars through 2026-04-27'],
+        lastUpdated: '2026-04-28T01:53:06Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Domain Health')).toBeInTheDocument();
+    expect(screen.getByText('Core Daily')).toBeInTheDocument();
+    expect(screen.getByText('Derivatives')).toBeInTheDocument();
+    expect(screen.getAllByText('INFO').length).toBeGreaterThan(0);
+    expect(screen.getByText('N225 Options Pending')).toBeInTheDocument();
+    expect(screen.getByText('2026-04-24 (pending)')).toBeInTheDocument();
+    expect(screen.queryByText('N225 Options Stale')).not.toBeInTheDocument();
+    expect(screen.getByText('N225 UnderPx Missing Dates')).toBeInTheDocument();
+  });
+
   it('does not count N225 options sync gaps as repair targets', () => {
     mockUseDbValidation.mockReturnValue({
       data: {

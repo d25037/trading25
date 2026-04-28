@@ -26,6 +26,14 @@ class StorageStats(BaseModel):
 
 
 IntradayFreshnessStatusLiteral = Literal["idle", "up_to_date", "stale"]
+ValidationHealthStatusLiteral = Literal["healthy", "info", "warning", "error"]
+Options225CoverageStatusLiteral = Literal[
+    "in_sync",
+    "missing",
+    "pending",
+    "stale",
+    "partial",
+]
 
 
 class IntradayFreshness(BaseModel):
@@ -169,6 +177,8 @@ class Options225Validation(BaseModel):
     count: int = 0
     dateCount: int = 0
     dateRange: DateRange | None = None
+    coverageStatus: Options225CoverageStatusLiteral = "in_sync"
+    allowedTopixLagDates: int = 0
     missingTopixCoverageDatesCount: int = 0
     missingTopixCoverageDates: list[str] = Field(default_factory=list)
     missingUnderlyingPriceDatesCount: int = 0
@@ -210,8 +220,16 @@ class ValidationSampleWindows(BaseModel):
     marginEmptySkippedCodes: ValidationSampleWindow
 
 
+class ValidationHealthDomains(BaseModel):
+    coreDailyStatus: ValidationHealthStatusLiteral = "healthy"
+    derivativesStatus: ValidationHealthStatusLiteral = "healthy"
+    intradayStatus: ValidationHealthStatusLiteral = "healthy"
+    sourceQualityStatus: ValidationHealthStatusLiteral = "healthy"
+
+
 class MarketValidationResponse(BaseModel):
     status: Literal["healthy", "warning", "error"]
+    healthDomains: ValidationHealthDomains
     initialized: bool
     lastSync: str | None = None
     lastIntradaySync: str | None = None

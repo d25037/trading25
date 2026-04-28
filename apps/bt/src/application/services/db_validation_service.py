@@ -38,6 +38,7 @@ from src.entrypoints.http.schemas.db import (
     StockMinuteDataValidation,
     ValidationSampleWindow,
     ValidationSampleWindows,
+    ValidationHealthDomains,
     StockDataValidation,
     StockStats,
     TopixStats,
@@ -49,6 +50,7 @@ _FAILED_DATES_SAMPLE_LIMIT = 10
 _ADJUSTMENT_EVENTS_SAMPLE_LIMIT = 20
 _STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT = 20
 _OPTIONS_225_SAMPLE_LIMIT = 20
+_OPTIONS_225_TOPIX_LAG_GRACE_DATES = 1
 _MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT = 20
 _EMPTY_SKIPPED_CODES_SAMPLE_LIMIT = 20
 
@@ -208,6 +210,16 @@ def validate_market_db(
         _resolve_options_225_missing_topix_coverage_dates(inspection)
     )
     options_225_partial_local_data = options_225_missing_topix_coverage_dates_count > 0
+    options_225_pending_local_data = _is_options_225_local_data_pending(
+        stale_local_data=options_225_stale_local_data,
+        missing_topix_coverage_dates_count=options_225_missing_topix_coverage_dates_count,
+    )
+    options_225_coverage_status = _resolve_options_225_coverage_status(
+        missing_local_data=options_225_missing_local_data,
+        stale_local_data=options_225_stale_local_data,
+        pending_local_data=options_225_pending_local_data,
+        partial_local_data=options_225_partial_local_data,
+    )
     intraday_freshness_snapshot = build_intraday_freshness(
         latest_date=inspection.stock_minute_max,
         latest_time=inspection.latest_stock_minute_time,
@@ -268,13 +280,13 @@ def validate_market_db(
         recommendations.append(
             "Run incremental sync to ingest N225 options data into options_225_data"
         )
-    if options_225_stale_local_data:
+    if options_225_stale_local_data and not options_225_pending_local_data:
         recommendations.append(
             "Run incremental sync to refresh N225 options data "
             f"through {inspection.topix_max or 'the latest TOPIX date'} "
             f"(latest local options date: {inspection.options_225_max or 'n/a'})"
         )
-    elif options_225_partial_local_data:
+    elif options_225_partial_local_data and not options_225_pending_local_data:
         recommendations.append(
             "Run incremental sync to backfill N225 options history for "
             f"{options_225_missing_topix_coverage_dates_count} TOPIX dates missing from "
@@ -304,25 +316,36 @@ def validate_market_db(
         )
     recommendations.extend(readiness_recommendations)
 
-    # Status determination
-    status: Literal["healthy", "warning", "error"] = "healthy"
-    if legacy_stock_snapshot or not initialized:
-        status = "error"
-    elif (
-        missing_dates_count > 0
-        or failed_dates
-        or missing_fundamentals_count > 0
-        or options_225_missing_local_data
-        or options_225_stale_local_data
-        or options_225_partial_local_data
-        or options_225_missing_underlying_dates_count > 0
-        or options_225_conflicting_underlying_dates_count > 0
-        or fundamentals_failed_dates
-        or fundamentals_failed_codes
-        or intraday_is_stale
-        or integrity_issues
-    ):
-        status = "warning"
+    core_daily_status = _resolve_core_daily_status(
+        legacy_stock_snapshot=legacy_stock_snapshot,
+        initialized=initialized,
+        missing_dates_count=missing_dates_count,
+        failed_dates_count=len(failed_dates),
+        missing_fundamentals_count=missing_fundamentals_count,
+        fundamentals_failed_dates_count=len(fundamentals_failed_dates),
+        fundamentals_failed_codes_count=len(fundamentals_failed_codes),
+        integrity_issues_count=len(integrity_issues),
+    )
+    derivatives_status = _resolve_derivatives_status(
+        missing_local_data=options_225_missing_local_data,
+        stale_local_data=options_225_stale_local_data,
+        pending_local_data=options_225_pending_local_data,
+        partial_local_data=options_225_partial_local_data,
+    )
+    intraday_status = "warning" if intraday_is_stale else "healthy"
+    source_quality_status = (
+        "info"
+        if (
+            adjustment_events_count > 0
+            or options_225_missing_underlying_dates_count > 0
+            or options_225_conflicting_underlying_dates_count > 0
+        )
+        else "healthy"
+    )
+    status: Literal["healthy", "warning", "error"] = _resolve_overall_status(
+        core_daily_status=core_daily_status,
+        derivatives_status=derivatives_status,
+    )
 
     topix = TopixStats(
         count=inspection.topix_count,
@@ -372,6 +395,8 @@ def validate_market_db(
         )
         if inspection.options_225_min and inspection.options_225_max
         else None,
+        coverageStatus=options_225_coverage_status,
+        allowedTopixLagDates=_OPTIONS_225_TOPIX_LAG_GRACE_DATES,
         missingTopixCoverageDatesCount=options_225_missing_topix_coverage_dates_count,
         missingTopixCoverageDates=options_225_missing_topix_coverage_dates,
         missingUnderlyingPriceDatesCount=options_225_missing_underlying_dates_count,
@@ -410,6 +435,12 @@ def validate_market_db(
 
     return MarketValidationResponse(
         status=status,
+        healthDomains=ValidationHealthDomains(
+            coreDailyStatus=core_daily_status,
+            derivativesStatus=derivatives_status,
+            intradayStatus=intraday_status,
+            sourceQualityStatus=source_quality_status,
+        ),
         initialized=initialized,
         lastSync=last_sync,
         lastIntradaySync=last_intraday_sync,
@@ -567,6 +598,35 @@ def _is_options_225_local_data_stale(inspection: TimeSeriesInspection) -> bool:
     return options_max < topix_max
 
 
+def _is_options_225_local_data_pending(
+    *,
+    stale_local_data: bool,
+    missing_topix_coverage_dates_count: int,
+) -> bool:
+    return (
+        stale_local_data
+        and 0 < missing_topix_coverage_dates_count <= _OPTIONS_225_TOPIX_LAG_GRACE_DATES
+    )
+
+
+def _resolve_options_225_coverage_status(
+    *,
+    missing_local_data: bool,
+    stale_local_data: bool,
+    pending_local_data: bool,
+    partial_local_data: bool,
+) -> Literal["in_sync", "missing", "pending", "stale", "partial"]:
+    if missing_local_data:
+        return "missing"
+    if pending_local_data:
+        return "pending"
+    if stale_local_data:
+        return "stale"
+    if partial_local_data:
+        return "partial"
+    return "in_sync"
+
+
 def _resolve_options_225_missing_topix_coverage_dates_count(
     inspection: TimeSeriesInspection,
 ) -> int:
@@ -581,6 +641,59 @@ def _resolve_options_225_missing_topix_coverage_dates(
     if inspection.topix_count <= 0 or inspection.options_225_count <= 0:
         return []
     return list(inspection.missing_options_225_dates[:_OPTIONS_225_SAMPLE_LIMIT])
+
+
+def _resolve_core_daily_status(
+    *,
+    legacy_stock_snapshot: bool,
+    initialized: bool,
+    missing_dates_count: int,
+    failed_dates_count: int,
+    missing_fundamentals_count: int,
+    fundamentals_failed_dates_count: int,
+    fundamentals_failed_codes_count: int,
+    integrity_issues_count: int,
+) -> Literal["healthy", "warning", "error"]:
+    if legacy_stock_snapshot or not initialized:
+        return "error"
+    if (
+        missing_dates_count > 0
+        or failed_dates_count > 0
+        or missing_fundamentals_count > 0
+        or fundamentals_failed_dates_count > 0
+        or fundamentals_failed_codes_count > 0
+        or integrity_issues_count > 0
+    ):
+        return "warning"
+    return "healthy"
+
+
+def _resolve_derivatives_status(
+    *,
+    missing_local_data: bool,
+    stale_local_data: bool,
+    pending_local_data: bool,
+    partial_local_data: bool,
+) -> Literal["healthy", "info", "warning"]:
+    if missing_local_data:
+        return "warning"
+    if pending_local_data:
+        return "info"
+    if stale_local_data or partial_local_data:
+        return "warning"
+    return "healthy"
+
+
+def _resolve_overall_status(
+    *,
+    core_daily_status: Literal["healthy", "warning", "error"],
+    derivatives_status: Literal["healthy", "info", "warning"],
+) -> Literal["healthy", "warning", "error"]:
+    if core_daily_status == "error":
+        return "error"
+    if core_daily_status == "warning" or derivatives_status == "warning":
+        return "warning"
+    return "healthy"
 
 
 def _build_readiness_issues(

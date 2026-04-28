@@ -327,9 +327,16 @@ def test_validate_market_db_warns_when_intraday_data_is_stale(
             stock_minute_code_count=1,
             latest_stock_minute_time="15:30",
             indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-04-15",
+            options_225_date_count=2,
+            margin_count=1,
+            margin_date_count=1,
             statements_count=10,
             statement_codes={"1301", "7203"},
-            statement_non_null_counts={"earnings_per_share": 10},
+            statement_non_null_counts={
+                column: 10 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
         )
     )
     monkeypatch.setattr(
@@ -348,7 +355,9 @@ def test_validate_market_db_warns_when_intraday_data_is_stale(
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.status == "warning"
+    assert result.status == "healthy"
+    assert result.healthDomains.coreDailyStatus == "healthy"
+    assert result.healthDomains.intradayStatus == "warning"
     assert result.lastIntradaySync == "2026-04-14T07:50:00+00:00"
     assert result.intradayFreshness.status == "stale"
     assert any("Run intraday sync to ingest minute bars through 2026-04-15" in rec for rec in result.recommendations)
@@ -402,15 +411,21 @@ def test_validate_market_db_reports_options_225_underlying_issues() -> None:
             options_225_min="2024-01-16",
             options_225_max="2024-01-17",
             options_225_date_count=2,
+            margin_count=1,
+            margin_date_count=1,
             statements_count=10,
             statement_codes={"1301", "7203"},
-            statement_non_null_counts={"earnings_per_share": 10},
+            statement_non_null_counts={
+                column: 10 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
         )
     )
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.status == "warning"
+    assert result.status == "healthy"
+    assert result.healthDomains.derivativesStatus == "healthy"
+    assert result.healthDomains.sourceQualityStatus == "info"
     assert result.options225.count == 4
     assert result.options225.missingUnderlyingPriceDatesCount == 1
     assert result.options225.conflictingUnderlyingPriceDatesCount == 1
@@ -513,11 +528,51 @@ def test_validate_market_db_warns_when_options_225_local_data_is_stale() -> None
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
     assert result.status == "warning"
+    assert result.healthDomains.derivativesStatus == "warning"
+    assert result.options225.coverageStatus == "stale"
     assert any(
         "Run incremental sync to refresh N225 options data through 2026-03-06" in rec
         for rec in result.recommendations
     )
     assert any("latest local options date: 2026-03-04" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_treats_one_topix_date_options_lag_as_pending_info() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-04-27",
+            stock_count=10,
+            stock_date_count=3,
+            stock_max="2026-04-27",
+            indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-04-24",
+            options_225_date_count=2,
+            missing_options_225_dates_count=1,
+            missing_options_225_dates=["2026-04-27"],
+            margin_count=1,
+            margin_date_count=1,
+            statements_count=10,
+            latest_statement_disclosed_date="2026-04-27",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={
+                column: 10 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "healthy"
+    assert result.healthDomains.coreDailyStatus == "healthy"
+    assert result.healthDomains.derivativesStatus == "info"
+    assert result.options225.coverageStatus == "pending"
+    assert result.options225.allowedTopixLagDates == 1
+    assert result.options225.missingTopixCoverageDatesCount == 1
+    assert not any("refresh N225 options data through 2026-04-27" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_warns_when_options_225_local_history_is_partial() -> None:

@@ -6818,6 +6818,7 @@ export interface components {
              */
             failedDatesCount: number;
             fundamentals: components["schemas"]["FundamentalsValidation"];
+            healthDomains: components["schemas"]["ValidationHealthDomains"];
             /** Initialized */
             initialized: boolean;
             /** Integrityissues */
@@ -7375,6 +7376,11 @@ export interface components {
         };
         /** Options225Validation */
         Options225Validation: {
+            /**
+             * Allowedtopixlagdates
+             * @default 0
+             */
+            allowedTopixLagDates: number;
             /** Conflictingunderlyingpricedates */
             conflictingUnderlyingPriceDates?: string[];
             /**
@@ -7387,6 +7393,12 @@ export interface components {
              * @default 0
              */
             count: number;
+            /**
+             * Coveragestatus
+             * @default in_sync
+             * @enum {string}
+             */
+            coverageStatus: "in_sync" | "missing" | "pending" | "stale" | "partial";
             /**
              * Datecount
              * @default 0
@@ -10586,6 +10598,33 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValidationHealthDomains */
+        ValidationHealthDomains: {
+            /**
+             * Coredailystatus
+             * @default healthy
+             * @enum {string}
+             */
+            coreDailyStatus: "healthy" | "info" | "warning" | "error";
+            /**
+             * Derivativesstatus
+             * @default healthy
+             * @enum {string}
+             */
+            derivativesStatus: "healthy" | "info" | "warning" | "error";
+            /**
+             * Intradaystatus
+             * @default healthy
+             * @enum {string}
+             */
+            intradayStatus: "healthy" | "info" | "warning" | "error";
+            /**
+             * Sourcequalitystatus
+             * @default healthy
+             * @enum {string}
+             */
+            sourceQualityStatus: "healthy" | "info" | "warning" | "error";
         };
         /** ValidationSampleWindow */
         ValidationSampleWindow: {

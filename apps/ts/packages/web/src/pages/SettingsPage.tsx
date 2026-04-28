@@ -86,6 +86,7 @@ function persistActiveSyncJobId(jobId: string | null): void {
 
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 type SyncJobStatusShape = Pick<SyncJobResponse, 'status'> | null | undefined;
+type ValidationHealthStatus = 'healthy' | 'info' | 'warning' | 'error';
 
 function getToneClasses(tone: StatusTone): string {
   switch (tone) {
@@ -106,6 +107,21 @@ function getValidationTone(status: MarketValidationResponse['status'] | undefine
   switch (status) {
     case 'healthy':
       return 'success';
+    case 'warning':
+      return 'warning';
+    case 'error':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+function getHealthStatusTone(status: ValidationHealthStatus | undefined): StatusTone {
+  switch (status) {
+    case 'healthy':
+      return 'success';
+    case 'info':
+      return 'accent';
     case 'warning':
       return 'warning';
     case 'error':
@@ -233,7 +249,13 @@ interface Options225CoverageDisplay {
   status: string;
 }
 
-type Options225CoverageKind = 'missing' | 'stale' | 'partial' | 'in_sync';
+type Options225CoverageKind = 'missing' | 'pending' | 'stale' | 'partial' | 'in_sync';
+
+interface DomainHealthItem {
+  label: string;
+  status: ValidationHealthStatus;
+  helpText: string;
+}
 
 interface ValidationDiagnosticListProps {
   diagnostics: ValidationDiagnostic[];
@@ -253,6 +275,16 @@ const EMPTY_REPAIR_TARGETS: RepairTargets = {
   failedFundamentalsDates: 0,
   failedFundamentalsCodes: 0,
 };
+
+function normalizeHealthStatus(
+  value: string | undefined,
+  fallback: ValidationHealthStatus = 'healthy'
+): ValidationHealthStatus {
+  if (value === 'healthy' || value === 'info' || value === 'warning' || value === 'error') {
+    return value;
+  }
+  return fallback;
+}
 
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
@@ -321,7 +353,11 @@ function resolveOptions225CoverageKind(params: {
   topixLatest: string | null;
   optionsLatest: string | null;
   missingCoverageCount: number;
+  coverageStatus?: MarketValidationResponse['options225']['coverageStatus'];
 }): Options225CoverageKind {
+  if (params.coverageStatus) {
+    return params.coverageStatus;
+  }
   if (params.optionsCount <= 0 && params.topixCount > 0 && params.initialized !== false) {
     return 'missing';
   }
@@ -348,6 +384,7 @@ function buildOptions225CoverageDisplay(
     topixLatest,
     optionsLatest,
     missingCoverageCount,
+    coverageStatus: validation?.coverageStatus,
   });
 
   switch (coverageKind) {
@@ -360,6 +397,11 @@ function buildOptions225CoverageDisplay(
       return {
         value: `${optionsLatest ?? 'n/a'} (stale)`,
         status: `Status: Behind TOPIX latest ${topixLatest ?? 'n/a'}`,
+      };
+    case 'pending':
+      return {
+        value: `${optionsLatest ?? 'n/a'} (pending)`,
+        status: `Status: Awaiting normal N225 options publication for ${formatCount(missingCoverageCount)} TOPIX date`,
       };
     case 'partial':
       return {
@@ -442,6 +484,36 @@ function buildSnapshotSummaryItems(
   }
 
   return items;
+}
+
+function buildDomainHealthItems(dbValidation: MarketValidationResponse | undefined): DomainHealthItem[] {
+  if (!dbValidation) {
+    return [];
+  }
+
+  const domains = dbValidation.healthDomains;
+  return [
+    {
+      label: 'Core Daily',
+      status: normalizeHealthStatus(domains?.coreDailyStatus, dbValidation.status),
+      helpText: 'TOPIX, stock_data, indices, fundamentals, margin, and backtest readiness.',
+    },
+    {
+      label: 'Derivatives',
+      status: normalizeHealthStatus(domains?.derivativesStatus),
+      helpText: 'Local N225 options coverage against TOPIX trading dates.',
+    },
+    {
+      label: 'Intraday',
+      status: normalizeHealthStatus(domains?.intradayStatus),
+      helpText: 'Minute bars freshness, separated from daily snapshot health.',
+    },
+    {
+      label: 'Source Quality',
+      status: normalizeHealthStatus(domains?.sourceQualityStatus),
+      helpText: 'Known source-data diagnostics such as historical UnderPx gaps or split inventory.',
+    },
+  ];
 }
 
 function buildCoverageItems(
@@ -584,6 +656,7 @@ function buildOptions225CoverageWarning(dbValidation: MarketValidationResponse):
     topixLatest: topixLatest ?? null,
     optionsLatest: optionsLatest ?? null,
     missingCoverageCount,
+    coverageStatus: options225.coverageStatus,
   });
 
   switch (coverageKind) {
@@ -598,6 +671,15 @@ function buildOptions225CoverageWarning(dbValidation: MarketValidationResponse):
         label: 'N225 Options Stale',
         value: 1,
         helpText: `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`incremental\` to refresh \`options_225_data\`.`,
+      };
+    case 'pending':
+      return {
+        label: 'N225 Options Pending',
+        value: missingCoverageCount,
+        helpText: `Local N225 options data is within the ${formatCount(options225.allowedTopixLagDates ?? 1)} TOPIX-date pending window. This is usually a publication timing gap; the next incremental sync should fill it after the source updates.`,
+        sampleItems: options225.missingTopixCoverageDates,
+        sampleLabel: 'Pending dates',
+        sampleHint: buildSampleHint(sampleWindows?.options225MissingTopixCoverageDates),
       };
     case 'partial':
       return {
@@ -624,7 +706,11 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
 
   const options225CoverageWarning = buildOptions225CoverageWarning(dbValidation);
   if (options225CoverageWarning) {
-    warningDiagnostics.push(options225CoverageWarning);
+    if (options225.coverageStatus === 'pending') {
+      informationalDiagnostics.push(options225CoverageWarning);
+    } else {
+      warningDiagnostics.push(options225CoverageWarning);
+    }
   }
 
   appendValidationDiagnostic(warningDiagnostics, dbValidation.stockData.missingDatesCount, {
@@ -651,7 +737,7 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
     sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
   });
 
-  appendValidationDiagnostic(warningDiagnostics, dbValidation.adjustmentEventsCount, {
+  appendValidationDiagnostic(informationalDiagnostics, dbValidation.adjustmentEventsCount, {
     label: 'Adjustment Events',
     helpText: 'Recent split or reverse-split events tracked from stock_data.',
     sampleItems: (dbValidation.adjustmentEvents ?? []).map(
@@ -666,7 +752,7 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
     helpText: 'margin_data contains codes that are missing from stocks metadata.',
   });
 
-  appendValidationDiagnostic(warningDiagnostics, options225.missingUnderlyingPriceDatesCount, {
+  appendValidationDiagnostic(informationalDiagnostics, options225.missingUnderlyingPriceDatesCount, {
     label: 'N225 UnderPx Missing Dates',
     helpText: 'These option dates exist locally but every contract is missing UnderPx.',
     sampleItems: options225.missingUnderlyingPriceDates,
@@ -674,7 +760,7 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
     sampleHint: buildSampleHint(sampleWindows?.options225MissingUnderlyingPriceDates),
   });
 
-  appendValidationDiagnostic(warningDiagnostics, options225.conflictingUnderlyingPriceDatesCount, {
+  appendValidationDiagnostic(informationalDiagnostics, options225.conflictingUnderlyingPriceDatesCount, {
     label: 'N225 UnderPx Conflicts',
     helpText: 'Multiple distinct UnderPx values were stored for the same trade date.',
     sampleItems: options225.conflictingUnderlyingPriceDates,
@@ -766,6 +852,7 @@ function SnapshotDetails({
 }) {
   const recommendations = dbValidation?.recommendations ?? [];
   const summaryItems = buildSnapshotSummaryItems(dbStats, dbValidation);
+  const domainHealthItems = buildDomainHealthItems(dbValidation);
   const coverageItems = dbStats ? buildCoverageItems(dbStats, dbValidation) : [];
   const validationDiagnostics = dbValidation
     ? buildValidationDiagnosticSections(dbValidation)
@@ -793,6 +880,24 @@ function SnapshotDetails({
               >
                 <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">{item.label}</p>
                 <p className="mt-2 text-sm font-semibold">{item.value}</p>
+                <p className="mt-2 text-xs opacity-80">{item.helpText}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {domainHealthItems.length > 0 ? (
+        <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+          <p className="font-medium">Domain Health</p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {domainHealthItems.map((item) => (
+              <div
+                key={item.label}
+                className={cn('rounded-xl border p-3', getToneClasses(getHealthStatusTone(item.status)))}
+              >
+                <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">{item.label}</p>
+                <p className="mt-2 text-sm font-semibold">{item.status.toUpperCase()}</p>
                 <p className="mt-2 text-xs opacity-80">{item.helpText}</p>
               </div>
             ))}

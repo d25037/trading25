@@ -7922,6 +7922,9 @@
           "fundamentals": {
             "$ref": "#/components/schemas/FundamentalsValidation"
           },
+          "healthDomains": {
+            "$ref": "#/components/schemas/ValidationHealthDomains"
+          },
           "initialized": {
             "title": "Initialized",
             "type": "boolean"
@@ -8035,6 +8038,7 @@
         },
         "required": [
           "status",
+          "healthDomains",
           "initialized",
           "topix",
           "stocks",
@@ -9289,6 +9293,11 @@
       },
       "Options225Validation": {
         "properties": {
+          "allowedTopixLagDates": {
+            "default": 0,
+            "title": "Allowedtopixlagdates",
+            "type": "integer"
+          },
           "conflictingUnderlyingPriceDates": {
             "items": {
               "type": "string"
@@ -9305,6 +9314,18 @@
             "default": 0,
             "title": "Count",
             "type": "integer"
+          },
+          "coverageStatus": {
+            "default": "in_sync",
+            "enum": [
+              "in_sync",
+              "missing",
+              "pending",
+              "stale",
+              "partial"
+            ],
+            "title": "Coveragestatus",
+            "type": "string"
           },
           "dateCount": {
             "default": 0,
@@ -16814,6 +16835,56 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationHealthDomains": {
+        "properties": {
+          "coreDailyStatus": {
+            "default": "healthy",
+            "enum": [
+              "healthy",
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Coredailystatus",
+            "type": "string"
+          },
+          "derivativesStatus": {
+            "default": "healthy",
+            "enum": [
+              "healthy",
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Derivativesstatus",
+            "type": "string"
+          },
+          "intradayStatus": {
+            "default": "healthy",
+            "enum": [
+              "healthy",
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Intradaystatus",
+            "type": "string"
+          },
+          "sourceQualityStatus": {
+            "default": "healthy",
+            "enum": [
+              "healthy",
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Sourcequalitystatus",
+            "type": "string"
+          }
+        },
+        "title": "ValidationHealthDomains",
         "type": "object"
       },
       "ValidationSampleWindow": {
