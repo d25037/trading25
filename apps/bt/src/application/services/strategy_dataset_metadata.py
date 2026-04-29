@@ -6,13 +6,13 @@ from typing import Any
 
 from src.application.services.dataset_presets import get_preset
 from src.application.services.dataset_resolver import DatasetResolver
-from src.application.services.run_contracts import extract_dataset_name_from_shared_config
 from src.infrastructure.db.market.dataset_snapshot_reader import (
     DatasetSnapshotReader,
     read_dataset_snapshot_manifest,
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.config.settings import get_settings
+from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 from src.domains.strategy.runtime.loader import ConfigLoader
 
 _PREFERRED_MARKET_ORDER = ("prime", "standard", "growth")
@@ -98,7 +98,7 @@ def resolve_dataset_metadata(
     dataset_base_path: str | None = None,
 ) -> StrategyDatasetMetadata:
     resolver = _dataset_resolver(dataset_base_path)
-    normalized_name = extract_dataset_name_from_shared_config({"dataset": dataset_name})
+    normalized_name = normalize_dataset_snapshot_name(dataset_name)
     if normalized_name is None:
         raise ValueError(f"Invalid dataset name: {dataset_name}")
     if not resolver.exists(normalized_name):
@@ -124,7 +124,7 @@ def resolve_dataset_stock_codes(
     dataset_base_path: str | None = None,
 ) -> list[str]:
     resolver = _dataset_resolver(dataset_base_path)
-    normalized_name = extract_dataset_name_from_shared_config({"dataset": dataset_name})
+    normalized_name = normalize_dataset_snapshot_name(dataset_name)
     if normalized_name is None:
         raise ValueError(f"Invalid dataset name: {dataset_name}")
     if not resolver.exists(normalized_name):
@@ -161,7 +161,11 @@ def resolve_strategy_dataset_metadata(
     loader = config_loader or ConfigLoader()
     config = strategy_config if strategy_config is not None else loader.load_strategy_config(strategy_name)
     merged_shared_config = loader.merge_shared_config(config)
-    dataset_name = extract_dataset_name_from_shared_config(merged_shared_config)
+    dataset_name = (
+        normalize_dataset_snapshot_name(merged_shared_config.get("dataset_snapshot"))
+        if merged_shared_config.get("data_source") == "dataset_snapshot"
+        else None
+    )
     if dataset_name is None:
         return StrategyDatasetMetadata(
             dataset_name=None,

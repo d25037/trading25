@@ -79,13 +79,44 @@ def _market_timeseries_paths() -> tuple[Path, Path]:
     return timeseries_base / "market.duckdb", timeseries_base / "parquet"
 
 
-def _create_market_resources() -> tuple[MarketDb, MarketTimeSeriesStore]:
-    duckdb_path, parquet_dir = _market_timeseries_paths()
-    market_db = MarketDb(str(duckdb_path), read_only=False)
+def _remember_market_paths(request: Request) -> tuple[Path, Path]:
+    market_db = getattr(request.app.state, "market_db", None)
+    db_path = getattr(market_db, "db_path", None)
+    if isinstance(db_path, str) and db_path.strip():
+        duckdb_path = Path(db_path)
+        parquet_dir = duckdb_path.parent / "parquet"
+    else:
+        duckdb_path, parquet_dir = _market_timeseries_paths()
+    request.app.state.market_duckdb_path = str(duckdb_path)
+    request.app.state.market_parquet_dir = str(parquet_dir)
+    return duckdb_path, parquet_dir
+
+
+def _remembered_market_paths(request: Request) -> tuple[Path, Path]:
+    duckdb_path = getattr(request.app.state, "market_duckdb_path", None)
+    parquet_dir = getattr(request.app.state, "market_parquet_dir", None)
+    if isinstance(duckdb_path, str) and duckdb_path.strip():
+        resolved_duckdb_path = Path(duckdb_path)
+        if isinstance(parquet_dir, str) and parquet_dir.strip():
+            return resolved_duckdb_path, Path(parquet_dir)
+        return resolved_duckdb_path, resolved_duckdb_path.parent / "parquet"
+    return _market_timeseries_paths()
+
+
+def _create_market_resources(
+    *,
+    read_only: bool = False,
+    duckdb_path: Path | None = None,
+    parquet_dir: Path | None = None,
+) -> tuple[MarketDb, MarketTimeSeriesStore]:
+    if duckdb_path is None or parquet_dir is None:
+        duckdb_path, parquet_dir = _market_timeseries_paths()
+    market_db = MarketDb(str(duckdb_path), read_only=read_only)
     store = create_time_series_store(
         backend="duckdb-parquet",
         duckdb_path=str(duckdb_path),
         parquet_dir=str(parquet_dir),
+        read_only=read_only,
     )
     if store is None:
         market_db.close()
@@ -105,26 +136,7 @@ def _close_resource(resource: object | None, *, label: str) -> None:
         logger.warning("Failed to close {} during market DB reset: {}", label, exc)
 
 
-def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
-    reader: MarketDbReader | None = None
-    market_data_service: MarketDataService | None = None
-
-    try:
-        reader = MarketDbReader(duckdb_path)
-        market_data_service = MarketDataService(reader)
-    except Exception as exc:  # noqa: BLE001 - keep API alive with degraded read services
-        logger.warning("Failed to initialize market reader after market DB reset: {}", exc)
-
-    request.app.state.market_reader = reader
-    request.app.state.market_data_service = market_data_service
-    request.app.state.roe_service = create_market_roe_service(reader)
-    request.app.state.margin_analytics_service = create_market_margin_analytics_service(reader)
-    request.app.state.chart_service = ChartService(reader)
-
-
-def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
-    duckdb_path, parquet_dir = _market_timeseries_paths()
-    wal_path = Path(f"{duckdb_path}.wal")
+def _clear_market_resources(request: Request) -> None:
     current_market_db = getattr(request.app.state, "market_db", None)
     current_store = getattr(request.app.state, "market_time_series_store", None)
     current_reader = getattr(request.app.state, "market_reader", None)
@@ -142,16 +154,66 @@ def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSerie
     _close_resource(current_market_db, label="market_db")
     close_all_cached_data_access_clients()
 
+
+def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
+    reader: MarketDbReader | None = None
+    market_data_service: MarketDataService | None = None
+
+    try:
+        reader = MarketDbReader(duckdb_path, read_only=True)
+        market_data_service = MarketDataService(reader)
+    except Exception as exc:  # noqa: BLE001 - keep API alive with degraded read services
+        logger.warning("Failed to initialize market reader after market DB reset: {}", exc)
+
+    request.app.state.market_reader = reader
+    request.app.state.market_data_service = market_data_service
+    request.app.state.roe_service = create_market_roe_service(reader)
+    request.app.state.margin_analytics_service = create_market_margin_analytics_service(reader)
+    request.app.state.chart_service = ChartService(reader)
+
+
+def _restore_read_only_market_resources(request: Request) -> None:
+    duckdb_path, parquet_dir = _remembered_market_paths(request)
+    _clear_market_resources(request)
+    if not duckdb_path.exists():
+        return
+    market_db, store = _create_market_resources(
+        read_only=True,
+        duckdb_path=duckdb_path,
+        parquet_dir=parquet_dir,
+    )
+    request.app.state.market_db = market_db
+    request.app.state.market_time_series_store = store
+    _install_market_reader_services(request, str(duckdb_path))
+
+
+def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
+    duckdb_path, parquet_dir = _remember_market_paths(request)
+    _clear_market_resources(request)
+    market_db, store = _create_market_resources(
+        read_only=False,
+        duckdb_path=duckdb_path,
+        parquet_dir=parquet_dir,
+    )
+    request.app.state.market_db = market_db
+    request.app.state.market_time_series_store = store
+    return market_db, store
+
+
+def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
+    duckdb_path, parquet_dir = _market_timeseries_paths()
+    wal_path = Path(f"{duckdb_path}.wal")
+    _clear_market_resources(request)
+
     if duckdb_path.exists():
         duckdb_path.unlink()
     if wal_path.exists():
         wal_path.unlink()
     shutil.rmtree(parquet_dir, ignore_errors=True)
 
-    market_db, store = _create_market_resources()
+    market_db, store = _create_market_resources(read_only=False)
     request.app.state.market_db = market_db
     request.app.state.market_time_series_store = store
-    _install_market_reader_services(request, str(duckdb_path))
     return market_db, store
 
 
@@ -165,6 +227,7 @@ def _get_market_time_series_store(request: Request) -> MarketTimeSeriesStore:
         backend="duckdb-parquet",
         duckdb_path=str(duckdb_path),
         parquet_dir=str(parquet_dir),
+        read_only=True,
     )
     if store is None:
         raise HTTPException(
@@ -250,22 +313,49 @@ def _resolve_time_series_store(
     summary="Start database sync job",
 )
 async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
-    market_db = _get_market_db(request)
     jquants_client = _get_jquants_client(request)
-    time_series_store = _resolve_time_series_store(request, body)
     sync_mode = SyncMode(body.mode)
-    job = await start_sync(
-        sync_mode,
-        market_db,
-        jquants_client,
-        time_series_store=time_series_store,
-        close_time_series_store=False,
-        enforce_bulk_for_stock_data=body.enforceBulkForStockData,
-        reset_before_sync=body.resetBeforeSync,
-        reset_market_snapshot=(lambda: _reset_market_resources(request)) if body.resetBeforeSync else None,
-    )
+    market_db: MarketDb
+    time_series_store: MarketTimeSeriesStore
+
+    if body.resetBeforeSync:
+        market_db = _get_market_db(request)
+        time_series_store = _resolve_time_series_store(request, body)
+    else:
+        if body.dataPlane is not None and body.dataPlane.backend != "duckdb-parquet":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Unsupported dataPlane backend. "
+                    "Only duckdb-parquet is available."
+                ),
+            )
+        try:
+            market_db, time_series_store = _prepare_market_write_resources(request)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        job = await start_sync(
+            sync_mode,
+            market_db,
+            jquants_client,
+            time_series_store=time_series_store,
+            close_time_series_store=True,
+            close_market_db=True,
+            on_finish=lambda: _restore_read_only_market_resources(request),
+            enforce_bulk_for_stock_data=body.enforceBulkForStockData,
+            reset_before_sync=body.resetBeforeSync,
+            reset_market_snapshot=(lambda: _reset_market_resources(request)) if body.resetBeforeSync else None,
+        )
+    except Exception:
+        if not body.resetBeforeSync:
+            _restore_read_only_market_resources(request)
+        raise
 
     if job is None:
+        if not body.resetBeforeSync:
+            _restore_read_only_market_resources(request)
         raise HTTPException(status_code=409, detail="Another sync job is already running")
 
     from src.application.services.sync_strategies import get_strategy
@@ -473,15 +563,20 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
     summary="Sync intraday minute bars into local DuckDB",
 )
 async def sync_intraday(request: Request, body: IntradaySyncRequest) -> IntradaySyncResponse:
-    market_db = _get_market_db(request)
-    time_series_store = _get_market_time_series_store(request)
+    if sync_job_manager.get_active_job() is not None:
+        raise HTTPException(status_code=409, detail="Another sync job is already running")
+    _get_market_db(request)
     jquants_client = _get_jquants_client(request)
-    return await intraday_sync_service.sync_intraday_data(
-        body,
-        market_db=market_db,
-        time_series_store=time_series_store,
-        jquants_client=jquants_client,
-    )
+    try:
+        market_db, time_series_store = _prepare_market_write_resources(request)
+        return await intraday_sync_service.sync_intraday_data(
+            body,
+            market_db=market_db,
+            time_series_store=time_series_store,
+            jquants_client=jquants_client,
+        )
+    finally:
+        _restore_read_only_market_resources(request)
 
 
 @router.post(
@@ -490,24 +585,29 @@ async def sync_intraday(request: Request, body: IntradaySyncRequest) -> Intraday
     summary="Refresh stock data for specific codes",
 )
 async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshResponse:
-    market_db = _get_market_db(request)
-    time_series_store = _get_market_time_series_store(request)
+    if sync_job_manager.get_active_job() is not None:
+        raise HTTPException(status_code=409, detail="Another sync job is already running")
+    _get_market_db(request)
     jquants_client = _get_jquants_client(request)
 
-    if not market_db.is_initialized():
-        raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
-    if market_db.is_legacy_stock_price_snapshot():
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
-                "and market-timeseries/parquet, then run initial sync."
-            ),
-        )
+    try:
+        market_db, time_series_store = _prepare_market_write_resources(request)
+        if not market_db.is_initialized():
+            raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
+        if market_db.is_legacy_stock_price_snapshot():
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Legacy market.duckdb detected. Reset market-timeseries/market.duckdb "
+                    "and market-timeseries/parquet, then run initial sync."
+                ),
+            )
 
-    return await stock_refresh_service.refresh_stocks(
-        body.codes,
-        market_db,
-        time_series_store,
-        jquants_client,
-    )
+        return await stock_refresh_service.refresh_stocks(
+            body.codes,
+            market_db,
+            time_series_store,
+            jquants_client,
+        )
+    finally:
+        _restore_read_only_market_resources(request)

@@ -4,7 +4,8 @@
 # 戦略固有の実行環境設定を行いたい場合は、以下の shared_config セクションを有効化してください
 # shared_config:
 #   initial_cash: 20000000  # 初期資金を2000万円に変更
-#   dataset: "topix100-A"  # データベースを変更
+#   data_source: "market"  # 通常実行は market.duckdb を使用
+#   universe_preset: "primeExTopix500"  # PIT universe preset を指定
 #   kelly_fraction: 1.0  # Kelly係数を変更（0.5=Half Kelly, 1.0=Full Kelly, 2.0=Double Kelly）
 #   fees: 0.0005  # 取引手数料を変更
 #   min_allocation: 0.02  # 最小配分率を変更

@@ -107,10 +107,17 @@ class SharedConfig(BaseModel):
     )
     start_date: str | None = Field(default="", description="開始日")
     end_date: str | None = Field(default="", description="終了日")
-    dataset: str = Field(default="", description="データセット名")
+    data_source: Literal["market", "dataset_snapshot"] = Field(
+        default="market",
+        description="Data source for strategy execution. Normal runs use market.duckdb.",
+    )
     universe_preset: str | None = Field(
         default=None,
         description="market.duckdb-backed universe preset (prime/standard/growth/topix100/primeExTopix500)",
+    )
+    dataset_snapshot: str | None = Field(
+        default=None,
+        description="Archived dataset snapshot name. Requires data_source=dataset_snapshot and static_universe=true.",
     )
     universe_as_of_date: str | None = Field(
         default=None,
@@ -186,6 +193,13 @@ class SharedConfig(BaseModel):
     )
 
     @property
+    def dataset(self) -> str:
+        """Internal data-access scope used by legacy loader function signatures."""
+        if self.data_source == "dataset_snapshot":
+            return str(self.dataset_snapshot or "")
+        return str(self.universe_preset or "")
+
+    @property
     def next_session_round_trip(self) -> bool:
         return (
             self.execution_policy.mode
@@ -209,35 +223,50 @@ class SharedConfig(BaseModel):
     @model_validator(mode="after")
     def resolve_stock_codes(self, info: ValidationInfo):
         """stock_codes の "all" を動的に解決"""
+        if self.data_source == "dataset_snapshot" and not self.static_universe:
+            raise ValueError(
+                "shared_config.data_source='dataset_snapshot' requires static_universe=true. "
+                "Normal PIT-safe runs must use shared_config.universe_preset."
+            )
+        if self.data_source == "market" and self.dataset_snapshot:
+            raise ValueError(
+                "shared_config.dataset_snapshot is only allowed when data_source='dataset_snapshot'"
+            )
         if info.context and info.context.get("resolve_stock_codes") is False:
             return self
         if self.stock_codes == ["all"]:
-            if not self.dataset.strip():
+            data_scope = self.dataset.strip()
+            if self.data_source == "market" and not self.universe_preset:
                 raise ValueError(
-                    "shared_config.dataset is required when stock_codes=['all']. "
-                    "Set it in strategy YAML or XDG default config."
+                    "shared_config.universe_preset is required when stock_codes=['all']. "
+                    "Do not use shared_config.dataset for PIT universe selection."
+                )
+            if not data_scope:
+                raise ValueError(
+                    "shared_config.universe_preset is required for market runs, or "
+                    "shared_config.dataset_snapshot with static_universe=true for archived runs."
                 )
             # データベースから銘柄一覧を取得
             from src.infrastructure.data_access.loaders import get_stock_list
 
             try:
-                self.stock_codes = get_stock_list(self.dataset)
+                self.stock_codes = get_stock_list(data_scope)
             except Exception as e:
                 # APIエラー時は明示的なエラーメッセージを出力
                 from loguru import logger
 
                 logger.error(f"銘柄リスト取得エラー: {e}")
-                logger.error(f"データセット: {self.dataset}")
+                logger.error(f"データスコープ: {data_scope}")
                 raise ValueError(
                     f"銘柄リストの取得に失敗しました。"
-                    f"APIサーバーが起動しているか、データセット '{self.dataset}' が存在するか確認してください。"
+                    f"market.duckdb または dataset_snapshot '{data_scope}' が利用可能か確認してください。"
                     f"エラー詳細: {e}"
                 ) from e
 
             # 銘柄が0件の場合もエラー
             if not self.stock_codes:
                 raise ValueError(
-                    f"データセット '{self.dataset}' に銘柄が見つかりませんでした。"
+                    f"データスコープ '{data_scope}' に銘柄が見つかりませんでした。"
                 )
         return self
 

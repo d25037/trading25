@@ -9,7 +9,6 @@ from loguru import logger
 
 from src.infrastructure.db.market.universe_resolver import (
     UniverseResolutionError,
-    dataset_to_universe_preset,
     resolve_universe,
 )
 from src.infrastructure.db.market.market_db import MarketDb
@@ -38,20 +37,23 @@ def resolve_backtest_universe_codes(shared_config: dict[str, Any]) -> list[str] 
     if stock_codes != ["all"]:
         return None
 
-    dataset_name = str(shared_config.get("dataset", "")).strip()
     explicit_preset = str(shared_config.get("universe_preset") or "").strip()
-    preset = explicit_preset or dataset_to_universe_preset(dataset_name)
+    preset = explicit_preset or None
     if preset is None:
-        if shared_config.get("static_universe") is True:
+        if (
+            shared_config.get("data_source") == "dataset_snapshot"
+            and shared_config.get("static_universe") is True
+        ):
             logger.warning(
-                "Using archived/static dataset snapshot universe for dataset={} because static_universe=true",
-                dataset_name,
+                "Using archived/static dataset snapshot universe={} because static_universe=true",
+                shared_config.get("dataset_snapshot"),
             )
             return None
         raise DatasetSnapshotRuntimeError(
             "Physical dataset snapshots are no longer supported as the normal universe SoT. "
-            "Set shared_config.universe_preset (prime/standard/growth/topix100/primeExTopix500) "
-            "or set static_universe=true only for explicit archived reproducibility runs."
+            "Set shared_config.universe_preset (prime/standard/growth/topix100/primeExTopix500). "
+            "For explicit archived reproducibility only, set data_source=dataset_snapshot, "
+            "dataset_snapshot=<name>, and static_universe=true."
         )
 
     as_of_date = str(

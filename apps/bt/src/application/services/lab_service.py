@@ -95,33 +95,30 @@ def _resolve_target_scope(
     return target_scope
 
 
-def _normalize_dataset_name(dataset: str | None) -> str | None:
-    if dataset is None:
+def _normalize_universe_preset(universe_preset: str | None) -> str | None:
+    if universe_preset is None:
         return None
 
-    normalized = dataset.strip()
+    normalized = universe_preset.strip()
     return normalized or None
 
 
-def _resolve_generate_dataset(dataset: str | None) -> str | None:
-    normalized_dataset = _normalize_dataset_name(dataset)
-    if normalized_dataset is not None:
-        return normalized_dataset
+def _resolve_generate_universe_default(universe_preset: str | None) -> str | None:
+    normalized_preset = _normalize_universe_preset(universe_preset)
+    if normalized_preset is not None:
+        return normalized_preset
 
-    default_dataset = load_default_shared_config().get("dataset")
-    if not isinstance(default_dataset, str):
+    default_preset = load_default_shared_config().get("universe_preset")
+    if not isinstance(default_preset, str):
         return None
 
-    return _normalize_dataset_name(default_dataset)
+    return _normalize_universe_preset(default_preset)
 
 
 def _resolve_generate_universe_preset(
     universe_preset: str | None,
-    dataset: str | None = None,
 ) -> str | None:
-    # `dataset` is retained only as a request/backward-compat alias.  The lab
-    # generator now records this choice as a market universe preset.
-    return _resolve_generate_dataset(universe_preset or dataset)
+    return _resolve_generate_universe_default(universe_preset)
 
 
 def _merge_generate_shared_config(
@@ -129,15 +126,17 @@ def _merge_generate_shared_config(
     *,
     direction: str,
     timeframe: str,
-    dataset: str | None,
+    universe_preset: str | None,
 ) -> dict[str, Any]:
     merged_shared_config = dict(candidate_shared_config or {})
     merged_shared_config["direction"] = direction
     merged_shared_config["timeframe"] = timeframe
-    if dataset is None:
-        merged_shared_config.pop("dataset", None)
+    merged_shared_config["data_source"] = "market"
+    merged_shared_config.pop("dataset", None)
+    if universe_preset is None:
+        merged_shared_config.pop("universe_preset", None)
     else:
-        merged_shared_config["dataset"] = dataset
+        merged_shared_config["universe_preset"] = universe_preset
     return merged_shared_config
 
 
@@ -432,7 +431,6 @@ class LabService:
         save: bool = True,
         direction: str = "longonly",
         timeframe: str = "daily",
-        dataset: str | None = None,
         universe_preset: str | None = None,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
@@ -441,7 +439,7 @@ class LabService:
         """戦略自動生成ジョブをサブミット"""
         resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        resolved_universe_preset = _resolve_generate_universe_preset(universe_preset, dataset)
+        resolved_universe_preset = _resolve_generate_universe_preset(universe_preset)
         parameters: dict[str, Any] = {
             "count": count,
             "top": top,
@@ -475,7 +473,6 @@ class LabService:
         }
         if resolved_universe_preset is not None:
             payload["universe_preset"] = resolved_universe_preset
-            payload["dataset"] = resolved_universe_preset  # worker compatibility
         return await self._submit_worker_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
@@ -491,7 +488,7 @@ class LabService:
         save: bool,
         direction: str,
         timeframe: str,
-        dataset: str | None,
+        universe_preset: str | None,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
     ) -> dict[str, Any]:
@@ -502,12 +499,12 @@ class LabService:
         from src.domains.lab_agent.yaml_updater import YamlUpdater
 
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        resolved_dataset = _resolve_generate_universe_preset(None, dataset)
+        resolved_universe_preset = _resolve_generate_universe_preset(universe_preset)
         shared_config_override = _merge_generate_shared_config(
             None,
             direction=direction,
             timeframe=timeframe,
-            dataset=resolved_dataset,
+            universe_preset=resolved_universe_preset,
         )
         config = GeneratorConfig(
             n_strategies=count,
@@ -565,7 +562,7 @@ class LabService:
                             result.candidate.shared_config,
                             direction=direction,
                             timeframe=timeframe,
-                            dataset=resolved_dataset,
+                            universe_preset=resolved_universe_preset,
                         ),
                         "entry_filter_params": deepcopy(result.candidate.entry_filter_params),
                         "exit_trigger_params": deepcopy(result.candidate.exit_trigger_params),
@@ -581,7 +578,7 @@ class LabService:
                 best.candidate.shared_config,
                 direction=direction,
                 timeframe=timeframe,
-                dataset=resolved_dataset,
+                universe_preset=resolved_universe_preset,
             )
             yaml_updater = YamlUpdater()
             saved_path = yaml_updater.save_candidate(best.candidate)

@@ -58,23 +58,23 @@ class TestSharedConfig:
         config = SharedConfig(
             initial_cash=200000,
             fees=0.002,
-            dataset="sampleA",
+            universe_preset="primeExTopix500",
             stock_codes=["17190"],
         )
         assert config.initial_cash == 200000
         assert config.fees == 0.002
         assert config.stock_codes == ["17190"]
 
-    def test_blank_dataset_requires_explicit_override_when_resolving_all_codes(self):
+    def test_blank_universe_requires_explicit_override_when_resolving_all_codes(self):
         with pytest.raises(ValidationError) as exc_info:
             SharedConfig()
 
-        assert "shared_config.dataset is required" in str(exc_info.value)
+        assert "shared_config.universe_preset is required" in str(exc_info.value)
 
     def test_invalid_initial_cash(self):
         """無効な初期資金でValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            SharedConfig(initial_cash=-1000, dataset="sampleA")
+            SharedConfig(initial_cash=-1000, universe_preset="primeExTopix500")
         assert "初期資金は正の値である必要があります" in str(exc_info.value)
 
     def test_invalid_fees(self):
@@ -82,7 +82,7 @@ class TestSharedConfig:
         with pytest.raises(ValidationError) as exc_info:
             SharedConfig(
                 fees=1.5,  # 1以上は無効
-                dataset="sampleA",
+                universe_preset="primeExTopix500",
             )
         assert "手数料は0以上1未満である必要があります" in str(exc_info.value)
 
@@ -90,7 +90,7 @@ class TestSharedConfig:
         """複数銘柄コード設定テスト"""
         config = SharedConfig(
             initial_cash=100000,
-            dataset="sampleA",
+            universe_preset="primeExTopix500",
             stock_codes=["17190", "23010", "98030"],
         )
         assert len(config.stock_codes) == 3

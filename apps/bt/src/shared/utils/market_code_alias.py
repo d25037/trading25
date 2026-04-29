@@ -1,18 +1,31 @@
 """
 Market Code Alias Utilities
 
-市場コードの表現ゆれ（legacy: prime/standard/growth, current: 0111/0112/0113）を吸収する。
+市場コードの表現ゆれを吸収する。
+
+current:
+- 0111 Prime / 0112 Standard / 0113 Growth
+
+historical JPX segments before the 2022 market restructuring:
+- 0101 東証一部 -> Prime proxy
+- 0102 東証二部, 0106 JASDAQ Standard -> Standard proxy
+- 0104 Mothers, 0107 JASDAQ Growth -> Growth proxy
 """
 
 from __future__ import annotations
 
 MARKET_CODE_ALIASES: dict[str, tuple[str, ...]] = {
-    "prime": ("prime", "0111"),
-    "standard": ("standard", "0112"),
-    "growth": ("growth", "0113"),
-    "0111": ("prime", "0111"),
-    "0112": ("standard", "0112"),
-    "0113": ("growth", "0113"),
+    "prime": ("prime", "0111", "0101"),
+    "standard": ("standard", "0112", "0102", "0106"),
+    "growth": ("growth", "0113", "0104", "0107"),
+    "0111": ("prime", "0111", "0101"),
+    "0112": ("standard", "0112", "0102", "0106"),
+    "0113": ("growth", "0113", "0104", "0107"),
+    "0101": ("prime", "0111", "0101"),
+    "0102": ("standard", "0112", "0102", "0106"),
+    "0106": ("standard", "0112", "0102", "0106"),
+    "0104": ("growth", "0113", "0104", "0107"),
+    "0107": ("growth", "0113", "0104", "0107"),
 }
 
 

@@ -33,24 +33,24 @@ VALID_SIGNAL_CATEGORIES: tuple[SignalCategory, ...] = (
 )
 
 
-def _normalize_dataset_name(dataset: str | None) -> str | None:
-    if dataset is None:
+def _normalize_universe_preset(universe_preset: str | None) -> str | None:
+    if universe_preset is None:
         return None
 
-    normalized = dataset.strip()
+    normalized = universe_preset.strip()
     return normalized or None
 
 
-def _resolve_generate_dataset(dataset: str | None) -> tuple[str | None, bool]:
-    normalized_dataset = _normalize_dataset_name(dataset)
-    if normalized_dataset is not None:
-        return normalized_dataset, False
+def _resolve_generate_universe_preset(universe_preset: str | None) -> tuple[str | None, bool]:
+    normalized_preset = _normalize_universe_preset(universe_preset)
+    if normalized_preset is not None:
+        return normalized_preset, False
 
-    default_dataset = load_default_shared_config().get("dataset")
-    if not isinstance(default_dataset, str):
+    default_preset = load_default_shared_config().get("universe_preset")
+    if not isinstance(default_preset, str):
         return None, True
 
-    return _normalize_dataset_name(default_dataset), True
+    return _normalize_universe_preset(default_preset), True
 
 
 def _merge_generate_shared_config(
@@ -58,15 +58,17 @@ def _merge_generate_shared_config(
     *,
     direction: str,
     timeframe: str,
-    dataset: str | None,
+    universe_preset: str | None,
 ) -> dict[str, object]:
     merged_shared_config = dict(shared_config or {})
     merged_shared_config["direction"] = direction
     merged_shared_config["timeframe"] = timeframe
-    if dataset is None:
-        merged_shared_config.pop("dataset", None)
+    merged_shared_config["data_source"] = "market"
+    merged_shared_config.pop("dataset", None)
+    if universe_preset is None:
+        merged_shared_config.pop("universe_preset", None)
     else:
-        merged_shared_config["dataset"] = dataset
+        merged_shared_config["universe_preset"] = universe_preset
     return merged_shared_config
 
 
@@ -103,11 +105,11 @@ def generate_command(
         "-T",
         help="時間軸 (daily/weekly)",
     ),
-    dataset: str | None = typer.Option(
+    universe_preset: str | None = typer.Option(
         None,
-        "--dataset",
-        "-D",
-        help="データセット名（未指定時は XDG default config を使用）",
+        "--universe-preset",
+        "-U",
+        help="PIT universe preset（未指定時は XDG default config を使用）",
     ),
     entry_filter_only: bool = typer.Option(
         False,
@@ -130,7 +132,7 @@ def generate_command(
         uv run bt -v lab generate
         uv run bt lab generate --count 200 --top 20
         uv run bt lab generate --direction shortonly --timeframe weekly
-        uv run bt lab generate --dataset topix500
+        uv run bt lab generate --universe-preset primeExTopix500
     """
 
     from src.domains.lab_agent import GeneratorConfig, StrategyEvaluator, StrategyGenerator
@@ -149,16 +151,16 @@ def generate_command(
         raise typer.Exit(code=1)
 
     allowed_categories = _resolve_allowed_categories(allowed_category)
-    resolved_dataset, used_default_dataset = _resolve_generate_dataset(dataset)
-    dataset_label = resolved_dataset or "(XDG default unresolved)"
-    if used_default_dataset and resolved_dataset is not None:
-        dataset_label = f"{resolved_dataset} (XDG default)"
+    resolved_universe_preset, used_default_preset = _resolve_generate_universe_preset(universe_preset)
+    universe_label = resolved_universe_preset or "(XDG default unresolved)"
+    if used_default_preset and resolved_universe_preset is not None:
+        universe_label = f"{resolved_universe_preset} (XDG default)"
 
     console.print(
         f"[bold blue]戦略自動生成[/bold blue]: {count}個生成 → 上位{top}個評価"
     )
     console.print(
-        f"  direction: {direction}, timeframe: {timeframe}, dataset: {dataset_label}"
+        f"  direction: {direction}, timeframe: {timeframe}, universe: {universe_label}"
     )
     console.print(
         f"  entry_filter_only: {entry_filter_only}, "
@@ -184,7 +186,7 @@ def generate_command(
         None,
         direction=direction,
         timeframe=timeframe,
-        dataset=resolved_dataset,
+        universe_preset=resolved_universe_preset,
     )
     evaluator = StrategyEvaluator(
         shared_config_dict=shared_config_dict
@@ -229,7 +231,7 @@ def generate_command(
             best_candidate.shared_config,
             direction=direction,
             timeframe=timeframe,
-            dataset=resolved_dataset,
+            universe_preset=resolved_universe_preset,
         )
         yaml_updater = YamlUpdater()
         path = yaml_updater.save_candidate(best_candidate)

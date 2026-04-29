@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.services.dataset_presets import get_preset_label
+from src.application.services.dataset_presets import get_preset, get_preset_label
 from src.application.services.screening_strategy_selection import (
     ScreeningStrategyCatalog,
     build_strategy_selection_catalog,
@@ -62,13 +62,24 @@ def _resolve_selected_strategy_datasets(
     for name in selected_names:
         runtime_payload = catalog.runtime_payloads[name]
         try:
-            dataset_metadata = resolve_dataset_metadata(
-                runtime_payload.shared_config.dataset,
-                dataset_base_path=dataset_base_path,
-            )
+            if runtime_payload.shared_config.data_source == "dataset_snapshot":
+                dataset_metadata = resolve_dataset_metadata(
+                    runtime_payload.shared_config.dataset,
+                    dataset_base_path=dataset_base_path,
+                )
+            else:
+                preset_name = runtime_payload.shared_config.universe_preset
+                preset = get_preset(preset_name or "")
+                if preset is None:
+                    raise ValueError("shared_config.universe_preset is required")
+                dataset_metadata = StrategyDatasetMetadata(
+                    dataset_name=None,
+                    dataset_preset=preset_name,
+                    screening_default_markets=preset.markets,
+                )
         except Exception as exc:
             raise ValueError(
-                f"Invalid dataset for screening strategy {name}: {exc}"
+                f"Invalid universe for screening strategy {name}: {exc}"
             ) from exc
 
         if not dataset_metadata.screening_default_markets:
@@ -146,7 +157,7 @@ def resolve_default_screening_markets(
     markets = union_market_lists(market_lists)
     if not markets:
         raise ValueError(
-            "Failed to resolve default screening markets from production strategy datasets"
+            "Failed to resolve default screening markets from production strategy universes"
         )
 
     return ScreeningMarketResolution(

@@ -160,6 +160,8 @@ async def start_sync(
     jquants_client: SyncServiceClientLike,
     time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
     close_time_series_store: bool = False,
+    close_market_db: bool = False,
+    on_finish: Callable[[], None] | None = None,
     enforce_bulk_for_stock_data: bool = False,
     reset_before_sync: bool = False,
     reset_market_snapshot: ResetMarketSnapshot | None = None,
@@ -255,6 +257,18 @@ async def start_sync(
                     await asyncio.to_thread(current_time_series_store.close)
                 except Exception as e:  # pragma: no cover - close失敗はログのみ
                     logger.warning(f"Failed to close time-series store for job {job.job_id}: {e}")
+            if close_market_db and current_market_db is not None:
+                close = getattr(current_market_db, "close", None)
+                if callable(close):
+                    try:
+                        await asyncio.to_thread(close)
+                    except Exception as e:  # pragma: no cover - close失敗はログのみ
+                        logger.warning(f"Failed to close market DB for job {job.job_id}: {e}")
+            if on_finish is not None:
+                try:
+                    await asyncio.to_thread(on_finish)
+                except Exception as e:  # pragma: no cover - restore失敗はログのみ
+                    logger.warning(f"Failed to run sync finish callback for job {job.job_id}: {e}")
 
     task = asyncio.create_task(_run())
     job.task = task

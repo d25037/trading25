@@ -112,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
     if reader_path.exists():
         try:
-            market_reader = MarketDbReader(str(reader_path))
+            market_reader = MarketDbReader(str(reader_path), read_only=True)
             app.state.market_data_service = MarketDataService(market_reader)
             logger.info(f"Market data reader を初期化: {reader_path}")
         except Exception as e:
@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     market_db: MarketDb | None = None
     market_duckdb_path = str(Path(settings.market_timeseries_dir) / "market.duckdb")
     try:
-        market_db = MarketDb(market_duckdb_path, read_only=False)
+        market_db = MarketDb(market_duckdb_path, read_only=True)
         logger.info(f"MarketDb (DuckDB metadata) を初期化: {market_duckdb_path}")
     except Exception as e:
         logger.warning(f"MarketDb の初期化に失敗: {e}")
@@ -148,6 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             backend="duckdb-parquet",
             duckdb_path=str((Path(timeseries_base) / "market.duckdb")),
             parquet_dir=str((Path(timeseries_base) / "parquet")),
+            read_only=True,
         )
     except Exception as e:
         logger.warning(f"Market time-series store の初期化に失敗: {e}")

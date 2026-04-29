@@ -522,9 +522,15 @@ async def validate_strategy(
         shared_config = config.get("shared_config", {})
         if shared_config:
             if "dataset" in shared_config:
-                dataset = shared_config["dataset"]
-                if not isinstance(dataset, str) or len(dataset) == 0:
-                    errors.append("datasetは空でない文字列である必要があります")
+                errors.append(
+                    "shared_config.dataset is no longer supported for normal runs; "
+                    "use shared_config.universe_preset for PIT universe selection"
+                )
+
+            if "universe_preset" in shared_config:
+                universe_preset = shared_config["universe_preset"]
+                if not isinstance(universe_preset, str) or len(universe_preset) == 0:
+                    errors.append("universe_presetは空でない文字列である必要があります")
 
             if "kelly_fraction" in shared_config:
                 kf = shared_config["kelly_fraction"]

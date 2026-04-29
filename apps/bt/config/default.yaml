@@ -19,7 +19,12 @@ default:
       - all
       start_date: ""
       end_date: ""
-      dataset: "" # runtime override in XDG default config
+      data_source: "market" # normal runs use market.duckdb
+      universe_preset:      # PIT universe: prime/standard/growth/topix100/primeExTopix500
+      universe_as_of_date:
+      universe_filters: {}
+      dataset_snapshot:     # archived reproducibility only; requires static_universe=true
+      static_universe: false
       include_margin_data: true # 信用残高データを含めるか
       include_statements_data: true # 財務諸表データを含めるか（PERフィルター等で使用）
       relative_mode: false # 相対価格モード（個別銘柄OHLC ÷ ベンチマークOHLC）

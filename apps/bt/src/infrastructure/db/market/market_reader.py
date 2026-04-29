@@ -67,17 +67,16 @@ class MarketDbReadable(MarketDbQueryable, Protocol):
 class MarketDbReader:
     """Market time-series 読み取り専用リーダー（DuckDB 専用）。"""
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, *, read_only: bool = False) -> None:
         self._db_path = db_path
+        self._read_only = read_only
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
 
     def _create_connection(self) -> Any:
         duckdb = importlib.import_module("duckdb")
 
-        # Keep the same default connection mode as the time-series store.
-        # DuckDB rejects mixed configs (e.g. read_only + read_write) for one file in a process.
-        return cast(Any, duckdb).connect(self._db_path)
+        return cast(Any, duckdb).connect(self._db_path, read_only=self._read_only)
 
     def _get_thread_connection(self) -> Any:
         thread_id = threading.get_ident()

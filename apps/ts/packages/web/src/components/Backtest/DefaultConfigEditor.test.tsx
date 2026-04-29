@@ -16,7 +16,8 @@ const mockState = {
     output_directory: /tmp/backtest
   parameters:
     shared_config:
-      dataset: prime_20260316
+      data_source: market
+      universe_preset: primeExTopix500
       benchmark_table: topix
 `,
     raw_document: {
@@ -27,7 +28,8 @@ const mockState = {
         },
         parameters: {
           shared_config: {
-            dataset: 'prime_20260316',
+            data_source: 'market',
+            universe_preset: 'primeExTopix500',
             benchmark_table: 'topix',
           },
         },
@@ -37,14 +39,16 @@ const mockState = {
       output_directory: '/tmp/backtest',
     },
     raw_shared_config: {
-      dataset: 'prime_20260316',
+      data_source: 'market',
+      universe_preset: 'primeExTopix500',
       benchmark_table: 'topix',
     },
     effective_execution: {
       output_directory: '/tmp/backtest',
     },
     effective_shared_config: {
-      dataset: 'prime_20260316',
+      data_source: 'market',
+      universe_preset: 'primeExTopix500',
       benchmark_table: 'topix',
     },
     advanced_only_paths: ['default.extra_note'],
@@ -53,18 +57,18 @@ const mockState = {
     basics: [],
     shared_config_fields: [
       {
-        path: 'dataset',
+        path: 'universe_preset',
         section: 'shared_config',
         group: 'data',
-        label: 'Dataset',
+        label: 'Universe Preset',
         type: 'string',
         widget: 'combobox',
-        description: 'Dataset name',
-        summary: 'Dataset snapshot',
-        default: 'default-dataset',
+        description: 'PIT universe preset',
+        summary: 'market.duckdb-backed universe preset',
+        default: 'standard',
         options: null,
         constraints: null,
-        placeholder: 'prime_20260316',
+        placeholder: 'primeExTopix500',
         unit: null,
         examples: [],
         required: false,
@@ -242,7 +246,8 @@ describe('DefaultConfigEditor', () => {
           output_directory: '/tmp/backtest',
         },
         shared_config: {
-          dataset: 'prime_20260316',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           benchmark_table: 'topix',
         },
       },
@@ -251,7 +256,7 @@ describe('DefaultConfigEditor', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('uses available dataset and benchmark options for default shared config selection', async () => {
+  it('uses available universe preset and benchmark options for default shared config selection', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
@@ -261,12 +266,12 @@ describe('DefaultConfigEditor', () => {
 
     render(<DefaultConfigEditor open={true} onOpenChange={onOpenChange} />);
 
-    const datasetSelect = (await screen.findByLabelText('Dataset')) as HTMLSelectElement;
-    expect(datasetSelect.tagName).toBe('SELECT');
-    expect(screen.getByRole('option', { name: 'prime_20260316' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'default-dataset' })).toBeInTheDocument();
+    const universeSelect = (await screen.findByLabelText('Universe Preset')) as HTMLSelectElement;
+    expect(universeSelect.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'primeExTopix500' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'standard' })).toBeInTheDocument();
 
-    fireEvent.change(datasetSelect, { target: { value: 'default-dataset' } });
+    fireEvent.change(universeSelect, { target: { value: 'standard' } });
     const benchmarkSelect = screen.getByLabelText('Benchmark') as HTMLSelectElement;
     expect(benchmarkSelect.tagName).toBe('SELECT');
     expect(screen.getByRole('option', { name: 'topix' })).toBeInTheDocument();
@@ -279,7 +284,8 @@ describe('DefaultConfigEditor', () => {
           output_directory: '/tmp/backtest',
         },
         shared_config: {
-          dataset: 'default-dataset',
+          data_source: 'market',
+          universe_preset: 'standard',
           benchmark_table: 'N225_UNDERPX',
         },
       },
@@ -314,12 +320,13 @@ describe('DefaultConfigEditor', () => {
     output_directory: /tmp/custom
   parameters:
     shared_config:
-      dataset: switched_dataset`,
+      data_source: market
+      universe_preset: growth`,
       },
     });
     await user.click(screen.getByRole('tab', { name: 'Visual' }));
 
-    expect(await screen.findByDisplayValue('switched_dataset')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('growth')).toBeInTheDocument();
   });
 
   it('blocks returning to visual mode for incompatible yaml', async () => {

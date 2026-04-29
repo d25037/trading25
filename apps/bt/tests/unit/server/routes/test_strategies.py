@@ -35,7 +35,7 @@ class TestGetStrategyDetail:
     def test_success(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
-            "shared_config": {"dataset": "test"},
+            "shared_config": {"universe_preset": "primeExTopix500"},
         }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
@@ -59,7 +59,9 @@ class TestStrategyEditorReference:
         assert resp.status_code == 200
         data = resp.json()
         assert data["capabilities"]["visual_editor"] is True
-        assert any(field["path"] == "dataset" for field in data["shared_config_fields"])
+        assert any(field["path"] == "data_source" for field in data["shared_config_fields"])
+        assert any(field["path"] == "universe_preset" for field in data["shared_config_fields"])
+        assert not any(field["path"] == "dataset" for field in data["shared_config_fields"])
         assert any(group["key"] == "data" for group in data["shared_config_groups"])
 
     def test_error_returns_500(self, client):
@@ -77,7 +79,7 @@ class TestStrategyEditorReference:
 class TestStrategyEditorContext:
     def test_success(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {
-            "shared_config": {"dataset": "custom-dataset"},
+            "shared_config": {"universe_preset": "primeExTopix500"},
             "execution": {"output_directory": "/tmp/custom"},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "extra_block": {"keep": True},
@@ -87,7 +89,7 @@ class TestStrategyEditorContext:
             "execution": {"output_directory": None, "create_output_dir": True},
             "parameters": {
                 "shared_config": {
-                    "dataset": "default-dataset",
+                    "universe_preset": "standard",
                     "benchmark_table": "topix",
                     "execution_policy": {"mode": "standard"},
                     "stock_codes": ["all"],
@@ -95,7 +97,7 @@ class TestStrategyEditorContext:
             },
         }
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "custom-dataset",
+            "universe_preset": "primeExTopix500",
             "benchmark_table": "topix",
             "execution_policy": {"mode": "standard"},
             "stock_codes": ["all"],
@@ -110,14 +112,14 @@ class TestStrategyEditorContext:
         assert resp.status_code == 200
         data = resp.json()
         assert data["strategy_name"] == "experimental/sample"
-        assert data["default_shared_config"]["dataset"] == "default-dataset"
-        assert data["effective_shared_config"]["dataset"] == "custom-dataset"
+        assert data["default_shared_config"]["universe_preset"] == "standard"
+        assert data["effective_shared_config"]["universe_preset"] == "primeExTopix500"
         assert data["unknown_top_level_keys"] == ["extra_block"]
-        dataset_provenance = next(
-            item for item in data["shared_config_provenance"] if item["path"] == "dataset"
+        universe_provenance = next(
+            item for item in data["shared_config_provenance"] if item["path"] == "universe_preset"
         )
-        assert dataset_provenance == {
-            "path": "dataset",
+        assert universe_provenance == {
+            "path": "universe_preset",
             "source": "strategy",
             "overridden": True,
         }
@@ -180,7 +182,7 @@ class TestValidateStrategy:
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -198,7 +200,7 @@ class TestValidateStrategy:
     def test_missing_params_warning(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {}
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -215,7 +217,7 @@ class TestValidateStrategy:
             "shared_config": {"kelly_fraction": 5.0},
         }
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
             "kelly_fraction": 5.0,
@@ -231,7 +233,7 @@ class TestValidateStrategy:
 
     def test_strict_nested_typo(self, client, mock_config_loader):
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -265,7 +267,7 @@ class TestValidateStrategy:
 
     def test_next_session_round_trip_rejects_exit_triggers(self, client, mock_config_loader):
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
             "execution_policy": {"mode": "next_session_round_trip"},
@@ -293,7 +295,7 @@ class TestValidateStrategy:
 
     def test_current_session_round_trip_compiles_allowlisted_signal(self, client, mock_config_loader):
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
             "execution_policy": {"mode": "current_session_round_trip"},
@@ -338,7 +340,7 @@ class TestValidateStrategy:
         mock_config_loader,
     ):
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -354,7 +356,7 @@ class TestValidateStrategy:
                 "/api/strategies/experimental/draft/validate",
                 json={
                     "config": {
-                        "shared_config": {"dataset": "primeExTopix500"},
+                        "shared_config": {"universe_preset": "primeExTopix500"},
                         "entry_filter_params": {
                             "volume_ratio_above": {"enabled": True},
                         },
@@ -368,10 +370,10 @@ class TestValidateStrategy:
         assert data["errors"] == []
         mock_runner.get_execution_info.assert_not_called()
 
-    def test_production_requires_explicit_dataset_in_raw_yaml(self, client, mock_config_loader):
+    def test_production_requires_explicit_universe_preset_in_raw_yaml(self, client, mock_config_loader):
         mock_config_loader.resolve_strategy_category.return_value = "production"
         mock_config_loader.merge_shared_config.return_value = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -390,7 +392,7 @@ class TestValidateStrategy:
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is False
-        assert any("shared_config.dataset explicitly" in error for error in data["errors"])
+        assert any("shared_config.universe_preset explicitly" in error for error in data["errors"])
 
 
 class TestUpdateStrategy:
@@ -618,7 +620,7 @@ class TestListStrategies:
             },
         ]
         mock_config_loader.merge_shared_config.side_effect = [
-            {"dataset": "primeExTopix500"},
+            {"universe_preset": "primeExTopix500"},
             {"execution_policy": {"mode": "current_session_round_trip"}},
         ]
         with patch.object(
@@ -666,7 +668,7 @@ class TestListStrategies:
                 "index_open_gap_regime": {"enabled": True},
             },
         }
-        mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}
+        mock_config_loader.merge_shared_config.return_value = {"universe_preset": "primeExTopix500"}
         with patch.object(
             strategies_mod,
             "resolve_strategy_dataset_metadata",
@@ -715,11 +717,11 @@ class TestListStrategies:
             ),
         ]
         mock_config_loader.load_strategy_config.return_value = {
-            "shared_config": {"dataset": "primeExTopix500"},
+            "shared_config": {"universe_preset": "primeExTopix500"},
             "entry_filter_params": {},
             "exit_trigger_params": {},
         }
-        mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}
+        mock_config_loader.merge_shared_config.return_value = {"universe_preset": "primeExTopix500"}
 
         with patch.object(
             strategies_mod,
@@ -748,7 +750,7 @@ class TestListStrategies:
 class TestDefaultConfig:
     def test_get_success(self, client, mock_config_loader, tmp_path):
         default_path = tmp_path / "default.yaml"
-        default_path.write_text("default:\n  dataset: test\n", encoding="utf-8")
+        default_path.write_text("default:\n  parameters:\n    shared_config:\n      universe_preset: prime\n", encoding="utf-8")
         mock_config_loader.get_default_config_path.return_value = default_path
 
         resp = client.get("/api/config/default")
@@ -777,7 +779,7 @@ class TestDefaultConfig:
                 "    output_directory: /tmp/backtest\n"
                 "  parameters:\n"
                 "    shared_config:\n"
-                "      dataset: prime_20260316\n"
+                "      universe_preset: primeExTopix500\n"
                 "      benchmark_table: topix\n"
             ),
             encoding="utf-8",
@@ -789,7 +791,7 @@ class TestDefaultConfig:
         assert resp.status_code == 200
         data = resp.json()
         assert data["raw_execution"]["output_directory"] == "/tmp/backtest"
-        assert data["raw_shared_config"]["dataset"] == "prime_20260316"
+        assert data["raw_shared_config"]["universe_preset"] == "primeExTopix500"
         assert data["advanced_only_paths"] == ["default.extra_note"]
 
     def test_update_success(self, client, mock_config_loader, tmp_path):
@@ -798,7 +800,7 @@ class TestDefaultConfig:
 
         resp = client.put(
             "/api/config/default",
-            json={"content": "default:\n  dataset: test\n"},
+            json={"content": "default:\n  parameters:\n    shared_config:\n      universe_preset: prime\n"},
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
@@ -849,7 +851,7 @@ class TestDefaultConfig:
 
         resp = client.put(
             "/api/config/default",
-            json={"content": "default:\n  dataset: test\n"},
+            json={"content": "default:\n  parameters:\n    shared_config:\n      universe_preset: prime\n"},
         )
         assert resp.status_code == 200
         assert write_path.exists()
@@ -866,7 +868,7 @@ class TestDefaultConfig:
                 "    output_directory: /tmp/old  # exec comment\n"
                 "  parameters:\n"
                 "    shared_config:\n"
-                "      dataset: old-dataset  # dataset comment\n"
+                "      universe_preset: old-preset  # universe comment\n"
                 "      benchmark_table: topix\n"
             ),
             encoding="utf-8",
@@ -879,7 +881,7 @@ class TestDefaultConfig:
             json={
                 "execution": {"output_directory": "/tmp/new"},
                 "shared_config": {
-                    "dataset": "new-dataset",
+                    "universe_preset": "standard",
                     "benchmark_table": "topix",
                 },
             },
@@ -892,7 +894,7 @@ class TestDefaultConfig:
         assert "# keep note" in saved
         assert "extra_note: keep me" in saved
         assert "output_directory: /tmp/new" in saved
-        assert "dataset: new-dataset" in saved
+        assert "universe_preset: standard" in saved
         mock_config_loader.reload_default_config.assert_called_once()
 
     def test_structured_update_reads_baseline_and_writes_override(self, client, mock_config_loader, tmp_path):
@@ -905,7 +907,7 @@ class TestDefaultConfig:
                 "    output_directory: /tmp/old\n"
                 "  parameters:\n"
                 "    shared_config:\n"
-                "      dataset: baseline-dataset\n"
+                "      universe_preset: prime\n"
             ),
             encoding="utf-8",
         )
@@ -917,15 +919,15 @@ class TestDefaultConfig:
             "/api/config/default/structured",
             json={
                 "execution": {"output_directory": "/tmp/override"},
-                "shared_config": {"dataset": "override-dataset"},
+                "shared_config": {"universe_preset": "growth"},
             },
         )
 
         assert resp.status_code == 200
-        assert baseline_path.read_text(encoding="utf-8").find("baseline-dataset") >= 0
+        assert "universe_preset: prime" in baseline_path.read_text(encoding="utf-8")
         saved = override_path.read_text(encoding="utf-8")
         assert "output_directory: /tmp/override" in saved
-        assert "dataset: override-dataset" in saved
+        assert "universe_preset: growth" in saved
 
     def test_structured_update_rejects_unknown_execution_field(
         self,

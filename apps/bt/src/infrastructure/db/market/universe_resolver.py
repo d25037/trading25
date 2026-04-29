@@ -10,32 +10,20 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.utils.market_code_alias import expand_market_codes
 
 UniversePreset = Literal["prime", "standard", "growth", "topix100", "primeExTopix500", "custom"]
 
-_MARKET_CODE_BY_PRESET: dict[str, str] = {
-    "prime": "0111",
-    "standard": "0112",
-    "growth": "0113",
+_MARKET_CODES_BY_PRESET: dict[str, tuple[str, ...]] = {
+    "prime": tuple(expand_market_codes(["prime"])),
+    "standard": tuple(expand_market_codes(["standard"])),
+    "growth": tuple(expand_market_codes(["growth"])),
 }
 _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
 _TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
-_DATASET_TO_UNIVERSE_PRESET: dict[str, str] = {
-    "prime": "prime",
-    "primeMarket": "prime",
-    "standard": "standard",
-    "standardMarket": "standard",
-    "growth": "growth",
-    "growthMarket": "growth",
-    "topix100": "topix100",
-    "primeExTopix500": "primeExTopix500",
-}
-
-
-def dataset_to_universe_preset(dataset: str | None) -> str | None:
-    if not isinstance(dataset, str):
-        return None
-    return _DATASET_TO_UNIVERSE_PRESET.get(dataset.strip())
+UNIVERSE_PRESET_NAMES = frozenset(
+    {"prime", "standard", "growth", "topix100", "primeExTopix500"}
+)
 
 
 class UniverseResolverDbLike(Protocol):
@@ -96,12 +84,12 @@ def resolve_universe(
     normalized_preset = preset.strip()
     request_filters = dict(filters or {})
 
-    if normalized_preset in _MARKET_CODE_BY_PRESET:
+    if normalized_preset in _MARKET_CODES_BY_PRESET:
         return _resolve_market_code_universe(
             db,
             as_of_date=normalized_date,
             preset=normalized_preset,
-            market_code=_MARKET_CODE_BY_PRESET[normalized_preset],
+            market_codes=list(_MARKET_CODES_BY_PRESET[normalized_preset]),
             filters=request_filters,
         )
     if normalized_preset == "topix100":
@@ -130,10 +118,10 @@ def _resolve_market_code_universe(
     *,
     as_of_date: str,
     preset: str,
-    market_code: str,
+    market_codes: list[str],
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    base_codes = db.get_stock_master_codes_for_date(as_of_date, market_codes=[market_code])
+    base_codes = db.get_stock_master_codes_for_date(as_of_date, market_codes=market_codes)
     warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset=preset)
     codes = _apply_code_filters(base_codes, filters)
     return UniverseResolution(
@@ -144,7 +132,7 @@ def _resolve_market_code_universe(
             preset=preset,
             rowCount=len(base_codes),
             resolvedCount=len(codes),
-            filters={"marketCodes": [market_code], **filters},
+            filters={"marketCodes": market_codes, **filters},
             warnings=warnings,
         ),
     )
@@ -184,7 +172,7 @@ def _resolve_prime_ex_topix500_universe(
 ) -> UniverseResolution:
     base_codes = db.get_stock_master_codes_for_date(
         as_of_date=as_of_date,
-        market_codes=[_MARKET_CODE_BY_PRESET["prime"]],
+        market_codes=list(_MARKET_CODES_BY_PRESET["prime"]),
         exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
     )
     warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset="primeExTopix500")
@@ -198,7 +186,7 @@ def _resolve_prime_ex_topix500_universe(
             rowCount=len(base_codes),
             resolvedCount=len(codes),
             filters={
-                "marketCodes": [_MARKET_CODE_BY_PRESET["prime"]],
+                "marketCodes": list(_MARKET_CODES_BY_PRESET["prime"]),
                 "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
                 **filters,
             },

@@ -20,7 +20,7 @@ def test_strategy_config_schema_valid_minimal():
 
 def test_strategy_config_schema_missing_entry_params():
     config = {
-        "shared_config": {"dataset": "primeExTopix500"},
+        "shared_config": {"universe_preset": "primeExTopix500"},
     }
 
     with pytest.raises(ValidationError):
@@ -35,7 +35,7 @@ def test_strategy_config_schema_no_stock_code_resolution(monkeypatch):
 
     config = {
         "shared_config": {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "stock_codes": ["all"],
         },
         "entry_filter_params": {},

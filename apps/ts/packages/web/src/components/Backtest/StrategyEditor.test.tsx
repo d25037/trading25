@@ -93,7 +93,8 @@ const mockState: MockState = {
     category: 'experimental',
     raw_config: {
       shared_config: {
-        dataset: 'custom-dataset',
+        data_source: 'market',
+        universe_preset: 'primeExTopix500',
         execution_policy: { mode: 'standard' },
       },
       execution: {
@@ -113,7 +114,8 @@ const mockState: MockState = {
       },
     },
     default_shared_config: {
-      dataset: 'default-dataset',
+      data_source: 'market',
+      universe_preset: 'standard',
       benchmark_table: 'topix',
       stock_codes: ['all'],
       execution_policy: { mode: 'standard' },
@@ -122,7 +124,8 @@ const mockState: MockState = {
       output_directory: null,
     },
     effective_shared_config: {
-      dataset: 'custom-dataset',
+      data_source: 'market',
+      universe_preset: 'primeExTopix500',
       benchmark_table: 'topix',
       stock_codes: ['all'],
       execution_policy: { mode: 'standard' },
@@ -175,20 +178,20 @@ const mockState: MockState = {
     ],
     shared_config_fields: [
       {
-        path: 'dataset',
+        path: 'universe_preset',
         section: 'shared_config',
         group: 'data',
-        label: 'Dataset',
+        label: 'Universe Preset',
         type: 'string',
         widget: 'combobox',
-        description: 'Dataset name',
-        summary: 'Dataset snapshot',
-        default: 'default-dataset',
+        description: 'PIT universe preset',
+        summary: 'market.duckdb-backed universe preset',
+        default: 'standard',
         options: null,
         constraints: undefined,
-        placeholder: 'prime_20260316',
+        placeholder: 'primeExTopix500',
         unit: null,
-        examples: [],
+        examples: ['prime', 'standard', 'growth', 'topix100', 'primeExTopix500'],
         required: false,
         advanced_only: false,
       },
@@ -541,7 +544,8 @@ describe('StrategyEditor', () => {
       ...mockState.strategyContext,
       raw_config: {
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
         },
         execution: {
@@ -561,7 +565,8 @@ describe('StrategyEditor', () => {
         },
       },
       default_shared_config: {
-        dataset: 'default-dataset',
+        data_source: 'market',
+        universe_preset: 'standard',
         benchmark_table: 'topix',
         stock_codes: ['all'],
         execution_policy: { mode: 'standard' },
@@ -583,7 +588,7 @@ describe('StrategyEditor', () => {
 
     expect(await screen.findByText('Strategy Editor')).toBeInTheDocument();
     expect(screen.getByText('Shared Config')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('custom-dataset')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('primeExTopix500')).toBeInTheDocument();
     expect(screen.getByText('Advanced-only Content')).toBeInTheDocument();
     expect(screen.getByText('execution')).toBeInTheDocument();
   });
@@ -617,7 +622,8 @@ describe('StrategyEditor', () => {
       ...mockState.strategyContext,
       raw_config: {
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
         },
         entry_filter_params: {},
@@ -817,12 +823,12 @@ describe('StrategyEditor', () => {
     await user.click(screen.getByRole('tab', { name: 'Advanced YAML' }));
     fireEvent.change(screen.getByLabelText('YAML Editor'), {
       target: {
-        value: `display_name: Hybrid\nshared_config:\n  dataset: switched-dataset\nentry_filter_params: {}\nexit_trigger_params: {}`,
+        value: `display_name: Hybrid\nshared_config:\n  data_source: market\n  universe_preset: growth\nentry_filter_params: {}\nexit_trigger_params: {}`,
       },
     });
     await user.click(screen.getByRole('tab', { name: 'Visual' }));
 
-    expect(await screen.findByDisplayValue('switched-dataset')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('growth')).toBeInTheDocument();
   });
 
   it('shows parse errors inside preview when advanced yaml cannot be parsed', async () => {
@@ -862,7 +868,9 @@ describe('StrategyEditor', () => {
       raw_config: {
         ...mockState.strategyContext.raw_config,
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'dataset_snapshot',
+          dataset_snapshot: 'custom-dataset',
+          static_universe: true,
           execution_policy: { mode: 'standard' },
           stock_codes: ['7203'],
         },
@@ -898,7 +906,7 @@ describe('StrategyEditor', () => {
     );
   });
 
-  it('selects dataset and benchmark values from the available option lists', async () => {
+  it('selects universe preset and benchmark values from the available option lists', async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     mockUpdateMutate.mockImplementation((_payload, options) => {
@@ -907,12 +915,12 @@ describe('StrategyEditor', () => {
 
     render(<StrategyEditor open onOpenChange={onOpenChange} strategyName="experimental/sample" />);
 
-    const datasetSelect = (await screen.findByLabelText('Dataset')) as HTMLSelectElement;
-    expect(datasetSelect.tagName).toBe('SELECT');
-    expect(screen.getByRole('option', { name: 'custom-dataset' })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'default-dataset' })).toBeInTheDocument();
+    const universeSelect = (await screen.findByLabelText('Universe Preset')) as HTMLSelectElement;
+    expect(universeSelect.tagName).toBe('SELECT');
+    expect(screen.getAllByRole('option', { name: 'primeExTopix500' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('option', { name: 'standard' }).length).toBeGreaterThan(0);
 
-    fireEvent.change(datasetSelect, { target: { value: 'default-dataset' } });
+    fireEvent.change(universeSelect, { target: { value: 'standard' } });
     const benchmarkSelect = screen.getByLabelText('Benchmark') as HTMLSelectElement;
     expect(benchmarkSelect.tagName).toBe('SELECT');
     expect(screen.getByRole('option', { name: 'topix' })).toBeInTheDocument();
@@ -925,7 +933,7 @@ describe('StrategyEditor', () => {
         request: expect.objectContaining({
           config: expect.objectContaining({
             shared_config: expect.objectContaining({
-              dataset: 'default-dataset',
+              universe_preset: 'standard',
               benchmark_table: 'N225_UNDERPX',
             }),
           }),
@@ -942,7 +950,8 @@ describe('StrategyEditor', () => {
       raw_config: {
         ...mockState.strategyContext.raw_config,
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
           stock_codes: ['7203'],
         },
@@ -957,7 +966,7 @@ describe('StrategyEditor', () => {
     expect(screen.getByDisplayValue('7203')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'All' }));
-    expect(screen.getByText('Entire dataset universe is selected.')).toBeInTheDocument();
+    expect(screen.getByText('Entire PIT universe is selected.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Custom' }));
     const stockCodesTextarea = Array.from(document.querySelectorAll('textarea')).find((element) =>
@@ -985,7 +994,8 @@ describe('StrategyEditor', () => {
       ...mockState.strategyContext,
       raw_config: {
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
         },
         entry_filter_params: {},
@@ -1044,7 +1054,8 @@ describe('StrategyEditor', () => {
       ...mockState.strategyContext,
       raw_config: {
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
         },
         entry_filter_params: {},
@@ -1133,7 +1144,8 @@ describe('StrategyEditor', () => {
       ...mockState.strategyContext,
       raw_config: {
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'standard' },
         },
         entry_filter_params: {},
@@ -1231,7 +1243,8 @@ describe('StrategyEditor', () => {
       raw_config: {
         ...mockState.strategyContext.raw_config,
         shared_config: {
-          dataset: 'custom-dataset',
+          data_source: 'market',
+          universe_preset: 'primeExTopix500',
           execution_policy: { mode: 'next_session_round_trip' },
         },
         exit_trigger_params: {

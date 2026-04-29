@@ -123,7 +123,7 @@ describe('authoringDocumentUtils', () => {
           },
           parameters: {
             shared_config: {
-              dataset: 'demo',
+              universe_preset: 'prime',
             },
             extra: true,
           },

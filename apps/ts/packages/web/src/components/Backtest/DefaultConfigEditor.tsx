@@ -42,12 +42,14 @@ interface DefaultConfigEditorProps {
 type DefaultEditorTab = 'visual' | 'advanced';
 
 function isReferenceSelectField(path: string) {
-  return path === 'dataset' || path === 'benchmark_table';
+  return path === 'universe_preset' || path === 'dataset_snapshot' || path === 'benchmark_table';
 }
 
 function getReferenceSelectCopy(path: string) {
-  return path === 'dataset'
-    ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
+  return path === 'universe_preset'
+    ? { chooserLabel: 'Choose universe preset', placeholderLabel: 'Select a universe preset' }
+    : path === 'dataset_snapshot'
+      ? { chooserLabel: 'Choose archived dataset snapshot', placeholderLabel: 'Select a dataset snapshot' }
     : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
 }
 
@@ -115,9 +117,21 @@ export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorP
 
   const advancedOnlyPaths = useMemo(() => buildDefaultDocumentAdvancedOnlyPaths(draftDocument), [draftDocument]);
 
-  const datasetOptionValues = useMemo(() => {
+  const universePresetOptionValues = useMemo(() => {
     const values = new Set<string>();
-    const currentValue = getValueAtPath(sharedConfig, 'dataset');
+    const currentValue = getValueAtPath(sharedConfig, 'universe_preset');
+    if (typeof currentValue === 'string' && currentValue.length > 0) {
+      values.add(currentValue);
+    }
+    for (const preset of ['prime', 'standard', 'growth', 'topix100', 'primeExTopix500']) {
+      values.add(preset);
+    }
+    return Array.from(values);
+  }, [sharedConfig]);
+
+  const datasetSnapshotOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    const currentValue = getValueAtPath(sharedConfig, 'dataset_snapshot');
     if (typeof currentValue === 'string' && currentValue.length > 0) {
       values.add(currentValue);
     }
@@ -199,15 +213,18 @@ export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorP
 
   const getFieldOptionValues = useCallback(
     (path: string) => {
-      if (path === 'dataset') {
-        return datasetOptionValues;
+      if (path === 'universe_preset') {
+        return universePresetOptionValues;
+      }
+      if (path === 'dataset_snapshot') {
+        return datasetSnapshotOptionValues;
       }
       if (path === 'benchmark_table') {
         return benchmarkOptionValues;
       }
       return undefined;
     },
-    [benchmarkOptionValues, datasetOptionValues]
+    [benchmarkOptionValues, datasetSnapshotOptionValues, universePresetOptionValues]
   );
 
   const renderReferenceField = useCallback(

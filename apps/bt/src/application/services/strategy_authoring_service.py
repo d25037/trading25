@@ -45,7 +45,7 @@ _SHARED_CONFIG_GROUPS = [
     AuthoringFieldGroupSchema(
         key="data",
         label="Data",
-        description="Dataset and market-data loading settings.",
+        description="PIT universe and market-data loading settings.",
     ),
     AuthoringFieldGroupSchema(
         key="execution",
@@ -153,12 +153,36 @@ _SHARED_FIELD_OVERRIDES: dict[str, dict[str, Any]] = {
         "summary": "Optional inclusive backtest end date.",
         "placeholder": "YYYY-MM-DD",
     },
-    "dataset": {
+    "data_source": {
         "group": "data",
-        "label": "Dataset",
+        "label": "Data Source",
+        "summary": "Normal runs use market.duckdb. Dataset snapshots are archived reproducibility only.",
+        "examples": ["market", "dataset_snapshot"],
+    },
+    "universe_preset": {
+        "group": "data",
+        "label": "Universe Preset",
         "widget": "combobox",
-        "summary": "Dataset snapshot name resolved by the runtime.",
-        "placeholder": "Override in XDG default config or strategy YAML",
+        "summary": "PIT market.duckdb-backed universe preset.",
+        "placeholder": "primeExTopix500",
+        "examples": ["prime", "standard", "growth", "topix100", "primeExTopix500"],
+    },
+    "universe_as_of_date": {
+        "group": "data",
+        "label": "Universe As Of",
+        "summary": "Optional PIT date for universe resolution. Defaults to start_date.",
+        "placeholder": "YYYY-MM-DD",
+    },
+    "dataset_snapshot": {
+        "group": "data",
+        "label": "Dataset Snapshot",
+        "widget": "combobox",
+        "summary": "Archived snapshot name. Requires data_source=dataset_snapshot and static_universe=true.",
+    },
+    "static_universe": {
+        "group": "data",
+        "label": "Static Universe",
+        "summary": "Explicit opt-in for archived dataset snapshot reproducibility.",
     },
     "include_margin_data": {
         "group": "data",
@@ -202,7 +226,7 @@ _SHARED_FIELD_OVERRIDES: dict[str, dict[str, Any]] = {
         "group": "data",
         "label": "Stock Codes",
         "widget": "string_list",
-        "summary": "Use ['all'] for the whole dataset or specify custom codes.",
+        "summary": "Use ['all'] for the PIT universe or specify custom codes.",
         "placeholder": "7203, 6758, 9984",
     },
     "direction": {

@@ -23,7 +23,7 @@ from src.infrastructure.external_api.dataset.helpers import (
 )
 from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
-from src.infrastructure.db.market.universe_resolver import dataset_to_universe_preset
+from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.shared.config.settings import get_settings
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.snapshot_ids import (
@@ -136,7 +136,11 @@ def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
     with _market_reader_lock:
         reader = _market_reader_cache.get(cache_key)
         if reader is None:
-            reader = MarketDbReader(str(market_duckdb_path))
+            try:
+                reader = MarketDbReader(str(market_duckdb_path), read_only=True)
+            except TypeError:
+                # Some unit-test fakes still model the older constructor.
+                reader = MarketDbReader(str(market_duckdb_path))
             _market_reader_cache[cache_key] = reader
         return reader
 
@@ -215,6 +219,38 @@ def _to_statements_df(rows: list[Any]) -> pd.DataFrame:
         },
     )
     return convert_dated_response(records, date_column="disclosedDate")
+
+
+def _build_stock_code_map_values(stock_codes: list[str]) -> tuple[str, list[Any]]:
+    entries: list[tuple[str, str, int]] = []
+    seen: set[tuple[str, str]] = set()
+    for requested_code in stock_codes:
+        for priority, candidate_code in enumerate(stock_code_candidates(requested_code)):
+            key = (requested_code, candidate_code)
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append((requested_code, candidate_code, priority))
+
+    values_sql = ",".join("(?, ?, ?)" for _ in entries)
+    params: list[Any] = []
+    for requested_code, candidate_code, priority in entries:
+        params.extend([requested_code, candidate_code, priority])
+    return values_sql, params
+
+
+def _row_value(row: Any, key: str) -> Any:
+    try:
+        return row[key]
+    except (KeyError, TypeError):
+        return getattr(row, key)
+
+
+def _group_rows_by_requested_code(rows: list[Any], stock_codes: list[str]) -> dict[str, list[Any]]:
+    result: dict[str, list[Any]] = {code: [] for code in stock_codes}
+    for row in rows:
+        result.setdefault(str(_row_value(row, "requested_code")), []).append(row)
+    return result
 
 
 class DirectDatasetClient:
@@ -577,6 +613,79 @@ class DirectMarketClient:
         rows = reader.query(sql, tuple(params))
         return _to_statements_df(rows)
 
+    def get_statements_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> dict[str, pd.DataFrame]:
+        if not stock_codes:
+            return {}
+
+        reader = _resolve_market_reader()
+        values_sql, params = _build_stock_code_map_values(stock_codes)
+        if not values_sql:
+            return {}
+
+        where_conditions: list[str] = []
+        if start_date:
+            where_conditions.append("s.disclosed_date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("s.disclosed_date <= ?")
+            params.append(end_date)
+
+        period_values = _resolve_statements_period_filter_values(period_type)
+        if period_values:
+            period_placeholders = ",".join("?" for _ in period_values)
+            where_conditions.append(
+                f"s.type_of_current_period IN ({period_placeholders})"
+            )
+            params.extend(period_values)
+
+        if actual_only:
+            actual_clause = " OR ".join(
+                f"s.{column} IS NOT NULL" for column in _STATEMENTS_ACTUAL_ONLY_COLUMNS
+            )
+            where_conditions.append(f"({actual_clause})")
+
+        where_sql = ""
+        if where_conditions:
+            where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        sql = f"""
+            WITH code_map(requested_code, candidate_code, candidate_priority) AS (
+                VALUES {values_sql}
+            ),
+            ranked AS (
+                SELECT
+                    code_map.requested_code,
+                    s.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY code_map.requested_code, s.disclosed_date
+                        ORDER BY
+                            code_map.candidate_priority,
+                            CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM statements AS s
+                JOIN code_map ON s.code = code_map.candidate_code
+                {where_sql}
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY requested_code, disclosed_date
+        """
+        rows = reader.query(sql, tuple(params))
+        grouped = _group_rows_by_requested_code(rows, stock_codes)
+        return {
+            code: _to_statements_df(code_rows)
+            for code, code_rows in grouped.items()
+            if code_rows
+        }
+
     def get_margin(
         self,
         stock_code: str,
@@ -618,6 +727,65 @@ class DirectMarketClient:
         """
         rows = reader.query(sql, tuple(params))
         return _to_margin_df(rows)
+
+    def get_margin_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        if not stock_codes:
+            return {}
+
+        reader = _resolve_market_reader()
+        values_sql, params = _build_stock_code_map_values(stock_codes)
+        if not values_sql:
+            return {}
+
+        where_conditions: list[str] = []
+        if start_date:
+            where_conditions.append("m.date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("m.date <= ?")
+            params.append(end_date)
+        where_sql = ""
+        if where_conditions:
+            where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        sql = f"""
+            WITH code_map(requested_code, candidate_code, candidate_priority) AS (
+                VALUES {values_sql}
+            ),
+            ranked AS (
+                SELECT
+                    code_map.requested_code,
+                    m.date,
+                    m.long_margin_volume,
+                    m.short_margin_volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY code_map.requested_code, m.date
+                        ORDER BY
+                            code_map.candidate_priority,
+                            CASE WHEN length(m.code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM margin_data AS m
+                JOIN code_map ON m.code = code_map.candidate_code
+                {where_sql}
+            )
+            SELECT requested_code, date, long_margin_volume, short_margin_volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY requested_code, date
+        """
+
+        rows = reader.query(sql, tuple(params))
+        grouped = _group_rows_by_requested_code(rows, stock_codes)
+        return {
+            code: _to_margin_df(code_rows)
+            for code, code_rows in grouped.items()
+            if code_rows
+        }
 
     def get_stock_ohlcv(
         self,
@@ -677,6 +845,70 @@ class DirectMarketClient:
         ]
         return convert_ohlcv_response(records)
 
+    def get_stocks_ohlcv_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+        timeframe: Literal["daily", "weekly", "monthly"] = "daily",
+    ) -> dict[str, pd.DataFrame]:
+        _ = timeframe
+        if not stock_codes:
+            return {}
+
+        reader = _resolve_market_reader()
+        values_sql, params = _build_stock_code_map_values(stock_codes)
+        if not values_sql:
+            return {}
+
+        where_conditions: list[str] = []
+        if start_date:
+            where_conditions.append("s.date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("s.date <= ?")
+            params.append(end_date)
+        where_sql = ""
+        if where_conditions:
+            where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        sql = f"""
+            WITH code_map(requested_code, candidate_code, candidate_priority) AS (
+                VALUES {values_sql}
+            ),
+            ranked AS (
+                SELECT
+                    code_map.requested_code,
+                    s.date,
+                    s.open,
+                    s.high,
+                    s.low,
+                    s.close,
+                    s.volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY code_map.requested_code, s.date
+                        ORDER BY
+                            code_map.candidate_priority,
+                            CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM stock_data AS s
+                JOIN code_map ON s.code = code_map.candidate_code
+                {where_sql}
+            )
+            SELECT requested_code, date, open, high, low, close, volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY requested_code, date
+        """
+
+        rows = reader.query(sql, tuple(params))
+        grouped = _group_rows_by_requested_code(rows, stock_codes)
+        return {
+            code: _to_ohlcv_df(code_rows)
+            for code, code_rows in grouped.items()
+            if code_rows
+        }
+
     def get_topix(
         self,
         start_date: str | None = None,
@@ -710,14 +942,14 @@ class DirectMarketClient:
         return convert_index_response(records)
 
 
-class DirectMarketDatasetClient:
-    """Dataset-client compatibility shim backed by market.duckdb."""
+class DirectMarketDataClient:
+    """Dataset-client shaped adapter backed by market.duckdb."""
 
     def __init__(self, dataset_name: str) -> None:
         self.dataset_name = dataset_name
         self._market = DirectMarketClient()
 
-    def __enter__(self) -> DirectMarketDatasetClient:
+    def __enter__(self) -> DirectMarketDataClient:
         return self
 
     def __exit__(
@@ -744,11 +976,9 @@ class DirectMarketDatasetClient:
         end_date: str | None = None,
         timeframe: Literal["daily", "weekly", "monthly"] = "daily",
     ) -> dict[str, pd.DataFrame]:
-        return {
-            code: df
-            for code in stock_codes
-            if not (df := self.get_stock_ohlcv(code, start_date, end_date, timeframe)).empty
-        }
+        return self._market.get_stocks_ohlcv_batch(
+            stock_codes, start_date, end_date, timeframe
+        )
 
     def get_stock_list(
         self,
@@ -777,6 +1007,46 @@ class DirectMarketDatasetClient:
     def get_topix(self, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
         return self._market.get_topix(start_date, end_date)
 
+    def get_margin(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        return self._market.get_margin(stock_code, start_date, end_date)
+
+    def get_margin_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        return self._market.get_margin_batch(stock_codes, start_date, end_date)
+
+    def get_statements(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> pd.DataFrame:
+        return self._market.get_statements(
+            stock_code, start_date, end_date, period_type, actual_only
+        )
+
+    def get_statements_batch(
+        self,
+        stock_codes: list[str],
+        start_date: str | None = None,
+        end_date: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> dict[str, pd.DataFrame]:
+        return self._market.get_statements_batch(
+            stock_codes, start_date, end_date, period_type, actual_only
+        )
+
 
 def _create_http_dataset_client(dataset_name: str) -> DatasetAPIClient:
     return DatasetAPIClient(dataset_name)
@@ -786,11 +1056,14 @@ def _create_http_market_client() -> MarketAPIClient:
     return MarketAPIClient()
 
 
-def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient | DirectMarketDatasetClient:
+DirectMarketDatasetClient = DirectMarketDataClient
+
+
+def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient | DirectMarketDataClient:
     """Return HTTP or direct dataset client based on active data-access mode."""
     if should_use_direct_db():
-        if dataset_to_universe_preset(dataset_name) is not None:
-            return DirectMarketDatasetClient(dataset_name)
+        if dataset_name in UNIVERSE_PRESET_NAMES:
+            return DirectMarketDataClient(dataset_name)
         return DirectDatasetClient(dataset_name)
     return _create_http_dataset_client(dataset_name)
 

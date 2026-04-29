@@ -133,12 +133,16 @@ def prepare_batch_data(
 
 def fetch_stock_codes(shared_config_dict: dict[str, Any]) -> list[str] | None:
     """銘柄リストを事前取得"""
-    dataset = shared_config_dict.get("dataset")
-    if not dataset:
+    data_scope = (
+        shared_config_dict.get("dataset_snapshot")
+        if shared_config_dict.get("data_source") == "dataset_snapshot"
+        else shared_config_dict.get("universe_preset")
+    )
+    if not data_scope:
         return None
 
     try:
-        stock_codes = get_stock_list(dataset)
+        stock_codes = get_stock_list(data_scope)
         logger.info(
             f"Pre-fetched {len(stock_codes)} stock codes for parallel evaluation"
         )
@@ -154,8 +158,12 @@ def fetch_ohlcv_data(
     include_forecast_revision: bool = False,
 ) -> dict[str, dict[str, Any]] | None:
     """OHLCVデータを事前取得してシリアライズ"""
-    dataset = shared_config_dict.get("dataset")
-    if not stock_codes or not dataset:
+    data_scope = (
+        shared_config_dict.get("dataset_snapshot")
+        if shared_config_dict.get("data_source") == "dataset_snapshot"
+        else shared_config_dict.get("universe_preset")
+    )
+    if not stock_codes or not data_scope:
         return None
 
     try:
@@ -167,7 +175,7 @@ def fetch_ohlcv_data(
 
         logger.info(f"Pre-fetching OHLCV data for {len(stock_codes)} stocks...")
         raw_data = prepare_multi_data(
-            dataset=dataset,
+            dataset=data_scope,
             stock_codes=stock_codes,
             start_date=start_date,
             end_date=end_date,
@@ -188,8 +196,12 @@ def fetch_ohlcv_data(
 
 def fetch_benchmark_data(shared_config_dict: dict[str, Any]) -> dict[str, Any] | None:
     """ベンチマークデータ（TOPIX）を事前取得してシリアライズ"""
-    dataset = shared_config_dict.get("dataset")
-    if not dataset:
+    data_scope = (
+        shared_config_dict.get("dataset_snapshot")
+        if shared_config_dict.get("data_source") == "dataset_snapshot"
+        else shared_config_dict.get("universe_preset")
+    )
+    if not data_scope:
         return None
 
     try:
@@ -197,7 +209,7 @@ def fetch_benchmark_data(shared_config_dict: dict[str, Any]) -> dict[str, Any] |
         end_date = shared_config_dict.get("end_date")
 
         logger.info("Pre-fetching benchmark (TOPIX) data...")
-        benchmark_df = load_topix_data(dataset, start_date, end_date)
+        benchmark_df = load_topix_data(data_scope, start_date, end_date)
 
         benchmark_data = {
             "index": benchmark_df.index.astype(str).tolist(),

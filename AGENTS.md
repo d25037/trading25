@@ -51,7 +51,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks` / `margin_data`）とし、dataset へのフォールバックを禁止する
 - `Symbol Workbench`/`Analysis` の `stock_data` 読み取りは 4桁/5桁コード混在を正規化し、同日重複行は 4桁コード優先で 1 行化する。`stocks` 欠落時でも `stock_data` からの OHLCV 取得を継続する
 - Screening / Symbol Workbench / Backtest / Signal semantics の SoT matrix は [`docs/architecture-sot-matrix.md`](docs/architecture-sot-matrix.md) を参照する
-- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）。`production/*` は raw YAML で `shared_config.dataset` の明示宣言を必須とし、`default.yaml` 継承のみでは不十分とする
+- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）。通常の backtest / research / lab / screening は `shared_config.data_source: market` と `shared_config.universe_preset` を SoT とし、`shared_config.dataset` は unsupported とする。`production/*` は raw YAML で `shared_config.universe_preset` の明示宣言を必須とし、`default.yaml` 継承のみでは不十分とする。物理 dataset snapshot は `data_source: dataset_snapshot` + `dataset_snapshot` + `static_universe: true` を明示した archived reproducibility run だけで使う
 - Backtest family（`backtest` / `attribution` / `optimize` / `lab`）は `shared_config.execution_policy.mode` として `next_session_round_trip` / `current_session_round_trip` / `overnight_round_trip` をサポートする。`next_session_round_trip` は entry signal の翌営業日 `Open` で建てて同日 `Close` で閉じ、`current_session_round_trip` は当日 `Open` で建てて当日 `Close` で閉じ、`overnight_round_trip` は当日 `Close` で建てて翌営業日 `Open` で閉じる。`screening` は `next_session_round_trip` を unsupported error で拒否し、production strategy を `screening_support` (`supported` / `unsupported`) と `entry_decidability` (`pre_open_decidable` / `requires_same_session_observation`) で分類する
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - Strategy `rename` / `delete` の権限判定はトップレベルカテゴリ基準で行い、`experimental/**`（例: `experimental/optuna/foo`）は許可する
@@ -114,7 +114,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 両プロジェクトが `~/.local/share/trading25/` を共有:
 - `market-timeseries/market.duckdb` + `datasets/` + `portfolio.db` — FastAPI が管理
 - `strategies/experimental/` / `strategies/production/` / `strategies/legacy/` / `backtest/results/` / `backtest/attribution/` — bt が管理
-- `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.dataset` は空欄 baseline とする。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
+- `config/default.yaml` は repo baseline（`apps/bt/config/default.yaml`）を残しつつ、`shared_config.data_source: market` を baseline とし、`shared_config.universe_preset` は runtime/strategy で明示する。runtime override は `TRADING25_DEFAULT_CONFIG_PATH` または `~/.local/share/trading25/config/default.yaml` を優先する
 
 ## bt (Python / uv)
 VectorBT基盤の高速バックテスト・runner-first research bundle・static HTML report システム。
@@ -185,13 +185,13 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 
 - `apps/ts` の依存は `bun run quality:deps:audit` を SoT に棚卸しし、未使用依存、script/import と manifest の不整合、root override と package version drift を検出する。`zustand` は完全撤去ではなく縮小方針とし、URL と相性の良い page selection state は TanStack Router search params を SoT にする
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
-- Backtest `Strategies` 画面の Strategy Editor は `production` / `experimental` の編集を許可し、`Visual / Advanced YAML / Preview` の hybrid editor、section sidebar、backend metadata-driven な `shared_config` / signal guidance、`dataset` / `benchmark_table` の reference select UI を提供する。`Rename` / `Delete` は `experimental` のみ許可
-- Backtest `Default Config` editor は `default.execution` と `default.parameters.shared_config` を visual 編集でき、`dataset` / `benchmark_table` は Strategy Editor と同じ reference select card を使い、raw YAML は advanced fallback として維持する
+- Backtest `Strategies` 画面の Strategy Editor は `production` / `experimental` の編集を許可し、`Visual / Advanced YAML / Preview` の hybrid editor、section sidebar、backend metadata-driven な `shared_config` / signal guidance、`universe_preset` / `dataset_snapshot` / `benchmark_table` の reference select UI を提供する。`Rename` / `Delete` は `experimental` のみ許可
+- Backtest `Default Config` editor は `default.execution` と `default.parameters.shared_config` を visual 編集でき、`universe_preset` / `dataset_snapshot` / `benchmark_table` は Strategy Editor と同じ reference select card を使い、raw YAML は advanced fallback として維持する
 - Strategy optimization の SoT は strategy YAML トップレベル `optimization` block とし、旧 `*_grid.yaml` sidecar / `/api/optimize/grid-configs*` は廃止する。`GET/POST draft/PUT/DELETE /api/strategies/{strategy}/optimization` を strategy-scoped API とし、CLI では `bt migrate-optimization-specs` で legacy sidecar を one-shot 移行する
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、saved spec が無ければ `Generate Draft from Strategy` を主導線にする。`Saved` / `Generated Draft` / `Drift` / `Ready to Run` を表示し、保存ブロックは YAML 構文エラーと構造エラー時のみ、warning は保存可能とする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する
-- `screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止。`markets` 未指定時は selected strategies（未選択なら eligible production strategies 全体）の dataset snapshot 実体銘柄 universe を Auto SoT とし、UI/API の scope label は dataset preset label を返す。explicit な request/URL/UI 指定が常に優先する
+- `screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止。`markets` 未指定時は selected strategies（未選択なら eligible production strategies 全体）の `universe_preset` を `stock_master_daily` で PIT 解決した universe を Auto SoT とし、UI/API の scope label は universe preset label を返す。explicit な request/URL/UI 指定が常に優先する
 - `Screening / Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - frontend の desktop 作業幅はユーザーの常用レイアウト（おおむね 1180px 前後のコンテンツ幅）を優先し、hero/header/meta の縦占有を抑えて主テーブル・主チャートの可視領域を確保する
 - Screening 画面は `Pre-Open Decidable / Requires In-Session Observation` の2タブ構成。Ranking 画面は `Daily Ranking / Fundamental Ranking` の2タブ構成で、Daily Ranking は `Individual Stocks / Indices` の2サブタブを持つ。Indices は backend `indexPerformance` を表示し、`lookbackDays` と `date` を共有 filter として使う。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する

@@ -22,8 +22,8 @@ import {
 
 describe('authoringUtils', () => {
   it('parses object yaml and rejects non-object yaml', () => {
-    expect(parseYamlObject('shared_config:\n  dataset: demo').value).toEqual({
-      shared_config: { dataset: 'demo' },
+    expect(parseYamlObject('shared_config:\n  universe_preset: prime').value).toEqual({
+      shared_config: { universe_preset: 'prime' },
     });
     expect(parseYamlObject('- item').error).toContain('Must be an object');
   });
@@ -36,7 +36,7 @@ describe('authoringUtils', () => {
   });
 
   it('dumps yaml objects', () => {
-    expect(dumpYamlObject({ shared_config: { dataset: 'demo' } })).toContain('dataset: demo');
+    expect(dumpYamlObject({ shared_config: { universe_preset: 'prime' } })).toContain('universe_preset: prime');
   });
 
   it('falls back to json when safe yaml dump fails', () => {
@@ -55,9 +55,9 @@ describe('authoringUtils', () => {
     };
 
     expect(getValueAtPath(source, 'shared_config.execution_policy.mode')).toBe('standard');
-    expect(getValueAtPath(source, 'shared_config.dataset')).toBeUndefined();
+    expect(getValueAtPath(source, 'shared_config.universe_preset')).toBeUndefined();
     expect(hasValueAtPath(source, 'shared_config.execution_policy.mode')).toBe(true);
-    expect(hasValueAtPath(source, 'shared_config.dataset')).toBe(false);
+    expect(hasValueAtPath(source, 'shared_config.universe_preset')).toBe(false);
   });
 
   it('normalizes non-object signal sections and visual compatibility checks', () => {
@@ -67,7 +67,7 @@ describe('authoringUtils', () => {
   it('sets nested values without mutating the source', () => {
     const source = {
       shared_config: {
-        dataset: 'default',
+        universe_preset: 'standard',
       },
     };
 
@@ -75,7 +75,7 @@ describe('authoringUtils', () => {
 
     expect(next).toEqual({
       shared_config: {
-        dataset: 'default',
+        universe_preset: 'standard',
         execution_policy: {
           mode: 'next_session_round_trip',
         },
@@ -83,7 +83,7 @@ describe('authoringUtils', () => {
     });
     expect(source).toEqual({
       shared_config: {
-        dataset: 'default',
+        universe_preset: 'standard',
       },
     });
   });

@@ -26,24 +26,24 @@ class TestParseRequestedMarketCodes:
 class TestExpandMarketCodes:
     def test_expands_legacy_codes(self):
         result = expand_market_codes(["prime", "standard"])
-        assert result == ["prime", "0111", "standard", "0112"]
+        assert result == ["prime", "0111", "0101", "standard", "0112", "0102", "0106"]
 
     def test_expands_numeric_codes(self):
         result = expand_market_codes(["0111", "0112"])
-        assert result == ["prime", "0111", "standard", "0112"]
+        assert result == ["prime", "0111", "0101", "standard", "0112", "0102", "0106"]
 
     def test_deduplicates_and_keeps_unknown(self):
         result = expand_market_codes(["prime", "0111", "custom"])
-        assert result == ["prime", "0111", "custom"]
+        assert result == ["prime", "0111", "0101", "custom"]
 
 
 class TestResolveMarketCodes:
     def test_resolves_requested_and_query_codes(self):
         requested, query_codes = resolve_market_codes("prime,custom")
         assert requested == ["prime", "custom"]
-        assert query_codes == ["prime", "0111", "custom"]
+        assert query_codes == ["prime", "0111", "0101", "custom"]
 
     def test_resolves_with_fallback(self):
         requested, query_codes = resolve_market_codes("", fallback=["standard"])
         assert requested == ["standard"]
-        assert query_codes == ["standard", "0112"]
+        assert query_codes == ["standard", "0112", "0102", "0106"]

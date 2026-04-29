@@ -20,7 +20,6 @@ from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
-from src.infrastructure.db.market.universe_resolver import dataset_to_universe_preset
 from src.domains.analytics.screening_requirements import (
     APIPeriodType,
     MultiDataRequirementKey,
@@ -65,7 +64,7 @@ from src.entrypoints.http.schemas.screening import (
 from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.application.services.analytics_provenance import build_market_provenance
 from src.application.services.dataset_presets import get_preset_label
-from src.shared.utils.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes, resolve_market_codes
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
     load_market_sector_indices,
@@ -534,7 +533,7 @@ class ScreeningService:
         union_codes: set[str] = set()
         has_universe = False
         for strategy in strategy_runtimes:
-            preset = dataset_to_universe_preset(strategy.shared_config.dataset)
+            preset = strategy.shared_config.universe_preset
             if preset is not None and self._table_exists("stock_master_daily"):
                 codes = self._resolve_universe_codes_from_stock_master(
                     preset=preset,
@@ -555,15 +554,23 @@ class ScreeningService:
         filters: list[str] = ["date = ?"]
         params: list[str] = [as_of_date]
         if preset == "prime":
-            filters.append("market_code = '0111'")
+            market_codes = expand_market_codes(["prime"])
+            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
+            params.extend(market_codes)
         elif preset == "standard":
-            filters.append("market_code = '0112'")
+            market_codes = expand_market_codes(["standard"])
+            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
+            params.extend(market_codes)
         elif preset == "growth":
-            filters.append("market_code = '0113'")
+            market_codes = expand_market_codes(["growth"])
+            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
+            params.extend(market_codes)
         elif preset == "topix100":
             filters.append("coalesce(scale_category, '') IN ('TOPIX Core30', 'TOPIX Large70')")
         elif preset == "primeExTopix500":
-            filters.append("market_code = '0111'")
+            market_codes = expand_market_codes(["prime"])
+            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
+            params.extend(market_codes)
             filters.append("coalesce(scale_category, '') NOT IN (?, ?, ?)")
             params.extend(_TOPIX500_SCALE_CATEGORIES)
         else:
@@ -645,17 +652,20 @@ class ScreeningService:
             dataset_universe_codes: frozenset[str] | None = None
             dataset_scope_label: str | None = None
             if use_strategy_dataset_universe:
-                try:
-                    dataset_metadata = resolve_dataset_metadata(runtime_payload.shared_config.dataset)
-                    dataset_universe_codes = frozenset(
-                        resolve_dataset_stock_codes(runtime_payload.shared_config.dataset)
-                    )
-                    if dataset_metadata.dataset_preset is not None:
-                        dataset_scope_label = get_preset_label(dataset_metadata.dataset_preset)
-                except Exception as exc:
-                    raise ValueError(
-                        f"Invalid dataset universe for screening strategy {name}: {exc}"
-                    ) from exc
+                if runtime_payload.shared_config.data_source == "dataset_snapshot":
+                    try:
+                        dataset_metadata = resolve_dataset_metadata(
+                            runtime_payload.shared_config.dataset
+                        )
+                        dataset_universe_codes = frozenset(
+                            resolve_dataset_stock_codes(runtime_payload.shared_config.dataset)
+                        )
+                        if dataset_metadata.dataset_preset is not None:
+                            dataset_scope_label = get_preset_label(dataset_metadata.dataset_preset)
+                    except Exception as exc:
+                        raise ValueError(
+                            f"Invalid dataset universe for screening strategy {name}: {exc}"
+                        ) from exc
 
             runtime = StrategyRuntime(
                 name=name,

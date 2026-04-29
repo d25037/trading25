@@ -24,7 +24,7 @@ def config_loader():
                 "stock_codes": ["all"],
                 "start_date": "",
                 "end_date": "",
-                "dataset": "primeExTopix500",
+                "universe_preset": "primeExTopix500",
                 "kelly_fraction": 2.0,
                 "min_allocation": 0.01,
                 "max_allocation": 0.5,
@@ -48,7 +48,7 @@ def test_merge_shared_config_no_override(config_loader):
     # デフォルト設定がそのまま返される
     assert merged["initial_cash"] == 10000000
     assert merged["fees"] == 0.001
-    assert merged["dataset"] == "primeExTopix500"
+    assert merged["universe_preset"] == "primeExTopix500"
     assert merged["kelly_fraction"] == 2.0
 
 
@@ -157,7 +157,7 @@ def test_merge_shared_config_empty_strategy_config(config_loader):
     # デフォルト設定がそのまま返される
     assert merged["initial_cash"] == 10000000
     assert merged["fees"] == 0.001
-    assert merged["dataset"] == "primeExTopix500"
+    assert merged["universe_preset"] == "primeExTopix500"
 
 
 def test_merge_shared_config_invalid_type(config_loader):
@@ -326,7 +326,7 @@ def test_save_strategy_config_production_allowed(tmp_path):
     loader = ConfigLoader(config_dir=str(config_dir))
 
     config = {
-        "shared_config": {"dataset": "primeExTopix500"},
+        "shared_config": {"universe_preset": "primeExTopix500"},
         "entry_filter_params": {
             "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
         },
@@ -345,14 +345,14 @@ def test_save_strategy_config_production_allowed(tmp_path):
     assert "production" in str(path)
 
 
-def test_save_strategy_config_production_requires_explicit_dataset(tmp_path):
-    """production 保存は raw YAML の shared_config.dataset を必須とする"""
+def test_save_strategy_config_production_requires_explicit_universe_preset(tmp_path):
+    """production 保存は raw YAML の shared_config.universe_preset を必須とする"""
     config_dir = tmp_path / "config"
     production_dir = config_dir / "strategies" / "production"
     production_dir.mkdir(parents=True)
 
     loader = ConfigLoader(config_dir=str(config_dir))
-    loader.default_config = {"dataset": "primeExTopix500"}
+    loader.default_config = {"universe_preset": "primeExTopix500"}
 
     config = {
         "entry_filter_params": {
@@ -360,7 +360,7 @@ def test_save_strategy_config_production_requires_explicit_dataset(tmp_path):
         }
     }
 
-    with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+    with pytest.raises(ValueError, match="shared_config.universe_preset explicitly"):
         loader.save_strategy_config(
             "production/my_strategy",
             config,
@@ -643,7 +643,7 @@ def test_move_strategy_success(tmp_path):
     source_dir.mkdir(parents=True)
     source_file = source_dir / "sample.yaml"
     source_file.write_text(
-        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        "shared_config:\n  universe_preset: primeExTopix500\nentry_filter_params: {}",
         encoding="utf-8",
     )
 
@@ -681,7 +681,7 @@ def test_move_strategy_conflict_raises(tmp_path):
     production_dir.mkdir(parents=True)
 
     (experimental_dir / "sample.yaml").write_text(
-        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        "shared_config:\n  universe_preset: primeExTopix500\nentry_filter_params: {}",
         encoding="utf-8",
     )
     (production_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
@@ -728,7 +728,7 @@ def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
 
     source_path = experimental_dir / "sample.yaml"
     source_path.write_text(
-        "shared_config:\n  dataset: primeExTopix500\nentry_filter_params: {}",
+        "shared_config:\n  universe_preset: primeExTopix500\nentry_filter_params: {}",
         encoding="utf-8",
     )
 
@@ -747,17 +747,17 @@ def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
         loader.move_strategy("experimental/sample", "production")
 
 
-def test_move_strategy_to_production_requires_explicit_dataset(tmp_path):
-    """production への移動は raw YAML の shared_config.dataset を必須とする"""
+def test_move_strategy_to_production_requires_explicit_universe_preset(tmp_path):
+    """production への移動は raw YAML の shared_config.universe_preset を必須とする"""
     config_dir = tmp_path / "config"
     experimental_dir = config_dir / "strategies" / "experimental"
     experimental_dir.mkdir(parents=True)
     (experimental_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
 
     loader = ConfigLoader(config_dir=str(config_dir))
-    loader.default_config = {"dataset": "primeExTopix500"}
+    loader.default_config = {"universe_preset": "primeExTopix500"}
 
-    with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+    with pytest.raises(ValueError, match="shared_config.universe_preset explicitly"):
         loader.move_strategy("experimental/sample", "production")
 
 

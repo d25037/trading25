@@ -6140,6 +6140,7 @@
         "type": "object"
       },
       "LabGenerateRequest": {
+        "additionalProperties": false,
         "description": "戦略自動生成リクエスト",
         "properties": {
           "allowed_categories": {
@@ -6174,18 +6175,6 @@
             "minimum": 1,
             "title": "Count",
             "type": "integer"
-          },
-          "dataset": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Deprecated compatibility alias for universe_preset.",
-            "title": "Dataset"
           },
           "direction": {
             "default": "longonly",

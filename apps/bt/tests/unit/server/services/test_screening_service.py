@@ -165,8 +165,47 @@ def test_resolve_prime_ex_topix500_screening_universe_uses_scale_category(tmp_pa
     assert codes == {"1301"}
 
 
+def test_resolve_prime_ex_topix500_screening_universe_supports_historical_tse_first_section(tmp_path):
+    db_path = str(tmp_path / "screening-prime-ex-historical.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2016-05-30', '13010', 'TSE1 Small', '0101', 'TOPIX Small 1', '水産・農林業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2016-05-30', '72030', 'Toyota', '0101', 'TOPIX Core30', '輸送用機器')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2016-05-30', '14000', 'TSE2', '0102', '-', '情報・通信業')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        codes = service._resolve_universe_codes_from_stock_master(
+            preset="primeExTopix500",
+            as_of_date="2016-05-30",
+        )
+    finally:
+        reader.close()
+
+    assert codes == {"1301"}
+
+
 def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) -> StrategyRuntime:
-    shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
+    shared_payload: dict[str, object] = {"universe_preset": "primeExTopix500"}
     if shared_overrides:
         shared_payload.update(shared_overrides)
     shared_config = SharedConfig.model_validate(
@@ -249,7 +288,7 @@ class TestMarketCodeCompatibility:
         assert prime_result.scopeLabel == "Prime"
         assert numeric_result.scopeLabel == "Prime"
 
-    def test_run_screening_auto_mode_uses_dataset_universe_codes(
+    def test_run_screening_auto_mode_uses_universe_codes(
         self,
         service,
         monkeypatch,
@@ -392,7 +431,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {
-                    "dataset": "primeExTopix500",
+                    "universe_preset": "primeExTopix500",
                     "execution_policy": {"mode": "next_session_round_trip"},
                 },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
@@ -434,7 +473,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {
-                    "dataset": "primeExTopix500",
+                    "universe_preset": "primeExTopix500",
                     "execution_policy": {"mode": "current_session_round_trip"},
                 },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
@@ -476,7 +515,7 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
-                "shared_config": {"dataset": "primeExTopix500"},
+                "shared_config": {"universe_preset": "primeExTopix500"},
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {
                     "index_open_gap_regime": {"enabled": True},
@@ -486,7 +525,7 @@ class TestStrategyResolution:
         monkeypatch.setattr(
             service._config_loader,
             "merge_shared_config",
-            lambda _config: {"dataset": "primeExTopix500"},
+            lambda _config: {"universe_preset": "primeExTopix500"},
         )
 
         resolved = service._resolve_strategies(
@@ -560,7 +599,7 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
-                "shared_config": {"dataset": "primeExTopix500"},
+                "shared_config": {"universe_preset": "primeExTopix500"},
                 "entry_filter_params": {},
                 "exit_trigger_params": {},
             },
@@ -568,7 +607,7 @@ class TestStrategyResolution:
         monkeypatch.setattr(
             service._config_loader,
             "merge_shared_config",
-            lambda _config: {"dataset": "primeExTopix500"},
+            lambda _config: {"universe_preset": "primeExTopix500"},
         )
 
         auto_resolved = service._resolve_strategies(
@@ -624,7 +663,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda name: {
                 "shared_config": {
-                    "dataset": "primeExTopix500",
+                    "universe_preset": "primeExTopix500",
                     "execution_policy": {
                         "mode": (
                             "current_session_round_trip"
@@ -823,13 +862,13 @@ class TestRequestMemoizationAndParallelization:
         assert stats.hits == 1
         assert stats.misses == 1
 
-    def test_prepare_strategy_inputs_reuses_market_requirements_even_if_dataset_differs(
+    def test_prepare_strategy_inputs_reuses_market_requirements_even_if_universe_differs(
         self,
         service,
         monkeypatch,
     ):
-        s1 = _runtime("s1", shared_overrides={"dataset": "primeExTopix500"})
-        s2 = _runtime("s2", shared_overrides={"dataset": "topix100"})
+        s1 = _runtime("s1", shared_overrides={"universe_preset": "primeExTopix500"})
+        s2 = _runtime("s2", shared_overrides={"universe_preset": "topix100"})
         stock_universe = [
             StockUniverseItem(
                 code="1001",

@@ -6,7 +6,6 @@ from src.infrastructure.db.market.universe_resolver import (
     UniverseResolution,
     UniverseResolutionError,
     UniverseResolverDbLike,
-    dataset_to_universe_preset,
     resolve_universe,
 )
 
@@ -16,6 +15,5 @@ __all__ = [
     "UniverseResolution",
     "UniverseResolutionError",
     "UniverseResolverDbLike",
-    "dataset_to_universe_preset",
     "resolve_universe",
 ]

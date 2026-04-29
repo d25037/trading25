@@ -215,7 +215,7 @@ class TestSyncRoutes:
         assert not parquet_dir.exists()
         assert request.app.state.market_db is new_market_db
         assert request.app.state.market_time_series_store is new_store
-        install_services.assert_called_once_with(request, str(duckdb_path))
+        install_services.assert_not_called()
 
     def test_get_db_stats_routes_to_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
         request = MagicMock()
@@ -267,8 +267,9 @@ class TestSyncRoutes:
             assert data["mode"] == "incremental"
             assert data["status"] == "pending"
             assert mock_start.await_count == 1
-            assert mock_start.await_args.kwargs["time_series_store"] is default_store
-            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+            assert mock_start.await_args.kwargs["time_series_store"] is not default_store
+            assert mock_start.await_args.kwargs["close_time_series_store"] is True
+            assert mock_start.await_args.kwargs["close_market_db"] is True
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is False
 
     def test_sync_start_with_bulk_enforcement(self, client: TestClient) -> None:
@@ -289,7 +290,7 @@ class TestSyncRoutes:
 
             assert resp.status_code == 202
             assert mock_start.await_count == 1
-            assert mock_start.await_args.kwargs["time_series_store"] is default_store
+            assert mock_start.await_args.kwargs["time_series_store"] is not default_store
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is True
 
     def test_sync_start_with_reset_before_sync(self, client: TestClient) -> None:
@@ -352,7 +353,7 @@ class TestSyncRoutes:
             assert mock_create_store.call_count == 1
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is override_store
-            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+            assert mock_start.await_args.kwargs["close_time_series_store"] is True
 
     def test_sync_start_with_duckdb_data_plane_uses_app_store(self, client: TestClient) -> None:
         default_store = MagicMock()
@@ -374,9 +375,9 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 202
-            assert mock_create_store.call_count == 0
-            assert mock_start.await_args.kwargs["time_series_store"] is default_store
-            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+            assert mock_create_store.call_count == 1
+            assert mock_start.await_args.kwargs["time_series_store"] is mock_create_store.return_value
+            assert mock_start.await_args.kwargs["close_time_series_store"] is True
 
     def test_sync_start_duckdb_only_returns_422_when_backend_unavailable(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None
@@ -420,7 +421,7 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 409
-            override_store.close.assert_not_called()
+            override_store.close.assert_called_once()
 
     def test_sync_start_exception_does_not_close_app_store(self, client: TestClient) -> None:
         with (
@@ -438,7 +439,7 @@ class TestSyncRoutes:
             )
 
             assert resp.status_code == 500
-            override_store.close.assert_not_called()
+            override_store.close.assert_called_once()
 
     def test_resolve_time_series_store_rejects_unsupported_backend(self, client: TestClient) -> None:
         request = MagicMock()
@@ -869,7 +870,12 @@ class TestRefreshRoute:
         mock_client = MagicMock()
         mock_client.has_api_key = True
         app_client.app.state.jquants_client = mock_client
-        resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
+        with (
+            patch("src.entrypoints.http.routes.db._prepare_market_write_resources") as prepare,
+            patch("src.entrypoints.http.routes.db._restore_read_only_market_resources"),
+        ):
+            prepare.return_value = (market_db, MagicMock())
+            resp = app_client.post("/api/db/stocks/refresh", json={"codes": ["7203"]})
         assert resp.status_code == 422
         assert "Legacy market.duckdb detected" in resp.json()["message"]
         app_client.app.state.market_time_series_store = None

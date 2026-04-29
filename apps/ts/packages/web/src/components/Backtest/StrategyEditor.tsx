@@ -95,12 +95,14 @@ const timingLabels: Record<string, string> = {
 };
 
 function isReferenceSelectField(path: string) {
-  return path === 'dataset' || path === 'benchmark_table';
+  return path === 'universe_preset' || path === 'dataset_snapshot' || path === 'benchmark_table';
 }
 
 function getReferenceSelectCopy(path: string) {
-  return path === 'dataset'
-    ? { chooserLabel: 'Choose available dataset', placeholderLabel: 'Select a dataset' }
+  return path === 'universe_preset'
+    ? { chooserLabel: 'Choose universe preset', placeholderLabel: 'Select a universe preset' }
+    : path === 'dataset_snapshot'
+      ? { chooserLabel: 'Choose archived dataset snapshot', placeholderLabel: 'Select a dataset snapshot' }
     : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
 }
 
@@ -575,7 +577,7 @@ function StockCodesFieldCard({
           />
         ) : (
           <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-            Entire dataset universe is selected.
+            Entire PIT universe is selected.
           </div>
         )}
       </CardContent>
@@ -764,11 +766,25 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [definitionsByType, draftConfig, fundamentalDefinitionsByType, fundamentalParentFieldNames]
   );
 
-  const datasetOptionValues = useMemo(() => {
+  const universePresetOptionValues = useMemo(() => {
     const values = new Set<string>();
-    const inheritedValue = hasValueAtPath(rawSharedConfig, 'dataset')
-      ? getValueAtPath(rawSharedConfig, 'dataset')
-      : getValueAtPath(defaultSharedConfig, 'dataset');
+    const inheritedValue = hasValueAtPath(rawSharedConfig, 'universe_preset')
+      ? getValueAtPath(rawSharedConfig, 'universe_preset')
+      : getValueAtPath(defaultSharedConfig, 'universe_preset');
+    if (typeof inheritedValue === 'string' && inheritedValue.length > 0) {
+      values.add(inheritedValue);
+    }
+    for (const preset of ['prime', 'standard', 'growth', 'topix100', 'primeExTopix500']) {
+      values.add(preset);
+    }
+    return Array.from(values);
+  }, [defaultSharedConfig, rawSharedConfig]);
+
+  const datasetSnapshotOptionValues = useMemo(() => {
+    const values = new Set<string>();
+    const inheritedValue = hasValueAtPath(rawSharedConfig, 'dataset_snapshot')
+      ? getValueAtPath(rawSharedConfig, 'dataset_snapshot')
+      : getValueAtPath(defaultSharedConfig, 'dataset_snapshot');
     if (typeof inheritedValue === 'string' && inheritedValue.length > 0) {
       values.add(inheritedValue);
     }
@@ -1126,25 +1142,28 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   const isLoading = strategyContextQuery.isLoading || referenceQuery.isLoading || signalReferenceQuery.isLoading;
   const strategyCategory = context?.category ?? 'unknown';
   const updateErrorMessage = updateStrategy.isError ? updateStrategy.error.message : null;
-  const datasetName =
-    typeof getValueAtPath(rawSharedConfig, 'dataset') === 'string'
-      ? (getValueAtPath(rawSharedConfig, 'dataset') as string)
-      : typeof getValueAtPath(defaultSharedConfig, 'dataset') === 'string'
-        ? (getValueAtPath(defaultSharedConfig, 'dataset') as string)
+  const datasetSnapshotName =
+    typeof getValueAtPath(rawSharedConfig, 'dataset_snapshot') === 'string'
+      ? (getValueAtPath(rawSharedConfig, 'dataset_snapshot') as string)
+      : typeof getValueAtPath(defaultSharedConfig, 'dataset_snapshot') === 'string'
+        ? (getValueAtPath(defaultSharedConfig, 'dataset_snapshot') as string)
         : null;
-  const datasetInfo = useDatasetInfo(open ? datasetName : null);
+  const datasetInfo = useDatasetInfo(open ? datasetSnapshotName : null);
 
   const getSharedFieldOptionValues = useCallback(
     (path: string) => {
-      if (path === 'dataset') {
-        return datasetOptionValues;
+      if (path === 'universe_preset') {
+        return universePresetOptionValues;
+      }
+      if (path === 'dataset_snapshot') {
+        return datasetSnapshotOptionValues;
       }
       if (path === 'benchmark_table') {
         return benchmarkOptionValues;
       }
       return undefined;
     },
-    [benchmarkOptionValues, datasetOptionValues]
+    [benchmarkOptionValues, datasetSnapshotOptionValues, universePresetOptionValues]
   );
 
   const renderStockCodesField = useCallback(

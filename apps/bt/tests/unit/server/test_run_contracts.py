@@ -13,7 +13,7 @@ from src.application.services.run_contracts import (
     build_parameterized_run_spec,
     build_strategy_run_spec,
     build_run_metadata_from_spec,
-    extract_dataset_name_from_config_override,
+    extract_data_scope_from_config_override,
     normalize_config_override,
     resolve_strategy_dataset_name,
     refresh_job_execution_contracts,
@@ -68,18 +68,30 @@ class TestBuildRunMetadata:
 
 
 class TestRunSpecBuilders:
-    def test_extract_dataset_name_from_config_override(self) -> None:
-        dataset_name = extract_dataset_name_from_config_override(
-            {"shared_config": {"dataset": " primeExTopix500 "}}
+    def test_extract_data_scope_from_config_override(self) -> None:
+        dataset_name = extract_data_scope_from_config_override(
+            {"shared_config": {"universe_preset": " primeExTopix500 "}}
         )
 
         assert dataset_name == "primeExTopix500"
 
-    def test_normalize_config_override_strips_or_drops_blank_dataset(self) -> None:
+    def test_normalize_config_override_rejects_dataset(self) -> None:
+        with pytest.raises(ValueError, match="shared_config.dataset is no longer supported"):
+            normalize_config_override(
+                {
+                    "shared_config": {
+                        "dataset": "   ",
+                        "direction": "longonly",
+                    },
+                    "entry_filter_params": {"foo": 1},
+                }
+            )
+
+    def test_normalize_config_override_strips_or_drops_blank_universe_preset(self) -> None:
         normalized = normalize_config_override(
             {
                 "shared_config": {
-                    "dataset": "   ",
+                    "universe_preset": "   ",
                     "direction": "longonly",
                 },
                 "entry_filter_params": {"foo": 1},
@@ -91,12 +103,12 @@ class TestRunSpecBuilders:
             "entry_filter_params": {"foo": 1},
         }
 
-    def test_normalize_config_override_trims_dataset(self) -> None:
+    def test_normalize_config_override_trims_universe_preset(self) -> None:
         normalized = normalize_config_override(
-            {"shared_config": {"dataset": " primeExTopix500 "}}
+            {"shared_config": {"universe_preset": " primeExTopix500 "}}
         )
 
-        assert normalized == {"shared_config": {"dataset": "primeExTopix500"}}
+        assert normalized == {"shared_config": {"universe_preset": "primeExTopix500"}}
 
     def test_build_parameterized_run_spec_sets_dataset_snapshot_and_parameters(self) -> None:
         run_spec = build_parameterized_run_spec(
@@ -148,7 +160,7 @@ class TestRunSpecBuilders:
         run_spec = build_config_override_run_spec(
             "backtest_attribution",
             "demo-strategy",
-            config_override={"shared_config": {"dataset": "sample"}, "entry_filter_params": {}},
+            config_override={"shared_config": {"universe_preset": "sample"}, "entry_filter_params": {}},
             parameters={"shapley_top_n": 5},
         )
 
@@ -156,7 +168,7 @@ class TestRunSpecBuilders:
         assert run_spec.dataset_snapshot_id == "sample"
         assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters["config_override"] == {
-            "shared_config": {"dataset": "sample"},
+            "shared_config": {"universe_preset": "sample"},
             "entry_filter_params": {},
         }
         assert run_spec.parameters["shapley_top_n"] == 5
@@ -165,10 +177,10 @@ class TestRunSpecBuilders:
         class _StubConfigLoader:
             def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
                 assert strategy_name == "demo-strategy"
-                return {"shared_config": {"dataset": "primeExTopix500"}}
+                return {"shared_config": {"universe_preset": "primeExTopix500"}}
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
-                return {"dataset": "primeExTopix500", "direction": "longonly"}
+                return {"universe_preset": "primeExTopix500", "direction": "longonly"}
 
             def resolve_strategy_category(self, _strategy_name: str) -> str | None:
                 return None
@@ -187,12 +199,12 @@ class TestRunSpecBuilders:
                 return {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
-                return {"dataset": "primeExTopix500", "direction": "longonly"}
+                return {"universe_preset": "primeExTopix500", "direction": "longonly"}
 
             def resolve_strategy_category(self, _strategy_name: str) -> str | None:
                 return "production"
 
-        with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+        with pytest.raises(ValueError, match="shared_config.universe_preset explicitly"):
             resolve_strategy_dataset_name(
                 "production/demo-strategy",
                 config_loader=_StubConfigLoader(),
@@ -202,10 +214,10 @@ class TestRunSpecBuilders:
         class _StubConfigLoader:
             def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
                 assert strategy_name == "demo-strategy"
-                return {"shared_config": {"dataset": "primeExTopix500"}}
+                return {"shared_config": {"universe_preset": "primeExTopix500"}}
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
-                return {"dataset": "primeExTopix500"}
+                return {"universe_preset": "primeExTopix500"}
 
             def resolve_strategy_category(self, _strategy_name: str) -> str | None:
                 return None
@@ -230,10 +242,10 @@ class TestRunSpecBuilders:
         class _StubConfigLoader:
             def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
                 assert strategy_name == "demo-strategy"
-                return {"shared_config": {"dataset": "primeExTopix500"}}
+                return {"shared_config": {"universe_preset": "primeExTopix500"}}
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
-                return {"dataset": "primeExTopix500", "direction": "longonly"}
+                return {"universe_preset": "primeExTopix500", "direction": "longonly"}
 
             def resolve_strategy_category(self, _strategy_name: str) -> str | None:
                 return None
@@ -241,7 +253,7 @@ class TestRunSpecBuilders:
         run_spec = build_strategy_run_spec(
             "backtest",
             "demo-strategy",
-            config_override={"shared_config": {"dataset": "   ", "direction": "shortonly"}},
+            config_override={"shared_config": {"universe_preset": "   ", "direction": "shortonly"}},
             config_loader=_StubConfigLoader(),
         )
 
@@ -261,16 +273,16 @@ class TestRunSpecBuilders:
                 return {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
 
             def merge_shared_config(self, _strategy_config: dict[str, object]) -> dict[str, object]:
-                return {"dataset": "primeExTopix500", "direction": "longonly"}
+                return {"universe_preset": "primeExTopix500", "direction": "longonly"}
 
             def resolve_strategy_category(self, _strategy_name: str) -> str | None:
                 return "production"
 
-        with pytest.raises(ValueError, match="shared_config.dataset explicitly"):
+        with pytest.raises(ValueError, match="shared_config.universe_preset explicitly"):
             build_strategy_run_spec(
                 "backtest",
                 "production/demo-strategy",
-                config_override={"shared_config": {"dataset": "runtime-override"}},
+                config_override={"shared_config": {"universe_preset": "runtime-override"}},
                 config_loader=_StubConfigLoader(),
             )
 
@@ -279,14 +291,14 @@ class TestRunSpecBuilders:
             def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
                 assert strategy_name == "demo-strategy"
                 return {
-                    "shared_config": {"dataset": "primeExTopix500"},
+                    "shared_config": {"universe_preset": "primeExTopix500"},
                     "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 }
 
             def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
                 shared_config = strategy_config.get("shared_config", {})
                 merged: dict[str, object] = {
-                    "dataset": "primeExTopix500",
+                    "universe_preset": "primeExTopix500",
                     "direction": "longonly",
                     "timeframe": "daily",
                 }
@@ -317,7 +329,7 @@ class TestRunSpecBuilders:
             def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
                 assert strategy_name == "demo-strategy"
                 return {
-                    "shared_config": {"dataset": "primeExTopix500"},
+                    "shared_config": {"universe_preset": "primeExTopix500"},
                     "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                     "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
                 }
@@ -325,7 +337,7 @@ class TestRunSpecBuilders:
             def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
                 shared_config = strategy_config.get("shared_config", {})
                 merged: dict[str, object] = {
-                    "dataset": "primeExTopix500",
+                    "universe_preset": "primeExTopix500",
                     "direction": "longonly",
                     "timeframe": "daily",
                 }

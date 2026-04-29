@@ -57,18 +57,18 @@ vi.mock('@/components/ui/switch', () => ({
 }));
 
 const baseField: AuthoringFieldSchema = {
-  path: 'dataset',
+  path: 'universe_preset',
   section: 'shared_config',
   group: 'data',
-  label: 'Dataset',
+  label: 'Universe Preset',
   type: 'string',
   widget: 'text',
-  description: 'Dataset name',
-  summary: 'Dataset snapshot',
-  default: 'default-dataset',
+  description: 'PIT universe preset',
+  summary: 'market.duckdb-backed universe preset',
+  default: 'standard',
   options: undefined,
   constraints: undefined,
-  placeholder: 'prime_20260316',
+  placeholder: 'primeExTopix500',
   unit: undefined,
   examples: [],
   required: false,
@@ -79,9 +79,9 @@ describe('MetadataFieldControl', () => {
   it('renders inherited metadata and reset state', () => {
     render(
       <MetadataFieldControl
-        field={{ ...baseField, examples: ['prime_20260316'] }}
-        value="default-dataset"
-        effectiveValue="default-dataset"
+        field={{ ...baseField, examples: ['primeExTopix500'] }}
+        value="standard"
+        effectiveValue="standard"
         overridden={false}
         onChange={vi.fn()}
         onReset={vi.fn()}
@@ -89,7 +89,7 @@ describe('MetadataFieldControl', () => {
     );
 
     expect(screen.getByText('Inherited')).toBeInTheDocument();
-    expect(screen.getByText('Effective: default-dataset')).toBeInTheDocument();
+    expect(screen.getByText('Effective: standard')).toBeInTheDocument();
     expect(screen.getByText(/Example:/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
   });
@@ -115,13 +115,13 @@ describe('MetadataFieldControl', () => {
     rerender(
       <MetadataFieldControl
         field={baseField}
-        value={{ dataset: 'demo' }}
-        effectiveValue={{ dataset: 'demo' }}
+        value={{ universe_preset: 'prime' }}
+        effectiveValue={{ universe_preset: 'prime' }}
         overridden={false}
         onChange={vi.fn()}
       />
     );
-    expect(screen.getByText('Effective: {"dataset":"demo"}')).toBeInTheDocument();
+    expect(screen.getByText('Effective: {"universe_preset":"prime"}')).toBeInTheDocument();
   });
 
   it('handles switch and number widgets', async () => {
@@ -217,7 +217,7 @@ describe('MetadataFieldControl', () => {
     expect(onChange).toHaveBeenLastCalledWith(['7203', '6758', '9984']);
 
     rerender(<MetadataFieldControl field={baseField} value="demo" overridden={true} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Dataset'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByLabelText('Universe Preset'), { target: { value: 'custom' } });
     expect(onChange).toHaveBeenLastCalledWith('custom');
   });
 });

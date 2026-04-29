@@ -332,11 +332,14 @@ class DuckDbParquetTimeSeriesStore:
         *,
         duckdb_path: str,
         parquet_dir: str,
+        read_only: bool = False,
     ) -> None:
         self._duckdb_path = Path(duckdb_path)
         self._parquet_dir = Path(parquet_dir)
-        self._duckdb_path.parent.mkdir(parents=True, exist_ok=True)
-        self._parquet_dir.mkdir(parents=True, exist_ok=True)
+        self._read_only = read_only
+        if not read_only:
+            self._duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+            self._parquet_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             duckdb = __import__("duckdb")
@@ -346,14 +349,19 @@ class DuckDbParquetTimeSeriesStore:
                 "Install duckdb and retry."
             ) from exc
 
-        self._conn = cast(Any, duckdb).connect(str(self._duckdb_path))
+        self._conn = cast(Any, duckdb).connect(str(self._duckdb_path), read_only=read_only)
         # app state で共有されるため、sync 書き込みと stats/validate 読み取りを直列化する。
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
         self._dirty_stock_minute_dates: set[str] = set()
         self._stock_projection_full_rebuild_codes: set[str] = set()
-        self._ensure_schema()
-        self._cleanup_invalid_topix_rows_on_startup()
+        if not read_only:
+            self._ensure_schema()
+            self._cleanup_invalid_topix_rows_on_startup()
+
+    def _assert_writable(self) -> None:
+        if getattr(self, "_read_only", False):
+            raise PermissionError("market time-series store is read-only")
 
     def _ensure_schema(self) -> None:
         with self._lock:
@@ -517,6 +525,7 @@ class DuckDbParquetTimeSeriesStore:
             )
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         if not rows:
             return 0
         values = [
@@ -585,6 +594,7 @@ class DuckDbParquetTimeSeriesStore:
         return invalid_count
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         if not rows:
             return 0
 
@@ -613,6 +623,7 @@ class DuckDbParquetTimeSeriesStore:
         return published
 
     def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         published = self._publish_rows_with_upsert_spec(
             rows,
             spec=self._STOCK_MINUTE_DATA_UPSERT_SPEC,
@@ -659,6 +670,7 @@ class DuckDbParquetTimeSeriesStore:
         return len(rows)
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         return self._publish_rows_with_upsert_spec(
             rows,
             spec=self._INDICES_DATA_UPSERT_SPEC,
@@ -672,6 +684,7 @@ class DuckDbParquetTimeSeriesStore:
         )
 
     def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         return self._publish_rows_with_upsert_spec(
             rows,
             spec=self._OPTIONS_225_UPSERT_SPEC,
@@ -683,6 +696,7 @@ class DuckDbParquetTimeSeriesStore:
         return self._publish_rows_via_relation(rows, spec=self._OPTIONS_225_UPSERT_SPEC)
 
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         return self._publish_rows_with_upsert_spec(
             rows,
             spec=self._MARGIN_DATA_UPSERT_SPEC,
@@ -694,6 +708,7 @@ class DuckDbParquetTimeSeriesStore:
         return self._publish_rows_via_relation(rows, spec=self._MARGIN_DATA_UPSERT_SPEC)
 
     def publish_statements(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
         return self._publish_rows_with_upsert_spec(
             rows,
             spec=self._STATEMENTS_UPSERT_SPEC,
@@ -705,26 +720,33 @@ class DuckDbParquetTimeSeriesStore:
         return self._publish_rows_via_relation(rows, spec=self._STATEMENTS_UPSERT_SPEC)
 
     def index_topix_data(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("topix_data")
 
     def index_stock_data(self) -> None:
+        self._assert_writable()
         self._reproject_pending_stock_codes()
         self._export_if_dirty("stock_data_raw")
         self._export_if_dirty("stock_data")
 
     def index_stock_minute_data(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("stock_data_minute_raw")
 
     def index_indices_data(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("indices_data")
 
     def index_options_225_data(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("options_225_data")
 
     def index_margin_data(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("margin_data")
 
     def index_statements(self) -> None:
+        self._assert_writable()
         self._export_if_dirty("statements")
 
     def inspect(
@@ -1379,9 +1401,10 @@ class DuckDbParquetTimeSeriesStore:
 
     def close(self) -> None:
         with self._lock:
-            self._reproject_pending_stock_codes()
-            for table_name in list(self._dirty_tables):
-                self._export_if_dirty(table_name)
+            if not getattr(self, "_read_only", False):
+                self._reproject_pending_stock_codes()
+                for table_name in list(self._dirty_tables):
+                    self._export_if_dirty(table_name)
             self._conn.close()
 
 
@@ -1390,6 +1413,7 @@ def create_time_series_store(
     backend: str,
     duckdb_path: str,
     parquet_dir: str,
+    read_only: bool = False,
 ) -> MarketTimeSeriesStore | None:
     """設定に応じて DuckDB 時系列ストアを組み立てる。"""
     normalized_backend = backend.strip().lower()
@@ -1400,9 +1424,11 @@ def create_time_series_store(
         store = DuckDbParquetTimeSeriesStore(
             duckdb_path=duckdb_path,
             parquet_dir=parquet_dir,
+            read_only=read_only,
         )
     except Exception as exc:  # noqa: BLE001 - backend初期化失敗を呼び出し側で扱う
         logger.warning("DuckDB backend is unavailable: {}", exc)
         return None
-    logger.info("Market time-series backend enabled: duckdb-parquet")
+    mode = "read-only" if read_only else "read-write"
+    logger.info("Market time-series backend enabled: duckdb-parquet ({})", mode)
     return store

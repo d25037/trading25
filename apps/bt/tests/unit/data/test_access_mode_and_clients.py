@@ -550,6 +550,51 @@ def test_direct_market_client_get_stock_ohlcv(monkeypatch: pytest.MonkeyPatch) -
     assert captured["params"] == ("7203", "72030", "2024-01-01", "2024-12-31")
 
 
+def test_direct_market_client_get_stocks_ohlcv_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[SimpleNamespace]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                _ns(
+                    requested_code="7203",
+                    date="2024-01-04",
+                    open=100.0,
+                    high=101.0,
+                    low=99.0,
+                    close=100.5,
+                    volume=1000,
+                ),
+                _ns(
+                    requested_code="6501",
+                    date="2024-01-04",
+                    open=200.0,
+                    high=201.0,
+                    low=199.0,
+                    close=200.5,
+                    volume=2000,
+                ),
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    batch = market_client.get_stocks_ohlcv_batch(
+        ["7203", "6501"],
+        "2024-01-01",
+        "2024-12-31",
+    )
+
+    assert list(batch.keys()) == ["7203", "6501"]
+    assert list(batch["7203"].columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert "WITH code_map" in captured["sql"]
+    assert "JOIN code_map ON s.code = code_map.candidate_code" in captured["sql"]
+    assert "PARTITION BY code_map.requested_code, s.date" in captured["sql"]
+    assert captured["params"][-2:] == ("2024-01-01", "2024-12-31")
+
+
 def test_direct_market_client_get_statements(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
@@ -589,6 +634,157 @@ def test_direct_market_client_get_statements(monkeypatch: pytest.MonkeyPatch) ->
         "1Q",
         "Q1",
     )
+
+
+def test_direct_market_client_get_statements_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[SimpleNamespace]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                _ns(
+                    requested_code="7203",
+                    code="7203",
+                    disclosed_date="2024-03-31",
+                    earnings_per_share=10.0,
+                    profit=1000.0,
+                    equity=5000.0,
+                    type_of_current_period="FY",
+                    type_of_document="決算短信",
+                    next_year_forecast_earnings_per_share=12.0,
+                    forecast_eps=11.0,
+                ),
+                _ns(
+                    requested_code="6501",
+                    code="6501",
+                    disclosed_date="2024-03-31",
+                    earnings_per_share=20.0,
+                    profit=2000.0,
+                    equity=8000.0,
+                    type_of_current_period="FY",
+                    type_of_document="決算短信",
+                    next_year_forecast_earnings_per_share=22.0,
+                    forecast_eps=21.0,
+                ),
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    batch = market_client.get_statements_batch(
+        ["7203", "6501"],
+        "2024-01-01",
+        "2024-12-31",
+        period_type="FY",
+        actual_only=False,
+    )
+
+    assert list(batch.keys()) == ["7203", "6501"]
+    assert "forecastEps" in batch["7203"].columns
+    assert "WITH code_map" in captured["sql"]
+    assert "JOIN code_map ON s.code = code_map.candidate_code" in captured["sql"]
+    assert "PARTITION BY code_map.requested_code, s.disclosed_date" in captured["sql"]
+    assert "s.type_of_current_period IN (?)" in captured["sql"]
+    assert "s.earnings_per_share IS NOT NULL" not in captured["sql"]
+    assert captured["params"][-3:] == ("2024-01-01", "2024-12-31", "FY")
+
+
+def test_direct_market_client_get_margin_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[SimpleNamespace]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                _ns(
+                    requested_code="7203",
+                    date="2024-01-04",
+                    long_margin_volume=100.0,
+                    short_margin_volume=50.0,
+                )
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    batch = market_client.get_margin_batch(["7203", "6501"], "2024-01-01", "2024-12-31")
+
+    assert list(batch.keys()) == ["7203"]
+    assert list(batch["7203"].columns) == ["longMarginVolume", "shortMarginVolume"]
+    assert "JOIN code_map ON m.code = code_map.candidate_code" in captured["sql"]
+    assert "PARTITION BY code_map.requested_code, m.date" in captured["sql"]
+    assert captured["params"][-2:] == ("2024-01-01", "2024-12-31")
+
+
+def test_direct_market_dataset_client_delegates_batch_methods(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, Any]] = []
+
+    class _FakeMarketClient:
+        def get_stocks_ohlcv_batch(self, codes, start, end, timeframe):  # noqa: ANN001, ANN202
+            events.append(("ohlcv", codes, start, end, timeframe))
+            return {"7203": pd.DataFrame({"Close": [100.0]})}
+
+        def get_margin_batch(self, codes, start, end):  # noqa: ANN001, ANN202
+            events.append(("margin", codes, start, end))
+            return {"7203": pd.DataFrame({"longMarginVolume": [100.0]})}
+
+        def get_statements_batch(
+            self,
+            codes,  # noqa: ANN001
+            start,  # noqa: ANN001
+            end,  # noqa: ANN001
+            period_type,  # noqa: ANN001
+            actual_only,  # noqa: ANN001
+        ):
+            events.append(("statements", codes, start, end, period_type, actual_only))
+            return {"7203": pd.DataFrame({"earningsPerShare": [10.0]})}
+
+        def get_margin(self, code, start, end):  # noqa: ANN001, ANN202
+            events.append(("margin_one", code, start, end))
+            return pd.DataFrame({"longMarginVolume": [100.0]})
+
+        def get_statements(self, code, start, end, period_type, actual_only):  # noqa: ANN001, ANN202
+            events.append(("statements_one", code, start, end, period_type, actual_only))
+            return pd.DataFrame({"earningsPerShare": [10.0]})
+
+    monkeypatch.setattr(clients, "DirectMarketClient", _FakeMarketClient)
+
+    client = clients.DirectMarketDatasetClient("primeExTopix500")
+    assert list(client.get_stocks_ohlcv_batch(["7203"], "2024-01-01", "2024-12-31").keys()) == [
+        "7203"
+    ]
+    assert list(client.get_margin_batch(["7203"], "2024-01-01", "2024-12-31").keys()) == [
+        "7203"
+    ]
+    assert list(
+        client.get_statements_batch(
+            ["7203"],
+            "2024-01-01",
+            "2024-12-31",
+            period_type="FY",
+            actual_only=False,
+        ).keys()
+    ) == ["7203"]
+    assert not client.get_margin("7203", "2024-01-01", "2024-12-31").empty
+    assert not client.get_statements(
+        "7203",
+        "2024-01-01",
+        "2024-12-31",
+        period_type="FY",
+        actual_only=False,
+    ).empty
+    assert events == [
+        ("ohlcv", ["7203"], "2024-01-01", "2024-12-31", "daily"),
+        ("margin", ["7203"], "2024-01-01", "2024-12-31"),
+        ("statements", ["7203"], "2024-01-01", "2024-12-31", "FY", False),
+        ("margin_one", "7203", "2024-01-01", "2024-12-31"),
+        ("statements_one", "7203", "2024-01-01", "2024-12-31", "FY", False),
+    ]
 
 
 def test_direct_market_client_get_topix_empty(monkeypatch: pytest.MonkeyPatch) -> None:

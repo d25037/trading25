@@ -69,6 +69,12 @@ class BacktestResult(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
+def _resolve_data_scope_name(shared_config: dict[str, Any]) -> str:
+    if shared_config.get("data_source") == "dataset_snapshot":
+        return str(shared_config.get("dataset_snapshot") or "unknown")
+    return str(shared_config.get("universe_preset") or "unknown")
+
+
 class BacktestRunner:
     """
     CLI/Streamlit両対応のバックテスト実行ラッパー
@@ -131,7 +137,7 @@ class BacktestRunner:
             )
 
             shared_config = parameters.get("shared_config", {})
-            dataset_name = shared_config.get("dataset", "unknown")
+            dataset_name = _resolve_data_scope_name(shared_config)
 
             executor_output_dir = self.config_loader.get_output_directory(strategy_config)
             report_renderer = StaticHtmlReportRenderer(str(executor_output_dir))
@@ -548,8 +554,11 @@ class BacktestRunner:
                 resolved_codes = resolve_backtest_universe_codes(shared_config)
                 if resolved_codes is not None:
                     stock_codes = resolved_codes
-                elif shared_config.get("static_universe") is True:
-                    stock_codes = get_stock_list(shared_config.get("dataset", ""))
+                elif (
+                    shared_config.get("data_source") == "dataset_snapshot"
+                    and shared_config.get("static_universe") is True
+                ):
+                    stock_codes = get_stock_list(shared_config.get("dataset_snapshot", ""))
                 else:
                     logger.warning("ウォークフォワード用の universe preset が解決できませんでした")
                     return None
@@ -561,7 +570,11 @@ class BacktestRunner:
             logger.warning("ウォークフォワード用の銘柄が取得できませんでした")
             return None
 
-        dataset = shared_config.get("dataset", "")
+        dataset = (
+            shared_config.get("dataset_snapshot", "")
+            if shared_config.get("data_source") == "dataset_snapshot"
+            else shared_config.get("universe_preset", "")
+        )
         start_date = shared_config.get("start_date") or None
         end_date = shared_config.get("end_date") or None
         timeframe = shared_config.get("timeframe", "daily")
@@ -795,7 +808,7 @@ class BacktestRunner:
             return {
                 "display_name": strategy_config.get("display_name", strategy),
                 "description": strategy_config.get("description", ""),
-                "dataset": shared_config.get("dataset", "unknown"),
+                "dataset": _resolve_data_scope_name(shared_config),
                 "initial_cash": shared_config.get("initial_cash", 0),
                 "fees": shared_config.get("fees", 0),
                 "kelly_fraction": shared_config.get("kelly_fraction", 1.0),

@@ -5949,11 +5949,6 @@ export interface components {
              */
             count: number;
             /**
-             * Dataset
-             * @description Deprecated compatibility alias for universe_preset.
-             */
-            dataset?: string | null;
-            /**
              * Direction
              * @description 売買方向
              * @default longonly

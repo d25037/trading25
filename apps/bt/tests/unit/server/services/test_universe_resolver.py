@@ -101,7 +101,7 @@ def test_resolve_market_and_topix100_universes_from_stock_master_daily(market_db
 
     assert prime.codes == ["1301", "6666", "6758", "7203"]
     assert prime.provenance.sourceTable == "stock_master_daily"
-    assert prime.provenance.filters["marketCodes"] == ["0111"]
+    assert prime.provenance.filters["marketCodes"] == ["prime", "0111", "0101"]
     assert topix100.codes == ["6758", "7203"]
     assert topix100.provenance.filters["scaleCategories"] == ["TOPIX Core30", "TOPIX Large70"]
 
@@ -125,7 +125,7 @@ def test_resolve_prime_ex_topix500_uses_stock_master_scale_categories(market_db:
 
     assert result.codes == ["1301"]
     assert result.provenance.sourceTable == "stock_master_daily"
-    assert result.provenance.filters["marketCodes"] == ["0111"]
+    assert result.provenance.filters["marketCodes"] == ["prime", "0111", "0101"]
     assert result.provenance.filters["excludeScaleCategories"] == [
         "TOPIX Core30",
         "TOPIX Large70",
@@ -165,7 +165,7 @@ def test_resolve_prime_ex_topix500_uses_single_exclusion_query() -> None:
     assert db.calls == [
         {
             "as_of_date": "2024-01-05",
-            "market_codes": ["0111"],
+            "market_codes": ["prime", "0111", "0101"],
             "scale_categories": None,
             "exclude_scale_categories": [
                 "TOPIX Core30",
@@ -174,6 +174,58 @@ def test_resolve_prime_ex_topix500_uses_single_exclusion_query() -> None:
             ],
         }
     ]
+
+
+def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_db: MarketDb) -> None:
+    market_db.upsert_stock_master_daily(
+        "2016-05-30",
+        [
+            {
+                "code": "1301",
+                "company_name": "TSE1 Small",
+                "market_code": "0101",
+                "market_name": "東証一部",
+                "sector_17_code": "1",
+                "sector_17_name": "食品",
+                "sector_33_code": "0050",
+                "sector_33_name": "水産・農林業",
+                "scale_category": "TOPIX Small 1",
+                "listed_date": "1949-01-01",
+                "created_at": "now",
+            },
+            {
+                "code": "7203",
+                "company_name": "Toyota",
+                "market_code": "0101",
+                "market_name": "東証一部",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1949-05-16",
+                "created_at": "now",
+            },
+            {
+                "code": "1400",
+                "company_name": "TSE2",
+                "market_code": "0102",
+                "market_name": "東証二部",
+                "sector_17_code": "10",
+                "sector_17_name": "情報通信",
+                "sector_33_code": "5250",
+                "sector_33_name": "情報・通信業",
+                "scale_category": None,
+                "listed_date": "2000-01-01",
+                "created_at": "now",
+            },
+        ],
+    )
+
+    result = resolve_universe(market_db, as_of_date="2016-05-30", preset="primeExTopix500")
+
+    assert result.codes == ["1301"]
+    assert result.provenance.filters["marketCodes"] == ["prime", "0111", "0101"]
 
 
 def test_resolve_custom_universe_requires_codes() -> None:

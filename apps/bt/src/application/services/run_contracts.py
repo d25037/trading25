@@ -146,11 +146,11 @@ def build_parameterized_run_spec(
     return run_spec
 
 
-def _normalize_dataset_name(dataset_name: Any) -> str | None:
-    if not isinstance(dataset_name, str):
+def _normalize_nonempty_string(value: Any) -> str | None:
+    if not isinstance(value, str):
         return None
 
-    normalized = dataset_name.strip()
+    normalized = value.strip()
     return normalized or None
 
 
@@ -165,32 +165,39 @@ def normalize_config_override(
     if not isinstance(shared_config, dict):
         return normalized_override
 
-    if "dataset" not in shared_config:
-        return normalized_override
+    if "dataset" in shared_config:
+        raise ValueError(
+            "shared_config.dataset is no longer supported; use shared_config.universe_preset"
+        )
 
-    normalized_dataset_name = _normalize_dataset_name(shared_config.get("dataset"))
-    if normalized_dataset_name is None:
-        shared_config.pop("dataset", None)
-    else:
-        shared_config["dataset"] = normalized_dataset_name
+    for key in ("universe_preset", "dataset_snapshot"):
+        if key not in shared_config:
+            continue
+        normalized_value = _normalize_nonempty_string(shared_config.get(key))
+        if normalized_value is None:
+            shared_config.pop(key, None)
+        else:
+            shared_config[key] = normalized_value
 
     return normalized_override
 
 
-def extract_dataset_name_from_shared_config(shared_config: dict[str, Any] | None) -> str | None:
+def extract_data_scope_from_shared_config(shared_config: dict[str, Any] | None) -> str | None:
     if not isinstance(shared_config, dict):
         return None
-    return _normalize_dataset_name(shared_config.get("dataset"))
+    if shared_config.get("data_source") == "dataset_snapshot":
+        return _normalize_nonempty_string(shared_config.get("dataset_snapshot"))
+    return _normalize_nonempty_string(shared_config.get("universe_preset"))
 
 
-def extract_dataset_name_from_config_override(
+def extract_data_scope_from_config_override(
     config_override: dict[str, Any] | None,
 ) -> str | None:
     if not isinstance(config_override, dict):
         return None
 
     shared_config = config_override.get("shared_config")
-    return extract_dataset_name_from_shared_config(shared_config)
+    return extract_data_scope_from_shared_config(shared_config)
 
 
 def resolve_strategy_dataset_name(
@@ -199,7 +206,7 @@ def resolve_strategy_dataset_name(
     config_override: dict[str, Any] | None = None,
     config_loader: ConfigLoader | None = None,
 ) -> str | None:
-    override_dataset_name = extract_dataset_name_from_config_override(config_override)
+    override_dataset_name = extract_data_scope_from_config_override(config_override)
 
     loader = config_loader or ConfigLoader()
     try:
@@ -229,7 +236,7 @@ def resolve_strategy_dataset_name(
         logger.debug(f"run_spec dataset 解決で shared_config merge に失敗: {strategy_name}: {e}")
         return None
 
-    return extract_dataset_name_from_shared_config(shared_config)
+    return extract_data_scope_from_shared_config(shared_config)
 
 
 def build_strategy_run_spec(

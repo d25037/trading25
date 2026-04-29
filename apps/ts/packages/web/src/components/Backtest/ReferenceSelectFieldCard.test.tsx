@@ -5,18 +5,18 @@ import type { AuthoringFieldSchema } from '@/types/backtest';
 import { ReferenceSelectFieldCard } from './ReferenceSelectFieldCard';
 
 const baseField: AuthoringFieldSchema = {
-  path: 'dataset',
+  path: 'universe_preset',
   section: 'shared_config',
   group: 'data',
-  label: 'Dataset',
+  label: 'Universe Preset',
   type: 'string',
   widget: 'text',
-  description: 'Dataset name',
-  summary: 'Dataset snapshot',
-  default: 'default-dataset',
+  description: 'PIT universe preset',
+  summary: 'market.duckdb-backed universe preset',
+  default: 'standard',
   options: undefined,
   constraints: undefined,
-  placeholder: 'prime_20260316',
+  placeholder: 'primeExTopix500',
   unit: undefined,
   examples: [],
   required: false,
@@ -33,9 +33,9 @@ describe('ReferenceSelectFieldCard', () => {
         value={null}
         effectiveValue={undefined}
         overridden={false}
-        optionValues={['prime_20260316', 'default-dataset']}
-        chooserLabel="Choose available dataset"
-        placeholderLabel="Select a dataset"
+        optionValues={['primeExTopix500', 'standard']}
+        chooserLabel="Choose available universe"
+        placeholderLabel="Select a universe"
         onChange={onChange}
         onReset={vi.fn()}
       />
@@ -43,17 +43,17 @@ describe('ReferenceSelectFieldCard', () => {
 
     expect(screen.getByText('Inherited')).toBeInTheDocument();
     expect(screen.getByText('Effective: unset')).toBeInTheDocument();
-    expect(screen.queryByText('Dataset snapshot')).not.toBeInTheDocument();
-    expect(screen.queryByText('Dataset name')).not.toBeInTheDocument();
+    expect(screen.queryByText('market.duckdb-backed universe preset')).not.toBeInTheDocument();
+    expect(screen.queryByText('PIT universe preset')).not.toBeInTheDocument();
 
-    const select = screen.getByLabelText('Dataset');
+    const select = screen.getByLabelText('Universe Preset');
     expect(select).toHaveValue('');
     expect((select as HTMLSelectElement).options[0]?.value).toBe('');
     expect(screen.getByText('2 option(s) available.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
 
-    fireEvent.change(select, { target: { value: 'prime_20260316' } });
-    expect(onChange).toHaveBeenCalledWith('prime_20260316');
+    fireEvent.change(select, { target: { value: 'primeExTopix500' } });
+    expect(onChange).toHaveBeenCalledWith('primeExTopix500');
   });
 
   it('renders overridden state and preserves a current value missing from the live options', async () => {

@@ -2,10 +2,11 @@
 
 ## Decision
 - `J-Quants` は ingest/proxy 専用であり、verification path の SoT ではない。
-- `market.duckdb` は screening / charts / analytics の SoT である。
+- `market.duckdb` は screening / charts / analytics / normal backtest / optimize / attribution / lab の SoT である。
 - `market.duckdb.stock_data_raw` は price ingest の SoT であり、`O/H/L/C/Vo + adjustment_factor` を保持する。
 - `market.duckdb.stock_data` は `stock_data_raw` から再計算される local adjusted projection であり、既存 read path 互換の公開 series である。
-- `dataset snapshot` (`dataset.duckdb` + `manifest.v2.json`) は backtest / optimize / attribution / lab の SoT である。
+- `universe_preset` + `stock_master_daily` は all-stock universe selection の PIT SoT である。
+- `dataset snapshot` (`dataset.duckdb` + `manifest.v2.json`) は normal run の SoT ではない。`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
 - `SignalProcessor + compiled strategy IR + signal registry` は signal semantics の SoT である。
 
 ## Guardrails
@@ -13,6 +14,7 @@
 - chart fundamentals / margin / signal overlay は local market DB だけを読む。
 - stock split / reverse split の調整は J-Quants `Adj*` 永続値に依存せず、`stock_data_raw` の raw OHLCV と `adjustment_factor` から local で再投影する。
 - screening と backtest は missing required data を `skip` ではなく `false` として扱う。
+- `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。
 
 ## Provenance Contract

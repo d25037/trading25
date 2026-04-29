@@ -87,9 +87,31 @@
         "end_date": {
           "type": "string"
         },
-        "dataset": {
+        "data_source": {
           "type": "string",
+          "enum": ["market", "dataset_snapshot"]
+        },
+        "universe_preset": {
+          "type": ["string", "null"],
+          "enum": ["prime", "standard", "growth", "topix100", "primeExTopix500", null]
+        },
+        "universe_as_of_date": {
+          "type": ["string", "null"]
+        },
+        "universe_filters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "dataset_snapshot": {
+          "type": ["string", "null"],
           "minLength": 1
+        },
+        "static_universe": {
+          "type": "boolean"
+        },
+        "universe_provenance": {
+          "type": "object",
+          "additionalProperties": true
         },
         "include_margin_data": {
           "type": "boolean"

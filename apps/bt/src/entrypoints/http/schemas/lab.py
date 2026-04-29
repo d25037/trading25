@@ -6,7 +6,7 @@ Lab API Schemas
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.domains.backtest.contracts import EnginePolicy, FastCandidateSummary, VerificationSummary
 from src.entrypoints.http.schemas.common import BaseJobResponse
@@ -32,6 +32,8 @@ LabTargetScope = Literal["entry_filter_only", "exit_trigger_only", "both"]
 class LabGenerateRequest(BaseModel):
     """戦略自動生成リクエスト"""
 
+    model_config = ConfigDict(extra="forbid")
+
     count: int = Field(default=100, ge=1, le=10000, description="生成する戦略数")
     top: int = Field(default=10, ge=1, le=100, description="評価する上位戦略数")
     seed: int | None = Field(default=None, description="乱数シード（再現性用）")
@@ -40,10 +42,6 @@ class LabGenerateRequest(BaseModel):
         default="longonly", description="売買方向"
     )
     timeframe: Literal["daily", "weekly"] = Field(default="daily", description="タイムフレーム")
-    dataset: str | None = Field(
-        default=None,
-        description="Deprecated compatibility alias for universe_preset.",
-    )
     universe_preset: str | None = Field(
         default=None,
         description=(
@@ -63,12 +61,6 @@ class LabGenerateRequest(BaseModel):
         default_factory=EnginePolicy,
         description="Fast path / verification execution policy",
     )
-
-    @model_validator(mode="after")
-    def validate_universe_aliases(self):
-        if self.dataset is not None and self.universe_preset is not None:
-            raise ValueError("Use universe_preset instead of dataset; do not set both")
-        return self
 
 
 class LabEvolveRequest(BaseModel):
