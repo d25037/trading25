@@ -126,7 +126,7 @@ def test_load_stock_universe_uses_stock_master_daily_as_of_date(tmp_path):
     assert universe[0].company_name == "Historical Prime"
 
 
-def test_resolve_prime_ex_topix500_screening_universe_uses_index_membership_code(tmp_path):
+def test_resolve_prime_ex_topix500_screening_universe_uses_scale_category(tmp_path):
     db_path = str(tmp_path / "screening-prime-ex.db")
     conn = duckdb.connect(db_path)
     conn.execute(
@@ -142,23 +142,13 @@ def test_resolve_prime_ex_topix500_screening_universe_uses_index_membership_code
         """
     )
     conn.execute(
-        """
-        CREATE TABLE index_membership_daily (
-            date TEXT NOT NULL,
-            index_code TEXT NOT NULL,
-            code TEXT NOT NULL,
-            created_at TEXT
-        )
-        """
-    )
-    conn.execute(
         "INSERT INTO stock_master_daily VALUES ('2024-01-15', '13010', 'Prime Small', '0111', 'TOPIX Small 1', '水産・農林業')"
     )
     conn.execute(
         "INSERT INTO stock_master_daily VALUES ('2024-01-15', '72030', 'Toyota', '0111', 'TOPIX Core30', '輸送用機器')"
     )
     conn.execute(
-        "INSERT INTO index_membership_daily VALUES ('2024-01-15', 'TOPIX500', '72030', 'now')"
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '66660', 'Prime Mid', '0111', 'TOPIX Mid400', '輸送用機器')"
     )
     conn.close()
 

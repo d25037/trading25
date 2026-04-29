@@ -74,6 +74,19 @@ def _insert_master(db: MarketDb, snapshot_date: str) -> None:
                 "listed_date": "2000-01-01",
                 "created_at": "now",
             },
+            {
+                "code": "6666",
+                "company_name": "Prime Mid",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Mid400",
+                "listed_date": "2001-01-01",
+                "created_at": "now",
+            },
         ],
     )
 
@@ -84,7 +97,7 @@ def test_resolve_market_and_topix100_universes_from_stock_master_daily(market_db
     prime = resolve_universe(market_db, as_of_date="2024-01-05", preset="prime")
     topix100 = resolve_universe(market_db, as_of_date="2024-01-05", preset="topix100")
 
-    assert prime.codes == ["1301", "6758", "7203"]
+    assert prime.codes == ["1301", "6666", "6758", "7203"]
     assert prime.provenance.sourceTable == "stock_master_daily"
     assert prime.provenance.filters["marketCodes"] == ["0111"]
     assert topix100.codes == ["6758", "7203"]
@@ -103,32 +116,42 @@ def test_resolve_universe_does_not_fallback_to_latest_snapshot(market_db: Market
     ]
 
 
-def test_resolve_prime_ex_topix500_requires_exact_membership(market_db: MarketDb) -> None:
+def test_resolve_prime_ex_topix500_uses_stock_master_scale_categories(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
+
+    result = resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
+
+    assert result.codes == ["1301"]
+    assert result.provenance.sourceTable == "stock_master_daily"
+    assert result.provenance.filters["excludedMembershipCount"] == 3
+
+
+def test_resolve_prime_ex_topix500_requires_scale_category_coverage(market_db: MarketDb) -> None:
+    market_db.upsert_stock_master_daily(
+        "2024-01-05",
+        [
+            {
+                "code": "1301",
+                "company_name": "Prime Small",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "1",
+                "sector_17_name": "食品",
+                "sector_33_code": "0050",
+                "sector_33_name": "水産・農林業",
+                "scale_category": None,
+                "listed_date": "1949-01-01",
+                "created_at": "now",
+            },
+        ],
+    )
 
     with pytest.raises(UniverseResolutionError) as exc_info:
         resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
 
     assert exc_info.value.code == "universe.topix500_membership_unavailable"
     assert exc_info.value.provenance is not None
-    assert "index_membership_daily has no exact TOPIX500 membership" in exc_info.value.provenance.warnings[-1]
-
-
-def test_resolve_prime_ex_topix500_subtracts_exact_membership(market_db: MarketDb) -> None:
-    _insert_master(market_db, "2024-01-05")
-    market_db._execute(
-        """
-        INSERT INTO index_membership_daily (date, index_code, code, created_at)
-        VALUES
-            ('2024-01-05', 'TOPIX500', '72030', 'now'),
-            ('2024-01-05', 'TOPIX500', '6758', 'now')
-        """
-    )
-
-    result = resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
-
-    assert result.codes == ["1301"]
-    assert result.provenance.filters["excludedMembershipCount"] == 2
+    assert "stock_master_daily has no TOPIX500 scale-category rows" in exc_info.value.provenance.warnings[-1]
 
 
 def test_resolve_custom_universe_requires_codes() -> None:

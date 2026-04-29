@@ -85,6 +85,8 @@ from src.application.services.strategy_dataset_metadata import (
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 
+_TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -562,6 +564,8 @@ class ScreeningService:
             filters.append("coalesce(scale_category, '') IN ('TOPIX Core30', 'TOPIX Large70')")
         elif preset == "primeExTopix500":
             filters.append("market_code = '0111'")
+            filters.append("coalesce(scale_category, '') NOT IN (?, ?, ?)")
+            params.extend(_TOPIX500_SCALE_CATEGORIES)
         else:
             return set()
         where_clause = " AND ".join(filters)
@@ -575,24 +579,6 @@ class ScreeningService:
             tuple(params),
         )
         codes = {normalize_stock_code(str(row["code"])) for row in rows}
-        if preset == "primeExTopix500":
-            if not self._table_exists("index_membership_daily"):
-                raise ValueError(
-                    "Exact TOPIX500 membership is required for primeExTopix500 screening universe"
-                )
-            topix500_rows = self._reader.query(
-                """
-                SELECT code
-                FROM index_membership_daily
-                WHERE date = ? AND index_code = 'TOPIX500'
-                """,
-                (as_of_date,),
-            )
-            if not topix500_rows:
-                raise ValueError(
-                    "Exact TOPIX500 membership is unavailable for primeExTopix500 screening universe"
-                )
-            codes -= {normalize_stock_code(str(row["code"])) for row in topix500_rows}
         return codes
 
     @staticmethod

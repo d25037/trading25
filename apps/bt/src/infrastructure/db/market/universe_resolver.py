@@ -20,7 +20,7 @@ _MARKET_CODE_BY_PRESET: dict[str, str] = {
     "growth": "0113",
 }
 _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
-_DEFAULT_TOPIX500_INDEX_CODE = "TOPIX500"
+_TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
 _DATASET_TO_UNIVERSE_PRESET: dict[str, str] = {
     "prime": "prime",
     "primeMarket": "prime",
@@ -184,7 +184,6 @@ def _resolve_prime_ex_topix500_universe(
     as_of_date: str,
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    topix500_index_code = str(filters.get("topix500IndexCode") or _DEFAULT_TOPIX500_INDEX_CODE)
     prime = _resolve_market_code_universe(
         db,
         as_of_date=as_of_date,
@@ -192,22 +191,31 @@ def _resolve_prime_ex_topix500_universe(
         market_code=_MARKET_CODE_BY_PRESET["prime"],
         filters={},
     )
-    topix500_codes = db.get_index_membership_codes(as_of_date, topix500_index_code)
+    topix500_codes = set(
+        db.get_stock_master_codes_for_date(
+            as_of_date,
+            scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
+        )
+    )
     if not topix500_codes:
         provenance = UniverseProvenance(
-            sourceTable="stock_master_daily,index_membership_daily",
+            sourceTable="stock_master_daily",
             asOfDate=as_of_date,
             preset="primeExTopix500",
             rowCount=prime.provenance.rowCount,
             resolvedCount=0,
-            filters={"marketCodes": [_MARKET_CODE_BY_PRESET["prime"]], "topix500IndexCode": topix500_index_code, **filters},
+            filters={
+                "marketCodes": [_MARKET_CODE_BY_PRESET["prime"]],
+                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
+                **filters,
+            },
             warnings=[
                 *prime.provenance.warnings,
-                f"index_membership_daily has no exact TOPIX500 membership for {as_of_date}",
+                f"stock_master_daily has no TOPIX500 scale-category rows for {as_of_date}",
             ],
         )
         raise UniverseResolutionError(
-            "Exact TOPIX500 membership is unavailable for the requested as_of_date",
+            "TOPIX500 scale-category membership is unavailable for the requested as_of_date",
             code="universe.topix500_membership_unavailable",
             provenance=provenance,
         )
@@ -218,14 +226,14 @@ def _resolve_prime_ex_topix500_universe(
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
-            sourceTable="stock_master_daily,index_membership_daily",
+            sourceTable="stock_master_daily",
             asOfDate=as_of_date,
             preset="primeExTopix500",
             rowCount=prime.provenance.rowCount,
             resolvedCount=len(codes),
             filters={
                 "marketCodes": [_MARKET_CODE_BY_PRESET["prime"]],
-                "topix500IndexCode": topix500_index_code,
+                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
                 "excludedMembershipCount": len(topix500_codes),
                 **filters,
             },
