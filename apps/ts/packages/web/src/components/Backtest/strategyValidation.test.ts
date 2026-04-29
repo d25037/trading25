@@ -99,13 +99,48 @@ describe('validateStrategyConfigLocally', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
-        shared_config: { kelly_fraction: 2.1 },
+        shared_config: { universe_preset: 'primeExTopix500', kelly_fraction: 2.1 },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain('shared_config.kelly_fraction must be between 0 and 2');
+  });
+
+  it('rejects legacy dataset and missing market universe scope', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
+        shared_config: { dataset: 'primeExTopix500' },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "shared_config.dataset is no longer supported; use shared_config.universe_preset for PIT market universes, or shared_config.dataset_snapshot with data_source='dataset_snapshot' and static_universe=true for archived reproducibility."
+    );
+    expect(result.errors).toContain(
+      "shared_config.universe_preset is required for market-backed backtest YAML when stock_codes is ['all'] or omitted."
+    );
+  });
+
+  it('accepts explicit archived dataset snapshot opt-in', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
+        shared_config: {
+          data_source: 'dataset_snapshot',
+          dataset_snapshot: 'archived_20240101',
+          static_universe: true,
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
   });
 
   it('accepts next_session_round_trip execution_policy when companion constraints are satisfied', () => {
@@ -115,6 +150,7 @@ describe('validateStrategyConfigLocally', () => {
         exit_trigger_params: {},
         shared_config: {
           kelly_fraction: 2,
+          universe_preset: 'primeExTopix500',
           timeframe: 'daily',
           execution_policy: { mode: 'next_session_round_trip' },
         },
@@ -164,6 +200,7 @@ describe('validateStrategyConfigLocally', () => {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
         shared_config: {
+          universe_preset: 'primeExTopix500',
           timeframe: 'daily',
           execution_policy: { mode: 'current_session_round_trip' },
         },
@@ -213,6 +250,7 @@ describe('validateStrategyConfigLocally', () => {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
         shared_config: {
+          universe_preset: 'primeExTopix500',
           timeframe: 'daily',
           execution_policy: { mode: 'overnight_round_trip' },
         },
@@ -527,7 +565,7 @@ describe('validateStrategyConfigLocally', () => {
     const invalidFieldAndType = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
-        shared_config: { unknown_key: true, kelly_fraction: 'x' },
+        shared_config: { universe_preset: 'primeExTopix500', unknown_key: true, kelly_fraction: 'x' },
       },
       signalDefs
     );

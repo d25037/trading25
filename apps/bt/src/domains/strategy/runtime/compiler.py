@@ -13,6 +13,7 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.models import (
     StrategyConfig,
     resolve_execution_semantics,
+    validate_backtest_shared_config_data_scope,
     validate_strategy_config_dict,
 )
 from src.domains.strategy.runtime.parameter_extractor import _deep_merge_dict
@@ -324,6 +325,7 @@ def compile_strategy_config(
     validated: StrategyConfig = validate_strategy_config_dict(compiled_input)
 
     shared_config_dict = config_loader.merge_shared_config(compiled_input)
+    validate_backtest_shared_config_data_scope(shared_config_dict)
     shared_config = SharedConfig.model_validate(
         shared_config_dict,
         context={"resolve_stock_codes": False},

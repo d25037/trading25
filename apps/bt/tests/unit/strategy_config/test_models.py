@@ -4,6 +4,7 @@ from src.domains.strategy.runtime.models import (
     StrategyConfigStrictValidationError,
     try_validate_strategy_config_dict,
     try_validate_strategy_config_dict_strict,
+    validate_backtest_shared_config_data_scope,
     validate_strategy_config_dict,
     validate_strategy_config_dict_strict,
 )
@@ -89,6 +90,43 @@ class TestStrictValidation:
 
         result = validate_strategy_config_dict_strict(config)
         assert result.exit_trigger_params is not None
+
+    def test_strict_rejects_legacy_dataset_key_with_migration_message(self) -> None:
+        config = {
+            "shared_config": {
+                "dataset": "primeExTopix500",
+                "universe_preset": "primeExTopix500",
+            },
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+        }
+
+        is_valid, errors = try_validate_strategy_config_dict_strict(config)
+
+        assert is_valid is False
+        assert errors.count(
+            "shared_config.dataset is no longer supported; "
+            "use shared_config.universe_preset for PIT market universes, "
+            "or shared_config.dataset_snapshot with data_source='dataset_snapshot' "
+            "and static_universe=true for archived reproducibility."
+        ) == 1
+
+    def test_merged_backtest_scope_requires_universe_preset_for_market_all_codes(self) -> None:
+        with pytest.raises(StrategyConfigStrictValidationError) as exc_info:
+            validate_backtest_shared_config_data_scope(
+                {"data_source": "market", "stock_codes": ["all"]}
+            )
+
+        assert "shared_config.universe_preset is required" in str(exc_info.value)
+
+    def test_merged_backtest_scope_allows_archived_snapshot_opt_in(self) -> None:
+        validate_backtest_shared_config_data_scope(
+            {
+                "data_source": "dataset_snapshot",
+                "dataset_snapshot": "archived_20240101",
+                "static_universe": True,
+                "stock_codes": ["all"],
+            }
+        )
 
     def test_strict_nested_typo_rejected(self) -> None:
         config = {

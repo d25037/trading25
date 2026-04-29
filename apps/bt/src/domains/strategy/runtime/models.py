@@ -58,6 +58,14 @@ def _format_pydantic_error(error: ValidationError) -> list[str]:
         loc = item.get("loc", ())
         path = ".".join(str(p) for p in loc if p != "__root__")
         msg = str(item.get("msg", "Invalid value"))
+        if path == "shared_config.dataset" and item.get("type") == "extra_forbidden":
+            messages.append(
+                "shared_config.dataset is no longer supported; "
+                "use shared_config.universe_preset for PIT market universes, "
+                "or shared_config.dataset_snapshot with data_source='dataset_snapshot' "
+                "and static_universe=true for archived reproducibility."
+            )
+            continue
         messages.append(f"{path}: {msg}" if path else msg)
 
     return messages
@@ -98,6 +106,8 @@ def _collect_unknown_paths(
         current_path = f"{path}.{key}" if path else key
         field_info = fields.get(key)
         if field_info is None:
+            if current_path == "shared_config.dataset":
+                continue
             errors.append(current_path)
             continue
 
@@ -145,6 +155,67 @@ def _validate_round_trip_rules(
     return []
 
 
+def _is_all_stock_codes(value: Any) -> bool:
+    return value is None or value == ["all"]
+
+
+def _validate_shared_config_data_scope(
+    shared_config: Any,
+    *,
+    require_scope_for_all_codes: bool,
+) -> list[str]:
+    if not isinstance(shared_config, dict):
+        return []
+
+    errors: list[str] = []
+    if "dataset" in shared_config:
+        errors.append(
+            "shared_config.dataset is no longer supported; "
+            "use shared_config.universe_preset for PIT market universes, "
+            "or shared_config.dataset_snapshot with data_source='dataset_snapshot' "
+            "and static_universe=true for archived reproducibility."
+        )
+
+    data_source = shared_config.get("data_source", "market")
+    if data_source not in ("market", "dataset_snapshot"):
+        errors.append("shared_config.data_source must be one of: market, dataset_snapshot")
+        return errors
+
+    universe_preset = shared_config.get("universe_preset")
+    dataset_snapshot = shared_config.get("dataset_snapshot")
+    static_universe = shared_config.get("static_universe") is True
+    stock_codes = shared_config.get("stock_codes")
+
+    if data_source == "market":
+        if isinstance(dataset_snapshot, str) and dataset_snapshot.strip():
+            errors.append(
+                "shared_config.dataset_snapshot is only allowed when "
+                "shared_config.data_source is 'dataset_snapshot'"
+            )
+        if (
+            require_scope_for_all_codes
+            and _is_all_stock_codes(stock_codes)
+            and not (isinstance(universe_preset, str) and universe_preset.strip())
+        ):
+            errors.append(
+                "shared_config.universe_preset is required for market-backed "
+                "backtest YAML when stock_codes is ['all'] or omitted."
+            )
+    else:
+        if not (isinstance(dataset_snapshot, str) and dataset_snapshot.strip()):
+            errors.append(
+                "shared_config.dataset_snapshot is required when "
+                "shared_config.data_source is 'dataset_snapshot'"
+            )
+        if not static_universe:
+            errors.append(
+                "shared_config.static_universe must be true when "
+                "shared_config.data_source is 'dataset_snapshot'"
+            )
+
+    return errors
+
+
 def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyConfig | None, list[str]]:
     """型検証と未知キー検出をまとめて実行"""
     validated: StrategyConfig | None = None
@@ -156,6 +227,12 @@ def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyCon
         errors.extend(_format_pydantic_error(e))
 
     errors.extend(_validate_round_trip_rules(config, validated))
+    errors.extend(
+        _validate_shared_config_data_scope(
+            config.get("shared_config"),
+            require_scope_for_all_codes=False,
+        )
+    )
 
     unknown_paths = _collect_unknown_paths(config, StrategyConfig)
     errors.extend(
@@ -203,3 +280,13 @@ def try_validate_strategy_config_dict_strict(config: dict[str, Any]) -> tuple[bo
         return False, errors
 
     return True, []
+
+
+def validate_backtest_shared_config_data_scope(shared_config: dict[str, Any]) -> None:
+    """Validate merged shared_config for executable backtest/lab runs."""
+    errors = _validate_shared_config_data_scope(
+        shared_config,
+        require_scope_for_all_codes=True,
+    )
+    if errors:
+        raise StrategyConfigStrictValidationError(errors)
