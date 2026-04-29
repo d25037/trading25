@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from src.application.services.universe_resolver import (
@@ -123,35 +125,55 @@ def test_resolve_prime_ex_topix500_uses_stock_master_scale_categories(market_db:
 
     assert result.codes == ["1301"]
     assert result.provenance.sourceTable == "stock_master_daily"
-    assert result.provenance.filters["excludedMembershipCount"] == 3
+    assert result.provenance.filters["marketCodes"] == ["0111"]
+    assert result.provenance.filters["excludeScaleCategories"] == [
+        "TOPIX Core30",
+        "TOPIX Large70",
+        "TOPIX Mid400",
+    ]
 
 
-def test_resolve_prime_ex_topix500_requires_scale_category_coverage(market_db: MarketDb) -> None:
-    market_db.upsert_stock_master_daily(
-        "2024-01-05",
-        [
+class _SpyUniverseDb:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def get_stock_master_codes_for_date(
+        self,
+        as_of_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[str]:
+        self.calls.append(
             {
-                "code": "1301",
-                "company_name": "Prime Small",
-                "market_code": "0111",
-                "market_name": "プライム",
-                "sector_17_code": "1",
-                "sector_17_name": "食品",
-                "sector_33_code": "0050",
-                "sector_33_name": "水産・農林業",
-                "scale_category": None,
-                "listed_date": "1949-01-01",
-                "created_at": "now",
-            },
-        ],
-    )
+                "as_of_date": as_of_date,
+                "market_codes": market_codes,
+                "scale_categories": scale_categories,
+                "exclude_scale_categories": exclude_scale_categories,
+            }
+        )
+        return ["1301"]
 
-    with pytest.raises(UniverseResolutionError) as exc_info:
-        resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
 
-    assert exc_info.value.code == "universe.topix500_membership_unavailable"
-    assert exc_info.value.provenance is not None
-    assert "stock_master_daily has no TOPIX500 scale-category rows" in exc_info.value.provenance.warnings[-1]
+def test_resolve_prime_ex_topix500_uses_single_exclusion_query() -> None:
+    db = _SpyUniverseDb()
+
+    result = resolve_universe(db, as_of_date="2024-01-05", preset="primeExTopix500")
+
+    assert result.codes == ["1301"]
+    assert db.calls == [
+        {
+            "as_of_date": "2024-01-05",
+            "market_codes": ["0111"],
+            "scale_categories": None,
+            "exclude_scale_categories": [
+                "TOPIX Core30",
+                "TOPIX Large70",
+                "TOPIX Mid400",
+            ],
+        }
+    ]
 
 
 def test_resolve_custom_universe_requires_codes() -> None:

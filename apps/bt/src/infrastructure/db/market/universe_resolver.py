@@ -1,8 +1,7 @@
 """
 Universe Resolver
 
-market.duckdb schema v3 の stock_master_daily / index_membership_daily を SoT に、
-履歴日付ごとの universe を解決する。
+market.duckdb schema v3 の stock_master_daily を SoT に、履歴日付ごとの universe を解決する。
 """
 
 from __future__ import annotations
@@ -46,9 +45,8 @@ class UniverseResolverDbLike(Protocol):
         *,
         market_codes: list[str] | None = None,
         scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
     ) -> list[str]: ...
-
-    def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]: ...
 
 
 @dataclass(frozen=True)
@@ -184,60 +182,27 @@ def _resolve_prime_ex_topix500_universe(
     as_of_date: str,
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    prime = _resolve_market_code_universe(
-        db,
+    base_codes = db.get_stock_master_codes_for_date(
         as_of_date=as_of_date,
-        preset="primeExTopix500",
-        market_code=_MARKET_CODE_BY_PRESET["prime"],
-        filters={},
+        market_codes=[_MARKET_CODE_BY_PRESET["prime"]],
+        exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
     )
-    topix500_codes = set(
-        db.get_stock_master_codes_for_date(
-            as_of_date,
-            scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
-        )
-    )
-    if not topix500_codes:
-        provenance = UniverseProvenance(
-            sourceTable="stock_master_daily",
-            asOfDate=as_of_date,
-            preset="primeExTopix500",
-            rowCount=prime.provenance.rowCount,
-            resolvedCount=0,
-            filters={
-                "marketCodes": [_MARKET_CODE_BY_PRESET["prime"]],
-                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
-                **filters,
-            },
-            warnings=[
-                *prime.provenance.warnings,
-                f"stock_master_daily has no TOPIX500 scale-category rows for {as_of_date}",
-            ],
-        )
-        raise UniverseResolutionError(
-            "TOPIX500 scale-category membership is unavailable for the requested as_of_date",
-            code="universe.topix500_membership_unavailable",
-            provenance=provenance,
-        )
-    codes = _apply_code_filters(
-        [code for code in prime.codes if code not in topix500_codes],
-        filters,
-    )
+    warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset="primeExTopix500")
+    codes = _apply_code_filters(base_codes, filters)
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
             sourceTable="stock_master_daily",
             asOfDate=as_of_date,
             preset="primeExTopix500",
-            rowCount=prime.provenance.rowCount,
+            rowCount=len(base_codes),
             resolvedCount=len(codes),
             filters={
                 "marketCodes": [_MARKET_CODE_BY_PRESET["prime"]],
                 "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
-                "excludedMembershipCount": len(topix500_codes),
                 **filters,
             },
-            warnings=prime.provenance.warnings,
+            warnings=warnings,
         ),
     )
 

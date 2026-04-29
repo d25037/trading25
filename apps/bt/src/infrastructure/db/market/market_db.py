@@ -769,6 +769,7 @@ class MarketDb:
         *,
         market_codes: list[str] | None = None,
         scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
     ) -> list[str]:
         """指定日の PIT 銘柄コードだけを取得。latest fallback はしない。"""
         if not self._table_exists("stock_master_daily"):
@@ -783,6 +784,10 @@ class MarketDb:
             placeholders = ", ".join("?" for _ in scale_categories)
             conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
             params.extend(scale_categories)
+        if exclude_scale_categories:
+            placeholders = ", ".join("?" for _ in exclude_scale_categories)
+            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
+            params.extend(exclude_scale_categories)
         rows = self._fetchall(
             f"""
             SELECT code
