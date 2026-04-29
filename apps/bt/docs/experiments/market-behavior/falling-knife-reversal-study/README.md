@@ -12,7 +12,7 @@
 
 ### Data Scope / PIT Assumptions
 
-入力は `/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb` から作った一時 snapshot で、利用可能範囲は `2016-03-25 -> 2026-04-24`、分析範囲は `2016-04-21 -> 2026-04-23`。対象市場は `0111` プライム、`0112` スタンダード、`0113` グロースで、source rows は `8,068,767`、falling-knife events は `157,374`、stabilization entry を持つ event は `150,266`。signal 条件は signal date close までに観測できる `5d <= -10%`、`20d <= -20%`、`60d high から -25%以下`、SMA downtrend、`60d sortino <= 0.00` の overlap で、最小 overlap は `2`、同一銘柄 signal cooldown は `20` sessions。entry は常に翌営業日 open で、wait rule は最大 `10` sessions 内の安定化確認後の翌営業日 open。
+入力は `~/.local/share/trading25/market-timeseries/market.duckdb` から作った一時 snapshot で、利用可能範囲は `2016-03-25 -> 2026-04-24`、分析範囲は `2016-04-21 -> 2026-04-23`。対象市場は `0111` プライム、`0112` スタンダード、`0113` グロースで、source rows は `8,068,767`、falling-knife events は `157,374`、stabilization entry を持つ event は `150,266`。signal 条件は signal date close までに観測できる `5d <= -10%`、`20d <= -20%`、`60d high から -25%以下`、SMA downtrend、`60d sortino <= 0.00` の overlap で、最小 overlap は `2`、同一銘柄 signal cooldown は `20` sessions。entry は常に翌営業日 open で、wait rule は最大 `10` sessions 内の安定化確認後の翌営業日 open。
 
 ### Main Findings
 

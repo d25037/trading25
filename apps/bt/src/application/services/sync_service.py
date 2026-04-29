@@ -18,6 +18,7 @@ from loguru import logger
 
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
@@ -37,6 +38,8 @@ from src.shared.config.reliability import SYNC_JOB_TIMEOUT_MINUTES
 class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
     def ensure_schema(self) -> None: ...
     def is_legacy_stock_price_snapshot(self) -> bool: ...
+    def get_market_schema_version(self) -> int | None: ...
+    def is_market_schema_current(self) -> bool: ...
 
 
 class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
@@ -128,8 +131,21 @@ def _legacy_stock_snapshot_message() -> str:
     )
 
 
+def _incompatible_market_schema_message(version: int | None = None) -> str:
+    observed = "missing" if version is None else str(version)
+    return (
+        f"Incompatible market.duckdb schema detected (version: {observed}, "
+        f"required: {MARKET_SCHEMA_VERSION}). Run initial sync with reset enabled "
+        "to recreate market-timeseries/market.duckdb and market-timeseries/parquet."
+    )
+
+
 def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
     market_db.ensure_schema()
+    if not market_db.is_market_schema_current():
+        raise RuntimeError(
+            _incompatible_market_schema_message(market_db.get_market_schema_version())
+        )
     if market_db.is_legacy_stock_price_snapshot():
         raise RuntimeError(_legacy_stock_snapshot_message())
     market_db.set_sync_metadata(

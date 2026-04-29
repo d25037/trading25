@@ -68,7 +68,7 @@ def _get_market_duckdb_path() -> str:
 @router.get(
     "/api/dataset",
     response_model=list[DatasetListItem],
-    summary="List available datasets",
+    summary="List export/repro dataset snapshots",
 )
 def list_datasets(request: Request) -> list[DatasetListItem]:
     resolver = _get_resolver(request)
@@ -216,7 +216,7 @@ def _estimate_time(preset_name: str) -> str:
     "/api/dataset",
     response_model=DatasetCreateResponse,
     status_code=202,
-    summary="Create a new dataset (background job)",
+    summary="Create a dataset snapshot for export/repro fixtures (background job)",
 )
 async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONResponse:
     resolver = _get_resolver(request)

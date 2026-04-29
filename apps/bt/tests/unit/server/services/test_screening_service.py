@@ -78,6 +78,93 @@ def service(screening_db):
     reader.close()
 
 
+def test_load_stock_universe_uses_stock_master_daily_as_of_date(tmp_path):
+    db_path = str(tmp_path / "screening-pit.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES ('99990', 'Latest Only', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '10010', 'Historical Prime', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-16', '20020', 'Next Day Prime', '0111', 'TOPIX Small 1', '情報・通信業')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        universe = service._load_stock_universe(["0111"], "2024-01-15")
+    finally:
+        reader.close()
+
+    assert [stock.code for stock in universe] == ["1001"]
+    assert universe[0].company_name == "Historical Prime"
+
+
+def test_resolve_prime_ex_topix500_screening_universe_uses_scale_category(tmp_path):
+    db_path = str(tmp_path / "screening-prime-ex.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            market_code TEXT NOT NULL,
+            scale_category TEXT,
+            sector_33_name TEXT
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '13010', 'Prime Small', '0111', 'TOPIX Small 1', '水産・農林業')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '72030', 'Toyota', '0111', 'TOPIX Core30', '輸送用機器')"
+    )
+    conn.execute(
+        "INSERT INTO stock_master_daily VALUES ('2024-01-15', '66660', 'Prime Mid', '0111', 'TOPIX Mid400', '輸送用機器')"
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ScreeningService(reader)
+        codes = service._resolve_universe_codes_from_stock_master(
+            preset="primeExTopix500",
+            as_of_date="2024-01-15",
+        )
+    finally:
+        reader.close()
+
+    assert codes == {"1301"}
+
+
 def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) -> StrategyRuntime:
     shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
     if shared_overrides:

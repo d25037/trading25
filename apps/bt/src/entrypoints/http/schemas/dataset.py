@@ -179,9 +179,9 @@ class DatasetCreateRequest(BaseModel):
     name: str = Field(
         min_length=1,
         max_length=255,
-        description="Dataset snapshot name (e.g. 'primeMarket')",
+        description="Export/repro dataset snapshot name (not normal backtest SoT; e.g. 'primeMarket')",
     )
-    preset: str = Field(description="Preset config name")
+    preset: str = Field(description="Export/repro preset config name")
     overwrite: bool = Field(default=False, description="Overwrite existing dataset")
 
 

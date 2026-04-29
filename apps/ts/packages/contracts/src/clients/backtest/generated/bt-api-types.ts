@@ -916,10 +916,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List available datasets */
+        /** List export/repro dataset snapshots */
         get: operations["list_datasets_api_dataset_get"];
         put?: never;
-        /** Create a new dataset (background job) */
+        /** Create a dataset snapshot for export/repro fixtures (background job) */
         post: operations["create_dataset_api_dataset_post"];
         delete?: never;
         options?: never;
@@ -3889,7 +3889,7 @@ export interface components {
         DatasetCreateRequest: {
             /**
              * Name
-             * @description Dataset snapshot name (e.g. 'primeMarket')
+             * @description Export/repro dataset snapshot name (not normal backtest SoT; e.g. 'primeMarket')
              */
             name: string;
             /**
@@ -3900,7 +3900,7 @@ export interface components {
             overwrite: boolean;
             /**
              * Preset
-             * @description Preset config name
+             * @description Export/repro preset config name
              */
             preset: string;
         };
@@ -5950,7 +5950,7 @@ export interface components {
             count: number;
             /**
              * Dataset
-             * @description データセット名（未指定時は XDG default config を使用）
+             * @description Deprecated compatibility alias for universe_preset.
              */
             dataset?: string | null;
             /**
@@ -5992,6 +5992,11 @@ export interface components {
              * @default 10
              */
             top: number;
+            /**
+             * Universe Preset
+             * @description market.duckdb universe preset for generated-strategy evaluation (prime/standard/growth/topix100/primeExTopix500).
+             */
+            universe_preset?: string | null;
         };
         /**
          * LabGenerateResult
@@ -6715,6 +6720,21 @@ export interface components {
             periodDays: number;
             rankings: components["schemas"]["Rankings"];
         };
+        /** MarketSchemaStats */
+        MarketSchemaStats: {
+            /**
+             * Current
+             * @default false
+             */
+            current: boolean;
+            /**
+             * Requiredversion
+             * @default 3
+             */
+            requiredVersion: number;
+            /** Version */
+            version?: number | null;
+        };
         /**
          * MarketScreeningResponse
          * @description マーケットスクリーニングレスポンス
@@ -6769,7 +6789,9 @@ export interface components {
             lastUpdated: string;
             margin: components["schemas"]["MarginStats"];
             options225: components["schemas"]["Options225Stats"];
+            schema?: components["schemas"]["MarketSchemaStats"];
             stockData: components["schemas"]["StockDataStats"];
+            stockMaster?: components["schemas"]["StockMasterCoverageStats"];
             stockMinuteData: components["schemas"]["StockMinuteDataStats"];
             stocks: components["schemas"]["StockStats"];
             storage: components["schemas"]["StorageStats"];
@@ -6842,12 +6864,14 @@ export interface components {
             /** Recommendations */
             recommendations?: string[];
             sampleWindows: components["schemas"]["ValidationSampleWindows"];
+            schema?: components["schemas"]["MarketSchemaStats"];
             /**
              * Status
              * @enum {string}
              */
             status: "healthy" | "warning" | "error";
             stockData: components["schemas"]["StockDataValidation"];
+            stockMaster?: components["schemas"]["StockMasterCoverageStats"];
             stockMinuteData: components["schemas"]["StockMinuteDataValidation"];
             stocks: components["schemas"]["StockStats"];
             /** Stocksneedingrefresh */
@@ -9500,6 +9524,47 @@ export interface components {
              */
             stockCode: string;
         };
+        /** StockMasterCoverageStats */
+        StockMasterCoverageStats: {
+            /**
+             * Codecount
+             * @default 0
+             */
+            codeCount: number;
+            /**
+             * Dailycount
+             * @default 0
+             */
+            dailyCount: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Indexmembershipdailycount
+             * @default 0
+             */
+            indexMembershipDailyCount: number;
+            /**
+             * Intervalcount
+             * @default 0
+             */
+            intervalCount: number;
+            /**
+             * Latestcount
+             * @default 0
+             */
+            latestCount: number;
+            /** Missingtopixdates */
+            missingTopixDates?: string[];
+            /**
+             * Missingtopixdatescount
+             * @default 0
+             */
+            missingTopixDatesCount: number;
+        };
         /** StockMinuteDataStats */
         StockMinuteDataStats: {
             /**
@@ -10659,6 +10724,7 @@ export interface components {
             options225MissingTopixCoverageDates: components["schemas"]["ValidationSampleWindow"];
             options225MissingUnderlyingPriceDates: components["schemas"]["ValidationSampleWindow"];
             stockDataMissingDates: components["schemas"]["ValidationSampleWindow"];
+            stockMasterMissingTopixDates: components["schemas"]["ValidationSampleWindow"];
             stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];
         };
         /**
@@ -17120,7 +17186,10 @@ export interface operations {
     };
     get_stock_info_api_market_stocks__code__get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description PIT master date (YYYY-MM-DD); omitted uses stocks_latest */
+                asOfDate?: string | null;
+            };
             header?: never;
             path: {
                 code: string;

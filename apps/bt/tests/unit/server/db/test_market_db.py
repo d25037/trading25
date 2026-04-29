@@ -31,7 +31,11 @@ def _query_one(db_path: str, sql: str) -> tuple | None:
 class TestMarketDbBasics:
     def test_empty_stats_and_schema(self, market_db: MarketDb) -> None:
         stats = market_db.get_stats()
+        assert stats["market_schema_version"] == 1
         assert stats["stocks"] == 0
+        assert stats["stocks_latest"] == 0
+        assert stats["stock_master_daily"] == 0
+        assert stats["stock_master_intervals"] == 0
         assert stats["stock_data_raw"] == 0
         assert stats["stock_data"] == 0
         assert stats["topix_data"] == 0
@@ -39,16 +43,95 @@ class TestMarketDbBasics:
         assert stats["options_225_data"] == 0
         assert stats["margin_data"] == 0
         assert stats["sync_metadata"] == 1
+        assert stats["index_membership_daily"] == 0
+        assert market_db.get_market_schema_version() == 3
+        assert market_db.is_market_schema_current() is True
 
         schema = market_db.validate_schema()
         assert schema["valid"] is True
+        assert "market_schema_version" in schema["required_tables"]
         assert "stocks" in schema["required_tables"]
+        assert "stocks_latest" in schema["required_tables"]
+        assert "stock_master_daily" in schema["required_tables"]
+        assert "stock_master_intervals" in schema["required_tables"]
         assert "stock_data_raw" in schema["required_tables"]
         assert "stock_data" in schema["required_tables"]
         assert "topix_data" in schema["required_tables"]
         assert "options_225_data" in schema["required_tables"]
         assert "margin_data" in schema["required_tables"]
         assert "sync_metadata" in schema["required_tables"]
+
+    def test_pre_v3_existing_market_db_is_marked_incompatible(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "legacy-market.duckdb")
+        conn = duckdb.connect(db_path)
+        try:
+            conn.execute("CREATE TABLE stocks (code TEXT PRIMARY KEY)")
+        finally:
+            conn.close()
+
+        db = MarketDb(db_path)
+        try:
+            assert db.get_market_schema_version() == 0
+            assert db.is_market_schema_current() is False
+        finally:
+            db.close()
+
+    def test_stock_master_coverage_reports_v3_tables(self, market_db: MarketDb) -> None:
+        market_db._execute(
+            """
+            INSERT INTO stock_master_daily (
+                date, code, company_name, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                listed_date
+            ) VALUES
+                ('2024-01-04', '7203', 'トヨタ', '0111', 'プライム', '6', '自動車', '3700', '輸送用機器', '1949-05-16'),
+                ('2024-01-05', '7203', 'トヨタ', '0111', 'プライム', '6', '自動車', '3700', '輸送用機器', '1949-05-16')
+            """
+        )
+
+        coverage = market_db.get_stock_master_coverage()
+
+        assert coverage["dailyCount"] == 2
+        assert coverage["dateMin"] == "2024-01-04"
+        assert coverage["dateMax"] == "2024-01-05"
+        assert coverage["dateCount"] == 2
+        assert coverage["codeCount"] == 1
+
+    def test_stock_master_missing_dates_and_latest_are_derived_from_daily_master(self, market_db: MarketDb) -> None:
+        market_db.upsert_topix_data([
+            {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
+            {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
+        ])
+        market_db.upsert_stock_master_daily(
+            "2024-01-05",
+            [
+                {
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "company_name_english": "TOYOTA",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Core30",
+                    "listed_date": "1949-05-16",
+                    "created_at": "now",
+                }
+            ],
+        )
+
+        assert market_db.get_missing_stock_master_dates() == ["2024-01-04"]
+        assert market_db.get_missing_stock_master_dates_count() == 1
+        assert market_db.rebuild_stock_master_intervals() == 1
+        assert market_db.rebuild_stocks_latest() == 1
+
+        coverage = market_db.get_stock_master_coverage()
+        assert coverage["latestCount"] == 1
+        assert coverage["intervalCount"] == 1
+        assert coverage["missingTopixDatesCount"] == 1
+        assert coverage["missingTopixDates"] == ["2024-01-04"]
 
     def test_sync_metadata_roundtrip(self, market_db: MarketDb) -> None:
         assert market_db.get_sync_metadata("nonexistent") is None

@@ -115,6 +115,15 @@ def _resolve_generate_dataset(dataset: str | None) -> str | None:
     return _normalize_dataset_name(default_dataset)
 
 
+def _resolve_generate_universe_preset(
+    universe_preset: str | None,
+    dataset: str | None = None,
+) -> str | None:
+    # `dataset` is retained only as a request/backward-compat alias.  The lab
+    # generator now records this choice as a market universe preset.
+    return _resolve_generate_dataset(universe_preset or dataset)
+
+
 def _merge_generate_shared_config(
     candidate_shared_config: dict[str, Any] | None,
     *,
@@ -424,6 +433,7 @@ class LabService:
         direction: str = "longonly",
         timeframe: str = "daily",
         dataset: str | None = None,
+        universe_preset: str | None = None,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
         engine_policy: EnginePolicy | None = None,
@@ -431,7 +441,7 @@ class LabService:
         """戦略自動生成ジョブをサブミット"""
         resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        resolved_dataset = _resolve_generate_dataset(dataset)
+        resolved_universe_preset = _resolve_generate_universe_preset(universe_preset, dataset)
         parameters: dict[str, Any] = {
             "count": count,
             "top": top,
@@ -443,12 +453,12 @@ class LabService:
             "allowed_categories": resolved_categories,
             "engine_policy": resolved_engine_policy.model_dump(mode="json"),
         }
-        if resolved_dataset is not None:
-            parameters["dataset"] = resolved_dataset
+        if resolved_universe_preset is not None:
+            parameters["universe_preset"] = resolved_universe_preset
         run_spec = build_parameterized_run_spec(
             "lab_generate",
             f"generate(n={count},top={top})",
-            dataset_name=resolved_dataset,
+            dataset_name=resolved_universe_preset,
             parameters=parameters,
         )
         payload: dict[str, Any] = {
@@ -463,8 +473,9 @@ class LabService:
             "allowed_categories": resolved_categories,
             "engine_policy": resolved_engine_policy.model_dump(mode="json"),
         }
-        if resolved_dataset is not None:
-            payload["dataset"] = resolved_dataset
+        if resolved_universe_preset is not None:
+            payload["universe_preset"] = resolved_universe_preset
+            payload["dataset"] = resolved_universe_preset  # worker compatibility
         return await self._submit_worker_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
@@ -491,7 +502,7 @@ class LabService:
         from src.domains.lab_agent.yaml_updater import YamlUpdater
 
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        resolved_dataset = _resolve_generate_dataset(dataset)
+        resolved_dataset = _resolve_generate_universe_preset(None, dataset)
         shared_config_override = _merge_generate_shared_config(
             None,
             direction=direction,

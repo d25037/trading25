@@ -62,9 +62,10 @@ def get_all_stocks(
 def get_stock_info(
     request: Request,
     code: str,
+    asOfDate: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="PIT master date (YYYY-MM-DD); omitted uses stocks_latest"),
 ) -> StockInfo:
     service = _get_market_data_service(request)
-    result = service.get_stock_info(code)
+    result = service.get_stock_info(code, as_of_date=asOfDate)
     if result is None:
         raise HTTPException(status_code=404, detail="Stock not found")
     return result

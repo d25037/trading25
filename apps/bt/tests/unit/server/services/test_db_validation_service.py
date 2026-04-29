@@ -81,6 +81,26 @@ class DummyMarketDb:
     def get_stats(self) -> dict[str, int]:
         return {"stocks": 2, "statements": 4}
 
+    def get_market_schema_version(self) -> int | None:
+        return 3
+
+    def is_market_schema_current(self) -> bool:
+        return True
+
+    def get_stock_master_coverage(self) -> dict[str, Any]:
+        return {
+            "dailyCount": 0,
+            "intervalCount": 0,
+            "latestCount": 0,
+            "indexMembershipDailyCount": 0,
+            "dateMin": None,
+            "dateMax": None,
+            "dateCount": 0,
+            "codeCount": 0,
+            "missingTopixDatesCount": 0,
+            "missingTopixDates": [],
+        }
+
     def get_stock_count_by_market(self) -> dict[str, int]:
         return {"プライム": 2}
 

@@ -82,7 +82,11 @@ class SyncMarketDbLike(Protocol):  # pragma: no cover
     def get_sync_metadata(self, key: str) -> str | None: ...
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
+    def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> Any: ...
+    def rebuild_stock_master_intervals(self) -> int: ...
+    def rebuild_stocks_latest(self) -> int: ...
     def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
+    def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
@@ -1332,19 +1336,23 @@ class InitialSyncStrategy:
             topix_rows = topix_batch.rows
             dates_processed = len(topix_rows)
 
-            # Step 2: 銘柄マスタ
-            ctx.on_progress("stocks", 1, 8, "Fetching stock master data...")
+            # Step 2: 日次銘柄マスタ（TOPIX 取引日ベース）
+            ctx.on_progress("stocks", 1, 8, "Fetching daily stock master data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            stocks_data, stocks_calls = await _get_paginated_rows_with_call_count(
-                ctx.client,
-                "/equities/master",
+            trading_dates = sorted({r["date"] for r in topix_rows})
+            master_sync = await _sync_daily_stock_master(
+                ctx,
+                target_dates=trading_dates,
+                progress_current=1,
+                progress_total=8,
             )
-            total_calls += stocks_calls
-            stock_rows = _convert_stock_rows(stocks_data)
-            if stock_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
+            total_calls += master_sync["api_calls"]
+            stock_rows = master_sync["latest_rows"]
+            errors.extend(master_sync["errors"])
+            if master_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # Step 3: listed markets fundamentals（初回: code指定フル取得）
             ctx.on_progress("fundamentals", 2, 8, "Fetching listed-market fundamentals (full)...")
@@ -1372,7 +1380,6 @@ class InitialSyncStrategy:
 
             # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
             ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
-            trading_dates = sorted({r["date"] for r in topix_rows})
             from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
             decision = await _plan_fetch_method(
                 ctx,
@@ -1685,19 +1692,26 @@ class IncrementalSyncStrategy:
             total_calls += topix_calls
             topix_rows = topix_batch.rows
 
-            # Step 2: 銘柄マスタ更新
-            ctx.on_progress("stocks", 1, 7, "Updating stock master...")
+            # Step 2: 日次銘柄マスタ更新
+            ctx.on_progress("stocks", 1, 7, "Updating daily stock master...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            stocks_data, stocks_calls = await _get_paginated_rows_with_call_count(
-                ctx.client,
-                "/equities/master",
+            missing_master_dates = await asyncio.to_thread(
+                ctx.market_db.get_missing_stock_master_dates,
+                limit=None,
             )
-            total_calls += stocks_calls
-            stock_rows = _convert_stock_rows(stocks_data)
-            if stock_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
+            master_sync = await _sync_daily_stock_master(
+                ctx,
+                target_dates=missing_master_dates,
+                progress_current=1,
+                progress_total=7,
+            )
+            total_calls += master_sync["api_calls"]
+            stock_rows = master_sync["latest_rows"]
+            errors.extend(master_sync["errors"])
+            if master_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
@@ -3729,6 +3743,79 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "created_at": datetime.now(UTC).isoformat(),
         })
     return rows
+
+
+async def _sync_daily_stock_master(
+    ctx: SyncContext,
+    *,
+    target_dates: list[str],
+    progress_current: int,
+    progress_total: int,
+) -> dict[str, Any]:
+    """Fetch `/equities/master?date=...` for TOPIX dates and rebuild derived master tables."""
+    api_calls = 0
+    rows_updated = 0
+    latest_rows: list[dict[str, Any]] = []
+    failed_dates: list[str] = []
+    normalized_dates = sorted({date for date in target_dates if date})
+    if not normalized_dates:
+        return {
+            "api_calls": 0,
+            "updated": 0,
+            "latest_rows": [],
+            "errors": [],
+            "cancelled": False,
+        }
+
+    total_dates = len(normalized_dates)
+    for index, snapshot_date in enumerate(normalized_dates, start=1):
+        if ctx.cancelled.is_set():
+            return {
+                "api_calls": api_calls,
+                "updated": rows_updated,
+                "latest_rows": latest_rows,
+                "errors": [],
+                "cancelled": True,
+            }
+        ctx.on_progress(
+            "stocks",
+            progress_current,
+            progress_total,
+            f"Fetching daily stock master {index}/{total_dates}: {snapshot_date}",
+        )
+        payload, calls = await _get_paginated_rows_with_call_count(
+            ctx.client,
+            "/equities/master",
+            params={"date": _to_jquants_date_param(snapshot_date)},
+        )
+        api_calls += calls
+        rows = _convert_stock_rows(payload)
+        if not rows:
+            failed_dates.append(snapshot_date)
+            continue
+        await asyncio.to_thread(ctx.market_db.upsert_stock_master_daily, snapshot_date, rows)
+        rows_updated += len(rows)
+        latest_rows = rows
+
+    if rows_updated > 0:
+        await asyncio.to_thread(ctx.market_db.rebuild_stock_master_intervals)
+        await asyncio.to_thread(ctx.market_db.rebuild_stocks_latest)
+        await asyncio.to_thread(
+            ctx.market_db.set_sync_metadata,
+            METADATA_KEYS["LAST_STOCKS_REFRESH"],
+            datetime.now(UTC).isoformat(),
+        )
+
+    errors = [
+        f"No stock master rows returned for {len(failed_dates)} TOPIX dates: {', '.join(failed_dates[:10])}"
+    ] if failed_dates else []
+    return {
+        "api_calls": api_calls,
+        "updated": rows_updated,
+        "latest_rows": latest_rows,
+        "errors": errors,
+        "cancelled": False,
+    }
 
 
 def _convert_options_225_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:

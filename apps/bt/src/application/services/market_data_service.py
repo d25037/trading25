@@ -56,16 +56,53 @@ class MarketDataService:
 
         return 0
 
-    def get_stock_info(self, code: str) -> StockInfo | None:
+    def _table_exists(self, table_name: str) -> bool:
+        try:
+            row = self._reader.query_one(
+                """
+                SELECT 1 AS exists
+                FROM information_schema.tables
+                WHERE lower(table_name) = lower(?)
+                LIMIT 1
+                """,
+                (table_name,),
+            )
+        except Exception:
+            return False
+        return row is not None
+
+    def _table_has_rows(self, table_name: str) -> bool:
+        if not self._table_exists(table_name):
+            return False
+        try:
+            row = self._reader.query_one(f"SELECT 1 AS has_rows FROM {table_name} LIMIT 1")
+        except Exception:
+            return False
+        return row is not None
+
+    def get_stock_info(self, code: str, as_of_date: str | None = None) -> StockInfo | None:
         """単一銘柄の情報を取得"""
         codes = _stock_code_candidates(code)
         placeholders = ",".join("?" for _ in codes)
+        if as_of_date and self._table_exists("stock_master_daily"):
+            source_table = "stock_master_daily"
+        elif self._table_has_rows("stocks_latest"):
+            source_table = "stocks_latest"
+        else:
+            # Legacy/unit-test DBs predating v3 still expose only stocks.
+            source_table = "stocks"
+        date_clause = "date = ? AND " if as_of_date else ""
+        if as_of_date and source_table == "stock_master_daily":
+            params = (as_of_date, *codes)
+        else:
+            date_clause = ""
+            params = tuple(codes)
         row = self._reader.query_one(
             "SELECT code, company_name, company_name_english, market_code, market_name, "
             "sector_17_code, sector_17_name, sector_33_code, sector_33_name, "
-            f"scale_category, listed_date FROM stocks WHERE code IN ({placeholders}) "
+            f"scale_category, listed_date FROM {source_table} WHERE {date_clause}code IN ({placeholders}) "
             "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
-            tuple(codes),
+            params,
         )
         if row is None:
             return None
@@ -244,8 +281,9 @@ class MarketDataService:
 
         # 銘柄一覧
         placeholders = ",".join("?" for _ in query_market_codes)
+        stock_table = "stocks_latest" if self._table_has_rows("stocks_latest") else "stocks"
         stock_rows = self._reader.query(
-            f"SELECT code, company_name FROM stocks WHERE market_code IN ({placeholders}) ORDER BY code",
+            f"SELECT code, company_name FROM {stock_table} WHERE market_code IN ({placeholders}) ORDER BY code",
             tuple(query_market_codes),
         )
         if not stock_rows:

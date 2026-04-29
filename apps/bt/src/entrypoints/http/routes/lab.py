@@ -135,6 +135,7 @@ async def run_lab_generate(request: LabGenerateRequest) -> LabJobResponse:
             "direction": request.direction,
             "timeframe": request.timeframe,
             "dataset": request.dataset,
+            "universe_preset": request.universe_preset,
             "entry_filter_only": request.entry_filter_only,
             "allowed_categories": request.allowed_categories,
             "engine_policy": request.engine_policy,
