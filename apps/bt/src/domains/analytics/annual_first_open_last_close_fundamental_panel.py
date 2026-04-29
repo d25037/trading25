@@ -65,10 +65,15 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
 _MARKET_LABEL_BY_CODE: dict[str, str] = {
     "prime": "prime",
     "0111": "prime",
+    "0101": "prime",
     "standard": "standard",
     "0112": "standard",
+    "0102": "standard",
+    "0106": "standard",
     "growth": "growth",
     "0113": "growth",
+    "0104": "growth",
+    "0107": "growth",
 }
 _SCOPE_ALIAS_TO_CANONICAL: dict[str, str] = {
     **_MARKET_LABEL_BY_CODE,
@@ -177,6 +182,13 @@ def _placeholder_sql(size: int) -> str:
     return ",".join("?" for _ in range(size))
 
 
+def _values_sql(row_count: int, column_count: int) -> str:
+    if row_count <= 0 or column_count <= 0:
+        raise ValueError("row_count and column_count must be positive")
+    row_sql = f"({', '.join('?' for _ in range(column_count))})"
+    return ", ".join(row_sql for _ in range(row_count))
+
+
 def _empty_result_df(columns: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(columns=list(columns))
 
@@ -263,6 +275,18 @@ def _market_label(value: Any) -> str:
     return _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
 
 
+def _table_exists(conn: Any, table_name: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_name = ?
+        """,
+        [table_name],
+    ).fetchone()
+    return bool(row and int(row[0]) > 0)
+
+
 def _query_trading_calendar(
     conn: Any,
     *,
@@ -304,6 +328,24 @@ def _query_trading_calendar(
         df = df[(df["entry_mmdd"] <= "01-15") & (df["exit_mmdd"] >= "12-15")].copy()
     df = df[df["entry_date"] < df["exit_date"]].copy()
     return df[["year", "entry_date", "exit_date", "market_trading_days"]].reset_index(drop=True)
+
+
+def _stock_master_columns() -> list[str]:
+    return [
+        "year",
+        "entry_date",
+        "exit_date",
+        "market_trading_days",
+        "code",
+        "company_name",
+        "market_code",
+        "market_name",
+        "sector_33_name",
+        "scale_category",
+        "listed_date",
+        "normalized_code",
+        "market",
+    ]
 
 
 def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.DataFrame:
@@ -365,14 +407,148 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
     return df
 
 
-def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataFrame:
-    placeholders = _placeholder_sql(len(market_codes))
+def _query_entry_stock_master(
+    conn: Any,
+    *,
+    calendar_df: pd.DataFrame,
+    market_codes: Sequence[str],
+) -> tuple[pd.DataFrame, bool]:
+    columns = _stock_master_columns()
+    if calendar_df.empty:
+        return _empty_result_df(columns), False
+    if not _table_exists(conn, "stock_master_daily"):
+        stock_df = _query_canonical_stocks(conn, market_codes=market_codes)
+        if stock_df.empty:
+            return _empty_result_df(columns), False
+        records: list[dict[str, Any]] = []
+        for calendar in calendar_df.to_dict(orient="records"):
+            for stock in stock_df.to_dict(orient="records"):
+                record: dict[str, Any] = {
+                    "year": str(calendar["year"]),
+                    "entry_date": str(calendar["entry_date"]),
+                    "exit_date": str(calendar["exit_date"]),
+                    "market_trading_days": int(calendar["market_trading_days"]),
+                }
+                record.update(cast(dict[str, Any], stock))
+                records.append(record)
+        return pd.DataFrame(records, columns=columns), False
+
+    calendar_records = calendar_df.to_dict(orient="records")
+    calendar_values_sql = _values_sql(len(calendar_records), 4)
+    calendar_params: list[Any] = []
+    for row in calendar_records:
+        calendar_params.extend(
+            [
+                str(row["year"]),
+                str(row["entry_date"]),
+                str(row["exit_date"]),
+                int(row["market_trading_days"]),
+            ]
+        )
+    market_placeholders = _placeholder_sql(len(market_codes))
     normalized_code = _normalize_code_sql("code")
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH stocks_canonical AS (
-            SELECT code, {normalized_code} AS normalized_code
+        WITH calendar(year, entry_date, exit_date, market_trading_days) AS (
+            VALUES {calendar_values_sql}
+        ),
+        entry_master AS (
+            SELECT
+                c.year,
+                c.entry_date,
+                c.exit_date,
+                c.market_trading_days,
+                m.code,
+                m.company_name,
+                m.market_code,
+                m.market_name,
+                m.sector_33_name,
+                m.scale_category,
+                m.listed_date,
+                {normalized_code} AS normalized_code,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.entry_date, {normalized_code}
+                    ORDER BY {prefer_4digit}
+                ) AS rn
+            FROM calendar c
+            JOIN stock_master_daily m
+              ON m.date = c.entry_date
+            WHERE lower(m.market_code) IN ({market_placeholders})
+        )
+        SELECT
+            year,
+            entry_date,
+            exit_date,
+            market_trading_days,
+            code,
+            company_name,
+            market_code,
+            market_name,
+            sector_33_name,
+            scale_category,
+            listed_date,
+            normalized_code
+        FROM entry_master
+        WHERE rn = 1
+        ORDER BY year, market_code, code
+        """,
+        [*calendar_params, *[str(code).lower() for code in market_codes]],
+    ).fetchdf()
+    if df.empty:
+        return _empty_result_df(columns), True
+    df["year"] = df["year"].astype(str)
+    df["entry_date"] = df["entry_date"].astype(str)
+    df["exit_date"] = df["exit_date"].astype(str)
+    df["code"] = df["code"].astype(str)
+    df["normalized_code"] = df["normalized_code"].astype(str)
+    df["market_code"] = df["market_code"].astype(str)
+    df["listed_date"] = df["listed_date"].fillna("").astype(str)
+    df["market"] = df["market_code"].map(_market_label)
+    return df[columns], True
+
+
+def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
+    if not codes:
+        return _empty_result_df(
+            [
+                "code",
+                "disclosed_date",
+                "type_of_current_period",
+                "period_type",
+                "earnings_per_share",
+                "bps",
+                "forecast_eps",
+                "next_year_forecast_earnings_per_share",
+                "profit",
+                "equity",
+                "total_assets",
+                "sales",
+                "operating_profit",
+                "operating_cash_flow",
+                "investing_cash_flow",
+                "dividend_fy",
+                "forecast_dividend_fy",
+                "next_year_forecast_dividend_fy",
+                "payout_ratio",
+                "forecast_payout_ratio",
+                "next_year_forecast_payout_ratio",
+                "shares_outstanding",
+                "treasury_shares",
+            ]
+        )
+    selected_values_sql = _values_sql(len(codes), 1)
+    normalized_code = _normalize_code_sql("code")
+    statement_normalized_code = _normalize_code_sql("st.code")
+    prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
+    statement_prefer_4digit = "CASE WHEN length(st.code) = 4 THEN 0 ELSE 1 END"
+    df = conn.execute(
+        f"""
+        WITH selected_codes(code) AS (
+            VALUES {selected_values_sql}
+        ),
+        stocks_canonical AS (
+            SELECT code, normalized_code
             FROM (
                 SELECT
                     code,
@@ -381,10 +557,13 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                         PARTITION BY {normalized_code}
                         ORDER BY {prefer_4digit}
                     ) AS rn
-                FROM stocks
-                WHERE lower(market_code) IN ({placeholders})
+                FROM selected_codes
             )
             WHERE rn = 1
+        ),
+        selected_normalized_codes AS (
+            SELECT DISTINCT normalized_code
+            FROM stocks_canonical
         ),
         statements_canonical AS (
             SELECT
@@ -412,33 +591,35 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                 treasury_shares
             FROM (
                 SELECT
-                    {normalized_code} AS normalized_code,
-                    disclosed_date,
-                    type_of_current_period,
-                    earnings_per_share,
-                    bps,
-                    forecast_eps,
-                    next_year_forecast_earnings_per_share,
-                    profit,
-                    equity,
-                    total_assets,
-                    sales,
-                    operating_profit,
-                    operating_cash_flow,
-                    investing_cash_flow,
-                    dividend_fy,
-                    forecast_dividend_fy,
-                    next_year_forecast_dividend_fy,
-                    payout_ratio,
-                    forecast_payout_ratio,
-                    next_year_forecast_payout_ratio,
-                    shares_outstanding,
-                    treasury_shares,
+                    {statement_normalized_code} AS normalized_code,
+                    st.disclosed_date,
+                    st.type_of_current_period,
+                    st.earnings_per_share,
+                    st.bps,
+                    st.forecast_eps,
+                    st.next_year_forecast_earnings_per_share,
+                    st.profit,
+                    st.equity,
+                    st.total_assets,
+                    st.sales,
+                    st.operating_profit,
+                    st.operating_cash_flow,
+                    st.investing_cash_flow,
+                    st.dividend_fy,
+                    st.forecast_dividend_fy,
+                    st.next_year_forecast_dividend_fy,
+                    st.payout_ratio,
+                    st.forecast_payout_ratio,
+                    st.next_year_forecast_payout_ratio,
+                    st.shares_outstanding,
+                    st.treasury_shares,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code}, disclosed_date
-                        ORDER BY {prefer_4digit}
+                        PARTITION BY {statement_normalized_code}, st.disclosed_date
+                        ORDER BY {statement_prefer_4digit}
                     ) AS rn
-                FROM statements
+                FROM statements st
+                JOIN selected_normalized_codes selected
+                  ON selected.normalized_code = {statement_normalized_code}
             )
             WHERE rn = 1
         )
@@ -450,7 +631,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
           ON s.normalized_code = st.normalized_code
         ORDER BY s.code, st.disclosed_date
         """,
-        [str(code).lower() for code in market_codes],
+        [str(code) for code in codes],
     ).fetchdf()
     if df.empty:
         return _empty_result_df(
@@ -489,30 +670,39 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
 def _query_price_rows(
     conn: Any,
     *,
-    market_codes: Sequence[str],
+    codes: Sequence[str],
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
-    placeholders = _placeholder_sql(len(market_codes))
+    if not codes:
+        return _empty_result_df(["code", "date", "open", "high", "low", "close", "volume"])
+    selected_values_sql = _values_sql(len(codes), 1)
     normalized_code = _normalize_code_sql("code")
+    price_normalized_code = _normalize_code_sql("sd.code")
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
+    price_prefer_4digit = "CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH stocks_canonical AS (
-            SELECT code, market_code, {normalized_code} AS normalized_code
+        WITH selected_codes(code) AS (
+            VALUES {selected_values_sql}
+        ),
+        stocks_canonical AS (
+            SELECT code, normalized_code
             FROM (
                 SELECT
                     code,
-                    market_code,
                     {normalized_code} AS normalized_code,
                     ROW_NUMBER() OVER (
                         PARTITION BY {normalized_code}
                         ORDER BY {prefer_4digit}
                     ) AS rn
-                FROM stocks
-                WHERE lower(market_code) IN ({placeholders})
+                FROM selected_codes
             )
             WHERE rn = 1
+        ),
+        selected_normalized_codes AS (
+            SELECT DISTINCT normalized_code
+            FROM stocks_canonical
         ),
         stock_data_canonical AS (
             SELECT
@@ -525,25 +715,26 @@ def _query_price_rows(
                 volume
             FROM (
                 SELECT
-                    {normalized_code} AS normalized_code,
-                    date,
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
+                    {price_normalized_code} AS normalized_code,
+                    sd.date,
+                    sd.open,
+                    sd.high,
+                    sd.low,
+                    sd.close,
+                    sd.volume,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code}, date
-                        ORDER BY {prefer_4digit}
+                        PARTITION BY {price_normalized_code}, sd.date
+                        ORDER BY {price_prefer_4digit}
                     ) AS rn
-                FROM stock_data
-                WHERE date >= ? AND date <= ?
+                FROM stock_data sd
+                JOIN selected_normalized_codes selected
+                  ON selected.normalized_code = {price_normalized_code}
+                WHERE sd.date >= ? AND sd.date <= ?
             )
             WHERE rn = 1
         )
         SELECT
             s.code,
-            s.market_code,
             sd.date,
             sd.open,
             sd.high,
@@ -555,14 +746,12 @@ def _query_price_rows(
           ON s.normalized_code = sd.normalized_code
         ORDER BY s.code, sd.date
         """,
-        [*[str(code).lower() for code in market_codes], start_date, end_date],
+        [*[str(code) for code in codes], start_date, end_date],
     ).fetchdf()
     if df.empty:
-        return _empty_result_df(["code", "market_code", "date", "open", "high", "low", "close", "volume"])
+        return _empty_result_df(["code", "date", "open", "high", "low", "close", "volume"])
     df["code"] = df["code"].astype(str)
-    df["market_code"] = df["market_code"].astype(str)
     df["date"] = df["date"].astype(str)
-    df["market"] = df["market_code"].map(_market_label)
     return df
 
 
@@ -1001,7 +1190,6 @@ def _build_event_ledger(
         str(code): frame.sort_values("disclosed_date", kind="stable").reset_index(drop=True)
         for code, frame in statement_df.groupby("code", sort=False)
     }
-    calendar_records = calendar_df.to_dict(orient="records")
     records: list[dict[str, Any]] = []
 
     for stock in stock_df.to_dict(orient="records"):
@@ -1009,122 +1197,118 @@ def _build_event_ledger(
         price_frame = price_by_code.get(code)
         if price_frame is None or price_frame.empty:
             continue
-        price_years = set(price_frame["date"].astype(str).str[:4])
         statement_frame = statements_by_code.get(code, _empty_result_df(list(statement_df.columns)))
         price_dates = price_frame["date"].astype(str).to_numpy()
         listed_date = str(stock.get("listed_date") or "")
 
-        for calendar in calendar_records:
-            year = str(calendar["year"])
-            if year not in price_years:
-                continue
-            entry_date = str(calendar["entry_date"])
-            exit_date = str(calendar["exit_date"])
-            event_id = f"{code}:{year}"
-            record: dict[str, Any] = {
-                "event_id": event_id,
-                "year": year,
-                "code": code,
-                "company_name": str(stock.get("company_name") or ""),
-                "market": str(stock.get("market") or ""),
-                "market_code": str(stock.get("market_code") or ""),
-                "sector_33_name": str(stock.get("sector_33_name") or ""),
-                "scale_category": str(stock.get("scale_category") or ""),
-                "listed_date": listed_date,
-                "status": None,
-                "entry_date": entry_date,
-                "exit_date": exit_date,
-                "entry_open": None,
-                "entry_close": None,
-                "entry_previous_close": None,
-                "exit_close": None,
-                "holding_trading_days": None,
-                "holding_calendar_days": None,
-                "event_return": None,
-                "event_return_pct": None,
-                "cagr_pct": None,
-                "max_drawdown_pct": None,
-                "max_runup_pct": None,
-                "annualized_volatility_pct": None,
-                "sharpe_ratio": None,
-                "sortino_ratio": None,
-                "calmar_ratio": None,
-            }
-            entry_positions = np.where(price_dates == entry_date)[0]
-            exit_positions = np.where(price_dates == exit_date)[0]
-            if len(entry_positions) == 0:
-                record["status"] = "missing_entry_session"
-                records.append(record)
-                continue
-            if len(exit_positions) == 0:
-                record["status"] = "missing_exit_session"
-                records.append(record)
-                continue
-
-            entry_idx = int(entry_positions[0])
-            exit_idx = int(exit_positions[0])
-            if entry_idx > exit_idx:
-                record["status"] = "empty_holding_window"
-                records.append(record)
-                continue
-            path_df = price_frame.iloc[entry_idx : exit_idx + 1].copy().reset_index(drop=True)
-            if path_df.empty:
-                record["status"] = "empty_holding_window"
-                records.append(record)
-                continue
-            entry_open = _to_nullable_float(path_df.iloc[0]["open"])
-            entry_close = _to_nullable_float(path_df.iloc[0]["close"])
-            entry_previous_close = (
-                _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"]) if entry_idx > 0 else None
-            )
-            exit_close = _to_nullable_float(path_df.iloc[-1]["close"])
-            if entry_open is None or entry_open <= 0:
-                record["status"] = "invalid_entry_open"
-                records.append(record)
-                continue
-            if exit_close is None or exit_close <= 0:
-                record["status"] = "invalid_exit_close"
-                records.append(record)
-                continue
-            if pd.to_numeric(path_df["close"], errors="coerce").isna().any():
-                record["status"] = "invalid_price_path"
-                records.append(record)
-                continue
-
-            statement_frame_for_entry = statement_frame.copy()
-            statement_frame_for_entry.attrs["as_of_date"] = entry_date
-            baseline = _resolve_baseline_share_snapshot(
-                statement_frame_for_entry,
-                as_of_date=entry_date,
-            )
-            latest_fy = _latest_fy_statement(statement_frame_for_entry, as_of_date=entry_date)
-            feature_values = _build_feature_values(
-                statement_frame=statement_frame_for_entry,
-                latest_fy=latest_fy,
-                baseline=baseline,
-                as_of_date=entry_date,
-                entry_open=entry_open,
-                entry_previous_close=entry_previous_close,
-                price_frame=price_frame,
-                entry_idx=entry_idx,
-                adv_window=adv_window,
-            )
-            metrics = _calc_path_metrics(entry_open, path_df)
-            holding_calendar_days = (pd.Timestamp(exit_date) - pd.Timestamp(entry_date)).days
-            record.update(
-                {
-                    **feature_values,
-                    **metrics,
-                    "status": "realized",
-                    "entry_open": entry_open,
-                    "entry_close": entry_close,
-                    "entry_previous_close": entry_previous_close,
-                    "exit_close": exit_close,
-                    "holding_trading_days": int(len(path_df)),
-                    "holding_calendar_days": int(holding_calendar_days),
-                }
-            )
+        year = str(stock["year"])
+        entry_date = str(stock["entry_date"])
+        exit_date = str(stock["exit_date"])
+        event_id = f"{code}:{year}"
+        record: dict[str, Any] = {
+            "event_id": event_id,
+            "year": year,
+            "code": code,
+            "company_name": str(stock.get("company_name") or ""),
+            "market": str(stock.get("market") or ""),
+            "market_code": str(stock.get("market_code") or ""),
+            "sector_33_name": str(stock.get("sector_33_name") or ""),
+            "scale_category": str(stock.get("scale_category") or ""),
+            "listed_date": listed_date,
+            "status": None,
+            "entry_date": entry_date,
+            "exit_date": exit_date,
+            "entry_open": None,
+            "entry_close": None,
+            "entry_previous_close": None,
+            "exit_close": None,
+            "holding_trading_days": None,
+            "holding_calendar_days": None,
+            "event_return": None,
+            "event_return_pct": None,
+            "cagr_pct": None,
+            "max_drawdown_pct": None,
+            "max_runup_pct": None,
+            "annualized_volatility_pct": None,
+            "sharpe_ratio": None,
+            "sortino_ratio": None,
+            "calmar_ratio": None,
+        }
+        entry_positions = np.where(price_dates == entry_date)[0]
+        exit_positions = np.where(price_dates == exit_date)[0]
+        if len(entry_positions) == 0:
+            record["status"] = "missing_entry_session"
             records.append(record)
+            continue
+        if len(exit_positions) == 0:
+            record["status"] = "missing_exit_session"
+            records.append(record)
+            continue
+
+        entry_idx = int(entry_positions[0])
+        exit_idx = int(exit_positions[0])
+        if entry_idx > exit_idx:
+            record["status"] = "empty_holding_window"
+            records.append(record)
+            continue
+        path_df = price_frame.iloc[entry_idx : exit_idx + 1].copy().reset_index(drop=True)
+        if path_df.empty:
+            record["status"] = "empty_holding_window"
+            records.append(record)
+            continue
+        entry_open = _to_nullable_float(path_df.iloc[0]["open"])
+        entry_close = _to_nullable_float(path_df.iloc[0]["close"])
+        entry_previous_close = (
+            _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"]) if entry_idx > 0 else None
+        )
+        exit_close = _to_nullable_float(path_df.iloc[-1]["close"])
+        if entry_open is None or entry_open <= 0:
+            record["status"] = "invalid_entry_open"
+            records.append(record)
+            continue
+        if exit_close is None or exit_close <= 0:
+            record["status"] = "invalid_exit_close"
+            records.append(record)
+            continue
+        if pd.to_numeric(path_df["close"], errors="coerce").isna().any():
+            record["status"] = "invalid_price_path"
+            records.append(record)
+            continue
+
+        statement_frame_for_entry = statement_frame.copy()
+        statement_frame_for_entry.attrs["as_of_date"] = entry_date
+        baseline = _resolve_baseline_share_snapshot(
+            statement_frame_for_entry,
+            as_of_date=entry_date,
+        )
+        latest_fy = _latest_fy_statement(statement_frame_for_entry, as_of_date=entry_date)
+        feature_values = _build_feature_values(
+            statement_frame=statement_frame_for_entry,
+            latest_fy=latest_fy,
+            baseline=baseline,
+            as_of_date=entry_date,
+            entry_open=entry_open,
+            entry_previous_close=entry_previous_close,
+            price_frame=price_frame,
+            entry_idx=entry_idx,
+            adv_window=adv_window,
+        )
+        metrics = _calc_path_metrics(entry_open, path_df)
+        holding_calendar_days = (pd.Timestamp(exit_date) - pd.Timestamp(entry_date)).days
+        record.update(
+            {
+                **feature_values,
+                **metrics,
+                "status": "realized",
+                "entry_open": entry_open,
+                "entry_close": entry_close,
+                "entry_previous_close": entry_previous_close,
+                "exit_close": exit_close,
+                "holding_trading_days": int(len(path_df)),
+                "holding_calendar_days": int(holding_calendar_days),
+            }
+        )
+        records.append(record)
 
     if not records:
         return _empty_result_df(columns)
@@ -1592,11 +1776,13 @@ def run_annual_first_open_last_close_fundamental_panel(
             end_year=end_year,
             include_incomplete_last_year=include_incomplete_last_year,
         )
-        stock_df = _query_canonical_stocks(conn, market_codes=market_codes)
-        statement_df = _query_statement_rows(conn, market_codes=market_codes)
+        stock_df, uses_pit_stock_master = _query_entry_stock_master(
+            conn,
+            calendar_df=calendar_df,
+            market_codes=market_codes,
+        )
         allowed_codes = set(stock_df["code"].astype(str))
-        if allowed_codes:
-            statement_df = statement_df[statement_df["code"].astype(str).isin(allowed_codes)].copy()
+        statement_df = _query_statement_rows(conn, codes=tuple(sorted(allowed_codes)))
         if calendar_df.empty or stock_df.empty:
             empty_df = _empty_result_df([])
             return AnnualFirstOpenLastCloseFundamentalPanelResult(
@@ -1610,7 +1796,7 @@ def run_annual_first_open_last_close_fundamental_panel(
                 selected_markets=normalized_markets,
                 bucket_count=normalized_bucket_count,
                 adv_window=normalized_adv_window,
-                current_market_snapshot_only=True,
+                current_market_snapshot_only=not uses_pit_stock_master,
                 entry_timing="first_trading_day_open",
                 exit_timing="last_trading_day_close",
                 share_adjustment_policy=(
@@ -1631,14 +1817,10 @@ def run_annual_first_open_last_close_fundamental_panel(
         price_end_date = str(calendar_df["exit_date"].max())
         price_df = _query_price_rows(
             conn,
-            market_codes=market_codes,
+            codes=tuple(sorted(allowed_codes)),
             start_date=price_start_date,
             end_date=price_end_date,
         )
-        if allowed_codes:
-            price_df = price_df[price_df["code"].astype(str).isin(allowed_codes)].copy()
-            market_map = stock_df.set_index("code")["market"].to_dict()
-            price_df["market"] = price_df["code"].map(market_map).fillna(price_df["market"])
 
     event_ledger_df = _build_event_ledger(
         calendar_df=calendar_df,
@@ -1680,7 +1862,7 @@ def run_annual_first_open_last_close_fundamental_panel(
         selected_markets=normalized_markets,
         bucket_count=normalized_bucket_count,
         adv_window=normalized_adv_window,
-        current_market_snapshot_only=True,
+        current_market_snapshot_only=not uses_pit_stock_master,
         entry_timing="first_trading_day_open",
         exit_timing="last_trading_day_close",
         share_adjustment_policy=(
@@ -1713,7 +1895,11 @@ def _build_summary_markdown(result: AnnualFirstOpenLastCloseFundamentalPanelResu
         "",
         f"- Scope: `{', '.join(result.selected_markets)}`",
         "- Event: buy each stock at the first trading day's open and sell at the last trading day's close for each complete calendar year.",
-        "- Market classification uses the current stock-master snapshot; historical market migrations are not reconstructed.",
+        (
+            "- Market classification uses `stock_master_daily` on each entry date; historical market membership is PIT-safe for the annual entry universe."
+            if not result.current_market_snapshot_only
+            else "- Market classification uses the current `stocks` snapshot fallback; historical market migrations are not reconstructed."
+        ),
         "- Fundamental as-of: latest FY disclosure available on or before the entry date.",
         "- Per-share adjustment: EPS, BPS, forward EPS and dividend-per-share fields are adjusted to the latest share baseline available on or before entry, preferring quarterly shares. This is intended to avoid post-FY stock-split distortions.",
         f"- Factor buckets: `{result.bucket_count}` within each year and market scope.",

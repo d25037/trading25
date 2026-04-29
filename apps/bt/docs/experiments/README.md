@@ -87,6 +87,8 @@
   - 年次保有ファンダメンタル panel を土台に、Prime / Standard / Growth 間でどのファンダメンタル指標の水準差が大きいかを分解する実験。
 - [market-behavior/annual-value-composite-selection/](./market-behavior/annual-value-composite-selection/README.md)
   - 低PBR・小型・低forward PER を composite score に落とし、top% selection と liquidity/capacity floor を portfolio lens で評価する実験。
+- [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)
+  - 低forward PER を positive-low と non-positive に分解し、低PBR + 小型 composite への寄与を event-level と portfolio lens で確認する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
   - `forward_eps_driven` の実トレード台帳を起点に、forward EPS 成長・出来高・地合い・低PBR/低forward PER/小型の価値露出を市場別に分解する実験。
 - [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)

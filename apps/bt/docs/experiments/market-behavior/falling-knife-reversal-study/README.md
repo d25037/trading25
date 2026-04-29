@@ -12,7 +12,7 @@
 
 ### Data Scope / PIT Assumptions
 
-入力は `~/.local/share/trading25/market-timeseries/market.duckdb` から作った一時 snapshot で、利用可能範囲は `2016-03-25 -> 2026-04-24`、分析範囲は `2016-04-21 -> 2026-04-23`。対象市場は `0111` プライム、`0112` スタンダード、`0113` グロースで、source rows は `8,068,767`、falling-knife events は `157,374`、stabilization entry を持つ event は `150,266`。signal 条件は signal date close までに観測できる `5d <= -10%`、`20d <= -20%`、`60d high から -25%以下`、SMA downtrend、`60d sortino <= 0.00` の overlap で、最小 overlap は `2`、同一銘柄 signal cooldown は `20` sessions。entry は常に翌営業日 open で、wait rule は最大 `10` sessions 内の安定化確認後の翌営業日 open。
+入力は market.duckdb v3 の `stock_data` と PIT-safe stock master を使った live DuckDB read で、利用可能範囲は `2016-05-02 -> 2026-04-28`、分析範囲は `2016-06-01 -> 2026-04-27`。対象市場は `0111` プライム、`0112` スタンダード、`0113` グロースで、source rows は `7,954,155`、falling-knife events は `154,812`、対象 symbol は `3,734`、stabilization entry を持つ event は `147,699`。signal 条件は signal date close までに観測できる `5d <= -10%`、`20d <= -20%`、`60d high から -25%以下`、SMA downtrend、`60d sortino <= 0.00` の overlap で、最小 overlap は `2`、同一銘柄 signal cooldown は `20` sessions。entry は常に翌営業日 open で、wait rule は最大 `10` sessions 内の安定化確認後の翌営業日 open。
 
 ### Main Findings
 
@@ -20,34 +20,34 @@
 
 | Horizon | Mean | Median | P10 | Severe loss |
 | --- | ---: | ---: | ---: | ---: |
-| 5d | `0.35%` | `0.07%` | `-5.44%` | `3.20%` |
-| 20d | `1.29%` | `0.50%` | `-10.42%` | `10.50%` |
-| 60d | `3.35%` | `0.87%` | `-16.80%` | `18.81%` |
+| 5d | `0.35%` | `0.07%` | `-5.42%` | `3.23%` |
+| 20d | `1.29%` | `0.49%` | `-10.45%` | `10.66%` |
+| 60d | `3.33%` | `0.86%` | `-16.85%` | `19.44%` |
 
 #### グロースは反発の右尾が残る一方で、20d の左尾が明確に悪い。
 
 | Market | Horizon | Mean | Median | Severe loss |
 | --- | --- | ---: | ---: | ---: |
-| Prime | 20d | `1.60%` | `1.16%` | `8.41%` |
-| Standard | 20d | `1.13%` | `0.24%` | `9.56%` |
-| Growth | 20d | `0.88%` | `-0.78%` | `20.03%` |
+| Prime | 20d | `1.62%` | `1.15%` | `8.53%` |
+| Standard | 20d | `1.12%` | `0.22%` | `9.71%` |
+| Growth | 20d | `0.88%` | `-0.77%` | `20.29%` |
 
 #### tested rule では `wait_for_stabilization` は `catch_next_open` を上回らない。
 
 | Horizon | `wait - catch` mean | `wait - catch` median | Wait better |
 | --- | ---: | ---: | ---: |
-| 5d | `-0.30%` | `-0.49%` | `42.85%` |
-| 20d | `-0.39%` | `-0.68%` | `40.52%` |
-| 60d | `-0.55%` | `-0.65%` | `41.30%` |
+| 5d | `-0.30%` | `-0.49%` | `42.80%` |
+| 20d | `-0.39%` | `-0.69%` | `40.39%` |
+| 60d | `-0.57%` | `-0.66%` | `41.11%` |
 
 #### event の多くは risk-adjusted return 悪化と downtrend で拾われるが、深い drawdown 条件は頻度が低くても左尾が重い。
 
 | Condition | Event rate | Severe loss |
 | --- | ---: | ---: |
-| `poor_risk_adjusted_return` | `92.70%` | n/a |
-| `downtrend_sma` | `81.81%` | n/a |
-| `deep_60d_drawdown` | `22.72%` | `7.15%` |
-| `deep_20d_drop` | `5.77%` | `8.66%` |
+| `poor_risk_adjusted_return` | `92.65%` | `2.80%` |
+| `downtrend_sma` | `81.61%` | `2.57%` |
+| `deep_60d_drawdown` | `22.80%` | `7.20%` |
+| `deep_20d_drop` | `5.91%` | `8.62%` |
 
 ### Interpretation
 
@@ -55,19 +55,19 @@
 
 ### Production Implication
 
-この結果は「急落を買う」rule の採用根拠ではなく、急落局面で size を落とす、対象市場を分ける、または bad-tail pruning を追加する根拠として使う。特に 20d severe loss がプライム `8.41%` に対してグロース `20.03%` まで上がるため、市場をまとめた single threshold は避ける。次段では `catch_next_open` の rebound exposure を固定したまま、グロース、Daily Risk Adjusted Return bucket、deep drawdown 条件による除外 rule を検証する。
+この結果は「急落を買う」rule の採用根拠ではなく、急落局面で size を落とす、対象市場を分ける、または bad-tail pruning を追加する根拠として使う。特に 20d severe loss がプライム `8.53%` に対してグロース `20.29%` まで上がるため、市場をまとめた single threshold は避ける。次段では `catch_next_open` の rebound exposure を固定したまま、グロース、Daily Risk Adjusted Return bucket、deep drawdown 条件による除外 rule を検証する。
 
 ### Caveats
 
-この readout は `20260427_110323_78e01df6` bundle の単一 run に基づく。source snapshot は local DuckDB からの temporary copy で、manifest は `git_dirty: true` を示している。約定は翌営業日 open / horizon close の research approximation で、手数料、スリッページ、板流動性、実運用の同時保有制約は評価していない。Daily Risk Adjusted Return は `60d sortino` の bucket と閾値 `0.00` に依存するため、別 lookback や market-specific threshold では結果が変わりうる。
+この readout は `20260429_204107_e60eacef` bundle の単一 run に基づく。source は local market.duckdb v3 の live DuckDB read で、manifest は `git_dirty: true` を示している。約定は翌営業日 open / horizon close の research approximation で、手数料、スリッページ、板流動性、実運用の同時保有制約は評価していない。Daily Risk Adjusted Return は `60d sortino` の bucket と閾値 `0.00` に依存するため、別 lookback や market-specific threshold では結果が変わりうる。
 
 ### Source Artifacts
 
-- Bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6`
-- Summary: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/summary.md`
-- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/summary.json`
-- Tables: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/results.duckdb` (`event_df`, `trade_summary_df`, `paired_delta_df`, `condition_profile_df`)
-- Manifest: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260427_110323_78e01df6/manifest.json`
+- Bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef`
+- Summary: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef/summary.md`
+- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef/summary.json`
+- Tables: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef/results.duckdb` (`event_df`, `trade_summary_df`, `paired_delta_df`, `condition_profile_df`)
+- Manifest: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef/manifest.json`
 
 ## Purpose
 

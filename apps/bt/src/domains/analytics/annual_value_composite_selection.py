@@ -13,9 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.domains.analytics.annual_first_open_last_close_fundamental_panel import (
-    DEFAULT_MARKETS,
     get_annual_first_open_last_close_fundamental_panel_latest_bundle_path,
-    _market_query_codes,
     _open_analysis_connection,
     _query_price_rows,
     _to_nullable_float,
@@ -698,15 +696,14 @@ def _load_price_df(
     start_year = int(str(selected_event_df["year"].min()))
     start_date = f"{start_year - 1:04d}-01-01"
     end_date = str(selected_event_df["exit_date"].max())
+    selected_codes = tuple(sorted(set(selected_event_df["code"].astype(str))))
     with _open_analysis_connection(db_path) as ctx:
         price_df = _query_price_rows(
             ctx.connection,
-            market_codes=_market_query_codes(DEFAULT_MARKETS),
+            codes=selected_codes,
             start_date=start_date,
             end_date=end_date,
         )
-        allowed_codes = set(selected_event_df["code"].astype(str))
-        price_df = price_df[price_df["code"].astype(str).isin(allowed_codes)].copy()
         return str(ctx.source_mode), ctx.source_detail, price_df
 
 

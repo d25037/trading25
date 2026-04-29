@@ -56,6 +56,26 @@ def _build_market_db(db_path: Path) -> str:
     )
     conn.execute(
         """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            company_name_english TEXT,
+            market_code TEXT NOT NULL,
+            market_name TEXT NOT NULL,
+            sector_17_code TEXT NOT NULL,
+            sector_17_name TEXT NOT NULL,
+            sector_33_code TEXT NOT NULL,
+            sector_33_name TEXT NOT NULL,
+            scale_category TEXT,
+            listed_date TEXT,
+            created_at TEXT,
+            PRIMARY KEY (date, code)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE statements (
             code TEXT NOT NULL,
             disclosed_date TEXT NOT NULL,
@@ -118,6 +138,41 @@ def _build_market_db(db_path: Path) -> str:
                 "-",
                 "2000-01-01",
                 None,
+                None,
+            ),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                "2024-01-04",
+                "1111",
+                "Split Adjusted Standard",
+                None,
+                "0112",
+                "Standard",
+                "1",
+                "A",
+                "1",
+                "A",
+                "-",
+                "2000-01-01",
+                None,
+            ),
+            (
+                "2024-01-04",
+                "2222",
+                "Growth Negative",
+                None,
+                "0113",
+                "Growth",
+                "1",
+                "A",
+                "1",
+                "A",
+                "-",
+                "2000-01-01",
                 None,
             ),
         ],
@@ -251,6 +306,7 @@ def test_run_study_adjusts_per_share_metrics_to_entry_share_baseline(
     )
 
     assert list(result.calendar_df["year"]) == ["2024"]
+    assert result.current_market_snapshot_only is False
     split_event = _event_row(result, "1111", "2024")
     negative_event = _event_row(result, "2222", "2024")
 
@@ -279,6 +335,36 @@ def test_run_study_adjusts_per_share_metrics_to_entry_share_baseline(
     assert negative_event["event_return"] == pytest.approx(-0.2)
     assert negative_event["eps"] == pytest.approx(-20.0)
     assert negative_event["forward_eps_to_actual_eps"] == pytest.approx(0.5)
+
+
+def test_run_study_uses_entry_date_stock_master_for_market_scope(
+    analytics_db_path: str,
+) -> None:
+    conn = duckdb.connect(analytics_db_path)
+    conn.execute(
+        """
+        UPDATE stock_master_daily
+        SET market_code = '0102', market_name = '東証二部'
+        WHERE code = '2222'
+        """
+    )
+    conn.close()
+
+    standard_result = run_annual_first_open_last_close_fundamental_panel(
+        analytics_db_path,
+        markets=("standard",),
+        bucket_count=2,
+    )
+    growth_result = run_annual_first_open_last_close_fundamental_panel(
+        analytics_db_path,
+        markets=("growth",),
+        bucket_count=2,
+    )
+
+    assert standard_result.current_market_snapshot_only is False
+    assert set(standard_result.event_ledger_df["code"].astype(str)) == {"1111", "2222"}
+    assert set(standard_result.event_ledger_df["market"].astype(str)) == {"standard"}
+    assert growth_result.event_ledger_df.empty
 
 
 def test_feature_buckets_and_annual_portfolio_summary_are_built(

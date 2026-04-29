@@ -8,7 +8,7 @@
 
 ### Decision
 
-- Low `PBR + small cap` is the strongest reusable annual cross-section readout from this run, but it stays a research/ranking diagnostic until capacity, liquidity floors, turnover, and execution cost checks are added.
+- v3 `market.duckdb` では `stock_master_daily` の entry-date 構成を使う。低 `PBR`、小型、低 `forward PER` は引き続き再利用価値があるが、production へ直結させず ranking / research diagnostic として扱う。
 
 ### Why This Research Was Run
 
@@ -17,11 +17,11 @@
 
 ### Data Scope / PIT Assumptions
 
-- Complete years `2017-2025`; `29,294` realized stock-year events.
+- Complete years `2017-2025`; `32,264` realized stock-year events.
 - Entry is the first trading day `Open`; exit is the same calendar year last trading day `Close`.
 - FY fundamentals are selected only when disclosed on or before the entry date.
 - EPS, BPS, forward EPS, and dividend per share are adjusted to the latest entry-date share-count baseline.
-- Market split uses the current `stocks.market_code` snapshot as a retrospective proxy because historical market migration is not stored.
+- Market split uses `stock_master_daily` on each entry date. Historical JPX segment codes are normalized to the current research labels: `0101/0111 -> prime`, `0102/0106/0112 -> standard`, `0104/0107/0113 -> growth`.
 
 ### Main Findings
 
@@ -29,13 +29,15 @@
 
 | Scope | CAGR | Sharpe | Sortino | Calmar | MaxDD |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Full market baseline | `11.4%` | `0.76` | `0.86` | `0.32` | `-36.2%` |
+| Full market baseline | `11.5%` | `0.77` | `0.86` | `0.32` | `-36.0%` |
 
 #### broad market lens では `standard` が最も良い。
 
 | Market | CAGR | Sharpe |
 | --- | ---: | ---: |
-| `standard` | `12.6%` | `0.87` |
+| `prime` | `9.4%` | `0.62` |
+| `standard` | `15.9%` | `1.09` |
+| `growth` | `8.9%` | `0.48` |
 
 #### 再利用しやすい単独 factor は低 `PBR`、低 `forward PER`、低 `PER`、高配当/高予想配当利回り。
 
@@ -46,31 +48,26 @@
 | low `PER` | factor bucket summary の上位に残った |
 | high dividend / forecast dividend yield | factor bucket summary の上位に残った |
 
-#### `forward_eps_to_actual_eps` は広い selector としては弱い。
+#### v3では低 `PBR` と低 `forward PER` が最上位の単独 spread として残る。
 
-| Market lens | Q5 high ratio vs Q1 low ratio |
-| --- | --- |
-| `all` | Q5 が Q1 を上回らない |
-| `standard` | Q5 が Q1 を上回らない |
-| `growth` | Q5 が Q1 を上回らない |
-| `prime` | Q5 に小さな positive tilt |
-
-#### 最強の cross condition は低 `PBR + small cap` だが、capacity risk が大きい。
-
-| Condition | CAGR | Sharpe | Sortino | Calmar | MaxDD |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `standard` `PBR Q1 + market-cap Q1` | `37.7%` | `2.16` | `2.40` | `1.18` | `-31.9%` |
+| Market / factor | Preferred spread |
+| --- | ---: |
+| `growth` / `pbr` | `42.0pp` |
+| `standard` / `pbr` | `21.4pp` |
+| `all` / `pbr` | `20.0pp` |
+| `standard` / `forward_per` | `19.7pp` |
+| `all` / `forward_per` | `18.2pp` |
 
 #### per-share adjustment は省略できない。
 
 | Metric | Value |
 | --- | ---: |
-| realized events with `share_adjustment_applied = true` | `5,336` |
+| realized events with `share_adjustment_applied = true` | `5,293` |
 
 ### Interpretation
 
 - The strongest signal is not simply "cheap" or "small"; it is the interaction where very low valuation and very small market cap concentrate the annual return edge.
-- `standard` looks better than `growth` on risk-adjusted annual holding metrics in this run, but the market split is retrospective and should not be treated as a historical membership truth.
+- `standard` looks better than `growth` on risk-adjusted annual holding metrics in this run, and the market split is now PIT-safe at each annual entry date.
 - `forward EPS / actual EPS` is weaker than expected as a broad selector. The ratio is not useless, but it does not dominate the simpler low valuation families.
 - The share-count adjustment is not cosmetic: without it, EPS/BPS/forward EPS valuation buckets would be materially distorted for thousands of events.
 
@@ -83,7 +80,7 @@
 ### Caveats
 
 - Factor buckets are observational and must not be copied directly into live thresholds.
-- Historical market migration is unavailable, so market split is a current-snapshot proxy.
+- Legacy JPX segment labels are collapsed into current research labels for comparability, so `prime/standard/growth` before 2022 are proxy buckets rather than literal then-current market names.
 - The strongest branch is exposed to small-cap / low-ADV implementation risk.
 - Current-year incomplete annual returns are excluded by default.
 
@@ -92,6 +89,7 @@
 - Domain: `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
 - Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
 - Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
+- v3 bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260429_212200_e60eacef/`
 - Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`, `summary.json`
 
 ## Current Surface
@@ -110,7 +108,7 @@
 
 - Entry: complete calendar year の最初の取引日の `Open`。
 - Exit: 同じ年の最後の取引日の `Close`。
-- Market scope: current `stocks.market_code` snapshot による retrospective market split。
+- Market scope: `stock_master_daily` の entry date snapshot による PIT market split。
 - Fundamental as-of: entry date 以前に開示済みの最新 FY。
 - Per-share adjustment:
   - EPS / BPS / forward EPS / dividend-per-share は entry date 以前の最新株式数
@@ -141,11 +139,14 @@
 
 Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
 
-- `2017-2025` complete years, `29,294` realized stock-year events.
-- Full-market annual equal-weight baseline: CAGR `11.4%`, Sharpe `0.76`,
-  Sortino `0.86`, Calmar `0.32`, maxDD `-36.2%`.
+v3 PIT stock-master rerun:
+`/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260429_212200_e60eacef/`
+
+- `2017-2025` complete years, `32,264` realized stock-year events.
+- Full-market annual equal-weight baseline: CAGR `11.5%`, Sharpe `0.77`,
+  Sortino `0.86`, Calmar `0.32`, maxDD `-36.0%`.
 - Market split: `standard` was the best broad market lens in this run
-  (CAGR `12.6%`, Sharpe `0.87`), while `growth` had weaker risk-adjusted
+  (CAGR `15.9%`, Sharpe `1.09`), while `growth` had weaker risk-adjusted
   performance and deeper drawdown.
 - The strongest reusable single-factor families were low `PBR`, low
   `forward PER`, low `PER`, and high dividend yield / forecast dividend yield.
@@ -153,13 +154,13 @@ Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
   weak as a broad selector in this run. Q5 high ratio did not beat Q1 low ratio
   for `all`, `standard`, or `growth`, though `prime` had a small positive Q5
   tilt.
-- Low `PBR + small cap` was the strongest cross condition. `standard`
-  `PBR Q1 + market-cap Q1` produced CAGR `37.7%`, Sharpe `2.16`, Sortino
-  `2.40`, Calmar `1.18`, maxDD `-31.9%`.
+- Low `PBR` and low `forward PER` remained the strongest simple spread families.
+  The next-stage composite studies still need to handle capacity and liquidity
+  outside the alpha score.
 - The small-cap / low-ADV effect is large but should be treated as an
   implementation-risk axis, not a free live signal. Slippage and capacity
   controls are mandatory before considering production use.
-- Per-share adjustment mattered: `5,336` realized events had
+- Per-share adjustment mattered: `5,293` realized events had
   `share_adjustment_applied = true`, so ignoring post-FY share-count changes
   would materially distort EPS/BPS/forward EPS valuation buckets.
 
@@ -176,8 +177,8 @@ uv run --project apps/bt python apps/bt/scripts/research/run_annual_first_open_l
 
 ## Caveats
 
-- Historical market migration は `market.duckdb` に保持されていないため、market split
-  は current snapshot retrospective proxy。
+- v3 rerun は `stock_master_daily` を使うが、2022年以前の legacy JPX segment は
+  current research label へ proxy collapse している。
 - 現在年の大納会が未到来の場合、既定では incomplete last year を除外する。
 - Factor bucket は最初の観察用であり、そのまま live threshold として使わない。
 - Low-ADV / small-cap branches must be rechecked with liquidity floors,
