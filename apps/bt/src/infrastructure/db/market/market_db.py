@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
+import pandas as pd
+
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 # Hono 互換 metadata キー
@@ -114,6 +116,23 @@ _FUNDAMENTALS_TARGET_MARKET_CODES: tuple[str, ...] = (
     "standard",
     "growth",
 )
+
+_STOCK_MASTER_DAILY_COLUMNS: tuple[str, ...] = (
+    "date",
+    "code",
+    "company_name",
+    "company_name_english",
+    "market_code",
+    "market_name",
+    "sector_17_code",
+    "sector_17_name",
+    "sector_33_code",
+    "sector_33_name",
+    "scale_category",
+    "listed_date",
+    "created_at",
+)
+_STOCK_MASTER_DAILY_RELATION = "__tmp_stock_master_daily_publish"
 
 
 class MarketDb:
@@ -1084,6 +1103,51 @@ class MarketDb:
             params,
         )
         return len(rows)
+
+    def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
+        """date を含む PIT 銘柄マスタ行を relation-based upsert する。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+        deduped: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            row_date = str(row.get("date") or "")
+            code = str(row.get("code") or "")
+            if not row_date or not code:
+                continue
+            deduped[(row_date, code)] = row
+        if not deduped:
+            return 0
+
+        dataframe = pd.DataFrame.from_records(
+            [
+                {column: row.get(column) for column in _STOCK_MASTER_DAILY_COLUMNS}
+                for row in deduped.values()
+            ],
+            columns=_STOCK_MASTER_DAILY_COLUMNS,
+        )
+        columns_sql = ", ".join(_STOCK_MASTER_DAILY_COLUMNS)
+        update_columns = [
+            column
+            for column in _STOCK_MASTER_DAILY_COLUMNS
+            if column not in {"date", "code"}
+        ]
+        update_clause = ", ".join(
+            f"{column} = excluded.{column}" for column in update_columns
+        )
+        with self._lock:
+            self._conn.register(_STOCK_MASTER_DAILY_RELATION, dataframe)
+            try:
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_master_daily ({columns_sql})
+                    SELECT {columns_sql} FROM {_STOCK_MASTER_DAILY_RELATION}
+                    ON CONFLICT (date, code) DO UPDATE SET {update_clause}
+                    """
+                )
+            finally:
+                self._conn.unregister(_STOCK_MASTER_DAILY_RELATION)
+        return len(deduped)
 
     def rebuild_stock_master_intervals(self) -> int:
         """daily master から同一属性が続く PIT interval を再構築。"""

@@ -133,6 +133,205 @@ class TestMarketDbBasics:
         assert coverage["missingTopixDatesCount"] == 1
         assert coverage["missingTopixDates"] == ["2024-01-04"]
 
+    def test_stock_master_daily_rows_relation_upsert(self, market_db: MarketDb) -> None:
+        assert market_db.upsert_stock_master_daily_rows([
+            {
+                "date": "2024-01-04",
+                "code": "7203",
+                "company_name": "トヨタ",
+                "company_name_english": "TOYOTA",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1949-05-16",
+                "created_at": "first",
+            },
+            {
+                "date": "2024-01-05",
+                "code": "6758",
+                "company_name": "ソニー",
+                "company_name_english": "SONY",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "1",
+                "sector_17_name": "電機",
+                "sector_33_code": "3650",
+                "sector_33_name": "電気機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1958-12-01",
+                "created_at": "first",
+            },
+            {
+                "date": "2024-01-05",
+                "code": "6758",
+                "company_name": "ソニーグループ",
+                "company_name_english": "SONY GROUP",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "1",
+                "sector_17_name": "電機",
+                "sector_33_code": "3650",
+                "sector_33_name": "電気機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1958-12-01",
+                "created_at": "deduped",
+            },
+        ]) == 2
+
+        assert market_db.upsert_stock_master_daily_rows([
+            {
+                "date": "2024-01-04",
+                "code": "7203",
+                "company_name": "トヨタ自動車",
+                "company_name_english": "TOYOTA MOTOR",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1949-05-16",
+                "created_at": "second",
+            }
+        ]) == 1
+
+        row = market_db._fetchone(
+            """
+            SELECT COUNT(*),
+                   MAX(CASE WHEN date = '2024-01-04' AND code = '7203' THEN company_name END),
+                   MAX(CASE WHEN date = '2024-01-04' AND code = '7203' THEN created_at END),
+                   MAX(CASE WHEN date = '2024-01-05' AND code = '6758' THEN company_name END)
+            FROM stock_master_daily
+            """
+        )
+
+        assert row == (2, "トヨタ自動車", "second", "ソニーグループ")
+
+    def test_stock_master_daily_rows_relation_upsert_skips_empty_and_invalid_rows(
+        self, market_db: MarketDb
+    ) -> None:
+        assert market_db.upsert_stock_master_daily_rows([]) == 0
+        assert market_db.upsert_stock_master_daily_rows([
+            {"date": "", "code": "7203", "company_name": "missing date"},
+            {"date": "2024-01-04", "code": "", "company_name": "missing code"},
+        ]) == 0
+
+    def test_stock_master_daily_pit_query_filters(self, market_db: MarketDb) -> None:
+        market_db.upsert_topix_data([
+            {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},
+            {"date": "2024-01-05", "open": 2, "high": 3, "low": 2, "close": 3, "created_at": "now"},
+            {"date": "2024-01-09", "open": 3, "high": 4, "low": 3, "close": 4, "created_at": "now"},
+        ])
+        market_db.upsert_stock_master_daily_rows([
+            {
+                "date": "2024-01-04",
+                "code": "7203",
+                "company_name": "トヨタ",
+                "company_name_english": "TOYOTA",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "2024-01-04",
+                "created_at": "now",
+            },
+            {
+                "date": "2024-01-04",
+                "code": "6758",
+                "company_name": "ソニー",
+                "company_name_english": "SONY",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "1",
+                "sector_17_name": "電機",
+                "sector_33_code": "3650",
+                "sector_33_name": "電気機器",
+                "scale_category": "TOPIX Large70",
+                "listed_date": "2024-01-04",
+                "created_at": "now",
+            },
+            {
+                "date": "2024-01-04",
+                "code": "9999",
+                "company_name": "グロース",
+                "company_name_english": "GROWTH",
+                "market_code": "0113",
+                "market_name": "グロース",
+                "sector_17_code": "10",
+                "sector_17_name": "情報通信",
+                "sector_33_code": "5250",
+                "sector_33_name": "情報通信業",
+                "scale_category": "",
+                "listed_date": "2024-01-04",
+                "created_at": "now",
+            },
+        ])
+
+        assert market_db.get_topix_dates(start_date="2024-01-05", end_date="2024-01-09") == [
+            "2024-01-05",
+            "2024-01-09",
+        ]
+        rows = market_db.get_stock_master_rows_for_date(
+            "2024-01-04",
+            market_codes=["0111"],
+            scale_categories=["TOPIX Core30"],
+        )
+        assert [row["code"] for row in rows] == ["7203"]
+        assert market_db.get_stock_master_codes_for_date(
+            "2024-01-04",
+            market_codes=["0111"],
+            exclude_scale_categories=["TOPIX Core30"],
+        ) == ["6758"]
+        assert market_db.get_topix_dates() == [
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-09",
+        ]
+        assert market_db.get_topix_dates(start_date="2024-01-05") == [
+            "2024-01-05",
+            "2024-01-09",
+        ]
+        assert market_db.get_topix_dates(end_date="2024-01-05") == [
+            "2024-01-04",
+            "2024-01-05",
+        ]
+        assert [row["code"] for row in market_db.get_stock_master_rows_for_date("2024-01-04")] == [
+            "6758",
+            "7203",
+            "9999",
+        ]
+        assert market_db.get_stock_master_codes_for_date(
+            "2024-01-04",
+            scale_categories=["TOPIX Core30", "TOPIX Large70"],
+        ) == ["6758", "7203"]
+
+    def test_market_db_missing_optional_tables_return_empty_values(self, tmp_path: Path) -> None:
+        db = MarketDb(str(tmp_path / "missing-tables.duckdb"))
+        try:
+            db._execute("DROP TABLE topix_data")
+            db._execute("DROP TABLE stock_master_daily")
+            db._execute("DROP TABLE index_membership_daily")
+            db._execute("DROP TABLE stocks")
+
+            assert db.get_topix_dates() == []
+            assert db.get_latest_stock_master_date() is None
+            assert db.get_missing_stock_master_dates() == []
+            assert db.get_missing_stock_master_dates_count() == 0
+            assert db.get_stock_master_rows_for_date("2024-01-04") == []
+            assert db.get_stock_master_codes_for_date("2024-01-04") == []
+            assert db.get_index_membership_codes("2024-01-04", "TOPIX500") == set()
+            assert db.get_fundamentals_target_stock_rows() == []
+        finally:
+            db.close()
+
     def test_sync_metadata_roundtrip(self, market_db: MarketDb) -> None:
         assert market_db.get_sync_metadata("nonexistent") is None
 

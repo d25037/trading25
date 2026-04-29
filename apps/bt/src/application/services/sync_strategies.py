@@ -83,6 +83,7 @@ class SyncMarketDbLike(Protocol):  # pragma: no cover
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
     def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> Any: ...
+    def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int: ...
     def rebuild_stock_master_intervals(self) -> int: ...
     def rebuild_stocks_latest(self) -> int: ...
     def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
@@ -260,6 +261,36 @@ _BULK_MARGIN_KEY_ALIASES: dict[str, str] = {
     "short_margin_volume": "ShrtVol",
 }
 
+_BULK_STOCK_MASTER_KEY_ALIASES: dict[str, str] = {
+    "date": "Date",
+    "code": "Code",
+    "coname": "CoName",
+    "companyname": "CoName",
+    "companynm": "CoName",
+    "conameen": "CoNameEn",
+    "companynameenglish": "CoNameEn",
+    "companynmen": "CoNameEn",
+    "s17": "S17",
+    "sector17code": "S17",
+    "sector17": "S17",
+    "s17nm": "S17Nm",
+    "sector17codename": "S17Nm",
+    "sector17name": "S17Nm",
+    "s33": "S33",
+    "sector33code": "S33",
+    "sector33": "S33",
+    "s33nm": "S33Nm",
+    "sector33codename": "S33Nm",
+    "sector33name": "S33Nm",
+    "scalecat": "ScaleCat",
+    "scalecategory": "ScaleCat",
+    "mkt": "Mkt",
+    "marketcode": "Mkt",
+    "mktnm": "MktNm",
+    "marketcodename": "MktNm",
+    "marketname": "MktNm",
+}
+
 _BULK_FINS_KEY_ALIASES: dict[str, str] = {
     "code": "Code",
     "discdate": "DiscDate",
@@ -347,6 +378,7 @@ async def _plan_fetch_method(
     exact_dates: list[str] | None = None,
     min_rest_calls_to_probe_bulk: int = 3,
     require_bulk: bool = False,
+    disable_future_bulk_on_probe_failure: bool = True,
 ) -> _StageFetchDecision:
     if ctx.bulk_probe_disabled:
         plan_hint = _get_plan_hint(ctx.client)
@@ -408,9 +440,12 @@ async def _plan_fetch_method(
         )
     except Exception as e:
         # free/unknown plan や一時障害で /bulk/list が失敗した場合は
-        # 同期ジョブ全体を止めず、以降は REST に固定して継続する。
-        ctx.bulk_probe_disabled = True
-        ctx.bulk_probe_failure_reason = _summarize_exception(e)
+        # 同期ジョブ全体を止めず REST に戻す。stage によっては以降の
+        # bulk probe も無効化して同じ失敗の繰り返しを避ける。
+        probe_failure_reason = _summarize_exception(e)
+        if disable_future_bulk_on_probe_failure:
+            ctx.bulk_probe_disabled = True
+            ctx.bulk_probe_failure_reason = probe_failure_reason
         logger.warning(
             "sync bulk plan probe failed, falling back to REST for this job: {}",
             e,
@@ -435,7 +470,7 @@ async def _plan_fetch_method(
             estimated_bulk_calls=None,
             plan=None,
             reason="bulk_probe_failed",
-            reason_detail=ctx.bulk_probe_failure_reason,
+            reason_detail=probe_failure_reason,
         )
 
     if require_bulk:
@@ -522,6 +557,10 @@ def _normalize_bulk_options_225_rows(rows: list[dict[str, Any]]) -> list[dict[st
 
 def _normalize_bulk_margin_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _normalize_bulk_row_keys(rows, _BULK_MARGIN_KEY_ALIASES)
+
+
+def _normalize_bulk_stock_master_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _normalize_bulk_row_keys(rows, _BULK_STOCK_MASTER_KEY_ALIASES)
 
 
 def _normalize_bulk_fins_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -3725,7 +3764,7 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """JQuants 銘柄マスタ → DB 行"""
     rows = []
     for d in data:
-        code = normalize_stock_code(d.get("Code", ""))
+        code = normalize_stock_code(str(d.get("Code", "") or ""))
         if not code:
             continue
         rows.append({
@@ -3745,6 +3784,38 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _group_stock_master_bulk_rows_by_date(
+    data: list[dict[str, Any]],
+    *,
+    target_dates: set[str] | None,
+    default_snapshot_date: str | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    normalized_rows = _normalize_bulk_stock_master_rows(data)
+    raw_rows_by_date: dict[str, list[dict[str, Any]]] = {}
+    for row in normalized_rows:
+        row_date = _normalize_iso_date_text(row.get("Date"))
+        snapshot_date = row_date
+        if row_date is None:
+            snapshot_date = default_snapshot_date
+        if snapshot_date is None:
+            continue
+        if target_dates is not None and snapshot_date not in target_dates:
+            continue
+
+        normalized_row = row
+        if row_date is None:
+            normalized_row = dict(row)
+            normalized_row["Date"] = snapshot_date
+        raw_rows_by_date.setdefault(snapshot_date, []).append(normalized_row)
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for snapshot_date, raw_rows in raw_rows_by_date.items():
+        converted_rows = _convert_stock_rows(raw_rows)
+        if converted_rows:
+            grouped[snapshot_date] = converted_rows
+    return grouped
+
+
 async def _sync_daily_stock_master(
     ctx: SyncContext,
     *,
@@ -3752,11 +3823,10 @@ async def _sync_daily_stock_master(
     progress_current: int,
     progress_total: int,
 ) -> dict[str, Any]:
-    """Fetch `/equities/master?date=...` for TOPIX dates and rebuild derived master tables."""
+    """Fetch daily stock master snapshots and rebuild derived master tables."""
     api_calls = 0
     rows_updated = 0
     latest_rows: list[dict[str, Any]] = []
-    failed_dates: list[str] = []
     normalized_dates = sorted({date for date in target_dates if date})
     if not normalized_dates:
         return {
@@ -3768,34 +3838,169 @@ async def _sync_daily_stock_master(
         }
 
     total_dates = len(normalized_dates)
-    for index, snapshot_date in enumerate(normalized_dates, start=1):
-        if ctx.cancelled.is_set():
-            return {
-                "api_calls": api_calls,
-                "updated": rows_updated,
-                "latest_rows": latest_rows,
-                "errors": [],
-                "cancelled": True,
-            }
-        ctx.on_progress(
-            "stocks",
-            progress_current,
-            progress_total,
-            f"Fetching daily stock master {index}/{total_dates}: {snapshot_date}",
+    target_date_set = _build_target_date_set(normalized_dates)
+    date_from, date_to = _select_bulk_candidates_from_dates(normalized_dates)
+    updated_dates: set[str] = set()
+    latest_snapshot_date: str | None = None
+    rest_target_dates = normalized_dates
+
+    decision = await _plan_fetch_method(
+        ctx,
+        stage="stock_master_daily",
+        endpoint="/equities/master",
+        estimated_rest_calls=total_dates,
+        date_from=date_from,
+        date_to=date_to,
+        exact_dates=normalized_dates,
+        min_rest_calls_to_probe_bulk=1,
+        require_bulk=True,
+        disable_future_bulk_on_probe_failure=False,
+    )
+    api_calls += decision.planner_api_calls
+    _emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="stocks",
+        current=progress_current,
+        total=progress_total,
+        endpoint="/equities/master",
+        decision=decision,
+        target_label=f"{total_dates} dates",
+    )
+
+    used_rest_fallback = False
+    rest_fallback_reason: str | None = None
+    if decision.method == "bulk" and decision.plan is not None and decision.plan.files:
+        try:
+            _emit_fetch_execution_progress(
+                ctx,
+                progress_stage="stocks",
+                current=progress_current,
+                total=progress_total,
+                endpoint="/equities/master",
+                method="bulk",
+                target_label=f"{total_dates} dates",
+            )
+
+            async def _consume_stock_master_bulk_rows(
+                batch_rows: list[dict[str, Any]],
+                file_info: BulkFileInfo,
+            ) -> None:
+                nonlocal latest_rows, latest_snapshot_date, rows_updated
+                default_snapshot_date = (
+                    file_info.range_start.isoformat()
+                    if file_info.range_start is not None and file_info.range_start == file_info.range_end
+                    else None
+                )
+                rows_by_date = _group_stock_master_bulk_rows_by_date(
+                    batch_rows,
+                    target_dates=target_date_set,
+                    default_snapshot_date=default_snapshot_date,
+                )
+                rows_to_upsert: list[dict[str, Any]] = []
+                for snapshot_date in sorted(rows_by_date, key=_date_sort_key):
+                    rows = rows_by_date[snapshot_date]
+                    dated_rows = [dict(row, date=snapshot_date) for row in rows]
+                    rows_to_upsert.extend(dated_rows)
+                    updated_dates.add(snapshot_date)
+                    if latest_snapshot_date is None or _is_date_after(snapshot_date, latest_snapshot_date):
+                        latest_snapshot_date = snapshot_date
+                        latest_rows = list(rows)
+                    elif snapshot_date == latest_snapshot_date:
+                        latest_rows.extend(rows)
+                if rows_to_upsert:
+                    rows_updated += await asyncio.to_thread(
+                        ctx.market_db.upsert_stock_master_daily_rows,
+                        rows_to_upsert,
+                    )
+
+            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                decision.plan,
+                on_rows_batch=_consume_stock_master_bulk_rows,
+                accumulate_rows=False,
+            )
+            api_calls += bulk_result.api_calls
+            _log_sync_fetch_execution(
+                stage="stock_master_daily",
+                endpoint="/equities/master",
+                decision=decision,
+                executed="bulk",
+                actual_api_calls=decision.planner_api_calls + bulk_result.api_calls,
+                fallback=False,
+                bulk_result=bulk_result,
+            )
+            rest_target_dates = [date for date in normalized_dates if date not in updated_dates]
+            if rest_target_dates:
+                used_rest_fallback = True
+                rest_fallback_reason = (
+                    f"bulk returned no rows for {len(rest_target_dates)} target dates"
+                )
+        except Exception as e:
+            used_rest_fallback = True
+            rest_fallback_reason = _summarize_exception(e)
+            rest_target_dates = normalized_dates
+            logger.exception(
+                "stock master bulk fetch failed, falling back to REST: {}",
+                rest_fallback_reason,
+            )
+    elif decision.method == "bulk":
+        used_rest_fallback = True
+        rest_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+        rest_target_dates = normalized_dates
+
+    if decision.method == "rest" or used_rest_fallback:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage="stocks",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/equities/master",
+            method="rest",
+            target_label=f"{len(rest_target_dates)} dates",
+            fallback=used_rest_fallback,
+            fallback_reason=rest_fallback_reason,
         )
-        payload, calls = await _get_paginated_rows_with_call_count(
-            ctx.client,
-            "/equities/master",
-            params={"date": _to_jquants_date_param(snapshot_date)},
+        rest_calls = 0
+        for index, snapshot_date in enumerate(rest_target_dates, start=1):
+            if ctx.cancelled.is_set():
+                return {
+                    "api_calls": api_calls,
+                    "updated": rows_updated,
+                    "latest_rows": latest_rows,
+                    "errors": [],
+                    "cancelled": True,
+                }
+            ctx.on_progress(
+                "stocks",
+                progress_current,
+                progress_total,
+                f"Fetching daily stock master {index}/{len(rest_target_dates)}: {snapshot_date}",
+            )
+            payload, calls = await _get_paginated_rows_with_call_count(
+                ctx.client,
+                "/equities/master",
+                params={"date": _to_jquants_date_param(snapshot_date)},
+            )
+            api_calls += calls
+            rest_calls += calls
+            rows = _convert_stock_rows(payload)
+            if not rows:
+                continue
+            await asyncio.to_thread(ctx.market_db.upsert_stock_master_daily, snapshot_date, rows)
+            rows_updated += len(rows)
+            updated_dates.add(snapshot_date)
+            if latest_snapshot_date is None or _is_date_after(snapshot_date, latest_snapshot_date):
+                latest_snapshot_date = snapshot_date
+                latest_rows = rows
+            elif snapshot_date == latest_snapshot_date:
+                latest_rows = rows
+        _log_sync_fetch_execution(
+            stage="stock_master_daily",
+            endpoint="/equities/master",
+            decision=decision,
+            executed="rest",
+            actual_api_calls=decision.planner_api_calls + rest_calls,
+            fallback=used_rest_fallback,
         )
-        api_calls += calls
-        rows = _convert_stock_rows(payload)
-        if not rows:
-            failed_dates.append(snapshot_date)
-            continue
-        await asyncio.to_thread(ctx.market_db.upsert_stock_master_daily, snapshot_date, rows)
-        rows_updated += len(rows)
-        latest_rows = rows
 
     if rows_updated > 0:
         await asyncio.to_thread(ctx.market_db.rebuild_stock_master_intervals)
@@ -3806,6 +4011,7 @@ async def _sync_daily_stock_master(
             datetime.now(UTC).isoformat(),
         )
 
+    failed_dates = [date for date in normalized_dates if date not in updated_dates]
     errors = [
         f"No stock master rows returned for {len(failed_dates)} TOPIX dates: {', '.join(failed_dates[:10])}"
     ] if failed_dates else []

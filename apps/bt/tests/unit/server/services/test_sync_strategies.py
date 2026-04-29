@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,6 +28,7 @@ from src.application.services.sync_strategies import (
     _convert_indices_data_rows,
     _convert_stock_bulk_rows,
     _convert_stock_rows,
+    _group_stock_master_bulk_rows_by_date,
     _date_sort_key,
     _fetch_margin_by_code,
     _dedupe_preserve_order,
@@ -77,6 +78,7 @@ class DummyMarketDb:
             self.latest_indices_data_dates = {}
         self.stocks_rows: list[dict[str, Any]] = []
         self.stock_master_daily_rows: list[dict[str, Any]] = []
+        self.stock_master_daily_batch_upserts: list[list[dict[str, Any]]] = []
         self.stock_master_interval_rebuilds = 0
         self.stocks_latest_rebuilds = 0
         self.stock_rows: list[dict[str, Any]] = []
@@ -261,6 +263,17 @@ class DummyMarketDb:
             enriched = dict(row)
             enriched["date"] = snapshot_date
             self.stock_master_daily_rows.append(enriched)
+        return len(rows)
+
+    def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
+        self.stock_master_daily_batch_upserts.append([dict(row) for row in rows])
+        existing = {
+            (str(row.get("date")), str(row.get("code"))): dict(row)
+            for row in self.stock_master_daily_rows
+        }
+        for row in rows:
+            existing[(str(row.get("date")), str(row.get("code")))] = dict(row)
+        self.stock_master_daily_rows = list(existing.values())
         return len(rows)
 
     def rebuild_stock_master_intervals(self) -> int:
@@ -1052,6 +1065,244 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
     )
 
 
+def test_group_stock_master_bulk_rows_by_date_normalizes_v2_columns() -> None:
+    grouped = _group_stock_master_bulk_rows_by_date(
+        [
+            {
+                "date": "20260206",
+                "code": "72030",
+                "company_name": "トヨタ自動車",
+                "market_code": "0111",
+                "market_code_name": "プライム",
+                "scale_category": "TOPIX Core30",
+            },
+            {
+                "Date": "2026-02-07",
+                "Code": "99990",
+                "CoName": "outside",
+                "Mkt": "0113",
+            },
+        ],
+        target_dates={"2026-02-06"},
+    )
+
+    assert set(grouped) == {"2026-02-06"}
+    row = grouped["2026-02-06"][0]
+    assert row["code"] == "7203"
+    assert row["company_name"] == "トヨタ自動車"
+    assert row["market_code"] == "0111"
+    assert row["market_name"] == "プライム"
+    assert row["scale_category"] == "TOPIX Core30"
+
+
+def test_group_stock_master_bulk_rows_uses_default_snapshot_date_for_daily_file() -> None:
+    grouped = _group_stock_master_bulk_rows_by_date(
+        [
+            {
+                "code": "72030",
+                "company_name": "トヨタ自動車",
+                "market_code": "0111",
+                "market_code_name": "プライム",
+            },
+            {
+                "code": "67580",
+                "company_name": "missing snapshot date",
+            },
+        ],
+        target_dates={"2026-02-06"},
+        default_snapshot_date="2026-02-06",
+    )
+    skipped = _group_stock_master_bulk_rows_by_date(
+        [{"code": "72030", "company_name": "missing snapshot date"}],
+        target_dates={"2026-02-06"},
+    )
+
+    assert [row["code"] for row in grouped["2026-02-06"]] == ["7203", "6758"]
+    assert skipped == {}
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10"])
+    plan = BulkFetchPlan(
+        endpoint="/equities/master",
+        files=[
+            BulkFileInfo(
+                key="equities-master-202602.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _PlanAndFetchBulkService(
+        plan=plan,
+        rows=[
+            {
+                "Date": "2026-02-06",
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+            },
+            {
+                "Date": "2026-02-10",
+                "Code": "67580",
+                "CoName": "ソニーグループ",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+            },
+            {
+                "Date": "2026-02-12",
+                "Code": "99990",
+                "CoName": "outside target",
+                "Mkt": "0113",
+                "MktNm": "グロース",
+            },
+        ],
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06", "2026-02-10"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 2
+    assert result["api_calls"] == 3
+    assert result["errors"] == []
+    assert [row["code"] for row in result["latest_rows"]] == ["6758"]
+    assert bulk_service.build_calls == [
+        {
+            "endpoint": "/equities/master",
+            "date_from": "2026-02-06",
+            "date_to": "2026-02-10",
+            "exact_dates": ["2026-02-06", "2026-02-10"],
+        }
+    ]
+    assert bulk_service.fetch_calls == ["/equities/master"]
+    assert [call for call in client.calls if call[0] == "/equities/master"] == []
+    assert {row["date"] for row in market_db.stock_master_daily_rows} == {
+        "2026-02-06",
+        "2026-02-10",
+    }
+    assert len(market_db.stock_master_daily_batch_upserts) == 1
+    assert {
+        (row["date"], row["code"])
+        for row in market_db.stock_master_daily_batch_upserts[0]
+    } == {("2026-02-06", "7203"), ("2026-02-10", "6758")}
+    assert market_db.stock_master_interval_rebuilds == 1
+    assert market_db.stocks_latest_rebuilds == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10"])
+    plan = BulkFetchPlan(
+        endpoint="/equities/master",
+        files=[
+            BulkFileInfo(
+                key="equities-master-202602.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _PlanAndFetchBulkService(
+        plan=plan,
+        rows=[
+            {
+                "Date": "2026-02-06",
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+            }
+        ],
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06", "2026-02-10"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 2
+    assert result["api_calls"] == 4
+    assert result["errors"] == []
+    assert [
+        params for path, params in client.calls if path == "/equities/master"
+    ] == [{"date": "20260210"}]
+    assert {row["date"] for row in market_db.stock_master_daily_rows} == {
+        "2026-02-06",
+        "2026-02-10",
+    }
+    assert len(market_db.stock_master_daily_batch_upserts) == 1
+    assert [
+        (row["date"], row["code"])
+        for row in market_db.stock_master_daily_batch_upserts[0]
+    ] == [("2026-02-06", "7203")]
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_bulk_probe_failure_does_not_disable_later_bulk() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10"])
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+        bulk_service=_PlanOnlyBulkService(RuntimeError("master bulk unsupported")),
+        bulk_probe_disabled=False,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06", "2026-02-10"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 2
+    assert result["api_calls"] == 3
+    assert ctx.bulk_probe_disabled is False
+    assert [
+        params for path, params in client.calls if path == "/equities/master"
+    ] == [{"date": "20260206"}, {"date": "20260210"}]
+
+
 class InitialSyncClient:
     def __init__(
         self,
@@ -1216,6 +1467,50 @@ class _PlanOnlyBulkService:
         if isinstance(self._plan, Exception):
             raise self._plan
         return self._plan
+
+
+class _PlanAndFetchBulkService:
+    def __init__(self, *, plan: BulkFetchPlan, rows: list[dict[str, Any]]) -> None:
+        self._plan = plan
+        self._rows = rows
+        self.build_calls: list[dict[str, Any]] = []
+        self.fetch_calls: list[str] = []
+
+    async def build_plan(
+        self,
+        *,
+        endpoint: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        exact_dates: list[str] | None = None,
+    ) -> BulkFetchPlan:
+        self.build_calls.append(
+            {
+                "endpoint": endpoint,
+                "date_from": date_from,
+                "date_to": date_to,
+                "exact_dates": exact_dates,
+            }
+        )
+        return self._plan
+
+    async def fetch_with_plan(
+        self,
+        plan: BulkFetchPlan,
+        *,
+        on_rows_batch: Any | None = None,
+        accumulate_rows: bool = True,
+    ) -> BulkFetchResult:
+        self.fetch_calls.append(plan.endpoint)
+        if on_rows_batch is not None:
+            await on_rows_batch(self._rows, plan.files[0])
+        return BulkFetchResult(
+            rows=list(self._rows) if accumulate_rows else [],
+            api_calls=2,
+            cache_hits=0,
+            cache_misses=1,
+            selected_files=len(plan.files),
+        )
 
 
 def _rest_decision(estimated_rest_calls: int) -> _StageFetchDecision:
