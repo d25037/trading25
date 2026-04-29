@@ -124,6 +124,48 @@ class TestStrategyEditorContext:
             "overridden": True,
         }
 
+    def test_legacy_dataset_field_does_not_break_editor_context(
+        self,
+        client,
+        mock_config_loader,
+    ):
+        mock_config_loader.load_strategy_config.return_value = {
+            "shared_config": {
+                "dataset": "primeExTopix500",
+                "universe_preset": "primeExTopix500",
+            },
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+        }
+        mock_config_loader.resolve_strategy_category.return_value = "production"
+        mock_config_loader.default_config = {
+            "parameters": {
+                "shared_config": {
+                    "dataset": "legacy_default",
+                    "universe_preset": "standard",
+                    "benchmark_table": "topix",
+                    "execution_policy": {"mode": "standard"},
+                    "stock_codes": ["all"],
+                }
+            },
+        }
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
+            "benchmark_table": "topix",
+            "execution_policy": {"mode": "standard"},
+            "stock_codes": ["all"],
+        }
+        mock_config_loader.get_execution_config.return_value = {}
+
+        resp = client.get("/api/strategies/production/forward_eps_driven/editor-context")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["raw_config"]["shared_config"]["dataset"] == "primeExTopix500"
+        assert "dataset" not in data["default_shared_config"]
+        assert "dataset" not in data["effective_shared_config"]
+        assert data["effective_shared_config"]["universe_preset"] == "primeExTopix500"
+
     def test_not_found_returns_404(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.side_effect = FileNotFoundError("missing")
 
@@ -780,6 +822,7 @@ class TestDefaultConfig:
                 "  parameters:\n"
                 "    shared_config:\n"
                 "      universe_preset: primeExTopix500\n"
+                "      dataset: primeExTopix500\n"
                 "      benchmark_table: topix\n"
             ),
             encoding="utf-8",
@@ -792,6 +835,8 @@ class TestDefaultConfig:
         data = resp.json()
         assert data["raw_execution"]["output_directory"] == "/tmp/backtest"
         assert data["raw_shared_config"]["universe_preset"] == "primeExTopix500"
+        assert data["raw_shared_config"]["dataset"] == "primeExTopix500"
+        assert "dataset" not in data["effective_shared_config"]
         assert data["advanced_only_paths"] == ["default.extra_note"]
 
     def test_update_success(self, client, mock_config_loader, tmp_path):

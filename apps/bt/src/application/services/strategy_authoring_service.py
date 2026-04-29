@@ -575,10 +575,17 @@ def build_strategy_editor_reference() -> StrategyEditorReferenceResponse:
     )
 
 
+def _project_editor_shared_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop retired keys before building editor-only effective config."""
+    projected = dict(payload)
+    projected.pop("dataset", None)
+    return projected
+
+
 def _validate_model_dump(model_class: type[BaseModel], payload: dict[str, Any]) -> dict[str, Any]:
     if model_class is SharedConfig:
         validated = model_class.model_validate(
-            payload,
+            _project_editor_shared_config(payload),
             context={"resolve_stock_codes": False},
         )
     else:
