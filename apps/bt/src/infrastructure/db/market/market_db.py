@@ -18,6 +18,7 @@ from typing import Any, cast
 import pandas as pd
 
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.utils.market_code_alias import expand_market_codes
 
 # Hono 互換 metadata キー
 METADATA_KEYS = {
@@ -107,7 +108,7 @@ _STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("next_year_forecast_payout_ratio", "DOUBLE"),
 )
 
-_PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
+_PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
 _FUNDAMENTALS_TARGET_MARKET_CODES: tuple[str, ...] = (
     "0111",
     "0112",

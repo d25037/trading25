@@ -30,6 +30,7 @@ from src.domains.analytics.research_bundle import (
     load_payload_research_bundle,
     write_payload_research_bundle,
 )
+from src.shared.utils.market_code_alias import expand_market_codes
 
 StockGroup = Literal[
     "TOPIX100",
@@ -55,9 +56,9 @@ TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Large70",
     "TOPIX Mid400",
 )
-_PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
-_STANDARD_MARKET_CODES: tuple[str, ...] = ("0112", "standard")
-_GROWTH_MARKET_CODES: tuple[str, ...] = ("0113", "growth")
+_PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
+_STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
+_GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
 
 _STOCK_METRICS_COLUMNS: tuple[str, ...] = (
     "stock_group",

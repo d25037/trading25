@@ -30,7 +30,7 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
-from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes, normalize_market_scope
 from src.shared.utils.share_adjustment import is_valid_share_count
 
 
@@ -62,22 +62,6 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "annual_portfolio_daily_df",
     "annual_portfolio_summary_df",
 )
-_MARKET_LABEL_BY_CODE: dict[str, str] = {
-    "prime": "prime",
-    "0111": "prime",
-    "0101": "prime",
-    "standard": "standard",
-    "0112": "standard",
-    "0102": "standard",
-    "0106": "standard",
-    "growth": "growth",
-    "0113": "growth",
-    "0104": "growth",
-    "0107": "growth",
-}
-_SCOPE_ALIAS_TO_CANONICAL: dict[str, str] = {
-    **_MARKET_LABEL_BY_CODE,
-}
 _MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth")
 
 
@@ -199,7 +183,7 @@ def _normalize_selected_markets(markets: Sequence[str]) -> tuple[str, ...]:
     normalized: list[str] = []
     seen: set[str] = set()
     for market in markets:
-        canonical = _SCOPE_ALIAS_TO_CANONICAL.get(str(market).strip().lower())
+        canonical = normalize_market_scope(market)
         if canonical is None:
             raise ValueError(f"Unsupported market: {market}")
         if canonical in seen:
@@ -272,7 +256,7 @@ def _normalize_payout_ratio(value: float | None) -> float | None:
 
 
 def _market_label(value: Any) -> str:
-    return _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+    return str(normalize_market_scope(value, default=str(value).lower()))
 
 
 def _table_exists(conn: Any, table_name: str) -> bool:

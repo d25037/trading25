@@ -12,7 +12,7 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 
-from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes, normalize_market_scope
 from src.domains.analytics.fundamental_ranking import (
     FundamentalRankingCalculator,
     StatementRow,
@@ -68,12 +68,6 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "top_winner_events_df",
     "event_ledger_df",
 )
-_MARKET_LABEL_BY_CODE: dict[str, str] = {
-    "prime": "prime",
-    "0111": "prime",
-    "standard": "standard",
-    "0112": "standard",
-}
 _EXPERIMENT_ID_BY_MARKET: dict[str, str] = {
     "prime": PRIME_NEGATIVE_EPS_RIGHT_TAIL_EXPERIMENT_ID,
     "standard": STANDARD_NEGATIVE_EPS_RIGHT_TAIL_EXPERIMENT_ID,
@@ -172,11 +166,11 @@ def _empty_result_df(columns: Sequence[str]) -> pd.DataFrame:
 
 
 def _normalize_market(market: str) -> str:
-    normalized = str(market).strip().lower()
+    normalized = normalize_market_scope(market, default=str(market).strip().lower())
     if normalized not in _EXPERIMENT_ID_BY_MARKET:
         supported = ", ".join(sorted(_EXPERIMENT_ID_BY_MARKET))
         raise ValueError(f"Unsupported market: {market!r}. Supported markets: {supported}")
-    return normalized
+    return str(normalized)
 
 
 def _query_market_codes(market: str) -> tuple[str, ...]:
@@ -256,7 +250,7 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
     df["market_code"] = df["market_code"].astype(str)
     df["listed_date"] = df["listed_date"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     return df
 
@@ -389,7 +383,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
     df["disclosed_date"] = df["disclosed_date"].astype(str)
     df["market_code"] = df["market_code"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     df["period_type"] = df["type_of_current_period"].map(normalize_period_label)
     df["fy_cycle_key"] = df["disclosed_date"].map(resolve_fy_cycle_key)
@@ -484,7 +478,7 @@ def _query_price_rows(
     df["date"] = df["date"].astype(str)
     df["market_code"] = df["market_code"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     return df
 

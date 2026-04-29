@@ -22,6 +22,7 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.shared.utils.market_code_alias import normalize_market_scope
 from src.domains.backtest.core.runner import BacktestRunner
 from src.domains.strategy.indicators import (
     compute_risk_adjusted_return,
@@ -80,14 +81,6 @@ _VALUE_RAW_COLUMNS = (
     "market_cap_bil_jpy",
 )
 _MARKET_SCOPE_ORDER: tuple[str, ...] = ("all", "prime", "standard", "growth", "unknown")
-_MARKET_SCOPE_BY_CODE: dict[str, str] = {
-    "prime": "prime",
-    "0111": "prime",
-    "standard": "standard",
-    "0112": "standard",
-    "growth": "growth",
-    "0113": "growth",
-}
 
 
 @dataclass(frozen=True)
@@ -1350,17 +1343,13 @@ def _load_dataset_stock_metadata(dataset_name: str) -> dict[str, dict[str, str]]
 
 
 def _normalize_market_scope(market_code: str | None, market_name: str | None) -> str:
-    code = str(market_code or "").strip().lower()
-    if code in _MARKET_SCOPE_BY_CODE:
-        return _MARKET_SCOPE_BY_CODE[code]
-    name = str(market_name or "").strip().lower()
-    if "プライム" in name or "prime" in name:
-        return "prime"
-    if "スタンダード" in name or "standard" in name:
-        return "standard"
-    if "グロース" in name or "growth" in name:
-        return "growth"
-    return "unknown"
+    return str(
+        normalize_market_scope(
+            market_code,
+            market_name=market_name,
+            default="unknown",
+        )
+    )
 
 
 def _infer_market_scope_from_dataset_name(dataset_name: str) -> str:

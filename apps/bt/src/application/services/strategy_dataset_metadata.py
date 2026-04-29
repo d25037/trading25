@@ -12,23 +12,12 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
 )
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.config.settings import get_settings
+from src.shared.utils.market_code_alias import (
+    canonicalize_market_list as _canonicalize_market_list,
+    format_market_scope_label as _format_market_scope_label,
+)
 from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 from src.domains.strategy.runtime.loader import ConfigLoader
-
-_PREFERRED_MARKET_ORDER = ("prime", "standard", "growth")
-_MARKET_ALIAS_TO_CANONICAL = {
-    "prime": "prime",
-    "standard": "standard",
-    "growth": "growth",
-    "0111": "prime",
-    "0112": "standard",
-    "0113": "growth",
-}
-_MARKET_LABELS = {
-    "prime": "Prime",
-    "standard": "Standard",
-    "growth": "Growth",
-}
 
 
 @dataclass(frozen=True)
@@ -44,25 +33,7 @@ def _dataset_resolver(dataset_base_path: str | None = None) -> DatasetResolver:
 
 
 def canonicalize_market_list(markets: list[str]) -> list[str]:
-    canonical: list[str] = []
-    seen: set[str] = set()
-
-    for preferred in _PREFERRED_MARKET_ORDER:
-        if preferred in {
-            _MARKET_ALIAS_TO_CANONICAL.get(market.lower(), market)
-            for market in markets
-        }:
-            canonical.append(preferred)
-            seen.add(preferred)
-
-    for market in markets:
-        normalized = _MARKET_ALIAS_TO_CANONICAL.get(market.lower(), market)
-        if normalized in seen:
-            continue
-        canonical.append(normalized)
-        seen.add(normalized)
-
-    return canonical
+    return _canonicalize_market_list(markets)
 
 
 def union_market_lists(market_lists: list[list[str]]) -> list[str]:
@@ -84,12 +55,7 @@ def stringify_markets(markets: list[str]) -> str:
 
 
 def format_market_scope_label(markets: list[str]) -> str:
-    normalized = canonicalize_market_list(markets)
-    if not normalized:
-        return "Auto"
-    if normalized == list(_PREFERRED_MARKET_ORDER):
-        return "All Markets"
-    return " + ".join(_MARKET_LABELS.get(market, market) for market in normalized)
+    return _format_market_scope_label(markets)
 
 
 def resolve_dataset_metadata(

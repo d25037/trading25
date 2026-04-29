@@ -12,7 +12,7 @@ from typing import Any, Literal, cast
 import numpy as np
 import pandas as pd
 
-from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.market_code_alias import expand_market_codes, normalize_market_scope
 from src.domains.analytics.fundamental_ranking import (
     FundamentalRankingCalculator,
     StatementRow,
@@ -63,16 +63,7 @@ _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "portfolio_summary_df",
     "event_ledger_df",
 )
-_MARKET_LABEL_BY_CODE: dict[str, str] = {
-    "prime": "prime",
-    "0111": "prime",
-    "standard": "standard",
-    "0112": "standard",
-    "growth": "growth",
-    "0113": "growth",
-}
-_SCOPE_ALIAS_TO_CANONICAL: dict[str, str] = {
-    **_MARKET_LABEL_BY_CODE,
+_EXTRA_SCOPE_ALIAS_TO_CANONICAL: dict[str, str] = {
     "topix500": "topix500",
     "primeextopix500": "primeExTopix500",
     "prime_ex_topix500": "primeExTopix500",
@@ -166,7 +157,10 @@ def _normalize_selected_markets(markets: Sequence[str]) -> tuple[str, ...]:
     normalized: list[str] = []
     seen: set[str] = set()
     for market in markets:
-        canonical = _SCOPE_ALIAS_TO_CANONICAL.get(str(market).strip().lower())
+        market_key = str(market).strip().lower()
+        canonical = _EXTRA_SCOPE_ALIAS_TO_CANONICAL.get(market_key) or normalize_market_scope(
+            market
+        )
         if canonical is None:
             raise ValueError(f"Unsupported market: {market}")
         if canonical in seen:
@@ -286,7 +280,7 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
     df["scale_category"] = df["scale_category"].fillna("").astype(str)
     df["listed_date"] = df["listed_date"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     return df
 
@@ -424,7 +418,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
     df["disclosed_date"] = df["disclosed_date"].astype(str)
     df["market_code"] = df["market_code"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     df["period_type"] = df["type_of_current_period"].map(normalize_period_label)
     df["fy_cycle_key"] = df["disclosed_date"].map(resolve_fy_cycle_key)
@@ -507,7 +501,7 @@ def _query_price_rows(
     df["date"] = df["date"].astype(str)
     df["market_code"] = df["market_code"].astype(str)
     df["market"] = df["market_code"].map(
-        lambda value: _MARKET_LABEL_BY_CODE.get(str(value).lower(), str(value).lower())
+        lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     return df
 

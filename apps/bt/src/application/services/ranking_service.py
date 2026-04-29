@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReadable, MarketDbReader
-from src.shared.utils.market_code_alias import resolve_market_codes
+from src.shared.utils.market_code_alias import normalize_market_scope, resolve_market_codes
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
@@ -107,13 +107,7 @@ def _prefer_4digit_order_sql(column_ref: str) -> str:
 
 
 def _canonical_market_label(market_code: str) -> str:
-    if market_code in {"prime", "0111"}:
-        return "prime"
-    if market_code in {"standard", "0112"}:
-        return "standard"
-    if market_code in {"growth", "0113"}:
-        return "growth"
-    return market_code
+    return str(normalize_market_scope(market_code, default=market_code))
 
 
 def _positive_ratio(numerator: float | None, denominator: float | None) -> float | None:

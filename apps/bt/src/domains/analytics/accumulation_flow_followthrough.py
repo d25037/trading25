@@ -33,6 +33,7 @@ from src.domains.strategy.indicators import (
     compute_chaikin_money_flow,
     compute_on_balance_volume_score,
 )
+from src.shared.utils.market_code_alias import expand_market_codes
 
 UniverseKey = Literal["topix500", "prime_ex_topix500", "standard", "growth"]
 FilterKey = Literal[
@@ -87,9 +88,9 @@ TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Large70",
     "TOPIX Mid400",
 )
-PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
-STANDARD_MARKET_CODES: tuple[str, ...] = ("0112", "standard")
-GROWTH_MARKET_CODES: tuple[str, ...] = ("0113", "growth")
+PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
+STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
+GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
 MEMBERSHIP_MODE = "latest_market_code_scale_category_proxy"
 TABLE_FIELD_NAMES: tuple[str, ...] = (
     "universe_summary_df",
@@ -401,13 +402,17 @@ def _normalize_optional_int_sequence(
     return tuple(value for value in normalized if value > 0)
 
 
+def _sql_placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
+
+
 def _universe_case_sql() -> str:
-    return """
+    return f"""
         CASE
-            WHEN coalesce(scale_category, '') IN (?, ?, ?) THEN 'topix500'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'prime_ex_topix500'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'standard'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'growth'
+            WHEN coalesce(scale_category, '') IN ({_sql_placeholders(len(TOPIX500_SCALE_CATEGORIES))}) THEN 'topix500'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(PRIME_MARKET_CODES))}) THEN 'prime_ex_topix500'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(STANDARD_MARKET_CODES))}) THEN 'standard'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(GROWTH_MARKET_CODES))}) THEN 'growth'
             ELSE NULL
         END
     """

@@ -38,6 +38,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _open_analysis_connection,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
+from src.shared.utils.market_code_alias import expand_market_codes
 
 UniverseKey = Literal["topix500", "prime_ex_topix500", "standard", "growth"]
 SplitKey = Literal["full", "discovery", "validation"]
@@ -151,9 +152,9 @@ TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Large70",
     "TOPIX Mid400",
 )
-PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
-STANDARD_MARKET_CODES: tuple[str, ...] = ("0112", "standard")
-GROWTH_MARKET_CODES: tuple[str, ...] = ("0113", "growth")
+PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
+STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
+GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
 MEMBERSHIP_MODE = "latest_market_code_scale_category_proxy"
 
 TABLE_FIELD_NAMES: tuple[str, ...] = (
@@ -376,13 +377,17 @@ def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _sql_placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
+
+
 def _universe_case_sql() -> str:
-    return """
+    return f"""
         CASE
-            WHEN coalesce(scale_category, '') IN (?, ?, ?) THEN 'topix500'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'prime_ex_topix500'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'standard'
-            WHEN lower(coalesce(market_code, '')) IN (?, ?) THEN 'growth'
+            WHEN coalesce(scale_category, '') IN ({_sql_placeholders(len(TOPIX500_SCALE_CATEGORIES))}) THEN 'topix500'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(PRIME_MARKET_CODES))}) THEN 'prime_ex_topix500'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(STANDARD_MARKET_CODES))}) THEN 'standard'
+            WHEN lower(coalesce(market_code, '')) IN ({_sql_placeholders(len(GROWTH_MARKET_CODES))}) THEN 'growth'
             ELSE NULL
         END
     """
@@ -445,11 +450,12 @@ def _query_universe_stock_history(
     end_date: str | None,
 ) -> pd.DataFrame:
     normalized_code_sql = _normalize_code_sql("code")
-    params: list[Any] = [*_universe_case_params(), universe_key]
+    params: list[Any] = [*_universe_case_params()]
     date_filter_sql = ""
     if end_date is not None:
         date_filter_sql = " AND date <= ?"
         params.append(end_date)
+    params.append(universe_key)
 
     sql = f"""
         WITH latest_universe_raw AS (

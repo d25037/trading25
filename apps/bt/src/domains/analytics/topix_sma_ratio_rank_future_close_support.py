@@ -18,6 +18,7 @@ from src.domains.analytics.topix_rank_future_close_core import (
     _ranking_feature_label_lookup as _core_ranking_feature_label_lookup,
     _sort_frame as _core_sort_frame,
 )
+from src.shared.utils.market_code_alias import expand_market_codes
 
 DecileKey = Literal[
     "Q1",
@@ -108,7 +109,7 @@ TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Large70",
     "TOPIX Mid400",
 )
-PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
+PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
 UNIVERSE_LABEL_MAP: dict[UniverseKey, str] = {
     "topix100": "TOPIX100",
     "prime_ex_topix500": "PRIME ex TOPIX500",

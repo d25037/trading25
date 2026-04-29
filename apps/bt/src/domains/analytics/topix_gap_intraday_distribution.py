@@ -366,10 +366,10 @@ def _grouped_stock_days_cte(
         stocks_snapshot AS (
             SELECT
                 normalized_code,
-                market_code_norm IN ('prime', '0111') AS is_prime,
+                market_code_norm IN ('prime', '0111', '0101') AS is_prime,
                 scale_category IN ('TOPIX Core30', 'TOPIX Large70') AS is_topix100,
                 scale_category IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_topix500,
-                market_code_norm IN ('prime', '0111')
+                market_code_norm IN ('prime', '0111', '0101')
                     AND scale_category NOT IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_prime_ex_topix500
             FROM stocks_snapshot_raw
             WHERE row_priority = 1

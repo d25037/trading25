@@ -39,8 +39,9 @@ def test_dataset_resolver_uses_settings_base_path(monkeypatch: pytest.MonkeyPatc
 
 
 def test_canonicalize_market_list_normalizes_aliases_and_order() -> None:
-    assert canonicalize_market_list(["0113", "prime", "0111", "custom"]) == [
+    assert canonicalize_market_list(["0107", "prime", "0111", "0102", "custom"]) == [
         "prime",
+        "standard",
         "growth",
         "custom",
     ]
@@ -232,7 +233,12 @@ def test_resolve_strategy_dataset_metadata_loads_strategy_when_config_missing(
     class _StubLoader:
         def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
             assert strategy_name == "production/demo"
-            return {"shared_config": {"dataset": "primeExTopix500_20260316"}}
+            return {
+                "shared_config": {
+                    "data_source": "dataset_snapshot",
+                    "dataset_snapshot": "primeExTopix500_20260316",
+                }
+            }
 
         def merge_shared_config(self, config: dict[str, object]) -> dict[str, object]:
             return dict(config["shared_config"])

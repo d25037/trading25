@@ -19,6 +19,7 @@ from scipy import stats
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _normalize_code_sql,
 )
+from src.shared.utils.market_code_alias import expand_market_codes
 
 DecileKey = Literal[
     "Q1",
@@ -73,10 +74,14 @@ _TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Large70",
     "TOPIX Mid400",
 )
-_PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
+_PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
 _DEFAULT_LOOKBACK_YEARS = 10
 _DEFAULT_TOPIX100_MIN_CONSTITUENTS_PER_DAY = 80
 _DEFAULT_PRIME_EX_TOPIX500_MIN_CONSTITUENTS_PER_DAY = 400
+
+
+def _sql_placeholders(count: int) -> str:
+    return ", ".join("?" for _ in range(count))
 
 
 def _universe_membership_sql_and_params(
@@ -84,12 +89,13 @@ def _universe_membership_sql_and_params(
 ) -> tuple[str, list[str]]:
     if universe_key == "topix100":
         return (
-            "scale_category IN (?, ?)",
+            f"scale_category IN ({_sql_placeholders(len(_TOPIX100_SCALE_CATEGORIES))})",
             list(_TOPIX100_SCALE_CATEGORIES),
         )
     if universe_key == "prime_ex_topix500":
         return (
-            "market_code IN (?, ?) AND scale_category NOT IN (?, ?, ?)",
+            f"market_code IN ({_sql_placeholders(len(_PRIME_MARKET_CODES))}) "
+            f"AND scale_category NOT IN ({_sql_placeholders(len(_TOPIX500_SCALE_CATEGORIES))})",
             [*_PRIME_MARKET_CODES, *_TOPIX500_SCALE_CATEGORIES],
         )
     raise ValueError(f"Unsupported universe_key: {universe_key}")
