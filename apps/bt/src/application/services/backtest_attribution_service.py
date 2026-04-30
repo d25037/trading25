@@ -101,11 +101,12 @@ class BacktestAttributionService:
             if isinstance(effective_parameters, dict)
             else {}
         )
-        dataset_name = (
-            shared_config.get("dataset", "")
-            if isinstance(shared_config, dict)
-            else ""
-        )
+        dataset_name = ""
+        if isinstance(shared_config, dict):
+            if shared_config.get("data_source") == "dataset_snapshot":
+                dataset_name = str(shared_config.get("dataset_snapshot") or "")
+            else:
+                dataset_name = str(shared_config.get("universe_preset") or "")
 
         job = self._manager.get_job(job_id)
         created_at = getattr(job, "created_at", None) if job is not None else None

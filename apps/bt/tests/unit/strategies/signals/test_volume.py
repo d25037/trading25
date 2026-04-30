@@ -394,7 +394,7 @@ class TestVolumeSignalIntegration:
                 strategy_name="volume-entry-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },
@@ -447,7 +447,7 @@ class TestVolumeSignalIntegration:
                 strategy_name="volume-exit-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },
@@ -501,7 +501,7 @@ class TestVolumeSignalIntegration:
                 strategy_name="volume-ema-entry-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },
@@ -558,7 +558,7 @@ class TestVolumeSignalIntegration:
                 strategy_name="accumulation-pressure-entry-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },

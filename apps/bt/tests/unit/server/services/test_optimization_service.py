@@ -134,14 +134,14 @@ async def test_submit_optimization_resolves_dataset_from_base_strategy(monkeypat
     monkeypatch.setattr(
         service._config_loader,
         "load_strategy_config",
-        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        lambda strategy_name: {"shared_config": {"universe_preset": "primeExTopix500"}}
         if strategy_name == "strategy-y"
         else {},
     )
     monkeypatch.setattr(
         service._config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "primeExTopix500"},
+        lambda _strategy_config: {"universe_preset": "primeExTopix500"},
     )
 
     async def _set_job_task(job_id: str, task):

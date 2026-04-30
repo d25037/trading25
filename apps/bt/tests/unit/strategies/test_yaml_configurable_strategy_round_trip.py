@@ -16,7 +16,7 @@ from src.shared.models.signals import SignalParams, Signals
 
 def _shared_config(**overrides: Any) -> SharedConfig:
     payload = {
-        "dataset": "sample",
+        "universe_preset": "sample",
         "stock_codes": ["1111"],
         "printlog": False,
     }

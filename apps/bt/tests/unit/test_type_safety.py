@@ -172,7 +172,7 @@ class TestSharedConfigTypeSafety:
         config = SharedConfig(
             initial_cash=200000,
             fees=0.002,
-            dataset="sampleA",
+            universe_preset="sampleA",
             stock_codes=["17190", "23010"],
         )
 
@@ -188,7 +188,7 @@ class TestSharedConfigTypeSafety:
         with pytest.raises(ValidationError) as exc_info:
             SharedConfig(
                 initial_cash=-1000,  # 負の値は無効
-                dataset="sampleA",
+                universe_preset="sampleA",
             )
         assert "初期資金は正の値である必要があります" in str(exc_info.value)
 
@@ -197,7 +197,7 @@ class TestSharedConfigTypeSafety:
         with pytest.raises(ValidationError) as exc_info:
             SharedConfig(
                 fees=1.5,  # 1以上は無効
-                dataset="sampleA",
+                universe_preset="sampleA",
             )
         assert "手数料は0以上1未満である必要があります" in str(exc_info.value)
 
@@ -210,7 +210,7 @@ class TestYamlConfigurableStrategyTypeSafety:
         shared_config = SharedConfig(
             initial_cash=100000,
             fees=0.001,
-            dataset="sampleA",
+            universe_preset="sampleA",
             stock_codes=["test_stock"],
             printlog=False,
         )
@@ -238,7 +238,7 @@ class TestYamlConfigurableStrategyTypeSafety:
         shared_config = SharedConfig(
             initial_cash=100000,
             fees=0.001,
-            dataset="sampleA",
+            universe_preset="sampleA",
             stock_codes=["test_stock"],
             printlog=False,
         )

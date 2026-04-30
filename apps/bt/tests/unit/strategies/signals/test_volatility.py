@@ -466,7 +466,7 @@ class TestVolatilitySignalIntegration:
                 strategy_name="volatility-percentile-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },
@@ -518,7 +518,7 @@ class TestVolatilitySignalIntegration:
                 strategy_name="bollinger-position-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },

@@ -28,7 +28,7 @@ from src.shared.models.signals import SignalParams
 class _StubConfigLoader:
     def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
         merged: dict[str, object] = {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
         }
@@ -42,7 +42,7 @@ def test_compile_strategy_config_collects_market_requirements() -> None:
     compiled = compile_strategy_config(
         "demo-strategy",
         {
-            "shared_config": {"dataset": "primeExTopix500"},
+            "shared_config": {"universe_preset": "primeExTopix500"},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         },
         config_loader=_StubConfigLoader(),

@@ -298,6 +298,12 @@ function validateSharedConfig(sharedConfig: unknown, errors: string[]): void {
     return;
   }
 
+  validateSharedConfigKeys(sharedConfig, errors);
+  validateSharedConfigDataSource(sharedConfig, errors);
+  validateKellyFraction(sharedConfig.kelly_fraction, errors);
+}
+
+function validateSharedConfigKeys(sharedConfig: Record<string, unknown>, errors: string[]): void {
   for (const key of Object.keys(sharedConfig)) {
     if (!ALLOWED_SHARED_CONFIG_KEYS.has(key)) {
       errors.push(`shared_config.${key} is not a valid parameter name`);
@@ -309,40 +315,62 @@ function validateSharedConfig(sharedConfig: unknown, errors: string[]): void {
       "shared_config.dataset is no longer supported; use shared_config.universe_preset for PIT market universes, or shared_config.dataset_snapshot with data_source='dataset_snapshot' and static_universe=true for archived reproducibility."
     );
   }
+}
 
+function validateSharedConfigDataSource(sharedConfig: Record<string, unknown>, errors: string[]): void {
   const dataSource = sharedConfig.data_source ?? 'market';
   if (dataSource !== 'market' && dataSource !== 'dataset_snapshot') {
     errors.push('shared_config.data_source must be one of: market, dataset_snapshot');
   }
 
+  validateMarketDataSourceConfig(sharedConfig, dataSource, errors);
+  validateDatasetSnapshotDataSourceConfig(sharedConfig, dataSource, errors);
+}
+
+function validateMarketDataSourceConfig(
+  sharedConfig: Record<string, unknown>,
+  dataSource: unknown,
+  errors: string[]
+): void {
   const universePreset = sharedConfig.universe_preset;
   const datasetSnapshot = sharedConfig.dataset_snapshot;
-  const staticUniverse = sharedConfig.static_universe;
   const stockCodes = sharedConfig.stock_codes;
   const usesAllStocks =
     stockCodes === undefined || (Array.isArray(stockCodes) && stockCodes.length === 1 && stockCodes[0] === 'all');
 
-  if (dataSource === 'market') {
-    if (typeof datasetSnapshot === 'string' && datasetSnapshot.trim().length > 0) {
-      errors.push("shared_config.dataset_snapshot is only allowed when shared_config.data_source is 'dataset_snapshot'");
-    }
-    if (usesAllStocks && (typeof universePreset !== 'string' || universePreset.trim().length === 0)) {
-      errors.push(
-        "shared_config.universe_preset is required for market-backed backtest YAML when stock_codes is ['all'] or omitted."
-      );
-    }
+  if (dataSource !== 'market') {
+    return;
   }
 
-  if (dataSource === 'dataset_snapshot') {
-    if (typeof datasetSnapshot !== 'string' || datasetSnapshot.trim().length === 0) {
-      errors.push("shared_config.dataset_snapshot is required when shared_config.data_source is 'dataset_snapshot'");
-    }
-    if (staticUniverse !== true) {
-      errors.push("shared_config.static_universe must be true when shared_config.data_source is 'dataset_snapshot'");
-    }
+  if (typeof datasetSnapshot === 'string' && datasetSnapshot.trim().length > 0) {
+    errors.push("shared_config.dataset_snapshot is only allowed when shared_config.data_source is 'dataset_snapshot'");
+  }
+  if (usesAllStocks && (typeof universePreset !== 'string' || universePreset.trim().length === 0)) {
+    errors.push(
+      "shared_config.universe_preset is required for market-backed backtest YAML when stock_codes is ['all'] or omitted."
+    );
+  }
+}
+
+function validateDatasetSnapshotDataSourceConfig(
+  sharedConfig: Record<string, unknown>,
+  dataSource: unknown,
+  errors: string[]
+): void {
+  if (dataSource !== 'dataset_snapshot') {
+    return;
   }
 
-  const kelly = sharedConfig.kelly_fraction;
+  const datasetSnapshot = sharedConfig.dataset_snapshot;
+  if (typeof datasetSnapshot !== 'string' || datasetSnapshot.trim().length === 0) {
+    errors.push("shared_config.dataset_snapshot is required when shared_config.data_source is 'dataset_snapshot'");
+  }
+  if (sharedConfig.static_universe !== true) {
+    errors.push("shared_config.static_universe must be true when shared_config.data_source is 'dataset_snapshot'");
+  }
+}
+
+function validateKellyFraction(kelly: unknown, errors: string[]): void {
   if (kelly === undefined) {
     return;
   }

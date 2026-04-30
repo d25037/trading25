@@ -13,7 +13,7 @@ from src.shared.models.signals import SignalParams
 
 
 def _shared_config(**overrides: object) -> SharedConfig:
-    payload: dict[str, object] = {"dataset": "primeExTopix500"}
+    payload: dict[str, object] = {"universe_preset": "primeExTopix500"}
     payload.update(overrides)
     return SharedConfig.model_validate(payload, context={"resolve_stock_codes": False})
 

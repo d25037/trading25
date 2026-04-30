@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
+import duckdb
 import pandas as pd
 
 from src.domains.analytics.research_bundle import (
@@ -22,12 +23,14 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.domains.backtest.core.market_universe import resolve_backtest_universe_codes
 from src.domains.analytics.window_warmup import (
     estimate_strategy_indicator_warmup_calendar_days,
     resolve_window_load_start_date,
 )
 from src.domains.backtest.core.runner import BacktestRunner
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.infrastructure.data_access.loaders import get_stock_list
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.shared.models.config import SharedConfig
@@ -160,19 +163,24 @@ def run_production_strategy_single_name_trade_quality(
     trade_rows: list[dict[str, Any]] = []
 
     with data_access_mode_context("direct"):
-        resolved_stock_codes = {
+        snapshot_stock_codes = {
             dataset_name: get_stock_list(dataset_name)
             for dataset_name in dataset_names
+            if not _is_market_universe_preset(dataset_name)
         }
         for dataset_info in dataset_infos:
             windows = _build_analysis_windows(
                 dataset_info=dataset_info,
                 holdout_months=holdout_months,
             )
-            stock_codes = resolved_stock_codes[dataset_info["dataset_name"]]
             for strategy_name in strategy_names:
                 base_parameters = base_parameters_by_strategy[strategy_name]
                 for window in windows:
+                    stock_codes = _resolve_window_stock_codes(
+                        dataset_info=dataset_info,
+                        window=window,
+                        snapshot_stock_codes=snapshot_stock_codes,
+                    )
                     scenario_row, scenario_trade_rows = _run_single_name_scenario(
                         base_parameters=base_parameters,
                         strategy_name=strategy_name,
@@ -337,9 +345,27 @@ def _run_single_name_scenario(
         )
         scenario_parameters = copy.deepcopy(base_parameters)
         shared_config_payload = dict(scenario_parameters.get("shared_config", {}))
+        shared_config_payload.pop("dataset", None)
+        if _is_market_universe_preset(dataset_info["dataset_name"]):
+            shared_config_payload.pop("dataset_snapshot", None)
+            shared_config_payload.update(
+                {
+                    "data_source": "market",
+                    "universe_preset": dataset_info["dataset_name"],
+                    "universe_as_of_date": window_start_date,
+                    "static_universe": False,
+                }
+            )
+        else:
+            shared_config_payload.update(
+                {
+                    "data_source": "dataset_snapshot",
+                    "dataset_snapshot": dataset_info["dataset_name"],
+                    "static_universe": True,
+                }
+            )
         shared_config_payload.update(
             {
-                "dataset": dataset_info["dataset_name"],
                 "start_date": load_start_date,
                 "end_date": window_end_date,
                 "group_by": True,
@@ -665,6 +691,9 @@ def _build_per_symbol_summary_df(trade_ledger_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _load_dataset_summary(dataset_name: str, *, holdout_months: int) -> dict[str, Any]:
+    if _is_market_universe_preset(dataset_name):
+        return _load_market_universe_summary(dataset_name, holdout_months=holdout_months)
+
     manifest_path = get_data_dir() / "datasets" / dataset_name / "manifest.v2.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"Dataset manifest was not found: {manifest_path}")
@@ -687,6 +716,72 @@ def _load_dataset_summary(dataset_name: str, *, holdout_months: int) -> dict[str
         "holdout_start_date": holdout_start_date,
         "holdout_end_date": dataset_end,
     }
+
+
+def _is_market_universe_preset(dataset_name: str) -> bool:
+    return dataset_name in UNIVERSE_PRESET_NAMES
+
+
+def _market_duckdb_path() -> Path:
+    return get_data_dir() / "market-timeseries" / "market.duckdb"
+
+
+def _load_market_universe_summary(dataset_name: str, *, holdout_months: int) -> dict[str, Any]:
+    duckdb_path = _market_duckdb_path()
+    if not duckdb_path.exists():
+        raise FileNotFoundError(f"market.duckdb was not found: {duckdb_path}")
+    with duckdb.connect(str(duckdb_path), read_only=True) as conn:
+        row = conn.execute(
+            "SELECT MIN(date), MAX(date), COUNT(*) FROM stock_data"
+        ).fetchone()
+    if row is None or row[0] is None or row[1] is None:
+        raise RuntimeError(f"market.duckdb has no stock_data rows: {duckdb_path}")
+    dataset_start = str(row[0])
+    dataset_end = str(row[1])
+    stock_data_rows = int(row[2] or 0)
+    stocks = len(_resolve_market_stock_codes(dataset_name, as_of_date=dataset_end))
+    holdout_start_date = _subtract_months_iso(dataset_end, holdout_months)
+    train_end_date = _day_before_iso(holdout_start_date)
+    if train_end_date < dataset_start:
+        train_end_date = None
+    return {
+        "dataset_name": dataset_name,
+        "dataset_preset": dataset_name,
+        "stocks": stocks,
+        "stock_data_rows": stock_data_rows,
+        "dataset_start_date": dataset_start,
+        "dataset_end_date": dataset_end,
+        "train_end_date": train_end_date,
+        "holdout_start_date": holdout_start_date,
+        "holdout_end_date": dataset_end,
+    }
+
+
+def _resolve_market_stock_codes(dataset_name: str, *, as_of_date: str) -> list[str]:
+    shared_config: dict[str, Any] = {
+        "data_source": "market",
+        "universe_preset": dataset_name,
+        "stock_codes": ["all"],
+        "start_date": as_of_date,
+        "universe_as_of_date": as_of_date,
+    }
+    resolved = resolve_backtest_universe_codes(shared_config)
+    return resolved or []
+
+
+def _resolve_window_stock_codes(
+    *,
+    dataset_info: dict[str, Any],
+    window: dict[str, str],
+    snapshot_stock_codes: dict[str, list[str]],
+) -> list[str]:
+    dataset_name = str(dataset_info["dataset_name"])
+    if _is_market_universe_preset(dataset_name):
+        return _resolve_market_stock_codes(
+            dataset_name,
+            as_of_date=window["window_start_date"],
+        )
+    return snapshot_stock_codes[dataset_name]
 
 
 def _build_analysis_windows(

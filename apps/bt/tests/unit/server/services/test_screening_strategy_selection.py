@@ -39,7 +39,7 @@ def _loaded_config(
         entry_params=SignalParams(),
         exit_params=SignalParams(),
         shared_config=SharedConfig.model_validate(
-            {"dataset": "primeExTopix500"},
+            {"universe_preset": "primeExTopix500"},
             context={"resolve_stock_codes": False},
         ),
         compiled_strategy=cast(CompiledStrategyIR, object()),

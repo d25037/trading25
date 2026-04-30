@@ -28,7 +28,7 @@ def test_build_verification_plan_computes_metrics_for_daily_round_trip() -> None
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -69,7 +69,7 @@ def test_build_verification_plan_skips_unaffordable_trade_after_fees_and_slippag
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=100,
             timeframe="daily",
@@ -110,7 +110,7 @@ def test_build_verification_plan_matches_vectorbt_cash_sharing_order_sizing() ->
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301", "1332"],
             initial_cash=100_000,
             timeframe="daily",
@@ -152,7 +152,7 @@ def test_nautilus_verification_runner_writes_core_artifacts(monkeypatch, tmp_pat
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -184,7 +184,7 @@ def test_nautilus_verification_runner_writes_core_artifacts(monkeypatch, tmp_pat
         runner._vectorbt_runner,
         "build_parameters_for_strategy",
         lambda strategy, config_override=None: {
-            "shared_config": {"dataset": "sample", "timeframe": "daily"},
+            "shared_config": {"universe_preset": "sample", "timeframe": "daily"},
             "entry_filter_params": {},
         },
     )
@@ -293,7 +293,7 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
         "demo",
         {
             "shared_config": {
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1301", "1332"],
                 "initial_cash": 1_000_000,
                 "timeframe": "daily",
@@ -315,7 +315,7 @@ def test_build_verification_plan_computes_metrics_for_overnight_round_trip() -> 
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -430,7 +430,7 @@ def test_prepare_portfolio_inputs_rejects_unsupported_config(
             "demo",
             {
                 "shared_config": {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1301"],
                     "initial_cash": 1_000_000,
                     "timeframe": timeframe,
@@ -474,7 +474,7 @@ def test_prepare_portfolio_inputs_rejects_signal_portfolio_mode(monkeypatch) -> 
             "demo",
             {
                 "shared_config": {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1301"],
                     "initial_cash": 1_000_000,
                     "timeframe": "daily",
@@ -509,7 +509,7 @@ def test_prepare_portfolio_inputs_requires_round_trip_capture(monkeypatch) -> No
             "demo",
             {
                 "shared_config": {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1301"],
                     "initial_cash": 1_000_000,
                     "timeframe": "daily",
@@ -747,7 +747,7 @@ def test_build_verification_plan_tracks_missing_price_skips() -> None:
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -979,7 +979,7 @@ def test_run_nautilus_engine_uses_fake_runtime_and_records_metadata(monkeypatch)
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -1016,7 +1016,7 @@ def test_build_verification_plan_handles_missing_prices_without_trades() -> None
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -1048,7 +1048,7 @@ def test_nautilus_verification_runner_reports_progress(monkeypatch, tmp_path: Pa
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -1071,7 +1071,7 @@ def test_nautilus_verification_runner_reports_progress(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(
         runner._vectorbt_runner,
         "build_parameters_for_strategy",
-        lambda strategy, config_override=None: {"shared_config": {"dataset": "sample", "timeframe": "daily"}},
+        lambda strategy, config_override=None: {"shared_config": {"universe_preset": "sample", "timeframe": "daily"}},
     )
     monkeypatch.setattr(
         runner._vectorbt_runner.config_loader,
@@ -1179,7 +1179,7 @@ def test_run_nautilus_engine_skips_strategy_for_symbols_without_trade_plan(monke
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -1267,7 +1267,7 @@ def test_run_nautilus_engine_skips_symbols_without_executable_bars(monkeypatch) 
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301", "1332"],
             initial_cash=1_000_000,
             timeframe="daily",

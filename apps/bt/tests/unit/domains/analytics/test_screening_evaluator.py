@@ -73,7 +73,7 @@ def _compiled_strategy(
 ) -> CompiledStrategyIR:
     shared_config = SharedConfig.model_validate(
         {
-            "dataset": "primeExTopix500",
+            "universe_preset": "primeExTopix500",
             "timeframe": "daily",
             "execution_policy": execution_policy or {"mode": "standard"},
         },

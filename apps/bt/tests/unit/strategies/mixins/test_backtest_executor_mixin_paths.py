@@ -746,7 +746,7 @@ class TestBacktestExecutorMixinPaths:
             strategy_name="runtime",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "next_session_round_trip"},
                 },
@@ -765,7 +765,7 @@ class TestBacktestExecutorMixinPaths:
             strategy_name="runtime",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                 },
                 context={"resolve_stock_codes": False},

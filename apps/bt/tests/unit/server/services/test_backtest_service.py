@@ -119,7 +119,7 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
 
     job_id = await service.submit_backtest(
         "strategy",
-        config_override={"shared_config": {"dataset": "sample-dataset"}},
+        config_override={"shared_config": {"universe_preset": "sample-dataset"}},
     )
 
     assert job_id == "job-123"
@@ -180,14 +180,14 @@ async def test_submit_backtest_resolves_dataset_from_base_strategy_when_override
     monkeypatch.setattr(
         service._runner.config_loader,
         "load_strategy_config",
-        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        lambda strategy_name: {"shared_config": {"universe_preset": "primeExTopix500"}}
         if strategy_name == "strategy"
         else {},
     )
     monkeypatch.setattr(
         service._runner.config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "primeExTopix500"},
+        lambda _strategy_config: {"universe_preset": "primeExTopix500"},
     )
     monkeypatch.setattr(
         service._manager,
@@ -225,14 +225,14 @@ async def test_submit_backtest_normalizes_blank_dataset_override_before_executio
     monkeypatch.setattr(
         service._runner.config_loader,
         "load_strategy_config",
-        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        lambda strategy_name: {"shared_config": {"universe_preset": "primeExTopix500"}}
         if strategy_name == "strategy"
         else {},
     )
     monkeypatch.setattr(
         service._runner.config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "primeExTopix500", "direction": "longonly"},
+        lambda _strategy_config: {"universe_preset": "primeExTopix500", "direction": "longonly"},
     )
     monkeypatch.setattr(
         service._manager,
@@ -250,7 +250,7 @@ async def test_submit_backtest_normalizes_blank_dataset_override_before_executio
 
     job_id = await service.submit_backtest(
         "strategy",
-        config_override={"shared_config": {"dataset": "   ", "direction": "shortonly"}},
+        config_override={"shared_config": {"universe_preset": "   ", "direction": "shortonly"}},
     )
 
     assert job_id == "job-789"
@@ -598,10 +598,10 @@ async def test_start_worker_process_invokes_subprocess_exec(monkeypatch):
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _create_subprocess_exec)
 
-    await service._start_worker_process("job-1", "strategy-1", {"shared_config": {"dataset": "sample"}})
+    await service._start_worker_process("job-1", "strategy-1", {"shared_config": {"universe_preset": "sample"}})
 
     assert captured["args"] == tuple(
-        service._build_worker_command("job-1", "strategy-1", {"shared_config": {"dataset": "sample"}})
+        service._build_worker_command("job-1", "strategy-1", {"shared_config": {"universe_preset": "sample"}})
     )
 
 
@@ -611,7 +611,7 @@ def test_build_worker_command_embeds_config_override():
     command = service._build_worker_command(
         "job-1",
         "strategy-1",
-        {"shared_config": {"dataset": "sample"}},
+        {"shared_config": {"universe_preset": "sample"}},
     )
 
     assert command[:3] == [sys.executable, "-m", "src.application.workers.backtest_worker"]
@@ -619,7 +619,7 @@ def test_build_worker_command_embeds_config_override():
     assert "--strategy-name" in command
     assert command[command.index("--timeout-seconds") + 1] == "900"
     json_arg = command[command.index("--config-override-json") + 1]
-    assert json.loads(json_arg) == {"shared_config": {"dataset": "sample"}}
+    assert json.loads(json_arg) == {"shared_config": {"universe_preset": "sample"}}
 
 
 def test_extract_result_summary_prefers_html_metrics(tmp_path: Path):

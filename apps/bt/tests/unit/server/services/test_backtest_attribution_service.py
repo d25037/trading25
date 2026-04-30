@@ -52,7 +52,7 @@ def test_execute_attribution_sync_uses_threadsafe_progress(monkeypatch):
             "job-1",
             "strategy-1",
             loop,
-            {"shared_config": {"dataset": "sample"}},
+            {"shared_config": {"universe_preset": "sample"}},
             5,
             128,
             42,
@@ -207,7 +207,7 @@ async def test_submit_attribution_creates_job_and_registers_task(monkeypatch):
 
     job_id = await service.submit_attribution(
         strategy_name="strategy-1",
-        config_override={"shared_config": {"dataset": "sample"}},
+        config_override={"shared_config": {"universe_preset": "sample"}},
         shapley_top_n=3,
         shapley_permutations=64,
         random_seed=7,
@@ -242,14 +242,14 @@ async def test_submit_attribution_resolves_dataset_from_base_strategy_when_overr
     monkeypatch.setattr(
         service._runner.config_loader,
         "load_strategy_config",
-        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        lambda strategy_name: {"shared_config": {"universe_preset": "primeExTopix500"}}
         if strategy_name == "strategy-2"
         else {},
     )
     monkeypatch.setattr(
         service._runner.config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "primeExTopix500"},
+        lambda _strategy_config: {"universe_preset": "primeExTopix500"},
     )
 
     job_id = await service.submit_attribution(strategy_name="strategy-2")
@@ -284,19 +284,19 @@ async def test_submit_attribution_normalizes_blank_dataset_override_before_execu
     monkeypatch.setattr(
         service._runner.config_loader,
         "load_strategy_config",
-        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        lambda strategy_name: {"shared_config": {"universe_preset": "primeExTopix500"}}
         if strategy_name == "strategy-3"
         else {},
     )
     monkeypatch.setattr(
         service._runner.config_loader,
         "merge_shared_config",
-        lambda _strategy_config: {"dataset": "primeExTopix500", "direction": "longonly"},
+        lambda _strategy_config: {"universe_preset": "primeExTopix500", "direction": "longonly"},
     )
 
     job_id = await service.submit_attribution(
         strategy_name="strategy-3",
-        config_override={"shared_config": {"dataset": "   ", "direction": "shortonly"}},
+        config_override={"shared_config": {"universe_preset": "   ", "direction": "shortonly"}},
     )
     await asyncio.sleep(0)
 
@@ -441,7 +441,7 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
         service._runner,
         "build_parameters_for_strategy",
         lambda strategy, config_override: {
-            "shared_config": {"dataset": "prime_202601"},
+            "shared_config": {"universe_preset": "prime_202601"},
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {},
         },
@@ -463,7 +463,10 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
     payload = json.loads(saved_path.read_text(encoding="utf-8"))
     assert payload["strategy"]["name"] == "experimental/range_break_v18"
     assert payload["strategy"]["yaml_path"] == "/tmp/strategies/experimental/range_break_v18.yaml"
-    assert payload["strategy"]["effective_parameters"]["shared_config"]["dataset"] == "prime_202601"
+    assert (
+        payload["strategy"]["effective_parameters"]["shared_config"]["universe_preset"]
+        == "prime_202601"
+    )
     assert payload["runtime"]["shapley_top_n"] == 5
     assert payload["databases"]["market_db"]["name"] == "market.duckdb"
     assert payload["databases"]["dataset_name"] == "prime_202601"

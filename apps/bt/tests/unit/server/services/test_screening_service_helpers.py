@@ -57,7 +57,7 @@ def _runtime(
     entry_params: SignalParams | None = None,
     exit_params: SignalParams | None = None,
 ) -> StrategyRuntime:
-    shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
+    shared_payload: dict[str, object] = {"universe_preset": "primeExTopix500"}
     if shared_overrides:
         shared_payload.update(shared_overrides)
     resolved_entry_params = entry_params or SignalParams()
@@ -409,7 +409,7 @@ class TestStrategyResolutionHelpers:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
-                "shared_config": {"dataset": "primeExTopix500"},
+                "shared_config": {"universe_preset": "primeExTopix500"},
                 "entry_filter_params": {},
                 "exit_trigger_params": {},
             },
@@ -417,7 +417,7 @@ class TestStrategyResolutionHelpers:
         monkeypatch.setattr(
             service._config_loader,
             "merge_shared_config",
-            lambda _config: {"dataset": "primeExTopix500"},
+            lambda _config: {"universe_preset": "primeExTopix500"},
         )
 
         with pytest.raises(
@@ -435,7 +435,7 @@ class TestRuntimeEvaluationHelpers:
         service = ScreeningService(DummyReader())
         shared = SharedConfig.model_validate(
             {
-                "dataset": "primeExTopix500",
+                "universe_preset": "primeExTopix500",
                 "start_date": "2024-01-01",
                 "end_date": "2024-12-31",
             },
@@ -456,7 +456,7 @@ class TestRuntimeEvaluationHelpers:
     ):
         service = ScreeningService(DummyReader())
         shared = SharedConfig.model_validate(
-            {"dataset": "primeExTopix500"},
+            {"universe_preset": "primeExTopix500"},
             context={"resolve_stock_codes": False},
         )
 

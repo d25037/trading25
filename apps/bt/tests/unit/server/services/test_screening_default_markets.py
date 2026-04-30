@@ -14,11 +14,15 @@ from src.application.services.screening_default_markets import (
 from src.application.services.strategy_dataset_metadata import StrategyDatasetMetadata
 
 
-def _make_loaded_config(dataset_name: str, entry_decidability: str) -> SimpleNamespace:
+def _make_loaded_config(universe_preset: str, entry_decidability: str) -> SimpleNamespace:
     return SimpleNamespace(
         entry_params={},
         exit_params={},
-        shared_config=SimpleNamespace(dataset=dataset_name),
+        shared_config=SimpleNamespace(
+            data_source="market",
+            universe_preset=universe_preset,
+            dataset=universe_preset,
+        ),
         compiled_strategy=SimpleNamespace(),
         screening_support="supported",
         entry_decidability=entry_decidability,
@@ -48,33 +52,13 @@ def test_resolve_default_screening_markets_uses_selected_strategy_union(monkeypa
     monkeypatch.setattr(
         "src.application.services.screening_default_markets.load_strategy_screening_config",
         lambda _loader, name: {
-            "production/range_break_v15": _make_loaded_config("dataset-prime", "pre_open_decidable"),
-            "production/forward_eps_driven": _make_loaded_config("dataset-standard", "pre_open_decidable"),
+            "production/range_break_v15": _make_loaded_config("primeMarket", "pre_open_decidable"),
+            "production/forward_eps_driven": _make_loaded_config("standardMarket", "pre_open_decidable"),
             "production/topix_gap_down_intraday": _make_loaded_config(
-                "dataset-growth",
+                "growthMarket",
                 "requires_same_session_observation",
             ),
         }[name],
-    )
-    monkeypatch.setattr(
-        "src.application.services.screening_default_markets.resolve_dataset_metadata",
-        lambda dataset_name, dataset_base_path=None: {
-            "dataset-prime": StrategyDatasetMetadata(
-                dataset_name="dataset-prime",
-                dataset_preset="primeMarket",
-                screening_default_markets=["prime"],
-            ),
-            "dataset-standard": StrategyDatasetMetadata(
-                dataset_name="dataset-standard",
-                dataset_preset="standardMarket",
-                screening_default_markets=["standard"],
-            ),
-            "dataset-growth": StrategyDatasetMetadata(
-                dataset_name="dataset-growth",
-                dataset_preset="growthMarket",
-                screening_default_markets=["growth"],
-            ),
-        }[dataset_name],
     )
 
     resolved = resolve_default_screening_markets(
@@ -117,33 +101,13 @@ def test_resolve_default_screening_markets_uses_all_eligible_when_unselected(
     monkeypatch.setattr(
         "src.application.services.screening_default_markets.load_strategy_screening_config",
         lambda _loader, name: {
-            "production/range_break_v15": _make_loaded_config("dataset-prime", "pre_open_decidable"),
-            "production/forward_eps_driven": _make_loaded_config("dataset-standard", "pre_open_decidable"),
+            "production/range_break_v15": _make_loaded_config("primeMarket", "pre_open_decidable"),
+            "production/forward_eps_driven": _make_loaded_config("standardMarket", "pre_open_decidable"),
             "production/topix_gap_down_intraday": _make_loaded_config(
-                "dataset-growth",
+                "growthMarket",
                 "requires_same_session_observation",
             ),
         }[name],
-    )
-    monkeypatch.setattr(
-        "src.application.services.screening_default_markets.resolve_dataset_metadata",
-        lambda dataset_name, dataset_base_path=None: {
-            "dataset-prime": StrategyDatasetMetadata(
-                dataset_name="dataset-prime",
-                dataset_preset="primeMarket",
-                screening_default_markets=["prime"],
-            ),
-            "dataset-standard": StrategyDatasetMetadata(
-                dataset_name="dataset-standard",
-                dataset_preset="standardMarket",
-                screening_default_markets=["standard"],
-            ),
-            "dataset-growth": StrategyDatasetMetadata(
-                dataset_name="dataset-growth",
-                dataset_preset="growthMarket",
-                screening_default_markets=["growth"],
-            ),
-        }[dataset_name],
     )
 
     resolved = resolve_default_screening_markets(
@@ -175,15 +139,7 @@ def test_resolve_default_screening_markets_raises_for_unresolvable_dataset(
 
     monkeypatch.setattr(
         "src.application.services.screening_default_markets.load_strategy_screening_config",
-        lambda _loader, _name: _make_loaded_config("dataset-broken", "pre_open_decidable"),
-    )
-    monkeypatch.setattr(
-        "src.application.services.screening_default_markets.resolve_dataset_metadata",
-        lambda dataset_name, dataset_base_path=None: StrategyDatasetMetadata(
-            dataset_name=dataset_name,
-            dataset_preset="preset-broken",
-            screening_default_markets=None,
-        ),
+        lambda _loader, _name: _make_loaded_config("unknownPreset", "pre_open_decidable"),
     )
 
     with pytest.raises(ValueError, match="production/broken"):
@@ -214,26 +170,9 @@ def test_validate_selected_screening_strategy_datasets_ignores_unselected_broken
     monkeypatch.setattr(
         "src.application.services.screening_default_markets.load_strategy_screening_config",
         lambda _loader, name: {
-            "production/good": _make_loaded_config("dataset-good", "pre_open_decidable"),
-            "production/broken": _make_loaded_config("dataset-broken", "pre_open_decidable"),
+            "production/good": _make_loaded_config("primeMarket", "pre_open_decidable"),
+            "production/broken": _make_loaded_config("unknownPreset", "pre_open_decidable"),
         }[name],
-    )
-
-    resolved_names: list[str] = []
-
-    def _resolve_dataset(dataset_name: str, dataset_base_path=None) -> StrategyDatasetMetadata:
-        resolved_names.append(dataset_name)
-        if dataset_name == "dataset-broken":
-            raise FileNotFoundError("broken snapshot")
-        return StrategyDatasetMetadata(
-            dataset_name="dataset-good",
-            dataset_preset="preset-good",
-            screening_default_markets=["prime"],
-        )
-
-    monkeypatch.setattr(
-        "src.application.services.screening_default_markets.resolve_dataset_metadata",
-        _resolve_dataset,
     )
 
     selected = validate_selected_screening_strategy_datasets(
@@ -243,7 +182,6 @@ def test_validate_selected_screening_strategy_datasets_ignores_unselected_broken
     )
 
     assert selected == ["production/good"]
-    assert resolved_names == ["dataset-good"]
 
 
 def test_validate_selected_screening_strategy_datasets_raises_for_selected_broken_strategy(
@@ -260,18 +198,12 @@ def test_validate_selected_screening_strategy_datasets_raises_for_selected_broke
 
     monkeypatch.setattr(
         "src.application.services.screening_default_markets.load_strategy_screening_config",
-        lambda _loader, _name: _make_loaded_config("dataset-broken", "pre_open_decidable"),
-    )
-    monkeypatch.setattr(
-        "src.application.services.screening_default_markets.resolve_dataset_metadata",
-        lambda dataset_name, dataset_base_path=None: (_ for _ in ()).throw(
-            FileNotFoundError(f"{dataset_name} missing")
-        ),
+        lambda _loader, _name: _make_loaded_config("unknownPreset", "pre_open_decidable"),
     )
 
     with pytest.raises(
         ValueError,
-        match=r"Invalid dataset for screening strategy production/broken: dataset-broken missing",
+        match=r"Invalid universe for screening strategy production/broken: shared_config.universe_preset is required",
     ):
         validate_selected_screening_strategy_datasets(
             entry_decidability="pre_open_decidable",
@@ -357,7 +289,7 @@ def test_resolve_default_screening_markets_raises_when_union_is_empty(
 
     with pytest.raises(
         ValueError,
-        match="Failed to resolve default screening markets from production strategy datasets",
+        match="Failed to resolve default screening markets from production strategy universes",
     ):
         resolve_default_screening_markets(
             entry_decidability="pre_open_decidable",

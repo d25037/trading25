@@ -13,7 +13,10 @@ from src.shared.models.signals import SignalParams
 
 
 def _shared_config(**overrides: Any) -> SharedConfig:
-    payload: dict[str, Any] = {"dataset": "primeExTopix500", "timeframe": "daily"}
+    payload: dict[str, Any] = {
+        "universe_preset": "primeExTopix500",
+        "timeframe": "daily",
+    }
     payload.update(overrides)
     return SharedConfig.model_validate(
         payload,
@@ -118,7 +121,7 @@ def test_load_strategy_screening_config_uses_compiled_strategy_availability() ->
 
     config_loader = _ConfigLoader(
         {
-            "shared_config": {"dataset": "primeExTopix500"},
+            "shared_config": {"universe_preset": "primeExTopix500"},
             "entry_filter_params": {
                 "index_open_gap_regime": {"enabled": True}
             },

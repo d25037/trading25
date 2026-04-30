@@ -59,19 +59,19 @@ class TestFetchStockCodes:
     def test_success(self):
         with patch("src.domains.lab_agent.evaluator.batch_executor.get_stock_list") as mock_get:
             mock_get.return_value = ["1234", "5678"]
-            result = fetch_stock_codes({"dataset": "test_dataset"})
+            result = fetch_stock_codes({"universe_preset": "test_dataset"})
         assert result == ["1234", "5678"]
 
     def test_exception_returns_none(self):
         with patch("src.domains.lab_agent.evaluator.batch_executor.get_stock_list") as mock_get:
             mock_get.side_effect = Exception("API error")
-            result = fetch_stock_codes({"dataset": "test_dataset"})
+            result = fetch_stock_codes({"universe_preset": "test_dataset"})
         assert result is None
 
 
 class TestFetchOhlcvData:
     def test_no_stock_codes_returns_none(self):
-        result = fetch_ohlcv_data({"dataset": "test"}, None)
+        result = fetch_ohlcv_data({"universe_preset": "test"}, None)
         assert result is None
 
     def test_no_dataset_returns_none(self):
@@ -86,7 +86,7 @@ class TestFetchOhlcvData:
             mock_prep.return_value = {"1234": MagicMock()}
             mock_conv.return_value = {"1234": {"data": "test"}}
             result = fetch_ohlcv_data(
-                {"dataset": "test", "start_date": "2025-01-01", "end_date": "2025-12-31"},
+                {"universe_preset": "test", "start_date": "2025-01-01", "end_date": "2025-12-31"},
                 ["1234"],
             )
         assert result is not None
@@ -95,7 +95,7 @@ class TestFetchOhlcvData:
     def test_exception_returns_none(self):
         with patch("src.domains.lab_agent.evaluator.batch_executor.prepare_multi_data") as mock_prep:
             mock_prep.side_effect = Exception("data error")
-            result = fetch_ohlcv_data({"dataset": "test"}, ["1234"])
+            result = fetch_ohlcv_data({"universe_preset": "test"}, ["1234"])
         assert result is None
 
 
@@ -113,7 +113,7 @@ class TestFetchBenchmarkData:
         )
         with patch("src.domains.lab_agent.evaluator.batch_executor.load_topix_data") as mock_load:
             mock_load.return_value = mock_df
-            result = fetch_benchmark_data({"dataset": "test"})
+            result = fetch_benchmark_data({"universe_preset": "test"})
         assert result is not None
         assert "index" in result
         assert "columns" in result
@@ -122,7 +122,7 @@ class TestFetchBenchmarkData:
     def test_exception_returns_none(self):
         with patch("src.domains.lab_agent.evaluator.batch_executor.load_topix_data") as mock_load:
             mock_load.side_effect = Exception("load error")
-            result = fetch_benchmark_data({"dataset": "test"})
+            result = fetch_benchmark_data({"universe_preset": "test"})
         assert result is None
 
 
@@ -136,7 +136,7 @@ class TestPrepareBatchData:
             mock_codes.return_value = ["1234"]
             mock_ohlcv.return_value = {"1234": {"data": "test"}}
             mock_bench.return_value = {"index": [], "columns": [], "data": []}
-            result = prepare_batch_data({"dataset": "test"})
+            result = prepare_batch_data({"universe_preset": "test"})
         assert result.stock_codes == ["1234"]
         assert result.ohlcv_data is not None
         assert result.benchmark_data is not None
@@ -162,7 +162,7 @@ class TestPrepareBatchData:
                 exit_trigger_params={},
             )
 
-            prepare_batch_data({"dataset": "test"}, [candidate])
+            prepare_batch_data({"universe_preset": "test"}, [candidate])
 
         assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True
 
@@ -177,7 +177,7 @@ class TestPrepareBatchData:
             mock_bench.return_value = {"index": [], "columns": [], "data": []}
 
             result = prepare_batch_data(
-                {"dataset": "test"},
+                {"universe_preset": "test"},
                 [],
                 force_include_forecast_revision=True,
             )
@@ -325,7 +325,7 @@ class TestBatchExecutionPaths:
             result = execute_single_process(
                 candidates,
                 prepared_data=prepared_data,
-                shared_config_dict={"dataset": "test"},
+                shared_config_dict={"universe_preset": "test"},
                 scoring_weights={"sharpe_ratio": 1.0},
             )
         assert len(result) == 2
@@ -375,7 +375,7 @@ class TestBatchExecutionPaths:
                 candidates,
                 max_workers=2,
                 prepared_data=prepared_data,
-                shared_config_dict={"dataset": "test"},
+                shared_config_dict={"universe_preset": "test"},
                 scoring_weights={"sharpe_ratio": 1.0},
                 timeout_seconds=60,
             )
@@ -438,7 +438,7 @@ class TestBatchExecutionPaths:
                 exit_trigger_params={},
             )
 
-            prepare_batch_data({"dataset": "test"}, [candidate])
+            prepare_batch_data({"universe_preset": "test"}, [candidate])
 
         assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True
 
@@ -463,6 +463,6 @@ class TestBatchExecutionPaths:
                 exit_trigger_params={},
             )
 
-            prepare_batch_data({"dataset": "test"}, [candidate])
+            prepare_batch_data({"universe_preset": "test"}, [candidate])
 
         assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True

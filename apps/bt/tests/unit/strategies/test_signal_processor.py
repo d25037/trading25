@@ -122,7 +122,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "standard"},
                 },
@@ -329,7 +329,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "standard"},
                 },
@@ -514,7 +514,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111", "2222"],
                     "execution_policy": {"mode": "standard"},
                 },
@@ -690,7 +690,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "current_session_round_trip"},
                 },
@@ -750,7 +750,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "current_session_round_trip"},
                 },
@@ -788,7 +788,7 @@ class TestSignalProcessor:
             strategy_name="demo",
             shared_config=SharedConfig.model_validate(
                 {
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                     "execution_policy": {"mode": "current_session_round_trip"},
                 },

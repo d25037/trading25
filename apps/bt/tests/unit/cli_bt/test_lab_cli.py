@@ -65,7 +65,7 @@ def test_lab_generate_uses_xdg_default_dataset_when_omitted() -> None:
     with (
         patch(
             "src.entrypoints.cli.lab.load_default_shared_config",
-            return_value={"dataset": "xdg_dataset"},
+            return_value={"universe_preset": "xdg_dataset"},
         ),
         patch("src.domains.lab_agent.StrategyGenerator") as MockGenerator,
         patch("src.domains.lab_agent.StrategyEvaluator") as MockEvaluator,
@@ -88,12 +88,12 @@ def test_lab_generate_uses_xdg_default_dataset_when_omitted() -> None:
 
     assert result.exit_code == 0
     output = _strip_ansi(result.stdout)
-    assert "dataset: xdg_dataset (XDG default)" in output
+    assert "universe: xdg_dataset (XDG default)" in output
     assert (
-        MockEvaluator.call_args.kwargs["shared_config_dict"]["dataset"] == "xdg_dataset"
+        MockEvaluator.call_args.kwargs["shared_config_dict"]["universe_preset"] == "xdg_dataset"
     )
     saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
-    assert saved_candidate.shared_config["dataset"] == "xdg_dataset"
+    assert saved_candidate.shared_config["universe_preset"] == "xdg_dataset"
 
 
 def test_lab_generate_rejects_invalid_category() -> None:

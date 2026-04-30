@@ -78,7 +78,7 @@ class TestStrategyFactoryHelpers:
     def test_validate_round_trip_execution_mode_noops_when_disabled(self) -> None:
         shared_config = SharedConfig.model_validate(
             {
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "standard"},
             },
@@ -103,7 +103,7 @@ class TestStrategyFactoryHelpers:
 
         shared_config = SharedConfig.model_validate(
             {
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "next_session_round_trip"},
             },
@@ -134,7 +134,7 @@ class TestStrategyFactoryHelpers:
 
         strategy = StrategyFactory.create_strategy(
             shared_config={
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "next_session_round_trip"},
             },
@@ -157,7 +157,7 @@ class TestStrategyFactoryHelpers:
 
         shared_config = SharedConfig.model_validate(
             {
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "current_session_round_trip"},
             },
@@ -188,7 +188,7 @@ class TestStrategyFactoryHelpers:
 
         strategy = StrategyFactory.create_strategy(
             shared_config={
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "current_session_round_trip"},
             },
@@ -217,7 +217,7 @@ class TestStrategyFactoryHelpers:
 
         strategy = StrategyFactory.create_strategy(
             shared_config={
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
                 "execution_policy": {"mode": "overnight_round_trip"},
             },
@@ -246,7 +246,7 @@ class TestStrategyFactoryHelpers:
 
         strategy = StrategyFactory.create_strategy(
             shared_config={
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111"],
             },
             entry_filter_params={"index_open_gap_regime": {"enabled": True}},
@@ -301,7 +301,7 @@ class TestStrategyFactoryExecution:
 
         result = StrategyFactory.execute_strategy_with_config(
             shared_config={
-                "dataset": "sample",
+                "universe_preset": "sample",
                 "stock_codes": ["1111", "2222"],
                 "printlog": False,
             },
@@ -333,7 +333,7 @@ class TestStrategyFactoryExecution:
         with pytest.raises(RuntimeError, match="boom"):
             StrategyFactory.execute_strategy_with_config(
                 shared_config={
-                    "dataset": "sample",
+                    "universe_preset": "sample",
                     "stock_codes": ["1111"],
                 },
                 entry_filter_params={"volume_ratio_above": {"enabled": True}},

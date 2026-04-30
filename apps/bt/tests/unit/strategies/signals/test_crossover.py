@@ -279,7 +279,7 @@ class TestCrossoverSignalIntegration:
                 strategy_name="crossover-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },

@@ -54,7 +54,6 @@ class TestLabGenerateRequestSchema:
         assert req.save is True
         assert req.direction == "longonly"
         assert req.timeframe == "daily"
-        assert req.dataset is None
         assert req.universe_preset is None
         assert req.entry_filter_only is False
         assert req.allowed_categories is None
@@ -84,7 +83,7 @@ class TestLabGenerateRequestSchema:
 
     def test_dataset_and_universe_preset_are_mutually_exclusive(self) -> None:
         with pytest.raises(ValidationError):
-            LabGenerateRequest(dataset="legacy", universe_preset="prime")
+            LabGenerateRequest(dataset="legacy")
 
     def test_count_too_small(self) -> None:
         """countが1未満でバリデーションエラー"""
@@ -576,7 +575,7 @@ class TestLabEndpoints:
                         trade_count=5,
                     ),
                     strategy_name="reference/strategy_template",
-                    config_override={"shared_config": {"dataset": "demo"}},
+                    config_override={"shared_config": {"universe_preset": "demo"}},
                 ).model_dump(mode="json")
             ],
         }
@@ -763,7 +762,6 @@ class TestLabSubmitEndpoints:
                 save=True,
                 direction="longonly",
                 timeframe="daily",
-                dataset=None,
                 universe_preset=None,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
@@ -1035,7 +1033,7 @@ class TestLabServiceAsync:
         with (
             patch(
                 "src.application.services.lab_service.load_default_shared_config",
-                return_value={"dataset": "xdg_dataset"},
+                return_value={"universe_preset": "xdg_dataset"},
             ),
             patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
@@ -1061,12 +1059,12 @@ class TestLabServiceAsync:
             patch.object(
                 service._config_loader,
                 "load_strategy_config",
-                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+                return_value={"shared_config": {"universe_preset": "primeExTopix500"}},
             ),
             patch.object(
                 service._config_loader,
                 "merge_shared_config",
-                return_value={"dataset": "primeExTopix500"},
+                return_value={"universe_preset": "primeExTopix500"},
             ),
             patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
@@ -1091,12 +1089,12 @@ class TestLabServiceAsync:
             patch.object(
                 service._config_loader,
                 "load_strategy_config",
-                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+                return_value={"shared_config": {"universe_preset": "primeExTopix500"}},
             ),
             patch.object(
                 service._config_loader,
                 "merge_shared_config",
-                return_value={"dataset": "primeExTopix500"},
+                return_value={"universe_preset": "primeExTopix500"},
             ),
             patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
@@ -1123,12 +1121,12 @@ class TestLabServiceAsync:
             patch.object(
                 service._config_loader,
                 "load_strategy_config",
-                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+                return_value={"shared_config": {"universe_preset": "primeExTopix500"}},
             ),
             patch.object(
                 service._config_loader,
                 "merge_shared_config",
-                return_value={"dataset": "primeExTopix500"},
+                return_value={"universe_preset": "primeExTopix500"},
             ),
             patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
@@ -1652,7 +1650,7 @@ class TestLabServiceSyncMethods:
                 save=True,
                 direction="longonly",
                 timeframe="daily",
-                dataset="test",
+                universe_preset="test",
             )
 
         assert result["lab_type"] == "generate"
@@ -1660,9 +1658,9 @@ class TestLabServiceSyncMethods:
         assert result["saved_strategy_path"] == "/tmp/saved.yaml"
         assert len(result["results"]) == 1
         assert MockEval.call_args.kwargs["n_jobs"] == -1
-        assert MockEval.call_args.kwargs["shared_config_dict"]["dataset"] == "test"
+        assert MockEval.call_args.kwargs["shared_config_dict"]["universe_preset"] == "test"
         saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
-        assert saved_candidate.shared_config["dataset"] == "test"
+        assert saved_candidate.shared_config["universe_preset"] == "test"
         service._executor.shutdown(wait=False)
 
     def test_execute_generate_sync_uses_xdg_default_dataset_when_omitted(self) -> None:
@@ -1693,7 +1691,7 @@ class TestLabServiceSyncMethods:
         with (
             patch(
                 "src.application.services.lab_service.load_default_shared_config",
-                return_value={"dataset": "xdg_dataset"},
+                return_value={"universe_preset": "xdg_dataset"},
             ),
             patch(
                 "src.domains.lab_agent.strategy_generator.StrategyGenerator"
@@ -1712,15 +1710,15 @@ class TestLabServiceSyncMethods:
                 save=True,
                 direction="longonly",
                 timeframe="daily",
-                dataset=None,
+                universe_preset=None,
             )
 
         assert result["saved_strategy_path"] == "/tmp/default.yaml"
         assert (
-            MockEval.call_args.kwargs["shared_config_dict"]["dataset"] == "xdg_dataset"
+            MockEval.call_args.kwargs["shared_config_dict"]["universe_preset"] == "xdg_dataset"
         )
         saved_candidate = MockYaml.return_value.save_candidate.call_args.args[0]
-        assert saved_candidate.shared_config["dataset"] == "xdg_dataset"
+        assert saved_candidate.shared_config["universe_preset"] == "xdg_dataset"
         service._executor.shutdown(wait=False)
 
     def test_execute_generate_sync_no_save(self) -> None:
@@ -1756,7 +1754,7 @@ class TestLabServiceSyncMethods:
 
             result = service._execute_generate_sync(
                 count=5, top=1, seed=None, save=False,
-                direction="longonly", timeframe="daily", dataset="test",
+                direction="longonly", timeframe="daily", universe_preset="test",
             )
 
         assert result["saved_strategy_path"] is None
@@ -1782,7 +1780,7 @@ class TestLabServiceSyncMethods:
                 save=False,
                 direction="longonly",
                 timeframe="daily",
-                dataset="test",
+                universe_preset="test",
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
             )

@@ -23,7 +23,7 @@ def _make_candidate(strategy_id: str) -> StrategyCandidate:
         strategy_id=strategy_id,
         entry_filter_params={"signal_a": {"period": 20}},
         exit_trigger_params={"signal_b": {"period": 5}},
-        shared_config={"dataset": "demo"},
+        shared_config={"universe_preset": "demo"},
     )
 
 
@@ -61,7 +61,7 @@ def _make_seed(
             trade_count=5 + fast_rank,
         ),
         strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
+        config_override={"shared_config": {"universe_preset": "demo"}},
         strategy_candidate=strategy_candidate,
     ).model_copy(update={"verification_run_id": verification_run_id})
 
@@ -111,7 +111,7 @@ def test_helper_round_trip_and_seed_lookup() -> None:
         fast_score=1.2,
         fast_metrics=metrics,
         strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
+        config_override={"shared_config": {"universe_preset": "demo"}},
         strategy_candidate=strategy_candidate.model_dump(mode="json"),
     )
     seed_b = orchestrator.build_verification_seed(
@@ -120,7 +120,7 @@ def test_helper_round_trip_and_seed_lookup() -> None:
         fast_score=0.8,
         fast_metrics=metrics,
         strategy_name="demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
+        config_override={"shared_config": {"universe_preset": "demo"}},
         strategy_candidate={"strategy_id": "broken"},
     )
 
@@ -448,7 +448,7 @@ async def test_run_verification_orchestrator_creates_and_executes_child_runs(
     precreated_child_run_spec = build_config_override_run_spec(
         "backtest",
         "demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
+        config_override={"shared_config": {"universe_preset": "demo"}},
         parameters={"verification_candidate_id": "existing"},
         engine_family=EngineFamily.NAUTILUS,
     )
@@ -476,7 +476,7 @@ async def test_run_verification_orchestrator_creates_and_executes_child_runs(
         child = manager.get_job(job_id)
         assert child is not None
         assert strategy_name == "demo-strategy"
-        assert config_override == {"shared_config": {"dataset": "demo"}}
+        assert config_override == {"shared_config": {"universe_preset": "demo"}}
         assert child.run_spec is not None
         assert child.run_spec.parent_run_id == parent_id
         if job_id != existing_child_id:
@@ -528,7 +528,7 @@ async def test_internal_verification_helpers_identify_and_cancel_child_jobs() ->
     child_run_spec = build_config_override_run_spec(
         "backtest",
         "demo-strategy",
-        config_override={"shared_config": {"dataset": "demo"}},
+        config_override={"shared_config": {"universe_preset": "demo"}},
         parameters={"verification_candidate_id": "child-1"},
         engine_family=EngineFamily.NAUTILUS,
     )

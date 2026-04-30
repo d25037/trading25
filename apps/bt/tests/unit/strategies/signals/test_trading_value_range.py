@@ -268,7 +268,7 @@ class TestTradingValueRangeSignalIntegration:
                 strategy_name="trading-value-range-entry-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },
@@ -312,7 +312,7 @@ class TestTradingValueRangeSignalIntegration:
                 strategy_name="trading-value-range-exit-test",
                 shared_config=SharedConfig.model_validate(
                     {
-                        "dataset": "sample",
+                        "universe_preset": "sample",
                         "stock_codes": ["1111"],
                         "execution_policy": {"mode": "standard"},
                     },

@@ -21,7 +21,7 @@ class TestSMABreakStrategy:
         self.shared_config = SharedConfig(
             initial_cash=100000,
             fees=0.001,
-            dataset="sampleA",
+            universe_preset="sampleA",
             stock_codes=["test_stock"],
             printlog=False,
         )

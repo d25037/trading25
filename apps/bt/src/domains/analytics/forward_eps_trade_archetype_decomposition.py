@@ -33,6 +33,7 @@ from src.domains.strategy.signals.registry import (
     _select_forward_base_eps_column,
     _select_forward_forecast_eps_column,
 )
+from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.infrastructure.data_access.loaders import (
     load_statements_data,
     load_stock_data,
@@ -314,7 +315,15 @@ def _build_enriched_trade_df(
 
     signal_params = SignalParams.model_validate(parameters.get("entry_filter_params", {}))
     symbol_feature_cache: dict[str, dict[str, Any]] = {}
-    stock_metadata_by_code = _load_dataset_stock_metadata(dataset_name)
+    if _is_market_universe_preset(dataset_name):
+        stock_metadata_by_entry = _load_market_stock_metadata_for_trades(
+            dataset_name=dataset_name,
+            trade_df=enriched,
+        )
+        stock_metadata_by_code: dict[str, dict[str, str]] = {}
+    else:
+        stock_metadata_by_entry = {}
+        stock_metadata_by_code = _load_dataset_stock_metadata(dataset_name)
 
     rows: list[dict[str, Any]] = []
     with data_access_mode_context("direct"):
@@ -358,7 +367,11 @@ def _build_enriched_trade_df(
                 cast(pd.DataFrame, symbol_features["fundamental_features"]),
                 fundamental_feature_date,
             )
-            stock_metadata = stock_metadata_by_code.get(symbol, {})
+            entry_date_key = entry_date.strftime("%Y-%m-%d")
+            stock_metadata = stock_metadata_by_entry.get(
+                (symbol, entry_date_key),
+                stock_metadata_by_code.get(symbol, {}),
+            )
             disclosed_date = _coerce_timestamp(
                 None if fundamental_row is None else fundamental_row.get("disclosed_date")
             )
@@ -1340,6 +1353,72 @@ def _load_dataset_stock_metadata(dataset_name: str) -> dict[str, dict[str, str]]
             ),
         }
     return metadata
+
+
+def _is_market_universe_preset(dataset_name: str) -> bool:
+    return dataset_name in UNIVERSE_PRESET_NAMES
+
+
+def _market_duckdb_path() -> Path:
+    return get_data_dir() / "market-timeseries" / "market.duckdb"
+
+
+def _load_market_stock_metadata_for_trades(
+    *,
+    dataset_name: str,
+    trade_df: pd.DataFrame,
+) -> dict[tuple[str, str], dict[str, str]]:
+    if trade_df.empty:
+        return {}
+    keys = (
+        trade_df[["symbol", "entry_date"]]
+        .assign(
+            code=lambda frame: frame["symbol"].astype(str),
+            entry_date_key=lambda frame: pd.to_datetime(
+                frame["entry_date"],
+                errors="coerce",
+            ).dt.strftime("%Y-%m-%d"),
+        )[["code", "entry_date_key"]]
+        .dropna()
+        .drop_duplicates()
+    )
+    if keys.empty:
+        return {}
+    duckdb_path = _market_duckdb_path()
+    if not duckdb_path.exists():
+        raise FileNotFoundError(f"market.duckdb was not found: {duckdb_path}")
+    with duckdb.connect(str(duckdb_path), read_only=True) as conn:
+        conn.register("__trade_entry_keys", keys)
+        rows = conn.execute(
+            """
+            SELECT
+                k.code,
+                k.entry_date_key,
+                m.market_code,
+                m.market_name,
+                m.scale_category
+            FROM __trade_entry_keys k
+            LEFT JOIN stock_master_daily m
+              ON m.code = k.code
+             AND m.date = k.entry_date_key
+            ORDER BY k.code, k.entry_date_key
+            """
+        ).fetchdf()
+
+    metadata_by_entry: dict[tuple[str, str], dict[str, str]] = {}
+    for row in rows.to_dict("records"):
+        market_scope = normalize_market_scope(
+            row.get("market_code"),
+            market_name=row.get("market_name"),
+            default=_infer_market_scope_from_dataset_name(dataset_name),
+        )
+        metadata_by_entry[(str(row["code"]), str(row["entry_date_key"]))] = {
+            "market_code": str(row.get("market_code") or ""),
+            "market_name": str(row.get("market_name") or ""),
+            "market_scope": str(market_scope or "unknown"),
+            "scale_category": str(row.get("scale_category") or ""),
+        }
+    return metadata_by_entry
 
 
 def _normalize_market_scope(market_code: str | None, market_name: str | None) -> str:

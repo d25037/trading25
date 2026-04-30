@@ -217,18 +217,18 @@ class TestSharedConfig:
 
     def test_resolve_stock_codes_loads_all_codes(self):
         with patch("src.infrastructure.data_access.loaders.get_stock_list", return_value=["7203", "6758"]):
-            cfg = SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+            cfg = SharedConfig.model_validate({"stock_codes": ["all"], "universe_preset": "sample"})
         assert cfg.stock_codes == ["7203", "6758"]
 
     def test_resolve_stock_codes_raises_when_loader_returns_empty(self):
         with patch("src.infrastructure.data_access.loaders.get_stock_list", return_value=[]):
             with pytest.raises(ValidationError, match="銘柄が見つかりませんでした"):
-                SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+                SharedConfig.model_validate({"stock_codes": ["all"], "universe_preset": "sample"})
 
     def test_resolve_stock_codes_raises_when_loader_errors(self):
         with patch("src.infrastructure.data_access.loaders.get_stock_list", side_effect=RuntimeError("boom")):
             with pytest.raises(ValidationError, match="銘柄リストの取得に失敗しました"):
-                SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+                SharedConfig.model_validate({"stock_codes": ["all"], "universe_preset": "sample"})
 
     def test_validator_methods_accept_valid_values_directly(self):
         assert SharedConfig.validate_initial_cash(1.0) == 1.0
