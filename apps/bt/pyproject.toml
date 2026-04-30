@@ -13,7 +13,6 @@ dependencies = [
     "rich>=15.0.0",
     "loguru>=0.7.0",
     "pydantic>=2.13.3",
-    "scikit-learn>=1.0.0",
     "scipy>=1.7.0",  # Statistical functions (pearsonr, linregress)
     "httpx>=0.27.0",  # Sync HTTP client for API calls
     "optuna>=3.0.0",  # Bayesian optimization for strategy agent
