@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.screening_profile import (
     load_strategy_screening_config,
     resolve_entry_decidability,
@@ -129,8 +130,48 @@ def test_load_strategy_screening_config_uses_compiled_strategy_availability() ->
         }
     )
 
-    loaded = load_strategy_screening_config(config_loader, "production/demo")
+    loaded = load_strategy_screening_config(
+        cast(ConfigLoader, config_loader), "production/demo"
+    )
 
     assert loaded.screening_support == "supported"
     assert loaded.entry_decidability == "pre_open_decidable"
     assert loaded.entry_params.index_open_gap_regime.enabled is True
+
+
+def test_load_strategy_screening_config_ignores_legacy_dataset_field() -> None:
+    class _ConfigLoader:
+        def __init__(self, config: dict[str, Any]) -> None:
+            self._config = config
+
+        def load_strategy_config(self, strategy_name: str) -> dict[str, Any]:
+            assert strategy_name == "production/demo"
+            return self._config
+
+        def merge_shared_config(self, config: dict[str, Any]) -> dict[str, Any]:
+            return config.get("shared_config", {})
+
+        def resolve_strategy_category(self, strategy_name: str) -> str:
+            assert strategy_name == "production/demo"
+            return "production"
+
+    config_loader = _ConfigLoader(
+        {
+            "shared_config": {
+                "dataset": "primeExTopix500_20260325",
+                "universe_preset": "primeExTopix500",
+            },
+            "entry_filter_params": {
+                "volume_ratio_above": {"enabled": True},
+            },
+            "exit_trigger_params": {},
+        }
+    )
+
+    loaded = load_strategy_screening_config(
+        cast(ConfigLoader, config_loader), "production/demo"
+    )
+
+    assert loaded.shared_config.universe_preset == "primeExTopix500"
+    assert loaded.shared_config.dataset == "primeExTopix500"
+    assert loaded.entry_params.volume_ratio_above.enabled is True

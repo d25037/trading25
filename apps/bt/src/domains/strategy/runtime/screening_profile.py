@@ -55,6 +55,12 @@ class LoadedStrategyScreeningConfig:
     entry_decidability: EntryDecidability | None
 
 
+def _project_screening_shared_config(payload: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(payload)
+    projected.pop("dataset", None)
+    return projected
+
+
 def resolve_entry_decidability(
     compiled_strategy: CompiledStrategyIR,
 ) -> EntryDecidability:
@@ -93,7 +99,9 @@ def load_strategy_screening_config(
         config=config,
         strategy_name=strategy_name,
     )
-    shared_config_dict = config_loader.merge_shared_config(config)
+    shared_config_dict = _project_screening_shared_config(
+        config_loader.merge_shared_config(config)
+    )
     shared_config = SharedConfig.model_validate(
         shared_config_dict,
         context={"resolve_stock_codes": False},
