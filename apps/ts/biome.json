@@ -20,7 +20,6 @@
       "!!**/build",
       "!!**/coverage",
       "!!**/*.min.js",
-      "!!**/public/app.js",
       "!!**/*.d.ts.map"
     ],
     "maxSize": 2097152
