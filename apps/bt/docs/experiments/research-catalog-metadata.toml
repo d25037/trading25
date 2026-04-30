@@ -42,6 +42,17 @@ relatedExperiments = [
   "market-behavior/annual-fundamental-confounder-analysis",
 ]
 
+[experiments."strategy-audit/forward-eps-technical-horizon-decomposition"]
+family = "Strategy Audit"
+status = "candidate"
+decision = "Prime の overheat tail は hard exclude ではなく size haircut / risk cap 候補として扱う。Standard には同じ pruning rule を流用しない。"
+promotedSurface = "Strategy"
+riskFlags = ["tail-risk", "candidate-rule", "portfolio-lens-needed"]
+relatedExperiments = [
+  "strategy-audit/forward-eps-trade-archetype-decomposition",
+  "strategy-audit/forward-eps-driven-v3-factor-decomposition",
+]
+
 [experiments."market-behavior/falling-knife-bad-tail-pruning"]
 family = "Falling Knife"
 status = "candidate"
