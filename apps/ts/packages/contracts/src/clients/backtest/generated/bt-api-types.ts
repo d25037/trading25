@@ -10796,7 +10796,7 @@ export interface components {
              * Scoremethod
              * @enum {string}
              */
-            scoreMethod: "standard_pbr_tilt" | "standard_size_tilt" | "equal_weight";
+            scoreMethod: "standard_pbr_tilt" | "prime_size_tilt" | "equal_weight";
             /** Scorepolicy */
             scorePolicy: string;
             /** Weights */
@@ -12190,7 +12190,7 @@ export interface operations {
                 date?: string | null;
                 limit?: number;
                 markets?: string;
-                scoreMethod?: "standard_pbr_tilt" | "standard_size_tilt" | "equal_weight";
+                scoreMethod?: "standard_pbr_tilt" | "prime_size_tilt" | "equal_weight";
                 forwardEpsMode?: "latest" | "fy";
             };
             header?: never;

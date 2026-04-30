@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 ValueCompositeScoreMethod = Literal[
     "standard_pbr_tilt",
-    "standard_size_tilt",
+    "prime_size_tilt",
     "equal_weight",
 ]
 ValueCompositeForwardEpsMode = Literal["latest", "fy"]

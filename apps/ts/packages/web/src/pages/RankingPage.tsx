@@ -60,8 +60,8 @@ function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | u
   if (method === 'equal_weight') {
     return 'Equal-weight value score';
   }
-  if (method === 'standard_size_tilt') {
-    return 'Standard size tilt score';
+  if (method === 'prime_size_tilt') {
+    return 'Prime size tilt score';
   }
   return 'Standard PBR tilt score';
 }

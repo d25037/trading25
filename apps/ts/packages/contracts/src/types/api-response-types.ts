@@ -158,7 +158,7 @@ export interface MarketFundamentalRankingResponse {
 
 export type ValueCompositeScoreMethod =
   | 'standard_pbr_tilt'
-  | 'standard_size_tilt'
+  | 'prime_size_tilt'
   | 'equal_weight';
 export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
 

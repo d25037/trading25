@@ -21,8 +21,7 @@ const LIMIT_OPTIONS = [
 
 const SCORE_METHOD_OPTIONS = [
   { value: 'standard_pbr_tilt' as ValueCompositeScoreMethod, label: 'PBR tilt' },
-  { value: 'standard_size_tilt' as ValueCompositeScoreMethod, label: 'Size tilt' },
-  { value: 'equal_weight' as ValueCompositeScoreMethod, label: 'Equal weight' },
+  { value: 'prime_size_tilt' as ValueCompositeScoreMethod, label: 'Prime size tilt' },
 ];
 
 const FORWARD_EPS_MODE_OPTIONS = [
@@ -54,7 +53,7 @@ export function ValueCompositeRankingFilters({ params, onChange }: ValueComposit
             items={SCORE_METHOD_OPTIONS}
             value={params.scoreMethod ?? 'standard_pbr_tilt'}
             onChange={(scoreMethod) => updateParam('scoreMethod', scoreMethod)}
-            className="grid grid-cols-3 gap-1"
+            className="grid grid-cols-2 gap-1"
             itemClassName="h-8 justify-center rounded-lg px-2 py-1.5 text-xs"
           />
         </div>

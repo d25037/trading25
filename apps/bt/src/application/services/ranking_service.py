@@ -31,7 +31,7 @@ from src.domains.analytics.fundamental_ranking import (
 from src.domains.analytics.annual_value_composite_selection import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
     FIXED_VALUE_COMPOSITE_SCORE_COLUMN,
-    FIXED_VALUE_COMPOSITE_WEIGHTS,
+    PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
     build_value_composite_score_frame,
@@ -256,7 +256,7 @@ _VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
 )
 _VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[ValueCompositeScoreMethod, dict[str, float]] = {
     "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
-    "standard_size_tilt": FIXED_VALUE_COMPOSITE_WEIGHTS,
+    "prime_size_tilt": PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
 }
 _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
@@ -264,9 +264,9 @@ _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = 
         "Standard PBR tilt research weights: 35% small market cap + 40% low PBR + "
         f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
-    "standard_size_tilt": (
-        "Standard size tilt research weights: 55% small market cap + 25% low PBR + "
-        f"20% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    "prime_size_tilt": (
+        "Prime size tilt research weights: 45% small market cap + 20% low PBR + "
+        f"35% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
     "equal_weight": (
         "Equal weight across small market cap, low PBR, and low forward PER; "

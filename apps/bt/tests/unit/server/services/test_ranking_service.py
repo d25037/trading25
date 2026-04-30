@@ -1129,7 +1129,7 @@ class TestGetValueCompositeRanking:
         assert item.pbr == pytest.approx(0.52)
         assert item.forwardPer == pytest.approx(5.0)
 
-    def test_value_composite_ranking_equal_weight_score_method_changes_order(self, ranking_db):
+    def test_value_composite_ranking_score_methods_expose_expected_profiles(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:
             for row in [
@@ -1194,20 +1194,20 @@ class TestGetValueCompositeRanking:
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
         pbr_tilt = svc.get_value_composite_ranking(limit=10)
-        size_tilt = svc.get_value_composite_ranking(limit=10, score_method="standard_size_tilt")
+        prime_size_tilt = svc.get_value_composite_ranking(limit=10, score_method="prime_size_tilt")
         equal = svc.get_value_composite_ranking(limit=10, score_method="equal_weight")
         reader.close()
 
         assert pbr_tilt.scoreMethod == "standard_pbr_tilt"
-        assert size_tilt.scoreMethod == "standard_size_tilt"
+        assert prime_size_tilt.scoreMethod == "prime_size_tilt"
         assert equal.scoreMethod == "equal_weight"
-        assert size_tilt.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
+        assert prime_size_tilt.weights == {"smallMarketCap": 0.45, "lowPbr": 0.2, "lowForwardPer": 0.35}
         assert equal.weights == {
             "smallMarketCap": pytest.approx(1 / 3),
             "lowPbr": pytest.approx(1 / 3),
             "lowForwardPer": pytest.approx(1 / 3),
         }
-        assert [item.code for item in size_tilt.items[:3]] == ["66660", "99840", "77770"]
+        assert [item.code for item in prime_size_tilt.items[:3]] == ["77770", "99840", "66660"]
         assert [item.code for item in equal.items[:3]] == ["77770", "99840", "66660"]
 
     def test_value_composite_ranking_standard_pbr_tilt_weights(self, ranking_db):
@@ -1220,15 +1220,15 @@ class TestGetValueCompositeRanking:
         assert "35% small market cap + 40% low PBR + 25% low forward PER" in result.scorePolicy
         assert result.weights == {"smallMarketCap": 0.35, "lowPbr": 0.4, "lowForwardPer": 0.25}
 
-    def test_value_composite_ranking_standard_size_tilt_weights(self, ranking_db):
+    def test_value_composite_ranking_prime_size_tilt_weights(self, ranking_db):
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
-        result = svc.get_value_composite_ranking(limit=10, score_method="standard_size_tilt")
+        result = svc.get_value_composite_ranking(limit=10, score_method="prime_size_tilt")
         reader.close()
 
-        assert result.scoreMethod == "standard_size_tilt"
-        assert "55% small market cap + 25% low PBR + 20% low forward PER" in result.scorePolicy
-        assert result.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
+        assert result.scoreMethod == "prime_size_tilt"
+        assert "45% small market cap + 20% low PBR + 35% low forward PER" in result.scorePolicy
+        assert result.weights == {"smallMarketCap": 0.45, "lowPbr": 0.2, "lowForwardPer": 0.35}
 
 
 class _BadFloat:

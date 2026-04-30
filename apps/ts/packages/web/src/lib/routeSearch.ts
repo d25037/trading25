@@ -144,8 +144,7 @@ const SCREENING_SUB_TABS: ScreeningSubTab[] = [
 const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking', 'valueComposite'];
 const VALUE_COMPOSITE_SCORE_METHOD_VALUES: ValueCompositeScoreMethod[] = [
   'standard_pbr_tilt',
-  'standard_size_tilt',
-  'equal_weight',
+  'prime_size_tilt',
 ];
 const VALUE_COMPOSITE_FORWARD_EPS_MODE_VALUES: ValueCompositeForwardEpsMode[] = ['latest', 'fy'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices', 'topix100'];

@@ -17237,7 +17237,7 @@
           "scoreMethod": {
             "enum": [
               "standard_pbr_tilt",
-              "standard_size_tilt",
+              "prime_size_tilt",
               "equal_weight"
             ],
             "title": "Scoremethod",
@@ -19737,7 +19737,7 @@
               "default": "standard_pbr_tilt",
               "enum": [
                 "standard_pbr_tilt",
-                "standard_size_tilt",
+                "prime_size_tilt",
                 "equal_weight"
               ],
               "title": "Scoremethod",

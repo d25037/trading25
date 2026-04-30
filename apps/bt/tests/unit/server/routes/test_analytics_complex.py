@@ -572,15 +572,15 @@ class TestValueCompositeRanking:
             "lowForwardPer": 0.25,
         }
 
-    def test_standard_size_tilt_score_method(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=standard_size_tilt")
+    def test_prime_size_tilt_score_method(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=prime_size_tilt")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["scoreMethod"] == "standard_size_tilt"
+        assert data["scoreMethod"] == "prime_size_tilt"
         assert data["weights"] == {
-            "smallMarketCap": 0.55,
-            "lowPbr": 0.25,
-            "lowForwardPer": 0.2,
+            "smallMarketCap": 0.45,
+            "lowPbr": 0.2,
+            "lowForwardPer": 0.35,
         }
 
     def test_422_no_db(self):
