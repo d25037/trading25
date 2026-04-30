@@ -12,6 +12,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAYGROUND_ROOT = Path("apps/bt/notebooks/playground")
 EXPERIMENT_DOCS_ROOT = Path("apps/bt/docs/experiments")
+RESEARCH_CODE_ROOTS = (
+    Path("apps/bt/scripts/research"),
+    Path("apps/bt/src/domains/analytics"),
+)
 FORBIDDEN_DOC_PATTERNS = {
     "legacy-notebook-reference": "apps/bt/notebooks/playground",
     "legacy-marimo-command": "marimo edit",
@@ -25,6 +29,8 @@ PUBLISHED_READOUT_REQUIRED_SECTIONS = {
     "caveats",
     "source artifacts",
 }
+PUBLISHED_SUMMARY_ASSIGNMENT = "published_summary="
+PUBLISHED_SUMMARY_EXCEPTION_MARKER = "bundle-structured-fallback:"
 
 
 @dataclass(frozen=True)
@@ -95,6 +101,12 @@ def _is_legacy_playground_path(relative_path: Path) -> bool:
     )
 
 
+def _is_research_code_path(relative_path: Path) -> bool:
+    if relative_path.suffix != ".py":
+        return False
+    return any(relative_path.is_relative_to(root) for root in RESEARCH_CODE_ROOTS)
+
+
 def find_docs_guardrail_findings_in_text(
     relative_path: Path,
     text: str,
@@ -115,6 +127,33 @@ def find_docs_guardrail_findings_in_text(
                 )
             )
     findings.extend(find_published_readout_findings(relative_path, text))
+    return findings
+
+
+def find_research_code_guardrail_findings_in_text(
+    relative_path: Path,
+    text: str,
+) -> list[ResearchGuardrailFinding]:
+    findings: list[ResearchGuardrailFinding] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if PUBLISHED_SUMMARY_ASSIGNMENT not in line:
+            continue
+        nearby_context = lines[max(0, index - 3) : index + 1]
+        if any(PUBLISHED_SUMMARY_EXCEPTION_MARKER in item for item in nearby_context):
+            continue
+        findings.append(
+            ResearchGuardrailFinding(
+                relative_path=relative_path,
+                line_number=index + 1,
+                rule_name="published-summary-without-fallback-reason",
+                message=(
+                    "Published Readout is the publication SoT. Keep `published_summary=` "
+                    "only as a bundle-local structured fallback with an inline "
+                    "`# bundle-structured-fallback: ...` reason."
+                ),
+            )
+        )
     return findings
 
 
@@ -193,6 +232,11 @@ def scan_research_files(root: Path, files: list[Path]) -> list[ResearchGuardrail
         if relative_path.name == "README.md":
             text = absolute_path.read_text(encoding="utf-8", errors="ignore")
             findings.extend(find_docs_guardrail_findings_in_text(relative_path, text))
+            continue
+
+        if _is_research_code_path(relative_path):
+            text = absolute_path.read_text(encoding="utf-8", errors="ignore")
+            findings.extend(find_research_code_guardrail_findings_in_text(relative_path, text))
     return findings
 
 

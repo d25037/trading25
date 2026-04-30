@@ -193,6 +193,74 @@ def test_scan_research_files_requires_published_readout_section_content(tmp_path
     assert "decision" in findings[0].message
 
 
+def test_scan_research_files_rejects_new_published_summary_without_reason(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    analytics_module = (
+        tmp_path
+        / "apps"
+        / "bt"
+        / "src"
+        / "domains"
+        / "analytics"
+        / "demo.py"
+    )
+    analytics_module.parent.mkdir(parents=True)
+    analytics_module.write_text(
+        """
+def write_demo_bundle():
+    return write_research_bundle(
+        summary_markdown="# Demo",
+        published_summary=_build_published_summary(),
+    )
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_files(
+        tmp_path,
+        [Path("apps/bt/src/domains/analytics/demo.py")],
+    )
+
+    assert len(findings) == 1
+    assert findings[0].rule_name == "published-summary-without-fallback-reason"
+
+
+def test_scan_research_files_accepts_published_summary_with_fallback_reason(
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    analytics_module = (
+        tmp_path
+        / "apps"
+        / "bt"
+        / "src"
+        / "domains"
+        / "analytics"
+        / "demo.py"
+    )
+    analytics_module.parent.mkdir(parents=True)
+    analytics_module.write_text(
+        """
+def write_demo_bundle():
+    return write_research_bundle(
+        summary_markdown="# Demo",
+        # bundle-structured-fallback: keep machine-readable payload for old bundles.
+        published_summary=_build_published_summary(),
+    )
+""".strip(),
+        encoding="utf-8",
+    )
+
+    findings = module.scan_research_files(
+        tmp_path,
+        [Path("apps/bt/src/domains/analytics/demo.py")],
+    )
+
+    assert findings == []
+
+
 def test_main_detects_legacy_playground_by_default(tmp_path: Path, capsys) -> None:
     module = _load_module()
     notebook = tmp_path / "apps" / "bt" / "notebooks" / "playground" / "demo_playground.py"
