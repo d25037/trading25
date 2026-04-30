@@ -52,6 +52,11 @@ FIXED_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
     "low_pbr_score": 0.25,
     "low_forward_per_score": 0.20,
 }
+STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
+    "small_market_cap_score": 0.35,
+    "low_pbr_score": 0.40,
+    "low_forward_per_score": 0.25,
+}
 EQUAL_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
     column: 1.0 for column in _CORE_SCORE_COLUMNS
 }

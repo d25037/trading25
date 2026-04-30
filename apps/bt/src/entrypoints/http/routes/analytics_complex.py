@@ -186,7 +186,7 @@ async def get_value_composite_ranking(
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(50, ge=1, le=200),
     markets: str = Query("standard"),
-    scoreMethod: ValueCompositeScoreMethod = Query("walkforward_regression_weight"),
+    scoreMethod: ValueCompositeScoreMethod = Query("standard_pbr_tilt"),
     forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
 ) -> ValueCompositeRankingResponse:
     """小型バリュー複合スコアランキングを取得"""

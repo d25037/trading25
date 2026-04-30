@@ -525,14 +525,14 @@ class TestValueCompositeRanking:
         assert resp.status_code == 200
         data = resp.json()
         assert data["metricKey"] == "standard_value_composite"
-        assert data["scoreMethod"] == "walkforward_regression_weight"
+        assert data["scoreMethod"] == "standard_pbr_tilt"
         assert data["forwardEpsMode"] == "latest"
         assert data["markets"] == ["standard"]
         assert "no ADV60 floor" in data["scorePolicy"]
         assert data["weights"] == {
-            "smallMarketCap": 0.55,
-            "lowPbr": 0.25,
-            "lowForwardPer": 0.2,
+            "smallMarketCap": 0.35,
+            "lowPbr": 0.4,
+            "lowForwardPer": 0.25,
         }
         assert "items" in data
         assert "lastUpdated" in data
@@ -559,6 +559,28 @@ class TestValueCompositeRanking:
             "smallMarketCap": pytest.approx(1 / 3),
             "lowPbr": pytest.approx(1 / 3),
             "lowForwardPer": pytest.approx(1 / 3),
+        }
+
+    def test_standard_pbr_tilt_score_method(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=standard_pbr_tilt")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scoreMethod"] == "standard_pbr_tilt"
+        assert data["weights"] == {
+            "smallMarketCap": 0.35,
+            "lowPbr": 0.4,
+            "lowForwardPer": 0.25,
+        }
+
+    def test_standard_size_tilt_score_method(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=standard_size_tilt")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scoreMethod"] == "standard_size_tilt"
+        assert data["weights"] == {
+            "smallMarketCap": 0.55,
+            "lowPbr": 0.25,
+            "lowForwardPer": 0.2,
         }
 
     def test_422_no_db(self):

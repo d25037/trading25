@@ -17236,8 +17236,9 @@
           },
           "scoreMethod": {
             "enum": [
-              "equal_weight",
-              "walkforward_regression_weight"
+              "standard_pbr_tilt",
+              "standard_size_tilt",
+              "equal_weight"
             ],
             "title": "Scoremethod",
             "type": "string"
@@ -19733,10 +19734,11 @@
             "name": "scoreMethod",
             "required": false,
             "schema": {
-              "default": "walkforward_regression_weight",
+              "default": "standard_pbr_tilt",
               "enum": [
-                "equal_weight",
-                "walkforward_regression_weight"
+                "standard_pbr_tilt",
+                "standard_size_tilt",
+                "equal_weight"
               ],
               "title": "Scoremethod",
               "type": "string"

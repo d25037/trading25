@@ -32,6 +32,7 @@ from src.domains.analytics.annual_value_composite_selection import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
     FIXED_VALUE_COMPOSITE_SCORE_COLUMN,
     FIXED_VALUE_COMPOSITE_WEIGHTS,
+    STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
     build_value_composite_score_frame,
 )
@@ -254,17 +255,22 @@ _VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
     "requires PBR > 0 and forward PER > 0; no ADV60 floor"
 )
 _VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[ValueCompositeScoreMethod, dict[str, float]] = {
+    "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
+    "standard_size_tilt": FIXED_VALUE_COMPOSITE_WEIGHTS,
     "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
-    "walkforward_regression_weight": FIXED_VALUE_COMPOSITE_WEIGHTS,
 }
 _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
+    "standard_pbr_tilt": (
+        "Standard PBR tilt research weights: 35% small market cap + 40% low PBR + "
+        f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
+    "standard_size_tilt": (
+        "Standard size tilt research weights: 55% small market cap + 25% low PBR + "
+        f"20% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
     "equal_weight": (
         "Equal weight across small market cap, low PBR, and low forward PER; "
         f"{_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
-    ),
-    "walkforward_regression_weight": (
-        "Walk-forward research weights: 55% small market cap + 25% low PBR + "
-        f"20% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
 }
 _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str] = {
@@ -758,7 +764,7 @@ class RankingService:
         date: str | None = None,
         limit: int = 50,
         markets: str = "standard",
-        score_method: ValueCompositeScoreMethod = "walkforward_regression_weight",
+        score_method: ValueCompositeScoreMethod = "standard_pbr_tilt",
         forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
     ) -> ValueCompositeRankingResponse:
         """Standard市場向けの小型バリュー複合スコアランキングを取得"""

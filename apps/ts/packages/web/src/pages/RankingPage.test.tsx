@@ -114,9 +114,9 @@ vi.mock('@/hooks/useValueCompositeRanking', () => ({
       date: '2026-04-24',
       markets: ['standard'],
       metricKey: 'standard_value_composite',
-      scoreMethod: 'walkforward_regression_weight',
-      scorePolicy: '55% small market cap + 25% low PBR + 20% low forward PER; no ADV60 floor',
-      weights: { smallMarketCap: 0.55, lowPbr: 0.25, lowForwardPer: 0.2 },
+      scoreMethod: 'standard_pbr_tilt',
+      scorePolicy: '35% small market cap + 40% low PBR + 25% low forward PER; no ADV60 floor',
+      weights: { smallMarketCap: 0.35, lowPbr: 0.4, lowForwardPer: 0.25 },
       itemCount: 0,
       items: [],
       lastUpdated: '2026-04-24T00:00:00Z',
@@ -219,7 +219,7 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Value Scores' }));
     view.rerender(<RankingPage />);
 
-    expect(screen.getByText('Walk-forward value score')).toBeInTheDocument();
+    expect(screen.getByText('Standard PBR tilt score')).toBeInTheDocument();
     expect(screen.getByText('Value Score Filters')).toBeInTheDocument();
     expect(screen.getByText('Value Score Summary')).toBeInTheDocument();
   });

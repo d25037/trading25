@@ -47,7 +47,7 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 export const DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS: ValueCompositeRankingParams = {
   markets: 'standard',
   limit: 50,
-  scoreMethod: 'walkforward_regression_weight',
+  scoreMethod: 'standard_pbr_tilt',
   forwardEpsMode: 'latest',
 };
 

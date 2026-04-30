@@ -10,7 +10,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-ValueCompositeScoreMethod = Literal["equal_weight", "walkforward_regression_weight"]
+ValueCompositeScoreMethod = Literal[
+    "standard_pbr_tilt",
+    "standard_size_tilt",
+    "equal_weight",
+]
 ValueCompositeForwardEpsMode = Literal["latest", "fy"]
 
 

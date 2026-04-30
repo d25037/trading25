@@ -1039,9 +1039,9 @@ class TestGetValueCompositeRanking:
         assert result.date == "2024-01-19"
         assert result.markets == ["standard"]
         assert result.metricKey == "standard_value_composite"
-        assert result.scoreMethod == "walkforward_regression_weight"
+        assert result.scoreMethod == "standard_pbr_tilt"
         assert "no ADV60 floor" in result.scorePolicy
-        assert result.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
+        assert result.weights == {"smallMarketCap": 0.35, "lowPbr": 0.4, "lowForwardPer": 0.25}
         assert [item.code for item in result.items] == ["99840", "88880", "77770"]
         assert result.items[0].score > result.items[-1].score
         assert result.items[0].pbr == pytest.approx(0.52)
@@ -1193,19 +1193,42 @@ class TestGetValueCompositeRanking:
 
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
-        walkforward = svc.get_value_composite_ranking(limit=10)
+        pbr_tilt = svc.get_value_composite_ranking(limit=10)
+        size_tilt = svc.get_value_composite_ranking(limit=10, score_method="standard_size_tilt")
         equal = svc.get_value_composite_ranking(limit=10, score_method="equal_weight")
         reader.close()
 
-        assert walkforward.scoreMethod == "walkforward_regression_weight"
+        assert pbr_tilt.scoreMethod == "standard_pbr_tilt"
+        assert size_tilt.scoreMethod == "standard_size_tilt"
         assert equal.scoreMethod == "equal_weight"
+        assert size_tilt.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
         assert equal.weights == {
             "smallMarketCap": pytest.approx(1 / 3),
             "lowPbr": pytest.approx(1 / 3),
             "lowForwardPer": pytest.approx(1 / 3),
         }
-        assert [item.code for item in walkforward.items[:3]] == ["66660", "99840", "77770"]
+        assert [item.code for item in size_tilt.items[:3]] == ["66660", "99840", "77770"]
         assert [item.code for item in equal.items[:3]] == ["77770", "99840", "66660"]
+
+    def test_value_composite_ranking_standard_pbr_tilt_weights(self, ranking_db):
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(limit=10, score_method="standard_pbr_tilt")
+        reader.close()
+
+        assert result.scoreMethod == "standard_pbr_tilt"
+        assert "35% small market cap + 40% low PBR + 25% low forward PER" in result.scorePolicy
+        assert result.weights == {"smallMarketCap": 0.35, "lowPbr": 0.4, "lowForwardPer": 0.25}
+
+    def test_value_composite_ranking_standard_size_tilt_weights(self, ranking_db):
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(limit=10, score_method="standard_size_tilt")
+        reader.close()
+
+        assert result.scoreMethod == "standard_size_tilt"
+        assert "55% small market cap + 25% low PBR + 20% low forward PER" in result.scorePolicy
+        assert result.weights == {"smallMarketCap": 0.55, "lowPbr": 0.25, "lowForwardPer": 0.2}
 
 
 class _BadFloat:

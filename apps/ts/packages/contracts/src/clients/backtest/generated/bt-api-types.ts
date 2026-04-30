@@ -10796,7 +10796,7 @@ export interface components {
              * Scoremethod
              * @enum {string}
              */
-            scoreMethod: "equal_weight" | "walkforward_regression_weight";
+            scoreMethod: "standard_pbr_tilt" | "standard_size_tilt" | "equal_weight";
             /** Scorepolicy */
             scorePolicy: string;
             /** Weights */
@@ -12190,7 +12190,7 @@ export interface operations {
                 date?: string | null;
                 limit?: number;
                 markets?: string;
-                scoreMethod?: "equal_weight" | "walkforward_regression_weight";
+                scoreMethod?: "standard_pbr_tilt" | "standard_size_tilt" | "equal_weight";
                 forwardEpsMode?: "latest" | "fy";
             };
             header?: never;

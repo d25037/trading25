@@ -57,7 +57,13 @@ const dailyViewTabs = [
 ];
 
 function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | undefined): string {
-  return method === 'equal_weight' ? 'Equal-weight value score' : 'Walk-forward value score';
+  if (method === 'equal_weight') {
+    return 'Equal-weight value score';
+  }
+  if (method === 'standard_size_tilt') {
+    return 'Standard size tilt score';
+  }
+  return 'Standard PBR tilt score';
 }
 
 function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {

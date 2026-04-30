@@ -8,12 +8,7 @@ describe('ValueCompositeRankingFilters', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
 
-    render(
-      <ValueCompositeRankingFilters
-        params={{ markets: 'standard', limit: 50, scoreMethod: 'walkforward_regression_weight' }}
-        onChange={onChange}
-      />
-    );
+    render(<ValueCompositeRankingFilters params={{ markets: 'standard', limit: 50 }} onChange={onChange} />);
 
     await user.click(screen.getByRole('button', { name: 'Equal weight' }));
 
@@ -22,6 +17,27 @@ describe('ValueCompositeRankingFilters', () => {
       limit: 50,
       scoreMethod: 'equal_weight',
     });
+  });
+
+  it('changes to size tilt with the segmented toggle', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+
+    render(<ValueCompositeRankingFilters params={{ markets: 'standard', limit: 50 }} onChange={onChange} />);
+
+    await user.click(screen.getByRole('button', { name: 'Size tilt' }));
+
+    expect(onChange).toHaveBeenCalledWith({
+      markets: 'standard',
+      limit: 50,
+      scoreMethod: 'standard_size_tilt',
+    });
+  });
+
+  it('uses PBR tilt as the fallback score method', () => {
+    render(<ValueCompositeRankingFilters params={{ markets: 'standard', limit: 50 }} onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'PBR tilt' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('changes forward EPS basis with the segmented toggle', async () => {
@@ -33,7 +49,7 @@ describe('ValueCompositeRankingFilters', () => {
         params={{
           markets: 'standard',
           limit: 50,
-          scoreMethod: 'walkforward_regression_weight',
+          scoreMethod: 'standard_size_tilt',
           forwardEpsMode: 'latest',
         }}
         onChange={onChange}
@@ -45,7 +61,7 @@ describe('ValueCompositeRankingFilters', () => {
     expect(onChange).toHaveBeenCalledWith({
       markets: 'standard',
       limit: 50,
-      scoreMethod: 'walkforward_regression_weight',
+      scoreMethod: 'standard_size_tilt',
       forwardEpsMode: 'fy',
     });
   });
