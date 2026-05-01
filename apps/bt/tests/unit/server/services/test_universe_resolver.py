@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -9,10 +10,11 @@ from src.application.services.universe_resolver import (
     resolve_universe,
 )
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.universe_resolver import resolve_universe_code_superset
 
 
 @pytest.fixture
-def market_db(tmp_path) -> MarketDb:  # type: ignore[no-untyped-def]
+def market_db(tmp_path: Any) -> Generator[MarketDb]:
     db = MarketDb(str(tmp_path / "market.duckdb"))
     try:
         yield db
@@ -133,6 +135,96 @@ def test_resolve_prime_ex_topix500_uses_stock_master_scale_categories(market_db:
     ]
 
 
+def test_resolve_universe_code_superset_uses_date_range(market_db: MarketDb) -> None:
+    _insert_master(market_db, "2024-01-05")
+    market_db.upsert_stock_master_daily(
+        "2024-01-06",
+        [
+            {
+                "code": "1301",
+                "company_name": "Standard Next Day",
+                "market_code": "0112",
+                "market_name": "スタンダード",
+                "sector_17_code": "1",
+                "sector_17_name": "食品",
+                "sector_33_code": "0050",
+                "sector_33_name": "水産・農林業",
+                "scale_category": None,
+                "listed_date": "1949-01-01",
+                "created_at": "now",
+            },
+            {
+                "code": "1400",
+                "company_name": "Prime Next Day",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "10",
+                "sector_17_name": "情報通信",
+                "sector_33_code": "5250",
+                "sector_33_name": "情報・通信業",
+                "scale_category": None,
+                "listed_date": "2000-01-01",
+                "created_at": "now",
+            },
+        ],
+    )
+
+    result = resolve_universe_code_superset(
+        market_db,
+        start_date="2024-01-05",
+        end_date="2024-01-06",
+        preset="prime",
+    )
+
+    assert result.codes == ["1301", "1400", "6666", "6758", "7203"]
+    assert result.provenance.asOfDate == "2024-01-05..2024-01-06"
+    assert result.provenance.filters["dynamicUniverse"] is True
+
+
+def test_resolve_universe_code_superset_supports_topix100_and_custom(
+    market_db: MarketDb,
+) -> None:
+    _insert_master(market_db, "2024-01-05")
+
+    topix100 = resolve_universe_code_superset(
+        market_db,
+        start_date="2024-01-05",
+        end_date="2024-01-05",
+        preset="topix100",
+    )
+    custom = resolve_universe_code_superset(
+        market_db,
+        start_date="2024-01-05",
+        end_date="2024-01-06",
+        preset="custom",
+        filters={"codes": ["1301", "7203"]},
+    )
+
+    assert topix100.codes == ["6758", "7203"]
+    assert custom.codes == ["1301", "7203"]
+    assert custom.provenance.asOfDate == "2024-01-05..2024-01-06"
+
+
+def test_resolve_universe_code_superset_rejects_invalid_requests(
+    market_db: MarketDb,
+) -> None:
+    with pytest.raises(UniverseResolutionError, match="start_date and end_date"):
+        resolve_universe_code_superset(
+            market_db,
+            start_date="",
+            end_date="2024-01-06",
+            preset="prime",
+        )
+
+    with pytest.raises(UniverseResolutionError, match="Unsupported universe preset"):
+        resolve_universe_code_superset(
+            market_db,
+            start_date="2024-01-05",
+            end_date="2024-01-06",
+            preset="unknown",
+        )
+
+
 class _SpyUniverseDb:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -148,6 +240,26 @@ class _SpyUniverseDb:
         self.calls.append(
             {
                 "as_of_date": as_of_date,
+                "market_codes": market_codes,
+                "scale_categories": scale_categories,
+                "exclude_scale_categories": exclude_scale_categories,
+            }
+        )
+        return ["1301"]
+
+    def get_stock_master_codes_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[str]:
+        self.calls.append(
+            {
+                "start_date": start_date,
+                "end_date": end_date,
                 "market_codes": market_codes,
                 "scale_categories": scale_categories,
                 "exclude_scale_categories": exclude_scale_categories,
