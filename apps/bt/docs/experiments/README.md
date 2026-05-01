@@ -87,6 +87,8 @@
   - 年次保有ファンダメンタル panel を土台に、Prime / Standard / Growth 間でどのファンダメンタル指標の水準差が大きいかを分解する実験。
 - [market-behavior/annual-value-composite-selection/](./market-behavior/annual-value-composite-selection/README.md)
   - 低PBR・小型・低forward PER を composite score に落とし、top% selection と liquidity/capacity floor を portfolio lens で評価する実験。
+- [market-behavior/annual-market-specific-value-score-profile/](./market-behavior/annual-market-specific-value-score-profile/README.md)
+  - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)
   - 低forward PER を positive-low と non-positive に分解し、低PBR + 小型 composite への寄与を event-level と portfolio lens で確認する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)

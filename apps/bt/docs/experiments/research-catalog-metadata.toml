@@ -31,6 +31,18 @@ relatedExperiments = [
   "market-behavior/annual-forward-per-regime-decomposition",
 ]
 
+[experiments."market-behavior/annual-market-specific-value-score-profile"]
+family = "Annual Fundamentals"
+status = "ranking_surface"
+decision = "Ranking page は Standard を standard_pbr_tilt、Prime を prime_size_tilt として別 profile で扱う。ADV60 は alpha score に混ぜず capacity diagnostic に留める。"
+promotedSurface = "Ranking"
+riskFlags = ["decision-record", "portfolio-lens", "market-specific-profile"]
+relatedExperiments = [
+  "market-behavior/annual-fundamental-confounder-analysis",
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-sector-relative-value-composite",
+]
+
 [experiments."strategy-audit/forward-eps-trade-archetype-decomposition"]
 family = "Strategy Audit"
 status = "strategy_draft"
