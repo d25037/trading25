@@ -1,0 +1,78 @@
+display_name: Range Break v15 Target Low PBR
+description: >
+  Dynamic PIT range_break_v15 variant with the target_low_pbr pruning rule
+  from the 2026-05 range-break-dynamic-pit-pruning research.
+
+entry_filter_params:
+  period_extrema_break:
+    enabled: true
+    direction: high
+    lookback_days: 10
+    period: 200
+  bollinger_position:
+    enabled: true
+    window: 50
+    alpha: 2
+    level: upper
+    direction: below
+  rsi_threshold:
+    enabled: true
+    period: 10
+    threshold: 40
+    condition: above
+  volume_ratio_above:
+    enabled: true
+    ma_type: sma
+    ratio_threshold: 1.7
+    short_period: 50
+    long_period: 150
+  beta:
+    enabled: true
+    lookback_period: 50
+    min_beta: 0.2
+    max_beta: 3
+  trading_value_range:
+    enabled: true
+    period: 15
+    min_threshold: 1
+    max_threshold: 75
+  fundamental:
+    enabled: true
+    period_type: FY
+    use_adjusted: true
+    pbr:
+      enabled: true
+      threshold: 0.97
+      condition: below
+      exclude_negative: true
+
+exit_trigger_params:
+  period_extrema_break:
+    enabled: true
+    direction: low
+    lookback_days: 1
+    period: 60
+  atr_support_position:
+    enabled: true
+    direction: below
+    lookback_period: 20
+    atr_multiplier: 5
+    price_column: low
+  volume_ratio_below:
+    enabled: true
+    ma_type: sma
+    ratio_threshold: 0.3
+    short_period: 50
+    long_period: 150
+  trading_value:
+    enabled: false
+    direction: above
+    period: 15
+    threshold_value: 500
+
+shared_config:
+  data_source: market
+  universe_preset: primeExTopix500
+  static_universe: false
+  kelly_fraction: 1.7
+  max_exposure: 0.2
