@@ -819,6 +819,89 @@ class MarketDb:
         )
         return [code for row in rows if row and (code := normalize_stock_code(row[0]))]
 
+    def get_stock_master_codes_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[str]:
+        """指定期間内に条件を満たした PIT 銘柄コードの superset を取得する。"""
+        if not self._table_exists("stock_master_daily"):
+            return []
+        conditions = ["date BETWEEN ? AND ?"]
+        params: list[Any] = [start_date, end_date]
+        if market_codes:
+            placeholders = ", ".join("?" for _ in market_codes)
+            conditions.append(f"market_code IN ({placeholders})")
+            params.extend(market_codes)
+        if scale_categories:
+            placeholders = ", ".join("?" for _ in scale_categories)
+            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
+            params.extend(scale_categories)
+        if exclude_scale_categories:
+            placeholders = ", ".join("?" for _ in exclude_scale_categories)
+            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
+            params.extend(exclude_scale_categories)
+        rows = self._fetchall(
+            f"""
+            SELECT DISTINCT code
+            FROM stock_master_daily
+            WHERE {' AND '.join(conditions)}
+            ORDER BY code
+            """,
+            params,
+        )
+        return [code for row in rows if row and (code := normalize_stock_code(row[0]))]
+
+    def get_stock_master_code_dates_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        codes: list[str] | None = None,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        """指定期間内に universe 条件を満たした (date, code) を取得する。"""
+        if not self._table_exists("stock_master_daily"):
+            return []
+        conditions = ["date BETWEEN ? AND ?"]
+        params: list[Any] = [start_date, end_date]
+        if codes:
+            placeholders = ", ".join("?" for _ in codes)
+            conditions.append(f"code IN ({placeholders})")
+            params.extend(codes)
+        if market_codes:
+            placeholders = ", ".join("?" for _ in market_codes)
+            conditions.append(f"market_code IN ({placeholders})")
+            params.extend(market_codes)
+        if scale_categories:
+            placeholders = ", ".join("?" for _ in scale_categories)
+            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
+            params.extend(scale_categories)
+        if exclude_scale_categories:
+            placeholders = ", ".join("?" for _ in exclude_scale_categories)
+            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
+            params.extend(exclude_scale_categories)
+        rows = self._fetchall(
+            f"""
+            SELECT date, code
+            FROM stock_master_daily
+            WHERE {' AND '.join(conditions)}
+            ORDER BY date, code
+            """,
+            params,
+        )
+        return [
+            (str(row[0]), code)
+            for row in rows
+            if row and (code := normalize_stock_code(row[1]))
+        ]
+
     def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]:
         """指定日の指数 membership code set。latest fallback はしない。"""
         if not self._table_exists("index_membership_daily"):

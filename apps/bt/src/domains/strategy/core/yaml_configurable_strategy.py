@@ -71,6 +71,11 @@ class YamlConfigurableStrategy(
         # SharedConfigから基本パラメータを設定
         self.strategy_name = "runtime"
         self.dataset = shared_config.dataset
+        self.data_source = shared_config.data_source
+        self.universe_preset = shared_config.universe_preset
+        self.universe_filters = shared_config.universe_filters
+        self.universe_as_of_date = shared_config.universe_as_of_date
+        self.static_universe = shared_config.static_universe
         self.stock_codes = shared_config.stock_codes
         self.stock_code = (
             self.stock_codes[0] if self.stock_codes else ""

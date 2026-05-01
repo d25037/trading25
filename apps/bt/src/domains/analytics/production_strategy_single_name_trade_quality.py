@@ -757,12 +757,19 @@ def _load_market_universe_summary(dataset_name: str, *, holdout_months: int) -> 
     }
 
 
-def _resolve_market_stock_codes(dataset_name: str, *, as_of_date: str) -> list[str]:
+def _resolve_market_stock_codes(
+    dataset_name: str,
+    *,
+    as_of_date: str,
+    end_date: str | None = None,
+) -> list[str]:
+    resolved_end_date = end_date or as_of_date
     shared_config: dict[str, Any] = {
         "data_source": "market",
         "universe_preset": dataset_name,
         "stock_codes": ["all"],
         "start_date": as_of_date,
+        "end_date": resolved_end_date,
         "universe_as_of_date": as_of_date,
     }
     resolved = resolve_backtest_universe_codes(shared_config)
@@ -780,6 +787,7 @@ def _resolve_window_stock_codes(
         return _resolve_market_stock_codes(
             dataset_name,
             as_of_date=window["window_start_date"],
+            end_date=window["window_end_date"],
         )
     return snapshot_stock_codes[dataset_name]
 

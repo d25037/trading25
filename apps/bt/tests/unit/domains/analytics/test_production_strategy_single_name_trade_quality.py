@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.domains.analytics import production_strategy_single_name_trade_quality as trade_quality
 from src.domains.analytics.production_strategy_single_name_trade_quality import (
     _build_per_symbol_summary_df,
     _build_scenario_summary_row,
     _day_before_iso,
+    _resolve_window_stock_codes,
     _subtract_months_iso,
 )
 from src.domains.analytics.window_warmup import (
@@ -143,3 +145,33 @@ def test_resolve_window_load_start_date_clamps_to_dataset_start() -> None:
         window_start_date="2025-02-01",
         warmup_calendar_days=230,
     ) == "2025-01-01"
+
+
+def test_resolve_window_stock_codes_uses_window_range_for_market_universe(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_resolve_backtest_universe_codes(shared_config: dict[str, object]) -> list[str]:
+        captured.update(shared_config)
+        return ["1301", "1400"]
+
+    monkeypatch.setattr(
+        trade_quality,
+        "resolve_backtest_universe_codes",
+        _fake_resolve_backtest_universe_codes,
+    )
+
+    codes = _resolve_window_stock_codes(
+        dataset_info={"dataset_name": "prime", "dataset_preset": "prime"},
+        window={
+            "window_label": "holdout",
+            "window_start_date": "2024-01-05",
+            "window_end_date": "2024-01-06",
+        },
+        snapshot_stock_codes={},
+    )
+
+    assert codes == ["1301", "1400"]
+    assert captured["start_date"] == "2024-01-05"
+    assert captured["end_date"] == "2024-01-06"

@@ -67,6 +67,18 @@ def _any_signal_enabled(
     return None
 
 
+def _build_strategy_shared_config_payload(strategy: "StrategyProtocol") -> dict[str, Any]:
+    return {
+        "data_source": getattr(strategy, "data_source", "market"),
+        "universe_preset": getattr(strategy, "universe_preset", None),
+        "universe_filters": getattr(strategy, "universe_filters", {}),
+        "universe_as_of_date": getattr(strategy, "universe_as_of_date", None),
+        "static_universe": getattr(strategy, "static_universe", False),
+        "start_date": getattr(strategy, "start_date", None),
+        "end_date": getattr(strategy, "end_date", None),
+    }
+
+
 class BacktestExecutorMixin:
     """バックテスト実行機能ミックスイン"""
 
@@ -78,6 +90,34 @@ class BacktestExecutorMixin:
             adapter = VectorbtAdapter()
             setattr(self, "execution_adapter", adapter)
         return cast(ExecutionAdapterProtocol, adapter)
+
+    def _apply_dynamic_universe_entry_gate(
+        self: "StrategyProtocol",
+        entries: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Mask entry signals by entry-date market universe membership."""
+        from src.domains.backtest.core.market_universe import (
+            build_dynamic_universe_eligibility_frame,
+        )
+
+        if entries.empty:
+            return entries
+        if not isinstance(entries.index, pd.DatetimeIndex):
+            return entries
+        shared_config = _build_strategy_shared_config_payload(self)
+        eligibility = build_dynamic_universe_eligibility_frame(
+            shared_config,
+            index=entries.index,
+            columns=[str(column) for column in entries.columns],
+        )
+        gated = entries & eligibility.reindex_like(entries).fillna(False).astype(bool)
+        removed_count = int((entries & ~gated).sum().sum())
+        if removed_count > 0:
+            self._log(
+                f"Dynamic universe gate removed {removed_count} entry signals outside entry-date universe",
+                "info",
+            )
+        return gated.astype(bool)
 
     def _find_signal_for_data_requirement(
         self: "StrategyProtocol",
@@ -745,6 +785,7 @@ class BacktestExecutorMixin:
 
                 # データ型確認とクリーニング
                 close_data = close_data.astype(float)
+                all_entries = self._apply_dynamic_universe_entry_gate(all_entries)
 
                 # 🔍 DEBUG: 統合後のシグナル統計
                 total_entries = all_entries.sum().sum()
@@ -834,6 +875,7 @@ class BacktestExecutorMixin:
         # DataFrameの型を適切に設定
         entries_data = self._normalize_signal_frame(entries_data)
         exits_data = self._normalize_signal_frame(exits_data)
+        entries_data = self._apply_dynamic_universe_entry_gate(entries_data)
 
         if self.max_concurrent_positions:
             entries_data = self._limit_entries_per_day(

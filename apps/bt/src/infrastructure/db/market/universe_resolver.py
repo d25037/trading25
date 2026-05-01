@@ -36,6 +36,16 @@ class UniverseResolverDbLike(Protocol):
         exclude_scale_categories: list[str] | None = None,
     ) -> list[str]: ...
 
+    def get_stock_master_codes_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[str]: ...
+
 
 @dataclass(frozen=True)
 class UniverseProvenance:
@@ -113,6 +123,62 @@ def resolve_universe(
     )
 
 
+def resolve_universe_code_superset(
+    db: UniverseResolverDbLike,
+    *,
+    start_date: str,
+    end_date: str,
+    preset: str,
+    filters: dict[str, Any] | None = None,
+) -> UniverseResolution:
+    """Resolve a PIT universe code superset over a date range for dynamic gating."""
+    normalized_start = start_date.strip()
+    normalized_end = end_date.strip()
+    if not normalized_start or not normalized_end:
+        raise UniverseResolutionError(
+            "start_date and end_date are required for universe superset resolution",
+            code="universe.date_range_required",
+        )
+    normalized_preset = preset.strip()
+    request_filters = dict(filters or {})
+
+    if normalized_preset in _MARKET_CODES_BY_PRESET:
+        return _resolve_market_code_universe_superset(
+            db,
+            start_date=normalized_start,
+            end_date=normalized_end,
+            preset=normalized_preset,
+            market_codes=list(_MARKET_CODES_BY_PRESET[normalized_preset]),
+            filters=request_filters,
+        )
+    if normalized_preset == "topix100":
+        return _resolve_scale_category_universe_superset(
+            db,
+            start_date=normalized_start,
+            end_date=normalized_end,
+            preset="topix100",
+            scale_categories=list(_TOPIX100_SCALE_CATEGORIES),
+            filters=request_filters,
+        )
+    if normalized_preset == "primeExTopix500":
+        return _resolve_prime_ex_topix500_universe_superset(
+            db,
+            start_date=normalized_start,
+            end_date=normalized_end,
+            filters=request_filters,
+        )
+    if normalized_preset == "custom":
+        return _resolve_custom_universe(
+            as_of_date=f"{normalized_start}..{normalized_end}",
+            filters=request_filters,
+        )
+
+    raise UniverseResolutionError(
+        f"Unsupported universe preset: {preset}",
+        code="universe.preset_unsupported",
+    )
+
+
 def _resolve_market_code_universe(
     db: UniverseResolverDbLike,
     *,
@@ -134,6 +200,35 @@ def _resolve_market_code_universe(
             resolvedCount=len(codes),
             filters={"marketCodes": market_codes, **filters},
             warnings=warnings,
+        ),
+    )
+
+
+def _resolve_market_code_universe_superset(
+    db: UniverseResolverDbLike,
+    *,
+    start_date: str,
+    end_date: str,
+    preset: str,
+    market_codes: list[str],
+    filters: dict[str, Any],
+) -> UniverseResolution:
+    base_codes = db.get_stock_master_codes_for_date_range(
+        start_date,
+        end_date,
+        market_codes=market_codes,
+    )
+    codes = _apply_code_filters(base_codes, filters)
+    return UniverseResolution(
+        codes=codes,
+        provenance=UniverseProvenance(
+            sourceTable="stock_master_daily",
+            asOfDate=f"{start_date}..{end_date}",
+            preset=preset,
+            rowCount=len(base_codes),
+            resolvedCount=len(codes),
+            filters={"marketCodes": market_codes, "dynamicUniverse": True, **filters},
+            warnings=[],
         ),
     )
 
@@ -160,6 +255,39 @@ def _resolve_topix100_universe(
             resolvedCount=len(codes),
             filters={"scaleCategories": list(_TOPIX100_SCALE_CATEGORIES), **filters},
             warnings=warnings,
+        ),
+    )
+
+
+def _resolve_scale_category_universe_superset(
+    db: UniverseResolverDbLike,
+    *,
+    start_date: str,
+    end_date: str,
+    preset: str,
+    scale_categories: list[str],
+    filters: dict[str, Any],
+) -> UniverseResolution:
+    base_codes = db.get_stock_master_codes_for_date_range(
+        start_date,
+        end_date,
+        scale_categories=scale_categories,
+    )
+    codes = _apply_code_filters(base_codes, filters)
+    return UniverseResolution(
+        codes=codes,
+        provenance=UniverseProvenance(
+            sourceTable="stock_master_daily",
+            asOfDate=f"{start_date}..{end_date}",
+            preset=preset,
+            rowCount=len(base_codes),
+            resolvedCount=len(codes),
+            filters={
+                "scaleCategories": scale_categories,
+                "dynamicUniverse": True,
+                **filters,
+            },
+            warnings=[],
         ),
     )
 
@@ -191,6 +319,39 @@ def _resolve_prime_ex_topix500_universe(
                 **filters,
             },
             warnings=warnings,
+        ),
+    )
+
+
+def _resolve_prime_ex_topix500_universe_superset(
+    db: UniverseResolverDbLike,
+    *,
+    start_date: str,
+    end_date: str,
+    filters: dict[str, Any],
+) -> UniverseResolution:
+    base_codes = db.get_stock_master_codes_for_date_range(
+        start_date=start_date,
+        end_date=end_date,
+        market_codes=list(_MARKET_CODES_BY_PRESET["prime"]),
+        exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
+    )
+    codes = _apply_code_filters(base_codes, filters)
+    return UniverseResolution(
+        codes=codes,
+        provenance=UniverseProvenance(
+            sourceTable="stock_master_daily",
+            asOfDate=f"{start_date}..{end_date}",
+            preset="primeExTopix500",
+            rowCount=len(base_codes),
+            resolvedCount=len(codes),
+            filters={
+                "marketCodes": list(_MARKET_CODES_BY_PRESET["prime"]),
+                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
+                "dynamicUniverse": True,
+                **filters,
+            },
+            warnings=[],
         ),
     )
 
