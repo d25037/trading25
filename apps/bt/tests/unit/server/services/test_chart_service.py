@@ -110,6 +110,14 @@ class TestSectorStocksMarketCodeCompatibility:
         assert len(result.stocks) == 4
 
 
+def test_search_stocks_matches_english_name_case_insensitively(service) -> None:
+    result = service.search_stocks("lprime")
+
+    assert result.count == 1
+    assert result.results[0].code == "1001"
+    assert result.results[0].companyNameEnglish == "LPRIME"
+
+
 def test_get_stock_from_db_supports_mixed_stock_and_stock_data_codes(tmp_path) -> None:
     db_path = str(tmp_path / "chart-mixed-codes.db")
     conn = duckdb.connect(db_path)

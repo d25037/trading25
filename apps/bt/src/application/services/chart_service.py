@@ -401,26 +401,30 @@ class ChartService:
             return StockSearchResponse(query=query, results=[], count=0)
 
         search_term = query.strip()
-        search_pattern = f"%{search_term}%"
+        normalized_search_term = search_term.lower()
+        search_pattern = f"%{normalized_search_term}%"
+        prefix_pattern = f"{normalized_search_term}%"
 
         rows = self._reader.query(
             """
             SELECT code, company_name, company_name_english, market_code, market_name, sector_33_name,
                 CASE
-                    WHEN code = ? THEN 1
-                    WHEN code LIKE ? THEN 2
-                    WHEN company_name LIKE ? THEN 3
-                    WHEN company_name_english LIKE ? THEN 4
+                    WHEN lower(code) = ? THEN 1
+                    WHEN lower(code) LIKE ? THEN 2
+                    WHEN lower(company_name) LIKE ? THEN 3
+                    WHEN lower(coalesce(company_name_english, '')) LIKE ? THEN 4
                     ELSE 5
                 END as relevance
             FROM stocks
-            WHERE code LIKE ? OR company_name LIKE ? OR company_name_english LIKE ?
+            WHERE lower(code) LIKE ?
+                OR lower(company_name) LIKE ?
+                OR lower(coalesce(company_name_english, '')) LIKE ?
             ORDER BY relevance, code
             LIMIT ?
             """,
             (
-                search_term,
-                f"{search_term}%",
+                normalized_search_term,
+                prefix_pattern,
                 search_pattern,
                 search_pattern,
                 search_pattern,

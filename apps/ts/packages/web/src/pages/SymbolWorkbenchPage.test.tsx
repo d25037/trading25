@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   countVisibleFundamentalMetrics,
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
@@ -239,6 +239,20 @@ function renderSymbolWorkbenchPage() {
   };
 }
 
+function stubMobileWorkbenchLayout() {
+  const mediaQueryList = {
+    matches: true,
+    media: '(max-width: 1023px)',
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  } satisfies MediaQueryList;
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue(mediaQueryList));
+}
+
 describe('SymbolWorkbenchPage', () => {
   class MockIntersectionObserver {
     static instances: MockIntersectionObserver[] = [];
@@ -358,6 +372,10 @@ describe('SymbolWorkbenchPage', () => {
       isPending: false,
       error: null,
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders loading state', () => {
@@ -583,6 +601,37 @@ describe('SymbolWorkbenchPage', () => {
 
     expect(screen.getByRole('dialog', { name: 'Symbol Workbench Settings' })).toBeInTheDocument();
     expect(screen.getAllByText('Chart Controls').length).toBeGreaterThan(1);
+  });
+
+  it('closes mobile settings after selecting a symbol from the panel', async () => {
+    const user = userEvent.setup();
+    stubMobileWorkbenchLayout();
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+
+    renderSymbolWorkbenchPage();
+
+    await user.click(screen.getByRole('button', { name: '設定' }));
+    expect(screen.getByRole('dialog', { name: 'Symbol Workbench Settings' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Select 6758' }));
+
+    expect(mockSymbolWorkbenchRouteState.setSelectedSymbol).toHaveBeenCalledWith('6758');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Symbol Workbench Settings' })).not.toBeInTheDocument()
+    );
   });
 
   it('passes screening verification context into chart rendering and symbol changes', async () => {

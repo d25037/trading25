@@ -1285,6 +1285,15 @@ export function SymbolWorkbenchPage() {
   );
 
   const panelVisibilityById = resolveFundamentalPanelVisibility(settings);
+  const handleSelectSymbol = useCallback(
+    (symbol: string) => {
+      setSelectedSymbol(symbol);
+      if (isMobileWorkbenchLayout) {
+        setIsMobileSettingsOpen(false);
+      }
+    },
+    [isMobileWorkbenchLayout, setSelectedSymbol]
+  );
   const handleRefresh = useCallback(() => {
     if (!selectedSymbol) {
       return;
@@ -1315,7 +1324,7 @@ export function SymbolWorkbenchPage() {
         <SplitSidebar className="w-full lg:w-[18rem]">
           <Surface className="h-full min-h-0 overflow-hidden">
             <ErrorBoundary>
-              <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
+              <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={handleSelectSymbol} />
             </ErrorBoundary>
           </Surface>
         </SplitSidebar>
@@ -1328,7 +1337,7 @@ export function SymbolWorkbenchPage() {
             <DialogDescription>Search, chart settings, panel order, and signal controls.</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
+            <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={handleSelectSymbol} />
           </div>
         </DialogContent>
       </Dialog>
