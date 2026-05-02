@@ -17268,6 +17268,150 @@
         "title": "ValueCompositeRankingResponse",
         "type": "object"
       },
+      "ValueCompositeScoreResponse": {
+        "description": "Single-symbol value-composite score response.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "companyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companyname"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "forwardEpsMode": {
+            "enum": [
+              "latest",
+              "fy"
+            ],
+            "title": "Forwardepsmode",
+            "type": "string"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueCompositeRankingItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market"
+          },
+          "marketCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marketcode"
+          },
+          "metricKey": {
+            "const": "standard_value_composite",
+            "default": "standard_value_composite",
+            "title": "Metrickey",
+            "type": "string"
+          },
+          "scoreAvailable": {
+            "title": "Scoreavailable",
+            "type": "boolean"
+          },
+          "scoreMethod": {
+            "anyOf": [
+              {
+                "enum": [
+                  "standard_pbr_tilt",
+                  "prime_size_tilt",
+                  "equal_weight"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoremethod"
+          },
+          "scorePolicy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scorepolicy"
+          },
+          "universeCount": {
+            "default": 0,
+            "title": "Universecount",
+            "type": "integer"
+          },
+          "unsupportedReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_found",
+                  "unsupported_market",
+                  "forward_eps_missing",
+                  "bps_missing",
+                  "not_rankable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsupportedreason"
+          },
+          "weights": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Weights",
+            "type": "object"
+          }
+        },
+        "required": [
+          "date",
+          "code",
+          "forwardEpsMode",
+          "scoreAvailable",
+          "lastUpdated"
+        ],
+        "title": "ValueCompositeScoreResponse",
+        "type": "object"
+      },
       "VerificationCandidateStatus": {
         "description": "Verification state of a single fast-path candidate.",
         "enum": [
@@ -19812,6 +19956,110 @@
           }
         },
         "summary": "Get value-composite rankings",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/value-composite-score/{code}": {
+      "get": {
+        "description": "Get a market-specific value composite score for one symbol. Prime uses prime_size_tilt, Standard uses standard_pbr_tilt, and unsupported markets return scoreAvailable=false.",
+        "operationId": "get_value_composite_score_api_analytics_value_composite_score__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          },
+          {
+            "in": "query",
+            "name": "forwardEpsMode",
+            "required": false,
+            "schema": {
+              "default": "latest",
+              "enum": [
+                "latest",
+                "fy"
+              ],
+              "title": "Forwardepsmode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueCompositeScoreResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a single-symbol value-composite score",
         "tags": [
           "Analytics"
         ]

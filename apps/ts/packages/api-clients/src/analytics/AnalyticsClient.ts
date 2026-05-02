@@ -24,6 +24,8 @@ import type {
   Topix100RankingResponse,
   ValueCompositeRankingParams,
   ValueCompositeRankingResponse,
+  ValueCompositeScoreParams,
+  ValueCompositeScoreResponse,
 } from './types.js';
 
 function normalizeConfig(config?: string | Partial<AnalyticsClientConfig>): AnalyticsClientConfig {
@@ -101,6 +103,17 @@ export class AnalyticsClient {
       scoreMethod: params.scoreMethod,
       forwardEpsMode: params.forwardEpsMode,
     });
+  }
+
+  async getValueCompositeScore(params: ValueCompositeScoreParams): Promise<ValueCompositeScoreResponse> {
+    return this.request<ValueCompositeScoreResponse>(
+      `/api/analytics/value-composite-score/${encodeURIComponent(params.symbol)}`,
+      undefined,
+      {
+        date: params.date,
+        forwardEpsMode: params.forwardEpsMode,
+      }
+    );
   }
 
   async getFundamentals<T>(params: FundamentalsParams): Promise<T> {

@@ -121,26 +121,186 @@ def ranking_db(tmp_path):
     """)
 
     # 3 銘柄
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("72030", "トヨタ", "TOYOTA", "prime", "P", "S17", "輸送", "S33", "輸送用機器", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("67580", "ソニー", "SONY", "prime", "P", "S17", "電気", "S33", "電気機器", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("83060", "Numeric Prime", "NPRIME", "0111", "P", "S17", "銀行", "S33", "銀行業", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("46890", "Alt Prime", "APRIME", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("11110", "No Statement Prime", "NOSTMT", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("22220", "Zero Actual Prime", "ZEROACT", "prime", "P", "S17", "サービス", "S33", "サービス業", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("33330", "Peak Actual Prime", "PEAK", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("44440", "No Forecast Prime", "NOFC", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("5555", "Mixed Format Prime", "MIXED", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
-    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 ("99840", "テスト", "TEST", "standard", "S", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "72030",
+            "トヨタ",
+            "TOYOTA",
+            "prime",
+            "P",
+            "S17",
+            "輸送",
+            "S33",
+            "輸送用機器",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "67580",
+            "ソニー",
+            "SONY",
+            "prime",
+            "P",
+            "S17",
+            "電気",
+            "S33",
+            "電気機器",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "83060",
+            "Numeric Prime",
+            "NPRIME",
+            "0111",
+            "P",
+            "S17",
+            "銀行",
+            "S33",
+            "銀行業",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "46890",
+            "Alt Prime",
+            "APRIME",
+            "prime",
+            "P",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "11110",
+            "No Statement Prime",
+            "NOSTMT",
+            "prime",
+            "P",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "22220",
+            "Zero Actual Prime",
+            "ZEROACT",
+            "prime",
+            "P",
+            "S17",
+            "サービス",
+            "S33",
+            "サービス業",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "33330",
+            "Peak Actual Prime",
+            "PEAK",
+            "prime",
+            "P",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "44440",
+            "No Forecast Prime",
+            "NOFC",
+            "prime",
+            "P",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "5555",
+            "Mixed Format Prime",
+            "MIXED",
+            "prime",
+            "P",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "99840",
+            "テスト",
+            "TEST",
+            "standard",
+            "S",
+            "S17",
+            "情報",
+            "S33",
+            "情報通信",
+            None,
+            "2000-01-01",
+            None,
+            None,
+        ),
+    )
 
     # 5日分のOHLCVデータ
     dates = ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
@@ -157,7 +317,11 @@ def ranking_db(tmp_path):
         ("99840", 100000),
     ]:
         for i, d in enumerate(dates):
-            price = 2500.0 + i * 10 if code == "72030" else (13000.0 + i * 50 if code == "67580" else 500.0 + i * 5)
+            price = (
+                2500.0 + i * 10
+                if code == "72030"
+                else (13000.0 + i * 50 if code == "67580" else 500.0 + i * 5)
+            )
             vol = base_v + i * 10000
             conn.execute(
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
@@ -177,7 +341,14 @@ def ranking_db(tmp_path):
         "TOPIX": [1000.0, 1012.0, 1020.0, 1032.0, 1045.0, 1060.0],
         "N225": [33000.0, 33200.0, 33120.0, 33480.0, 33720.0, 33990.0],
     }
-    index_dates = ["2024-01-12", "2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
+    index_dates = [
+        "2024-01-12",
+        "2024-01-15",
+        "2024-01-16",
+        "2024-01-17",
+        "2024-01-18",
+        "2024-01-19",
+    ]
     for code, closes in index_rows.items():
         for current_date, close in zip(index_dates, closes, strict=True):
             conn.execute(
@@ -371,7 +542,28 @@ def topix100_ranking_service(tmp_path):
         )
     """)
 
-    volume_trends = [6, -6, 5, -5, 4, -4, 3, -3, 2, -2, 1, -1, 7, -7, 8, -8, 9, -9, 10, -10]
+    volume_trends = [
+        6,
+        -6,
+        5,
+        -5,
+        4,
+        -4,
+        3,
+        -3,
+        2,
+        -2,
+        1,
+        -1,
+        7,
+        -7,
+        8,
+        -8,
+        9,
+        -9,
+        10,
+        -10,
+    ]
     start_date = calendar_date(2024, 1, 1)
     dates = [(start_date + timedelta(days=offset)).isoformat() for offset in range(91)]
 
@@ -439,8 +631,12 @@ def topix100_ranking_service(tmp_path):
     reader.close()
 
 
-def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgbmSnapshot:
-    rows_by_code: dict[str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow] = {}
+def _build_test_signal_snapshot() -> (
+    Topix100Streak353NextSessionIntradayLightgbmSnapshot
+):
+    rows_by_code: dict[
+        str, Topix100Streak353NextSessionIntradayLightgbmSnapshotRow
+    ] = {}
     for offset, code in enumerate(range(1001, 1021), start=1):
         if offset % 4 == 1:
             intraday_score = -0.004
@@ -451,11 +647,13 @@ def _build_test_signal_snapshot() -> Topix100Streak353NextSessionIntradayLightgb
         else:
             intraday_score = -0.01
         intraday_score += (11 - offset) * 0.0002
-        rows_by_code[str(code)] = Topix100Streak353NextSessionIntradayLightgbmSnapshotRow(
-            code=str(code),
-            company_name=f"Stock {offset}",
-            date="2024-03-30",
-            intraday_score=intraday_score,
+        rows_by_code[str(code)] = (
+            Topix100Streak353NextSessionIntradayLightgbmSnapshotRow(
+                code=str(code),
+                company_name=f"Stock {offset}",
+                date="2024-03-30",
+                intraday_score=intraday_score,
+            )
         )
     return Topix100Streak353NextSessionIntradayLightgbmSnapshot(
         score_source_run_id="test-run",
@@ -588,7 +786,9 @@ class TestGetRankings:
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)
 
-        topix = next((item for item in result.indexPerformance if item.code == "TOPIX"), None)
+        topix = next(
+            (item for item in result.indexPerformance if item.code == "TOPIX"), None
+        )
         assert topix is not None
         assert topix.currentDate == "2024-01-19"
         assert topix.baseDate == "2024-01-16"
@@ -682,7 +882,9 @@ class TestGetTopix100Ranking:
         assert hasattr(result.items[0], "nextSessionDate")
         assert hasattr(result.items[0], "nextSessionIntradayReturn")
 
-    def test_supports_price_sma_20_80_metric(self, topix100_ranking_service, monkeypatch):
+    def test_supports_price_sma_20_80_metric(
+        self, topix100_ranking_service, monkeypatch
+    ):
         monkeypatch.setattr(
             "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
             lambda *args, **kwargs: _build_test_signal_snapshot(),
@@ -692,7 +894,9 @@ class TestGetTopix100Ranking:
         assert result.rankingMetric == "price_sma_20_80"
         assert result.items[0].priceSma20_80 >= result.items[1].priceSma20_80
 
-    def test_supports_configurable_price_vs_sma_window(self, topix100_ranking_service, monkeypatch):
+    def test_supports_configurable_price_vs_sma_window(
+        self, topix100_ranking_service, monkeypatch
+    ):
         monkeypatch.setattr(
             "src.application.services.ranking_service.score_topix100_streak_353_next_session_intraday_lightgbm_snapshot",
             lambda *args, **kwargs: _build_test_signal_snapshot(),
@@ -738,7 +942,9 @@ class TestGetTopix100Ranking:
         assert result.items[0].nextSessionDate == "2024-03-30"
         assert result.items[0].nextSessionIntradayReturn == pytest.approx(0.0)
 
-    def test_supports_swing_5d_mode_with_benchmarks(self, topix100_ranking_service, monkeypatch):
+    def test_supports_swing_5d_mode_with_benchmarks(
+        self, topix100_ranking_service, monkeypatch
+    ):
         monkeypatch.setattr(
             "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot",
             lambda *args, **kwargs: _build_test_swing_snapshot(),
@@ -774,7 +980,9 @@ class TestGetTopix100Ranking:
         assert first_item.openToOpen5dReturn is not None
 
         realized_returns = [
-            item.openToOpen5dReturn for item in result.items if item.openToOpen5dReturn is not None
+            item.openToOpen5dReturn
+            for item in result.items
+            if item.openToOpen5dReturn is not None
         ]
         assert realized_returns
         assert result.secondaryBenchmarkReturn == pytest.approx(
@@ -793,7 +1001,9 @@ class TestGetFundamentalRankings:
 
     def test_revised_forecast_is_prioritized(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        toyota = next((item for item in result.rankings.ratioHigh if item.code == "72030"), None)
+        toyota = next(
+            (item for item in result.rankings.ratioHigh if item.code == "72030"), None
+        )
         assert toyota is not None
         assert toyota.source == "revised"
         # forecast 140.0 / actual 100.0 = 1.4
@@ -803,7 +1013,9 @@ class TestGetFundamentalRankings:
 
     def test_fy_forecast_fallback_when_revision_missing(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        sony = next((item for item in result.rankings.ratioHigh if item.code == "67580"), None)
+        sony = next(
+            (item for item in result.rankings.ratioHigh if item.code == "67580"), None
+        )
         assert sony is not None
         assert sony.source == "fy"
         assert sony.periodType == "FY"
@@ -815,7 +1027,9 @@ class TestGetFundamentalRankings:
 
     def test_revised_quarter_uses_next_year_forecast_fallback(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        alt = next((item for item in result.rankings.ratioHigh if item.code == "46890"), None)
+        alt = next(
+            (item for item in result.rankings.ratioHigh if item.code == "46890"), None
+        )
         assert alt is not None
         assert alt.source == "revised"
         assert alt.periodType == "2Q"
@@ -825,8 +1039,13 @@ class TestGetFundamentalRankings:
 
     def test_ratio_high_low_ordering(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        assert result.rankings.ratioHigh[0].epsValue >= result.rankings.ratioHigh[1].epsValue
-        assert result.rankings.ratioLow[0].epsValue <= result.rankings.ratioLow[1].epsValue
+        assert (
+            result.rankings.ratioHigh[0].epsValue
+            >= result.rankings.ratioHigh[1].epsValue
+        )
+        assert (
+            result.rankings.ratioLow[0].epsValue <= result.rankings.ratioLow[1].epsValue
+        )
 
     def test_market_filter_alias_prime_includes_numeric_codes(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
@@ -834,7 +1053,9 @@ class TestGetFundamentalRankings:
         assert "prime" in market_codes
         assert "0111" in market_codes
 
-    def test_fundamental_rankings_support_mixed_stock_and_stock_data_code_formats(self, service):
+    def test_fundamental_rankings_support_mixed_stock_and_stock_data_code_formats(
+        self, service
+    ):
         result = service.get_fundamental_rankings(markets="prime", limit=100)
         codes = {item.code for item in result.rankings.ratioHigh}
         assert "5555" in codes
@@ -925,7 +1146,9 @@ class TestGetFundamentalRankings:
         result = svc.get_fundamental_rankings(markets="prime", limit=20)
         reader.close()
 
-        toyota = next((item for item in result.rankings.ratioHigh if item.code == "72030"), None)
+        toyota = next(
+            (item for item in result.rankings.ratioHigh if item.code == "72030"), None
+        )
         assert toyota is not None
         assert toyota.disclosedDate == "2024-01-18"
         assert toyota.epsValue == pytest.approx(1.4)
@@ -966,7 +1189,9 @@ class TestGetFundamentalRankings:
 
 
 class TestGetValueCompositeRanking:
-    def test_default_standard_value_score_uses_research_formula_without_adv_floor(self, ranking_db):
+    def test_default_standard_value_score_uses_research_formula_without_adv_floor(
+        self, ranking_db
+    ):
         conn = duckdb.connect(ranking_db)
         try:
             conn.execute(
@@ -1041,14 +1266,20 @@ class TestGetValueCompositeRanking:
         assert result.metricKey == "standard_value_composite"
         assert result.scoreMethod == "standard_pbr_tilt"
         assert "no ADV60 floor" in result.scorePolicy
-        assert result.weights == {"smallMarketCap": 0.35, "lowPbr": 0.4, "lowForwardPer": 0.25}
+        assert result.weights == {
+            "smallMarketCap": 0.35,
+            "lowPbr": 0.4,
+            "lowForwardPer": 0.25,
+        }
         assert [item.code for item in result.items] == ["99840", "88880", "77770"]
         assert result.items[0].score > result.items[-1].score
         assert result.items[0].pbr == pytest.approx(0.52)
         assert result.items[0].forwardPer == pytest.approx(5.0)
         assert result.items[0].marketCapBilJpy == pytest.approx(5.2)
 
-    def test_value_composite_ranking_can_use_latest_revised_forward_eps(self, ranking_db):
+    def test_value_composite_ranking_can_use_latest_revised_forward_eps(
+        self, ranking_db
+    ):
         conn = duckdb.connect(ranking_db)
         try:
             conn.execute(
@@ -1129,7 +1360,9 @@ class TestGetValueCompositeRanking:
         assert item.pbr == pytest.approx(0.52)
         assert item.forwardPer == pytest.approx(5.0)
 
-    def test_value_composite_ranking_score_methods_expose_expected_profiles(self, ranking_db):
+    def test_value_composite_ranking_score_methods_expose_expected_profiles(
+        self, ranking_db
+    ):
         conn = duckdb.connect(ranking_db)
         try:
             for row in [
@@ -1164,7 +1397,9 @@ class TestGetValueCompositeRanking:
                     None,
                 ),
             ]:
-                conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+                conn.execute(
+                    "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row
+                )
             for code, price, volume in [
                 ("66660", 100.0, 10_000_000),
                 ("77770", 1000.0, 20_000_000),
@@ -1194,41 +1429,339 @@ class TestGetValueCompositeRanking:
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
         pbr_tilt = svc.get_value_composite_ranking(limit=10)
-        prime_size_tilt = svc.get_value_composite_ranking(limit=10, score_method="prime_size_tilt")
+        prime_size_tilt = svc.get_value_composite_ranking(
+            limit=10, score_method="prime_size_tilt"
+        )
         equal = svc.get_value_composite_ranking(limit=10, score_method="equal_weight")
         reader.close()
 
         assert pbr_tilt.scoreMethod == "standard_pbr_tilt"
         assert prime_size_tilt.scoreMethod == "prime_size_tilt"
         assert equal.scoreMethod == "equal_weight"
-        assert prime_size_tilt.weights == {"smallMarketCap": 0.45, "lowPbr": 0.2, "lowForwardPer": 0.35}
+        assert prime_size_tilt.weights == {
+            "smallMarketCap": 0.45,
+            "lowPbr": 0.2,
+            "lowForwardPer": 0.35,
+        }
         assert equal.weights == {
             "smallMarketCap": pytest.approx(1 / 3),
             "lowPbr": pytest.approx(1 / 3),
             "lowForwardPer": pytest.approx(1 / 3),
         }
-        assert [item.code for item in prime_size_tilt.items[:3]] == ["77770", "99840", "66660"]
+        assert [item.code for item in prime_size_tilt.items[:3]] == [
+            "77770",
+            "99840",
+            "66660",
+        ]
         assert [item.code for item in equal.items[:3]] == ["77770", "99840", "66660"]
 
     def test_value_composite_ranking_standard_pbr_tilt_weights(self, ranking_db):
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
-        result = svc.get_value_composite_ranking(limit=10, score_method="standard_pbr_tilt")
+        result = svc.get_value_composite_ranking(
+            limit=10, score_method="standard_pbr_tilt"
+        )
         reader.close()
 
         assert result.scoreMethod == "standard_pbr_tilt"
-        assert "35% small market cap + 40% low PBR + 25% low forward PER" in result.scorePolicy
-        assert result.weights == {"smallMarketCap": 0.35, "lowPbr": 0.4, "lowForwardPer": 0.25}
+        assert (
+            "35% small market cap + 40% low PBR + 25% low forward PER"
+            in result.scorePolicy
+        )
+        assert result.weights == {
+            "smallMarketCap": 0.35,
+            "lowPbr": 0.4,
+            "lowForwardPer": 0.25,
+        }
 
     def test_value_composite_ranking_prime_size_tilt_weights(self, ranking_db):
         reader = MarketDbReader(ranking_db)
         svc = RankingService(reader)
-        result = svc.get_value_composite_ranking(limit=10, score_method="prime_size_tilt")
+        result = svc.get_value_composite_ranking(
+            limit=10, score_method="prime_size_tilt"
+        )
         reader.close()
 
         assert result.scoreMethod == "prime_size_tilt"
-        assert "45% small market cap + 20% low PBR + 35% low forward PER" in result.scorePolicy
-        assert result.weights == {"smallMarketCap": 0.45, "lowPbr": 0.2, "lowForwardPer": 0.35}
+        assert (
+            "45% small market cap + 20% low PBR + 35% low forward PER"
+            in result.scorePolicy
+        )
+        assert result.weights == {
+            "smallMarketCap": 0.45,
+            "lowPbr": 0.2,
+            "lowForwardPer": 0.35,
+        }
+
+    def test_value_composite_score_returns_market_specific_rank_for_symbol(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            for code, forecast, bps, shares in [
+                ("72030", 140.0, 1000.0, 100.0),
+                ("67580", 220.0, 2000.0, 200.0),
+            ]:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        next_year_forecast_earnings_per_share, bps, shares_outstanding
+                    )
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (code, "2024-01-10", 100.0, "FY", forecast, bps, shares),
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("7203")
+        ranking = svc.get_value_composite_ranking(
+            markets="prime",
+            score_method="prime_size_tilt",
+            limit=10,
+        )
+        reader.close()
+
+        ranking_item = next(item for item in ranking.items if item.code == "72030")
+        assert result.scoreAvailable is True
+        assert result.unsupportedReason is None
+        assert result.scoreMethod == "prime_size_tilt"
+        assert result.market == "prime"
+        assert result.universeCount == ranking.itemCount
+        assert result.item is not None
+        assert result.item.code == "72030"
+        assert result.item.rank == ranking_item.rank
+        assert result.item.score == pytest.approx(ranking_item.score)
+
+    def test_value_composite_score_hides_unsupported_growth_symbol(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "39990",
+                    "Growth Test",
+                    "GROWTH",
+                    "growth",
+                    "G",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("39990", "2024-01-19", 100.0, 100.0, 100.0, 100.0, 100_000, 1.0, None),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("39990", "2024-01-10", 10.0, "FY", 12.0, 100.0, 1_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("3999")
+        reader.close()
+
+        assert result.scoreAvailable is False
+        assert result.unsupportedReason == "unsupported_market"
+        assert result.market == "growth"
+        assert result.scoreMethod is None
+        assert result.item is None
+
+    def test_value_composite_score_reports_missing_forward_eps(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "285A",
+                    "Kioxia Test",
+                    "KIOXIA",
+                    "prime",
+                    "P",
+                    "S17",
+                    "電気",
+                    "S33",
+                    "電気機器",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("285A", "2024-01-19", 100.0, 100.0, 100.0, 100.0, 100_000, 1.0, None),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, forecast_eps, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?,?)
+                """,
+                ("285A", "2024-01-10", 10.0, "FY", None, None, 100.0, 1_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("285A")
+        reader.close()
+
+        assert result.scoreAvailable is False
+        assert result.unsupportedReason == "forward_eps_missing"
+        assert result.item is None
+
+    def test_value_composite_score_uses_latest_fy_row_with_bps(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            for row in [
+                (
+                    "68090",
+                    "Latest BPS Fallback",
+                    "BPSFB",
+                    "prime",
+                    "P",
+                    "S17",
+                    "電気",
+                    "S33",
+                    "電気機器",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+                (
+                    "68100",
+                    "Comparable Prime",
+                    "COMP",
+                    "prime",
+                    "P",
+                    "S17",
+                    "電気",
+                    "S33",
+                    "電気機器",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            ]:
+                conn.execute(
+                    "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row
+                )
+            for code, price in [("68090", 120.0), ("68100", 100.0)]:
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        "2024-01-19",
+                        price,
+                        price,
+                        price,
+                        price,
+                        100_000,
+                        1.0,
+                        None,
+                    ),
+                )
+            for row in [
+                ("68090", "2024-01-15", "3Q", None, None, None, 1_000_000.0),
+                ("68090", "2024-01-10", "FY", 10.0, 12.0, None, None),
+                ("68090", "2023-01-10", "FY", 9.0, 11.0, 100.0, None),
+                ("68100", "2024-01-10", "FY", 10.0, 12.0, 100.0, 1_000_000.0),
+            ]:
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, type_of_current_period, earnings_per_share,
+                        next_year_forecast_earnings_per_share, bps, shares_outstanding
+                    )
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    row,
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("6809")
+        reader.close()
+
+        assert result.scoreAvailable is True
+        assert result.unsupportedReason is None
+        assert result.item is not None
+        assert result.item.code == "68090"
+        assert result.item.pbr == pytest.approx(1.2)
+        assert result.item.latestFyDisclosedDate == "2023-01-10"
+
+    def test_value_composite_score_reports_missing_bps(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "68200",
+                    "No BPS Prime",
+                    "NOBPS",
+                    "prime",
+                    "P",
+                    "S17",
+                    "電気",
+                    "S33",
+                    "電気機器",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("68200", "2024-01-19", 100.0, 100.0, 100.0, 100.0, 100_000, 1.0, None),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("68200", "2024-01-10", 10.0, "FY", 12.0, None, 1_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("6820")
+        reader.close()
+
+        assert result.scoreAvailable is False
+        assert result.unsupportedReason == "bps_missing"
+        assert result.item is None
 
 
 class _BadFloat:
@@ -1271,11 +1804,17 @@ class TestRankingHelperBranches:
             is None
         )
 
-        assert service._resolve_latest_fy_row(
-            [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)]
-        ) is None
+        assert (
+            service._resolve_latest_fy_row(
+                [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)]
+            )
+            is None
+        )
 
-        assert service._resolve_latest_fy_forecast_snapshot(None, baseline_shares=100.0) is None
+        assert (
+            service._resolve_latest_fy_forecast_snapshot(None, baseline_shares=100.0)
+            is None
+        )
         assert (
             service._resolve_latest_fy_forecast_snapshot(
                 _LatestFyRow(
@@ -1325,22 +1864,19 @@ class TestRankingHelperBranches:
             )
             == 110.0
         )
-        assert (
-            service._resolve_latest_forecast_snapshot(
-                [
-                    _StatementRow("X", "2024-01-10", "FY", 100.0, 120.0, 120.0, 100.0),
-                    _StatementRow("X", "2024-01-18", "1Q", None, 140.0, None, 100.0),
-                    _StatementRow("X", "2024-01-22", "2Q", None, 999.0, None, 100.0),
-                ],
-                baseline_shares=100.0,
-                as_of_date="2024-01-19",
-            )
-            == _ForecastValue(
-                value=140.0,
-                disclosed_date="2024-01-18",
-                period_type="1Q",
-                source="revised",
-            )
+        assert service._resolve_latest_forecast_snapshot(
+            [
+                _StatementRow("X", "2024-01-10", "FY", 100.0, 120.0, 120.0, 100.0),
+                _StatementRow("X", "2024-01-18", "1Q", None, 140.0, None, 100.0),
+                _StatementRow("X", "2024-01-22", "2Q", None, 999.0, None, 100.0),
+            ],
+            baseline_shares=100.0,
+            as_of_date="2024-01-19",
+        ) == _ForecastValue(
+            value=140.0,
+            disclosed_date="2024-01-18",
+            period_type="1Q",
+            source="revised",
         )
 
         forecast = _ForecastValue(
@@ -1368,7 +1904,10 @@ class TestRankingDateEdgeCases:
     def test_returns_empty_when_reference_dates_are_unavailable(self, service):
         assert service._ranking_by_trading_value_average("2024-01-15", 3, 20, []) == []
         assert service._ranking_by_price_change("2024-01-15", 20, [], "DESC") == []
-        assert service._ranking_by_price_change_from_days("2024-01-15", 3, 20, [], "DESC") == []
+        assert (
+            service._ranking_by_price_change_from_days("2024-01-15", 3, 20, [], "DESC")
+            == []
+        )
 
     def test_period_high_low_paths_with_available_window(self, service):
         high = service._ranking_by_period_high("2024-01-19", 2, 20, [])

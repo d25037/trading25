@@ -15,7 +15,10 @@ from typing import Any, Literal, cast
 import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReadable, MarketDbReader
-from src.shared.utils.market_code_alias import normalize_market_scope, resolve_market_codes
+from src.shared.utils.market_code_alias import (
+    normalize_market_scope,
+    resolve_market_codes,
+)
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
@@ -63,7 +66,9 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100StudyMode,
     ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
+    ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
+    ValueCompositeScoreUnavailableReason,
     ValueCompositeScoreMethod,
 )
 
@@ -120,6 +125,13 @@ def _positive_ratio(numerator: float | None, denominator: float | None) -> float
     return ratio if ratio > 0 else None
 
 
+def _normalize_equity_code(code: object) -> str:
+    text = str(code).strip()
+    if len(text) == 5 and text.endswith("0"):
+        return text[:4]
+    return text
+
+
 def _finite_or_none(value: Any) -> float | None:
     number = _to_nullable_float(value)
     if number is None or not math.isfinite(number):
@@ -135,7 +147,9 @@ def _str_or_none(value: Any) -> str | None:
     return str(value)
 
 
-def _normalize_value_composite_weights(weights: Mapping[str, float]) -> dict[str, float]:
+def _normalize_value_composite_weights(
+    weights: Mapping[str, float],
+) -> dict[str, float]:
     weight_sum = sum(float(value) for value in weights.values())
     if not math.isfinite(weight_sum) or weight_sum <= 0:
         raise ValueError("value composite weights must sum to a positive finite value")
@@ -180,7 +194,9 @@ def _stock_data_dedup_cte(
 ) -> str:
     normalized = _normalized_code_sql(code_ref)
     order = _prefer_4digit_order_sql(code_ref)
-    select_ohlc = ", open, high, low, close, volume" if include_ohlc else ", close, volume"
+    select_ohlc = (
+        ", open, high, low, close, volume" if include_ohlc else ", close, volume"
+    )
     return f"""
         {cte_name} AS (
             SELECT
@@ -237,7 +253,9 @@ def _reader_table_exists(reader: MarketDbReadable, table_name: str) -> bool:
     return row is not None
 
 
-def _stock_master_source(reader: MarketDbReadable, as_of_date: str) -> tuple[str, str, tuple[str, ...]]:
+def _stock_master_source(
+    reader: MarketDbReadable, as_of_date: str
+) -> tuple[str, str, tuple[str, ...]]:
     if _reader_table_exists(reader, "stock_master_daily"):
         row = reader.query_one(
             "SELECT 1 AS exists FROM stock_master_daily WHERE date = ? LIMIT 1",
@@ -254,10 +272,16 @@ _VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
 _VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
     "requires PBR > 0 and forward PER > 0; no ADV60 floor"
 )
-_VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[ValueCompositeScoreMethod, dict[str, float]] = {
+_VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[
+    ValueCompositeScoreMethod, dict[str, float]
+] = {
     "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     "prime_size_tilt": PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
+}
+_VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
+    "prime": "prime_size_tilt",
+    "standard": "standard_pbr_tilt",
 }
 _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
     "standard_pbr_tilt": (
@@ -303,10 +327,7 @@ def _build_optional_desc_ranks(
         if getattr(item, field_name) is not None
     ]
     scoped.sort(key=lambda pair: (cast(float, pair[1]), pair[0]), reverse=True)
-    return {
-        code: rank
-        for rank, (code, _value) in enumerate(scoped, start=1)
-    }
+    return {code: rank for rank, (code, _value) in enumerate(scoped, start=1)}
 
 
 class RankingService:
@@ -354,7 +375,9 @@ class RankingService:
                 target_date, lookback_days, limit, query_market_codes
             )
         else:
-            trading_value = self._ranking_by_trading_value(target_date, limit, query_market_codes)
+            trading_value = self._ranking_by_trading_value(
+                target_date, limit, query_market_codes
+            )
 
         if lookback_days > 1:
             gainers = self._ranking_by_price_change_from_days(
@@ -364,12 +387,22 @@ class RankingService:
                 target_date, lookback_days, limit, query_market_codes, "ASC"
             )
         else:
-            gainers = self._ranking_by_price_change(target_date, limit, query_market_codes, "DESC")
-            losers = self._ranking_by_price_change(target_date, limit, query_market_codes, "ASC")
+            gainers = self._ranking_by_price_change(
+                target_date, limit, query_market_codes, "DESC"
+            )
+            losers = self._ranking_by_price_change(
+                target_date, limit, query_market_codes, "ASC"
+            )
 
-        period_high = self._ranking_by_period_high(target_date, period_days, limit, query_market_codes)
-        period_low = self._ranking_by_period_low(target_date, period_days, limit, query_market_codes)
-        index_performance = self._load_index_performance(target_date, lookback_days=lookback_days)
+        period_high = self._ranking_by_period_high(
+            target_date, period_days, limit, query_market_codes
+        )
+        period_low = self._ranking_by_period_low(
+            target_date, period_days, limit, query_market_codes
+        )
+        index_performance = self._load_index_performance(
+            target_date, lookback_days=lookback_days
+        )
 
         return MarketRankingResponse(
             date=target_date,
@@ -408,7 +441,9 @@ class RankingService:
             validated_sma_window,
         )
         if not rows:
-            raise ValueError(f"No TOPIX100 ranking data available for date: {target_date}")
+            raise ValueError(
+                f"No TOPIX100 ranking data available for date: {target_date}"
+            )
         if study_mode == "swing_5d":
             return self._get_topix100_swing_5d_ranking(
                 target_date=target_date,
@@ -431,15 +466,19 @@ class RankingService:
         sma_window: Topix100PriceSmaWindow,
         rows: list[Mapping[str, Any]],
     ) -> Topix100RankingResponse:
-        realized_rows_by_code = self._load_topix100_next_session_intraday_returns(target_date)
-        score_snapshot = score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
-            self._reader.db_path,
-            target_date=target_date,
-            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
-            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
-            categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
-            train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
-            connection=self._reader.conn,
+        realized_rows_by_code = self._load_topix100_next_session_intraday_returns(
+            target_date
+        )
+        score_snapshot = (
+            score_topix100_streak_353_next_session_intraday_lightgbm_snapshot(
+                self._reader.db_path,
+                target_date=target_date,
+                short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+                long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+                categorical_feature_columns=DEFAULT_RUNTIME_CATEGORICAL_FEATURE_COLUMNS,
+                train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
+                connection=self._reader.conn,
+            )
         )
 
         items = []
@@ -451,11 +490,14 @@ class RankingService:
                 self._build_topix100_ranking_item(
                     row=row,
                     intraday_score=(
-                        state_snapshot.intraday_score if state_snapshot is not None else None
+                        state_snapshot.intraday_score
+                        if state_snapshot is not None
+                        else None
                     ),
                     next_session_date=(
                         str(realized_row["next_session_date"])
-                        if realized_row is not None and realized_row["next_session_date"] is not None
+                        if realized_row is not None
+                        and realized_row["next_session_date"] is not None
                         else None
                     ),
                     next_session_intraday_return=(
@@ -472,7 +514,11 @@ class RankingService:
             [
                 item.model_copy(
                     update={
-                        "intradayScore": (-item.intradayScore if item.intradayScore is not None else None),
+                        "intradayScore": (
+                            -item.intradayScore
+                            if item.intradayScore is not None
+                            else None
+                        ),
                     }
                 )
                 for item in items
@@ -521,14 +567,18 @@ class RankingService:
         sma_window: Topix100PriceSmaWindow,
         rows: list[Mapping[str, Any]],
     ) -> Topix100RankingResponse:
-        realized_rows_by_code = self._load_topix100_next_session_open_to_open_5d_returns(target_date)
-        score_snapshot = score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
-            self._reader.db_path,
-            target_date=target_date,
-            short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
-            long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
-            train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
-            connection=self._reader.conn,
+        realized_rows_by_code = (
+            self._load_topix100_next_session_open_to_open_5d_returns(target_date)
+        )
+        score_snapshot = (
+            score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot(
+                self._reader.db_path,
+                target_date=target_date,
+                short_window_streaks=_TOPIX100_SHORT_WINDOW_STREAKS,
+                long_window_streaks=_TOPIX100_LONG_WINDOW_STREAKS,
+                train_lookback_days=DEFAULT_RUNTIME_TRAIN_LOOKBACK_DAYS,
+                connection=self._reader.conn,
+            )
         )
 
         items = []
@@ -540,16 +590,20 @@ class RankingService:
                 self._build_topix100_ranking_item(
                     row=row,
                     long_score_5d=(
-                        state_snapshot.long_score_5d if state_snapshot is not None else None
+                        state_snapshot.long_score_5d
+                        if state_snapshot is not None
+                        else None
                     ),
                     swing_entry_date=(
                         str(realized_row["entry_date"])
-                        if realized_row is not None and realized_row["entry_date"] is not None
+                        if realized_row is not None
+                        and realized_row["entry_date"] is not None
                         else None
                     ),
                     swing_exit_date=(
                         str(realized_row["exit_date"])
-                        if realized_row is not None and realized_row["exit_date"] is not None
+                        if realized_row is not None
+                        and realized_row["exit_date"] is not None
                         else None
                     ),
                     open_to_open_5d_return=(
@@ -601,7 +655,8 @@ class RankingService:
             secondaryBenchmark="topix100_universe",
             primaryBenchmarkReturn=(
                 float(benchmark_row["benchmark_return"])
-                if benchmark_row is not None and benchmark_row["benchmark_return"] is not None
+                if benchmark_row is not None
+                and benchmark_row["benchmark_return"] is not None
                 else None
             ),
             secondaryBenchmarkReturn=secondary_benchmark_return,
@@ -671,17 +726,24 @@ class RankingService:
         if forecast_lookback_fy_count < 1:
             raise ValueError("forecast_lookback_fy_count must be >= 1")
 
-        if forecast_above_all_actuals is not None and not forecast_above_recent_fy_actuals:
+        if (
+            forecast_above_all_actuals is not None
+            and not forecast_above_recent_fy_actuals
+        ):
             forecast_above_recent_fy_actuals = forecast_above_all_actuals
 
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
-        date_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+        date_row = self._reader.query_one(
+            "SELECT MAX(date) as max_date FROM stock_data"
+        )
         if date_row is None or date_row["max_date"] is None:
             raise ValueError("No trading data available in database")
         target_date = date_row["max_date"]
 
         stock_rows = self._load_fundamental_stock_rows(target_date, query_market_codes)
-        statement_rows = self._load_fundamental_statement_rows(target_date, query_market_codes)
+        statement_rows = self._load_fundamental_statement_rows(
+            target_date, query_market_codes
+        )
 
         statements_by_code: dict[str, list[_StatementRow]] = {}
         for row in statement_rows:
@@ -739,14 +801,20 @@ class RankingService:
                 ):
                     continue
 
-            ratio_snapshot = self._resolve_latest_ratio_snapshot(actual_snapshot, forecast_snapshot)
+            ratio_snapshot = self._resolve_latest_ratio_snapshot(
+                actual_snapshot, forecast_snapshot
+            )
 
             if ratio_snapshot is None:
                 continue
             ratio_candidates.append(self._build_fundamental_item(stock, ratio_snapshot))
 
-        ratio_high = self._rank_fundamental_items(ratio_candidates, limit, descending=True)
-        ratio_low = self._rank_fundamental_items(ratio_candidates, limit, descending=False)
+        ratio_high = self._rank_fundamental_items(
+            ratio_candidates, limit, descending=True
+        )
+        ratio_low = self._rank_fundamental_items(
+            ratio_candidates, limit, descending=False
+        )
 
         return MarketFundamentalRankingResponse(
             date=target_date,
@@ -773,21 +841,193 @@ class RankingService:
             raise ValueError(f"Unsupported scoreMethod: {score_method}")
         if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
             raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
-        weights = _normalize_value_composite_weights(_VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method])
+        weights = _normalize_value_composite_weights(
+            _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method]
+        )
         requested_market_codes, query_market_codes = resolve_market_codes(
             markets,
             fallback=["standard"],
         )
-        if date:
-            target_date = date
-        else:
-            date_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
-            if date_row is None or date_row["max_date"] is None:
-                raise ValueError("No trading data available in database")
-            target_date = date_row["max_date"]
+        target_date = self._resolve_value_composite_target_date(date)
+        scored = self._load_value_composite_scored_frame(
+            target_date=target_date,
+            query_market_codes=query_market_codes,
+            weights=weights,
+            forward_eps_mode=forward_eps_mode,
+        ).head(limit)
 
+        items = [
+            self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
+        ]
+
+        return ValueCompositeRankingResponse(
+            date=target_date,
+            markets=requested_market_codes,
+            metricKey=_VALUE_COMPOSITE_METRIC_KEY,
+            scoreMethod=score_method,
+            forwardEpsMode=forward_eps_mode,
+            scorePolicy=(
+                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+            ),
+            weights={
+                "smallMarketCap": weights["small_market_cap_score"],
+                "lowPbr": weights["low_pbr_score"],
+                "lowForwardPer": weights["low_forward_per_score"],
+            },
+            itemCount=len(items),
+            items=items,
+            lastUpdated=_now_iso(),
+        )
+
+    def get_value_composite_score(
+        self,
+        code: str,
+        date: str | None = None,
+        forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
+    ) -> ValueCompositeScoreResponse:
+        """単一銘柄の market-specific value composite score を取得"""
+
+        if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
+            raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
+        target_date = self._resolve_value_composite_target_date(date)
+        _, all_query_market_codes = resolve_market_codes(
+            "prime,standard,growth",
+            fallback=["prime", "standard", "growth"],
+        )
+        stock_rows = self._load_fundamental_stock_rows(
+            target_date, all_query_market_codes
+        )
+        normalized_target_code = _normalize_equity_code(code)
+        target_stock = next(
+            (
+                row
+                for row in stock_rows
+                if _normalize_equity_code(row["code"]) == normalized_target_code
+            ),
+            None,
+        )
+        last_updated = _now_iso()
+        if target_stock is None:
+            return ValueCompositeScoreResponse(
+                date=target_date,
+                code=code,
+                forwardEpsMode=forward_eps_mode,
+                scoreAvailable=False,
+                unsupportedReason="not_found",
+                lastUpdated=last_updated,
+            )
+
+        market = _canonical_market_label(str(target_stock["market_code"]))
+        score_method = _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET.get(market)
+        if score_method is None:
+            return ValueCompositeScoreResponse(
+                date=target_date,
+                code=str(target_stock["code"]),
+                companyName=str(target_stock["company_name"]),
+                marketCode=str(target_stock["market_code"]),
+                market=market,
+                forwardEpsMode=forward_eps_mode,
+                scoreAvailable=False,
+                unsupportedReason="unsupported_market",
+                lastUpdated=last_updated,
+            )
+
+        weights = _normalize_value_composite_weights(
+            _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method]
+        )
+        _, query_market_codes = resolve_market_codes(market, fallback=[market])
+        scored = self._load_value_composite_scored_frame(
+            target_date=target_date,
+            query_market_codes=query_market_codes,
+            weights=weights,
+            forward_eps_mode=forward_eps_mode,
+        )
+        rows = scored.to_dict(orient="records")
+        universe_count = len(rows)
+        for rank, row in enumerate(rows, start=1):
+            if _normalize_equity_code(row["code"]) != normalized_target_code:
+                continue
+            item = self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            return ValueCompositeScoreResponse(
+                date=target_date,
+                code=str(target_stock["code"]),
+                companyName=str(target_stock["company_name"]),
+                marketCode=str(target_stock["market_code"]),
+                market=market,
+                metricKey=_VALUE_COMPOSITE_METRIC_KEY,
+                scoreMethod=score_method,
+                forwardEpsMode=forward_eps_mode,
+                scorePolicy=(
+                    f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+                    f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+                ),
+                weights={
+                    "smallMarketCap": weights["small_market_cap_score"],
+                    "lowPbr": weights["low_pbr_score"],
+                    "lowForwardPer": weights["low_forward_per_score"],
+                },
+                universeCount=universe_count,
+                scoreAvailable=True,
+                item=item,
+                lastUpdated=last_updated,
+            )
+
+        unsupported_reason = self._resolve_value_composite_unavailable_reason(
+            target_stock=target_stock,
+            target_date=target_date,
+            query_market_codes=query_market_codes,
+            forward_eps_mode=forward_eps_mode,
+        )
+        return ValueCompositeScoreResponse(
+            date=target_date,
+            code=str(target_stock["code"]),
+            companyName=str(target_stock["company_name"]),
+            marketCode=str(target_stock["market_code"]),
+            market=market,
+            metricKey=_VALUE_COMPOSITE_METRIC_KEY,
+            scoreMethod=score_method,
+            forwardEpsMode=forward_eps_mode,
+            scorePolicy=(
+                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+            ),
+            weights={
+                "smallMarketCap": weights["small_market_cap_score"],
+                "lowPbr": weights["low_pbr_score"],
+                "lowForwardPer": weights["low_forward_per_score"],
+            },
+            universeCount=universe_count,
+            scoreAvailable=False,
+            unsupportedReason=unsupported_reason,
+            lastUpdated=last_updated,
+        )
+
+    # --- Private ranking methods ---
+
+    def _resolve_value_composite_target_date(self, date: str | None) -> str:
+        if date:
+            return date
+        date_row = self._reader.query_one(
+            "SELECT MAX(date) as max_date FROM stock_data"
+        )
+        if date_row is None or date_row["max_date"] is None:
+            raise ValueError("No trading data available in database")
+        return str(date_row["max_date"])
+
+    def _load_value_composite_scored_frame(
+        self,
+        *,
+        target_date: str,
+        query_market_codes: list[str],
+        weights: Mapping[str, float],
+        forward_eps_mode: ValueCompositeForwardEpsMode,
+    ) -> pd.DataFrame:
         stock_rows = self._load_fundamental_stock_rows(target_date, query_market_codes)
-        statement_rows = self._load_fundamental_statement_rows(target_date, query_market_codes)
+        statement_rows = self._load_fundamental_statement_rows(
+            target_date, query_market_codes
+        )
 
         statements_by_code: dict[str, list[_StatementRow]] = {}
         raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
@@ -832,7 +1072,11 @@ class RankingService:
                 forward_eps_mode=forward_eps_mode,
                 as_of_date=target_date,
             )
-            latest_fy = self._latest_value_fy_statement(raw_statements, as_of_date=target_date)
+            latest_fy = self._latest_value_bps_statement(
+                raw_statements,
+                baseline_shares,
+                as_of_date=target_date,
+            )
             if latest_fy is None:
                 continue
 
@@ -841,10 +1085,13 @@ class RankingService:
                 _to_nullable_float(latest_fy["shares_outstanding"]),
                 baseline_shares,
             )
-            forward_eps = forecast_snapshot.value if forecast_snapshot is not None else None
+            forward_eps = (
+                forecast_snapshot.value if forecast_snapshot is not None else None
+            )
             market_cap_bil_jpy = (
                 price * baseline_shares / 1_000_000_000.0
-                if baseline_shares is not None and _is_valid_share_count(baseline_shares)
+                if baseline_shares is not None
+                and _is_valid_share_count(baseline_shares)
                 else None
             )
             pbr = _positive_ratio(price, bps)
@@ -866,57 +1113,104 @@ class RankingService:
                     "forward_eps": forward_eps,
                     "latest_fy_disclosed_date": str(latest_fy["disclosed_date"]),
                     "forward_eps_disclosed_date": (
-                        forecast_snapshot.disclosed_date if forecast_snapshot is not None else None
+                        forecast_snapshot.disclosed_date
+                        if forecast_snapshot is not None
+                        else None
                     ),
-                    "forward_eps_source": forecast_snapshot.source if forecast_snapshot is not None else None,
+                    "forward_eps_source": forecast_snapshot.source
+                    if forecast_snapshot is not None
+                    else None,
                 }
             )
 
-        if records:
-            scored = build_value_composite_score_frame(
-                pd.DataFrame.from_records(records),
-                group_columns=("market",),
-                required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
-                score_column=VALUE_COMPOSITE_SCORE_COLUMN,
-                weights=weights,
-            )
-            scored = scored[
-                pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
-            ].copy()
-            scored = scored.sort_values(
-                [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
-                ascending=[False, True],
-                kind="stable",
-            ).head(limit)
-        else:
-            scored = pd.DataFrame()
+        if not records:
+            return pd.DataFrame()
 
-        items = [
-            self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
-            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
-        ]
-
-        return ValueCompositeRankingResponse(
-            date=target_date,
-            markets=requested_market_codes,
-            metricKey=_VALUE_COMPOSITE_METRIC_KEY,
-            scoreMethod=score_method,
-            forwardEpsMode=forward_eps_mode,
-            scorePolicy=(
-                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
-                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
-            ),
-            weights={
-                "smallMarketCap": weights["small_market_cap_score"],
-                "lowPbr": weights["low_pbr_score"],
-                "lowForwardPer": weights["low_forward_per_score"],
-            },
-            itemCount=len(items),
-            items=items,
-            lastUpdated=_now_iso(),
+        scored = build_value_composite_score_frame(
+            pd.DataFrame.from_records(records),
+            group_columns=("market",),
+            required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+            score_column=VALUE_COMPOSITE_SCORE_COLUMN,
+            weights=weights,
         )
+        scored = scored[
+            pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
+        ].copy()
+        return scored.sort_values(
+            [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+            ascending=[False, True],
+            kind="stable",
+        ).reset_index(drop=True)
 
-    # --- Private ranking methods ---
+    def _resolve_value_composite_unavailable_reason(
+        self,
+        *,
+        target_stock: Mapping[str, Any],
+        target_date: str,
+        query_market_codes: list[str],
+        forward_eps_mode: ValueCompositeForwardEpsMode,
+    ) -> ValueCompositeScoreUnavailableReason:
+        price = _to_nullable_float(target_stock["current_price"])
+        if price is None or price <= 0:
+            return "not_rankable"
+
+        target_code = _normalize_equity_code(target_stock["code"])
+        statement_rows = self._load_fundamental_statement_rows(
+            target_date, query_market_codes
+        )
+        statements: list[_StatementRow] = []
+        raw_statements: list[Mapping[str, Any]] = []
+        for row in statement_rows:
+            if _normalize_equity_code(row["code"]) != target_code:
+                continue
+            raw_statements.append(row)
+            statements.append(
+                _StatementRow(
+                    code=str(row["code"]),
+                    disclosed_date=str(row["disclosed_date"]),
+                    period_type=_normalize_period_label(row["type_of_current_period"]),
+                    earnings_per_share=_to_nullable_float(row["earnings_per_share"]),
+                    forecast_eps=_to_nullable_float(row["forecast_eps"]),
+                    next_year_forecast_earnings_per_share=_to_nullable_float(
+                        row["next_year_forecast_earnings_per_share"]
+                    ),
+                    shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
+                    fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
+                )
+            )
+        if not statements:
+            return "not_rankable"
+
+        baseline_shares = self._resolve_baseline_shares(
+            statements,
+            as_of_date=target_date,
+        )
+        forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
+            statements,
+            baseline_shares,
+            forward_eps_mode=forward_eps_mode,
+            as_of_date=target_date,
+        )
+        if forecast_snapshot is None or forecast_snapshot.value <= 0:
+            return "forward_eps_missing"
+
+        latest_fy = self._latest_value_bps_statement(
+            raw_statements,
+            baseline_shares,
+            as_of_date=target_date,
+        )
+        if latest_fy is None:
+            return "bps_missing"
+        bps = _adjust_per_share_value(
+            _to_nullable_float(latest_fy["bps"]),
+            _to_nullable_float(latest_fy["shares_outstanding"]),
+            baseline_shares,
+        )
+        if _positive_ratio(price, bps) is None:
+            return "bps_missing"
+        if _positive_ratio(price, forecast_snapshot.value) is None:
+            return "forward_eps_missing"
+        return "not_rankable"
 
     def _resolve_topix100_ranking_date(self, date: str | None) -> str:
         if date:
@@ -1147,7 +1441,9 @@ class RankingService:
                 (target_date,),
             )
 
-        if not self._table_exists("index_master") or not self._table_exists("indices_data"):
+        if not self._table_exists("index_master") or not self._table_exists(
+            "indices_data"
+        ):
             return None
 
         return self._reader.query_one(
@@ -1198,7 +1494,9 @@ class RankingService:
         master_table, master_date_clause, master_params = _stock_master_source(
             self._reader, target_date
         )
-        required_price_history_rows = 80 if metric == "price_sma_20_80" else int(sma_window)
+        required_price_history_rows = (
+            80 if metric == "price_sma_20_80" else int(sma_window)
+        )
         required_history_rows = max(
             required_price_history_rows,
             _TOPIX100_VOLUME_LONG_WINDOW,
@@ -1536,7 +1834,9 @@ class RankingService:
                 baseline_shares,
                 as_of_date=as_of_date,
             )
-        latest_fy = self._fundamental_calculator.resolve_latest_fy_row(rows, as_of_date=as_of_date)
+        latest_fy = self._fundamental_calculator.resolve_latest_fy_row(
+            rows, as_of_date=as_of_date
+        )
         return self._resolve_latest_fy_forecast_snapshot(latest_fy, baseline_shares)
 
     def _resolve_latest_ratio_snapshot(
@@ -1587,9 +1887,10 @@ class RankingService:
             )
         return ranked
 
-    def _latest_value_fy_statement(
+    def _latest_value_bps_statement(
         self,
         rows: list[Mapping[str, Any]],
+        baseline_shares: float | None,
         *,
         as_of_date: str,
     ) -> Mapping[str, Any] | None:
@@ -1599,9 +1900,17 @@ class RankingService:
             if _normalize_period_label(row["type_of_current_period"]) == "FY"
             and str(row["disclosed_date"]) <= str(as_of_date)
         ]
-        if not eligible:
-            return None
-        return sorted(eligible, key=lambda row: str(row["disclosed_date"]))[-1]
+        for row in sorted(
+            eligible, key=lambda row: str(row["disclosed_date"]), reverse=True
+        ):
+            bps = _adjust_per_share_value(
+                _to_nullable_float(row["bps"]),
+                _to_nullable_float(row["shares_outstanding"]),
+                baseline_shares,
+            )
+            if bps is not None and bps > 0:
+                return row
+        return None
 
     def _build_value_composite_item(
         self,
@@ -1656,7 +1965,9 @@ class RankingService:
     ) -> list[IndexPerformanceItem]:
         if lookback_days < 1:
             return []
-        if not self._table_exists("index_master") or not self._table_exists("indices_data"):
+        if not self._table_exists("index_master") or not self._table_exists(
+            "indices_data"
+        ):
             return []
 
         rows = self._reader.query(
@@ -1802,7 +2113,8 @@ class RankingService:
         rows = self._reader.query(sql, (start_date, date, *market_params, limit))
         return [
             _row_to_item(
-                row, i + 1,
+                row,
+                i + 1,
                 tradingValueAverage=row["avg_trading_value"],
                 lookbackDays=lookback_days,
             )
@@ -1846,7 +2158,8 @@ class RankingService:
         rows = self._reader.query(sql, (date, prev_date, *market_params, limit))
         return [
             _row_to_item(
-                row, i + 1,
+                row,
+                i + 1,
                 previousPrice=row["previous_price"],
                 changeAmount=row["change_amount"],
                 changePercentage=row["change_percentage"],
@@ -1855,7 +2168,12 @@ class RankingService:
         ]
 
     def _ranking_by_price_change_from_days(
-        self, date: str, lookback_days: int, limit: int, market_codes: list[str], order_dir: str
+        self,
+        date: str,
+        lookback_days: int,
+        limit: int,
+        market_codes: list[str],
+        order_dir: str,
     ) -> list[RankingItem]:
         """騰落率ランキング（N日前比較）"""
         base_date = self._get_trading_date_before(date, lookback_days)
@@ -1891,7 +2209,8 @@ class RankingService:
         rows = self._reader.query(sql, (date, base_date, *market_params, limit))
         return [
             _row_to_item(
-                row, i + 1,
+                row,
+                i + 1,
                 basePrice=row["base_price"],
                 changeAmount=row["change_amount"],
                 changePercentage=row["change_percentage"],
@@ -1944,7 +2263,8 @@ class RankingService:
         rows = self._reader.query(sql, (start_date, date, date, *market_params, limit))
         return [
             _row_to_item(
-                row, i + 1,
+                row,
+                i + 1,
                 tradingValue=row["trading_value"],
                 basePrice=row["base_price"],
                 changeAmount=row["change_amount"],
@@ -1998,7 +2318,8 @@ class RankingService:
         rows = self._reader.query(sql, (start_date, date, date, *market_params, limit))
         return [
             _row_to_item(
-                row, i + 1,
+                row,
+                i + 1,
                 tradingValue=row["trading_value"],
                 basePrice=row["base_price"],
                 changeAmount=row["change_amount"],

@@ -197,6 +197,10 @@ vi.mock('@/components/Chart/FundamentalsPanel', () => ({
   },
 }));
 
+vi.mock('@/components/Chart/ValueCompositeScoreStrip', () => ({
+  ValueCompositeScoreStrip: () => <div>Value Score Strip</div>,
+}));
+
 vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
   FundamentalsHistoryPanel: (props: unknown) => {
     mockFundamentalsHistoryPanelProps(props);

@@ -156,11 +156,14 @@ export interface MarketFundamentalRankingResponse {
   lastUpdated: string;
 }
 
-export type ValueCompositeScoreMethod =
-  | 'standard_pbr_tilt'
-  | 'prime_size_tilt'
-  | 'equal_weight';
+export type ValueCompositeScoreMethod = 'standard_pbr_tilt' | 'prime_size_tilt' | 'equal_weight';
 export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
+export type ValueCompositeScoreUnavailableReason =
+  | 'not_found'
+  | 'unsupported_market'
+  | 'forward_eps_missing'
+  | 'bps_missing'
+  | 'not_rankable';
 
 export interface ValueCompositeRankingItem {
   rank: number;
@@ -194,6 +197,24 @@ export interface ValueCompositeRankingResponse {
   weights: Record<string, number>;
   itemCount: number;
   items: ValueCompositeRankingItem[];
+  lastUpdated: string;
+}
+
+export interface ValueCompositeScoreResponse {
+  date: string;
+  code: string;
+  companyName?: string | null;
+  marketCode?: string | null;
+  market?: string | null;
+  metricKey: 'standard_value_composite';
+  scoreMethod?: ValueCompositeScoreMethod | null;
+  forwardEpsMode: ValueCompositeForwardEpsMode;
+  scorePolicy?: string | null;
+  weights: Record<string, number>;
+  universeCount: number;
+  scoreAvailable: boolean;
+  unsupportedReason?: ValueCompositeScoreUnavailableReason | null;
+  item?: ValueCompositeRankingItem | null;
   lastUpdated: string;
 }
 

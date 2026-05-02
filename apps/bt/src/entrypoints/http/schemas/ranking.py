@@ -16,6 +16,13 @@ ValueCompositeScoreMethod = Literal[
     "equal_weight",
 ]
 ValueCompositeForwardEpsMode = Literal["latest", "fy"]
+ValueCompositeScoreUnavailableReason = Literal[
+    "not_found",
+    "unsupported_market",
+    "forward_eps_missing",
+    "bps_missing",
+    "not_rankable",
+]
 
 
 class RankingItem(BaseModel):
@@ -217,4 +224,24 @@ class ValueCompositeRankingResponse(BaseModel):
     weights: dict[str, float]
     itemCount: int
     items: list[ValueCompositeRankingItem] = Field(default_factory=list)
+    lastUpdated: str
+
+
+class ValueCompositeScoreResponse(BaseModel):
+    """Single-symbol value-composite score response."""
+
+    date: str
+    code: str
+    companyName: str | None = None
+    marketCode: str | None = None
+    market: str | None = None
+    metricKey: Literal["standard_value_composite"] = "standard_value_composite"
+    scoreMethod: ValueCompositeScoreMethod | None = None
+    forwardEpsMode: ValueCompositeForwardEpsMode
+    scorePolicy: str | None = None
+    weights: dict[str, float] = Field(default_factory=dict)
+    universeCount: int = 0
+    scoreAvailable: bool
+    unsupportedReason: ValueCompositeScoreUnavailableReason | None = None
+    item: ValueCompositeRankingItem | None = None
     lastUpdated: str

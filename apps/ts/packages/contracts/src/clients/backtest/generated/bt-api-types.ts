@@ -386,6 +386,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/value-composite-score/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a single-symbol value-composite score
+         * @description Get a market-specific value composite score for one symbol. Prime uses prime_size_tilt, Standard uses standard_pbr_tilt, and unsupported markets return scoreAvailable=false.
+         */
+        get: operations["get_value_composite_score_api_analytics_value_composite_score__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/attribution-files": {
         parameters: {
             query?: never;
@@ -10805,6 +10825,53 @@ export interface components {
             };
         };
         /**
+         * ValueCompositeScoreResponse
+         * @description Single-symbol value-composite score response.
+         */
+        ValueCompositeScoreResponse: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName?: string | null;
+            /** Date */
+            date: string;
+            /**
+             * Forwardepsmode
+             * @enum {string}
+             */
+            forwardEpsMode: "latest" | "fy";
+            item?: components["schemas"]["ValueCompositeRankingItem"] | null;
+            /** Lastupdated */
+            lastUpdated: string;
+            /** Market */
+            market?: string | null;
+            /** Marketcode */
+            marketCode?: string | null;
+            /**
+             * Metrickey
+             * @default standard_value_composite
+             * @constant
+             */
+            metricKey: "standard_value_composite";
+            /** Scoreavailable */
+            scoreAvailable: boolean;
+            /** Scoremethod */
+            scoreMethod?: ("standard_pbr_tilt" | "prime_size_tilt" | "equal_weight") | null;
+            /** Scorepolicy */
+            scorePolicy?: string | null;
+            /**
+             * Universecount
+             * @default 0
+             */
+            universeCount: number;
+            /** Unsupportedreason */
+            unsupportedReason?: ("not_found" | "unsupported_market" | "forward_eps_missing" | "bps_missing" | "not_rankable") | null;
+            /** Weights */
+            weights?: {
+                [key: string]: number;
+            };
+        };
+        /**
          * VerificationCandidateStatus
          * @description Verification state of a single fast-path candidate.
          * @enum {string}
@@ -12206,6 +12273,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValueCompositeRankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_value_composite_score_api_analytics_value_composite_score__code__get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                forwardEpsMode?: "latest" | "fy";
+            };
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValueCompositeScoreResponse"];
                 };
             };
             /** @description Bad Request */

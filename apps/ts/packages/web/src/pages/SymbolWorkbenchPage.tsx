@@ -16,6 +16,7 @@ import { SingleValueIndicatorChart } from '@/components/Chart/SingleValueIndicat
 import { StockChart } from '@/components/Chart/StockChart';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
+import { ValueCompositeScoreStrip } from '@/components/Chart/ValueCompositeScoreStrip';
 import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
@@ -513,13 +514,18 @@ function renderOrderedPanelSection({
             </div>
             <div className="h-[calc(100%-3.75rem)] p-4">
               <ErrorBoundary>
-                <FundamentalsPanel
-                  symbol={selectedSymbol}
-                  enabled={fundamentalsPanelSection.isVisible}
-                  tradingValuePeriod={tradingValuePeriod}
-                  metricOrder={settings.fundamentalsMetricOrder}
-                  metricVisibility={settings.fundamentalsMetricVisibility}
-                />
+                <div className="flex h-full min-h-0 flex-col gap-3">
+                  <ValueCompositeScoreStrip symbol={selectedSymbol} enabled={fundamentalsPanelSection.isVisible} />
+                  <div className="min-h-0 flex-1">
+                    <FundamentalsPanel
+                      symbol={selectedSymbol}
+                      enabled={fundamentalsPanelSection.isVisible}
+                      tradingValuePeriod={tradingValuePeriod}
+                      metricOrder={settings.fundamentalsMetricOrder}
+                      metricVisibility={settings.fundamentalsMetricVisibility}
+                    />
+                  </div>
+                </div>
               </ErrorBoundary>
             </div>
           </Surface>

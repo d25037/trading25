@@ -124,6 +124,20 @@ describe('AnalyticsClient', () => {
     );
   });
 
+  test('getValueCompositeScore builds query parameters', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ scoreAvailable: false }));
+
+    await client.getValueCompositeScore({
+      symbol: '7203',
+      date: '2026-04-24',
+      forwardEpsMode: 'latest',
+    });
+
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/value-composite-score/7203?date=2026-04-24&forwardEpsMode=latest'
+    );
+  });
+
   test('fundamentals and margin endpoints use expected paths', async () => {
     fetchSpy.mockImplementation((() => Promise.resolve(createMockResponse({ ok: true }))) as typeof fetch);
 

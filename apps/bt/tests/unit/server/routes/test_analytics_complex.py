@@ -118,15 +118,57 @@ def analytics_timeseries_dir(tmp_path_factory):
     # 銘柄
     conn.execute(
         "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("72030", "トヨタ自動車", "TOYOTA", "prime", "プライム", "S17", "輸送用機器", "S33", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
+        (
+            "72030",
+            "トヨタ自動車",
+            "TOYOTA",
+            "prime",
+            "プライム",
+            "S17",
+            "輸送用機器",
+            "S33",
+            "輸送用機器",
+            "TOPIX Large70",
+            "1949-05-16",
+            None,
+            None,
+        ),
     )
     conn.execute(
         "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("67580", "ソニーグループ", "SONY", "prime", "プライム", "S17", "電気機器", "S33", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
+        (
+            "67580",
+            "ソニーグループ",
+            "SONY",
+            "prime",
+            "プライム",
+            "S17",
+            "電気機器",
+            "S33",
+            "電気機器",
+            "TOPIX Large70",
+            "1958-12-01",
+            None,
+            None,
+        ),
     )
     conn.execute(
         "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        ("33330", "ピーク実績銘柄", "PEAK", "prime", "プライム", "S17", "情報・通信業", "S33", "情報・通信業", "TOPIX Mid400", "1960-01-01", None, None),
+        (
+            "33330",
+            "ピーク実績銘柄",
+            "PEAK",
+            "prime",
+            "プライム",
+            "S17",
+            "情報・通信業",
+            "S33",
+            "情報・通信業",
+            "TOPIX Mid400",
+            "1960-01-01",
+            None,
+            None,
+        ),
     )
 
     # 300営業日分のデータ生成
@@ -134,6 +176,7 @@ def analytics_timeseries_dir(tmp_path_factory):
 
     # 銘柄データ（ランダムウォーク的）
     import random
+
     random.seed(42)
 
     for code, base_price in [("72030", 2500.0), ("67580", 13000.0), ("33330", 8000.0)]:
@@ -157,13 +200,29 @@ def analytics_timeseries_dir(tmp_path_factory):
         topix_price = topix_price * (1 + change)
         conn.execute(
             "INSERT INTO topix_data VALUES (?,?,?,?,?,?)",
-            (d, topix_price * 0.99, topix_price * 1.01, topix_price * 0.98, topix_price, None),
+            (
+                d,
+                topix_price * 0.99,
+                topix_price * 1.01,
+                topix_price * 0.98,
+                topix_price,
+                None,
+            ),
         )
 
     # 指数マスター
-    conn.execute("INSERT INTO index_master VALUES (?,?,?,?,?)", ("0000", "TOPIX", "TOPIX", "topix", "2008-05-07"))
-    conn.execute("INSERT INTO index_master VALUES (?,?,?,?,?)", ("0040", "水産農林", "Fishery", "sector33", "2010-01-04"))
-    conn.execute("INSERT INTO index_master VALUES (?,?,?,?,?)", ("0080", "食品", "Foods", "sector17", "2010-01-04"))
+    conn.execute(
+        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        ("0000", "TOPIX", "TOPIX", "topix", "2008-05-07"),
+    )
+    conn.execute(
+        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        ("0040", "水産農林", "Fishery", "sector33", "2010-01-04"),
+    )
+    conn.execute(
+        "INSERT INTO index_master VALUES (?,?,?,?,?)",
+        ("0080", "食品", "Foods", "sector17", "2010-01-04"),
+    )
 
     # 指数データ
     for idx_code, idx_base in [("0000", 2500.0), ("0040", 800.0), ("0080", 1200.0)]:
@@ -173,7 +232,16 @@ def analytics_timeseries_dir(tmp_path_factory):
             idx_price = idx_price * (1 + change)
             conn.execute(
                 "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
-                (idx_code, d, idx_price * 0.99, idx_price * 1.01, idx_price * 0.98, idx_price, None, None),
+                (
+                    idx_code,
+                    d,
+                    idx_price * 0.99,
+                    idx_price * 1.01,
+                    idx_price * 0.98,
+                    idx_price,
+                    None,
+                    None,
+                ),
             )
 
     # statements data for fundamental ranking
@@ -372,19 +440,25 @@ class TestTopix100Ranking:
             assert "nextSessionIntradayReturn" in item
 
     def test_supports_metric_query(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_sma_20_80")
+        resp = analytics_client.get(
+            "/api/analytics/topix100-ranking?metric=price_sma_20_80"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["rankingMetric"] == "price_sma_20_80"
 
     def test_supports_sma_window_query(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/topix100-ranking?metric=price_vs_sma_gap&smaWindow=100")
+        resp = analytics_client.get(
+            "/api/analytics/topix100-ranking?metric=price_vs_sma_gap&smaWindow=100"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["rankingMetric"] == "price_vs_sma_gap"
         assert data["smaWindow"] == 100
 
-    def test_includes_next_session_realized_return_when_available(self, analytics_client):
+    def test_includes_next_session_realized_return_when_available(
+        self, analytics_client
+    ):
         resp = analytics_client.get("/api/analytics/topix100-ranking?date=2024-02-20")
         assert resp.status_code == 200
         data = resp.json()
@@ -432,7 +506,9 @@ class TestTopix100Ranking:
             _score_stub,
         )
 
-        resp = analytics_client.get("/api/analytics/topix100-ranking?date=2024-02-14&studyMode=swing_5d")
+        resp = analytics_client.get(
+            "/api/analytics/topix100-ranking?date=2024-02-14&studyMode=swing_5d"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["studyMode"] == "swing_5d"
@@ -443,7 +519,9 @@ class TestTopix100Ranking:
         assert data["secondaryBenchmarkReturn"] is not None
         assert data["benchmarkEntryDate"] == "2024-02-15"
         assert data["benchmarkExitDate"] == "2024-02-22"
-        scored_item = next(item for item in data["items"] if item["longScore5d"] is not None)
+        scored_item = next(
+            item for item in data["items"] if item["longScore5d"] is not None
+        )
         assert scored_item["longScore5d"] is not None
         assert scored_item["swingEntryDate"] == "2024-02-15"
         assert scored_item["swingExitDate"] == "2024-02-22"
@@ -493,22 +571,32 @@ class TestFundamentalRanking:
     def test_forecast_above_recent_fy_actuals_filter(self, analytics_client):
         base_resp = analytics_client.get("/api/analytics/fundamental-ranking")
         assert base_resp.status_code == 200
-        base_codes = {item["code"] for item in base_resp.json()["rankings"]["ratioHigh"]}
+        base_codes = {
+            item["code"] for item in base_resp.json()["rankings"]["ratioHigh"]
+        }
         assert "33330" in base_codes
 
         filtered_resp = analytics_client.get(
             "/api/analytics/fundamental-ranking?forecastAboveRecentFyActuals=true&forecastLookbackFyCount=2"
         )
         assert filtered_resp.status_code == 200
-        filtered_codes = {item["code"] for item in filtered_resp.json()["rankings"]["ratioHigh"]}
+        filtered_codes = {
+            item["code"] for item in filtered_resp.json()["rankings"]["ratioHigh"]
+        }
         assert "33330" not in filtered_codes
 
-    def test_legacy_forecast_above_all_actuals_param_still_supported(self, analytics_client):
-        filtered_resp = analytics_client.get("/api/analytics/fundamental-ranking?forecastAboveAllActuals=true")
+    def test_legacy_forecast_above_all_actuals_param_still_supported(
+        self, analytics_client
+    ):
+        filtered_resp = analytics_client.get(
+            "/api/analytics/fundamental-ranking?forecastAboveAllActuals=true"
+        )
         assert filtered_resp.status_code == 200
 
     def test_422_unsupported_metric_key(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual")
+        resp = analytics_client.get(
+            "/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual"
+        )
         assert resp.status_code == 422
 
     def test_422_no_db(self):
@@ -544,14 +632,18 @@ class TestValueCompositeRanking:
         assert len(data["items"]) <= 1
 
     def test_forward_eps_mode_parameter(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/value-composite-ranking?forwardEpsMode=fy")
+        resp = analytics_client.get(
+            "/api/analytics/value-composite-ranking?forwardEpsMode=fy"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["forwardEpsMode"] == "fy"
         assert "FY forecast EPS" in data["scorePolicy"]
 
     def test_equal_weight_score_method(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=equal_weight")
+        resp = analytics_client.get(
+            "/api/analytics/value-composite-ranking?scoreMethod=equal_weight"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["scoreMethod"] == "equal_weight"
@@ -562,7 +654,9 @@ class TestValueCompositeRanking:
         }
 
     def test_standard_pbr_tilt_score_method(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=standard_pbr_tilt")
+        resp = analytics_client.get(
+            "/api/analytics/value-composite-ranking?scoreMethod=standard_pbr_tilt"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["scoreMethod"] == "standard_pbr_tilt"
@@ -573,7 +667,9 @@ class TestValueCompositeRanking:
         }
 
     def test_prime_size_tilt_score_method(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/value-composite-ranking?scoreMethod=prime_size_tilt")
+        resp = analytics_client.get(
+            "/api/analytics/value-composite-ranking?scoreMethod=prime_size_tilt"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["scoreMethod"] == "prime_size_tilt"
@@ -591,12 +687,33 @@ class TestValueCompositeRanking:
             assert resp.status_code == 422
 
 
+class TestValueCompositeScore:
+    def test_200_market_specific_score(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/value-composite-score/7203")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["code"] == "72030"
+        assert data["market"] == "prime"
+        assert data["scoreMethod"] == "prime_size_tilt"
+        assert data["forwardEpsMode"] == "latest"
+        assert "scoreAvailable" in data
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/value-composite-score/7203")
+            assert resp.status_code == 422
+
+
 # --- Factor Regression Tests ---
 
 
 class TestFactorRegression:
     def test_200(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["stockCode"] == "7203"
@@ -611,7 +728,9 @@ class TestFactorRegression:
         assert "dateRange" in data
 
     def test_response_numeric_precision(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         data = resp.json()
         # 数値は3桁精度
         assert isinstance(data["marketBeta"], float)
@@ -619,7 +738,9 @@ class TestFactorRegression:
         assert 0 <= data["marketRSquared"] <= 1
 
     def test_date_range(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         data = resp.json()
         dr = data["dateRange"]
         assert "from" in dr
@@ -662,7 +783,11 @@ class TestScreening:
         job.message = None
         job.created_at = datetime(2026, 1, 1)
         job.started_at = datetime(2026, 1, 1)
-        job.completed_at = datetime(2026, 1, 1) if status in {JobStatus.COMPLETED, JobStatus.CANCELLED} else None
+        job.completed_at = (
+            datetime(2026, 1, 1)
+            if status in {JobStatus.COMPLETED, JobStatus.CANCELLED}
+            else None
+        )
         job.error = None
         job.raw_result = raw_result
         return job
@@ -677,12 +802,18 @@ class TestScreening:
 
     def test_create_job_202(self, analytics_client):
         with (
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_service"
+            ) as mock_service,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+            ) as mock_manager,
         ):
             mock_service.submit_screening = AsyncMock(return_value="job-1")
             mock_service.get_job_request.return_value = ScreeningJobRequest()
-            mock_manager.get_job.return_value = self._make_job("job-1", JobStatus.PENDING)
+            mock_manager.get_job.return_value = self._make_job(
+                "job-1", JobStatus.PENDING
+            )
 
             resp = analytics_client.post("/api/analytics/screening/jobs", json={})
 
@@ -694,10 +825,16 @@ class TestScreening:
         assert data["sortBy"] == "matchedDate"
         assert data["order"] == "desc"
 
-    def test_create_job_maps_default_market_resolution_error_to_422(self, analytics_client):
-        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service:
+    def test_create_job_maps_default_market_resolution_error_to_422(
+        self, analytics_client
+    ):
+        with patch(
+            "src.entrypoints.http.routes.analytics_complex.screening_job_service"
+        ) as mock_service:
             mock_service.submit_screening = AsyncMock(
-                side_effect=ValueError("Failed to resolve default markets for production/broken")
+                side_effect=ValueError(
+                    "Failed to resolve default markets for production/broken"
+                )
             )
 
             resp = analytics_client.post("/api/analytics/screening/jobs", json={})
@@ -722,8 +859,12 @@ class TestScreening:
 
     def test_get_job_status(self, analytics_client):
         with (
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_service"
+            ) as mock_service,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+            ) as mock_manager,
         ):
             mock_service.get_job_request.return_value = ScreeningJobRequest(
                 markets="prime,standard",
@@ -731,7 +872,9 @@ class TestScreening:
                 sortBy="matchedDate",
                 order="asc",
             )
-            mock_manager.get_job.return_value = self._make_job("job-2", JobStatus.RUNNING)
+            mock_manager.get_job.return_value = self._make_job(
+                "job-2", JobStatus.RUNNING
+            )
 
             resp = analytics_client.get("/api/analytics/screening/jobs/job-2")
 
@@ -744,10 +887,16 @@ class TestScreening:
         assert data["markets"] == "prime,standard"
         assert data["scopeLabel"] == "Prime + Standard"
 
-    def test_get_job_status_restores_request_and_scope_from_run_spec(self, analytics_client):
+    def test_get_job_status_restores_request_and_scope_from_run_spec(
+        self, analytics_client
+    ):
         with (
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_service"
+            ) as mock_service,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+            ) as mock_manager,
         ):
             mock_service.get_job_request.return_value = None
             mock_service.get_job_scope_label.return_value = None
@@ -775,8 +924,12 @@ class TestScreening:
 
     def test_stream_job_status(self, analytics_client):
         with (
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_service"
+            ) as mock_service,
+            patch(
+                "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+            ) as mock_manager,
         ):
             job = self._make_job("job-stream", JobStatus.RUNNING)
             queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
@@ -799,7 +952,9 @@ class TestScreening:
             mock_manager.get_job.return_value = job
             mock_manager.subscribe.return_value = queue
 
-            resp = analytics_client.get("/api/analytics/screening/jobs/job-stream/stream")
+            resp = analytics_client.get(
+                "/api/analytics/screening/jobs/job-stream/stream"
+            )
 
         assert resp.status_code == 200
         assert "event: snapshot" in resp.text
@@ -810,8 +965,12 @@ class TestScreening:
         assert '"recentDays":5' in resp.text
 
     def test_cancel_job_conflict_for_completed(self, analytics_client):
-        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager:
-            mock_manager.get_job.return_value = self._make_job("job-3", JobStatus.COMPLETED)
+        with patch(
+            "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+        ) as mock_manager:
+            mock_manager.get_job.return_value = self._make_job(
+                "job-3", JobStatus.COMPLETED
+            )
             mock_manager.cancel_job = AsyncMock(return_value=None)
 
             resp = analytics_client.post("/api/analytics/screening/jobs/job-3/cancel")
@@ -848,7 +1007,9 @@ class TestScreening:
             }
         }
 
-        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager:
+        with patch(
+            "src.entrypoints.http.routes.analytics_complex.screening_job_manager"
+        ) as mock_manager:
             mock_manager.get_job.return_value = self._make_job(
                 "job-4",
                 JobStatus.COMPLETED,
@@ -895,60 +1056,94 @@ class TestAnalyticsRouteErrorMapping:
         assert resp.status_code == 500
         assert "Failed to get rankings" in str(resp.json())
 
-    def test_fundamental_ranking_maps_value_error_to_422(self, analytics_client, monkeypatch):
+    def test_fundamental_ranking_maps_value_error_to_422(
+        self, analytics_client, monkeypatch
+    ):
         from src.application.services.ranking_service import RankingService
 
         def _raise_value_error(self, **_kwargs):  # noqa: ANN001
             raise ValueError("invalid fundamental ranking params")
 
-        monkeypatch.setattr(RankingService, "get_fundamental_rankings", _raise_value_error)
+        monkeypatch.setattr(
+            RankingService, "get_fundamental_rankings", _raise_value_error
+        )
         resp = analytics_client.get("/api/analytics/fundamental-ranking")
         assert resp.status_code == 422
         assert "invalid fundamental ranking params" in str(resp.json())
 
-    def test_fundamental_ranking_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+    def test_fundamental_ranking_maps_unexpected_error_to_500(
+        self, analytics_client, monkeypatch
+    ):
         from src.application.services.ranking_service import RankingService
 
         def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
             raise RuntimeError("fundamental ranking boom")
 
-        monkeypatch.setattr(RankingService, "get_fundamental_rankings", _raise_runtime_error)
+        monkeypatch.setattr(
+            RankingService, "get_fundamental_rankings", _raise_runtime_error
+        )
         resp = analytics_client.get("/api/analytics/fundamental-ranking")
         assert resp.status_code == 500
         assert "Failed to get fundamental rankings" in str(resp.json())
 
-    def test_factor_regression_maps_insufficient_to_422(self, analytics_client, monkeypatch):
-        from src.application.services.factor_regression_service import FactorRegressionService
+    def test_factor_regression_maps_insufficient_to_422(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.factor_regression_service import (
+            FactorRegressionService,
+        )
 
         def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
             raise ValueError("insufficient history")
 
-        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_value_error)
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        monkeypatch.setattr(
+            FactorRegressionService, "analyze_stock", _raise_value_error
+        )
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         assert resp.status_code == 422
 
-    def test_factor_regression_maps_other_value_error_to_400(self, analytics_client, monkeypatch):
-        from src.application.services.factor_regression_service import FactorRegressionService
+    def test_factor_regression_maps_other_value_error_to_400(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.factor_regression_service import (
+            FactorRegressionService,
+        )
 
         def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
             raise ValueError("bad input")
 
-        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_value_error)
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        monkeypatch.setattr(
+            FactorRegressionService, "analyze_stock", _raise_value_error
+        )
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         assert resp.status_code == 400
 
-    def test_factor_regression_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
-        from src.application.services.factor_regression_service import FactorRegressionService
+    def test_factor_regression_maps_unexpected_error_to_500(
+        self, analytics_client, monkeypatch
+    ):
+        from src.application.services.factor_regression_service import (
+            FactorRegressionService,
+        )
 
         def _raise_runtime_error(self, symbol, lookback_days):  # noqa: ANN001
             raise RuntimeError("factor boom")
 
-        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_runtime_error)
-        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        monkeypatch.setattr(
+            FactorRegressionService, "analyze_stock", _raise_runtime_error
+        )
+        resp = analytics_client.get(
+            "/api/analytics/factor-regression/7203?lookbackDays=100"
+        )
         assert resp.status_code == 500
         assert "Failed to analyze" in str(resp.json())
 
-    def test_screening_job_submit_maps_value_error_to_422(self, analytics_client, monkeypatch):
+    def test_screening_job_submit_maps_value_error_to_422(
+        self, analytics_client, monkeypatch
+    ):
         from src.application.services.screening_job_service import ScreeningJobService
 
         async def _raise_value_error(self, reader, request):  # noqa: ANN001
@@ -959,13 +1154,17 @@ class TestAnalyticsRouteErrorMapping:
         assert resp.status_code == 422
         assert "invalid strategy" in str(resp.json())
 
-    def test_screening_job_submit_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+    def test_screening_job_submit_maps_unexpected_error_to_500(
+        self, analytics_client, monkeypatch
+    ):
         from src.application.services.screening_job_service import ScreeningJobService
 
         async def _raise_runtime_error(self, reader, request):  # noqa: ANN001
             raise RuntimeError("screening boom")
 
-        monkeypatch.setattr(ScreeningJobService, "submit_screening", _raise_runtime_error)
+        monkeypatch.setattr(
+            ScreeningJobService, "submit_screening", _raise_runtime_error
+        )
         resp = analytics_client.post("/api/analytics/screening/jobs", json={})
         assert resp.status_code == 500
         assert "Failed to start screening job" in str(resp.json())
@@ -992,10 +1191,14 @@ class TestAnalyticsRouteErrorMapping:
         monkeypatch,
     ):
         from src.shared.config.settings import reload_settings
-        from src.application.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
+        from src.application.services.portfolio_factor_regression_service import (
+            PortfolioFactorRegressionService,
+        )
 
         monkeypatch.setenv("MARKET_TIMESERIES_DIR", analytics_timeseries_dir)
-        monkeypatch.setenv("MARKET_DB_PATH", str(Path(analytics_timeseries_dir) / "market.duckdb"))
+        monkeypatch.setenv(
+            "MARKET_DB_PATH", str(Path(analytics_timeseries_dir) / "market.duckdb")
+        )
         monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
         monkeypatch.setenv("JQUANTS_PLAN", "free")
         reload_settings()
@@ -1008,28 +1211,36 @@ class TestAnalyticsRouteErrorMapping:
             def _raise_not_found(self, portfolio_id, lookback_days):  # noqa: ANN001
                 raise ValueError("portfolio not found")
 
-            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_not_found)
+            monkeypatch.setattr(
+                PortfolioFactorRegressionService, "analyze", _raise_not_found
+            )
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 404
 
             def _raise_insufficient(self, portfolio_id, lookback_days):  # noqa: ANN001
                 raise ValueError("insufficient samples")
 
-            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_insufficient)
+            monkeypatch.setattr(
+                PortfolioFactorRegressionService, "analyze", _raise_insufficient
+            )
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 422
 
             def _raise_other(self, portfolio_id, lookback_days):  # noqa: ANN001
                 raise ValueError("unexpected input")
 
-            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_other)
+            monkeypatch.setattr(
+                PortfolioFactorRegressionService, "analyze", _raise_other
+            )
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 400
 
             def _raise_runtime(self, portfolio_id, lookback_days):  # noqa: ANN001
                 raise RuntimeError("portfolio boom")
 
-            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_runtime)
+            monkeypatch.setattr(
+                PortfolioFactorRegressionService, "analyze", _raise_runtime
+            )
             resp = client.get("/api/analytics/portfolio-factor-regression/1")
             assert resp.status_code == 500
 

@@ -20,7 +20,9 @@ from src.entrypoints.http.routes.job_response_utils import (
 )
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
-from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
+from src.entrypoints.http.schemas.portfolio_factor_regression import (
+    PortfolioFactorRegressionResponse,
+)
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
@@ -29,6 +31,7 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100StudyMode,
     ValueCompositeRankingResponse,
     ValueCompositeForwardEpsMode,
+    ValueCompositeScoreResponse,
     ValueCompositeScoreMethod,
 )
 from src.entrypoints.http.schemas.screening import (
@@ -216,6 +219,45 @@ async def get_value_composite_ranking(
 
 
 @router.get(
+    "/api/analytics/value-composite-score/{code}",
+    response_model=ValueCompositeScoreResponse,
+    summary="Get a single-symbol value-composite score",
+    description=(
+        "Get a market-specific value composite score for one symbol. Prime uses prime_size_tilt, "
+        "Standard uses standard_pbr_tilt, and unsupported markets return scoreAvailable=false."
+    ),
+)
+async def get_value_composite_score(
+    code: str,
+    request: Request,
+    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
+) -> ValueCompositeScoreResponse:
+    """単一銘柄の小型バリュー複合スコアを取得"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+
+    service = RankingService(reader)
+    try:
+        return service.get_value_composite_score(
+            code=code,
+            date=date,
+            forward_eps_mode=forwardEpsMode,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Value composite score error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get value composite score: {e}",
+        )
+
+
+@router.get(
     "/api/analytics/topix100-ranking",
     response_model=Topix100RankingResponse,
     summary="Get TOPIX100 ranking snapshot",
@@ -274,7 +316,9 @@ async def get_factor_regression(
     lookbackDays: int = Query(252, ge=60, le=1000),
 ) -> FactorRegressionResponse:
     """ファクター回帰分析を実行"""
-    from src.application.services.factor_regression_service import FactorRegressionService
+    from src.application.services.factor_regression_service import (
+        FactorRegressionService,
+    )
 
     normalized_symbol = _normalize_factor_regression_symbol(symbol)
 
@@ -316,7 +360,9 @@ def _get_screening_job_or_404(job_id: str) -> JobInfo:
     if job is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
     if job.job_type != _SCREENING_JOB_TYPE:
-        raise HTTPException(status_code=400, detail=f"Screeningジョブではありません: {job.job_type}")
+        raise HTTPException(
+            status_code=400, detail=f"Screeningジョブではありません: {job.job_type}"
+        )
     return job
 
 
@@ -337,7 +383,9 @@ def _resolve_screening_job_request(job: JobInfo) -> ScreeningJobRequest:
     try:
         return ScreeningJobRequest.model_validate(request_payload)
     except Exception:
-        logger.warning("Failed to restore screening job request from run_spec", job_id=job.job_id)
+        logger.warning(
+            "Failed to restore screening job request from run_spec", job_id=job.job_id
+        )
         return ScreeningJobRequest()
 
 
@@ -355,13 +403,17 @@ def _resolve_screening_job_scope_label(
         if isinstance(persisted_scope_label, str) and persisted_scope_label:
             return persisted_scope_label
 
-    raw_response = job.raw_result.get("response") if isinstance(job.raw_result, dict) else None
+    raw_response = (
+        job.raw_result.get("response") if isinstance(job.raw_result, dict) else None
+    )
     if isinstance(raw_response, dict):
         result_scope_label = raw_response.get("scopeLabel")
         if isinstance(result_scope_label, str) and result_scope_label:
             return result_scope_label
 
-    return format_market_scope_label(params.markets.split(",")) if params.markets else None
+    return (
+        format_market_scope_label(params.markets.split(",")) if params.markets else None
+    )
 
 
 def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
@@ -431,7 +483,11 @@ async def _screening_job_event_generator(job_id: str):
                 "event": "job",
                 "data": _build_screening_job_response(latest_job).model_dump_json(),
             }
-            if latest_job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            if latest_job.status in (
+                JobStatus.COMPLETED,
+                JobStatus.FAILED,
+                JobStatus.CANCELLED,
+            ):
                 return
     finally:
         screening_job_manager.unsubscribe(job_id, queue)
@@ -561,7 +617,9 @@ async def get_portfolio_factor_regression(
 ) -> PortfolioFactorRegressionResponse:
     """ポートフォリオファクター回帰分析を実行"""
     from src.infrastructure.db.market.portfolio_db import PortfolioDb
-    from src.application.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
+    from src.application.services.portfolio_factor_regression_service import (
+        PortfolioFactorRegressionService,
+    )
 
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
@@ -569,7 +627,9 @@ async def get_portfolio_factor_regression(
 
     portfolio_db: PortfolioDb | None = getattr(request.app.state, "portfolio_db", None)
     if portfolio_db is None:
-        raise HTTPException(status_code=422, detail="Portfolio database not initialized")
+        raise HTTPException(
+            status_code=422, detail="Portfolio database not initialized"
+        )
 
     service = PortfolioFactorRegressionService(reader, portfolio_db)
     try:
@@ -578,7 +638,12 @@ async def get_portfolio_factor_regression(
         msg = str(e)
         if "not found" in msg.lower():
             raise HTTPException(status_code=404, detail=msg) from e
-        if "insufficient" in msg.lower() or "no valid" in msg.lower() or "zero" in msg.lower() or "no stocks" in msg.lower():
+        if (
+            "insufficient" in msg.lower()
+            or "no valid" in msg.lower()
+            or "zero" in msg.lower()
+            or "no stocks" in msg.lower()
+        ):
             raise HTTPException(status_code=422, detail=msg) from e
         raise HTTPException(status_code=400, detail=msg) from e
     except Exception as e:
