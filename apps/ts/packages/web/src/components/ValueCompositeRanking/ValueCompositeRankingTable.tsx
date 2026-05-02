@@ -31,11 +31,59 @@ function formatMarketCapBil(value: number): string {
   return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}bn`;
 }
 
+type TechnicalMetricKey = Exclude<keyof NonNullable<ValueCompositeRankingItem['technicalMetrics']>, 'featureDate'>;
+
+interface TechnicalMetricColumn {
+  key: TechnicalMetricKey;
+  label: string;
+  signed: boolean;
+}
+
+const STANDARD_TECHNICAL_COLUMNS: TechnicalMetricColumn[] = [
+  { key: 'reboundFrom252dLowPct', label: '252d Low Reb', signed: true },
+  { key: 'return252dPct', label: '252d Ret', signed: true },
+];
+
+const PRIME_TECHNICAL_COLUMNS: TechnicalMetricColumn[] = [
+  { key: 'volatility20dPct', label: 'Vol 20d', signed: false },
+  { key: 'volatility60dPct', label: 'Vol 60d', signed: false },
+  { key: 'downsideVolatility60dPct', label: 'Down Vol 60d', signed: false },
+];
+
+function normalizeMarket(value: string | null | undefined): 'prime' | 'standard' | 'other' {
+  if (value === 'prime' || value === '0111') return 'prime';
+  if (value === 'standard' || value === '0112') return 'standard';
+  return 'other';
+}
+
+function resolveTechnicalColumns(markets: string[], items: ValueCompositeRankingItem[]): TechnicalMetricColumn[] {
+  const marketSet = new Set(markets.map(normalizeMarket));
+  if (marketSet.size === 1 && marketSet.has('standard')) return STANDARD_TECHNICAL_COLUMNS;
+  if (marketSet.size === 1 && marketSet.has('prime')) return PRIME_TECHNICAL_COLUMNS;
+
+  const itemMarketSet = new Set(items.map((item) => normalizeMarket(item.marketCode)));
+  if (itemMarketSet.size === 1 && itemMarketSet.has('standard')) return STANDARD_TECHNICAL_COLUMNS;
+  if (itemMarketSet.size === 1 && itemMarketSet.has('prime')) return PRIME_TECHNICAL_COLUMNS;
+  return [...STANDARD_TECHNICAL_COLUMNS, ...PRIME_TECHNICAL_COLUMNS];
+}
+
+function formatTechnicalPercent(value: number | null | undefined, signed: boolean): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const formatted = Math.abs(value).toLocaleString('ja-JP', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  });
+  if (!signed) return `${formatted}%`;
+  return `${value >= 0 ? '+' : '-'}${formatted}%`;
+}
+
 function ValueCompositeRankingRow({
   item,
+  technicalColumns,
   onStockClick,
 }: {
   item: ValueCompositeRankingItem;
+  technicalColumns: TechnicalMetricColumn[];
   onStockClick: (code: string) => void;
 }) {
   return (
@@ -48,6 +96,11 @@ function ValueCompositeRankingRow({
       <td className="px-2 py-1.5 truncate max-w-[180px]">{item.companyName}</td>
       <td className="px-2 py-1.5 truncate max-w-[100px] text-muted-foreground">{item.sector33Name}</td>
       <td className="px-2 py-1.5 text-right font-medium tabular-nums">{formatScore(item.score)}</td>
+      {technicalColumns.map((column) => (
+        <td key={column.key} className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+          {formatTechnicalPercent(item.technicalMetrics?.[column.key], column.signed)}
+        </td>
+      ))}
       <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPer)}</td>
       <td className="px-2 py-1.5 text-right tabular-nums">{formatMarketCapBil(item.marketCapBilJpy)}</td>
@@ -56,13 +109,10 @@ function ValueCompositeRankingRow({
   );
 }
 
-export function ValueCompositeRankingTable({
-  data,
-  isLoading,
-  error,
-  onStockClick,
-}: ValueCompositeRankingTableProps) {
+export function ValueCompositeRankingTable({ data, isLoading, error, onStockClick }: ValueCompositeRankingTableProps) {
   const items = data?.items ?? [];
+  const technicalColumns = resolveTechnicalColumns(data?.markets ?? [], items);
+  const columnCount = 9 + technicalColumns.length;
   const shouldVirtualize = items.length >= VIRTUALIZATION_THRESHOLD;
   const virtual = useVirtualizedRows(items, {
     enabled: shouldVirtualize,
@@ -97,6 +147,11 @@ export function ValueCompositeRankingTable({
                 <th className="text-left px-2 py-1.5">Company</th>
                 <th className="text-left px-2 py-1.5 w-24">Sector</th>
                 <th className="text-right px-2 py-1.5 w-20">Score</th>
+                {technicalColumns.map((column) => (
+                  <th key={column.key} className="text-right px-2 py-1.5 w-24">
+                    {column.label}
+                  </th>
+                ))}
                 <th className="text-right px-2 py-1.5 w-20">PBR</th>
                 <th className="text-right px-2 py-1.5 w-24">Fwd PER</th>
                 <th className="text-right px-2 py-1.5 w-24">Mkt Cap</th>
@@ -106,19 +161,20 @@ export function ValueCompositeRankingTable({
             <tbody>
               {shouldVirtualize && virtual.paddingTop > 0 && (
                 <tr>
-                  <td colSpan={9} className="p-0" style={{ height: virtual.paddingTop }} />
+                  <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingTop }} />
                 </tr>
               )}
               {virtual.visibleItems.map((item) => (
                 <ValueCompositeRankingRow
                   key={`${item.code}-${item.rank}-${data?.date ?? ''}`}
                   item={item}
+                  technicalColumns={technicalColumns}
                   onStockClick={onStockClick}
                 />
               ))}
               {shouldVirtualize && virtual.paddingBottom > 0 && (
                 <tr>
-                  <td colSpan={9} className="p-0" style={{ height: virtual.paddingBottom }} />
+                  <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingBottom }} />
                 </tr>
               )}
             </tbody>

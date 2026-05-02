@@ -1361,6 +1361,60 @@ class TestGetValueCompositeRanking:
         assert item.pbr == pytest.approx(0.52)
         assert item.forwardPer == pytest.approx(5.0)
 
+    def test_value_composite_ranking_exposes_raw_technical_metrics(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            start = calendar_date(2023, 4, 30)
+            for i in range(260):
+                current_date = start + timedelta(days=i)
+                if current_date >= calendar_date(2024, 1, 15):
+                    break
+                close = 430.0 + i * 0.35 + (12.0 if i % 11 == 0 else 0.0)
+                conn.execute(
+                    "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "99840",
+                        current_date.isoformat(),
+                        close,
+                        close + 2.0,
+                        close - 2.0,
+                        close,
+                        120_000 + i,
+                        1.0,
+                        None,
+                    ),
+                )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(markets="standard", limit=10)
+        reader.close()
+
+        item = next((row for row in result.items if row.code == "99840"), None)
+        assert item is not None
+        metrics = item.technicalMetrics
+        assert metrics is not None
+        assert metrics.featureDate == "2024-01-19"
+        assert metrics.reboundFrom252dLowPct is not None
+        assert metrics.reboundFrom252dLowPct > 0
+        assert metrics.return252dPct is not None
+        assert metrics.return252dPct > 0
+        assert metrics.volatility20dPct is not None
+        assert metrics.volatility60dPct is not None
+        assert metrics.downsideVolatility60dPct is not None
+
     def test_value_composite_ranking_score_methods_expose_expected_profiles(
         self, ranking_db
     ):

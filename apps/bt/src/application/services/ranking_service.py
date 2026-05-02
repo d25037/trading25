@@ -72,6 +72,7 @@ from src.entrypoints.http.schemas.ranking import (
     Topix100StudyMode,
     ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
+    ValueCompositeTechnicalMetrics,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeScoreUnavailableReason,
@@ -931,6 +932,10 @@ class RankingService:
             weights=weights,
             forward_eps_mode=forward_eps_mode,
         ).head(limit)
+        scored = self._append_value_composite_technical_metrics(
+            scored,
+            target_date=target_date,
+        )
 
         items = [
             self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
@@ -1025,7 +1030,15 @@ class RankingService:
         for rank, row in enumerate(rows, start=1):
             if _normalize_equity_code(row["code"]) != normalized_target_code:
                 continue
-            item = self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
+            row_df = self._append_value_composite_technical_metrics(
+                pd.DataFrame.from_records([row_payload]),
+                target_date=target_date,
+            )
+            item = self._build_value_composite_item(
+                cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
+                rank,
+            )
             return ValueCompositeScoreResponse(
                 date=target_date,
                 code=str(target_stock["code"]),
@@ -1233,6 +1246,157 @@ class RankingService:
             ascending=[False, True],
             kind="stable",
         ).reset_index(drop=True)
+
+    def _append_value_composite_technical_metrics(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_date: str,
+    ) -> pd.DataFrame:
+        if frame.empty:
+            return frame.copy()
+        result = frame.copy()
+        technical_metrics = self._load_value_composite_technical_metrics(
+            target_date=target_date,
+            codes=[str(code) for code in result["code"].tolist()],
+        )
+        technical_columns = (
+            "technical_feature_date",
+            "rebound_from_252d_low_pct",
+            "return_252d_pct",
+            "volatility_20d_pct",
+            "volatility_60d_pct",
+            "downside_volatility_60d_pct",
+        )
+        normalized_codes = result["code"].map(_normalize_equity_code)
+        for column in technical_columns:
+            result[column] = normalized_codes.map(
+                lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
+            )
+        return result
+
+    def _load_value_composite_technical_metrics(
+        self,
+        *,
+        target_date: str,
+        codes: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        normalized_codes = sorted({_normalize_equity_code(code) for code in codes})
+        if not normalized_codes:
+            return {}
+        placeholders = ",".join("?" for _ in normalized_codes)
+        normalized = _normalized_code_sql("code")
+        order = _prefer_4digit_order_sql("code")
+        sql = f"""
+            WITH stock_history AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    close
+                FROM (
+                    SELECT
+                        {normalized} AS normalized_code,
+                        date,
+                        close,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {normalized}, date
+                            ORDER BY {order}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date <= ?
+                      AND {normalized} IN ({placeholders})
+                )
+                WHERE rn = 1
+            ),
+            returns AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    close,
+                    close / NULLIF(LAG(close, 252) OVER (
+                        PARTITION BY normalized_code ORDER BY date
+                    ), 0) - 1 AS return_252d,
+                    close / NULLIF(MIN(close) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 251 PRECEDING AND CURRENT ROW
+                    ), 0) - 1 AS rebound_from_252d_low,
+                    close / NULLIF(LAG(close) OVER (
+                        PARTITION BY normalized_code ORDER BY date
+                    ), 0) - 1 AS daily_return
+                FROM stock_history
+            ),
+            metrics AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    rebound_from_252d_low * 100.0 AS rebound_from_252d_low_pct,
+                    return_252d * 100.0 AS return_252d_pct,
+                    STDDEV_SAMP(daily_return) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                    ) * SQRT(252.0) * 100.0 AS volatility_20d_pct,
+                    COUNT(daily_return) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                    ) AS volatility_20d_count,
+                    STDDEV_SAMP(daily_return) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) * SQRT(252.0) * 100.0 AS volatility_60d_pct,
+                    COUNT(daily_return) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS volatility_60d_count,
+                    STDDEV_SAMP(CASE WHEN daily_return < 0 THEN daily_return ELSE NULL END) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) * SQRT(252.0) * 100.0 AS downside_volatility_60d_pct,
+                    COUNT(CASE WHEN daily_return < 0 THEN daily_return ELSE NULL END) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS downside_volatility_60d_count,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code ORDER BY date DESC
+                    ) AS latest_rank
+                FROM returns
+            )
+            SELECT
+                normalized_code,
+                date AS technical_feature_date,
+                rebound_from_252d_low_pct,
+                return_252d_pct,
+                CASE WHEN volatility_20d_count >= 20 THEN volatility_20d_pct ELSE NULL END AS volatility_20d_pct,
+                CASE WHEN volatility_60d_count >= 60 THEN volatility_60d_pct ELSE NULL END AS volatility_60d_pct,
+                CASE
+                    WHEN downside_volatility_60d_count >= 2 THEN downside_volatility_60d_pct
+                    ELSE NULL
+                END AS downside_volatility_60d_pct
+            FROM metrics
+            WHERE latest_rank = 1
+        """
+        rows = self._reader.query(sql, (target_date, *normalized_codes))
+        return {
+            str(row["normalized_code"]): {
+                "technical_feature_date": _str_or_none(row["technical_feature_date"]),
+                "rebound_from_252d_low_pct": _finite_or_none(
+                    row["rebound_from_252d_low_pct"]
+                ),
+                "return_252d_pct": _finite_or_none(row["return_252d_pct"]),
+                "volatility_20d_pct": _finite_or_none(row["volatility_20d_pct"]),
+                "volatility_60d_pct": _finite_or_none(row["volatility_60d_pct"]),
+                "downside_volatility_60d_pct": _finite_or_none(
+                    row["downside_volatility_60d_pct"]
+                ),
+            }
+            for row in rows
+        }
 
     def _resolve_value_composite_unavailable_reason(
         self,
@@ -2088,6 +2252,18 @@ class RankingService:
             latestFyDisclosedDate=_str_or_none(row.get("latest_fy_disclosed_date")),
             forwardEpsDisclosedDate=_str_or_none(row.get("forward_eps_disclosed_date")),
             forwardEpsSource=cast(Literal["revised", "fy"] | None, source),
+            technicalMetrics=ValueCompositeTechnicalMetrics(
+                featureDate=_str_or_none(row.get("technical_feature_date")),
+                reboundFrom252dLowPct=_finite_or_none(
+                    row.get("rebound_from_252d_low_pct")
+                ),
+                return252dPct=_finite_or_none(row.get("return_252d_pct")),
+                volatility20dPct=_finite_or_none(row.get("volatility_20d_pct")),
+                volatility60dPct=_finite_or_none(row.get("volatility_60d_pct")),
+                downsideVolatility60dPct=_finite_or_none(
+                    row.get("downside_volatility_60d_pct")
+                ),
+            ),
         )
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:

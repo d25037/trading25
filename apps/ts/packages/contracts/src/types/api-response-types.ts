@@ -165,6 +165,15 @@ export type ValueCompositeScoreUnavailableReason =
   | 'bps_missing'
   | 'not_rankable';
 
+export interface ValueCompositeTechnicalMetrics {
+  featureDate?: string | null;
+  reboundFrom252dLowPct?: number | null;
+  return252dPct?: number | null;
+  volatility20dPct?: number | null;
+  volatility60dPct?: number | null;
+  downsideVolatility60dPct?: number | null;
+}
+
 export interface ValueCompositeRankingItem {
   rank: number;
   code: string;
@@ -185,6 +194,7 @@ export interface ValueCompositeRankingItem {
   latestFyDisclosedDate?: string | null;
   forwardEpsDisclosedDate?: string | null;
   forwardEpsSource?: FundamentalRankingSource | null;
+  technicalMetrics?: ValueCompositeTechnicalMetrics | null;
 }
 
 export interface ValueCompositeRankingResponse {

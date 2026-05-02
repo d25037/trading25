@@ -188,8 +188,19 @@ class MarketFundamentalRankingResponse(BaseModel):
     lastUpdated: str
 
 
+class ValueCompositeTechnicalMetrics(BaseModel):
+    """Entry-as-of raw technical metrics for value-composite ranking."""
+
+    featureDate: str | None = None
+    reboundFrom252dLowPct: float | None = None
+    return252dPct: float | None = None
+    volatility20dPct: float | None = None
+    volatility60dPct: float | None = None
+    downsideVolatility60dPct: float | None = None
+
+
 class ValueCompositeRankingItem(BaseModel):
-    """Standard value-composite ranking item."""
+    """Value-composite ranking item."""
 
     rank: int
     code: str
@@ -210,6 +221,7 @@ class ValueCompositeRankingItem(BaseModel):
     latestFyDisclosedDate: str | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None
+    technicalMetrics: ValueCompositeTechnicalMetrics | None = None
 
 
 class ValueCompositeRankingResponse(BaseModel):

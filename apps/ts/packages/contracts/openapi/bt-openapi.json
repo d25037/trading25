@@ -17054,7 +17054,7 @@
         "type": "object"
       },
       "ValueCompositeRankingItem": {
-        "description": "Standard value-composite ranking item.",
+        "description": "Value-composite ranking item.",
         "properties": {
           "bps": {
             "anyOf": [
@@ -17166,6 +17166,16 @@
           "smallMarketCapScore": {
             "title": "Smallmarketcapscore",
             "type": "number"
+          },
+          "technicalMetrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueCompositeTechnicalMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "volume": {
             "title": "Volume",
@@ -17410,6 +17420,79 @@
           "lastUpdated"
         ],
         "title": "ValueCompositeScoreResponse",
+        "type": "object"
+      },
+      "ValueCompositeTechnicalMetrics": {
+        "description": "Entry-as-of raw technical metrics for value-composite ranking.",
+        "properties": {
+          "downsideVolatility60dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downsidevolatility60Dpct"
+          },
+          "featureDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Featuredate"
+          },
+          "reboundFrom252dLowPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reboundfrom252Dlowpct"
+          },
+          "return252dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return252Dpct"
+          },
+          "volatility20dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility20Dpct"
+          },
+          "volatility60dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility60Dpct"
+          }
+        },
+        "title": "ValueCompositeTechnicalMetrics",
         "type": "object"
       },
       "VerificationCandidateStatus": {
@@ -23421,7 +23504,9 @@
                 "FY",
                 "1Q",
                 "2Q",
-                "3Q"
+                "3Q",
+                "4Q",
+                "5Q"
               ],
               "title": "Period Type",
               "type": "string"
@@ -23569,7 +23654,9 @@
                 "FY",
                 "1Q",
                 "2Q",
-                "3Q"
+                "3Q",
+                "4Q",
+                "5Q"
               ],
               "title": "Period Type",
               "type": "string"

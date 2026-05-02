@@ -10744,7 +10744,7 @@ export interface components {
         };
         /**
          * ValueCompositeRankingItem
-         * @description Standard value-composite ranking item.
+         * @description Value-composite ranking item.
          */
         ValueCompositeRankingItem: {
             /** Bps */
@@ -10783,6 +10783,7 @@ export interface components {
             sector33Name: string;
             /** Smallmarketcapscore */
             smallMarketCapScore: number;
+            technicalMetrics?: components["schemas"]["ValueCompositeTechnicalMetrics"] | null;
             /** Volume */
             volume: number;
         };
@@ -10870,6 +10871,24 @@ export interface components {
             weights?: {
                 [key: string]: number;
             };
+        };
+        /**
+         * ValueCompositeTechnicalMetrics
+         * @description Entry-as-of raw technical metrics for value-composite ranking.
+         */
+        ValueCompositeTechnicalMetrics: {
+            /** Downsidevolatility60Dpct */
+            downsideVolatility60dPct?: number | null;
+            /** Featuredate */
+            featureDate?: string | null;
+            /** Reboundfrom252Dlowpct */
+            reboundFrom252dLowPct?: number | null;
+            /** Return252Dpct */
+            return252dPct?: number | null;
+            /** Volatility20Dpct */
+            volatility20dPct?: number | null;
+            /** Volatility60Dpct */
+            volatility60dPct?: number | null;
         };
         /**
          * VerificationCandidateStatus
@@ -14777,7 +14796,7 @@ export interface operations {
             query?: {
                 start_date?: string | null;
                 end_date?: string | null;
-                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q";
+                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q" | "4Q" | "5Q";
                 actual_only?: boolean;
             };
             header?: never;
@@ -14843,7 +14862,7 @@ export interface operations {
                 codes: string;
                 start_date?: string | null;
                 end_date?: string | null;
-                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q";
+                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q" | "4Q" | "5Q";
                 actual_only?: boolean;
             };
             header?: never;
