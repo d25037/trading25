@@ -30,9 +30,9 @@ from src.domains.analytics.fundamental_ranking import (
 )
 from src.domains.analytics.annual_value_composite_selection import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
-    FIXED_VALUE_COMPOSITE_SCORE_COLUMN,
     PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
+    VALUE_COMPOSITE_SCORE_COLUMN,
     VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
     build_value_composite_score_frame,
 )
@@ -877,13 +877,14 @@ class RankingService:
                 pd.DataFrame.from_records(records),
                 group_columns=("market",),
                 required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+                score_column=VALUE_COMPOSITE_SCORE_COLUMN,
                 weights=weights,
             )
             scored = scored[
-                pd.to_numeric(scored[FIXED_VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
+                pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
             ].copy()
             scored = scored.sort_values(
-                [FIXED_VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+                [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
                 ascending=[False, True],
                 kind="stable",
             ).head(limit)
@@ -1617,7 +1618,7 @@ class RankingService:
             sector33Name=str(row["sector_33_name"]),
             currentPrice=float(row["current_price"]),
             volume=float(row["volume"]),
-            score=float(row[FIXED_VALUE_COMPOSITE_SCORE_COLUMN]),
+            score=float(row[VALUE_COMPOSITE_SCORE_COLUMN]),
             lowPbrScore=float(row["low_pbr_score"]),
             smallMarketCapScore=float(row["small_market_cap_score"]),
             lowForwardPerScore=float(row["low_forward_per_score"]),

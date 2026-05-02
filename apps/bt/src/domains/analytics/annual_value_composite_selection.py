@@ -46,6 +46,7 @@ _CORE_SCORE_COLUMNS: tuple[str, ...] = (
     "small_market_cap_score",
     "low_forward_per_score",
 )
+VALUE_COMPOSITE_SCORE_COLUMN = "value_composite_score"
 FIXED_VALUE_COMPOSITE_SCORE_COLUMN = "fixed_55_25_20_score"
 FIXED_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
     "small_market_cap_score": 0.55,
