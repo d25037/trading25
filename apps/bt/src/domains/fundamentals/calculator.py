@@ -11,8 +11,12 @@ from src.infrastructure.external_api.jquants_client import JQuantsStatement
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.financial import calc_market_cap_scalar
 from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    ShareCountSnapshot,
+    adjust_share_count_to_price_basis,
     is_valid_share_count,
     resolve_latest_quarterly_baseline_shares,
+    resolve_latest_quarterly_share_snapshot,
 )
 from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
@@ -60,13 +64,27 @@ class FundamentalsCalculator:
         snapshots = [(stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY) for stmt in statements]
         return resolve_latest_quarterly_baseline_shares(snapshots)
 
+    def _resolve_baseline_share_snapshot_from_latest_quarter(
+        self, statements: list[JQuantsStatement]
+    ) -> ShareCountSnapshot | None:
+        snapshots = [(stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY) for stmt in statements]
+        return resolve_latest_quarterly_share_snapshot(snapshots)
+
     def _resolve_latest_treasury_shares_from_latest_quarter(
         self, statements: list[JQuantsStatement]
     ) -> float | None:
+        snapshot = self._resolve_latest_treasury_share_snapshot_from_latest_quarter(
+            statements
+        )
+        return snapshot.shares if snapshot is not None else None
+
+    def _resolve_latest_treasury_share_snapshot_from_latest_quarter(
+        self, statements: list[JQuantsStatement]
+    ) -> ShareCountSnapshot | None:
         latest_quarter_key: str | None = None
-        latest_quarter_treasury: float | None = None
+        latest_quarter_snapshot: ShareCountSnapshot | None = None
         latest_any_key: str | None = None
-        latest_any_treasury: float | None = None
+        latest_any_snapshot: ShareCountSnapshot | None = None
 
         for stmt in statements:
             treasury_shares = stmt.TrShFY
@@ -77,17 +95,40 @@ class FundamentalsCalculator:
             disclosed_key = str(stmt.DiscDate) if stmt.DiscDate is not None else ""
             treasury_value = float(treasury_shares)
             normalized_period = normalize_period_type(stmt.CurPerType)
+            snapshot = ShareCountSnapshot(
+                period_type=normalized_period,
+                disclosed_date=disclosed_key,
+                shares=treasury_value,
+            )
 
             if normalized_period in {"1Q", "2Q", "3Q"}:
                 if latest_quarter_key is None or disclosed_key > latest_quarter_key:
                     latest_quarter_key = disclosed_key
-                    latest_quarter_treasury = treasury_value
+                    latest_quarter_snapshot = snapshot
 
             if latest_any_key is None or disclosed_key > latest_any_key:
                 latest_any_key = disclosed_key
-                latest_any_treasury = treasury_value
+                latest_any_snapshot = snapshot
 
-        return latest_quarter_treasury if latest_quarter_treasury is not None else latest_any_treasury
+        return latest_quarter_snapshot if latest_quarter_snapshot is not None else latest_any_snapshot
+
+    def _adjust_snapshot_shares_to_price_basis(
+        self,
+        snapshot: ShareCountSnapshot | None,
+        share_adjustment_events: list[ShareAdjustmentEvent],
+        *,
+        through_date: str | None,
+        allow_zero: bool = False,
+    ) -> float | None:
+        if snapshot is None:
+            return None
+        return adjust_share_count_to_price_basis(
+            snapshot.shares,
+            share_adjustment_events,
+            from_date=snapshot.disclosed_date,
+            through_date=through_date,
+            allow_zero=allow_zero,
+        )
 
     def _compute_adjusted_value(
         self,
@@ -161,9 +202,16 @@ class FundamentalsCalculator:
         data: list[FundamentalDataPoint],
         statements: list[JQuantsStatement],
         latest_metrics: FundamentalDataPoint | None,
+        share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
+        through_date: str | None = None,
     ) -> tuple[list[FundamentalDataPoint], FundamentalDataPoint | None]:
         shares_map = self._build_shares_map(statements)
-        base_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+        base_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
+        base_shares = self._adjust_snapshot_shares_to_price_basis(
+            base_snapshot,
+            share_adjustment_events or [],
+            through_date=through_date,
+        )
 
         updated_data: list[FundamentalDataPoint] = []
         for item in data:
@@ -690,20 +738,35 @@ class FundamentalsCalculator:
         statements: list[JQuantsStatement],
         daily_prices: dict[str, float],
         prefer_consolidated: bool,
+        share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
     ) -> list[DailyValuationDataPoint]:
         if not daily_prices:
             return []
 
-        baseline_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
-        baseline_treasury_shares = self._resolve_latest_treasury_shares_from_latest_quarter(statements)
-        fy_data_points = self._get_applicable_fy_data(statements, prefer_consolidated, baseline_shares)
-        if not fy_data_points:
-            return []
+        baseline_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
+        treasury_snapshot = self._resolve_latest_treasury_share_snapshot_from_latest_quarter(statements)
+        adjustment_events = share_adjustment_events or []
 
         result: list[DailyValuationDataPoint] = []
         sorted_dates = sorted(daily_prices.keys())
         for date_str in sorted_dates:
             close = daily_prices[date_str]
+            baseline_shares = self._adjust_snapshot_shares_to_price_basis(
+                baseline_snapshot,
+                adjustment_events,
+                through_date=date_str,
+            )
+            baseline_treasury_shares = self._adjust_snapshot_shares_to_price_basis(
+                treasury_snapshot,
+                adjustment_events,
+                through_date=date_str,
+                allow_zero=True,
+            )
+            fy_data_points = self._get_applicable_fy_data(
+                statements, prefer_consolidated, baseline_shares
+            )
+            if not fy_data_points:
+                continue
             applicable_fy = self._find_applicable_fy(fy_data_points, date_str)
             if applicable_fy is None:
                 continue
@@ -1037,6 +1100,8 @@ class FundamentalsCalculator:
         latest_metrics: FundamentalDataPoint | None,
         statements: list[JQuantsStatement],
         prefer_consolidated: bool,
+        share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
+        through_date: str | None = None,
     ) -> None:
         if latest_metrics is None:
             return
@@ -1067,7 +1132,12 @@ class FundamentalsCalculator:
         if q_forecast is None:
             return
 
-        baseline_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+        baseline_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
+        baseline_shares = self._adjust_snapshot_shares_to_price_basis(
+            baseline_snapshot,
+            share_adjustment_events or [],
+            through_date=through_date,
+        )
         adjusted_q_forecast = self._compute_adjusted_value(q_forecast, latest_q.ShOutFY, baseline_shares)
         rounded_q_forecast = adjusted_q_forecast if adjusted_q_forecast is not None else round(q_forecast, 2)
 

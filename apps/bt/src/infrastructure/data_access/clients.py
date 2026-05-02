@@ -30,6 +30,7 @@ from src.shared.utils.snapshot_ids import (
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
 )
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 from .mode import should_use_direct_db
 
@@ -856,6 +857,51 @@ class DirectMarketClient:
         ]
         return convert_ohlcv_response(records)
 
+    def get_stock_adjustment_events(
+        self,
+        stock_code: str,
+        end_date: str | None = None,
+    ) -> list[ShareAdjustmentEvent]:
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return []
+
+        placeholders = ",".join("?" for _ in candidates)
+        params: list[str] = list(candidates)
+        date_clause = ""
+        if end_date:
+            date_clause = " AND date <= ?"
+            params.append(end_date)
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    date,
+                    adjustment_factor,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM stock_data_raw
+                WHERE code IN ({placeholders})
+                  AND adjustment_factor IS NOT NULL
+                  AND adjustment_factor != 1.0
+                  {date_clause}
+            )
+            SELECT date, adjustment_factor
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+        """
+        rows = reader.query(sql, tuple(params))
+        return [
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+            for row in rows
+        ]
+
     def get_stocks_ohlcv_batch(
         self,
         stock_codes: list[str],
@@ -979,6 +1025,13 @@ class DirectMarketDataClient:
         timeframe: Literal["daily", "weekly", "monthly"] = "daily",
     ) -> pd.DataFrame:
         return self._market.get_stock_ohlcv(stock_code, start_date, end_date, timeframe)
+
+    def get_stock_adjustment_events(
+        self,
+        stock_code: str,
+        end_date: str | None = None,
+    ) -> list[ShareAdjustmentEvent]:
+        return self._market.get_stock_adjustment_events(stock_code, end_date=end_date)
 
     def get_stocks_ohlcv_batch(
         self,

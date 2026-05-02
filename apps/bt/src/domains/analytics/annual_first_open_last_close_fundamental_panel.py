@@ -34,7 +34,11 @@ from src.shared.utils.market_code_alias import (
     expand_market_codes,
     normalize_market_scope,
 )
-from src.shared.utils.share_adjustment import is_valid_share_count
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_share_count_to_price_basis,
+    is_valid_share_count,
+)
 from src.shared.utils.statement_document import (
     is_actual_fy_financial_statement,
     is_earn_forecast_revision_document,
@@ -768,10 +772,67 @@ def _query_price_rows(
     return df
 
 
+def _query_adjustment_event_rows(
+    conn: Any,
+    *,
+    codes: Sequence[str],
+    end_date: str,
+) -> pd.DataFrame:
+    if not codes or not _table_exists(conn, "stock_data_raw"):
+        return _empty_result_df(["code", "date", "adjustment_factor"])
+    normalized_code = _normalize_code_sql("code")
+    prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
+    values = ",".join("(?)" for _ in codes)
+    df = conn.execute(
+        f"""
+        WITH selected_codes(code) AS (VALUES {values}),
+        selected_normalized_codes AS (
+            SELECT DISTINCT {_normalize_code_sql("code")} AS normalized_code
+            FROM selected_codes
+        ),
+        adjustment_canonical AS (
+            SELECT
+                normalized_code,
+                date,
+                adjustment_factor
+            FROM (
+                SELECT
+                    {normalized_code} AS normalized_code,
+                    date,
+                    adjustment_factor,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized_code}, date
+                        ORDER BY {prefer_4digit}
+                    ) AS rn
+                FROM stock_data_raw
+                JOIN selected_normalized_codes selected
+                  ON selected.normalized_code = {normalized_code}
+                WHERE date <= ?
+                  AND adjustment_factor IS NOT NULL
+                  AND adjustment_factor != 1.0
+            )
+            WHERE rn = 1
+        )
+        SELECT selected_codes.code, events.date, events.adjustment_factor
+        FROM selected_codes
+        JOIN adjustment_canonical events
+          ON events.normalized_code = {_normalize_code_sql("selected_codes.code")}
+        ORDER BY selected_codes.code, events.date
+        """,
+        [*[str(code) for code in codes], end_date],
+    ).fetchdf()
+    if df.empty:
+        return _empty_result_df(["code", "date", "adjustment_factor"])
+    df["code"] = df["code"].astype(str)
+    df["date"] = df["date"].astype(str)
+    return df
+
+
 def _resolve_baseline_share_snapshot(
     statement_frame: pd.DataFrame,
     *,
     as_of_date: str,
+    adjustment_events: Sequence[ShareAdjustmentEvent] = (),
 ) -> ShareBaselineSnapshot:
     if statement_frame.empty:
         return ShareBaselineSnapshot(None, None, None, None, None, None)
@@ -804,24 +865,34 @@ def _resolve_baseline_share_snapshot(
             quarterly_treasury if not quarterly_treasury.empty else treasury_candidates
         ).iloc[-1]
 
+    shares = _to_nullable_float(share_row["shares_outstanding"]) if share_row is not None else None
+    shares_source_date = str(share_row["disclosed_date"]) if share_row is not None else None
+    treasury_shares = (
+        _to_nullable_float(treasury_row["treasury_shares"])
+        if treasury_row is not None
+        else None
+    )
+    treasury_source_date = str(treasury_row["disclosed_date"]) if treasury_row is not None else None
+
     return ShareBaselineSnapshot(
-        shares=_to_nullable_float(share_row["shares_outstanding"])
-        if share_row is not None
-        else None,
-        shares_source_date=str(share_row["disclosed_date"])
-        if share_row is not None
-        else None,
+        shares=adjust_share_count_to_price_basis(
+            shares,
+            adjustment_events,
+            from_date=shares_source_date,
+            through_date=as_of_date,
+        ),
+        shares_source_date=shares_source_date,
         shares_source_period_type=str(share_row["period_type"])
         if share_row is not None
         else None,
-        treasury_shares=(
-            _to_nullable_float(treasury_row["treasury_shares"])
-            if treasury_row is not None
-            else None
+        treasury_shares=adjust_share_count_to_price_basis(
+            treasury_shares,
+            adjustment_events,
+            from_date=treasury_source_date,
+            through_date=as_of_date,
+            allow_zero=True,
         ),
-        treasury_source_date=str(treasury_row["disclosed_date"])
-        if treasury_row is not None
-        else None,
+        treasury_source_date=treasury_source_date,
         treasury_source_period_type=str(treasury_row["period_type"])
         if treasury_row is not None
         else None,
@@ -1261,6 +1332,7 @@ def _build_event_ledger(
     stock_df: pd.DataFrame,
     statement_df: pd.DataFrame,
     price_df: pd.DataFrame,
+    adjustment_event_df: pd.DataFrame,
     adv_window: int,
 ) -> pd.DataFrame:
     columns = [
@@ -1327,6 +1399,16 @@ def _build_event_ledger(
             drop=True
         )
         for code, frame in statement_df.groupby("code", sort=False)
+    }
+    adjustment_events_by_code = {
+        str(code): [
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+            for row in frame.to_dict(orient="records")
+        ]
+        for code, frame in adjustment_event_df.groupby("code", sort=False)
     }
     records: list[dict[str, Any]] = []
 
@@ -1424,6 +1506,7 @@ def _build_event_ledger(
         baseline = _resolve_baseline_share_snapshot(
             statement_frame_for_entry,
             as_of_date=entry_date,
+            adjustment_events=adjustment_events_by_code.get(code, []),
         )
         latest_fy = _latest_fy_statement(
             statement_frame_for_entry, as_of_date=entry_date
@@ -2032,7 +2115,9 @@ def run_annual_first_open_last_close_fundamental_panel(
                 exit_timing="last_trading_day_close",
                 share_adjustment_policy=(
                     "per-share metrics use the latest disclosed share baseline as of entry, "
-                    "preferring quarterly shares, then latest any disclosure"
+                    "preferring quarterly shares, then latest any disclosure, and adjust "
+                    "that baseline onto the entry adjusted-price basis using stock split "
+                    "adjustment_factor events"
                 ),
                 calendar_df=empty_df.copy(),
                 event_ledger_df=empty_df.copy(),
@@ -2052,12 +2137,18 @@ def run_annual_first_open_last_close_fundamental_panel(
             start_date=price_start_date,
             end_date=price_end_date,
         )
+        adjustment_event_df = _query_adjustment_event_rows(
+            conn,
+            codes=tuple(sorted(allowed_codes)),
+            end_date=price_end_date,
+        )
 
     event_ledger_df = _build_event_ledger(
         calendar_df=calendar_df,
         stock_df=stock_df,
         statement_df=statement_df,
         price_df=price_df,
+        adjustment_event_df=adjustment_event_df,
         adv_window=normalized_adv_window,
     )
     feature_coverage_df = _build_feature_coverage_df(event_ledger_df)
@@ -2102,7 +2193,9 @@ def run_annual_first_open_last_close_fundamental_panel(
         exit_timing="last_trading_day_close",
         share_adjustment_policy=(
             "per-share metrics use the latest disclosed share baseline as of entry, "
-            "preferring quarterly shares, then latest any disclosure"
+            "preferring quarterly shares, then latest any disclosure, and adjust "
+            "that baseline onto the entry adjusted-price basis using stock split "
+            "adjustment_factor events"
         ),
         calendar_df=calendar_df,
         event_ledger_df=event_ledger_df,
@@ -2138,7 +2231,7 @@ def _build_summary_markdown(
             else "- Market classification uses the current `stocks` snapshot fallback; historical market migrations are not reconstructed."
         ),
         "- Fundamental as-of: latest FY disclosure available on or before the entry date.",
-        "- Per-share adjustment: EPS, BPS, forward EPS and dividend-per-share fields are adjusted to the latest share baseline available on or before entry, preferring quarterly shares. This is intended to avoid post-FY stock-split distortions.",
+        "- Per-share adjustment: EPS, BPS, forward EPS and dividend-per-share fields are adjusted to the latest share baseline available on or before entry, preferring quarterly shares, then onto the entry adjusted-price basis using stock split adjustment factors.",
         f"- Factor buckets: `{result.bucket_count}` within each year and market scope.",
         "",
         "## Portfolio Summary",

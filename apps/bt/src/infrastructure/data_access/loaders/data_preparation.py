@@ -4,7 +4,8 @@
 VectorBT用のデータを準備する高レベル統合関数群
 """
 
-from typing import Dict, List, Literal, Optional
+from collections.abc import Iterable
+from typing import Dict, List, Literal, Optional, cast
 
 import pandas as pd
 from loguru import logger
@@ -20,6 +21,9 @@ from src.shared.exceptions import (
     StatementsDataLoadError,
 )
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+)
 
 from .margin_loaders import load_margin_data, transform_margin_df
 from .multi_asset_loaders import (
@@ -30,7 +34,7 @@ from .multi_asset_loaders import (
 from .statements_loaders import (
     load_statements_data,
     merge_forward_forecast_revision,
-    resolve_shared_baseline_shares,
+    resolve_adjusted_shared_baseline_shares,
     transform_statements_df,
 )
 from .stock_loaders import get_available_stocks, load_stock_data
@@ -38,6 +42,28 @@ from .utils import extract_dataset_name
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
+
+
+def _latest_index_date(index: pd.DatetimeIndex) -> str | None:
+    if index.empty:
+        return None
+    return index.max().strftime("%Y-%m-%d")
+
+
+def _load_adjustment_events(
+    client: object,
+    stock_code: str,
+    *,
+    end_date: str | None,
+) -> list[ShareAdjustmentEvent]:
+    getter = getattr(client, "get_stock_adjustment_events", None)
+    if not callable(getter):
+        return []
+    try:
+        events = cast(Iterable[object], getter(stock_code, end_date=end_date))
+    except Exception:  # noqa: BLE001 - adjustment events are best-effort for legacy clients
+        return []
+    return [event for event in events if isinstance(event, ShareAdjustmentEvent)]
 
 
 def prepare_all_stocks_data(
@@ -321,6 +347,7 @@ def prepare_multi_data(
         )
         try:
             revision_batch: dict[str, pd.DataFrame] = {}
+            adjustment_events_by_code: dict[str, list[ShareAdjustmentEvent]] = {}
             with DatasetAPIClient(dataset_name) as client:
                 statements_batch = client.get_statements_batch(
                     statements_codes, start_date, end_date,
@@ -339,23 +366,36 @@ def prepare_multi_data(
                         logger.warning(
                             f"財務諸表四半期修正バッチ取得失敗、FYのみで続行: {e}"
                         )
+                for stock_code in statements_codes:
+                    stock_data = result.get(stock_code, {}).get("daily")
+                    if stock_data is None:
+                        continue
+                    daily_index = pd.DatetimeIndex(stock_data.index)
+                    adjustment_events_by_code[stock_code] = _load_adjustment_events(
+                        client,
+                        stock_code,
+                        end_date=_latest_index_date(daily_index),
+                    )
             for stock_code, stmt_df in statements_batch.items():
                 if stock_code in result and not stmt_df.empty:
+                    stock_data = result[stock_code]["daily"]
+                    daily_index = pd.DatetimeIndex(stock_data.index)
                     revision_raw_df = (
                         revision_batch.get(stock_code)
                         if should_merge_forecast_revision
                         else None
                     )
-                    shared_baseline_shares = resolve_shared_baseline_shares(
+                    through_date = _latest_index_date(daily_index)
+                    shared_baseline_shares = resolve_adjusted_shared_baseline_shares(
                         stmt_df,
                         revision_raw_df,
+                        adjustment_events_by_code.get(stock_code, []),
+                        through_date=through_date,
                     )
                     stmt_df = transform_statements_df(
                         stmt_df,
                         baseline_shares=shared_baseline_shares,
                     )
-                    stock_data = result[stock_code]["daily"]
-                    daily_index = pd.DatetimeIndex(stock_data.index)
                     stmt_reindexed = stmt_df.reindex(daily_index, method="ffill")
                     if (
                         should_merge_forecast_revision

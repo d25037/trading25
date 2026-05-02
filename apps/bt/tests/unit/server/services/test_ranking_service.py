@@ -19,6 +19,7 @@ from src.domains.analytics.fundamental_ranking import (
     normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
 )
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.domains.analytics.topix100_streak_353_next_session_intraday_lightgbm import (
     Topix100Streak353NextSessionIntradayLightgbmSnapshot,
     Topix100Streak353NextSessionIntradayLightgbmSnapshotRow,
@@ -1934,6 +1935,24 @@ class TestRankingHelperBranches:
             )
             is None
         )
+
+    def test_adjust_shares_to_price_basis_uses_split_events(self, service):
+        adjusted = service._adjust_shares_to_price_basis(
+            2_260_000.0,
+            disclosed_date="2026-02-09",
+            events_by_code={
+                "1798": [
+                    ShareAdjustmentEvent(
+                        date="2026-03-30",
+                        adjustment_factor=0.2,
+                    )
+                ]
+            },
+            code="1798",
+            target_date="2026-05-01",
+        )
+
+        assert adjusted == pytest.approx(11_300_000.0)
 
 
 class TestRankingDateEdgeCases:

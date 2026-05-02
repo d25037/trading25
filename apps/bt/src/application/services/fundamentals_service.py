@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
+from collections.abc import Iterable
 
 import pandas as pd
 from loguru import logger
@@ -23,6 +24,7 @@ from src.entrypoints.http.schemas.fundamentals import (
 )
 from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
 from src.infrastructure.data_access.clients import DirectMarketClient
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 # Backward-compatible symbol for tests patching module-local client constructor.
 MarketDataClient = DirectMarketClient
@@ -208,6 +210,25 @@ class FundamentalsService:
     def _get_daily_stock_prices(self, symbol: str) -> dict[str, float]:
         return self._calculator._to_daily_close_map(self._get_daily_stock_ohlcv(symbol))
 
+    def _get_stock_adjustment_events(self, symbol: str) -> list[ShareAdjustmentEvent]:
+        try:
+            getter = getattr(self.market_client, "get_stock_adjustment_events")
+        except Exception as e:
+            logger.warning(f"Failed to access stock adjustment events client for {symbol}: {e}")
+            return []
+        if not callable(getter):
+            return []
+        try:
+            events = cast(Iterable[object], getter(symbol))
+        except Exception as e:
+            logger.warning(f"Failed to get stock adjustment events for {symbol}: {e}")
+            return []
+        return [
+            event
+            for event in events
+            if isinstance(event, ShareAdjustmentEvent)
+        ]
+
     def compute_fundamentals(
         self, request: FundamentalsComputeRequest
     ) -> FundamentalsComputeResponse:
@@ -237,9 +258,14 @@ class FundamentalsService:
 
         daily_ohlcv = self._get_daily_stock_ohlcv(request.symbol)
         daily_prices = self._calculator._to_daily_close_map(daily_ohlcv)
+        share_adjustment_events = self._get_stock_adjustment_events(request.symbol)
+        latest_price_date = max(daily_prices.keys()) if daily_prices else None
 
         daily_valuation = self._calculator._calculate_daily_valuation(
-            statements, daily_prices, request.prefer_consolidated
+            statements,
+            daily_prices,
+            request.prefer_consolidated,
+            share_adjustment_events=share_adjustment_events,
         )
 
         filtered_statements = self._calculator._filter_statements(
@@ -323,12 +349,16 @@ class FundamentalsService:
             latest_metrics,
             statements,
             request.prefer_consolidated,
+            share_adjustment_events=share_adjustment_events,
+            through_date=latest_price_date,
         )
 
         data, latest_metrics = self._calculator._apply_share_adjustments(
             data,
             statements,
             latest_metrics,
+            share_adjustment_events=share_adjustment_events,
+            through_date=latest_price_date,
         )
         latest_metrics = self._calculator._apply_forecast_eps_above_recent_fy_actuals(
             latest_metrics,

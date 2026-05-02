@@ -19,6 +19,11 @@ from src.shared.utils.market_code_alias import (
     normalize_market_scope,
     resolve_market_codes,
 )
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_share_count_to_price_basis,
+    resolve_latest_quarterly_share_snapshot,
+)
 from src.shared.utils.statement_document import is_actual_fy_financial_statement
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
@@ -356,6 +361,68 @@ class RankingService:
             (table_name,),
         )
         return row is not None
+
+    def _load_adjustment_events_by_code(
+        self,
+        *,
+        target_date: str,
+        market_codes: list[str],
+    ) -> dict[str, list[ShareAdjustmentEvent]]:
+        if not self._table_exists("stock_data_raw"):
+            return {}
+
+        market_clause, market_params = _build_market_filter(market_codes)
+        raw_normalized = _normalized_code_sql("raw.code")
+        stocks_normalized = _normalized_code_sql("s.code")
+        raw_prefer_4digit = _prefer_4digit_order_sql("raw.code")
+        stocks_prefer_4digit = _prefer_4digit_order_sql("s.code")
+        sql = f"""
+            WITH stocks_canonical AS (
+                SELECT code, normalized_code, market_code
+                FROM (
+                    SELECT
+                        code,
+                        market_code,
+                        {stocks_normalized} AS normalized_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {stocks_normalized}
+                            ORDER BY {stocks_prefer_4digit}
+                        ) AS rn
+                    FROM stocks s
+                )
+                WHERE rn = 1
+            ),
+            adjustment_canonical AS (
+                SELECT
+                    s.code,
+                    raw.date,
+                    raw.adjustment_factor,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.code, raw.date
+                        ORDER BY {raw_prefer_4digit}
+                    ) AS rn
+                FROM stock_data_raw raw
+                JOIN stocks_canonical s
+                    ON s.normalized_code = {raw_normalized}
+                WHERE raw.date <= ?
+                  AND raw.adjustment_factor IS NOT NULL
+                  AND raw.adjustment_factor != 1.0
+                  {market_clause}
+            )
+            SELECT code, date, adjustment_factor
+            FROM adjustment_canonical
+            WHERE rn = 1
+            ORDER BY code, date
+        """
+        grouped: dict[str, list[ShareAdjustmentEvent]] = {}
+        for row in self._reader.query(sql, (target_date, *market_params)):
+            grouped.setdefault(str(row["code"]), []).append(
+                ShareAdjustmentEvent(
+                    date=str(row["date"]),
+                    adjustment_factor=float(row["adjustment_factor"]),
+                )
+            )
+        return grouped
 
     def get_rankings(
         self,
@@ -1037,6 +1104,10 @@ class RankingService:
         statement_rows = self._load_fundamental_statement_rows(
             target_date, query_market_codes
         )
+        adjustment_events_by_code = self._load_adjustment_events_by_code(
+            target_date=target_date,
+            market_codes=query_market_codes,
+        )
 
         statements_by_code: dict[str, list[_StatementRow]] = {}
         raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
@@ -1072,9 +1143,20 @@ class RankingService:
             if price is None or price <= 0:
                 continue
 
-            baseline_shares = self._resolve_baseline_shares(
+            baseline_snapshot = self._resolve_baseline_share_snapshot(
                 statements,
                 as_of_date=target_date,
+            )
+            baseline_shares = self._adjust_shares_to_price_basis(
+                baseline_snapshot.shares if baseline_snapshot is not None else None,
+                disclosed_date=(
+                    baseline_snapshot.disclosed_date
+                    if baseline_snapshot is not None
+                    else None
+                ),
+                events_by_code=adjustment_events_by_code,
+                code=code,
+                target_date=target_date,
             )
             forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
                 statements,
@@ -1192,9 +1274,24 @@ class RankingService:
         if not statements:
             return "not_rankable"
 
-        baseline_shares = self._resolve_baseline_shares(
+        adjustment_events_by_code = self._load_adjustment_events_by_code(
+            target_date=target_date,
+            market_codes=query_market_codes,
+        )
+        baseline_snapshot = self._resolve_baseline_share_snapshot(
             statements,
             as_of_date=target_date,
+        )
+        baseline_shares = self._adjust_shares_to_price_basis(
+            baseline_snapshot.shares if baseline_snapshot is not None else None,
+            disclosed_date=(
+                baseline_snapshot.disclosed_date
+                if baseline_snapshot is not None
+                else None
+            ),
+            events_by_code=adjustment_events_by_code,
+            code=str(target_stock["code"]),
+            target_date=target_date,
         )
         forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
             statements,
@@ -1755,6 +1852,40 @@ class RankingService:
         return self._fundamental_calculator.resolve_baseline_shares(
             rows,
             as_of_date=as_of_date,
+        )
+
+    def _resolve_baseline_share_snapshot(
+        self,
+        rows: list[_StatementRow],
+        *,
+        as_of_date: str | None = None,
+    ):
+        eligible_rows = self._fundamental_calculator._rows_as_of(
+            rows,
+            as_of_date=as_of_date,
+        )
+        snapshots = [
+            (row.period_type, row.disclosed_date, row.shares_outstanding)
+            for row in eligible_rows
+        ]
+        return resolve_latest_quarterly_share_snapshot(snapshots)
+
+    def _adjust_shares_to_price_basis(
+        self,
+        shares: float | None,
+        *,
+        disclosed_date: str | None,
+        events_by_code: Mapping[str, list[ShareAdjustmentEvent]],
+        code: str,
+        target_date: str,
+        allow_zero: bool = False,
+    ) -> float | None:
+        return adjust_share_count_to_price_basis(
+            shares,
+            events_by_code.get(code, []),
+            from_date=disclosed_date,
+            through_date=target_date,
+            allow_zero=allow_zero,
         )
 
     def _resolve_latest_actual_snapshot(

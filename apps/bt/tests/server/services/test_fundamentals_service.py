@@ -18,6 +18,7 @@ from src.domains.fundamentals import (
     FundamentalDataPoint,
     FundamentalsCalculator,
 )
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.application.services.fundamentals_service import (
     FundamentalsService,
     fundamentals_service,
@@ -2694,6 +2695,54 @@ class TestCalculateDailyValuation:
         assert result[0].pbr == 0.5
         assert result[0].marketCap == 500000.0
         assert result[0].freeFloatMarketCap == 450000.0
+
+    def test_daily_valuation_adjusts_share_basis_after_stock_split(
+        self, service: FundamentalsService
+    ):
+        """価格が分割後基準なら株式数・EPS・BPSも同じ基準へ補正する"""
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "Code": "1798",
+                    "DiscDate": "2026-02-09",
+                    "CurPerType": "3Q",
+                    "CurPerEn": "2025-12-31",
+                    "EPS": 1039.39,
+                    "BPS": 8343.60,
+                    "ShOutFY": 2_260_000,
+                    "TrShFY": 79_060,
+                }
+            ),
+            JQuantsStatement(
+                **{
+                    **base,
+                    "Code": "1798",
+                    "DiscDate": "2025-05-12",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2025-03-31",
+                    "EPS": 1009.98,
+                    "BPS": 8343.60,
+                    "ShOutFY": 2_260_000,
+                    "TrShFY": 79_060,
+                }
+            ),
+        ]
+
+        result = service._calculate_daily_valuation(
+            statements,
+            {"2026-05-01": 1193.0},
+            True,
+            share_adjustment_events=[
+                ShareAdjustmentEvent(date="2026-03-30", adjustment_factor=0.2)
+            ],
+        )
+
+        assert result[0].marketCap == 13_480_900_000.0
+        assert result[0].freeFloatMarketCap == 13_009_307_100.0
+        assert result[0].per == 5.91
+        assert result[0].pbr == 0.71
 
     def test_daily_valuation_without_pbr_or_market_cap(
         self, service: FundamentalsService

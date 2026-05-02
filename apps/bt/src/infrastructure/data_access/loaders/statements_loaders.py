@@ -5,7 +5,8 @@
 VectorBTで使用できる形式に変換します。
 """
 
-from typing import Optional
+from collections.abc import Iterable
+from typing import Any, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -16,8 +17,11 @@ from src.infrastructure.data_access.clients import get_dataset_client
 from src.infrastructure.data_access.loaders.utils import extract_dataset_name
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_share_count_to_price_basis,
     is_valid_share_count,
     resolve_latest_quarterly_baseline_shares,
+    resolve_latest_quarterly_share_snapshot,
 )
 from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
@@ -176,6 +180,48 @@ def resolve_shared_baseline_shares(
     if not snapshots:
         return None
     return resolve_latest_quarterly_baseline_shares(snapshots)
+
+
+def resolve_adjusted_shared_baseline_shares(
+    base_df: pd.DataFrame,
+    revision_df: pd.DataFrame | None,
+    adjustment_events: list[ShareAdjustmentEvent],
+    *,
+    through_date: str | None,
+) -> float | None:
+    snapshots: list[tuple[object, object, float | int | None]] = []
+    for frame in (base_df, revision_df):
+        if frame is None or frame.empty:
+            continue
+        shares = _resolve_shares_column(frame)
+        if shares is None:
+            continue
+        period_types = (
+            frame["typeOfCurrentPeriod"]
+            if "typeOfCurrentPeriod" in frame.columns
+            else pd.Series([None] * len(frame), index=frame.index)
+        )
+        for disclosed_at, period_type, share_count in zip(
+            frame.index,
+            period_types,
+            shares,
+            strict=False,
+        ):
+            disclosed_date = (
+                disclosed_at.strftime("%Y-%m-%d")
+                if isinstance(disclosed_at, pd.Timestamp)
+                else str(disclosed_at)
+            )
+            snapshots.append((period_type, disclosed_date, _to_float_or_none(share_count)))
+    snapshot = resolve_latest_quarterly_share_snapshot(snapshots)
+    if snapshot is None:
+        return resolve_shared_baseline_shares(base_df, revision_df)
+    return adjust_share_count_to_price_basis(
+        snapshot.shares,
+        adjustment_events,
+        from_date=snapshot.disclosed_date,
+        through_date=through_date,
+    )
 
 
 def _compute_adjusted_series(
@@ -431,6 +477,8 @@ def load_statements_data(
     """
     dataset_name = extract_dataset_name(dataset)
     revision_df: pd.DataFrame | None = None
+    adjustment_events: list[ShareAdjustmentEvent] = []
+    through_date = daily_index.max().strftime("%Y-%m-%d") if not daily_index.empty else None
 
     with DatasetAPIClient(dataset_name) as client:
         df = client.get_statements(
@@ -454,6 +502,18 @@ def load_statements_data(
                     "四半期修正データ取得に失敗（FYのみで続行）: "
                     f"{stock_code}, error={e}"
                 )
+        getter = getattr(client, "get_stock_adjustment_events", None)
+        if callable(getter):
+            try:
+                events = cast(Iterable[object], getter(stock_code, end_date=through_date))
+                adjustment_events = [
+                    event for event in events if isinstance(event, ShareAdjustmentEvent)
+                ]
+            except Exception as e:  # noqa: BLE001 - legacy clients may not expose raw events
+                logger.debug(
+                    "株式分割調整イベント取得をスキップ: "
+                    f"{stock_code}, error={e}"
+                )
 
     if df.empty:
         raise ValueError(
@@ -461,7 +521,12 @@ def load_statements_data(
             f"with period_type: {period_type}"
         )
 
-    shared_baseline_shares = resolve_shared_baseline_shares(df, revision_df)
+    shared_baseline_shares = resolve_adjusted_shared_baseline_shares(
+        df,
+        revision_df,
+        adjustment_events,
+        through_date=through_date,
+    )
 
     # カラム名統一・数値変換・派生指標計算
     df = transform_statements_df(df, baseline_shares=shared_baseline_shares)
@@ -477,6 +542,18 @@ def load_statements_data(
 
     logger.debug(f"財務諸表データ読み込み成功: {stock_code} (period_type={period_type})")
     return df
+
+
+def _to_float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        converted = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(converted):
+        return None
+    return converted
 
 
 def _calc_roe(df: pd.DataFrame) -> np.ndarray:

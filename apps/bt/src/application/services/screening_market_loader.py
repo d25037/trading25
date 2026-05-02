@@ -15,12 +15,13 @@ from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodTy
 from src.infrastructure.data_access.loaders.margin_loaders import transform_margin_df
 from src.infrastructure.data_access.loaders.statements_loaders import (
     merge_forward_forecast_revision,
-    resolve_shared_baseline_shares,
+    resolve_adjusted_shared_baseline_shares,
     transform_statements_df,
 )
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code, stock_code_query_candidates
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 _LEGACY_PERIOD_TYPE_MAP = {
     "1Q": "Q1",
@@ -370,6 +371,11 @@ def _attach_statements(
 
     base_map = _group_statement_rows(base_rows)
     revision_map = _group_statement_rows(revision_rows) if revision_rows else {}
+    adjustment_events_by_code = _load_adjustment_events_by_code(
+        reader,
+        codes,
+        end_date=end_date,
+    )
 
     for code, daily_index in daily_index_by_code.items():
         base_df = base_map.get(code)
@@ -378,7 +384,12 @@ def _attach_statements(
 
         try:
             revision_df = revision_map.get(code) if should_merge_forecast_revision else None
-            shared_baseline_shares = resolve_shared_baseline_shares(base_df, revision_df)
+            shared_baseline_shares = resolve_adjusted_shared_baseline_shares(
+                base_df,
+                revision_df,
+                adjustment_events_by_code.get(code, []),
+                through_date=_latest_index_date(daily_index),
+            )
             base_daily = transform_statements_df(
                 base_df,
                 baseline_shares=shared_baseline_shares,
@@ -395,6 +406,50 @@ def _attach_statements(
             warnings.append(f"{code} statements transform failed ({e})")
 
     return warnings
+
+
+def _latest_index_date(index: pd.DatetimeIndex) -> str | None:
+    if index.empty:
+        return None
+    return index.max().strftime("%Y-%m-%d")
+
+
+def _load_adjustment_events_by_code(
+    reader: MarketDbQueryable,
+    stock_codes: list[str],
+    *,
+    end_date: str | None,
+) -> dict[str, list[ShareAdjustmentEvent]]:
+    query_codes = stock_code_query_candidates(stock_codes)
+    if not query_codes:
+        return {}
+    placeholders = ",".join("?" for _ in query_codes)
+    sql = f"""
+        SELECT code, date, adjustment_factor
+        FROM stock_data_raw
+        WHERE code IN ({placeholders})
+          AND adjustment_factor IS NOT NULL
+          AND adjustment_factor != 1.0
+    """
+    params: list[Any] = list(query_codes)
+    if end_date:
+        sql += " AND date <= ?"
+        params.append(end_date)
+    sql += " ORDER BY code, date"
+    try:
+        rows = reader.query(sql, tuple(params))
+    except Exception:  # noqa: BLE001 - stock_data_raw is unavailable in some old test DBs
+        return {}
+    grouped: dict[str, list[ShareAdjustmentEvent]] = {}
+    for row in rows:
+        code = normalize_stock_code(str(row["code"]))
+        grouped.setdefault(code, []).append(
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+        )
+    return grouped
 
 
 def _is_missing_table_error(exc: Exception) -> bool:
