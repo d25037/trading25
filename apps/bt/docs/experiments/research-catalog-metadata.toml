@@ -78,6 +78,18 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
 ]
 
+[experiments."market-behavior/annual-prime-value-volume-volatility-participation"]
+family = "Annual Fundamentals"
+status = "candidate"
+decision = "Prime high-vol effect は単純な参加者増加 proxy ではない。20d volatility は volume/trading-value ratio と中程度に連動するが、60d volatility はほぼ無相関。high-vol 内の high participation は平均 return を押し下げるため、volume/trading-value ratio は加点ではなく crowding diagnostic として扱う。"
+promotedSurface = "Research"
+riskFlags = ["prime-specific", "technical-participation", "crowding-diagnostic", "not-score-additive", "portfolio-lens"]
+relatedExperiments = [
+  "market-behavior/annual-prime-value-technical-risk-decomposition",
+  "market-behavior/annual-value-technical-feature-importance",
+  "market-behavior/annual-value-composite-selection",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
