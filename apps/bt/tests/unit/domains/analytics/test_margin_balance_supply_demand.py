@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
 
 from src.domains.analytics.margin_balance_supply_demand import (
+    MarginBalanceSupplyDemandResult,
+    build_summary_markdown,
     run_margin_balance_supply_demand_research,
+    write_margin_balance_supply_demand_bundle,
 )
 
 
@@ -15,16 +19,7 @@ def test_margin_balance_research_shifts_weekly_record_to_effective_entry(
 ) -> None:
     db_path = _build_margin_research_db(tmp_path / "market.duckdb")
 
-    result = run_margin_balance_supply_demand_research(
-        db_path,
-        horizons=(1,),
-        adv_window=2,
-        effective_lag_sessions=3,
-        bucket_count=2,
-        min_daily_observations=2,
-        discovery_end_date="2024-01-10",
-        percentile_window=2,
-    )
+    result = _run_test_research(db_path)
 
     obs = result.observation_df.sort_values(["code", "margin_date"]).reset_index(drop=True)
     first_alpha = obs[(obs["code"] == "1111") & (obs["margin_date"] == "2024-01-03")].iloc[0]
@@ -51,16 +46,7 @@ def test_margin_balance_research_emits_bucket_and_pruning_summaries(
 ) -> None:
     db_path = _build_margin_research_db(tmp_path / "market.duckdb")
 
-    result = run_margin_balance_supply_demand_research(
-        db_path,
-        horizons=(1,),
-        adv_window=2,
-        effective_lag_sessions=3,
-        bucket_count=2,
-        min_daily_observations=2,
-        discovery_end_date="2024-01-10",
-        percentile_window=2,
-    )
+    result = _run_test_research(db_path)
 
     bucket_summary = result.bucket_return_summary_df
     pruning_summary = result.pruning_summary_df
@@ -83,6 +69,76 @@ def test_margin_balance_research_emits_bucket_and_pruning_summaries(
                 strict=True,
             )
         )
+    )
+
+
+def test_margin_balance_research_writes_bundle_and_summary(tmp_path: Path) -> None:
+    db_path = _build_margin_research_db(tmp_path / "market.duckdb")
+    result = _run_test_research(db_path)
+
+    summary = build_summary_markdown(result)
+    assert "Price Decline x Margin Long Change" in summary
+    assert "Bucket Return Sample" in summary
+
+    bundle = write_margin_balance_supply_demand_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="unit-test",
+        notes="coverage",
+    )
+
+    assert bundle.manifest_path.exists()
+    assert bundle.results_db_path.exists()
+    assert bundle.summary_path.read_text(encoding="utf-8").startswith(
+        "# Margin Balance Supply/Demand"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"horizons": (0,)}, "horizons must be positive"),
+        ({"prior_return_windows": (1,)}, "prior_return_windows must be greater than 1"),
+        ({"adv_window": 0}, "adv_window must be positive"),
+        ({"effective_lag_sessions": 0}, "effective_lag_sessions must be at least 1"),
+        ({"bucket_count": 1}, "bucket_count must be at least 2"),
+        (
+            {"bucket_count": 3, "min_daily_observations": 2},
+            "min_daily_observations must be >= bucket_count",
+        ),
+        (
+            {"severe_loss_threshold_pct": 0.0},
+            "severe_loss_threshold_pct must be negative",
+        ),
+        ({"percentile_window": 1}, "percentile_window must be at least 2"),
+    ],
+)
+def test_margin_balance_research_rejects_invalid_params(
+    tmp_path: Path,
+    kwargs: dict[str, Any],
+    message: str,
+) -> None:
+    db_path = _build_margin_research_db(tmp_path / "market.duckdb")
+
+    with pytest.raises(ValueError, match=message):
+        run_margin_balance_supply_demand_research(db_path, **kwargs)
+
+
+def test_margin_balance_research_requires_existing_db(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        run_margin_balance_supply_demand_research(tmp_path / "missing.duckdb")
+
+
+def _run_test_research(db_path: Path) -> MarginBalanceSupplyDemandResult:
+    return run_margin_balance_supply_demand_research(
+        db_path,
+        horizons=(1,),
+        adv_window=2,
+        effective_lag_sessions=3,
+        bucket_count=2,
+        min_daily_observations=2,
+        discovery_end_date="2024-01-10",
+        percentile_window=2,
     )
 
 
