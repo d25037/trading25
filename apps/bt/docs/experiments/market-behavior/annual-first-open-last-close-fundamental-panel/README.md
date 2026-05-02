@@ -8,7 +8,7 @@
 
 ### Decision
 
-- v3 `market.duckdb` では `stock_master_daily` の entry-date 構成を使う。低 `PBR`、小型、低 `forward PER` は引き続き再利用価値があるが、production へ直結させず ranking / research diagnostic として扱う。
+- v3 `market.duckdb` では `stock_master_daily` の entry-date 構成と `TypeOfDocument` semantics による FY financial-statement 行を使う。直近 FY financial-statement 行を actual metrics の SoT にした後も、低 `PBR`、小型、低 `forward PER` は引き続き再利用価値があるが、production へ直結させず ranking / research diagnostic として扱う。
 
 ### Why This Research Was Run
 
@@ -19,7 +19,7 @@
 
 - Complete years `2017-2025`; `32,264` realized stock-year events.
 - Entry is the first trading day `Open`; exit is the same calendar year last trading day `Close`.
-- FY fundamentals are selected only when disclosed on or before the entry date.
+- FY actual fundamentals are selected from financial-statement documents only when disclosed on or before the entry date. FY forecast / revision documents remain forecast sources and are not allowed to shadow actual BPS / EPS rows.
 - EPS, BPS, forward EPS, and dividend per share are adjusted to the latest entry-date share-count baseline.
 - Market split uses `stock_master_daily` on each entry date. Historical JPX segment codes are normalized to the current research labels: `0101/0111 -> prime`, `0102/0106/0112 -> standard`, `0104/0107/0113 -> growth`.
 
@@ -52,24 +52,24 @@
 
 | Market / factor | Preferred spread |
 | --- | ---: |
-| `growth` / `pbr` | `42.0pp` |
-| `standard` / `pbr` | `21.4pp` |
+| `growth` / `pbr` | `42.6pp` |
+| `standard` / `pbr` | `21.3pp` |
 | `all` / `pbr` | `20.0pp` |
-| `standard` / `forward_per` | `19.7pp` |
+| `standard` / `forward_per` | `19.4pp` |
 | `all` / `forward_per` | `18.2pp` |
 
 #### per-share adjustment は省略できない。
 
 | Metric | Value |
 | --- | ---: |
-| realized events with `share_adjustment_applied = true` | `5,293` |
+| realized events with `share_adjustment_applied = true` | `6,389` |
 
 ### Interpretation
 
 - The strongest signal is not simply "cheap" or "small"; it is the interaction where very low valuation and very small market cap concentrate the annual return edge.
 - `standard` looks better than `growth` on risk-adjusted annual holding metrics in this run, and the market split is now PIT-safe at each annual entry date.
 - `forward EPS / actual EPS` is weaker than expected as a broad selector. The ratio is not useless, but it does not dominate the simpler low valuation families.
-- The share-count adjustment is not cosmetic: without it, EPS/BPS/forward EPS valuation buckets would be materially distorted for thousands of events.
+- The share-count adjustment and document semantics are not cosmetic: without them, EPS/BPS/forward EPS valuation buckets would be materially distorted for thousands of events, and forecast-only FY rows can incorrectly shadow actual BPS.
 
 ### Production Implication
 
@@ -89,7 +89,7 @@
 - Domain: `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
 - Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
 - Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
-- v3 bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260429_212200_e60eacef/`
+- v3 statement-document semantics bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`
 - Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`, `summary.json`
 
 ## Current Surface
@@ -139,8 +139,8 @@
 
 Baseline result: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
 
-v3 PIT stock-master rerun:
-`/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260429_212200_e60eacef/`
+v3 PIT stock-master + statement-document semantics rerun:
+`/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`
 
 - `2017-2025` complete years, `32,264` realized stock-year events.
 - Full-market annual equal-weight baseline: CAGR `11.5%`, Sharpe `0.77`,
@@ -160,7 +160,7 @@ v3 PIT stock-master rerun:
 - The small-cap / low-ADV effect is large but should be treated as an
   implementation-risk axis, not a free live signal. Slippage and capacity
   controls are mandatory before considering production use.
-- Per-share adjustment mattered: `5,293` realized events had
+- Per-share adjustment mattered: `6,389` realized events had
   `share_adjustment_applied = true`, so ignoring post-FY share-count changes
   would materially distort EPS/BPS/forward EPS valuation buckets.
 

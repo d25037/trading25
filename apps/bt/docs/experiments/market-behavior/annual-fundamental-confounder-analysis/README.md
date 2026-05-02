@@ -9,7 +9,7 @@
 
 ### Decision
 
-低 `PBR`、小型、低 `forward PER` は v3 PIT stock-master rerun でも独立性が残る。`ADV60` は alpha ではなく capacity / execution diagnostic として扱う。`forward EPS / actual EPS` は補助情報に留め、主スコアへ強く入れない。
+低 `PBR`、小型、低 `forward PER` は v3 PIT stock-master + statement-document semantics rerun でも独立性が残る。`ADV60` は alpha ではなく capacity / execution diagnostic として扱う。`forward EPS / actual EPS` は補助情報に留め、主スコアへ強く入れない。
 
 ### Why This Research Was Run
 
@@ -17,29 +17,31 @@ annual panel の単独 factor spread が、低 `PBR`・小型・低 `forward PER
 
 ### Data Scope / PIT Assumptions
 
-入力は v3 parent bundle `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260429_212200_e60eacef/`。期間は `2017-2025`、input realized events は `32,264`。upstream は `stock_master_daily` の entry-date market membership と entry-date as-of FY fundamentals を使う。default run は全 realized events、practical run は `PBR > 0` かつ `forward PER > 0` の `21,532` events。
+入力は v3 parent bundle `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`。期間は `2017-2025`、input realized events は `32,264`。upstream は `stock_master_daily` の entry-date market membership と entry-date as-of FY fundamentals を使い、actual metrics は FY financial-statement documents から取る。default run は全 realized events、practical run は `PBR > 0` かつ `forward PER > 0` の `24,660` events。
 
 ### Main Findings
 
 #### 結論
 
-| Scope | Condition | low PBR | small cap | low forward PER | high CFO yield | low ADV60 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `all` | default | `3.96pp / t=10.16` | `3.51pp / t=9.13` | `2.50pp / t=7.23` | `0.65pp / t=2.10` | `-1.71pp / t=-4.69` |
-| `all` | positive ratios | `3.75pp / t=9.77` | `3.19pp / t=8.46` | `2.84pp / t=7.67` | `0.51pp / t=1.69` | `-1.67pp / t=-4.67` |
-| `standard` | positive ratios | `4.24pp / t=6.78` | `2.64pp / t=5.19` | `2.42pp / t=3.96` | `1.14pp / t=2.12` | `-1.11pp / t=-2.20` |
-| `growth` | positive ratios | `7.49pp / t=4.53` | `6.82pp / t=3.73` | `0.27pp / t=0.16` | `1.75pp / t=1.28` | `-2.10pp / t=-1.26` |
+| Scope | Condition | low PBR | small cap | low forward PER | low ADV60 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `all` | default | `5.04pp / t=16.47` | `3.10pp / t=8.97` | `2.73pp / t=9.88` | `-1.54pp / t=-4.71` |
+| `all` | positive ratios | `4.37pp / t=13.91` | `2.99pp / t=8.69` | `3.48pp / t=12.17` | `-1.49pp / t=-4.56` |
+| `prime` | positive ratios | `2.98pp / t=7.70` | `3.83pp / t=6.52` | `3.72pp / t=10.53` | `-3.09pp / t=-5.68` |
+| `standard` | positive ratios | `5.41pp / t=9.92` | `2.51pp / t=5.42` | `3.07pp / t=6.31` | `-0.68pp / t=-1.46` |
+| `growth` | positive ratios | `7.19pp / t=5.20` | `6.04pp / t=3.77` | `2.91pp / t=2.34` | `-0.60pp / t=-0.39` |
 
 #### 結論
 
 | Incremental rule | Scope | Events | Mean return | Annual mean | Year t |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `low_pbr_small_cap_low_forward_per` | `standard`, default | `314` | `30.81%` | `33.09%` | `3.62` |
-| `low_pbr_small_cap_low_forward_per` | `standard`, positive ratios | `316` | `30.24%` | `31.98%` | `3.55` |
+| `low_pbr_small_cap_low_forward_per` | `prime`, positive ratios | `706` | `23.78%` | `25.30%` | `3.04` |
+| `low_pbr_small_cap_low_forward_per` | `standard`, positive ratios | `377` | `28.91%` | `32.17%` | `3.43` |
+| `low_pbr_small_cap` | `standard`, positive ratios | `556` | `28.20%` | `29.43%` | `3.61` |
 
 ### Interpretation
 
-Positive-ratio filtering does not overturn the main conclusion. It mainly removes denominator-distress rows and clarifies that `growth` の low `forward PER` は独立 factor として弱い。`standard` では低 `PBR`、小型、低 `forward PER` が同時に残るので、composite selection の主戦場は引き続き `standard`。
+Positive-ratio filtering does not overturn the main conclusion. The statement-document semantics fix increases the practical positive-ratio universe, but the market split remains clear: `prime` は小型 + 低 `forward PER` が厚く、`standard` は低 `PBR` が主役。`standard` では低 `PBR`、小型、低 `forward PER` が同時に残るので、composite selection の主戦場は引き続き `standard`。
 
 ### Production Implication
 
@@ -51,8 +53,8 @@ Ranking score は低 `PBR` + 小型 + 低 `forward PER` を中心にする。CFO
 
 ### Source Artifacts
 
-- Default bundle: `/tmp/trading25-research/market-behavior/annual-fundamental-confounder-analysis/20260429_212231_e60eacef_02/`
-- Positive-ratio bundle: `/tmp/trading25-research/market-behavior/annual-fundamental-confounder-analysis/20260429_212231_e60eacef/`
+- Default bundle: `/tmp/trading25-research/market-behavior/annual-fundamental-confounder-analysis/20260502_statement_doc_semantics_default/`
+- Positive-ratio bundle: `/tmp/trading25-research/market-behavior/annual-fundamental-confounder-analysis/20260502_statement_doc_semantics_positive/`
 - Domain: `apps/bt/src/domains/analytics/annual_fundamental_confounder_analysis.py`
 - Runner: `apps/bt/scripts/research/run_annual_fundamental_confounder_analysis.py`
 
