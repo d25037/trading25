@@ -302,8 +302,8 @@ _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = 
         f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
     "prime_size_tilt": (
-        "Prime size tilt research weights: 45% small market cap + 20% low PBR + "
-        f"35% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+        "Prime size tilt research weights: 46.5% small market cap + 5% low PBR + "
+        f"48.5% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
     "equal_weight": (
         "Equal weight across small market cap, low PBR, and low forward PER; "

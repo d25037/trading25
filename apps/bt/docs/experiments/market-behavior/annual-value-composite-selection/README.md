@@ -18,7 +18,7 @@ confounder analysis で残った低 `PBR`、小型、低 `forward PER` を、年
 
 ### Data Scope / PIT Assumptions
 
-入力は v3 parent bundle `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`。default は `32,264` scored events、positive-ratio run は `24,660` scored events。価格curveは parent bundle の `db_path` から selected event codes のみを読み直す。
+入力は v3 parent bundle `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_share_basis_rerun/`。default は `32,264` scored events、positive-ratio run は `24,660` scored events。価格curveは parent bundle の `db_path` から selected event codes のみを読み直す。
 
 ### Main Findings
 
@@ -26,12 +26,12 @@ confounder analysis で残った低 `PBR`、小型、低 `forward PER` を、年
 
 | Run | Market | Score | Liquidity | Top | Events | CAGR | Sharpe | MaxDD |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| default | `standard` | `fixed_55_25_20` | none | `10%` | `896` | `37.41%` | `2.19` | `-31.91%` |
-| default | `standard` | `bucket_sum` | none | `10%` | `896` | `35.97%` | `2.16` | `-31.29%` |
-| default | `standard` | `walkforward_regression_weight` | none | `10%` | `896` | `35.92%` | `2.14` | `-31.71%` |
-| positive ratios | `standard` | `walkforward_regression_weight` | none | `10%` | `829` | `34.51%` | `2.12` | `-30.14%` |
-| positive ratios | `standard` | `fixed_55_25_20` | none | `10%` | `829` | `34.33%` | `2.09` | `-30.44%` |
-| positive ratios | `standard` | `equal_weight` | none | `10%` | `829` | `34.19%` | `2.10` | `-29.79%` |
+| default | `standard` | `fixed_55_25_20` | none | `10%` | `896` | `37.47%` | `2.20` | `-31.91%` |
+| default | `standard` | `bucket_sum` | none | `10%` | `896` | `36.13%` | `2.17` | `-31.29%` |
+| default | `standard` | `walkforward_regression_weight` | none | `10%` | `896` | `36.34%` | `2.16` | `-31.71%` |
+| positive ratios | `standard` | `walkforward_regression_weight` | none | `10%` | `829` | `34.71%` | `2.13` | `-30.14%` |
+| positive ratios | `standard` | `fixed_55_25_20` | none | `10%` | `829` | `34.58%` | `2.11` | `-30.44%` |
+| positive ratios | `standard` | `equal_weight` | none | `10%` | `829` | `34.68%` | `2.12` | `-29.79%` |
 
 #### 結論
 
@@ -43,7 +43,7 @@ confounder analysis で残った低 `PBR`、小型、低 `forward PER` を、年
 
 ### Interpretation
 
-The strongest practical surface remains `standard` top decile. The fixed simple score remains competitive with walk-forward regression, so a small, explainable composite is preferable to overfitting weights. The statement-document semantics fix increases the positive-ratio universe and slightly lowers the headline Standard positive-ratio CAGR, but it does not remove the edge.
+The strongest practical surface remains `standard` top decile. The fixed simple score remains competitive with walk-forward regression, so a small, explainable composite is preferable to overfitting weights. The share-basis rerun moves the headline Standard positive-ratio CAGR only slightly versus the statement-document semantics rerun, and does not change the edge.
 
 ### Production Implication
 
@@ -55,8 +55,8 @@ The portfolio lens is annual open-to-close equal-weight and does not include cos
 
 ### Source Artifacts
 
-- Default bundle: `/tmp/trading25-research/market-behavior/annual-value-composite-selection/20260502_statement_doc_semantics_default/`
-- Positive-ratio bundle: `/tmp/trading25-research/market-behavior/annual-value-composite-selection/20260502_statement_doc_semantics_positive/`
+- Default bundle: `/tmp/trading25-research/market-behavior/annual-value-composite-selection/20260502_share_basis_default/`
+- Positive-ratio bundle: `/tmp/trading25-research/market-behavior/annual-value-composite-selection/20260502_share_basis_positive/`
 - Domain: `apps/bt/src/domains/analytics/annual_value_composite_selection.py`
 - Runner: `apps/bt/scripts/research/run_annual_value_composite_selection.py`
 

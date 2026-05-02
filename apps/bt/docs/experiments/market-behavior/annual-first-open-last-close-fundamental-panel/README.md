@@ -52,17 +52,17 @@
 
 | Market / factor | Preferred spread |
 | --- | ---: |
-| `growth` / `pbr` | `42.6pp` |
-| `standard` / `pbr` | `21.3pp` |
-| `all` / `pbr` | `20.0pp` |
-| `standard` / `forward_per` | `19.4pp` |
-| `all` / `forward_per` | `18.2pp` |
+| `growth` / `pbr` | `43.8pp` |
+| `standard` / `pbr` | `21.7pp` |
+| `all` / `pbr` | `19.9pp` |
+| `standard` / `forward_per` | `20.0pp` |
+| `all` / `forward_per` | `18.4pp` |
 
 #### per-share adjustment は省略できない。
 
 | Metric | Value |
 | --- | ---: |
-| realized events with `share_adjustment_applied = true` | `6,389` |
+| realized events with `share_adjustment_applied = true` | `6,534` |
 
 ### Interpretation
 
@@ -89,7 +89,7 @@
 - Domain: `apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py`
 - Runner: `apps/bt/scripts/research/run_annual_first_open_last_close_fundamental_panel.py`
 - Baseline: [`baseline-2026-04-23.md`](./baseline-2026-04-23.md)
-- v3 statement-document semantics bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_statement_doc_semantics/`
+- v3 share-basis rerun bundle: `/tmp/trading25-research/market-behavior/annual-first-open-last-close-fundamental-panel/20260502_share_basis_rerun/`
 - Bundle artifacts: `manifest.json`, `results.duckdb`, `summary.md`, `summary.json`
 
 ## Current Surface

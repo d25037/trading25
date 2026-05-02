@@ -674,9 +674,9 @@ class TestValueCompositeRanking:
         data = resp.json()
         assert data["scoreMethod"] == "prime_size_tilt"
         assert data["weights"] == {
-            "smallMarketCap": 0.45,
-            "lowPbr": 0.2,
-            "lowForwardPer": 0.35,
+            "smallMarketCap": 0.465,
+            "lowPbr": 0.05,
+            "lowForwardPer": 0.485,
         }
 
     def test_422_no_db(self):

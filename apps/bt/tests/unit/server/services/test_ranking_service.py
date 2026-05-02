@@ -1440,9 +1440,9 @@ class TestGetValueCompositeRanking:
         assert prime_size_tilt.scoreMethod == "prime_size_tilt"
         assert equal.scoreMethod == "equal_weight"
         assert prime_size_tilt.weights == {
-            "smallMarketCap": 0.45,
-            "lowPbr": 0.2,
-            "lowForwardPer": 0.35,
+            "smallMarketCap": 0.465,
+            "lowPbr": 0.05,
+            "lowForwardPer": 0.485,
         }
         assert equal.weights == {
             "smallMarketCap": pytest.approx(1 / 3),
@@ -1485,13 +1485,13 @@ class TestGetValueCompositeRanking:
 
         assert result.scoreMethod == "prime_size_tilt"
         assert (
-            "45% small market cap + 20% low PBR + 35% low forward PER"
+            "46.5% small market cap + 5% low PBR + 48.5% low forward PER"
             in result.scorePolicy
         )
         assert result.weights == {
-            "smallMarketCap": 0.45,
-            "lowPbr": 0.2,
-            "lowForwardPer": 0.35,
+            "smallMarketCap": 0.465,
+            "lowPbr": 0.05,
+            "lowForwardPer": 0.485,
         }
 
     def test_value_composite_score_returns_market_specific_rank_for_symbol(

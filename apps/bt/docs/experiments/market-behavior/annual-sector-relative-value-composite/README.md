@@ -6,7 +6,7 @@
 
 ### Decision
 
-v3 statement-document semantics positive-ratio run では、Standard は sector-relative / hybrid valuation に改善余地がある。一方で Prime は `prime_size_tilt_raw` がまだ最良で、sector-relative 化はやや劣化した。したがって次の候補は、Standard に限って `standard_pbr_tilt_sector_relative` / hybrid 系を追加検証し、Prime は現行 `prime_size_tilt` を維持する方針。
+v3 statement-document semantics positive-ratio run では、Standard は sector-relative / hybrid valuation に改善余地がある。一方で Prime は raw valuation profile がまだ最良で、sector-relative 化はやや劣化した。したがって次の候補は、Standard に限って `standard_pbr_tilt_sector_relative` / hybrid 系を追加検証し、Prime は raw `prime_size_tilt` を維持する方針。Prime の exact weight は後続の share-basis top `5%` check で small `46.5%` / low `PBR` `5%` / low `forward PER` `48.5%` に更新した。
 
 ### Why This Research Was Run
 
@@ -40,7 +40,7 @@ v3 statement-document semantics positive-ratio run では、Standard は sector-
 
 ### Interpretation
 
-Standard は full sector-relative と hybrid が raw よりわずかに良く、同業内の安さを混ぜる余地は残る。ただし差は大きくないため、Ranking page の既存 `standard_pbr_tilt` を即置換するほどではない。Prime は raw `prime_size_tilt` が最良で、sector-relative 化すると CAGR / Sharpe が落ちるため、Prime の edge は sector allocation を含んだ raw valuation と小型 tilt の組み合わせとして扱う方が現時点では自然。
+Standard は full sector-relative と hybrid が raw よりわずかに良く、同業内の安さを混ぜる余地は残る。ただし差は大きくないため、Ranking page の既存 `standard_pbr_tilt` を即置換するほどではない。Prime は raw `prime_size_tilt` が最良で、sector-relative 化すると CAGR / Sharpe が落ちるため、Prime の edge は sector allocation を含んだ raw valuation、小型 tilt、低 `forward PER` tilt の組み合わせとして扱う方が現時点では自然。
 
 ### Production Implication
 
