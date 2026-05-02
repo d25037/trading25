@@ -89,6 +89,8 @@
   - 低PBR・小型・低forward PER を composite score に落とし、top% selection と liquidity/capacity floor を portfolio lens で評価する実験。
 - [market-behavior/annual-value-composite-technical-filter/](./market-behavior/annual-value-composite-technical-filter/README.md)
   - annual value composite の選定銘柄に entry 前営業日時点の `SMA250` / TOPIX trend filter を重ね、左尾 pruning と反転初動の取りこぼしを比較する実験。
+- [market-behavior/annual-value-technical-feature-importance/](./market-behavior/annual-value-technical-feature-importance/README.md)
+  - annual value composite の Standard top decile に entry 前営業日時点の technical feature を横並びで重ね、stock selection 補助として重要そうな indicator family を比較する実験。
 - [market-behavior/annual-market-specific-value-score-profile/](./market-behavior/annual-market-specific-value-score-profile/README.md)
   - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)

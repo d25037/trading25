@@ -42,6 +42,18 @@ relatedExperiments = [
   "market-behavior/annual-market-specific-value-score-profile",
 ]
 
+[experiments."market-behavior/annual-value-technical-feature-importance"]
+family = "Annual Fundamentals"
+status = "candidate"
+decision = "Standard value top decile の technical 補助は price_to_sma250 より rebound_from_252d_low_pct、topix_volatility_60d_pct、return_20d_pct、volume_ratio_20_60 を優先して次の additive score / regime overlay 研究に進める。hard filter 化はまだしない。"
+promotedSurface = "Research"
+riskFlags = ["technical-feature-importance", "pit-entry-previous-session", "portfolio-lens-needed", "not-hard-filter"]
+relatedExperiments = [
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-value-composite-technical-filter",
+  "market-behavior/annual-market-specific-value-score-profile",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
