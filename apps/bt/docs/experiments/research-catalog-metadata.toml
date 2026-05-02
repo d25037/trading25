@@ -90,6 +90,17 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
 ]
 
+[experiments."market-behavior/margin-balance-supply-demand"]
+family = "Supply Demand"
+status = "candidate"
+decision = "既存 market.duckdb の信用買い残・信用売り残だけを PIT-safe effective date にずらして検証する Phase 1。機関空売りは含めず、単独 alpha ではなく bad-tail pruning 候補として評価する。"
+promotedSurface = "Research"
+riskFlags = ["margin-balance", "pit-effective-date", "not-institutional-short-selling", "tail-risk"]
+relatedExperiments = [
+  "market-behavior/annual-prime-value-volume-volatility-participation",
+  "strategy-audit/forward-eps-technical-horizon-decomposition",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
