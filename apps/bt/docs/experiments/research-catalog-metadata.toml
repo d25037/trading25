@@ -23,12 +23,23 @@ relatedExperiments = [
 [experiments."market-behavior/annual-value-composite-selection"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
-decision = "Use Ranking as the research display surface; keep Screening for production execution."
+decision = "Use Ranking as the research display surface; keep Screening for production execution. Future value research readouts should not lead with fixed_55_25_20; prefer equal_weight, walkforward_regression_weight, or Ranking market-specific profiles."
 promotedSurface = "Ranking"
 riskFlags = ["portfolio-lens"]
 relatedExperiments = [
   "market-behavior/annual-fundamental-confounder-analysis",
   "market-behavior/annual-forward-per-regime-decomposition",
+]
+
+[experiments."market-behavior/annual-value-composite-technical-filter"]
+family = "Annual Fundamentals"
+status = "observed"
+decision = "price > SMA250 / price < SMA250 単体は annual value composite に採用しない。2017 の SMA250 missing はDB左端warmup不足として分離する。stock AND TOPIX below SMA250 は小サンプルの rebound bucket 候補として残すが、hard filter 化はしない。"
+promotedSurface = "Research"
+riskFlags = ["technical-filter", "portfolio-lens", "pit-entry-previous-session", "db-left-boundary-warmup"]
+relatedExperiments = [
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-market-specific-value-score-profile",
 ]
 
 [experiments."market-behavior/annual-market-specific-value-score-profile"]

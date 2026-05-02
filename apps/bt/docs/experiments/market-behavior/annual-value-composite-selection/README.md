@@ -45,6 +45,12 @@ confounder analysis で残った低 `PBR`、小型、低 `forward PER` を、年
 
 The strongest practical surface remains `standard` top decile. The fixed simple score remains competitive with walk-forward regression, so a small, explainable composite is preferable to overfitting weights. The share-basis rerun moves the headline Standard positive-ratio CAGR only slightly versus the statement-document semantics rerun, and does not change the edge.
 
+Follow-up technical-filter research found that fixed `55/25/20`
+(`fixed_55_25_20`, user shorthand `fixed_55_20`) should no longer be the
+primary score for future value research readouts. Keep it as historical context
+where old bundles contain it, but prefer `equal_weight`,
+`walkforward_regression_weight`, or the Ranking market-specific score profiles.
+
 ### Production Implication
 
 Use `standard` value composite as a ranking candidate, not as a standalone production strategy. Keep liquidity, cost, turnover, and order-size caps outside the score and evaluate them in a separate execution layer.
@@ -119,6 +125,11 @@ still adds value once obviously distressed negative-ratio names are excluded.
 The deployable score should not include an `ADV60` floor: the capacity checks
 show that even `ADV60 >= 10mn JPY` materially lowers return, so liquidity should
 remain a side diagnostic rather than part of the rank score.
+
+Future value research should not use `fixed_55_25_20` as the leading score.
+Use `equal_weight` / `walkforward_regression_weight` for research comparison,
+or the market-specific Ranking score profiles when the question targets the
+production surface.
 
 ## Run
 
