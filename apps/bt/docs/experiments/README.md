@@ -93,6 +93,8 @@
   - annual value composite の Standard top decile に entry 前営業日時点の technical feature を横並びで重ね、stock selection 補助として重要そうな indicator family を比較する実験。
 - [market-behavior/annual-value-rebound-range-position-decomposition/](./market-behavior/annual-value-rebound-range-position-decomposition/README.md)
   - annual value technical feature importance で強く出た `rebound_from_252d_low_pct` を、252日レンジ内位置と高値からの drawdown から切り分ける実験。
+- [market-behavior/annual-prime-value-technical-risk-decomposition/](./market-behavior/annual-prime-value-technical-risk-decomposition/README.md)
+  - Prime value で強く見えた stock volatility 系の technical effect が alpha なのか risk exposure なのかを beta / idiosyncratic volatility / p10 で切り分ける実験。
 - [market-behavior/annual-market-specific-value-score-profile/](./market-behavior/annual-market-specific-value-score-profile/README.md)
   - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)

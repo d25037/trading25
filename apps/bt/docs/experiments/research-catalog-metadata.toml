@@ -66,6 +66,18 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-technical-filter",
 ]
 
+[experiments."market-behavior/annual-prime-value-technical-risk-decomposition"]
+family = "Annual Fundamentals"
+status = "candidate"
+decision = "Prime value の technical 効果は Standard の rebound capture ではなく、stock volatility high bucket の right-tail capture と drawdown budget cost の組み合わせ。event lens では p10 と idiosyncratic volatility が悪化する一方、日次 portfolio lens では CAGR / Sharpe が改善し MaxDD が悪化するため、除外条件ではなく risk budget / sizing 研究へ進める。"
+promotedSurface = "Research"
+riskFlags = ["prime-specific", "technical-risk-decomposition", "right-tail-capture", "left-tail-cost", "daily-portfolio-lens", "maxdd-cost"]
+relatedExperiments = [
+  "market-behavior/annual-value-technical-feature-importance",
+  "market-behavior/annual-market-specific-value-score-profile",
+  "market-behavior/annual-value-composite-selection",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
