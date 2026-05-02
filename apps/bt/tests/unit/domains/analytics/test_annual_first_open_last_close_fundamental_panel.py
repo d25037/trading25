@@ -200,7 +200,7 @@ def _build_market_db(db_path: Path) -> str:
                 100.0,
                 1000.0,
                 "FY",
-                None,
+                "FYFinancialStatements_Consolidated_JP",
                 120.0,
                 1000.0,
                 500.0,
@@ -228,7 +228,7 @@ def _build_market_db(db_path: Path) -> str:
                 None,
                 None,
                 "1Q",
-                None,
+                "1QFinancialStatements_Consolidated_JP",
                 None,
                 None,
                 None,
@@ -250,13 +250,41 @@ def _build_market_db(db_path: Path) -> str:
                 20.0,
             ),
             (
+                "1111",
+                "2023-12-20",
+                None,
+                None,
+                None,
+                "FY",
+                "EarnForecastRevision",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                90.0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            (
                 "2222",
                 "2023-05-10",
                 -20.0,
                 -20.0,
                 500.0,
                 "FY",
-                None,
+                "FYFinancialStatements_Consolidated_JP",
                 -10.0,
                 500.0,
                 300.0,
@@ -290,7 +318,8 @@ def analytics_db_path(tmp_path: Path) -> str:
 
 def _event_row(result, code: str, year: str) -> pd.Series:
     row = result.event_ledger_df[
-        (result.event_ledger_df["code"] == code) & (result.event_ledger_df["year"] == year)
+        (result.event_ledger_df["code"] == code)
+        & (result.event_ledger_df["year"] == year)
     ]
     assert len(row) == 1
     return row.iloc[0]
@@ -318,9 +347,10 @@ def test_run_study_adjusts_per_share_metrics_to_entry_share_baseline(
     assert split_event["share_adjustment_ratio"] == pytest.approx(0.5)
     assert split_event["eps"] == pytest.approx(50.0)
     assert split_event["bps"] == pytest.approx(500.0)
-    assert split_event["forward_eps"] == pytest.approx(70.0)
-    assert split_event["forward_eps_to_actual_eps"] == pytest.approx(1.4)
+    assert split_event["forward_eps"] == pytest.approx(90.0)
+    assert split_event["forward_eps_to_actual_eps"] == pytest.approx(1.8)
     assert split_event["forward_eps_source"] == "revised"
+    assert split_event["forward_eps_period_type"] == "FY"
     assert split_event["per"] == pytest.approx(1.0)
     assert split_event["pbr"] == pytest.approx(0.1)
     assert split_event["market_cap_bil_jpy"] == pytest.approx(0.00001)
@@ -378,7 +408,10 @@ def test_feature_buckets_and_annual_portfolio_summary_are_built(
 
     all_portfolio = result.annual_portfolio_summary_df[
         (result.annual_portfolio_summary_df["market_scope"].astype(str) == "all")
-        & (result.annual_portfolio_summary_df["portfolio_scope"].astype(str) == "all_years")
+        & (
+            result.annual_portfolio_summary_df["portfolio_scope"].astype(str)
+            == "all_years"
+        )
     ]
     assert len(all_portfolio) == 1
     assert all_portfolio.iloc[0]["realized_event_count"] == 2
@@ -399,7 +432,9 @@ def test_feature_buckets_and_annual_portfolio_summary_are_built(
     ]
     assert len(eps_spread) == 1
     assert eps_spread.iloc[0]["high_minus_low_mean_return_pct"] == pytest.approx(70.0)
-    assert eps_spread.iloc[0]["preferred_minus_opposite_mean_return_pct"] == pytest.approx(70.0)
+    assert eps_spread.iloc[0][
+        "preferred_minus_opposite_mean_return_pct"
+    ] == pytest.approx(70.0)
 
 
 def test_bundle_roundtrip_for_study(
@@ -416,16 +451,26 @@ def test_bundle_roundtrip_for_study(
         output_root=tmp_path,
         run_id="test-run",
     )
-    loaded = load_annual_first_open_last_close_fundamental_panel_bundle(bundle.bundle_dir)
+    loaded = load_annual_first_open_last_close_fundamental_panel_bundle(
+        bundle.bundle_dir
+    )
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
 
-    assert bundle.experiment_id == ANNUAL_FIRST_OPEN_LAST_CLOSE_FUNDAMENTAL_PANEL_EXPERIMENT_ID
-    assert get_annual_first_open_last_close_fundamental_panel_bundle_path_for_run_id(
-        "test-run",
-        output_root=tmp_path,
-    ) == bundle.bundle_dir
     assert (
-        get_annual_first_open_last_close_fundamental_panel_latest_bundle_path(output_root=tmp_path)
+        bundle.experiment_id
+        == ANNUAL_FIRST_OPEN_LAST_CLOSE_FUNDAMENTAL_PANEL_EXPERIMENT_ID
+    )
+    assert (
+        get_annual_first_open_last_close_fundamental_panel_bundle_path_for_run_id(
+            "test-run",
+            output_root=tmp_path,
+        )
+        == bundle.bundle_dir
+    )
+    assert (
+        get_annual_first_open_last_close_fundamental_panel_latest_bundle_path(
+            output_root=tmp_path
+        )
         == bundle.bundle_dir
     )
     assert manifest["params"]["bucket_count"] == 2

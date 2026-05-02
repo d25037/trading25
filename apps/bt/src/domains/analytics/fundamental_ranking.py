@@ -13,9 +13,13 @@ from src.shared.utils.share_adjustment import (
     is_valid_share_count as _is_valid_share_count_shared,
     resolve_latest_quarterly_baseline_shares,
 )
+from src.shared.utils.statement_document import (
+    is_actual_fy_financial_statement,
+    is_earn_forecast_revision_document,
+)
 
 
-_QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
+_INTERIM_PERIODS = {"1Q", "2Q", "3Q", "4Q", "5Q"}
 
 
 @dataclass
@@ -28,6 +32,7 @@ class StatementRow:
     next_year_forecast_earnings_per_share: float | None
     shares_outstanding: float | None
     fy_cycle_key: str | None = None
+    type_of_document: str | None = None
 
 
 @dataclass
@@ -86,7 +91,9 @@ def adjust_per_share_value(
 ) -> float | None:
     if raw_value is None:
         return None
-    if not (is_valid_share_count(current_shares) and is_valid_share_count(baseline_shares)):
+    if not (
+        is_valid_share_count(current_shares) and is_valid_share_count(baseline_shares)
+    ):
         return round_eps(raw_value)
     assert current_shares is not None
     assert baseline_shares is not None
@@ -157,9 +164,15 @@ class FundamentalRankingCalculator:
         as_of_date: str | None = None,
     ) -> ForecastValue | None:
         eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
-        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
+        sorted_rows = sorted(
+            eligible_rows, key=lambda row: row.disclosed_date, reverse=True
+        )
         for row in sorted_rows:
-            if row.period_type != "FY":
+            if not is_actual_fy_financial_statement(
+                row.period_type,
+                row.type_of_document,
+                allow_unknown_document=True,
+            ):
                 continue
             adjusted = adjust_per_share_value(
                 row.earnings_per_share,
@@ -188,12 +201,18 @@ class FundamentalRankingCalculator:
             raise ValueError("lookback_fy_count must be >= 1")
 
         eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
-        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
+        sorted_rows = sorted(
+            eligible_rows, key=lambda row: row.disclosed_date, reverse=True
+        )
         recent_values: list[float] = []
         seen_cycles: set[str] = set()
 
         for row in sorted_rows:
-            if row.period_type != "FY":
+            if not is_actual_fy_financial_statement(
+                row.period_type,
+                row.type_of_document,
+                allow_unknown_document=True,
+            ):
                 continue
             cycle_key = row.fy_cycle_key or row.disclosed_date
             if cycle_key in seen_cycles:
@@ -221,9 +240,15 @@ class FundamentalRankingCalculator:
         as_of_date: str | None = None,
     ) -> LatestFyRow | None:
         eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
-        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
+        sorted_rows = sorted(
+            eligible_rows, key=lambda row: row.disclosed_date, reverse=True
+        )
         for row in sorted_rows:
-            if row.period_type != "FY":
+            if not is_actual_fy_financial_statement(
+                row.period_type,
+                row.type_of_document,
+                allow_unknown_document=True,
+            ):
                 continue
             forecast_value = (
                 row.next_year_forecast_earnings_per_share
@@ -268,9 +293,14 @@ class FundamentalRankingCalculator:
         as_of_date: str | None = None,
     ) -> ForecastValue | None:
         eligible_rows = self._rows_as_of(rows, as_of_date=as_of_date)
-        sorted_rows = sorted(eligible_rows, key=lambda row: row.disclosed_date, reverse=True)
+        sorted_rows = sorted(
+            eligible_rows, key=lambda row: row.disclosed_date, reverse=True
+        )
         for row in sorted_rows:
-            if row.period_type not in _QUARTER_PERIODS:
+            if (
+                row.period_type not in _INTERIM_PERIODS
+                and not is_earn_forecast_revision_document(row.type_of_document)
+            ):
                 continue
             if row.disclosed_date <= fy_disclosed_date:
                 continue

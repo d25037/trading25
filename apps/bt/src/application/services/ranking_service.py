@@ -19,6 +19,7 @@ from src.shared.utils.market_code_alias import (
     normalize_market_scope,
     resolve_market_codes,
 )
+from src.shared.utils.statement_document import is_actual_fy_financial_statement
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
@@ -145,6 +146,13 @@ def _str_or_none(value: Any) -> str | None:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return str(value)
+
+
+def _row_get(row: Mapping[str, Any], key: str) -> Any:
+    try:
+        return row[key]
+    except KeyError:
+        return None
 
 
 def _normalize_value_composite_weights(
@@ -761,6 +769,7 @@ class RankingService:
                     ),
                     shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
                     fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
+                    type_of_document=_str_or_none(_row_get(row, "type_of_document")),
                 )
             )
 
@@ -1046,6 +1055,7 @@ class RankingService:
                     ),
                     shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
                     fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
+                    type_of_document=_str_or_none(_row_get(row, "type_of_document")),
                 )
             )
             raw_statements_by_code.setdefault(code, []).append(row)
@@ -1176,6 +1186,7 @@ class RankingService:
                     ),
                     shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
                     fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
+                    type_of_document=_str_or_none(_row_get(row, "type_of_document")),
                 )
             )
         if not statements:
@@ -1690,6 +1701,7 @@ class RankingService:
                     normalized_code,
                     disclosed_date,
                     type_of_current_period,
+                    type_of_document,
                     earnings_per_share,
                     bps,
                     forecast_eps,
@@ -1700,6 +1712,7 @@ class RankingService:
                         {statements_norm} AS normalized_code,
                         disclosed_date,
                         type_of_current_period,
+                        type_of_document,
                         earnings_per_share,
                         bps,
                         forecast_eps,
@@ -1717,6 +1730,7 @@ class RankingService:
                 s.code,
                 st.disclosed_date,
                 st.type_of_current_period,
+                st.type_of_document,
                 st.earnings_per_share,
                 st.bps,
                 st.forecast_eps,
@@ -1897,8 +1911,12 @@ class RankingService:
         eligible = [
             row
             for row in rows
-            if _normalize_period_label(row["type_of_current_period"]) == "FY"
-            and str(row["disclosed_date"]) <= str(as_of_date)
+            if str(row["disclosed_date"]) <= str(as_of_date)
+            and is_actual_fy_financial_statement(
+                _normalize_period_label(row["type_of_current_period"]),
+                _str_or_none(_row_get(row, "type_of_document")),
+                allow_unknown_document=True,
+            )
         ]
         for row in sorted(
             eligible, key=lambda row: str(row["disclosed_date"]), reverse=True

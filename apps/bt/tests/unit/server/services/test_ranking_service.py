@@ -1686,18 +1686,54 @@ class TestGetValueCompositeRanking:
                     ),
                 )
             for row in [
-                ("68090", "2024-01-15", "3Q", None, None, None, 1_000_000.0),
-                ("68090", "2024-01-10", "FY", 10.0, 12.0, None, None),
-                ("68090", "2023-01-10", "FY", 9.0, 11.0, 100.0, None),
-                ("68100", "2024-01-10", "FY", 10.0, 12.0, 100.0, 1_000_000.0),
+                (
+                    "68090",
+                    "2024-01-15",
+                    "3Q",
+                    "3QFinancialStatements_Consolidated_JP",
+                    None,
+                    None,
+                    None,
+                    1_000_000.0,
+                ),
+                (
+                    "68090",
+                    "2024-01-10",
+                    "FY",
+                    "EarnForecastRevision",
+                    10.0,
+                    None,
+                    None,
+                    None,
+                ),
+                (
+                    "68090",
+                    "2023-01-10",
+                    "FY",
+                    "FYFinancialStatements_Consolidated_JP",
+                    9.0,
+                    11.0,
+                    100.0,
+                    None,
+                ),
+                (
+                    "68100",
+                    "2024-01-10",
+                    "FY",
+                    "FYFinancialStatements_Consolidated_JP",
+                    10.0,
+                    12.0,
+                    100.0,
+                    1_000_000.0,
+                ),
             ]:
                 conn.execute(
                     """
                     INSERT INTO statements (
-                        code, disclosed_date, type_of_current_period, earnings_per_share,
+                        code, disclosed_date, type_of_current_period, type_of_document, earnings_per_share,
                         next_year_forecast_earnings_per_share, bps, shares_outstanding
                     )
-                    VALUES (?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?)
                     """,
                     row,
                 )

@@ -30,8 +30,15 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
-from src.shared.utils.market_code_alias import expand_market_codes, normalize_market_scope
+from src.shared.utils.market_code_alias import (
+    expand_market_codes,
+    normalize_market_scope,
+)
 from src.shared.utils.share_adjustment import is_valid_share_count
+from src.shared.utils.statement_document import (
+    is_actual_fy_financial_statement,
+    is_earn_forecast_revision_document,
+)
 
 
 AnnualEventStatus = Literal[
@@ -52,7 +59,7 @@ ANNUAL_FIRST_OPEN_LAST_CLOSE_FUNDAMENTAL_PANEL_EXPERIMENT_ID = (
 DEFAULT_MARKETS: tuple[str, ...] = ("prime", "standard", "growth")
 DEFAULT_BUCKET_COUNT = 5
 DEFAULT_ADV_WINDOW = 60
-_QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
+_QUARTER_PERIODS = {"1Q", "2Q", "3Q", "4Q", "5Q"}
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "calendar_df",
     "event_ledger_df",
@@ -116,7 +123,9 @@ _FACTOR_DEFINITIONS: tuple[FeatureDefinition, ...] = (
     FeatureDefinition("forward_per", "Forward PER", False),
     FeatureDefinition("pbr", "PBR", False),
     FeatureDefinition("market_cap_bil_jpy", "Market cap, bn JPY", None),
-    FeatureDefinition("free_float_market_cap_bil_jpy", "Free-float market cap, bn JPY", None),
+    FeatureDefinition(
+        "free_float_market_cap_bil_jpy", "Free-float market cap, bn JPY", None
+    ),
     FeatureDefinition("free_float_ratio_pct", "Free-float ratio, pct", True),
     FeatureDefinition("avg_trading_value_60d_mil_jpy", "ADV60, mn JPY", True),
     FeatureDefinition("market_cap_to_adv60", "Market cap / ADV60", False),
@@ -136,16 +145,22 @@ _FACTOR_DEFINITIONS: tuple[FeatureDefinition, ...] = (
     FeatureDefinition("cfo_yield_pct", "CFO yield, pct", True),
     FeatureDefinition("fcf_yield_pct", "FCF yield, pct", True),
     FeatureDefinition("dividend_yield_pct", "Dividend yield, pct", True),
-    FeatureDefinition("forecast_dividend_yield_pct", "Forecast dividend yield, pct", True),
+    FeatureDefinition(
+        "forecast_dividend_yield_pct", "Forecast dividend yield, pct", True
+    ),
     FeatureDefinition("payout_ratio_pct", "Payout ratio, pct", None),
     FeatureDefinition("forecast_payout_ratio_pct", "Forecast payout ratio, pct", None),
     FeatureDefinition("prior_20d_return_pct", "Prior 20D return, pct", None),
     FeatureDefinition("prior_63d_return_pct", "Prior 63D return, pct", None),
     FeatureDefinition("prior_252d_return_pct", "Prior 252D return, pct", None),
-    FeatureDefinition("pre_entry_volatility_20d_pct", "Pre-entry volatility 20D, pct", False),
+    FeatureDefinition(
+        "pre_entry_volatility_20d_pct", "Pre-entry volatility 20D, pct", False
+    ),
 )
 _FACTOR_BY_NAME = {definition.name: definition for definition in _FACTOR_DEFINITIONS}
-_FEATURE_COLUMNS: tuple[str, ...] = tuple(definition.name for definition in _FACTOR_DEFINITIONS)
+_FEATURE_COLUMNS: tuple[str, ...] = tuple(
+    definition.name for definition in _FACTOR_DEFINITIONS
+)
 
 
 def _connect_duckdb(db_path: str, *, read_only: bool = True) -> Any:
@@ -302,7 +317,9 @@ def _query_trading_calendar(
         params,
     ).fetchdf()
     if df.empty:
-        return _empty_result_df(["year", "entry_date", "exit_date", "market_trading_days"])
+        return _empty_result_df(
+            ["year", "entry_date", "exit_date", "market_trading_days"]
+        )
     df["year"] = df["year"].astype(str)
     df["entry_date"] = df["entry_date"].astype(str)
     df["exit_date"] = df["exit_date"].astype(str)
@@ -311,7 +328,9 @@ def _query_trading_calendar(
     if not include_incomplete_last_year:
         df = df[(df["entry_mmdd"] <= "01-15") & (df["exit_mmdd"] >= "12-15")].copy()
     df = df[df["entry_date"] < df["exit_date"]].copy()
-    return df[["year", "entry_date", "exit_date", "market_trading_days"]].reset_index(drop=True)
+    return df[["year", "entry_date", "exit_date", "market_trading_days"]].reset_index(
+        drop=True
+    )
 
 
 def _stock_master_columns() -> list[str]:
@@ -499,6 +518,7 @@ def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
                 "code",
                 "disclosed_date",
                 "type_of_current_period",
+                "type_of_document",
                 "period_type",
                 "earnings_per_share",
                 "bps",
@@ -554,6 +574,7 @@ def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
                 normalized_code,
                 disclosed_date,
                 type_of_current_period,
+                type_of_document,
                 earnings_per_share,
                 bps,
                 forecast_eps,
@@ -578,6 +599,7 @@ def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
                     {statement_normalized_code} AS normalized_code,
                     st.disclosed_date,
                     st.type_of_current_period,
+                    st.type_of_document,
                     st.earnings_per_share,
                     st.bps,
                     st.forecast_eps,
@@ -623,6 +645,7 @@ def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
                 "code",
                 "disclosed_date",
                 "type_of_current_period",
+                "type_of_document",
                 "period_type",
                 "earnings_per_share",
                 "bps",
@@ -648,7 +671,9 @@ def _query_statement_rows(conn: Any, *, codes: Sequence[str]) -> pd.DataFrame:
     df["code"] = df["code"].astype(str)
     df["disclosed_date"] = df["disclosed_date"].astype(str)
     df["period_type"] = df["type_of_current_period"].map(normalize_period_label)
-    return df.sort_values(["code", "disclosed_date"], kind="stable").reset_index(drop=True)
+    return df.sort_values(["code", "disclosed_date"], kind="stable").reset_index(
+        drop=True
+    )
 
 
 def _query_price_rows(
@@ -659,7 +684,9 @@ def _query_price_rows(
     end_date: str,
 ) -> pd.DataFrame:
     if not codes:
-        return _empty_result_df(["code", "date", "open", "high", "low", "close", "volume"])
+        return _empty_result_df(
+            ["code", "date", "open", "high", "low", "close", "volume"]
+        )
     selected_values_sql = _values_sql(len(codes), 1)
     normalized_code = _normalize_code_sql("code")
     price_normalized_code = _normalize_code_sql("sd.code")
@@ -733,7 +760,9 @@ def _query_price_rows(
         [*[str(code) for code in codes], start_date, end_date],
     ).fetchdf()
     if df.empty:
-        return _empty_result_df(["code", "date", "open", "high", "low", "close", "volume"])
+        return _empty_result_df(
+            ["code", "date", "open", "high", "low", "close", "volume"]
+        )
     df["code"] = df["code"].astype(str)
     df["date"] = df["date"].astype(str)
     return df
@@ -746,15 +775,21 @@ def _resolve_baseline_share_snapshot(
 ) -> ShareBaselineSnapshot:
     if statement_frame.empty:
         return ShareBaselineSnapshot(None, None, None, None, None, None)
-    eligible = statement_frame[statement_frame["disclosed_date"].astype(str) <= str(as_of_date)].copy()
+    eligible = statement_frame[
+        statement_frame["disclosed_date"].astype(str) <= str(as_of_date)
+    ].copy()
     if eligible.empty:
         return ShareBaselineSnapshot(None, None, None, None, None, None)
     eligible = eligible.sort_values("disclosed_date", kind="stable")
 
     share_row: pd.Series | None = None
-    share_candidates = eligible[eligible["shares_outstanding"].map(_to_nullable_float).map(is_valid_share_count)]
+    share_candidates = eligible[
+        eligible["shares_outstanding"].map(_to_nullable_float).map(is_valid_share_count)
+    ]
     if not share_candidates.empty:
-        quarterly = share_candidates[share_candidates["period_type"].isin(_QUARTER_PERIODS)]
+        quarterly = share_candidates[
+            share_candidates["period_type"].isin(_QUARTER_PERIODS)
+        ]
         share_row = (quarterly if not quarterly.empty else share_candidates).iloc[-1]
 
     treasury_row: pd.Series | None = None
@@ -762,27 +797,74 @@ def _resolve_baseline_share_snapshot(
         eligible["treasury_shares"].map(_to_nullable_float).map(_is_valid_non_negative)
     ]
     if not treasury_candidates.empty:
-        quarterly_treasury = treasury_candidates[treasury_candidates["period_type"].isin(_QUARTER_PERIODS)]
-        treasury_row = (quarterly_treasury if not quarterly_treasury.empty else treasury_candidates).iloc[-1]
+        quarterly_treasury = treasury_candidates[
+            treasury_candidates["period_type"].isin(_QUARTER_PERIODS)
+        ]
+        treasury_row = (
+            quarterly_treasury if not quarterly_treasury.empty else treasury_candidates
+        ).iloc[-1]
 
     return ShareBaselineSnapshot(
-        shares=_to_nullable_float(share_row["shares_outstanding"]) if share_row is not None else None,
-        shares_source_date=str(share_row["disclosed_date"]) if share_row is not None else None,
-        shares_source_period_type=str(share_row["period_type"]) if share_row is not None else None,
+        shares=_to_nullable_float(share_row["shares_outstanding"])
+        if share_row is not None
+        else None,
+        shares_source_date=str(share_row["disclosed_date"])
+        if share_row is not None
+        else None,
+        shares_source_period_type=str(share_row["period_type"])
+        if share_row is not None
+        else None,
         treasury_shares=(
-            _to_nullable_float(treasury_row["treasury_shares"]) if treasury_row is not None else None
+            _to_nullable_float(treasury_row["treasury_shares"])
+            if treasury_row is not None
+            else None
         ),
-        treasury_source_date=str(treasury_row["disclosed_date"]) if treasury_row is not None else None,
-        treasury_source_period_type=str(treasury_row["period_type"]) if treasury_row is not None else None,
+        treasury_source_date=str(treasury_row["disclosed_date"])
+        if treasury_row is not None
+        else None,
+        treasury_source_period_type=str(treasury_row["period_type"])
+        if treasury_row is not None
+        else None,
     )
 
 
-def _latest_fy_statement(statement_frame: pd.DataFrame, *, as_of_date: str) -> pd.Series | None:
+def _latest_fy_statement(
+    statement_frame: pd.DataFrame, *, as_of_date: str
+) -> pd.Series | None:
     if statement_frame.empty:
         return None
     eligible = statement_frame[
-        (statement_frame["period_type"] == "FY")
+        _actual_fy_financial_statement_mask(statement_frame)
         & (statement_frame["disclosed_date"].astype(str) <= str(as_of_date))
+    ].copy()
+    if eligible.empty:
+        return None
+    return eligible.sort_values("disclosed_date", kind="stable").iloc[-1]
+
+
+def _actual_fy_financial_statement_mask(statement_frame: pd.DataFrame) -> pd.Series:
+    return statement_frame.apply(
+        lambda row: is_actual_fy_financial_statement(
+            str(row.get("period_type") or row.get("type_of_current_period") or ""),
+            str(row.get("type_of_document") or ""),
+            allow_unknown_document=True,
+        ),
+        axis=1,
+    )
+
+
+def _latest_actual_fy_metric_statement(
+    statement_frame: pd.DataFrame,
+    *,
+    as_of_date: str,
+    metric_column: str,
+) -> pd.Series | None:
+    if statement_frame.empty or metric_column not in statement_frame.columns:
+        return None
+    eligible = statement_frame[
+        _actual_fy_financial_statement_mask(statement_frame)
+        & (statement_frame["disclosed_date"].astype(str) <= str(as_of_date))
+        & statement_frame[metric_column].map(_to_nullable_float).notna()
     ].copy()
     if eligible.empty:
         return None
@@ -800,23 +882,37 @@ def _resolve_forward_eps(
     eligible = statement_frame[
         (statement_frame["disclosed_date"].astype(str) <= str(as_of_date))
         & (statement_frame["disclosed_date"].astype(str) > fy_disclosed_date)
-        & (statement_frame["period_type"].isin(_QUARTER_PERIODS))
+        & (
+            statement_frame["period_type"].isin(_QUARTER_PERIODS)
+            | statement_frame["type_of_document"].map(
+                is_earn_forecast_revision_document
+            )
+        )
     ].copy()
     if not eligible.empty:
         eligible = eligible.sort_values("disclosed_date", kind="stable")
         for row in reversed(list(eligible.to_dict(orient="records"))):
             raw_revised = _to_nullable_float(row.get("forecast_eps"))
             if raw_revised is None:
-                raw_revised = _to_nullable_float(row.get("next_year_forecast_earnings_per_share"))
+                raw_revised = _to_nullable_float(
+                    row.get("next_year_forecast_earnings_per_share")
+                )
             adjusted = adjust_per_share_value(
                 raw_revised,
                 _to_nullable_float(row.get("shares_outstanding")),
                 baseline_shares,
             )
             if adjusted is not None:
-                return adjusted, "revised", str(row["disclosed_date"]), str(row["period_type"])
+                return (
+                    adjusted,
+                    "revised",
+                    str(row["disclosed_date"]),
+                    str(row["period_type"]),
+                )
 
-    raw_fy_forecast = _to_nullable_float(latest_fy["next_year_forecast_earnings_per_share"])
+    raw_fy_forecast = _to_nullable_float(
+        latest_fy["next_year_forecast_earnings_per_share"]
+    )
     if raw_fy_forecast is None:
         raw_fy_forecast = _to_nullable_float(latest_fy["forecast_eps"])
     adjusted_fy = adjust_per_share_value(
@@ -824,7 +920,12 @@ def _resolve_forward_eps(
         _to_nullable_float(latest_fy["shares_outstanding"]),
         baseline_shares,
     )
-    return adjusted_fy, "fy" if adjusted_fy is not None else None, fy_disclosed_date, "FY"
+    return (
+        adjusted_fy,
+        "fy" if adjusted_fy is not None else None,
+        fy_disclosed_date,
+        "FY",
+    )
 
 
 def _compute_prior_return_pct(
@@ -837,7 +938,11 @@ def _compute_prior_return_pct(
     if start_idx < 0:
         return None
     start_close = _to_nullable_float(price_frame.iloc[start_idx]["close"])
-    prior_close = _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"]) if entry_idx > 0 else None
+    prior_close = (
+        _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"])
+        if entry_idx > 0
+        else None
+    )
     if start_close is None or prior_close is None or start_close <= 0:
         return None
     return (prior_close / start_close - 1.0) * 100.0
@@ -852,7 +957,9 @@ def _compute_pre_entry_volatility_pct(
     start_idx = entry_idx - sessions
     if start_idx < 0:
         return None
-    close = pd.to_numeric(price_frame.iloc[start_idx:entry_idx]["close"], errors="coerce")
+    close = pd.to_numeric(
+        price_frame.iloc[start_idx:entry_idx]["close"], errors="coerce"
+    )
     returns = close.pct_change().dropna()
     if len(returns) < 2:
         return None
@@ -879,8 +986,12 @@ def _compute_adv(
     return (value if math.isfinite(value) and value > 0 else None), sessions
 
 
-def _calc_path_metrics(entry_open: float, path_df: pd.DataFrame) -> dict[str, float | None]:
-    close_values = pd.to_numeric(path_df["close"], errors="coerce").astype(float).to_numpy()
+def _calc_path_metrics(
+    entry_open: float, path_df: pd.DataFrame
+) -> dict[str, float | None]:
+    close_values = (
+        pd.to_numeric(path_df["close"], errors="coerce").astype(float).to_numpy()
+    )
     if len(close_values) == 0 or not np.isfinite(close_values).all():
         return {}
     previous_close = np.concatenate(([entry_open], close_values[:-1]))
@@ -903,7 +1014,9 @@ def _calc_path_metrics(entry_open: float, path_df: pd.DataFrame) -> dict[str, fl
         "event_return_pct": total_return * 100.0,
         "max_drawdown_pct": max_drawdown * 100.0,
         "max_runup_pct": (float(np.max(curve_with_initial)) - 1.0) * 100.0,
-        "annualized_volatility_pct": _annualized_volatility_pct(pd.Series(daily_returns)),
+        "annualized_volatility_pct": _annualized_volatility_pct(
+            pd.Series(daily_returns)
+        ),
         "sharpe_ratio": _annualized_sharpe(pd.Series(daily_returns)),
         "sortino_ratio": _annualized_sortino(pd.Series(daily_returns)),
         "cagr_pct": cagr * 100.0 if cagr is not None else None,
@@ -950,6 +1063,27 @@ def _build_feature_values(
     if latest_fy is None:
         return record
 
+    def latest_metric_row(metric_column: str) -> pd.Series | None:
+        return _latest_actual_fy_metric_statement(
+            statement_frame,
+            as_of_date=as_of_date,
+            metric_column=metric_column,
+        )
+
+    def actual_metric(metric_column: str) -> float | None:
+        row = latest_metric_row(metric_column)
+        return _to_nullable_float(row[metric_column]) if row is not None else None
+
+    def actual_per_share_metric(metric_column: str) -> float | None:
+        row = latest_metric_row(metric_column)
+        if row is None:
+            return None
+        return adjust_per_share_value(
+            _to_nullable_float(row[metric_column]),
+            _to_nullable_float(row["shares_outstanding"]),
+            baseline.shares,
+        )
+
     fy_shares = _to_nullable_float(latest_fy["shares_outstanding"])
     share_adjustment_ratio = (
         fy_shares / baseline.shares
@@ -959,17 +1093,15 @@ def _build_feature_values(
         and is_valid_share_count(baseline.shares)
         else None
     )
-    eps = adjust_per_share_value(
-        _to_nullable_float(latest_fy["earnings_per_share"]),
-        fy_shares,
-        baseline.shares,
-    )
-    bps = adjust_per_share_value(_to_nullable_float(latest_fy["bps"]), fy_shares, baseline.shares)
-    forward_eps, forward_eps_source, forward_eps_date, forward_eps_period = _resolve_forward_eps(
-        statement_frame,
-        latest_fy=latest_fy,
-        baseline_shares=baseline.shares,
-        as_of_date=as_of_date,
+    eps = actual_per_share_metric("earnings_per_share")
+    bps = actual_per_share_metric("bps")
+    forward_eps, forward_eps_source, forward_eps_date, forward_eps_period = (
+        _resolve_forward_eps(
+            statement_frame,
+            latest_fy=latest_fy,
+            baseline_shares=baseline.shares,
+            as_of_date=as_of_date,
+        )
     )
 
     entry_price = entry_open
@@ -998,26 +1130,30 @@ def _build_feature_values(
         else (None, 0)
     )
 
-    profit = _to_nullable_float(latest_fy["profit"])
-    equity = _to_nullable_float(latest_fy["equity"])
-    total_assets = _to_nullable_float(latest_fy["total_assets"])
-    sales = _to_nullable_float(latest_fy["sales"])
-    operating_profit = _to_nullable_float(latest_fy["operating_profit"])
-    cfo = _to_nullable_float(latest_fy["operating_cash_flow"])
-    cfi = _to_nullable_float(latest_fy["investing_cash_flow"])
+    profit = actual_metric("profit")
+    equity = actual_metric("equity")
+    total_assets = actual_metric("total_assets")
+    sales = actual_metric("sales")
+    operating_profit = actual_metric("operating_profit")
+    cfo = actual_metric("operating_cash_flow")
+    cfi = actual_metric("investing_cash_flow")
     fcf = cfo + cfi if cfo is not None and cfi is not None else None
-    dividend_fy = adjust_per_share_value(
-        _to_nullable_float(latest_fy["dividend_fy"]),
-        fy_shares,
-        baseline.shares,
+    dividend_fy = actual_per_share_metric("dividend_fy")
+    raw_forecast_dividend = _to_nullable_float(
+        latest_fy["next_year_forecast_dividend_fy"]
     )
-    raw_forecast_dividend = _to_nullable_float(latest_fy["next_year_forecast_dividend_fy"])
     if raw_forecast_dividend is None:
         raw_forecast_dividend = _to_nullable_float(latest_fy["forecast_dividend_fy"])
-    forecast_dividend_fy = adjust_per_share_value(raw_forecast_dividend, fy_shares, baseline.shares)
-    raw_forecast_payout_ratio = _to_nullable_float(latest_fy["next_year_forecast_payout_ratio"])
+    forecast_dividend_fy = adjust_per_share_value(
+        raw_forecast_dividend, fy_shares, baseline.shares
+    )
+    raw_forecast_payout_ratio = _to_nullable_float(
+        latest_fy["next_year_forecast_payout_ratio"]
+    )
     if raw_forecast_payout_ratio is None:
-        raw_forecast_payout_ratio = _to_nullable_float(latest_fy["forecast_payout_ratio"])
+        raw_forecast_payout_ratio = _to_nullable_float(
+            latest_fy["forecast_payout_ratio"]
+        )
 
     record.update(
         {
@@ -1027,7 +1163,9 @@ def _build_feature_values(
             "share_adjustment_ratio": share_adjustment_ratio,
             "share_adjustment_applied": (
                 share_adjustment_ratio is not None
-                and not math.isclose(share_adjustment_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-12)
+                and not math.isclose(
+                    share_adjustment_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-12
+                )
             ),
             "eps": eps,
             "forward_eps": forward_eps,
@@ -1042,7 +1180,9 @@ def _build_feature_values(
             "preopen_per_prev_close": _ratio(previous_price, eps),
             "preopen_forward_per_prev_close": _ratio(previous_price, forward_eps),
             "preopen_pbr_prev_close": _ratio(previous_price, bps),
-            "market_cap_bil_jpy": market_cap / 1_000_000_000.0 if market_cap is not None else None,
+            "market_cap_bil_jpy": market_cap / 1_000_000_000.0
+            if market_cap is not None
+            else None,
             "free_float_market_cap_bil_jpy": (
                 free_float_market_cap / 1_000_000_000.0
                 if free_float_market_cap is not None
@@ -1053,7 +1193,9 @@ def _build_feature_values(
                 if free_float_shares is not None and baseline.shares is not None
                 else None
             ),
-            "avg_trading_value_60d_mil_jpy": adv / 1_000_000.0 if adv is not None else None,
+            "avg_trading_value_60d_mil_jpy": adv / 1_000_000.0
+            if adv is not None
+            else None,
             "avg_trading_value_60d_source_sessions": adv_sessions,
             "market_cap_to_adv60": _ratio(market_cap, adv),
             "adv60_to_market_cap_pct": _ratio_pct(adv, market_cap),
@@ -1075,9 +1217,15 @@ def _build_feature_values(
             "cfo_yield_pct": _ratio_pct(cfo, market_cap),
             "fcf_yield_pct": _ratio_pct(fcf, market_cap),
             "dividend_yield_pct": _ratio_pct(dividend_fy, entry_price),
-            "forecast_dividend_yield_pct": _ratio_pct(forecast_dividend_fy, entry_price),
-            "payout_ratio_pct": _normalize_payout_ratio(_to_nullable_float(latest_fy["payout_ratio"])),
-            "forecast_payout_ratio_pct": _normalize_payout_ratio(raw_forecast_payout_ratio),
+            "forecast_dividend_yield_pct": _ratio_pct(
+                forecast_dividend_fy, entry_price
+            ),
+            "payout_ratio_pct": _normalize_payout_ratio(
+                _to_nullable_float(latest_fy["payout_ratio"])
+            ),
+            "forecast_payout_ratio_pct": _normalize_payout_ratio(
+                raw_forecast_payout_ratio
+            ),
             "prior_20d_return_pct": (
                 _compute_prior_return_pct(price_frame, entry_idx=entry_idx, sessions=20)
                 if entry_idx is not None
@@ -1089,12 +1237,16 @@ def _build_feature_values(
                 else None
             ),
             "prior_252d_return_pct": (
-                _compute_prior_return_pct(price_frame, entry_idx=entry_idx, sessions=252)
+                _compute_prior_return_pct(
+                    price_frame, entry_idx=entry_idx, sessions=252
+                )
                 if entry_idx is not None
                 else None
             ),
             "pre_entry_volatility_20d_pct": (
-                _compute_pre_entry_volatility_pct(price_frame, entry_idx=entry_idx, sessions=20)
+                _compute_pre_entry_volatility_pct(
+                    price_frame, entry_idx=entry_idx, sessions=20
+                )
                 if entry_idx is not None
                 else None
             ),
@@ -1171,7 +1323,9 @@ def _build_event_ledger(
         for code, frame in price_df.groupby("code", sort=False)
     }
     statements_by_code = {
-        str(code): frame.sort_values("disclosed_date", kind="stable").reset_index(drop=True)
+        str(code): frame.sort_values("disclosed_date", kind="stable").reset_index(
+            drop=True
+        )
         for code, frame in statement_df.groupby("code", sort=False)
     }
     records: list[dict[str, Any]] = []
@@ -1181,7 +1335,9 @@ def _build_event_ledger(
         price_frame = price_by_code.get(code)
         if price_frame is None or price_frame.empty:
             continue
-        statement_frame = statements_by_code.get(code, _empty_result_df(list(statement_df.columns)))
+        statement_frame = statements_by_code.get(
+            code, _empty_result_df(list(statement_df.columns))
+        )
         price_dates = price_frame["date"].astype(str).to_numpy()
         listed_date = str(stock.get("listed_date") or "")
 
@@ -1235,7 +1391,9 @@ def _build_event_ledger(
             record["status"] = "empty_holding_window"
             records.append(record)
             continue
-        path_df = price_frame.iloc[entry_idx : exit_idx + 1].copy().reset_index(drop=True)
+        path_df = (
+            price_frame.iloc[entry_idx : exit_idx + 1].copy().reset_index(drop=True)
+        )
         if path_df.empty:
             record["status"] = "empty_holding_window"
             records.append(record)
@@ -1243,7 +1401,9 @@ def _build_event_ledger(
         entry_open = _to_nullable_float(path_df.iloc[0]["open"])
         entry_close = _to_nullable_float(path_df.iloc[0]["close"])
         entry_previous_close = (
-            _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"]) if entry_idx > 0 else None
+            _to_nullable_float(price_frame.iloc[entry_idx - 1]["close"])
+            if entry_idx > 0
+            else None
         )
         exit_close = _to_nullable_float(path_df.iloc[-1]["close"])
         if entry_open is None or entry_open <= 0:
@@ -1265,7 +1425,9 @@ def _build_event_ledger(
             statement_frame_for_entry,
             as_of_date=entry_date,
         )
-        latest_fy = _latest_fy_statement(statement_frame_for_entry, as_of_date=entry_date)
+        latest_fy = _latest_fy_statement(
+            statement_frame_for_entry, as_of_date=entry_date
+        )
         feature_values = _build_feature_values(
             statement_frame=statement_frame_for_entry,
             latest_fy=latest_fy,
@@ -1278,7 +1440,9 @@ def _build_event_ledger(
             adv_window=adv_window,
         )
         metrics = _calc_path_metrics(entry_open, path_df)
-        holding_calendar_days = (pd.Timestamp(exit_date) - pd.Timestamp(entry_date)).days
+        holding_calendar_days = (
+            pd.Timestamp(exit_date) - pd.Timestamp(entry_date)
+        ).days
         record.update(
             {
                 **feature_values,
@@ -1300,7 +1464,11 @@ def _build_event_ledger(
     for column in columns:
         if column not in result.columns:
             result[column] = None
-    return result[columns].sort_values(["year", "market", "code"], kind="stable").reset_index(drop=True)
+    return (
+        result[columns]
+        .sort_values(["year", "market", "code"], kind="stable")
+        .reset_index(drop=True)
+    )
 
 
 def _expand_market_scope(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1335,16 +1503,27 @@ def _bool_ratio_pct(mask: pd.Series) -> float | None:
 
 
 def _build_feature_coverage_df(event_ledger_df: pd.DataFrame) -> pd.DataFrame:
-    columns = ["market_scope", "feature_name", "feature_label", "event_count", "non_null_count", "coverage_pct"]
+    columns = [
+        "market_scope",
+        "feature_name",
+        "feature_label",
+        "event_count",
+        "non_null_count",
+        "coverage_pct",
+    ]
     realized_df = event_ledger_df[event_ledger_df["status"] == "realized"].copy()
     if realized_df.empty:
         return _empty_result_df(columns)
     scoped = _expand_market_scope(realized_df)
     records: list[dict[str, Any]] = []
-    for market_scope, group_df in scoped.groupby("market_scope", observed=True, sort=False):
+    for market_scope, group_df in scoped.groupby(
+        "market_scope", observed=True, sort=False
+    ):
         event_count = int(len(group_df))
         for definition in _FACTOR_DEFINITIONS:
-            non_null_count = int(pd.to_numeric(group_df[definition.name], errors="coerce").notna().sum())
+            non_null_count = int(
+                pd.to_numeric(group_df[definition.name], errors="coerce").notna().sum()
+            )
             records.append(
                 {
                     "market_scope": str(market_scope),
@@ -1352,16 +1531,24 @@ def _build_feature_coverage_df(event_ledger_df: pd.DataFrame) -> pd.DataFrame:
                     "feature_label": definition.label,
                     "event_count": event_count,
                     "non_null_count": non_null_count,
-                    "coverage_pct": non_null_count / event_count * 100.0 if event_count else None,
+                    "coverage_pct": non_null_count / event_count * 100.0
+                    if event_count
+                    else None,
                 }
             )
     result = pd.DataFrame(records)
     result["market_scope"] = pd.Categorical(
         result["market_scope"],
-        categories=[scope for scope in _MARKET_SCOPE_ORDER if scope in set(result["market_scope"])],
+        categories=[
+            scope
+            for scope in _MARKET_SCOPE_ORDER
+            if scope in set(result["market_scope"])
+        ],
         ordered=True,
     )
-    return result.sort_values(["market_scope", "feature_name"], kind="stable").reset_index(drop=True)
+    return result.sort_values(
+        ["market_scope", "feature_name"], kind="stable"
+    ).reset_index(drop=True)
 
 
 def _assign_factor_buckets(
@@ -1370,7 +1557,13 @@ def _assign_factor_buckets(
     factor_name: str,
     bucket_count: int,
 ) -> pd.DataFrame:
-    columns = [*scoped_df.columns, "feature_name", "feature_label", "bucket", "bucket_label"]
+    columns = [
+        *scoped_df.columns,
+        "feature_name",
+        "feature_label",
+        "bucket",
+        "bucket_label",
+    ]
     value_df = scoped_df.copy()
     value_df["feature_value"] = pd.to_numeric(value_df[factor_name], errors="coerce")
     value_df = value_df[value_df["feature_value"].notna()].copy()
@@ -1379,12 +1572,16 @@ def _assign_factor_buckets(
 
     definition = _FACTOR_BY_NAME[factor_name]
     frames: list[pd.DataFrame] = []
-    for (_, _), group_df in value_df.groupby(["market_scope", "year"], observed=True, sort=False):
+    for (_, _), group_df in value_df.groupby(
+        ["market_scope", "year"], observed=True, sort=False
+    ):
         if len(group_df) < bucket_count:
             continue
         ordered = group_df.sort_values(["feature_value", "code"], kind="stable").copy()
         ranks = np.arange(len(ordered), dtype=float)
-        ordered["bucket"] = np.floor(ranks * bucket_count / len(ordered)).astype(int) + 1
+        ordered["bucket"] = (
+            np.floor(ranks * bucket_count / len(ordered)).astype(int) + 1
+        )
         ordered["feature_name"] = factor_name
         ordered["feature_label"] = definition.label
         ordered["bucket_label"] = ordered["bucket"].map(lambda value: f"Q{int(value)}")
@@ -1446,16 +1643,28 @@ def _build_feature_bucket_summary_df(
                     "bucket_label": f"Q{int(bucket)}",
                     "year_count": int(group_df["year"].nunique()),
                     "realized_event_count": int(len(group_df)),
-                    "mean_feature_value": _series_stat(group_df["feature_value"], "mean"),
-                    "median_feature_value": _series_stat(group_df["feature_value"], "median"),
-                    "mean_return_pct": _series_stat(group_df["event_return_pct"], "mean"),
-                    "median_return_pct": _series_stat(group_df["event_return_pct"], "median"),
+                    "mean_feature_value": _series_stat(
+                        group_df["feature_value"], "mean"
+                    ),
+                    "median_feature_value": _series_stat(
+                        group_df["feature_value"], "median"
+                    ),
+                    "mean_return_pct": _series_stat(
+                        group_df["event_return_pct"], "mean"
+                    ),
+                    "median_return_pct": _series_stat(
+                        group_df["event_return_pct"], "median"
+                    ),
                     "q25_return_pct": _series_stat(group_df["event_return_pct"], "q25"),
                     "q75_return_pct": _series_stat(group_df["event_return_pct"], "q75"),
                     "win_rate_pct": _bool_ratio_pct(group_df["event_return"] > 0),
-                    "mean_max_drawdown_pct": _series_stat(group_df["max_drawdown_pct"], "mean"),
+                    "mean_max_drawdown_pct": _series_stat(
+                        group_df["max_drawdown_pct"], "mean"
+                    ),
                     "mean_sharpe_ratio": _series_stat(group_df["sharpe_ratio"], "mean"),
-                    "mean_sortino_ratio": _series_stat(group_df["sortino_ratio"], "mean"),
+                    "mean_sortino_ratio": _series_stat(
+                        group_df["sortino_ratio"], "mean"
+                    ),
                     "mean_calmar_ratio": _series_stat(group_df["calmar_ratio"], "mean"),
                 }
             )
@@ -1464,7 +1673,11 @@ def _build_feature_bucket_summary_df(
     result = pd.DataFrame(records)
     result["market_scope"] = pd.Categorical(
         result["market_scope"],
-        categories=[scope for scope in _MARKET_SCOPE_ORDER if scope in set(result["market_scope"])],
+        categories=[
+            scope
+            for scope in _MARKET_SCOPE_ORDER
+            if scope in set(result["market_scope"])
+        ],
         ordered=True,
     )
     return result.sort_values(
@@ -1504,11 +1717,15 @@ def _build_factor_spread_summary_df(
         low_return = _to_nullable_float(low.iloc[0]["mean_return_pct"])
         high_return = _to_nullable_float(high.iloc[0]["mean_return_pct"])
         high_minus_low = (
-            high_return - low_return if high_return is not None and low_return is not None else None
+            high_return - low_return
+            if high_return is not None and low_return is not None
+            else None
         )
         preferred = None
         if high_minus_low is not None and definition.higher_is_better is not None:
-            preferred = high_minus_low if definition.higher_is_better else -high_minus_low
+            preferred = (
+                high_minus_low if definition.higher_is_better else -high_minus_low
+            )
         records.append(
             {
                 "market_scope": str(market_scope),
@@ -1526,10 +1743,16 @@ def _build_factor_spread_summary_df(
     result = pd.DataFrame(records)
     result["market_scope"] = pd.Categorical(
         result["market_scope"],
-        categories=[scope for scope in _MARKET_SCOPE_ORDER if scope in set(result["market_scope"])],
+        categories=[
+            scope
+            for scope in _MARKET_SCOPE_ORDER
+            if scope in set(result["market_scope"])
+        ],
         ordered=True,
     )
-    return result.sort_values(["market_scope", "feature_name"], kind="stable").reset_index(drop=True)
+    return result.sort_values(
+        ["market_scope", "feature_name"], kind="stable"
+    ).reset_index(drop=True)
 
 
 def _annualized_volatility_pct(daily_returns: pd.Series) -> float | None:
@@ -1559,7 +1782,9 @@ def _annualized_sortino(daily_returns: pd.Series) -> float | None:
     if len(downside) < 2:
         return None
     downside_std = float(downside.std(ddof=1))
-    if not math.isfinite(downside_std) or math.isclose(downside_std, 0.0, abs_tol=1e-12):
+    if not math.isfinite(downside_std) or math.isclose(
+        downside_std, 0.0, abs_tol=1e-12
+    ):
         return None
     value = float(numeric.mean()) / downside_std * math.sqrt(252.0)
     return value if math.isfinite(value) else None
@@ -1602,7 +1827,9 @@ def _build_annual_portfolio_daily_df(
         entry_open = _to_nullable_float(event.get("entry_open"))
         if entry_open is None or entry_open <= 0:
             continue
-        close_values = pd.to_numeric(path_df["close"], errors="coerce").astype(float).to_numpy()
+        close_values = (
+            pd.to_numeric(path_df["close"], errors="coerce").astype(float).to_numpy()
+        )
         if not np.isfinite(close_values).all():
             continue
         previous_close = np.concatenate(([entry_open], close_values[:-1]))
@@ -1632,10 +1859,14 @@ def _build_annual_portfolio_daily_df(
         }
         for (market_scope, portfolio_scope, date_value), values in aggregate.items()
     ]
-    daily_df = pd.DataFrame(records).sort_values(
-        ["market_scope", "portfolio_scope", "date"],
-        kind="stable",
-    ).reset_index(drop=True)
+    daily_df = (
+        pd.DataFrame(records)
+        .sort_values(
+            ["market_scope", "portfolio_scope", "date"],
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
     daily_df["portfolio_value"] = np.nan
     daily_df["drawdown_pct"] = np.nan
     for _, group_df in daily_df.groupby(
@@ -1697,17 +1928,25 @@ def _build_annual_portfolio_summary_df(
             cagr = float(cagr_value) if math.isfinite(cagr_value) else None
         max_drawdown_pct = _series_stat(group_df["drawdown_pct"], "mean")
         drawdown_min = pd.to_numeric(group_df["drawdown_pct"], errors="coerce").min()
-        max_drawdown_pct = float(drawdown_min) if pd.notna(drawdown_min) else max_drawdown_pct
+        max_drawdown_pct = (
+            float(drawdown_min) if pd.notna(drawdown_min) else max_drawdown_pct
+        )
         records.append(
             {
                 "market_scope": str(market_scope),
                 "portfolio_scope": str(portfolio_scope),
-                "realized_event_count": int(count_map[(str(market_scope), str(portfolio_scope))]),
+                "realized_event_count": int(
+                    count_map[(str(market_scope), str(portfolio_scope))]
+                ),
                 "start_date": start_date,
                 "end_date": end_date,
                 "active_days": int(len(group_df)),
-                "avg_active_positions": _series_stat(group_df["active_positions"], "mean"),
-                "max_active_positions": int(pd.to_numeric(group_df["active_positions"]).max()),
+                "avg_active_positions": _series_stat(
+                    group_df["active_positions"], "mean"
+                ),
+                "max_active_positions": int(
+                    pd.to_numeric(group_df["active_positions"]).max()
+                ),
                 "total_return_pct": total_return * 100.0,
                 "cagr_pct": cagr * 100.0 if cagr is not None else None,
                 "max_drawdown_pct": max_drawdown_pct,
@@ -1728,10 +1967,16 @@ def _build_annual_portfolio_summary_df(
     result = pd.DataFrame(records)
     result["market_scope"] = pd.Categorical(
         result["market_scope"],
-        categories=[scope for scope in _MARKET_SCOPE_ORDER if scope in set(result["market_scope"])],
+        categories=[
+            scope
+            for scope in _MARKET_SCOPE_ORDER
+            if scope in set(result["market_scope"])
+        ],
         ordered=True,
     )
-    return result.sort_values(["market_scope", "portfolio_scope"], kind="stable").reset_index(drop=True)
+    return result.sort_values(
+        ["market_scope", "portfolio_scope"], kind="stable"
+    ).reset_index(drop=True)
 
 
 def run_annual_first_open_last_close_fundamental_panel(
@@ -1753,7 +1998,9 @@ def run_annual_first_open_last_close_fundamental_panel(
         conn = ctx.connection
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
-        available_start_date, available_end_date = _fetch_date_range(conn, table_name="stock_data")
+        available_start_date, available_end_date = _fetch_date_range(
+            conn, table_name="stock_data"
+        )
         calendar_df = _query_trading_calendar(
             conn,
             start_year=start_year,
@@ -1832,8 +2079,12 @@ def run_annual_first_open_last_close_fundamental_panel(
     )
 
     realized_df = event_ledger_df[event_ledger_df["status"] == "realized"].copy()
-    analysis_start_date = str(realized_df["entry_date"].min()) if not realized_df.empty else None
-    analysis_end_date = str(realized_df["exit_date"].max()) if not realized_df.empty else None
+    analysis_start_date = (
+        str(realized_df["entry_date"].min()) if not realized_df.empty else None
+    )
+    analysis_end_date = (
+        str(realized_df["exit_date"].max()) if not realized_df.empty else None
+    )
 
     return AnnualFirstOpenLastCloseFundamentalPanelResult(
         db_path=db_path,
@@ -1871,7 +2122,9 @@ def _fmt_num(value: float | int | None, digits: int = 1) -> str:
     return f"{value:.{digits}f}"
 
 
-def _build_summary_markdown(result: AnnualFirstOpenLastCloseFundamentalPanelResult) -> str:
+def _build_summary_markdown(
+    result: AnnualFirstOpenLastCloseFundamentalPanelResult,
+) -> str:
     lines = [
         "# Annual First-Open Last-Close Fundamental Panel",
         "",
@@ -1891,9 +2144,14 @@ def _build_summary_markdown(result: AnnualFirstOpenLastCloseFundamentalPanelResu
         "## Portfolio Summary",
         "",
     ]
-    all_years = result.annual_portfolio_summary_df[
-        result.annual_portfolio_summary_df["portfolio_scope"].astype(str) == "all_years"
-    ] if not result.annual_portfolio_summary_df.empty else pd.DataFrame()
+    all_years = (
+        result.annual_portfolio_summary_df[
+            result.annual_portfolio_summary_df["portfolio_scope"].astype(str)
+            == "all_years"
+        ]
+        if not result.annual_portfolio_summary_df.empty
+        else pd.DataFrame()
+    )
     if all_years.empty:
         lines.append("- No realized annual portfolio could be built.")
     else:
@@ -1931,14 +2189,20 @@ def _build_summary_markdown(result: AnnualFirstOpenLastCloseFundamentalPanelResu
     if result.event_ledger_df.empty:
         lines.append("- Event ledger is empty.")
     else:
-        realized = result.event_ledger_df[result.event_ledger_df["status"] == "realized"]
+        realized = result.event_ledger_df[
+            result.event_ledger_df["status"] == "realized"
+        ]
         adjusted = realized[realized["share_adjustment_applied"] == True]  # noqa: E712
         lines.append(f"- Realized events: `{len(realized)}`")
-        lines.append(f"- Events with per-share split adjustment applied: `{len(adjusted)}`")
+        lines.append(
+            f"- Events with per-share split adjustment applied: `{len(adjusted)}`"
+        )
     return "\n".join(lines)
 
 
-def _build_published_summary(result: AnnualFirstOpenLastCloseFundamentalPanelResult) -> dict[str, Any]:
+def _build_published_summary(
+    result: AnnualFirstOpenLastCloseFundamentalPanelResult,
+) -> dict[str, Any]:
     return {
         "selectedMarkets": list(result.selected_markets),
         "bucketCount": result.bucket_count,
@@ -1948,8 +2212,12 @@ def _build_published_summary(result: AnnualFirstOpenLastCloseFundamentalPanelRes
         "entryTiming": result.entry_timing,
         "exitTiming": result.exit_timing,
         "shareAdjustmentPolicy": result.share_adjustment_policy,
-        "annualPortfolioSummary": result.annual_portfolio_summary_df.to_dict(orient="records"),
-        "factorSpreadSummary": result.factor_spread_summary_df.to_dict(orient="records"),
+        "annualPortfolioSummary": result.annual_portfolio_summary_df.to_dict(
+            orient="records"
+        ),
+        "factorSpreadSummary": result.factor_spread_summary_df.to_dict(
+            orient="records"
+        ),
         "featureCoverage": result.feature_coverage_df.to_dict(orient="records"),
     }
 
