@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime
 from html import escape
@@ -95,8 +96,7 @@ class BacktestReportPathPlanner:
     ) -> tuple[str, str]:
         strategy_name = strategy_name or "unknown"
         shared_config = parameters.get("shared_config", {})
-        dataset = shared_config.get("dataset", "")
-        dataset_name = canonicalize_dataset_snapshot_id(dataset) or "unknown"
+        data_scope_name = _resolve_report_data_scope_name(shared_config)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         from src.shared.paths import get_backtest_results_dir
@@ -107,7 +107,7 @@ class BacktestReportPathPlanner:
         else:
             strategy_dir_path = f"backtest/{strategy_name}"
 
-        return strategy_dir_path, f"{dataset_name}_{timestamp}"
+        return strategy_dir_path, f"{data_scope_name}_{timestamp}"
 
     def _resolve_html_path(
         self,
@@ -206,6 +206,19 @@ def _format_value(value: Any) -> str:
     return str(value)
 
 
+def _resolve_report_data_scope_name(shared_config: dict[str, Any]) -> str:
+    if not isinstance(shared_config, dict):
+        return "unknown"
+    if shared_config.get("data_source") == "dataset_snapshot":
+        snapshot_id = canonicalize_dataset_snapshot_id(shared_config.get("dataset_snapshot"))
+        return snapshot_id or "unknown"
+    universe_preset = shared_config.get("universe_preset")
+    if isinstance(universe_preset, str) and universe_preset.strip():
+        return universe_preset.strip()
+    legacy_dataset = canonicalize_dataset_snapshot_id(shared_config.get("dataset"))
+    return legacy_dataset or "unknown"
+
+
 def _table_from_mapping(title: str, values: dict[str, Any]) -> str:
     if not values:
         return ""
@@ -249,6 +262,221 @@ def _table_from_dataframe(title: str, frame: pd.DataFrame, *, limit: int = 25) -
     return (
         f"<section><h2>{escape(title)}</h2>{note}"
         f"<table><thead><tr>{headers}</tr></thead><tbody>{body}</tbody></table></section>"
+    )
+
+
+def _entry_signal_date_label(value: Any) -> str:
+    try:
+        timestamp = pd.to_datetime(value, errors="coerce")
+    except Exception:
+        timestamp = pd.NaT
+    if pd.notna(timestamp):
+        return timestamp.date().isoformat()
+    return str(value)
+
+
+def _entry_signal_counts_section(frame: pd.DataFrame, *, limit: int = 25) -> str:
+    if frame.empty:
+        return ""
+    if "signal_count" not in frame.columns:
+        return _table_from_dataframe("Entry Signal Counts", frame, limit=limit)
+
+    counts = pd.to_numeric(frame["signal_count"], errors="coerce").fillna(0)
+    nonzero_counts = counts[counts > 0]
+    if nonzero_counts.empty:
+        return (
+            '<section><h2>Entry Signal Counts</h2>'
+            '<p class="note">No non-zero entry signal days.</p></section>'
+        )
+
+    limited = nonzero_counts.head(limit)
+    if len(nonzero_counts) > limit:
+        note = (
+            f'<p class="note">Showing first {limit:,} non-zero signal days '
+            f'of {len(nonzero_counts):,}.</p>'
+        )
+    else:
+        note = f'<p class="note">Showing {len(nonzero_counts):,} non-zero signal days.</p>'
+    rows = "\n".join(
+        "<tr>"
+        f"<td>{escape(_entry_signal_date_label(index))}</td>"
+        f"<td>{int(value):,}</td>"
+        "</tr>"
+        for index, value in limited.items()
+    )
+    return (
+        f"<section><h2>Entry Signal Counts</h2>{note}"
+        "<table><thead><tr><th>Date</th><th>Signal Count</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></section>"
+    )
+
+
+def _numeric_series(series: pd.Series) -> pd.Series:
+    if series.empty:
+        return pd.Series(dtype=float)
+    numeric = pd.to_numeric(series, errors="coerce").dropna()
+    if numeric.empty:
+        return pd.Series(dtype=float)
+    return numeric.astype(float)
+
+
+def _chart_y(value: float, *, min_value: float, max_value: float, top: float, height: float) -> float:
+    value_range = max_value - min_value
+    if math.isclose(value_range, 0.0):
+        return top + height / 2
+    return top + ((max_value - value) / value_range) * height
+
+
+def _chart_tick_values(values: list[float], *, max_ticks: int = 5) -> list[float]:
+    min_value = min(values)
+    max_value = max(values)
+    value_range = max_value - min_value
+    if math.isclose(value_range, 0.0):
+        return [min_value]
+    return [
+        min_value + (value_range * index / (max_ticks - 1))
+        for index in range(max_ticks)
+    ]
+
+
+def _chart_tick_indices(length: int, *, max_ticks: int = 5) -> list[int]:
+    if length <= 0:
+        return []
+    if length <= max_ticks:
+        return list(range(length))
+    denominator = max_ticks - 1
+    return sorted(
+        {
+            round(index * (length - 1) / denominator)
+            for index in range(max_ticks)
+        }
+    )
+
+
+def _chart_axis_value_label(value: float) -> str:
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.1f}B"
+    if abs_value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs_value >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    if abs_value >= 100:
+        return f"{value:.0f}"
+    if abs_value >= 10:
+        return f"{value:.1f}"
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def _chart_axis_label(value: Any) -> str:
+    try:
+        timestamp = pd.to_datetime(value, errors="coerce")
+    except Exception:
+        timestamp = pd.NaT
+    if pd.notna(timestamp):
+        return f"{timestamp.year:04d}/{timestamp.month:02d}"
+    return str(value)
+
+
+def _series_chart_section(title: str, series: pd.Series, *, accent: str) -> str:
+    numeric = _numeric_series(series)
+    if numeric.empty:
+        return ""
+
+    width = 760
+    height = 260
+    left = 74
+    right = 28
+    top = 28
+    bottom = 40
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+    values = numeric.tolist()
+    min_value = min(values)
+    max_value = max(values)
+
+    points: list[str] = []
+    denominator = max(len(values) - 1, 1)
+    for index, value in enumerate(values):
+        x = left + (index / denominator) * plot_width
+        y = _chart_y(
+            value,
+            min_value=min_value,
+            max_value=max_value,
+            top=top,
+            height=plot_height,
+        )
+        points.append(f"{x:.2f},{y:.2f}")
+
+    y_ticks = "\n".join(
+        f'    <line class="chart-grid" x1="{left}" y1="{y:.2f}" '
+        f'x2="{width - right}" y2="{y:.2f}"></line>\n'
+        f'    <text class="chart-y-label" x="{left - 10}" y="{y + 4:.2f}">'
+        f"{escape(_chart_axis_value_label(value))}</text>"
+        for value in reversed(_chart_tick_values(values))
+        for y in [
+            _chart_y(
+                value,
+                min_value=min_value,
+                max_value=max_value,
+                top=top,
+                height=plot_height,
+            )
+        ]
+    )
+    x_tick_indices = _chart_tick_indices(len(values), max_ticks=9)
+    x_grid = "\n".join(
+        f'    <line class="chart-x-grid" x1="{x:.2f}" y1="{top}" '
+        f'x2="{x:.2f}" y2="{height - bottom}"></line>'
+        for index in x_tick_indices
+        for x in [left + (index / denominator) * plot_width]
+    )
+    x_ticks = "\n".join(
+        f'    <text class="chart-x-label" x="{x:.2f}" y="{height - 8}">'
+        f"{escape(_chart_axis_label(numeric.index[index]))}</text>"
+        for index in x_tick_indices
+        for x in [left + (index / denominator) * plot_width]
+    )
+    summary = (
+        f"Start {escape(_format_value(values[0]))} | "
+        f"End {escape(_format_value(values[-1]))} | "
+        f"Min {escape(_format_value(min_value))} | "
+        f"Max {escape(_format_value(max_value))}"
+    )
+    points_attr = " ".join(points)
+    return f"""
+<section class="chart-section">
+  <h2>{escape(title)}</h2>
+  <p class="note">{summary}</p>
+  <svg viewBox="0 0 {width} {height}" role="img" aria-label="{escape(title)}">
+{y_ticks}
+{x_grid}
+    <line class="chart-axis" x1="{left}" y1="{height - bottom}" x2="{width - right}" y2="{height - bottom}"></line>
+    <line class="chart-axis" x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}"></line>
+    <polyline class="chart-line" stroke="{accent}" points="{points_attr}"></polyline>
+{x_ticks}
+  </svg>
+</section>"""
+
+
+def _kelly_chart_sections(portfolio: SerializedPortfolioView | None) -> str:
+    if portfolio is None:
+        return ""
+    return "\n".join(
+        section
+        for section in [
+            _series_chart_section(
+                "Kelly Portfolio Equity Curve",
+                portfolio.value(),
+                accent="#1d4ed8",
+            ),
+            _series_chart_section(
+                "Kelly Portfolio Drawdown",
+                portfolio.drawdown(),
+                accent="#b42318",
+            ),
+        ]
+        if section
     )
 
 
@@ -297,11 +525,12 @@ def _build_report_html(
         _table_from_mapping("Run Summary", summary),
         _table_from_mapping("Canonical Metrics", metrics),
         _table_from_mapping("Artifacts", artifact_rows),
+        _kelly_chart_sections(context.kelly_portfolio),
         _portfolio_sections("Kelly Portfolio", context.kelly_portfolio),
         _portfolio_sections("Initial Portfolio", context.initial_portfolio),
     ]
     if context.all_entries is not None:
-        sections.append(_table_from_dataframe("Entry Signal Counts", context.all_entries))
+        sections.append(_entry_signal_counts_section(context.all_entries))
     body = "\n".join(section for section in sections if section)
     title = f"{strategy_name} Backtest Report"
     return f"""<!doctype html>
@@ -324,6 +553,14 @@ def _build_report_html(
     th {{ width: 260px; color: #334e68; font-weight: 600; }}
     thead th {{ width: auto; background: #f0f4f8; }}
     .note {{ margin: 0 0 8px; font-size: 12px; color: #627d98; }}
+    svg {{ display: block; width: 100%; height: auto; }}
+    .chart-section {{ overflow: hidden; }}
+    .chart-grid {{ stroke: #e4e7eb; stroke-width: 1; }}
+    .chart-x-grid {{ stroke: #edf1f5; stroke-width: 1; }}
+    .chart-axis {{ stroke: #cbd5e1; stroke-width: 1; }}
+    .chart-line {{ fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }}
+    .chart-y-label {{ fill: #627d98; font-size: 11px; text-anchor: end; }}
+    .chart-x-label {{ fill: #627d98; font-size: 11px; text-anchor: middle; }}
   </style>
 </head>
 <body>
