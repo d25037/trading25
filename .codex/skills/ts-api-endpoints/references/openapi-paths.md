@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **138**
+Total paths: **139**
 
 ## /api/analytics
 
@@ -28,6 +28,7 @@ Total paths: **138**
 | `/api/analytics/stocks/{symbol}/margin-ratio` | `GET` |
 | `/api/analytics/topix100-ranking` | `GET` |
 | `/api/analytics/value-composite-ranking` | `GET` |
+| `/api/analytics/value-composite-score/{code}` | `GET` |
 
 ## /api/backtest
 

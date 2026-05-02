@@ -16,7 +16,7 @@ class TestFundamentalPeriodType:
 
     def test_accepts_all_valid_values(self):
         """全ての有効な値を受け入れること"""
-        for value in ("all", "FY", "1Q", "2Q", "3Q"):
+        for value in ("all", "FY", "1Q", "2Q", "3Q", "4Q", "5Q"):
             params = FundamentalSignalParams(period_type=value)
             assert params.period_type == value
 
@@ -24,7 +24,7 @@ class TestFundamentalPeriodType:
         """無効な値でバリデーションエラーが発生すること"""
         import pytest
         with pytest.raises(Exception):
-            FundamentalSignalParams.model_validate({"period_type": "4Q"})
+            FundamentalSignalParams.model_validate({"period_type": "6Q"})
 
     def test_existing_yaml_compatibility(self):
         """既存YAML（period_type未指定）との互換性"""
@@ -59,7 +59,7 @@ class TestStatementsPeriodType:
     def test_type_alias_values(self):
         """StatementsPeriodType が正しい値を許容すること"""
         from typing import get_args
-        expected = ("all", "FY", "1Q", "2Q", "3Q")
+        expected = ("all", "FY", "1Q", "2Q", "3Q", "4Q", "5Q")
         assert get_args(StatementsPeriodType) == expected
 
 

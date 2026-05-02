@@ -566,7 +566,7 @@ class TestFundamentalParentFieldPropagation:
         )
         assert period_type_field is not None
         assert period_type_field["type"] == "select"
-        assert period_type_field["options"] == ["all", "FY", "1Q", "2Q", "3Q"]
+        assert period_type_field["options"] == ["all", "FY", "1Q", "2Q", "3Q", "4Q", "5Q"]
 
     def test_child_field_takes_priority_over_parent(self):
         """子が同名フィールドを持つ場合に子優先であること（重複なし検証）"""
