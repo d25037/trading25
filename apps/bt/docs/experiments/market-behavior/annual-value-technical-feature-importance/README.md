@@ -7,7 +7,9 @@
 
 ### Decision
 
-現時点で Ranking の value score に混ぜる第一候補は `price_to_sma250` ではない。より優先して見るべき technical feature は、`rebound_from_252d_low_pct`、`topix_volatility_60d_pct`、`return_20d_pct`、`volume_ratio_20_60`。ただし、今回の結果だけで hard filter 化はしない。Ranking では technical diagnostic として並べ、次の研究ではこれらを value score に対する additive score / risk overlay として検証する。
+現時点で Ranking の value score に混ぜる第一候補は `price_to_sma250` ではない。Standard では、より優先して見るべき technical feature は `rebound_from_252d_low_pct`、`topix_volatility_60d_pct`、`return_20d_pct`、`volume_ratio_20_60`。ただし、今回の結果だけで hard filter 化はしない。Ranking では technical diagnostic として並べ、次の研究ではこれらを value score に対する additive score / risk overlay として検証する。
+
+Prime に同じ結論をそのまま移植するのは危ない。追加 rerun では、Standard top 5% でも `rebound_from_252d_low_pct` と `topix_volatility_60d_pct` は残ったが、Prime top 10% / top 5% では効果がかなり弱くなった。したがって technical overlay は market-specific に扱う。
 
 `fixed_55_25_20` は今回の focus score methods から明示的に除外した。readout は `equal_weight` と `walkforward_regression_weight` の共通性を重視する。
 
@@ -57,9 +59,44 @@
 | `risk_adjusted_return_60d` | `-3.72pp` | `-1.91pp` | annual value selection ではこのまま使う優先度は低い |
 | `rsi_14` | `-0.81pp` | `-4.29pp` | score method 間で向きが割れ、left-tail も悪い |
 
+#### Market / Top 5% Sensitivity
+
+同じ runner を `prime` と top `5%` に rerun した。入力 bundle には既に `prime` / `standard` と `0.05` / `0.10` の selected events が含まれていたため、upstream selection は再作成していない。
+
+| Scenario | Selected events | SMA250 feature rows |
+| --- | ---: | ---: |
+| `standard_top10` | `1,658` | `1,457` |
+| `standard_top5` | `836` | `744` |
+| `prime_top10` | `2,874` | `2,598` |
+| `prime_top5` | `1,442` | `1,304` |
+
+Standard では top `5%` でも主要結論はかなり残った。`rebound_from_252d_low_pct` は top `10%` で avg delta mean `+9.82pp`、top `5%` で `+8.73pp`。`topix_volatility_60d_pct` も top `10%` で `+7.55pp`、top `5%` で `+5.52pp`。top `5%` では `drawdown_from_252d_high_pct` low side も `+7.75pp` と強く見えたが、これは `range_position_252d` よりも high から遠い depressed value 側の効果として別途確認が必要。
+
+| Feature | Standard top10 mean | Standard top5 mean | Standard top10 p10 | Standard top5 p10 |
+| --- | ---: | ---: | ---: | ---: |
+| `rebound_from_252d_low_pct` | `+9.82pp` | `+8.73pp` | `-0.66pp` | `+1.94pp` |
+| `topix_volatility_60d_pct` | `+7.55pp` | `+5.52pp` | `+4.74pp` | `+4.00pp` |
+| `return_20d_pct` | `+5.89pp` | `+0.48pp` | `-1.51pp` | `-0.75pp` |
+| `volume_ratio_20_60` | `+1.86pp` | `-0.29pp` | `-1.58pp` | `-7.67pp` |
+| `price_to_sma250` | `-0.80pp` | `+0.66pp` | `+2.41pp` | `+1.85pp` |
+| `range_position_252d` | `-1.88pp` | `-2.85pp` | `-0.22pp` | `+3.34pp` |
+
+Prime では同じ feature はかなり弱い。top `10%` の `rebound_from_252d_low_pct` は avg delta mean `+1.58pp` に留まり、top `5%` では `-1.01pp`。`return_252d_pct` も Prime では top `10%` / top `5%` の両方でマイナスだった。Prime value は Standard value と同じ「反転進捗を強く足す」設計にはしない方がよい。
+
+| Feature | Prime top10 mean | Prime top5 mean | Prime top10 p10 | Prime top5 p10 |
+| --- | ---: | ---: | ---: | ---: |
+| `topix_volatility_60d_pct` | `+2.46pp` | `-1.10pp` | `+1.19pp` | `+1.21pp` |
+| `rebound_from_252d_low_pct` | `+1.58pp` | `-1.01pp` | `-3.54pp` | `-6.66pp` |
+| `return_20d_pct` | `-0.79pp` | `+0.35pp` | `-0.63pp` | `-0.88pp` |
+| `volume_ratio_20_60` | `+0.13pp` | `-1.00pp` | `-1.32pp` | `+0.43pp` |
+| `return_252d_pct` | `-0.76pp` | `-2.78pp` | `-2.35pp` | `-4.70pp` |
+| `range_position_252d` | `-1.84pp` | `+0.14pp` | `+0.53pp` | `+0.02pp` |
+
 ### Interpretation
 
 今回の一番の知見は、`price_to_sma250` よりも「どれだけ安値から戻っているか」「市場が荒れていないか」「短期的に走りすぎていないか」の方が、Standard value top decile の銘柄選択補助として読みやすいこと。これは `SMA250` の上か下かという二値 trend 判定ではなく、value selection の中で「反転が始まっているが過熱しすぎていない」銘柄を選ぶ問題に近い。
+
+この見方は Standard に強く、Prime では弱い。Prime は銘柄数が多く流動性も高い一方、低PBR・低forward PER・小型 composite の性格が Standard と違うため、同じ technical rebound feature が右尾捕捉として働きにくい可能性がある。
 
 `topix_volatility_60d_pct` は market-wide regime なので、銘柄選択 factor というより risk overlay / capital allocation の候補として扱うべき。`rebound_from_252d_low_pct` は stock-specific feature として一番強いが、p10 は改善しないため、単独で左尾を削る feature ではない。
 
@@ -67,14 +104,14 @@ Stock volatility family は static importance では上位に来る一方、walk
 
 ### Production Implication
 
-Ranking に入れるなら、次の順で diagnostic / score candidate として扱う。
+Ranking に入れるなら、Standard profile では次の順で diagnostic / score candidate として扱う。
 
 1. `topix_volatility_60d_pct`: market regime 表示、または value score の risk-on/off overlay。
 2. `rebound_from_252d_low_pct`: value stock の反転進捗 feature。
 3. `return_20d_pct`: 短期 run-up 回避の reversal feature。
 4. `volume_ratio_20_60`: 補助的な participation / attention feature。
 
-次の research は、これらを単独 hard filter ではなく、`equal_weight` / `walkforward_regression_weight` value score に対する additive technical score として検証する。特に `topix_volatility_60d_pct` は銘柄 rank ではなく年初 exposure weight として別枠で見る。
+次の research は、これらを単独 hard filter ではなく、`equal_weight` / `walkforward_regression_weight` value score に対する additive technical score として検証する。特に `topix_volatility_60d_pct` は銘柄 rank ではなく年初 exposure weight として別枠で見る。Prime profile には Standard の rebound overlay をそのまま入れず、Prime 専用に別 feature set を探す。
 
 ### Caveats
 
@@ -87,6 +124,9 @@ Ranking に入れるなら、次の順で diagnostic / score candidate として
 - Bundle: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_feature_importance_standard_positive_v2/`
 - Results DB: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_feature_importance_standard_positive_v2/results.duckdb`
 - Summary: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_feature_importance_standard_positive_v2/summary.md`
+- Standard top5 bundle: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_standard_top5/`
+- Prime top10 bundle: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_prime_top10/`
+- Prime top5 bundle: `/tmp/trading25-research/market-behavior/annual-value-technical-feature-importance/20260502_value_technical_prime_top5/`
 
 ## Current Surface
 

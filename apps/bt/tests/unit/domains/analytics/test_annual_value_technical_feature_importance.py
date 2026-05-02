@@ -35,9 +35,13 @@ def test_run_annual_value_technical_feature_importance_builds_tables(
     assert result.focus_score_methods == ("equal_weight", "walkforward_regression_weight")
     assert result.selected_event_count > 0
     assert result.technical_feature_count > 0
-    assert {"price_to_sma250", "rsi_14", "volume_ratio_20_60", "topix_price_to_sma250"}.issubset(
-        result.enriched_event_df.columns
-    )
+    assert {
+        "price_to_sma250",
+        "rsi_14",
+        "volume_ratio_20_60",
+        "topix_price_to_sma250",
+        "range_position_252d",
+    }.issubset(result.enriched_event_df.columns)
     assert not result.feature_bucket_summary_df.empty
     assert not result.feature_importance_df.empty
     assert set(result.feature_importance_df["feature_family"]).issuperset(

@@ -101,6 +101,7 @@ TECHNICAL_FEATURES: tuple[TechnicalFeatureSpec, ...] = (
     TechnicalFeatureSpec("return_252d_pct", "momentum", "Return 252d", None),
     TechnicalFeatureSpec("drawdown_from_252d_high_pct", "reversal", "Drawdown from 252d high", False),
     TechnicalFeatureSpec("rebound_from_252d_low_pct", "reversal", "Rebound from 252d low", None),
+    TechnicalFeatureSpec("range_position_252d", "reversal", "252d range position", None),
     TechnicalFeatureSpec("volatility_20d_pct", "volatility", "Volatility 20d", False),
     TechnicalFeatureSpec("volatility_60d_pct", "volatility", "Volatility 60d", False),
     TechnicalFeatureSpec("downside_volatility_60d_pct", "volatility", "Downside volatility 60d", False),
@@ -331,8 +332,10 @@ def _build_symbol_feature_frame(frame: pd.DataFrame) -> pd.DataFrame:
         result[f"return_{window}d_pct"] = (close / close.shift(window) - 1.0) * 100.0
     high_252 = close.rolling(252, min_periods=252).max()
     low_252 = close.rolling(252, min_periods=252).min()
+    range_252 = high_252 - low_252
     result["drawdown_from_252d_high_pct"] = (close / high_252 - 1.0) * 100.0
     result["rebound_from_252d_low_pct"] = (close / low_252 - 1.0) * 100.0
+    result["range_position_252d"] = (close - low_252) / range_252.replace(0, np.nan)
     result["volatility_20d_pct"] = returns.rolling(20, min_periods=20).std() * math.sqrt(252.0) * 100.0
     result["volatility_60d_pct"] = returns.rolling(60, min_periods=60).std() * math.sqrt(252.0) * 100.0
     downside = returns.where(returns < 0)

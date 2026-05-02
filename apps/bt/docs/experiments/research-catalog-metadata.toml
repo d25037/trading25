@@ -45,13 +45,25 @@ relatedExperiments = [
 [experiments."market-behavior/annual-value-technical-feature-importance"]
 family = "Annual Fundamentals"
 status = "candidate"
-decision = "Standard value top decile の technical 補助は price_to_sma250 より rebound_from_252d_low_pct、topix_volatility_60d_pct、return_20d_pct、volume_ratio_20_60 を優先して次の additive score / regime overlay 研究に進める。hard filter 化はまだしない。"
+decision = "Standard value の technical 補助は price_to_sma250 より rebound_from_252d_low_pct と topix_volatility_60d_pct を優先して次の additive score / regime overlay 研究に進める。top5%でも概ね残るが、Prime では同じ効果がかなり弱いため market-specific に扱う。hard filter 化はまだしない。"
 promotedSurface = "Research"
 riskFlags = ["technical-feature-importance", "pit-entry-previous-session", "portfolio-lens-needed", "not-hard-filter"]
 relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
   "market-behavior/annual-value-composite-technical-filter",
   "market-behavior/annual-market-specific-value-score-profile",
+]
+
+[experiments."market-behavior/annual-value-rebound-range-position-decomposition"]
+family = "Annual Fundamentals"
+status = "candidate"
+decision = "rebound_from_252d_low_pct は range_position_252d の proxy ではない。range_position は OOS で弱く、rebound は反転進捗 feature として additive technical score 候補に残す。ただし p10 は改善しないため left-tail pruning ではなく rebound capture として扱う。"
+promotedSurface = "Research"
+riskFlags = ["technical-feature-decomposition", "pit-entry-previous-session", "not-hard-filter", "right-tail-capture"]
+relatedExperiments = [
+  "market-behavior/annual-value-technical-feature-importance",
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-value-composite-technical-filter",
 ]
 
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
