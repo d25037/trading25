@@ -93,9 +93,9 @@ relatedExperiments = [
 [experiments."market-behavior/margin-balance-supply-demand"]
 family = "Supply Demand"
 status = "candidate"
-decision = "既存 market.duckdb の信用買い残・信用売り残だけを PIT-safe effective date にずらして検証する Phase 1。機関空売りは含めず、単独 alpha ではなく bad-tail pruning 候補として評価する。"
+decision = "信用買い残増加は単独悪材料ではなく、価格下落と交絡する。20d/60d 下落中の買い残増加には弱い追加 drag がある一方、上昇中の買い残増加は momentum / event participation proxy になりうるため、価格 trend と組み合わせた診断に留める。"
 promotedSurface = "Research"
-riskFlags = ["margin-balance", "pit-effective-date", "not-institutional-short-selling", "tail-risk"]
+riskFlags = ["margin-balance", "pit-effective-date", "not-institutional-short-selling", "price-trend-confounding"]
 relatedExperiments = [
   "market-behavior/annual-prime-value-volume-volatility-participation",
   "strategy-audit/forward-eps-technical-horizon-decomposition",

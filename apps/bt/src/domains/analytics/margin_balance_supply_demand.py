@@ -28,6 +28,7 @@ DEFAULT_MIN_DAILY_OBSERVATIONS = 20
 DEFAULT_DISCOVERY_END_DATE = "2021-12-31"
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
 DEFAULT_PERCENTILE_WINDOW = 52
+DEFAULT_PRIOR_RETURN_WINDOWS: tuple[int, ...] = (5, 20, 60)
 
 FEATURE_COLUMNS: tuple[str, ...] = (
     "long_to_adv20",
@@ -62,6 +63,7 @@ class MarginBalanceSupplyDemandResult:
     bucket_return_summary_df: pd.DataFrame
     pruning_summary_df: pd.DataFrame
     market_summary_df: pd.DataFrame
+    price_margin_interaction_summary_df: pd.DataFrame
     coverage_summary_df: pd.DataFrame
 
 
@@ -78,10 +80,15 @@ def run_margin_balance_supply_demand_research(
     discovery_end_date: str = DEFAULT_DISCOVERY_END_DATE,
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
     percentile_window: int = DEFAULT_PERCENTILE_WINDOW,
+    prior_return_windows: Iterable[int] = DEFAULT_PRIOR_RETURN_WINDOWS,
 ) -> MarginBalanceSupplyDemandResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
+    resolved_prior_return_windows = tuple(
+        sorted({int(window) for window in prior_return_windows})
+    )
     _validate_params(
         horizons=resolved_horizons,
+        prior_return_windows=resolved_prior_return_windows,
         adv_window=adv_window,
         effective_lag_sessions=effective_lag_sessions,
         bucket_count=bucket_count,
@@ -104,6 +111,7 @@ def run_margin_balance_supply_demand_research(
             start_date=start_date,
             end_date=end_date,
             horizons=resolved_horizons,
+            prior_return_windows=resolved_prior_return_windows,
             adv_window=adv_window,
             effective_lag_sessions=effective_lag_sessions,
         )
@@ -140,9 +148,17 @@ def run_margin_balance_supply_demand_research(
         horizons=resolved_horizons,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
     )
+    price_margin_interaction_summary_df = _build_price_margin_interaction_summary_df(
+        observation_df,
+        horizons=resolved_horizons,
+        prior_return_windows=resolved_prior_return_windows,
+        discovery_end_date=discovery_end_date,
+        severe_loss_threshold_pct=severe_loss_threshold_pct,
+    )
     coverage_summary_df = _build_coverage_summary_df(
         observation_df,
         horizons=resolved_horizons,
+        prior_return_windows=resolved_prior_return_windows,
         start_date=start_date,
         end_date=end_date,
         effective_lag_sessions=effective_lag_sessions,
@@ -169,6 +185,7 @@ def run_margin_balance_supply_demand_research(
         bucket_return_summary_df=bucket_return_summary_df,
         pruning_summary_df=pruning_summary_df,
         market_summary_df=market_summary_df,
+        price_margin_interaction_summary_df=price_margin_interaction_summary_df,
         coverage_summary_df=coverage_summary_df,
     )
 
@@ -192,6 +209,11 @@ def write_margin_balance_supply_demand_bundle(
             "min_daily_observations": result.min_daily_observations,
             "discovery_end_date": result.discovery_end_date,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
+            "prior_return_windows": [
+                int(column.removeprefix("prior_return_").removesuffix("d"))
+                for column in result.observation_df.columns
+                if column.startswith("prior_return_") and column.endswith("d")
+            ],
         },
         db_path=result.db_path,
         analysis_start_date=result.analysis_start_date,
@@ -208,6 +230,9 @@ def write_margin_balance_supply_demand_bundle(
             "coverage_summary_df": result.coverage_summary_df,
             "bucket_return_summary_df": result.bucket_return_summary_df,
             "pruning_summary_df": result.pruning_summary_df,
+            "price_margin_interaction_summary_df": (
+                result.price_margin_interaction_summary_df
+            ),
             "market_summary_df": result.market_summary_df,
             "observation_df": result.observation_df,
         },
@@ -230,6 +255,17 @@ def build_summary_markdown(result: MarginBalanceSupplyDemandResult) -> str:
         result.bucket_return_summary_df,
         sort_columns=["horizon", "feature", "bucket"],
         ascending=[True, True, True],
+        limit=24,
+    )
+    interaction = _top_rows_for_markdown(
+        result.price_margin_interaction_summary_df,
+        sort_columns=[
+            "period",
+            "prior_return_window",
+            "horizon",
+            "delta_vs_price_segment_pct",
+        ],
+        ascending=[True, True, True, True],
         limit=24,
     )
     return "\n".join(
@@ -255,6 +291,10 @@ def build_summary_markdown(result: MarginBalanceSupplyDemandResult) -> str:
             "",
             best_pruning,
             "",
+            "## Price Decline x Margin Long Change",
+            "",
+            interaction,
+            "",
             "## Bucket Return Sample",
             "",
             bucket,
@@ -266,6 +306,7 @@ def build_summary_markdown(result: MarginBalanceSupplyDemandResult) -> str:
 def _validate_params(
     *,
     horizons: tuple[int, ...],
+    prior_return_windows: tuple[int, ...],
     adv_window: int,
     effective_lag_sessions: int,
     bucket_count: int,
@@ -275,6 +316,8 @@ def _validate_params(
 ) -> None:
     if not horizons or any(horizon <= 0 for horizon in horizons):
         raise ValueError("horizons must be positive")
+    if not prior_return_windows or any(window <= 1 for window in prior_return_windows):
+        raise ValueError("prior_return_windows must be greater than 1")
     if adv_window <= 0:
         raise ValueError("adv_window must be positive")
     if effective_lag_sessions < 1:
@@ -307,6 +350,7 @@ def _query_observation_frame(
     start_date: str | None,
     end_date: str | None,
     horizons: tuple[int, ...],
+    prior_return_windows: tuple[int, ...],
     adv_window: int,
     effective_lag_sessions: int,
 ) -> pd.DataFrame:
@@ -330,6 +374,33 @@ def _query_observation_frame(
               THEN ({alias}.close / entry.open) - 1.0
               ELSE NULL
             END AS return_open_to_close_{horizon}d
+            """
+        )
+
+    prior_return_exprs: list[str] = []
+    prior_joins: list[str] = [
+        """
+        LEFT JOIN stock_features prior_1
+          ON prior_1.code = entry.code
+         AND prior_1.code_rn = entry.code_rn - 1
+        """
+    ]
+    for window in prior_return_windows:
+        alias = f"prior_{window}"
+        prior_joins.append(
+            f"""
+            LEFT JOIN stock_features {alias}
+              ON {alias}.code = entry.code
+             AND {alias}.code_rn = entry.code_rn - {window}
+            """
+        )
+        prior_return_exprs.append(
+            f"""
+            CASE
+              WHEN prior_1.close > 0 AND {alias}.close > 0
+              THEN (prior_1.close / {alias}.close) - 1.0
+              ELSE NULL
+            END AS prior_return_{window}d
             """
         )
 
@@ -415,6 +486,11 @@ def _query_observation_frame(
                     ORDER BY date
                     ROWS BETWEEN {adv_window} PRECEDING AND 1 PRECEDING
                 ) AS adv20,
+                MAX(close) OVER (
+                    PARTITION BY code
+                    ORDER BY date
+                    ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING
+                ) AS prior_high_close_20,
                 ROW_NUMBER() OVER (PARTITION BY code ORDER BY date) AS code_rn
             FROM stock_rows
         ),
@@ -450,6 +526,12 @@ def _query_observation_frame(
             sl.market_code,
             sl.market_name,
             sl.scale_category,
+            CASE
+              WHEN prior_1.close > 0 AND entry.prior_high_close_20 > 0
+              THEN (prior_1.close / entry.prior_high_close_20) - 1.0
+              ELSE NULL
+            END AS drawdown_from_20d_high,
+            {", ".join(prior_return_exprs)},
             {", ".join(return_exprs)}
         FROM margin_with_effective_rn m
         JOIN trading_calendar effective
@@ -457,6 +539,7 @@ def _query_observation_frame(
         JOIN stock_features entry
           ON entry.code = m.code
          AND entry.date = effective.date
+        {" ".join(prior_joins)}
         {" ".join(future_joins)}
         LEFT JOIN stocks_latest sl
           ON sl.code = m.code
@@ -743,10 +826,130 @@ def _build_market_summary_df(
     return pd.DataFrame(rows)
 
 
+def _build_price_margin_interaction_summary_df(
+    observation_df: pd.DataFrame,
+    *,
+    horizons: tuple[int, ...],
+    prior_return_windows: tuple[int, ...],
+    discovery_end_date: str,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    periods = [
+        ("full", observation_df),
+        (
+            "discovery",
+            observation_df[observation_df["effective_date"].astype(str) <= discovery_end_date],
+        ),
+        (
+            "validation",
+            observation_df[observation_df["effective_date"].astype(str) > discovery_end_date],
+        ),
+    ]
+    for window in prior_return_windows:
+        prior_col = f"prior_return_{window}d"
+        if prior_col not in observation_df.columns:
+            continue
+        for period_name, period_df in periods:
+            base_df = period_df.dropna(
+                subset=[prior_col, "long_weekly_change_pct"]
+            ).copy()
+            if base_df.empty:
+                continue
+            base_df["price_segment"] = np.where(
+                base_df[prior_col].astype(float) < 0,
+                "decline",
+                "advance_or_flat",
+            )
+            base_df["long_change_segment"] = np.where(
+                base_df["long_weekly_change_pct"].astype(float) > 0,
+                "long_increase",
+                "long_decrease_or_flat",
+            )
+            for horizon in horizons:
+                return_col = f"return_open_to_close_{horizon}d"
+                horizon_df = base_df.dropna(subset=[return_col])
+                if horizon_df.empty:
+                    continue
+                price_segment_stats = {
+                    price_segment: _return_stats(
+                        group[return_col].astype(float),
+                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    )
+                    for price_segment, group in horizon_df.groupby(
+                        "price_segment",
+                        observed=True,
+                    )
+                }
+                for (price_segment, long_segment), group in horizon_df.groupby(
+                    ["price_segment", "long_change_segment"],
+                    observed=True,
+                ):
+                    returns = group[return_col].astype(float)
+                    stats = _return_stats(
+                        returns,
+                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    )
+                    price_stats = price_segment_stats[str(price_segment)]
+                    rows.append(
+                        {
+                            "period": period_name,
+                            "prior_return_window": window,
+                            "horizon": horizon,
+                            "price_segment": str(price_segment),
+                            "long_change_segment": str(long_segment),
+                            "obs": stats["obs"],
+                            "code_count": int(group["code"].nunique()),
+                            "mean_prior_return_pct": float(
+                                group[prior_col].astype(float).mean() * 100.0
+                            ),
+                            "mean_long_weekly_change_pct": float(
+                                group["long_weekly_change_pct"].astype(float).mean()
+                            ),
+                            "mean_return_pct": stats["mean_return_pct"],
+                            "hit_rate_pct": stats["hit_rate_pct"],
+                            "severe_loss_rate_pct": stats["severe_loss_rate_pct"],
+                            "price_segment_mean_return_pct": price_stats[
+                                "mean_return_pct"
+                            ],
+                            "delta_vs_price_segment_pct": stats["mean_return_pct"]
+                            - price_stats["mean_return_pct"],
+                            "price_segment_severe_loss_rate_pct": price_stats[
+                                "severe_loss_rate_pct"
+                            ],
+                            "severe_loss_delta_vs_price_segment_pct": stats[
+                                "severe_loss_rate_pct"
+                            ]
+                            - price_stats["severe_loss_rate_pct"],
+                        }
+                    )
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "period",
+                "prior_return_window",
+                "horizon",
+                "price_segment",
+                "long_change_segment",
+            ]
+        )
+    return pd.DataFrame(rows).sort_values(
+        [
+            "period",
+            "prior_return_window",
+            "horizon",
+            "price_segment",
+            "long_change_segment",
+        ],
+        kind="stable",
+    )
+
+
 def _build_coverage_summary_df(
     observation_df: pd.DataFrame,
     *,
     horizons: tuple[int, ...],
+    prior_return_windows: tuple[int, ...],
     start_date: str | None,
     end_date: str | None,
     effective_lag_sessions: int,
@@ -797,8 +1000,18 @@ def _build_coverage_summary_df(
                 "metric": f"return_coverage_{horizon}d",
                 "value": int(observation_df[return_col].notna().sum()),
                 "detail": "observations with enough future close data",
-            }
-        )
+        }
+    )
+    for window in prior_return_windows:
+        prior_col = f"prior_return_{window}d"
+        if prior_col in observation_df.columns:
+            rows.append(
+                {
+                    "metric": f"prior_return_coverage_{window}d",
+                    "value": int(observation_df[prior_col].notna().sum()),
+                    "detail": "observations with PIT-safe prior price return",
+                }
+            )
     return pd.DataFrame(rows)
 
 

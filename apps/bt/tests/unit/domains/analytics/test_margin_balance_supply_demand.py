@@ -38,6 +38,13 @@ def test_margin_balance_research_shifts_weekly_record_to_effective_entry(
     expected_return = (105.0 / 100.0) - 1.0
     assert first_alpha["return_open_to_close_1d"] == pytest.approx(expected_return)
 
+    second_alpha = obs[
+        (obs["code"] == "1111") & (obs["margin_date"] == "2024-01-05")
+    ].iloc[0]
+    expected_prior_return = (106.0 / 102.0) - 1.0
+    assert second_alpha["prior_return_5d"] == pytest.approx(expected_prior_return)
+    assert second_alpha["long_weekly_change_pct"] == pytest.approx(10.0)
+
 
 def test_margin_balance_research_emits_bucket_and_pruning_summaries(
     tmp_path: Path,
@@ -57,12 +64,26 @@ def test_margin_balance_research_emits_bucket_and_pruning_summaries(
 
     bucket_summary = result.bucket_return_summary_df
     pruning_summary = result.pruning_summary_df
+    interaction_summary = result.price_margin_interaction_summary_df
 
     assert not bucket_summary.empty
     assert {"long_to_adv20", "short_to_adv20"}.issubset(set(bucket_summary["feature"]))
     assert not pruning_summary.empty
     assert "exclude_high_long_to_adv20" in set(pruning_summary["candidate"])
     assert {"full", "discovery", "validation"}.issubset(set(pruning_summary["period"]))
+    assert not interaction_summary.empty
+    assert {
+        ("advance_or_flat", "long_increase"),
+        ("decline", "long_decrease_or_flat"),
+    }.issubset(
+        set(
+            zip(
+                interaction_summary["price_segment"],
+                interaction_summary["long_change_segment"],
+                strict=True,
+            )
+        )
+    )
 
 
 def _build_margin_research_db(db_path: Path) -> Path:
