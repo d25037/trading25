@@ -600,7 +600,13 @@ class DirectMarketClient:
                     *,
                     ROW_NUMBER() OVER (
                         PARTITION BY disclosed_date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                        ORDER BY
+                            CASE WHEN length(code) = 4 THEN 0 ELSE 1 END,
+                            CASE
+                                WHEN type_of_document LIKE '%FinancialStatements%' THEN 0
+                                WHEN type_of_document IS NULL OR type_of_document = '' THEN 1
+                                ELSE 2
+                            END
                     ) AS rn
                 FROM statements
                 WHERE {" AND ".join(where_conditions)}
@@ -667,7 +673,12 @@ class DirectMarketClient:
                         PARTITION BY code_map.requested_code, s.disclosed_date
                         ORDER BY
                             code_map.candidate_priority,
-                            CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END
+                            CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END,
+                            CASE
+                                WHEN s.type_of_document LIKE '%FinancialStatements%' THEN 0
+                                WHEN s.type_of_document IS NULL OR s.type_of_document = '' THEN 1
+                                ELSE 2
+                            END
                     ) AS rn
                 FROM statements AS s
                 JOIN code_map ON s.code = code_map.candidate_code

@@ -5,6 +5,7 @@ from src.shared.utils.statement_document import (
     classify_statement_document,
     is_actual_fy_financial_statement,
     is_earn_forecast_revision_document,
+    is_statement_period_financial_document,
 )
 
 
@@ -44,3 +45,8 @@ def test_period_normalization_accepts_jquants_4q_5q() -> None:
     assert normalize_period_type("4Q") == "4Q"
     assert normalize_period_type("5Q") == "5Q"
     assert is_earn_forecast_revision_document("REITEarnForecastRevision")
+    assert is_statement_period_financial_document(
+        "2Q",
+        "2QFinancialStatements_Consolidated_JP",
+    )
+    assert not is_statement_period_financial_document("FY", "EarnForecastRevision")

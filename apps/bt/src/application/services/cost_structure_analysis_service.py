@@ -22,6 +22,7 @@ from src.entrypoints.http.schemas.cost_structure import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.shared.utils.statement_document import is_statement_period_financial_document
 
 
 class CostStructureAnalysisService:
@@ -62,12 +63,19 @@ class CostStructureAnalysisService:
                 SELECT
                     code,
                     disclosed_date,
+                    type_of_document,
                     type_of_current_period,
                     sales,
                     operating_profit,
                     ROW_NUMBER() OVER (
                         PARTITION BY disclosed_date, type_of_current_period
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                        ORDER BY
+                            CASE WHEN length(code) = 4 THEN 0 ELSE 1 END,
+                            CASE
+                                WHEN type_of_document LIKE '%FinancialStatements%' THEN 0
+                                WHEN type_of_document IS NULL OR type_of_document = '' THEN 1
+                                ELSE 2
+                            END
                     ) AS rn
                 FROM statements
                 WHERE code IN ({placeholders})
@@ -75,6 +83,7 @@ class CostStructureAnalysisService:
             SELECT
                 code,
                 disclosed_date,
+                type_of_document,
                 type_of_current_period,
                 sales,
                 operating_profit
@@ -89,6 +98,12 @@ class CostStructureAnalysisService:
         for row in rows:
             period_type = str(row["type_of_current_period"] or "").strip()
             if period_type not in {"1Q", "2Q", "3Q", "FY"}:
+                continue
+            if not is_statement_period_financial_document(
+                period_type,
+                row.get("type_of_document"),
+                allow_unknown_document=True,
+            ):
                 continue
             statements.append(
                 CostStructureStatement(

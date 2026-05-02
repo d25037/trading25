@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.shared.utils.market_code_alias import expand_market_codes, normalize_market_scope
+from src.shared.utils.statement_document import is_actual_fy_financial_statement
 from src.domains.analytics.fundamental_ranking import (
     FundamentalRankingCalculator,
     StatementRow,
@@ -348,6 +349,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                 normalized_code,
                 disclosed_date,
                 type_of_current_period,
+                type_of_document,
                 earnings_per_share,
                 forecast_eps,
                 next_year_forecast_earnings_per_share,
@@ -358,6 +360,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                     {normalized_code} AS normalized_code,
                     disclosed_date,
                     type_of_current_period,
+                    type_of_document,
                     earnings_per_share,
                     forecast_eps,
                     next_year_forecast_earnings_per_share,
@@ -365,7 +368,13 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                     shares_outstanding,
                     ROW_NUMBER() OVER (
                         PARTITION BY {normalized_code}, disclosed_date
-                        ORDER BY {prefer_4digit}
+                        ORDER BY
+                            {prefer_4digit},
+                            CASE
+                                WHEN type_of_document LIKE '%FinancialStatements%' THEN 0
+                                WHEN type_of_document IS NULL OR type_of_document = '' THEN 1
+                                ELSE 2
+                            END
                     ) AS rn
                 FROM statements
             )
@@ -380,6 +389,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
             s.listed_date,
             st.disclosed_date,
             st.type_of_current_period,
+            st.type_of_document,
             st.earnings_per_share,
             st.forecast_eps,
             st.next_year_forecast_earnings_per_share,
@@ -403,6 +413,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                 "listed_date",
                 "disclosed_date",
                 "type_of_current_period",
+                "type_of_document",
                 "earnings_per_share",
                 "forecast_eps",
                 "next_year_forecast_earnings_per_share",
@@ -410,6 +421,7 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                 "shares_outstanding",
                 "market",
                 "period_type",
+                "is_actual_fy_statement",
                 "fy_cycle_key",
             ]
         )
@@ -421,6 +433,18 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
         lambda value: normalize_market_scope(value, default=str(value).lower())
     )
     df["period_type"] = df["type_of_current_period"].map(normalize_period_label)
+    df["is_actual_fy_statement"] = [
+        is_actual_fy_financial_statement(
+            period_type,
+            type_of_document,
+            allow_unknown_document=True,
+        )
+        for period_type, type_of_document in zip(
+            df["period_type"],
+            df["type_of_document"],
+            strict=False,
+        )
+    ]
     df["fy_cycle_key"] = df["disclosed_date"].map(resolve_fy_cycle_key)
     return df
 
@@ -672,7 +696,7 @@ def _build_event_ledger(
         if not statement_rows:
             continue
         fy_anchor_df = (
-            code_statement_df[code_statement_df["period_type"] == "FY"]
+            code_statement_df[code_statement_df["is_actual_fy_statement"]]
             .sort_values("disclosed_date", kind="stable")
             .groupby("fy_cycle_key", sort=False, observed=True)
             .head(1)
@@ -1617,7 +1641,7 @@ def run_fy_eps_sign_next_fy_return(
                 uses_current_scale_category_proxy=uses_current_scale_category_proxy,
             )
 
-        signed_candidate_df = statement_df[statement_df["period_type"] == "FY"].copy()
+        signed_candidate_df = statement_df[statement_df["is_actual_fy_statement"]].copy()
         analysis_start_date = (
             str(signed_candidate_df["disclosed_date"].min()) if not signed_candidate_df.empty else None
         )
@@ -1629,7 +1653,7 @@ def run_fy_eps_sign_next_fy_return(
         max_next_fy_date = None
         if not statement_df.empty:
             fy_anchor_df = (
-                statement_df[statement_df["period_type"] == "FY"]
+                statement_df[statement_df["is_actual_fy_statement"]]
                 .sort_values(["code", "disclosed_date"], kind="stable")
                 .groupby(["code", "fy_cycle_key"], sort=False, observed=True)
                 .head(1)

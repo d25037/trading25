@@ -64,6 +64,22 @@ class _BlankPeriodReader(_FakeReader):
         ]
 
 
+class _ForecastRevisionReader(_FakeReader):
+    def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, object]]:
+        rows = super().query(sql, params)
+        return [
+            *rows,
+            {
+                "code": "7203",
+                "disclosed_date": "2025-06-01",
+                "type_of_document": "EarnForecastRevision",
+                "type_of_current_period": "FY",
+                "sales": 9_999_000_000,
+                "operating_profit": 9_999_000_000,
+            },
+        ]
+
+
 class _MissingStockReader(_FakeReader):
     def query_one(self, sql: str, params: tuple[object, ...] = ()) -> dict[str, object] | None:
         if "FROM stocks" in sql:
@@ -124,6 +140,15 @@ def test_get_statement_rows_skips_blank_period_types() -> None:
 
     assert len(rows) == 4
     assert all(row.period_type.strip() for row in rows)
+
+
+def test_get_statement_rows_skips_forecast_revision_documents() -> None:
+    service = CostStructureAnalysisService(_ForecastRevisionReader())
+
+    rows = service._get_statement_rows("7203")
+
+    assert len(rows) == 4
+    assert all(row.sales != 9999.0 for row in rows)
 
 
 def test_to_millions_returns_none_for_null() -> None:

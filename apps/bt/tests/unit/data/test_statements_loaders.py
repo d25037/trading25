@@ -505,6 +505,30 @@ class TestTransformStatementsAdjusted:
         assert result.loc["2024-04-28", "ForwardForecastEPS"] == 220.0
         assert result.loc["2024-07-30", "ForwardForecastEPS"] == 60.0
 
+    def test_transform_does_not_use_fy_forecast_revision_as_actual_base(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28"), pd.Timestamp("2024-05-10")],
+                "typeOfDocument": [
+                    "FYFinancialStatements_Consolidated_JP",
+                    "EarnForecastRevision",
+                ],
+                "typeOfCurrentPeriod": ["FY", "FY"],
+                "earningsPerShare": [200.0, 999.0],
+                "forecastEps": [210.0, 310.0],
+                "nextYearForecastEarningsPerShare": [220.0, 330.0],
+                "sharesOutstanding": [1000.0, 1000.0],
+                "profit": [2_000_000, None],
+                "equity": [5_500_000, None],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert result.loc["2024-04-28", "ForwardBaseEPS"] == 200.0
+        assert result.loc["2024-05-10", "ForwardBaseEPS"] == 200.0
+        assert result.loc["2024-05-10", "ForwardForecastEPS"] == 330.0
+
 
 class TestTransformStatementsRoa:
     def test_transform_calculates_roa_from_total_assets(self):

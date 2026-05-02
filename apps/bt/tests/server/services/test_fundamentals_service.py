@@ -616,6 +616,27 @@ class TestFilterStatements:
         filtered = service._filter_statements(statements, "FY", None, None)
         assert len(filtered) == 2
 
+    def test_filter_by_period_type_fy_excludes_forecast_revision(
+        self, service: FundamentalsService, statements: list[JQuantsStatement]
+    ):
+        revision = JQuantsStatement(
+            **{
+                **statements[0].model_dump(),
+                "DocType": "EarnForecastRevision",
+                "DiscDate": "2024-06-01",
+            }
+        )
+
+        filtered = service._filter_statements(
+            [*statements, revision],
+            "FY",
+            None,
+            None,
+        )
+
+        assert revision not in filtered
+        assert len(filtered) == 2
+
     def test_filter_by_period_type_q1(
         self, service: FundamentalsService, statements: list[JQuantsStatement]
     ):

@@ -19,6 +19,7 @@ from src.shared.utils.share_adjustment import (
     is_valid_share_count,
     resolve_latest_quarterly_baseline_shares,
 )
+from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
@@ -28,6 +29,7 @@ _COLUMN_MAPPING = {
     "earningsPerShare": "EPS",
     "profit": "Profit",
     "equity": "Equity",
+    "typeOfDocument": "TypeOfDocument",
     "typeOfCurrentPeriod": "TypeOfCurrentPeriod",
     "nextYearForecastEarningsPerShare": "NextYearForecastEPS",
     "bps": "BPS",
@@ -135,6 +137,13 @@ def _resolve_period_column(df: pd.DataFrame) -> str | None:
     )
 
 
+def _resolve_document_column(df: pd.DataFrame) -> str | None:
+    return _resolve_first_available_column(
+        df,
+        ("TypeOfDocument", "typeOfDocument"),
+    )
+
+
 def _iter_share_snapshots(df: pd.DataFrame):
     if df.empty:
         return
@@ -196,17 +205,36 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
         period_types = df["TypeOfCurrentPeriod"].map(normalize_period_type)
     else:
         period_types = pd.Series("FY", index=df.index)
+    document_column = _resolve_document_column(df)
+    if document_column is None:
+        is_actual_fy = period_types == "FY"
+    else:
+        is_actual_fy = pd.Series(
+            [
+                is_actual_fy_financial_statement(
+                    period_type,
+                    type_of_document,
+                    allow_unknown_document=True,
+                )
+                for period_type, type_of_document in zip(
+                    period_types,
+                    df[document_column],
+                    strict=False,
+                )
+            ],
+            index=df.index,
+        )
 
-    is_fy = period_types == "FY"
+    is_fy_period = period_types == "FY"
     is_quarter = period_types.isin(["1Q", "2Q", "3Q"])
 
     if "EPS" in df.columns:
-        df["ForwardBaseEPS"] = df["EPS"].where(is_fy).ffill()
+        df["ForwardBaseEPS"] = df["EPS"].where(is_actual_fy).ffill()
     if "AdjustedEPS" in df.columns:
-        df["AdjustedForwardBaseEPS"] = df["AdjustedEPS"].where(is_fy).ffill()
+        df["AdjustedForwardBaseEPS"] = df["AdjustedEPS"].where(is_actual_fy).ffill()
 
     if "NextYearForecastEPS" in df.columns:
-        fy_forecast = df["NextYearForecastEPS"].where(is_fy)
+        fy_forecast = df["NextYearForecastEPS"].where(is_fy_period)
     else:
         fy_forecast = pd.Series(np.nan, index=df.index)
 
@@ -218,7 +246,7 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
     df["ForwardForecastEPS"] = fy_forecast.combine_first(q_forecast)
 
     if "AdjustedNextYearForecastEPS" in df.columns:
-        adjusted_fy_forecast = df["AdjustedNextYearForecastEPS"].where(is_fy)
+        adjusted_fy_forecast = df["AdjustedNextYearForecastEPS"].where(is_fy_period)
     else:
         adjusted_fy_forecast = pd.Series(np.nan, index=df.index)
 
@@ -233,12 +261,12 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
 
     # Dividend forecast helpers (same policy as EPS: FY uses next FY forecast, Q uses current FY forecast)
     if "DividendFY" in df.columns:
-        df["ForwardBaseDividendFY"] = df["DividendFY"].where(is_fy).ffill()
+        df["ForwardBaseDividendFY"] = df["DividendFY"].where(is_actual_fy).ffill()
     if "AdjustedDividendFY" in df.columns:
-        df["AdjustedForwardBaseDividendFY"] = df["AdjustedDividendFY"].where(is_fy).ffill()
+        df["AdjustedForwardBaseDividendFY"] = df["AdjustedDividendFY"].where(is_actual_fy).ffill()
 
     if "NextYearForecastDividendFY" in df.columns:
-        fy_div_forecast = df["NextYearForecastDividendFY"].where(is_fy)
+        fy_div_forecast = df["NextYearForecastDividendFY"].where(is_fy_period)
     else:
         fy_div_forecast = pd.Series(np.nan, index=df.index)
 
@@ -250,7 +278,7 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
     df["ForwardForecastDividendFY"] = fy_div_forecast.combine_first(q_div_forecast)
 
     if "AdjustedNextYearForecastDividendFY" in df.columns:
-        adjusted_fy_div_forecast = df["AdjustedNextYearForecastDividendFY"].where(is_fy)
+        adjusted_fy_div_forecast = df["AdjustedNextYearForecastDividendFY"].where(is_fy_period)
     else:
         adjusted_fy_div_forecast = pd.Series(np.nan, index=df.index)
 
@@ -264,10 +292,10 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
     )
 
     if "PayoutRatio" in df.columns:
-        df["ForwardBasePayoutRatio"] = df["PayoutRatio"].where(is_fy).ffill()
+        df["ForwardBasePayoutRatio"] = df["PayoutRatio"].where(is_actual_fy).ffill()
 
     if "NextYearForecastPayoutRatio" in df.columns:
-        fy_payout_forecast = df["NextYearForecastPayoutRatio"].where(is_fy)
+        fy_payout_forecast = df["NextYearForecastPayoutRatio"].where(is_fy_period)
     else:
         fy_payout_forecast = pd.Series(np.nan, index=df.index)
 

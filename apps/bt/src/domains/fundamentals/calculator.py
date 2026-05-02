@@ -14,6 +14,7 @@ from src.shared.utils.share_adjustment import (
     is_valid_share_count,
     resolve_latest_quarterly_baseline_shares,
 )
+from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
 from .models import (
     DailyValuationDataPoint,
@@ -260,6 +261,8 @@ class FundamentalsCalculator:
             stmt_period_type = normalize_period_type(stmt.CurPerType)
             if normalized_period_type != "all" and stmt_period_type != normalized_period_type:
                 continue
+            if normalized_period_type == "FY" and not self._is_actual_fy_statement(stmt):
+                continue
             period_end = stmt.CurPerEn
             if from_date and period_end < from_date:
                 continue
@@ -268,6 +271,13 @@ class FundamentalsCalculator:
             filtered.append(stmt)
 
         return filtered
+
+    def _is_actual_fy_statement(self, stmt: JQuantsStatement) -> bool:
+        return is_actual_fy_financial_statement(
+            stmt.CurPerType,
+            stmt.DocType,
+            allow_unknown_document=True,
+        )
 
     def _calculate_all_metrics(
         self,
@@ -594,7 +604,7 @@ class FundamentalsCalculator:
         actual_eps: float | None,
         prefer_consolidated: bool,
     ) -> tuple[float | None, float | None]:
-        is_fy = stmt.CurPerType == "FY"
+        is_fy = normalize_period_type(stmt.CurPerType) == "FY"
         if prefer_consolidated:
             primary, fallback = (stmt.NxFEPS, stmt.FEPS) if is_fy else (stmt.FEPS, stmt.NxFEPS)
         else:
@@ -733,7 +743,7 @@ class FundamentalsCalculator:
     ) -> list[FYDataPoint]:
         fy_data: list[FYDataPoint] = []
         for stmt in statements:
-            if stmt.CurPerType != "FY":
+            if not self._is_actual_fy_statement(stmt):
                 continue
             eps = self._calculate_eps(stmt, prefer_consolidated)
             bps = self._calculate_bps(stmt, prefer_consolidated)

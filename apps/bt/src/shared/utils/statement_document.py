@@ -41,3 +41,18 @@ def is_actual_fy_financial_statement(
 
 def is_earn_forecast_revision_document(type_of_document: str | None) -> bool:
     return classify_statement_document(type_of_document) == "earn_forecast_revision"
+
+
+def is_statement_period_financial_document(
+    period_type: str | None,
+    type_of_document: str | None,
+    *,
+    allow_unknown_document: bool = False,
+) -> bool:
+    normalized_period = normalize_period_type(period_type)
+    if normalized_period is None:
+        return False
+    document_kind = classify_statement_document(type_of_document)
+    if document_kind == "financial_statement":
+        return True
+    return allow_unknown_document and document_kind == "unknown"
