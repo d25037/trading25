@@ -265,50 +265,78 @@ def _table_from_dataframe(title: str, frame: pd.DataFrame, *, limit: int = 25) -
     )
 
 
-def _entry_signal_date_label(value: Any) -> str:
-    try:
-        timestamp = pd.to_datetime(value, errors="coerce")
-    except Exception:
-        timestamp = pd.NaT
-    if pd.notna(timestamp):
-        return timestamp.date().isoformat()
-    return str(value)
-
-
 def _entry_signal_counts_section(frame: pd.DataFrame, *, limit: int = 25) -> str:
     if frame.empty:
         return ""
     if "signal_count" not in frame.columns:
         return _table_from_dataframe("Entry Signal Counts", frame, limit=limit)
 
-    counts = pd.to_numeric(frame["signal_count"], errors="coerce").fillna(0)
-    nonzero_counts = counts[counts > 0]
-    if nonzero_counts.empty:
-        return (
-            '<section><h2>Entry Signal Counts</h2>'
-            '<p class="note">No non-zero entry signal days.</p></section>'
-        )
+    counts = pd.to_numeric(frame["signal_count"], errors="coerce").fillna(0).astype(float)
+    total_days = int(len(counts))
+    nonzero_days = int((counts > 0).sum())
+    zero_days = total_days - nonzero_days
+    total_signals = float(counts.sum())
+    summary = {
+        "Total Days": total_days,
+        "Total Signals": int(total_signals) if total_signals.is_integer() else total_signals,
+        "Non-zero Days": nonzero_days,
+        "Zero Days": zero_days,
+        "Non-zero Day Rate": _format_percent(nonzero_days / total_days),
+        "Mean per Day": float(counts.mean()),
+        "Median per Day": float(counts.median()),
+        "P75 per Day": float(counts.quantile(0.75)),
+        "P90 per Day": float(counts.quantile(0.90)),
+        "P95 per Day": float(counts.quantile(0.95)),
+        "Max per Day": int(counts.max()) if float(counts.max()).is_integer() else float(counts.max()),
+    }
 
-    limited = nonzero_counts.head(limit)
-    if len(nonzero_counts) > limit:
+    frequency = counts.value_counts().sort_index()
+    limited_frequency = frequency.head(limit)
+    if len(frequency) > limit:
         note = (
-            f'<p class="note">Showing first {limit:,} non-zero signal days '
-            f'of {len(nonzero_counts):,}.</p>'
+            f'<p class="note">Showing first {limit:,} signal-count buckets '
+            f'of {len(frequency):,}.</p>'
         )
     else:
-        note = f'<p class="note">Showing {len(nonzero_counts):,} non-zero signal days.</p>'
+        note = f'<p class="note">Showing {len(frequency):,} signal-count buckets.</p>'
+
+    summary_rows = "\n".join(
+        "<tr>"
+        f"<th>{escape(str(metric))}</th>"
+        f"<td>{escape(_format_value(value))}</td>"
+        "</tr>"
+        for metric, value in summary.items()
+    )
+    summary_table = (
+        "<h3>Daily Signal Count Statistics</h3>"
+        "<table><thead><tr><th>Metric</th><th>Value</th></tr></thead>"
+        f"<tbody>{summary_rows}</tbody></table>"
+    )
     rows = "\n".join(
         "<tr>"
-        f"<td>{escape(_entry_signal_date_label(index))}</td>"
-        f"<td>{int(value):,}</td>"
+        f"<td>{_format_signal_count_bucket(signal_count)}</td>"
+        f"<td>{int(day_count):,}</td>"
+        f"<td>{_format_percent(int(day_count) / total_days)}</td>"
         "</tr>"
-        for index, value in limited.items()
+        for signal_count, day_count in limited_frequency.items()
     )
-    return (
-        f"<section><h2>Entry Signal Counts</h2>{note}"
-        "<table><thead><tr><th>Date</th><th>Signal Count</th></tr></thead>"
-        f"<tbody>{rows}</tbody></table></section>"
+    distribution_table = (
+        f"<h3>Daily Signal Count Distribution</h3>{note}"
+        "<table><thead><tr><th>Signal Count</th><th>Days</th><th>Share</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
     )
+    return f"<section><h2>Entry Signal Counts</h2>{summary_table}{distribution_table}</section>"
+
+
+def _format_percent(value: float) -> str:
+    return f"{value * 100:.2f}%"
+
+
+def _format_signal_count_bucket(value: Any) -> str:
+    coerced = float(value)
+    if coerced.is_integer():
+        return f"{int(coerced):,}"
+    return _format_value(coerced)
 
 
 def _numeric_series(series: pd.Series) -> pd.Series:
@@ -546,6 +574,7 @@ def _build_report_html(
     header {{ margin-bottom: 24px; }}
     h1 {{ margin: 0 0 8px; font-size: 28px; font-weight: 700; }}
     h2 {{ margin: 0 0 12px; font-size: 18px; }}
+    h3 {{ margin: 18px 0 10px; font-size: 15px; }}
     p {{ margin: 0; color: #52606d; }}
     section {{ background: #ffffff; border: 1px solid #d9e2ec; border-radius: 6px; margin: 16px 0; padding: 16px; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}

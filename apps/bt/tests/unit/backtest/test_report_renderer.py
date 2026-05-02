@@ -206,7 +206,7 @@ def test_static_html_report_renderer_writes_payload_driven_html(tmp_path: Path) 
     assert "7203" in html
 
 
-def test_static_html_report_renderer_entry_signal_counts_show_nonzero_dates(
+def test_static_html_report_renderer_entry_signal_counts_show_distribution_stats(
     tmp_path: Path,
 ) -> None:
     output_dir = _allowed_tmp_output_dir(tmp_path)
@@ -238,21 +238,32 @@ def test_static_html_report_renderer_entry_signal_counts_show_nonzero_dates(
 
     html = rendered_path.read_text(encoding="utf-8")
     assert "Entry Signal Counts" in html
-    assert "non-zero signal days" in html
-    assert "<th>Date</th><th>Signal Count</th>" in html
+    assert "Daily Signal Count Statistics" in html
+    assert "<th>Metric</th><th>Value</th>" in html
+    assert "<th>Total Days</th><td>30</td>" in html
+    assert "<th>Total Signals</th><td>10</td>" in html
+    assert "<th>Non-zero Days</th><td>2</td>" in html
+    assert "<th>Zero Days</th><td>28</td>" in html
+    assert "<th>Mean per Day</th><td>0.3333</td>" in html
+    assert "<th>Median per Day</th><td>0.0000</td>" in html
+    assert "<th>Max per Day</th><td>7</td>" in html
+    assert "Daily Signal Count Distribution" in html
+    assert "<th>Signal Count</th><th>Days</th><th>Share</th>" in html
+    assert "<td>0</td><td>28</td><td>93.33%</td>" in html
+    assert "<td>3</td><td>1</td><td>3.33%</td>" in html
+    assert "<td>7</td><td>1</td><td>3.33%</td>" in html
     assert "2026-01-26T00:00:00" not in html
-    assert "2026-01-26" in html
-    assert "2026-01-28" in html
-    assert "<td>3</td>" in html
-    assert "<td>7</td>" in html
     assert "Showing first 25 of 30 rows" not in html
 
 
 def test_static_html_report_renderer_entry_signal_counts_empty_and_fallbacks() -> None:
     assert _entry_signal_counts_section(pd.DataFrame()) == ""
-    assert "No non-zero entry signal days" in _entry_signal_counts_section(
+    zero_only = _entry_signal_counts_section(
         pd.DataFrame({"signal_count": [0, 0]}, index=["2026-01-01", "2026-01-02"])
     )
+    assert "<th>Total Days</th><td>2</td>" in zero_only
+    assert "<th>Total Signals</th><td>0</td>" in zero_only
+    assert "<td>0</td><td>2</td><td>100.00%</td>" in zero_only
 
     fallback = _entry_signal_counts_section(
         pd.DataFrame({"other_count": [1, 2, 3]}, index=["a", "b", "c"]),
