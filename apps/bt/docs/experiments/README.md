@@ -97,6 +97,8 @@
   - Prime value で強く見えた stock volatility 系の technical effect が alpha なのか risk exposure なのかを beta / idiosyncratic volatility / p10 で切り分ける実験。
 - [market-behavior/annual-prime-value-volume-volatility-participation/](./market-behavior/annual-prime-value-volume-volatility-participation/README.md)
   - Prime value の high-volatility effect が volume / trading value の参加増加 proxy なのかを、participation split と portfolio lens で切り分ける実験。
+- [market-behavior/annual-prime-value-pbr-absorption/](./market-behavior/annual-prime-value-pbr-absorption/README.md)
+  - Prime top 5% で低PBRの追加 weight が小型・低forward PERに吸収されるのかを、PBR weight 感度と入替銘柄 profile で確認する実験。
 - [market-behavior/annual-market-specific-value-score-profile/](./market-behavior/annual-market-specific-value-score-profile/README.md)
   - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)
