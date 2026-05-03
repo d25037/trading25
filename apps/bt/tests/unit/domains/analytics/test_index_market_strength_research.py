@@ -98,12 +98,23 @@ def test_run_index_market_strength_research_builds_feature_and_breadth_tables(
     assert result.horizon_sessions == 5
     assert set(result.index_price_feature_df["code"]) == {"I001", "I002", "I003"}
     assert "forward_5d_return_pct" in result.index_price_feature_df.columns
+    assert "topix_excess_forward_5d_return_pct" in result.index_price_feature_df.columns
+    assert "beta_adjusted_forward_5d_return_pct" in result.index_price_feature_df.columns
     assert "return_20d_pct" in result.index_price_feature_df.columns
     assert "rebound_from_low_20d_pct" in result.index_price_feature_df.columns
     assert "price_position_20d" in result.index_price_feature_df.columns
+    assert set(result.index_beta_df["code"]) == {"I001", "I002", "I003"}
+    assert {"beta", "corr_topix", "annualized_volatility_pct"}.issubset(
+        result.index_beta_df.columns
+    )
     assert set(result.index_state_summary_df["feature_family"]).issuperset(
         {"return", "rebound_from_low", "price_position"}
     )
+    assert set(result.index_decomposition_summary_df["return_metric"]) == {
+        "raw",
+        "topix_excess",
+        "beta_adjusted",
+    }
     assert set(result.breadth_state_df["lookback"]) == {5, 20}
     assert {"strong_breadth_ratio", "weak_breadth_ratio"}.issubset(
         result.breadth_state_df.columns
@@ -139,5 +150,10 @@ def test_write_and_load_index_market_strength_research_bundle(tmp_path: Path) ->
     pd.testing.assert_frame_equal(
         loaded.index_state_summary_df.reset_index(drop=True),
         result.index_state_summary_df.reset_index(drop=True),
+        check_dtype=False,
+    )
+    pd.testing.assert_frame_equal(
+        loaded.index_decomposition_summary_df.reset_index(drop=True),
+        result.index_decomposition_summary_df.reset_index(drop=True),
         check_dtype=False,
     )

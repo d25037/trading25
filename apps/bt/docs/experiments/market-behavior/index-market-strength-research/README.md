@@ -41,6 +41,26 @@ annual value 解析で使った technical overlay の発想を、個別銘柄で
 | `overheat_breadth high` | `120` | validation | `28` | `-1.03%` | `39.29%` | `-6.25%` |
 | `overheat_breadth high` | `120` | holdout | `32` | `+0.98%` | `68.75%` | `-5.17%` |
 
+#### TOPIX / Beta Decomposition
+
+`60日 return <= -10%` の個別33指数 rebound は raw では強いが、TOPIX を控除するとかなり薄まり、beta-adjusted residual では高ベータ優位ではなくなる。
+
+| Lens | Raw 20d | TOPIX excess | Beta-adjusted | Hit(beta-adj) | 読み |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `return_20d <= -10%` | `+3.40%` | `-0.24%` | `-0.28%` | `48.17%` | 短期急落後の raw rebound は市場反発寄り |
+| `return_60d <= -10%` | `+3.11%` | `+0.28%` | `+0.25%` | `52.00%` | 中期急落後に薄い residual が残る |
+| `return_120d <= -10%` | `+2.14%` | `-0.10%` | `-0.04%` | `48.61%` | 長期下落後はほぼ beta / market rebound |
+| `price_position_120d low` | `+1.92%` | `+0.22%` | `+0.26%` | `52.93%` | レンジ下限効果も大半は市場反発 |
+| `return_20d > +15%` | `+0.45%` | `+0.02%` | `-0.05%` | `45.15%` | 急騰後は residual でも弱い |
+
+`60日 return <= -10%` の beta tercile 別では、raw は high beta が最も強いが、beta-adjusted では low beta が最も強い。
+
+| Beta tercile | Avg beta | Raw 20d | TOPIX excess | Beta-adjusted | Beta-adj hit | Beta-adj P10 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| low beta | `0.74` | `+3.15%` | `+0.60%` | `+1.26%` | `64.82%` | `-4.37%` |
+| mid beta | `0.98` | `+2.86%` | `-0.34%` | `-0.26%` | `46.81%` | `-4.91%` |
+| high beta | `1.14` | `+4.03%` | `+0.60%` | `+0.11%` | `49.89%` | `-5.10%` |
+
 #### 初期 bucket 定義
 
 | Family | Bucket 方針 |
@@ -56,21 +76,23 @@ annual value 解析で使った technical overlay の発想を、個別銘柄で
 
 `overheat_breadth high` は discovery / validation で弱く、特に validation は hit rate が低い。ただし holdout はプラスに転じているため、単純な除外ルールとしてはまだ不安定。次は market shock 日、日銀/政策イベント、半期 split を加えて、過熱後の弱さが regime 依存かを分解する。
 
+TOPIX / beta decomposition 後の読みはより慎重になる。raw return の「売られた業種の反発」はかなり市場全体の rebound と beta exposure で説明できる。セクターローテーション alpha として残るのは、`60日 return <= -10%` の beta-adjusted `+0.25%` 程度で、強いとは言いにくい。一方で low beta の売られすぎ業種には beta-adjusted `+1.26%` が残り、これは market beta ではなく defensive / laggard rotation の候補として別に見る価値がある。
+
 ### Production Implication
 
-候補が安定すれば、annual value や screening の hard filter より先に、market exposure / sizing / warning diagnostic として使う。現時点では `weak_breadth high` を rebound watch、`overheat_breadth high` を caution watch として扱い、銘柄選定 score へ直接混ぜない。
+候補が安定すれば、annual value や screening の hard filter より先に、market exposure / sizing / warning diagnostic として使う。現時点では `weak_breadth high` を rebound watch、`overheat_breadth high` を caution watch として扱い、銘柄選定 score へ直接混ぜない。個別業種の raw rebound は market beta に大きく依存するため、production へ使う場合は raw ではなく TOPIX excess / beta-adjusted residual を主指標にする。
 
 ### Caveats
 
-`sector33` 指数は指数そのものの OHLC であり、個別銘柄 universe の breadth ではない。33指数間の equal-weight 集計は市場全体の近似で、TOPIX 時価総額加重とは一致しない。初回 run の high weak-breadth bucket は observation が `58-64` 日程度で、validation の左尾は十分に悪い。index_master の historical membership は不要だが、指数コード catalog と local `indices_data` の coverage に依存する。
+`sector33` 指数は指数そのものの OHLC であり、個別銘柄 universe の breadth ではない。33指数間の equal-weight 集計は市場全体の近似で、TOPIX 時価総額加重とは一致しない。初回 run の high weak-breadth bucket は observation が `58-64` 日程度で、validation の左尾は十分に悪い。beta は全期間の日次 return で推定した static beta であり、rolling beta / regime beta ではない。index_master の historical membership は不要だが、指数コード catalog と local `indices_data` の coverage に依存する。
 
 ### Source Artifacts
 
 - Domain: `apps/bt/src/domains/analytics/index_market_strength_research.py`
 - Runner: `apps/bt/scripts/research/run_index_market_strength_research.py`
-- Bundle: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33/`
-- Results DB: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33/results.duckdb`
-- Summary: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33/summary.md`
+- Bundle: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33_beta_decomp/`
+- Results DB: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33_beta_decomp/results.duckdb`
+- Summary: `/tmp/trading25-research/market-behavior/index-market-strength-research/20260504_index_market_strength_sector33_beta_decomp/summary.md`
 
 ## Run
 

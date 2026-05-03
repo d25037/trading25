@@ -31,7 +31,9 @@ DEFAULT_VALIDATION_END_DATE = "2023-12-31"
 
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "index_price_feature_df",
+    "index_beta_df",
     "index_state_summary_df",
+    "index_decomposition_summary_df",
     "breadth_state_df",
     "breadth_state_summary_df",
     "feature_rank_df",
@@ -52,7 +54,9 @@ class IndexMarketStrengthResearchResult:
     observation_count: int
     feature_policy: str
     index_price_feature_df: pd.DataFrame
+    index_beta_df: pd.DataFrame
     index_state_summary_df: pd.DataFrame
+    index_decomposition_summary_df: pd.DataFrame
     breadth_state_df: pd.DataFrame
     breadth_state_summary_df: pd.DataFrame
     feature_rank_df: pd.DataFrame
@@ -84,6 +88,7 @@ def run_index_market_strength_research(
             ctx.connection,
             target_category_prefix=target_category_prefix,
         )
+        topix_price_df = _query_topix_price_rows(ctx.connection)
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
 
@@ -100,7 +105,20 @@ def run_index_market_strength_research(
         discovery_end_date=discovery_end_date,
         validation_end_date=validation_end_date,
     )
+    index_beta_df = _build_index_beta_df(index_price_df, topix_price_df)
+    feature_df = _add_topix_decomposition_features(
+        feature_df,
+        topix_price_df=topix_price_df,
+        index_beta_df=index_beta_df,
+        horizon_sessions=horizon,
+    )
     state_summary_df = _build_index_state_summary_df(
+        feature_df,
+        lookback_windows=windows,
+        horizon_sessions=horizon,
+        min_observations=min_summary_observations,
+    )
+    decomposition_summary_df = _build_index_decomposition_summary_df(
         feature_df,
         lookback_windows=windows,
         horizon_sessions=horizon,
@@ -140,11 +158,15 @@ def run_index_market_strength_research(
         feature_policy=(
             "Features use only each index's close/high/low history available at date t. "
             f"The objective is close-to-close return after {horizon} trading sessions. "
+            "TOPIX excess subtracts TOPIX forward return for the same date; "
+            "beta-adjusted residual subtracts each index beta times TOPIX forward return. "
             "Bucket thresholds are fixed ex ante; breadth is equal-weight across the "
             "available target indices on each date."
         ),
         index_price_feature_df=feature_df,
+        index_beta_df=index_beta_df,
         index_state_summary_df=state_summary_df,
+        index_decomposition_summary_df=decomposition_summary_df,
         breadth_state_df=breadth_state_df,
         breadth_state_summary_df=breadth_summary_df,
         feature_rank_df=feature_rank_df,
@@ -232,6 +254,146 @@ def _query_index_price_rows(
         rows[col] = pd.to_numeric(rows[col], errors="coerce")
     rows = rows.dropna(subset=["code", "date", "close"]).sort_values(["code", "date"])
     return rows.reset_index(drop=True)
+
+
+def _query_topix_price_rows(conn: Any) -> pd.DataFrame:
+    has_master = _table_exists(conn, "index_master")
+    if has_master:
+        rows = conn.execute(
+            """
+            WITH topix_code AS (
+                SELECT code
+                FROM index_master
+                WHERE lower(COALESCE(category, '')) = 'topix'
+                ORDER BY CASE WHEN upper(code) IN ('0000', 'TOPIX') THEN 0 ELSE 1 END, code
+                LIMIT 1
+            )
+            SELECT d.code, d.date, d.close
+            FROM indices_data d
+            JOIN topix_code tc ON tc.code = d.code
+            WHERE d.close IS NOT NULL
+              AND d.close > 0
+            ORDER BY d.date
+            """
+        ).fetchdf()
+    else:
+        rows = conn.execute(
+            """
+            SELECT code, date, close
+            FROM indices_data
+            WHERE upper(code) IN ('0000', 'TOPIX')
+              AND close IS NOT NULL
+              AND close > 0
+            ORDER BY date
+            """
+        ).fetchdf()
+    if rows.empty:
+        return pd.DataFrame(columns=["code", "date", "close"])
+    rows = rows.copy()
+    rows["date"] = pd.to_datetime(rows["date"], errors="coerce")
+    rows["close"] = pd.to_numeric(rows["close"], errors="coerce")
+    return rows.dropna(subset=["date", "close"]).sort_values("date").reset_index(drop=True)
+
+
+def _build_index_beta_df(
+    index_price_df: pd.DataFrame,
+    topix_price_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if index_price_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "code",
+                "index_name",
+                "return_observation_count",
+                "beta",
+                "corr_topix",
+                "annualized_volatility_pct",
+            ]
+        )
+    if topix_price_df.empty:
+        missing_topix_df = (
+            index_price_df[["code", "index_name"]]
+            .drop_duplicates()
+            .sort_values("code")
+            .copy()
+        )
+        missing_topix_df["return_observation_count"] = 0
+        missing_topix_df["beta"] = np.nan
+        missing_topix_df["corr_topix"] = np.nan
+        missing_topix_df["annualized_volatility_pct"] = np.nan
+        return missing_topix_df.reset_index(drop=True)
+
+    sector = index_price_df[["code", "index_name", "date", "close"]].copy()
+    sector["daily_return"] = sector.groupby("code", sort=True)["close"].pct_change()
+    topix = topix_price_df[["date", "close"]].copy()
+    topix["topix_daily_return"] = topix["close"].pct_change()
+    merged = sector.merge(
+        topix[["date", "topix_daily_return"]],
+        on="date",
+        how="left",
+    ).dropna(subset=["daily_return", "topix_daily_return"])
+    rows: list[dict[str, object]] = []
+    for code, group in merged.groupby("code", sort=True):
+        index_name = str(group["index_name"].dropna().iloc[0]) if not group.empty else str(code)
+        sector_returns = pd.to_numeric(group["daily_return"], errors="coerce")
+        topix_returns = pd.to_numeric(group["topix_daily_return"], errors="coerce")
+        variance = (
+            float(cast(Any, topix_returns.var(ddof=1)))
+            if len(topix_returns) > 1
+            else float("nan")
+        )
+        covariance = (
+            float(cast(Any, sector_returns.cov(topix_returns)))
+            if len(group) > 1
+            else float("nan")
+        )
+        beta = covariance / variance if np.isfinite(variance) and variance != 0.0 else np.nan
+        rows.append(
+            {
+                "code": str(code),
+                "index_name": index_name,
+                "return_observation_count": int(len(group)),
+                "beta": beta,
+                "corr_topix": float(sector_returns.corr(topix_returns))
+                if len(group) > 1
+                else np.nan,
+                "annualized_volatility_pct": float(sector_returns.std(ddof=1) * np.sqrt(252) * 100.0)
+                if len(group) > 1
+                else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _add_topix_decomposition_features(
+    feature_df: pd.DataFrame,
+    *,
+    topix_price_df: pd.DataFrame,
+    index_beta_df: pd.DataFrame,
+    horizon_sessions: int,
+) -> pd.DataFrame:
+    if feature_df.empty:
+        return feature_df
+    result = feature_df.copy()
+    horizon_col = f"forward_{horizon_sessions}d_return_pct"
+    topix_forward_col = f"topix_forward_{horizon_sessions}d_return_pct"
+    topix_excess_col = f"topix_excess_forward_{horizon_sessions}d_return_pct"
+    beta_adjusted_col = f"beta_adjusted_forward_{horizon_sessions}d_return_pct"
+    if not topix_price_df.empty:
+        topix = topix_price_df[["date", "close"]].sort_values("date").copy()
+        topix[f"forward_{horizon_sessions}d_close"] = topix["close"].shift(-horizon_sessions)
+        topix[topix_forward_col] = (
+            topix[f"forward_{horizon_sessions}d_close"] / topix["close"] - 1.0
+        ) * 100.0
+        topix["date"] = topix["date"].dt.strftime("%Y-%m-%d")
+        result = result.merge(topix[["date", topix_forward_col]], on="date", how="left")
+    else:
+        result[topix_forward_col] = np.nan
+    beta_map = index_beta_df.set_index("code")["beta"] if "beta" in index_beta_df.columns else {}
+    result["beta"] = result["code"].map(beta_map)
+    result[topix_excess_col] = result[horizon_col] - result[topix_forward_col]
+    result[beta_adjusted_col] = result[horizon_col] - result["beta"] * result[topix_forward_col]
+    return result
 
 
 def _build_index_price_feature_df(
@@ -401,6 +563,62 @@ def _build_index_state_summary_df(
                         )
                     )
     return pd.DataFrame(rows)
+
+
+def _build_index_decomposition_summary_df(
+    feature_df: pd.DataFrame,
+    *,
+    lookback_windows: tuple[int, ...],
+    horizon_sessions: int,
+    min_observations: int,
+) -> pd.DataFrame:
+    metric_specs = (
+        ("raw", f"forward_{horizon_sessions}d_return_pct"),
+        ("topix_excess", f"topix_excess_forward_{horizon_sessions}d_return_pct"),
+        ("beta_adjusted", f"beta_adjusted_forward_{horizon_sessions}d_return_pct"),
+    )
+    feature_specs = (
+        ("return", "return_{window}d_bucket", "return_{window}d_pct"),
+        (
+            "rebound_from_low",
+            "rebound_from_low_{window}d_bucket",
+            "rebound_from_low_{window}d_pct",
+        ),
+        ("price_position", "price_position_{window}d_bucket", "price_position_{window}d"),
+    )
+    rows: list[dict[str, object]] = []
+    for return_metric, return_col in metric_specs:
+        if return_col not in feature_df.columns:
+            continue
+        for window in lookback_windows:
+            for family, bucket_template, value_template in feature_specs:
+                bucket_col = bucket_template.format(window=window)
+                value_col = value_template.format(window=window)
+                for sample_period, period_df in _iter_period_frames(feature_df):
+                    usable = period_df.dropna(subset=[bucket_col, return_col])
+                    if usable.empty:
+                        continue
+                    for bucket, group in usable.groupby(bucket_col, dropna=True, sort=True):
+                        if len(group) < min_observations:
+                            continue
+                        row = _summary_row(
+                            group,
+                            return_col=return_col,
+                            sample_period=sample_period,
+                            lookback=window,
+                            state_family="index_feature",
+                            feature_family=family,
+                            bucket=str(bucket),
+                            feature_mean=float(
+                                pd.to_numeric(group[value_col], errors="coerce").mean()
+                            ),
+                        )
+                        row["return_metric"] = return_metric
+                        rows.append(row)
+    if not rows:
+        return pd.DataFrame()
+    cols = ["return_metric"] + [col for col in rows[0] if col != "return_metric"]
+    return pd.DataFrame(rows)[cols]
 
 
 def _iter_period_frames(df: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
