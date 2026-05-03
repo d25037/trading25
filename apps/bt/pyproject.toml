@@ -52,6 +52,9 @@ research = [
 nautilus = [
     "nautilus-trader>=1.225.0",
 ]
+rust = [
+    "vectorbt-rust>=1.0.0",
+]
 
 [tool.pyright]
 include = ["src"]

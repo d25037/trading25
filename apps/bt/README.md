@@ -96,6 +96,15 @@ uv run pytest tests
 - pydantic / typer / loguru
 - pytest / ruff / pyright
 
+Optional VectorBT Rust dispatch:
+
+```bash
+uv sync --group rust
+BT_VECTORBT_ENGINE=rust uv run bt backtest <strategy>
+```
+
+`BT_VECTORBT_ENGINE` は `auto` / `numba` / `rust` を受け付けます。Rust dispatch は `Portfolio.from_signals` path のみ対象です。
+
 ## Documentation
 
 - `AGENTS.md` - 運用ルールと責務
