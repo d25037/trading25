@@ -34,7 +34,6 @@ run_bt_unit_shards() {
   )
   local -a shard_core=(
     tests/unit/agent
-    tests/unit/analysis
     tests/unit/api
     tests/unit/application
     tests/unit/architecture

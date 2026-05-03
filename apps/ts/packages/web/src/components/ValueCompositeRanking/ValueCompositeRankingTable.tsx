@@ -34,20 +34,20 @@ function formatMarketCapBil(value: number): string {
 type TechnicalMetricKey = Exclude<keyof NonNullable<ValueCompositeRankingItem['technicalMetrics']>, 'featureDate'>;
 
 interface TechnicalMetricColumn {
-  key: TechnicalMetricKey;
+  metric: TechnicalMetricKey;
   label: string;
   signed: boolean;
 }
 
 const STANDARD_TECHNICAL_COLUMNS: TechnicalMetricColumn[] = [
-  { key: 'reboundFrom252dLowPct', label: '252d Low Reb', signed: true },
-  { key: 'return252dPct', label: '252d Ret', signed: true },
+  { metric: 'reboundFrom252dLowPct', label: '252d Low Reb', signed: true },
+  { metric: 'return252dPct', label: '252d Ret', signed: true },
 ];
 
 const PRIME_TECHNICAL_COLUMNS: TechnicalMetricColumn[] = [
-  { key: 'volatility20dPct', label: 'Vol 20d', signed: false },
-  { key: 'volatility60dPct', label: 'Vol 60d', signed: false },
-  { key: 'downsideVolatility60dPct', label: 'Down Vol 60d', signed: false },
+  { metric: 'volatility20dPct', label: 'Vol 20d', signed: false },
+  { metric: 'volatility60dPct', label: 'Vol 60d', signed: false },
+  { metric: 'downsideVolatility60dPct', label: 'Down Vol 60d', signed: false },
 ];
 
 function normalizeMarket(value: string | null | undefined): 'prime' | 'standard' | 'other' {
@@ -97,8 +97,8 @@ function ValueCompositeRankingRow({
       <td className="px-2 py-1.5 truncate max-w-[100px] text-muted-foreground">{item.sector33Name}</td>
       <td className="px-2 py-1.5 text-right font-medium tabular-nums">{formatScore(item.score)}</td>
       {technicalColumns.map((column) => (
-        <td key={column.key} className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
-          {formatTechnicalPercent(item.technicalMetrics?.[column.key], column.signed)}
+        <td key={column.metric} className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+          {formatTechnicalPercent(item.technicalMetrics?.[column.metric], column.signed)}
         </td>
       ))}
       <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
@@ -148,7 +148,7 @@ export function ValueCompositeRankingTable({ data, isLoading, error, onStockClic
                 <th className="text-left px-2 py-1.5 w-24">Sector</th>
                 <th className="text-right px-2 py-1.5 w-20">Score</th>
                 {technicalColumns.map((column) => (
-                  <th key={column.key} className="text-right px-2 py-1.5 w-24">
+                  <th key={column.metric} className="text-right px-2 py-1.5 w-24">
                     {column.label}
                   </th>
                 ))}

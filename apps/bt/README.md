@@ -103,7 +103,7 @@ uv sync --group rust
 BT_VECTORBT_ENGINE=rust uv run bt backtest <strategy>
 ```
 
-`BT_VECTORBT_ENGINE` は `auto` / `numba` / `rust` を受け付けます。Rust dispatch は `Portfolio.from_signals` path のみ対象です。
+`BT_VECTORBT_ENGINE` は `numba`（default） / `auto` / `rust` を受け付けます。Rust dispatch は `Portfolio.from_signals` path のみ対象で、`rust` または `auto` を明示した場合だけ利用します。round-trip execution policy は `Portfolio.from_order_func` を使うため `numba` のみ対応です。
 
 ## Documentation
 
