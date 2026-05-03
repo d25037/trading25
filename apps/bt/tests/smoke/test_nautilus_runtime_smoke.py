@@ -34,7 +34,7 @@ def _build_prepared_inputs() -> _PreparedPortfolioInputs:
         strategy_name="demo",
         dataset_name="sample",
         shared_config=SharedConfig(
-            dataset="sample",
+            universe_preset="sample",
             stock_codes=["1301"],
             initial_cash=1_000_000,
             timeframe="daily",
@@ -73,7 +73,7 @@ def test_nautilus_real_runtime_smoke(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         runner._vectorbt_runner,
         "build_parameters_for_strategy",
         lambda strategy, config_override=None: {
-            "shared_config": {"dataset": "sample", "timeframe": "daily"},
+            "shared_config": {"universe_preset": "sample", "timeframe": "daily"},
             "entry_filter_params": {},
         },
     )
