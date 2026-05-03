@@ -1451,6 +1451,9 @@ dev = [
 nautilus = [
     { name = "nautilus-trader" },
 ]
+rust = [
+    { name = "vectorbt-rust" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1487,6 +1490,7 @@ dev = [
 ]
 nautilus = [{ name = "nautilus-trader", specifier = ">=1.225.0" }]
 research = []
+rust = [{ name = "vectorbt-rust", specifier = ">=1.0.0" }]
 
 [[package]]
 name = "traitlets"
@@ -1636,6 +1640,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/69/55/257d9217301d0817b4b0b2ed74e8949d1084d6457ad032c13ab81e652c3a/vectorbt-1.0.0.tar.gz", hash = "sha256:e42cd61ecdabb165bf7a482516f15f48b0173ad17629c875916dacfdc39b8fb0", size = 546226, upload-time = "2026-04-22T13:30:02.032Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4c/08/c15c7ade057b0633ac39fe6f5fffa37c306304745538c4f9187a05e9aa69/vectorbt-1.0.0-py3-none-any.whl", hash = "sha256:c596e11bdad985181150f3b3c8db0a7322c738fbb64c7a919a0418e99326cc13", size = 451657, upload-time = "2026-04-22T13:29:59.982Z" },
+]
+
+[[package]]
+name = "vectorbt-rust"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/02/32/a5b7193cfaaa4485e6b3c0156e15701b21bb505b66e035f01594675d1242/vectorbt_rust-1.0.0.tar.gz", hash = "sha256:d9ef94a24f970be4d566d5c41d20c436cb1593ae2e960ee2ae9851ce5042b9aa", size = 74476, upload-time = "2026-04-22T13:29:36.715Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/62/3df4be3717f3c2df07f51d380f9beae7100e78656b1879710e62c2d36f28/vectorbt_rust-1.0.0-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:ceceb76bb1f485dc66eb3aa4ee2e4934b704c8753884a4c2eebf156427ecf374", size = 845019, upload-time = "2026-04-22T13:29:22.458Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/5f/b96d327002901177fc05c64d9a99bbff5673a20081bb1a3a2e35e02a8707/vectorbt_rust-1.0.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:689794e3f3a91c0b8cfc3565076b01864a51a95a8a003410c972942a424a8014", size = 766156, upload-time = "2026-04-22T13:29:24.034Z" },
+    { url = "https://files.pythonhosted.org/packages/35/fc/2ef2905a752f17329c768ddbfdff3cd14deab932e1010ca140bde9ab32b4/vectorbt_rust-1.0.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a204323805b5cc721ce4706f8d117886d0e860a2c74758aad965c65912aabc8f", size = 781441, upload-time = "2026-04-22T13:29:25.418Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/c6/708752ae698161575fe949ba659341e24ebd6341ed683e1f2b66b7a84a35/vectorbt_rust-1.0.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9a379f7ae66ef5733d5de6ae1f23f8434d4411918d04b9b2baf7e8db105ca759", size = 873255, upload-time = "2026-04-22T13:29:27.081Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/fe/fe1b7b07520fbb1559187ea5a962db0246b5c3f6e24ace2f7cd6a5346fab/vectorbt_rust-1.0.0-cp312-cp312-win_amd64.whl", hash = "sha256:f6adbd831d1615eca9e6499296345d092f670d668440d2b5043523f3753c62fc", size = 885340, upload-time = "2026-04-22T13:29:28.381Z" },
 ]
 
 [[package]]
