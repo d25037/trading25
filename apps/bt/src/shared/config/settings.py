@@ -54,6 +54,20 @@ class Settings(BaseModel):
         alias="BT_LAB_JOB_TIMEOUT_SECONDS",
     )
 
+    # Market DB daily incremental sync scheduler (FastAPI background task)
+    market_sync_scheduler_enabled: bool = Field(
+        default=False,
+        alias="MARKET_SYNC_SCHEDULER_ENABLED",
+    )
+    market_sync_scheduler_time_jst: str = Field(
+        default="16:30",
+        alias="MARKET_SYNC_SCHEDULER_TIME_JST",
+    )
+    market_sync_scheduler_enforce_bulk_for_stock_data: bool = Field(
+        default=False,
+        alias="MARKET_SYNC_SCHEDULER_ENFORCE_BULK_FOR_STOCK_DATA",
+    )
+
     # JQuants API
     jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")
     jquants_plan: str = Field(default="free", alias="JQUANTS_PLAN")

@@ -15,6 +15,9 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("BT_LAB_JOB_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("MARKET_SYNC_SCHEDULER_ENABLED", raising=False)
+    monkeypatch.delenv("MARKET_SYNC_SCHEDULER_TIME_JST", raising=False)
+    monkeypatch.delenv("MARKET_SYNC_SCHEDULER_ENFORCE_BULK_FOR_STOCK_DATA", raising=False)
 
     settings = reload_settings()
 
@@ -24,6 +27,9 @@ def test_settings_defaults(monkeypatch):
     assert settings.backtest_job_timeout_seconds == 3600
     assert settings.optimization_job_timeout_seconds == 3600
     assert settings.lab_job_timeout_seconds == 3600
+    assert settings.market_sync_scheduler_enabled is False
+    assert settings.market_sync_scheduler_time_jst == "16:30"
+    assert settings.market_sync_scheduler_enforce_bulk_for_stock_data is False
 
 
 def test_settings_env_override(monkeypatch):
@@ -33,6 +39,9 @@ def test_settings_env_override(monkeypatch):
     monkeypatch.setenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", "1800")
     monkeypatch.setenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", "2400")
     monkeypatch.setenv("BT_LAB_JOB_TIMEOUT_SECONDS", "3000")
+    monkeypatch.setenv("MARKET_SYNC_SCHEDULER_ENABLED", "true")
+    monkeypatch.setenv("MARKET_SYNC_SCHEDULER_TIME_JST", "17:05")
+    monkeypatch.setenv("MARKET_SYNC_SCHEDULER_ENFORCE_BULK_FOR_STOCK_DATA", "true")
 
     settings = reload_settings()
 
@@ -42,6 +51,9 @@ def test_settings_env_override(monkeypatch):
     assert settings.backtest_job_timeout_seconds == 1800
     assert settings.optimization_job_timeout_seconds == 2400
     assert settings.lab_job_timeout_seconds == 3000
+    assert settings.market_sync_scheduler_enabled is True
+    assert settings.market_sync_scheduler_time_jst == "17:05"
+    assert settings.market_sync_scheduler_enforce_bulk_for_stock_data is True
 
 
 def test_settings_cache(monkeypatch):
@@ -72,11 +84,12 @@ def test_settings_module_loads_dotenv():
     assert settings_mod._dotenv_path == expected
 
 
-def test_find_repo_root_raises_when_git_not_found(tmp_path):
+def test_find_repo_root_raises_when_git_not_found():
+    from pathlib import Path
+
     from src.shared.config.settings import _find_repo_root
 
-    start = tmp_path / "nested" / "path"
-    start.mkdir(parents=True)
+    start = Path("/__trading25_missing_git_root__/nested/path")
 
     with pytest.raises(RuntimeError):
         _find_repo_root(start)

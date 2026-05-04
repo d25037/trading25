@@ -46,6 +46,7 @@ from src.application.services.margin_analytics_service import create_market_marg
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.optimization_service import optimization_service
 from src.application.services.dataset_resolver import DatasetResolver
+from src.application.services.daily_market_sync_scheduler import run_daily_market_sync_scheduler
 from src.application.services.roe_service import create_market_roe_service
 from src.application.services.screening_job_service import (
     screening_job_manager,
@@ -194,6 +195,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.dataset_resolver = dataset_resolver
 
     cleanup_task = asyncio.create_task(_periodic_cleanup())
+    daily_market_sync_task: asyncio.Task[None] | None = None
+    if settings.market_sync_scheduler_enabled:
+        daily_market_sync_task = asyncio.create_task(
+            run_daily_market_sync_scheduler(
+                app,
+                settings=settings,
+                jquants_client=jquants_client,
+            )
+        )
 
     yield
 
@@ -201,6 +211,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup_task.cancel()
     with suppress(asyncio.CancelledError):
         await cleanup_task
+    if daily_market_sync_task is not None:
+        daily_market_sync_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await daily_market_sync_task
 
     # Phase 3D: Job manager shutdown（DB close 前に durable write を済ませる）
     from src.application.services.sync_service import sync_job_manager
