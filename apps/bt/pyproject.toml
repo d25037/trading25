@@ -50,7 +50,7 @@ dev = [
 research = [
 ]
 nautilus = [
-    "nautilus-trader>=1.225.0",
+    "nautilus-trader>=1.226.0",
 ]
 
 [tool.pyright]
