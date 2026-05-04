@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -14,12 +15,40 @@ from vectorbt.portfolio.enums import Direction, SizeType
 
 from src.domains.backtest.contracts import CanonicalExecutionMetrics
 
+VectorbtEngine = Literal["auto", "numba", "rust"]
+VECTORBT_ENGINE_ENV = "BT_VECTORBT_ENGINE"
+DEFAULT_VECTORBT_ENGINE: VectorbtEngine = "numba"
+_VALID_VECTORBT_ENGINES: set[str] = {"auto", "numba", "rust"}
+
 ROUND_TRIP_DIRECTION_MAP = {
     "longonly": int(Direction.LongOnly),
     "shortonly": int(Direction.ShortOnly),
     "both": int(Direction.Both),
 }
 PERCENT_SIZE_TYPE = int(SizeType.Percent)
+
+
+def resolve_vectorbt_engine(engine: str | None = None) -> VectorbtEngine:
+    """Resolve the VectorBT portfolio dispatch engine."""
+
+    raw_engine = engine if engine is not None else os.getenv(VECTORBT_ENGINE_ENV, DEFAULT_VECTORBT_ENGINE)
+    resolved = raw_engine.strip().lower()
+    if resolved not in _VALID_VECTORBT_ENGINES:
+        raise ValueError(
+            f"Invalid VectorBT engine {raw_engine!r}. "
+            "Expected one of: auto, numba, rust."
+        )
+    return cast(VectorbtEngine, resolved)
+
+
+def _ensure_round_trip_engine_supported(engine: VectorbtEngine) -> None:
+    if engine == "numba":
+        return
+    raise ValueError(
+        f"VectorBT engine {engine!r} is only supported for signal portfolios. "
+        f"Round-trip execution uses Portfolio.from_order_func and requires "
+        f"{VECTORBT_ENGINE_ENV}=numba."
+    )
 
 
 def _is_mock_value(value: Any) -> bool:
@@ -355,6 +384,9 @@ class VectorbtPortfolioAdapter:
 class VectorbtAdapter:
     """Execute and normalize portfolios through vectorbt."""
 
+    def __init__(self, engine: str | None = None) -> None:
+        self.engine: VectorbtEngine = resolve_vectorbt_engine(engine)
+
     def create_signal_portfolio(
         self,
         *,
@@ -386,6 +418,7 @@ class VectorbtAdapter:
             "group_by": group_by,
             "accumulate": accumulate,
             "freq": freq,
+            "engine": self.engine,
         }
         if size is not None:
             portfolio_kwargs["size"] = size
@@ -416,6 +449,7 @@ class VectorbtAdapter:
         group_by: bool | None,
         freq: str = "D",
     ) -> ExecutionPortfolioProtocol:
+        _ensure_round_trip_engine_supported(self.engine)
         normalized_entries = entries_data.fillna(False).infer_objects(copy=False).astype(bool)
         order_func = _round_trip_order_func_nb
         if execution_mode == "overnight_round_trip":
