@@ -20,7 +20,7 @@ jobs:
       security_ci: ${{ steps.scope.outputs.security_ci }}
       docs_only: ${{ steps.scope.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Determine changed files
@@ -46,10 +46,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Audit codex skills
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -74,10 +74,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -108,10 +108,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -140,10 +140,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/bt)
@@ -161,7 +161,7 @@ jobs:
       - package-unit-tests
       - app-integration-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -172,10 +172,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -202,7 +202,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -213,10 +213,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -246,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -257,10 +257,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -289,7 +289,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Run secret scan (gitleaks)
@@ -303,7 +303,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -314,10 +314,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)
@@ -339,13 +339,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/bt)
@@ -406,7 +406,7 @@ jobs:
       - dependency-vulnerability-audit
       - bt-research-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Install Bun
@@ -417,10 +417,10 @@ jobs:
           echo "$BUN_INSTALL/bin" >> "$GITHUB_PATH"
           echo "BUN_INSTALL=$BUN_INSTALL" >> "$GITHUB_ENV"
           bun --version
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v8
         with:
           version: "latest"
       - name: Install deps (apps/ts)

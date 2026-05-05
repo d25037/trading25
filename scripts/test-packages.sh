@@ -10,6 +10,7 @@ bt_product_analytics_tests=(
   tests/unit/domains/analytics/test_screening_evaluator.py
   tests/unit/domains/analytics/test_screening_requirements.py
   tests/unit/domains/analytics/test_screening_results.py
+  tests/unit/domains/analytics/test_value_composite_scoring.py
 )
 bt_product_script_tests=(
   tests/unit/scripts/test_audit_skills.py
