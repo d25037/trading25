@@ -120,3 +120,13 @@ def test_dependency_manifest_change_runs_security_and_product_ci() -> None:
     assert scope.research_ci is False
     assert scope.security_ci is True
     assert scope.docs_only is False
+
+
+def test_unknown_non_docs_change_falls_back_to_product_ci() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(["some/new/config.toml"])
+
+    assert scope.product_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False

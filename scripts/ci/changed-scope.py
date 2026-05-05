@@ -150,18 +150,34 @@ def classify_changed_paths(paths: list[str]) -> CiScope:
     security_ci = False
 
     for path in normalized:
-        if _is_shared_path(path):
+        is_docs = _is_docs_path(path)
+        is_shared = _is_shared_path(path)
+        is_product = _is_product_path(path)
+        is_research = _is_research_path(path)
+        is_contract = _is_contract_path(path)
+        is_security = _is_security_path(path)
+
+        if is_shared:
             product_ci = True
             research_ci = True
-        if _is_product_path(path):
+        if is_product:
             product_ci = True
-        if _is_research_path(path):
+        if is_research:
             research_ci = True
-        if _is_contract_path(path):
+        if is_contract:
             contracts_ci = True
             product_ci = True
-        if _is_security_path(path):
+        if is_security:
             security_ci = True
+            product_ci = True
+        if not (
+            is_docs
+            or is_shared
+            or is_product
+            or is_research
+            or is_contract
+            or is_security
+        ):
             product_ci = True
 
     return CiScope(
