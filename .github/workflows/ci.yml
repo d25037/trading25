@@ -4,13 +4,62 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      product_ci: ${{ steps.scope.outputs.product_ci }}
+      research_ci: ${{ steps.scope.outputs.research_ci }}
+      contracts_ci: ${{ steps.scope.outputs.contracts_ci }}
+      security_ci: ${{ steps.scope.outputs.security_ci }}
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine changed files
+        id: changed
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" > /tmp/changed-files.txt
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/changed-files.txt
+          else
+            git ls-files > /tmp/changed-files.txt
+          fi
+          cat /tmp/changed-files.txt
+      - name: Classify CI scope
+        id: scope
+        run: |
+          python scripts/ci/changed-scope.py < /tmp/changed-files.txt | tee /tmp/ci-scope.txt
+          cat /tmp/ci-scope.txt >> "$GITHUB_OUTPUT"
+
+  repo-guardrails:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit codex skills
+        run: python scripts/skills/audit_skills.py --strict-legacy
+      - name: Check privacy leaks
+        run: python scripts/check-privacy-leaks.py
+
   quality:
+    needs: changes
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -37,18 +86,14 @@ jobs:
       - name: Install deps (apps/bt)
         run: uv sync --locked
         working-directory: apps/bt
-      - name: Audit codex skills
-        run: python scripts/skills/audit_skills.py --strict-legacy
-      - name: Check privacy leaks
-        run: python scripts/check-privacy-leaks.py
-      - name: Check research guardrails
-        run: python scripts/check-research-guardrails.py
       - name: Lint
         run: ./scripts/lint.sh
       - name: Typecheck
         run: ./scripts/typecheck.sh
 
   contract-tests:
+    needs: changes
+    if: needs.changes.outputs.contracts_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -79,6 +124,8 @@ jobs:
         run: ./scripts/check-contract-sync.sh
 
   golden-dataset-regression:
+    needs: changes
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -106,9 +153,11 @@ jobs:
         run: ./scripts/test-golden-regression.sh
 
   coverage-gate:
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs:
+      - changes
       - package-unit-tests
       - app-integration-tests
     steps:
@@ -148,6 +197,8 @@ jobs:
           BT_COVERAGE_INPUT_DIR: /tmp/bt-coverage
 
   package-unit-tests:
+    needs: changes
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -190,6 +241,8 @@ jobs:
           if-no-files-found: error
 
   app-integration-tests:
+    needs: changes
+    if: needs.changes.outputs.product_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -231,6 +284,8 @@ jobs:
           if-no-files-found: error
 
   secret-scan:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -243,6 +298,8 @@ jobs:
             detect --source="/repo" --no-git --redact --verbose
 
   dependency-vulnerability-audit:
+    needs: changes
+    if: needs.changes.outputs.security_ci == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -276,11 +333,45 @@ jobs:
           --ignore-vuln CVE-2026-3219
         working-directory: apps/bt
 
+  bt-research-tests:
+    needs: changes
+    if: needs.changes.outputs.research_ci == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Check research guardrails
+        run: python scripts/check-research-guardrails.py
+      - name: Run bt research unit tests
+        run: ./scripts/bt-pytest.sh tests/unit/domains/analytics tests/unit/scripts
+        env:
+          BT_PYTEST_FAST: "1"
+
   web-e2e:
-    if: github.event_name == 'pull_request'
+    if: >
+      ${{
+        always() &&
+        github.event_name == 'pull_request' &&
+        needs.changes.outputs.product_ci == 'true' &&
+        !contains(needs.*.result, 'failure') &&
+        !contains(needs.*.result, 'cancelled')
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
+      - changes
+      - repo-guardrails
       - quality
       - contract-tests
       - golden-dataset-regression
@@ -289,6 +380,7 @@ jobs:
       - app-integration-tests
       - secret-scan
       - dependency-vulnerability-audit
+      - bt-research-tests
     steps:
       - uses: actions/checkout@v4
         with:
