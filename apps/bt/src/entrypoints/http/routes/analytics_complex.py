@@ -26,9 +26,6 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import (
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
-    Topix100RankingMetric,
-    Topix100RankingResponse,
-    Topix100StudyMode,
     ValueCompositeRankingResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeScoreResponse,
@@ -254,50 +251,6 @@ async def get_value_composite_score(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get value composite score: {e}",
-        )
-
-
-@router.get(
-    "/api/analytics/topix100-ranking",
-    response_model=Topix100RankingResponse,
-    summary="Get TOPIX100 ranking snapshot",
-    description=(
-        "Get the latest or specified TOPIX100 snapshot ranked by either price / SMA gap "
-        "(default SMA50, configurable to SMA20 or SMA100) or price SMA 20/80, "
-        "with volume SMA 5/20 sidecar buckets. Intraday mode reports the realized "
-        "next-session open-to-close return, while swing mode reports the realized "
-        "X+1 open to X+6 open return."
-    ),
-)
-async def get_topix100_ranking(
-    request: Request,
-    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    studyMode: Topix100StudyMode = Query("intraday"),
-    metric: Topix100RankingMetric = Query("price_vs_sma_gap"),
-    smaWindow: int = Query(50, description="Supported values: 20, 50, 100."),
-) -> Topix100RankingResponse:
-    """TOPIX100 の当日ランキングを取得し、study mode に応じた実現値も返す"""
-    from src.application.services.ranking_service import RankingService
-
-    reader = getattr(request.app.state, "market_reader", None)
-    if reader is None:
-        raise HTTPException(status_code=422, detail="Database not initialized")
-
-    service = RankingService(reader)
-    try:
-        return service.get_topix100_ranking(
-            date=date,
-            study_mode=studyMode,
-            metric=metric,
-            sma_window=smaWindow,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        logger.exception(f"TOPIX100 ranking error: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get TOPIX100 ranking: {e}",
         )
 
 

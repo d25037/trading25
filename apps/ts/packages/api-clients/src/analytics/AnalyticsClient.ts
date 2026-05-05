@@ -20,8 +20,6 @@ import type {
   ScreeningJobRequest,
   ScreeningJobResponse,
   SectorStocksParams,
-  Topix100RankingParams,
-  Topix100RankingResponse,
   ValueCompositeRankingParams,
   ValueCompositeRankingResponse,
   ValueCompositeScoreParams,
@@ -83,15 +81,6 @@ export class AnalyticsClient {
       forecastAboveRecentFyActuals: params.forecastAboveRecentFyActuals,
       forecastLookbackFyCount: params.forecastLookbackFyCount,
       forecastAboveAllActuals: params.forecastAboveAllActuals,
-    });
-  }
-
-  async getTopix100Ranking(params: Topix100RankingParams = {}): Promise<Topix100RankingResponse> {
-    return this.request<Topix100RankingResponse>('/api/analytics/topix100-ranking', undefined, {
-      date: params.date,
-      studyMode: params.studyMode,
-      metric: params.metric,
-      smaWindow: params.smaWindow,
     });
   }
 

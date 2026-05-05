@@ -20,14 +20,7 @@ import {
   RANKING_LOOKBACK_OPTIONS,
   RankingFilters,
   RankingTable,
-  Topix100RankingFilters,
-  Topix100RankingTable,
 } from '@/components/Ranking';
-import {
-  getTopix100RankingMetricLabel,
-  resolveTopix100PriceSmaWindow,
-  resolveTopix100RankingMetric,
-} from '@/components/Ranking/topix100RankingMetric';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import {
   ValueCompositeRankingFilters,
@@ -37,7 +30,6 @@ import {
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
-import { useTopix100Ranking } from '@/hooks/useTopix100Ranking';
 import { useValueCompositeRanking } from '@/hooks/useValueCompositeRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
@@ -53,7 +45,6 @@ const subTabs = [
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
-  { value: 'topix100' as RankingDailyView, label: 'TOPIX100 Study' },
 ];
 
 function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | undefined): string {
@@ -92,9 +83,7 @@ interface RankingContentProps {
   activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
-  setRankingParams: (params: RankingParams) => void;
   rankingQuery: ReturnType<typeof useRanking>;
-  topix100RankingQuery: ReturnType<typeof useTopix100Ranking>;
   fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
   valueCompositeRankingQuery: ReturnType<typeof useValueCompositeRanking>;
   onStockClick: (code: string) => void;
@@ -181,8 +170,6 @@ function RankingSidebar({
       {activeSubTab === 'ranking' ? (
         activeDailyView === 'indices' ? (
           <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
-        ) : activeDailyView === 'topix100' ? (
-          <Topix100RankingFilters params={rankingParams} onChange={setRankingParams} />
         ) : (
           <RankingFilters params={rankingParams} onChange={setRankingParams} />
         )
@@ -215,21 +202,6 @@ function buildIntroMetaItems(
       { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
     ];
   }
-  if (activeDailyView === 'topix100') {
-    const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
-    const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
-    const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
-    return [
-      { label: 'Metric', value: getTopix100RankingMetricLabel(topix100Metric, topix100SmaWindow) },
-      {
-        label: 'Read',
-        value:
-          topix100StudyMode === 'swing_5d'
-            ? 'Leak-free X+1 open -> X+6 open, KPI vs TOPIX'
-            : 'Decile-only intraday LightGBM score',
-      },
-    ];
-  }
   return [
     {
       label: 'Mode',
@@ -243,18 +215,12 @@ function RankingContent({
   activeSubTab,
   activeDailyView,
   rankingParams,
-  setRankingParams,
   rankingQuery,
-  topix100RankingQuery,
   fundamentalRankingQuery,
   valueCompositeRankingQuery,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
-  const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
-  const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
-  const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
-
   if (activeSubTab === 'fundamentalRanking') {
     return (
       <>
@@ -295,30 +261,6 @@ function RankingContent({
     );
   }
 
-  if (activeDailyView === 'topix100') {
-    return (
-      <Topix100RankingTable
-        data={topix100RankingQuery.data}
-        isLoading={topix100RankingQuery.isLoading}
-        error={topix100RankingQuery.error}
-        onStockClick={onStockClick}
-        studyMode={topix100StudyMode}
-        rankingMetric={topix100Metric}
-        rankingSmaWindow={topix100SmaWindow}
-        priceBucketFilter={rankingParams.topix100PriceBucket ?? 'all'}
-        sortBy={rankingParams.topix100SortBy ?? 'rank'}
-        sortOrder={rankingParams.topix100SortOrder ?? 'asc'}
-        onSortChange={(sortBy, sortOrder) =>
-          setRankingParams({
-            ...rankingParams,
-            topix100SortBy: sortBy,
-            topix100SortOrder: sortOrder,
-          })
-        }
-      />
-    );
-  }
-
   return (
     <RankingTable
       rankings={rankingQuery.data?.rankings}
@@ -344,17 +286,7 @@ export function RankingPage() {
     setValueCompositeRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
-  const topix100StudyMode = rankingParams.topix100StudyMode ?? 'swing_5d';
-  const topix100Metric = resolveTopix100RankingMetric(rankingParams.topix100Metric);
-  const topix100SmaWindow = resolveTopix100PriceSmaWindow(rankingParams.topix100SmaWindow);
-  const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking' && activeDailyView !== 'topix100');
-  const topix100RankingQuery = useTopix100Ranking(
-    rankingParams.date,
-    topix100StudyMode,
-    topix100Metric,
-    topix100SmaWindow,
-    activeSubTab === 'ranking' && activeDailyView === 'topix100'
-  );
+  const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
   const fundamentalRankingQuery = useFundamentalRanking(
     fundamentalRankingParams,
     activeSubTab === 'fundamentalRanking'
@@ -399,7 +331,7 @@ export function RankingPage() {
             <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-xs text-muted-foreground sm:text-sm">
-                Daily ranking, index performance, TOPIX100 SMA divergence, forecast/actual EPS ratios, and value scores.
+                Daily ranking, index performance, forecast/actual EPS ratios, and value scores.
               </p>
             </div>
           </div>
@@ -428,9 +360,7 @@ export function RankingPage() {
             activeSubTab={activeSubTab}
             activeDailyView={activeDailyView}
             rankingParams={rankingParams}
-            setRankingParams={setRankingParams}
             rankingQuery={rankingQuery}
-            topix100RankingQuery={topix100RankingQuery}
             fundamentalRankingQuery={fundamentalRankingQuery}
             valueCompositeRankingQuery={valueCompositeRankingQuery}
             onStockClick={handleStockClick}

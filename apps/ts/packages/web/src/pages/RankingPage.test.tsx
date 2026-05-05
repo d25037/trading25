@@ -6,14 +6,14 @@ import {
   DEFAULT_RANKING_PARAMS,
   DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS,
 } from '@/stores/screeningStore';
-import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
+import type { RankingPageTab } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
 const mockNavigate = vi.fn();
 const mockSetActiveSubTab = vi.fn((tab: RankingPageTab) => {
   mockRouteState.activeSubTab = tab;
 });
-const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
+const mockSetActiveDailyView = vi.fn((view: 'stocks' | 'indices') => {
   mockRouteState.activeDailyView = view;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
@@ -27,7 +27,7 @@ const mockSetValueCompositeRankingParams = vi.fn((params: typeof DEFAULT_VALUE_C
 });
 const mockRouteState = {
   activeSubTab: 'ranking' as RankingPageTab,
-  activeDailyView: 'stocks' as RankingDailyView,
+  activeDailyView: 'stocks' as 'stocks' | 'indices',
   setActiveSubTab: mockSetActiveSubTab,
   setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
@@ -71,43 +71,6 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useTopix100Ranking', () => ({
-  useTopix100Ranking: () => ({
-    data: {
-      date: '2026-03-25',
-      studyMode: 'swing_5d',
-      rankingMetric: 'price_vs_sma_gap',
-      smaWindow: 50,
-      shortWindowStreaks: 3,
-      longWindowStreaks: 53,
-      longScoreHorizonDays: 5,
-      shortScoreHorizonDays: 1,
-      scoreTarget: 'next_session_open_to_open_5d',
-      intradayScoreTarget: 'next_session_open_close',
-      scoreModelType: 'daily_refit',
-      scoreTrainWindowDays: 756,
-      scoreTestWindowDays: 1,
-      scoreStepDays: 1,
-      scoreSplitTrainStart: '2023-01-04',
-      scoreSplitTrainEnd: '2025-12-30',
-      scoreSplitTestStart: null,
-      scoreSplitTestEnd: null,
-      scoreSplitPartialTail: false,
-      scoreSourceRunId: '20260406_180623_c0eb7f87',
-      primaryBenchmark: 'topix',
-      secondaryBenchmark: 'topix100_universe',
-      primaryBenchmarkReturn: 0.01,
-      secondaryBenchmarkReturn: 0.006,
-      benchmarkEntryDate: '2026-03-26',
-      benchmarkExitDate: '2026-04-02',
-      itemCount: 0,
-      items: [],
-    },
-    isLoading: false,
-    error: null,
-  }),
-}));
-
 vi.mock('@/hooks/useValueCompositeRanking', () => ({
   useValueCompositeRanking: () => ({
     data: {
@@ -141,12 +104,6 @@ vi.mock('@/components/Ranking', () => ({
   RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
     <button type="button" onClick={() => onStockClick('6758')}>
       Ranking Row
-    </button>
-  ),
-  Topix100RankingFilters: () => <div>TOPIX100 Ranking Filters</div>,
-  Topix100RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('7203')}>
-      TOPIX100 Ranking Table
     </button>
   ),
 }));
@@ -194,7 +151,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'TOPIX100 Study' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Value Scores' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
@@ -249,19 +206,6 @@ describe('RankingPage', () => {
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
   });
 
-  it('switches daily ranking to topix100 view', async () => {
-    const user = userEvent.setup();
-    const view = render(<RankingPage />);
-
-    await user.click(screen.getByRole('button', { name: 'TOPIX100 Study' }));
-    view.rerender(<RankingPage />);
-
-    expect(screen.getByText('Price / SMA50 Gap')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Ranking Filters')).toBeInTheDocument();
-    expect(screen.getByText('TOPIX100 Ranking Table')).toBeInTheDocument();
-    expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
-  });
-
   it('navigates to indices when an index row is selected', async () => {
     const user = userEvent.setup();
     mockRouteState.activeDailyView = 'indices';
@@ -280,12 +224,4 @@ describe('RankingPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '9984' } });
   });
 
-  it('navigates to the symbol workbench when a TOPIX100 row is selected', async () => {
-    const user = userEvent.setup();
-    mockRouteState.activeDailyView = 'topix100';
-    render(<RankingPage />);
-
-    await user.click(screen.getByText('TOPIX100 Ranking Table'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '7203' } });
-  });
 });

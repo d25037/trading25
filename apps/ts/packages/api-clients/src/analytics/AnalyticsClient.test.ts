@@ -93,21 +93,6 @@ describe('AnalyticsClient', () => {
     );
   });
 
-  test('getTopix100Ranking builds query parameters', async () => {
-    fetchSpy.mockResolvedValueOnce(createMockResponse({ items: [] }));
-
-    await client.getTopix100Ranking({
-      date: '2026-03-25',
-      studyMode: 'swing_5d',
-      metric: 'price_vs_sma_gap',
-      smaWindow: 100,
-    });
-
-    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/topix100-ranking?date=2026-03-25&studyMode=swing_5d&metric=price_vs_sma_gap&smaWindow=100'
-    );
-  });
-
   test('getValueCompositeRanking builds query parameters', async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ items: [] }));
 
