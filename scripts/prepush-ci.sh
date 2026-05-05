@@ -7,15 +7,17 @@ uv_cache_dir="${UV_CACHE_DIR:-/tmp/uv-cache}"
 include_security=false
 include_web_e2e=false
 skip_install=false
+force_full=false
 
 usage() {
   cat <<'EOF'
 Usage: scripts/prepush-ci.sh [--full] [--security] [--web-e2e] [--skip-install]
 
-Run local checks before push using the same repo scripts that CI uses.
+Run local checks before push using the same changed-file tiers that CI uses.
+By default, changed files are compared against PREPUSH_BASE_REF or origin/main.
 
 Options:
-  --full         Include security audits and web E2E smoke.
+  --full         Force all tiers, and include security audits and web E2E smoke.
   --security     Include dependency audit and secret scan.
   --web-e2e      Include Playwright smoke with bt server startup.
   --skip-install Assume deps are already prepared and skip shared install.
@@ -26,6 +28,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --full)
+      force_full=true
       include_security=true
       include_web_e2e=true
       ;;
@@ -54,6 +57,12 @@ done
 coverage_dir="$(mktemp -d "/tmp/trading25-prepush-coverage.XXXXXX")"
 bt_server_pid=""
 secret_scan_dir=""
+changed_files_path=""
+product_ci=false
+research_ci=false
+contracts_ci=false
+security_ci=false
+docs_only=false
 
 cleanup() {
   if [[ -n "${bt_server_pid}" ]] && kill -0 "${bt_server_pid}" >/dev/null 2>&1; then
@@ -62,6 +71,9 @@ cleanup() {
   fi
   if [[ -n "${secret_scan_dir}" && -d "${secret_scan_dir}" ]]; then
     rm -rf "${secret_scan_dir}"
+  fi
+  if [[ -n "${changed_files_path}" && -f "${changed_files_path}" ]]; then
+    rm -f "${changed_files_path}"
   fi
   rm -rf "${coverage_dir}"
 }
@@ -84,18 +96,100 @@ ensure_command() {
   fi
 }
 
-install_shared_deps() {
+install_ts_deps() {
   run_step "deps:apps/ts" bash -lc "cd \"${repo_root}/apps/ts\" && bun install --frozen-lockfile"
+}
+
+install_bt_deps() {
   run_step "deps:apps/bt" bash -lc "cd \"${repo_root}/apps/bt\" && UV_CACHE_DIR=\"${uv_cache_dir}\" uv sync --locked"
 }
 
-run_core_suite() {
+install_deps_for_scope() {
+  if ${skip_install}; then
+    return
+  fi
+
+  if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+    install_ts_deps
+  fi
+  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+    install_bt_deps
+  fi
+}
+
+collect_changed_files() {
+  changed_files_path="$(mktemp "/tmp/trading25-prepush-changed-files.XXXXXX")"
+
+  if ${force_full}; then
+    git -C "${repo_root}" ls-files >"${changed_files_path}"
+    return
+  fi
+
+  local base_ref="${PREPUSH_BASE_REF:-origin/main}"
+  local base_commit=""
+  if git -C "${repo_root}" rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1; then
+    base_commit="$(git -C "${repo_root}" merge-base "${base_ref}" HEAD || true)"
+  fi
+
+  {
+    if [[ -n "${base_commit}" ]]; then
+      git -C "${repo_root}" diff --name-only "${base_commit}" HEAD
+    else
+      git -C "${repo_root}" diff --name-only HEAD
+    fi
+    git -C "${repo_root}" diff --name-only
+    git -C "${repo_root}" diff --cached --name-only
+    git -C "${repo_root}" ls-files --others --exclude-standard
+  } | sort -u >"${changed_files_path}"
+}
+
+classify_scope() {
+  local line
+  while IFS= read -r line; do
+    case "${line}" in
+      product_ci=true) product_ci=true ;;
+      product_ci=false) product_ci=false ;;
+      research_ci=true) research_ci=true ;;
+      research_ci=false) research_ci=false ;;
+      contracts_ci=true) contracts_ci=true ;;
+      contracts_ci=false) contracts_ci=false ;;
+      security_ci=true) security_ci=true ;;
+      security_ci=false) security_ci=false ;;
+      docs_only=true) docs_only=true ;;
+      docs_only=false) docs_only=false ;;
+    esac
+  done < <(python3 "${repo_root}/scripts/ci/changed-scope.py" <"${changed_files_path}")
+
+  echo "[prepush-ci] scope: product=${product_ci} research=${research_ci} contracts=${contracts_ci} security=${security_ci} docs_only=${docs_only}"
+}
+
+ensure_commands_for_scope() {
+  ensure_command git "changed-file detection"
+  ensure_command python3 "scope classification"
+
+  if ${product_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+    ensure_command bun "apps/ts checks"
+  fi
+  if ${product_ci} || ${research_ci} || ${contracts_ci} || ${security_ci} || ${include_security} || ${include_web_e2e}; then
+    ensure_command uv "apps/bt checks"
+  fi
+}
+
+run_repo_guardrails() {
   run_step "quality:audit-skills" python3 "${repo_root}/scripts/skills/audit_skills.py" --strict-legacy
   run_step "quality:privacy-leak-check" python3 "${repo_root}/scripts/check-privacy-leaks.py"
-  run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
+}
+
+run_quality_suite() {
   run_step "quality:lint" "${repo_root}/scripts/lint.sh"
   run_step "quality:typecheck" "${repo_root}/scripts/typecheck.sh"
+}
+
+run_contract_suite() {
   run_step "contract-tests" "${repo_root}/scripts/check-contract-sync.sh"
+}
+
+run_product_test_suite() {
   run_step "golden-dataset-regression" "${repo_root}/scripts/test-golden-regression.sh"
   run_step \
     "package-unit-tests" \
@@ -116,6 +210,15 @@ run_core_suite() {
     CI_DEPS_READY=1 \
     BT_COVERAGE_INPUT_DIR="${coverage_dir}" \
     "${repo_root}/scripts/coverage-gate.sh"
+}
+
+run_research_suite() {
+  run_step "quality:research-guardrails" python3 "${repo_root}/scripts/check-research-guardrails.py"
+  run_step \
+    "bt-research-tests" \
+    env \
+    BT_PYTEST_FAST=1 \
+    "${repo_root}/scripts/bt-pytest.sh" tests/unit/domains/analytics tests/unit/scripts
 }
 
 run_security_suite() {
@@ -162,17 +265,38 @@ run_web_e2e_suite() {
 }
 
 main() {
-  ensure_command bun "apps/ts checks"
-  ensure_command uv "apps/bt checks"
-  ensure_command python3 "skill audit"
+  ensure_command git "changed-file detection"
+  ensure_command python3 "scope classification"
 
-  if ! ${skip_install}; then
-    install_shared_deps
+  collect_changed_files
+  classify_scope
+  ensure_commands_for_scope
+
+  if ${docs_only} && ! ${include_security} && ! ${include_web_e2e}; then
+    echo "[prepush-ci] docs-only change; no local CI tiers selected."
+    echo
+    echo "[prepush-ci] PASS"
+    return
   fi
 
-  run_core_suite
+  install_deps_for_scope
 
-  if ${include_security}; then
+  run_repo_guardrails
+
+  if ${product_ci}; then
+    run_quality_suite
+    run_product_test_suite
+  fi
+
+  if ${contracts_ci}; then
+    run_contract_suite
+  fi
+
+  if ${research_ci}; then
+    run_research_suite
+  fi
+
+  if ${security_ci} || ${include_security}; then
     run_security_suite
   fi
 

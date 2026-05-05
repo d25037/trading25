@@ -1,0 +1,76 @@
+"""Tests for scripts/ci/research-test-targets.py."""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def _load_module():
+    repo_root = Path(__file__).resolve().parents[5]
+    module_path = repo_root / "scripts" / "ci" / "research-test-targets.py"
+    spec = importlib.util.spec_from_file_location("research_test_targets", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Failed to load research_test_targets module")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["research_test_targets"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_runner_change_maps_to_matching_runner_test() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/scripts/research/run_volume_ratio_future_return_regime.py"]
+    )
+
+    assert targets == (
+        "tests/unit/scripts/test_run_volume_ratio_future_return_regime.py",
+    )
+
+
+def test_research_module_change_maps_to_matching_domain_test() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py"]
+    )
+
+    assert targets == (
+        "tests/unit/domains/analytics/test_volume_ratio_future_return_regime.py",
+    )
+
+
+def test_archived_invalidated_research_module_is_linted_but_not_pytested() -> None:
+    module = _load_module()
+
+    path = (
+        "apps/bt/src/domains/analytics/"
+        "topix100_streak_353_next_session_open_to_close_5d_lightgbm_walkforward.py"
+    )
+
+    assert module.pytest_targets_for_research_changes([path]) == ()
+    assert module.research_python_files([path]) == (path,)
+
+
+def test_research_bundle_change_keeps_infra_tests() -> None:
+    module = _load_module()
+
+    targets = module.pytest_targets_for_research_changes(
+        ["apps/bt/src/domains/analytics/research_bundle.py"]
+    )
+
+    assert targets == (
+        "tests/unit/scripts/test_check_research_guardrails.py",
+        "tests/unit/domains/analytics/test_research_bundle.py",
+    )
+
+
+def test_docs_change_has_no_pytest_target() -> None:
+    module = _load_module()
+
+    assert module.pytest_targets_for_research_changes(
+        ["apps/bt/docs/experiments/market-behavior/foo/README.md"]
+    ) == ()

@@ -148,12 +148,6 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       rankingPeriodDays: '60',
-      rankingTopix100Metric: 'price_vs_sma20_gap',
-      rankingTopix100SmaWindow: '100',
-      rankingTopix100PriceBucket: 'q10',
-      rankingTopix100StudyMode: 'intraday',
-      rankingTopix100SortBy: 'longScore5d',
-      rankingTopix100SortOrder: 'desc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: '7',
@@ -161,97 +155,50 @@ describe('routeSearch', () => {
 
     const state = getScreeningStateFromSearch(search);
 
-    expect(state.rankingParams.topix100StudyMode).toBe('intraday');
-    expect(state.rankingParams.topix100SortBy).toBe('intradayScore');
-
     expect(serializeScreeningSearch(state)).toEqual({
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 60,
-      rankingTopix100SmaWindow: 100,
-      rankingTopix100PriceBucket: 'q10',
-      rankingTopix100StudyMode: 'intraday',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
     });
   });
 
-  it('normalizes topix100 default sort when study mode changes through url state', () => {
+  it('drops removed topix100 ranking url state', () => {
     const rankingSearch = validateRankingSearch({
       dailyView: 'topix100',
       rankingTopix100StudyMode: 'intraday',
-    });
-
-    const rankingState = getRankingStateFromSearch(rankingSearch);
-
-    expect(rankingState.rankingParams.topix100StudyMode).toBe('intraday');
-    expect(rankingState.rankingParams.topix100SortBy).toBe('intradayScore');
-    expect(serializeRankingSearch(rankingState)).toEqual({
-      dailyView: 'topix100',
-      rankingTopix100StudyMode: 'intraday',
-    });
-  });
-
-  it('migrates legacy topix100 sma20 metric urls to the new metric plus sma window', () => {
-    const search = validateScreeningSearch({
       rankingTopix100Metric: 'price_sma_20_80',
       rankingTopix100SmaWindow: '20',
-    });
-
-    expect(search).toEqual({
-      rankingTopix100Metric: 'price_sma_20_80',
-      rankingTopix100SmaWindow: 20,
-    });
-
-    const legacySearch = validateScreeningSearch({
-      rankingTopix100Metric: 'price_vs_sma20_gap',
-    });
-
-    expect(legacySearch).toEqual({
-      rankingTopix100Metric: 'price_vs_sma_gap',
-      rankingTopix100SmaWindow: 20,
-    });
-  });
-
-  it('migrates legacy q456 topix100 bucket urls to q234', () => {
-    const search = validateRankingSearch({
       rankingTopix100PriceBucket: 'q456',
+      rankingTopix100SortBy: 'shortScore1d',
     });
 
-    expect(search).toEqual({
-      rankingTopix100PriceBucket: 'q234',
-    });
+    expect(rankingSearch).toEqual({});
+    const rankingState = getRankingStateFromSearch(rankingSearch);
+    expect(rankingState.activeDailyView).toBe('stocks');
+    expect(serializeRankingSearch(rankingState)).toEqual({});
   });
 
   it('roundtrips ranking route state and maps screening ranking tabs', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'fundamentalRanking',
-      dailyView: 'topix100',
+      dailyView: 'indices',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
-      rankingTopix100StudyMode: 'intraday',
-      rankingTopix100Metric: 'price_vs_sma_gap',
-      rankingTopix100SmaWindow: '100',
-      rankingTopix100PriceBucket: 'q1',
-      rankingTopix100SortBy: 'shortScore1d',
-      rankingTopix100SortOrder: 'desc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
     expect(rankingState.activeSubTab).toBe('fundamentalRanking');
-    expect(rankingState.activeDailyView).toBe('topix100');
+    expect(rankingState.activeDailyView).toBe('indices');
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'fundamentalRanking',
-      dailyView: 'topix100',
+      dailyView: 'indices',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
-      rankingTopix100StudyMode: 'intraday',
-      rankingTopix100SmaWindow: 100,
-      rankingTopix100PriceBucket: 'q1',
-      rankingTopix100SortBy: 'intradayShortRank',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });

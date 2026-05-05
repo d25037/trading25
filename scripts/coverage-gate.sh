@@ -42,6 +42,27 @@ if [[ -n "${BT_COVERAGE_INPUT_DIR:-}" ]]; then
 else
   BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage run -m pytest tests/
 fi
-BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage report --fail-under=70
+bt_product_coverage_include=(
+  "src/application/**/*.py"
+  "src/domains/backtest/**/*.py"
+  "src/domains/fundamentals/**/*.py"
+  "src/domains/lab_agent/**/*.py"
+  "src/domains/optimization/**/*.py"
+  "src/domains/strategy/**/*.py"
+  "src/entrypoints/**/*.py"
+  "src/infrastructure/**/*.py"
+  "src/shared/**/*.py"
+  "src/domains/analytics/cost_structure.py"
+  "src/domains/analytics/fundamental_ranking.py"
+  "src/domains/analytics/margin_metrics.py"
+  "src/domains/analytics/regression_core.py"
+  "src/domains/analytics/screening_evaluator.py"
+  "src/domains/analytics/screening_requirements.py"
+  "src/domains/analytics/screening_results.py"
+  "src/domains/analytics/value_composite_scoring.py"
+)
+BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage report \
+  --fail-under=70 \
+  --include="$(IFS=,; echo "${bt_product_coverage_include[*]}")"
 
 echo "[coverage] PASS"

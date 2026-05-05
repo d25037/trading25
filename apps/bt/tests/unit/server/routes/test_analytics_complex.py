@@ -403,136 +403,15 @@ class TestRanking:
             assert resp.status_code == 422
 
 
-class TestTopix100Ranking:
-    def test_200_default(self, analytics_client):
+class TestTopix100RankingDemotion:
+    def test_topix100_ranking_is_not_a_production_api(self, analytics_client):
         resp = analytics_client.get("/api/analytics/topix100-ranking")
+        assert resp.status_code == 404
+
+    def test_topix100_ranking_is_not_published_in_openapi(self, analytics_client):
+        resp = analytics_client.get("/openapi.json")
         assert resp.status_code == 200
-        data = resp.json()
-        assert "date" in data
-        assert data["studyMode"] == "intraday"
-        assert data["rankingMetric"] == "price_vs_sma_gap"
-        assert data["smaWindow"] == 50
-        assert data["shortWindowStreaks"] == 3
-        assert data["longWindowStreaks"] == 53
-        assert data["scoreTarget"] == "next_session_open_close"
-        assert data["intradayScoreTarget"] == "next_session_open_close"
-        assert "itemCount" in data
-        assert "items" in data
-        assert "lastUpdated" in data
-
-    def test_item_shape(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/topix100-ranking")
-        assert resp.status_code == 200
-        data = resp.json()
-        if data["items"]:
-            item = data["items"][0]
-            assert "rank" in item
-            assert "code" in item
-            assert "priceVsSmaGap" in item
-            assert "priceSma20_80" in item
-            assert "volumeSma5_20" in item
-            assert "priceDecile" in item
-            assert "priceBucket" in item
-            assert "intradayScore" in item
-            assert "intradayLongRank" in item
-            assert "intradayShortRank" in item
-            assert "nextSessionDate" in item
-            assert "nextSessionIntradayReturn" in item
-
-    def test_supports_metric_query(self, analytics_client):
-        resp = analytics_client.get(
-            "/api/analytics/topix100-ranking?metric=price_sma_20_80"
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rankingMetric"] == "price_sma_20_80"
-
-    def test_supports_sma_window_query(self, analytics_client):
-        resp = analytics_client.get(
-            "/api/analytics/topix100-ranking?metric=price_vs_sma_gap&smaWindow=100"
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rankingMetric"] == "price_vs_sma_gap"
-        assert data["smaWindow"] == 100
-
-    def test_includes_next_session_realized_return_when_available(
-        self, analytics_client
-    ):
-        resp = analytics_client.get("/api/analytics/topix100-ranking?date=2024-02-20")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["date"] == "2024-02-20"
-        assert data["items"]
-        first_item = data["items"][0]
-        assert first_item["nextSessionDate"] == "2024-02-21"
-        assert first_item["nextSessionIntradayReturn"] is not None
-
-    def test_supports_swing_5d_study_mode(self, analytics_client, monkeypatch):
-        from src.domains.analytics.topix100_streak_353_signal_score_lightgbm import (
-            Topix100Streak353SignalScoreLightgbmSnapshot,
-            Topix100Streak353SignalScoreLightgbmSnapshotRow,
-        )
-
-        def _score_stub(*args, **kwargs):
-            return Topix100Streak353SignalScoreLightgbmSnapshot(
-                score_source_run_id="route-swing-run",
-                price_feature="price_vs_sma_50_gap",
-                volume_feature="volume_sma_5_20",
-                short_window_streaks=3,
-                long_window_streaks=53,
-                long_target_horizon_days=5,
-                short_target_horizon_days=1,
-                rows_by_code={
-                    "72030": Topix100Streak353SignalScoreLightgbmSnapshotRow(
-                        code="72030",
-                        company_name="トヨタ自動車",
-                        date="2024-02-14",
-                        long_score_5d=0.012,
-                        short_score_1d=None,
-                    ),
-                    "67580": Topix100Streak353SignalScoreLightgbmSnapshotRow(
-                        code="67580",
-                        company_name="ソニーグループ",
-                        date="2024-02-14",
-                        long_score_5d=0.008,
-                        short_score_1d=None,
-                    ),
-                },
-            )
-
-        monkeypatch.setattr(
-            "src.application.services.ranking_service.score_topix100_streak_353_next_session_open_to_open_5d_lightgbm_snapshot",
-            _score_stub,
-        )
-
-        resp = analytics_client.get(
-            "/api/analytics/topix100-ranking?date=2024-02-14&studyMode=swing_5d"
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["studyMode"] == "swing_5d"
-        assert data["scoreTarget"] == "next_session_open_to_open_5d"
-        assert data["primaryBenchmark"] == "topix"
-        assert data["secondaryBenchmark"] == "topix100_universe"
-        assert data["primaryBenchmarkReturn"] is not None
-        assert data["secondaryBenchmarkReturn"] is not None
-        assert data["benchmarkEntryDate"] == "2024-02-15"
-        assert data["benchmarkExitDate"] == "2024-02-22"
-        scored_item = next(
-            item for item in data["items"] if item["longScore5d"] is not None
-        )
-        assert scored_item["longScore5d"] is not None
-        assert scored_item["swingEntryDate"] == "2024-02-15"
-        assert scored_item["swingExitDate"] == "2024-02-22"
-        assert scored_item["openToOpen5dReturn"] is not None
-
-    def test_422_no_db(self):
-        app = create_app()
-        with TestClient(app) as client:
-            app.state.market_reader = None
-            resp = client.get("/api/analytics/topix100-ranking")
-            assert resp.status_code == 422
+        assert "/api/analytics/topix100-ranking" not in resp.json()["paths"]
 
 
 class TestFundamentalRanking:
