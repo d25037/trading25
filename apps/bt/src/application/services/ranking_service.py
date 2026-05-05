@@ -37,7 +37,7 @@ from src.domains.analytics.fundamental_ranking import (
     resolve_fy_cycle_key as _resolve_fy_cycle_key,
     to_nullable_float as _to_nullable_float,
 )
-from src.domains.analytics.annual_value_composite_selection import (
+from src.domains.analytics.value_composite_scoring import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
     PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,

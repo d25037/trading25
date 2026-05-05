@@ -31,7 +31,6 @@ RESEARCH_MODULE_MARKERS = (
     "research_bundle.py",
 )
 PRODUCTION_ANALYTICS_MODULES = {
-    "annual_value_composite_selection",
     "cost_structure",
     "fundamental_ranking",
     "margin_metrics",
@@ -39,6 +38,7 @@ PRODUCTION_ANALYTICS_MODULES = {
     "screening_evaluator",
     "screening_requirements",
     "screening_results",
+    "value_composite_scoring",
 }
 PRODUCT_PREFIXES = (
     "apps/bt/src/entrypoints/",

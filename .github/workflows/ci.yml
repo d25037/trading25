@@ -351,10 +351,34 @@ jobs:
       - name: Install deps (apps/bt)
         run: uv sync --locked
         working-directory: apps/bt
+      - name: Determine changed research files
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}" > /tmp/research-changed-files.txt
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/research-changed-files.txt
+          else
+            : > /tmp/research-changed-files.txt
+          fi
+          cat /tmp/research-changed-files.txt
       - name: Check research guardrails
-        run: python scripts/check-research-guardrails.py
+        run: python scripts/check-research-guardrails.py $(cat /tmp/research-changed-files.txt)
+      - name: Lint changed research Python
+        run: |
+          python scripts/ci/research-test-targets.py --mode py-files < /tmp/research-changed-files.txt > /tmp/research-python-files.txt
+          if [[ -s /tmp/research-python-files.txt ]]; then
+            uv run --project apps/bt ruff check $(cat /tmp/research-python-files.txt)
+          else
+            echo "No changed research Python files to lint."
+          fi
       - name: Run bt research unit tests
-        run: ./scripts/bt-pytest.sh tests/unit/domains/analytics tests/unit/scripts
+        run: |
+          python scripts/ci/research-test-targets.py < /tmp/research-changed-files.txt > /tmp/research-test-targets.txt
+          if [[ -s /tmp/research-test-targets.txt ]]; then
+            ./scripts/bt-pytest.sh $(cat /tmp/research-test-targets.txt)
+          else
+            echo "No mapped research pytest targets for this change."
+          fi
         env:
           BT_PYTEST_FAST: "1"
 

@@ -67,11 +67,35 @@ def test_research_analytics_module_change_is_research_only() -> None:
     assert scope.docs_only is False
 
 
+def test_value_composite_research_module_change_is_research_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        ["apps/bt/src/domains/analytics/annual_value_composite_selection.py"]
+    )
+
+    assert scope.product_ci is False
+    assert scope.research_ci is True
+    assert scope.docs_only is False
+
+
 def test_api_backed_analytics_module_change_is_product_only() -> None:
     module = _load_module()
 
     scope = module.classify_changed_paths(
         ["apps/bt/src/domains/analytics/screening_evaluator.py"]
+    )
+
+    assert scope.product_ci is True
+    assert scope.research_ci is False
+    assert scope.docs_only is False
+
+
+def test_value_composite_scoring_change_is_product_only() -> None:
+    module = _load_module()
+
+    scope = module.classify_changed_paths(
+        ["apps/bt/src/domains/analytics/value_composite_scoring.py"]
     )
 
     assert scope.product_ci is True
