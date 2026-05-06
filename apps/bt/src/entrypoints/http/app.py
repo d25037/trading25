@@ -25,7 +25,7 @@ from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddlewa
 from src.entrypoints.http.error_utils import extract_http_exception_detail
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
-from src.entrypoints.http.routes import analytics_complex, analytics_market, chart, jquants_proxy, market_data
+from src.entrypoints.http.routes import analytics_complex, analytics_market, chart, jquants_proxy, market_data, moomoo
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -45,6 +45,7 @@ from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
 from src.application.services.margin_analytics_service import create_market_margin_analytics_service
 from src.application.services.market_data_service import MarketDataService
+from src.application.services.moomoo_market_data_service import MoomooMarketDataService
 from src.application.services.optimization_service import optimization_service
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.roe_service import create_market_roe_service
@@ -53,6 +54,7 @@ from src.application.services.screening_job_service import (
     screening_job_service,
 )
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
+from src.infrastructure.external_api.clients.moomoo_quote_client import MoomooOpenDConfig, MoomooQuoteClient
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -60,6 +62,9 @@ _STATUS_TEXT: dict[int, str] = {
     404: "Not Found",
     409: "Conflict",
     422: "Unprocessable Entity",
+    502: "Bad Gateway",
+    503: "Service Unavailable",
+    504: "Gateway Timeout",
     500: "Internal Server Error",
     501: "Not Implemented",
 }
@@ -107,6 +112,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.jquants_client = jquants_client
     app.state.jquants_proxy_service = JQuantsProxyService(jquants_client)
+    app.state.moomoo_market_data_service = MoomooMarketDataService(
+        MoomooQuoteClient(
+            MoomooOpenDConfig(
+                host=settings.moomoo_opend_host,
+                port=settings.moomoo_opend_port,
+                is_encrypt=settings.moomoo_opend_is_encrypt,
+                enabled=settings.moomoo_opend_enabled,
+                max_history_rows=settings.moomoo_opend_max_history_rows,
+            )
+        )
+    )
 
     # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
@@ -364,6 +380,7 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(snapshots.router)
     app.include_router(fundamentals.router)
     app.include_router(jquants_proxy.router)
+    app.include_router(moomoo.router)
     app.include_router(analytics_market.router)
     app.include_router(market_data.router)
     app.include_router(chart.router)

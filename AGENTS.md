@@ -59,6 +59,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
 - **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は削除済み）
 - `GET /api/market/options/225` は DuckDB local read を SoT とし、`options_225_data` が空なら `market_db_sync` recovery を返して live proxy fallback は行わない
+- moomoo OpenD 統合は米国株の read-only 情報収集・研究用途に限定する。`/api/moomoo/*` は quote / static info / historical kline / snapshot のみを扱い、注文・取引・口座操作 API は導入しない。moomoo 由来の米国株データは J-Quants / 日本株 `market.duckdb` と混ぜず、永続化する場合は別 Data Plane として設計する
 
 ## OpenAPI契約
 

@@ -58,6 +58,13 @@ class Settings(BaseModel):
     jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")
     jquants_plan: str = Field(default="free", alias="JQUANTS_PLAN")
 
+    # moomoo OpenD read-only quote API
+    moomoo_opend_enabled: bool = Field(default=True, alias="MOOMOO_OPEND_ENABLED")
+    moomoo_opend_host: str = Field(default="127.0.0.1", alias="MOOMOO_OPEND_HOST")
+    moomoo_opend_port: int = Field(default=11111, ge=1, le=65535, alias="MOOMOO_OPEND_PORT")
+    moomoo_opend_is_encrypt: bool = Field(default=False, alias="MOOMOO_OPEND_IS_ENCRYPT")
+    moomoo_opend_max_history_rows: int = Field(default=5000, ge=1, alias="MOOMOO_OPEND_MAX_HISTORY_ROWS")
+
     # Deprecated alias (legacy name): now points to DuckDB time-series file.
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 

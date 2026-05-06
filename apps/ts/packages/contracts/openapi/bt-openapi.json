@@ -8242,6 +8242,595 @@
         "title": "MinuteBarsResponse",
         "type": "object"
       },
+      "MoomooStatusResponse": {
+        "description": "moomoo OpenD read-only integration status.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "mode": {
+            "const": "read_only",
+            "default": "read_only",
+            "title": "Mode",
+            "type": "string"
+          },
+          "openDReachable": {
+            "title": "Opendreachable",
+            "type": "boolean"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "quoteContextReady": {
+            "title": "Quotecontextready",
+            "type": "boolean"
+          },
+          "sdkInstalled": {
+            "title": "Sdkinstalled",
+            "type": "boolean"
+          },
+          "supportedMarkets": {
+            "items": {
+              "const": "US",
+              "type": "string"
+            },
+            "title": "Supportedmarkets",
+            "type": "array"
+          },
+          "tradeApiEnabled": {
+            "const": false,
+            "default": false,
+            "title": "Tradeapienabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "sdkInstalled",
+          "openDReachable",
+          "quoteContextReady",
+          "host",
+          "port"
+        ],
+        "title": "MoomooStatusResponse",
+        "type": "object"
+      },
+      "MoomooUsHistoryResponse": {
+        "description": "US historical candlestick response.",
+        "properties": {
+          "adjustment": {
+            "const": "qfq",
+            "title": "Adjustment",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "hasMore": {
+            "title": "Hasmore",
+            "type": "boolean"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/MoomooUsKlineItem"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "timeframe": {
+            "const": "1d",
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "code",
+          "timeframe",
+          "adjustment",
+          "rows",
+          "count",
+          "hasMore",
+          "lastUpdated"
+        ],
+        "title": "MoomooUsHistoryResponse",
+        "type": "object"
+      },
+      "MoomooUsKlineItem": {
+        "description": "US historical daily candlestick row from moomoo OpenD.",
+        "properties": {
+          "changeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changerate"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "lastClose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastclose"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "open": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open"
+          },
+          "peRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peratio"
+          },
+          "timeKey": {
+            "title": "Timekey",
+            "type": "string"
+          },
+          "turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover"
+          },
+          "turnoverRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnoverrate"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "required": [
+          "code",
+          "timeKey"
+        ],
+        "title": "MoomooUsKlineItem",
+        "type": "object"
+      },
+      "MoomooUsSnapshotItem": {
+        "description": "US market snapshot row from moomoo OpenD.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "highPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Highprice"
+          },
+          "lastPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastprice"
+          },
+          "lowPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lowprice"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "openPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openprice"
+          },
+          "pbRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbratio"
+          },
+          "peRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peratio"
+          },
+          "prevClosePrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevcloseprice"
+          },
+          "suspension": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspension"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "totalMarketValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalmarketvalue"
+          },
+          "turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnover"
+          },
+          "turnoverRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnoverrate"
+          },
+          "updateTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatetime"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "required": [
+          "code",
+          "symbol"
+        ],
+        "title": "MoomooUsSnapshotItem",
+        "type": "object"
+      },
+      "MoomooUsSnapshotResponse": {
+        "description": "US market snapshot response.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MoomooUsSnapshotItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "symbols": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Symbols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "symbols",
+          "items",
+          "count",
+          "lastUpdated"
+        ],
+        "title": "MoomooUsSnapshotResponse",
+        "type": "object"
+      },
+      "MoomooUsStockInfo": {
+        "description": "US stock static information from moomoo OpenD.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "delisting": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delisting"
+          },
+          "exchangeType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchangetype"
+          },
+          "listingDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Listingdate"
+          },
+          "lotSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lotsize"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "stockType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stocktype"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "symbol"
+        ],
+        "title": "MoomooUsStockInfo",
+        "type": "object"
+      },
+      "MoomooUsStockSearchResponse": {
+        "description": "US stock search response.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MoomooUsStockInfo"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "items",
+          "count",
+          "lastUpdated"
+        ],
+        "title": "MoomooUsStockSearchResponse",
+        "type": "object"
+      },
       "N225OptionItem": {
         "description": "Normalized Nikkei 225 option daily bar item.",
         "properties": {
@@ -26978,6 +27567,362 @@
         ]
       }
     },
+    "/api/moomoo/status": {
+      "get": {
+        "description": "Return read-only moomoo OpenD integration status.",
+        "operationId": "get_moomoo_status_api_moomoo_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoomooStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Moomoo Status",
+        "tags": [
+          "Moomoo OpenD"
+        ]
+      }
+    },
+    "/api/moomoo/us/history": {
+      "get": {
+        "description": "Fetch US daily historical candlesticks from moomoo OpenD.",
+        "operationId": "get_us_history_api_moomoo_us_history_get",
+        "parameters": [
+          {
+            "description": "US symbol, with or without US. prefix",
+            "in": "query",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "US symbol, with or without US. prefix",
+              "maxLength": 32,
+              "minLength": 1,
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date (YYYY-MM-DD)",
+              "title": "From"
+            }
+          },
+          {
+            "description": "End date (YYYY-MM-DD)",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date (YYYY-MM-DD)",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Maximum rows to return",
+            "in": "query",
+            "name": "max_rows",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 5000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum rows to return",
+              "title": "Max Rows"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoomooUsHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Us History",
+        "tags": [
+          "Moomoo OpenD"
+        ]
+      }
+    },
+    "/api/moomoo/us/snapshot": {
+      "get": {
+        "description": "Fetch US market snapshots from moomoo OpenD.",
+        "operationId": "get_us_snapshot_api_moomoo_us_snapshot_get",
+        "parameters": [
+          {
+            "description": "US symbols",
+            "in": "query",
+            "name": "symbols",
+            "required": true,
+            "schema": {
+              "description": "US symbols",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "title": "Symbols",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoomooUsSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Us Snapshot",
+        "tags": [
+          "Moomoo OpenD"
+        ]
+      }
+    },
+    "/api/moomoo/us/stocks/search": {
+      "get": {
+        "description": "Search US stocks through moomoo OpenD static information.",
+        "operationId": "search_us_stocks_api_moomoo_us_stocks_search_get",
+        "parameters": [
+          {
+            "description": "US ticker or company name fragment",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "US ticker or company name fragment",
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of matches",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum number of matches",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoomooUsStockSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Search Us Stocks",
+        "tags": [
+          "Moomoo OpenD"
+        ]
+      }
+    },
     "/api/ohlcv/resample": {
       "post": {
         "description": "OHLCVデータを指定したTimeframe（週足/月足）に変換します。\n\n**機能**:\n- 日足→週足/月足のリサンプル\n- 相対OHLC（ベンチマーク比較）変換（オプション）\n\n**仕様**: docs/spec-timeframe-resample.md を参照\n\n**計算順序**: Relative OHLC計算 → Timeframe Resample\n\n**集約ルール**:\n- Open: first（期間最初の始値）\n- High: max（期間中の最高値）\n- Low: min（期間中の最安値）\n- Close: last（期間最後の終値）\n- Volume: sum（期間の出来高合計）",
@@ -30583,6 +31528,10 @@
     {
       "description": "Layer 1 raw JQuants data for debugging and development",
       "name": "JQuants Proxy"
+    },
+    {
+      "description": "Read-only moomoo OpenD US market data for research",
+      "name": "Moomoo OpenD"
     },
     {
       "description": "Layer 2 optimized chart-ready data (production, caching enabled)",

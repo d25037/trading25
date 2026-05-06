@@ -15,6 +15,7 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     # Hono 互換（operation tags 基準）
     {"name": "Health", "description": "Health check endpoints for service monitoring"},
     {"name": "JQuants Proxy", "description": "Layer 1 raw JQuants data for debugging and development"},
+    {"name": "Moomoo OpenD", "description": "Read-only moomoo OpenD US market data for research"},
     {"name": "Chart", "description": "Layer 2 optimized chart-ready data (production, caching enabled)"},
     {"name": "Analytics", "description": "Layer 2 computed metrics and analytics for production"},
     {"name": "Market Data", "description": "Market data sync, validation, refresh, and database maintenance"},

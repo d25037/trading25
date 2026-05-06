@@ -2006,6 +2006,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/moomoo/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Moomoo Status
+         * @description Return read-only moomoo OpenD integration status.
+         */
+        get: operations["get_moomoo_status_api_moomoo_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moomoo/us/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Us History
+         * @description Fetch US daily historical candlesticks from moomoo OpenD.
+         */
+        get: operations["get_us_history_api_moomoo_us_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moomoo/us/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Us Snapshot
+         * @description Fetch US market snapshots from moomoo OpenD.
+         */
+        get: operations["get_us_snapshot_api_moomoo_us_snapshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/moomoo/us/stocks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Us Stocks
+         * @description Search US stocks through moomoo OpenD static information.
+         */
+        get: operations["search_us_stocks_api_moomoo_us_stocks_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ohlcv/resample": {
         parameters: {
             query?: never;
@@ -6928,6 +7008,188 @@ export interface components {
             data: components["schemas"]["MinuteBarItem"][];
             /** Pagination Key */
             pagination_key?: string | null;
+        };
+        /**
+         * MoomooStatusResponse
+         * @description moomoo OpenD read-only integration status.
+         */
+        MoomooStatusResponse: {
+            /** Enabled */
+            enabled: boolean;
+            /** Host */
+            host: string;
+            /** Message */
+            message?: string | null;
+            /**
+             * Mode
+             * @default read_only
+             * @constant
+             */
+            mode: "read_only";
+            /** Opendreachable */
+            openDReachable: boolean;
+            /** Port */
+            port: number;
+            /** Quotecontextready */
+            quoteContextReady: boolean;
+            /** Sdkinstalled */
+            sdkInstalled: boolean;
+            /** Supportedmarkets */
+            supportedMarkets?: "US"[];
+            /**
+             * Tradeapienabled
+             * @default false
+             * @constant
+             */
+            tradeApiEnabled: false;
+        };
+        /**
+         * MoomooUsHistoryResponse
+         * @description US historical candlestick response.
+         */
+        MoomooUsHistoryResponse: {
+            /**
+             * Adjustment
+             * @constant
+             */
+            adjustment: "qfq";
+            /** Code */
+            code: string;
+            /** Count */
+            count: number;
+            /** Hasmore */
+            hasMore: boolean;
+            /** Lastupdated */
+            lastUpdated: string;
+            /** Rows */
+            rows: components["schemas"]["MoomooUsKlineItem"][];
+            /** Symbol */
+            symbol: string;
+            /**
+             * Timeframe
+             * @constant
+             */
+            timeframe: "1d";
+        };
+        /**
+         * MoomooUsKlineItem
+         * @description US historical daily candlestick row from moomoo OpenD.
+         */
+        MoomooUsKlineItem: {
+            /** Changerate */
+            changeRate?: number | null;
+            /** Close */
+            close?: number | null;
+            /** Code */
+            code: string;
+            /** High */
+            high?: number | null;
+            /** Lastclose */
+            lastClose?: number | null;
+            /** Low */
+            low?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Open */
+            open?: number | null;
+            /** Peratio */
+            peRatio?: number | null;
+            /** Timekey */
+            timeKey: string;
+            /** Turnover */
+            turnover?: number | null;
+            /** Turnoverrate */
+            turnoverRate?: number | null;
+            /** Volume */
+            volume?: number | null;
+        };
+        /**
+         * MoomooUsSnapshotItem
+         * @description US market snapshot row from moomoo OpenD.
+         */
+        MoomooUsSnapshotItem: {
+            /** Code */
+            code: string;
+            /** Highprice */
+            highPrice?: number | null;
+            /** Lastprice */
+            lastPrice?: number | null;
+            /** Lowprice */
+            lowPrice?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Openprice */
+            openPrice?: number | null;
+            /** Pbratio */
+            pbRatio?: number | null;
+            /** Peratio */
+            peRatio?: number | null;
+            /** Prevcloseprice */
+            prevClosePrice?: number | null;
+            /** Suspension */
+            suspension?: boolean | null;
+            /** Symbol */
+            symbol: string;
+            /** Totalmarketvalue */
+            totalMarketValue?: number | null;
+            /** Turnover */
+            turnover?: number | null;
+            /** Turnoverrate */
+            turnoverRate?: number | null;
+            /** Updatetime */
+            updateTime?: string | null;
+            /** Volume */
+            volume?: number | null;
+        };
+        /**
+         * MoomooUsSnapshotResponse
+         * @description US market snapshot response.
+         */
+        MoomooUsSnapshotResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["MoomooUsSnapshotItem"][];
+            /** Lastupdated */
+            lastUpdated: string;
+            /** Symbols */
+            symbols: string[];
+        };
+        /**
+         * MoomooUsStockInfo
+         * @description US stock static information from moomoo OpenD.
+         */
+        MoomooUsStockInfo: {
+            /** Code */
+            code: string;
+            /** Delisting */
+            delisting?: boolean | null;
+            /** Exchangetype */
+            exchangeType?: string | null;
+            /** Listingdate */
+            listingDate?: string | null;
+            /** Lotsize */
+            lotSize?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Stocktype */
+            stockType?: string | null;
+            /** Symbol */
+            symbol: string;
+        };
+        /**
+         * MoomooUsStockSearchResponse
+         * @description US stock search response.
+         */
+        MoomooUsStockSearchResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["MoomooUsStockInfo"][];
+            /** Lastupdated */
+            lastUpdated: string;
+            /** Query */
+            query: string;
         };
         /**
          * N225OptionItem
@@ -17300,6 +17562,238 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketOHLCRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_moomoo_status_api_moomoo_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoomooStatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_us_history_api_moomoo_us_history_get: {
+        parameters: {
+            query: {
+                /** @description US symbol, with or without US. prefix */
+                symbol: string;
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Maximum rows to return */
+                max_rows?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoomooUsHistoryResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_us_snapshot_api_moomoo_us_snapshot_get: {
+        parameters: {
+            query: {
+                /** @description US symbols */
+                symbols: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoomooUsSnapshotResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    search_us_stocks_api_moomoo_us_stocks_search_get: {
+        parameters: {
+            query: {
+                /** @description US ticker or company name fragment */
+                query: string;
+                /** @description Maximum number of matches */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MoomooUsStockSearchResponse"];
                 };
             };
             /** @description Bad Request */

@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **138**
+Total paths: **142**
 
 ## /api/analytics
 
@@ -166,6 +166,15 @@ Total paths: **138**
 | `/api/market/stocks/{code}/minute-bars` | `GET` |
 | `/api/market/stocks/{code}/ohlcv` | `GET` |
 | `/api/market/topix` | `GET` |
+
+## /api/moomoo
+
+| Path | Methods |
+|---|---|
+| `/api/moomoo/status` | `GET` |
+| `/api/moomoo/us/history` | `GET` |
+| `/api/moomoo/us/snapshot` | `GET` |
+| `/api/moomoo/us/stocks/search` | `GET` |
 
 ## /api/ohlcv
 

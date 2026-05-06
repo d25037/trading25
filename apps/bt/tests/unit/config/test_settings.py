@@ -15,6 +15,11 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("BT_LAB_JOB_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("MOOMOO_OPEND_ENABLED", raising=False)
+    monkeypatch.delenv("MOOMOO_OPEND_HOST", raising=False)
+    monkeypatch.delenv("MOOMOO_OPEND_PORT", raising=False)
+    monkeypatch.delenv("MOOMOO_OPEND_IS_ENCRYPT", raising=False)
+    monkeypatch.delenv("MOOMOO_OPEND_MAX_HISTORY_ROWS", raising=False)
 
     settings = reload_settings()
 
@@ -24,6 +29,11 @@ def test_settings_defaults(monkeypatch):
     assert settings.backtest_job_timeout_seconds == 3600
     assert settings.optimization_job_timeout_seconds == 3600
     assert settings.lab_job_timeout_seconds == 3600
+    assert settings.moomoo_opend_enabled is True
+    assert settings.moomoo_opend_host == "127.0.0.1"
+    assert settings.moomoo_opend_port == 11111
+    assert settings.moomoo_opend_is_encrypt is False
+    assert settings.moomoo_opend_max_history_rows == 5000
 
 
 def test_settings_env_override(monkeypatch):
@@ -33,6 +43,11 @@ def test_settings_env_override(monkeypatch):
     monkeypatch.setenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", "1800")
     monkeypatch.setenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", "2400")
     monkeypatch.setenv("BT_LAB_JOB_TIMEOUT_SECONDS", "3000")
+    monkeypatch.setenv("MOOMOO_OPEND_ENABLED", "false")
+    monkeypatch.setenv("MOOMOO_OPEND_HOST", "localhost")
+    monkeypatch.setenv("MOOMOO_OPEND_PORT", "22222")
+    monkeypatch.setenv("MOOMOO_OPEND_IS_ENCRYPT", "true")
+    monkeypatch.setenv("MOOMOO_OPEND_MAX_HISTORY_ROWS", "2500")
 
     settings = reload_settings()
 
@@ -42,6 +57,11 @@ def test_settings_env_override(monkeypatch):
     assert settings.backtest_job_timeout_seconds == 1800
     assert settings.optimization_job_timeout_seconds == 2400
     assert settings.lab_job_timeout_seconds == 3000
+    assert settings.moomoo_opend_enabled is False
+    assert settings.moomoo_opend_host == "localhost"
+    assert settings.moomoo_opend_port == 22222
+    assert settings.moomoo_opend_is_encrypt is True
+    assert settings.moomoo_opend_max_history_rows == 2500
 
 
 def test_settings_cache(monkeypatch):
