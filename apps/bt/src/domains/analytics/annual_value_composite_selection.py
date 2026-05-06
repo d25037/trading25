@@ -195,9 +195,14 @@ def _market_scope_sort(frame: pd.DataFrame, extra_columns: Sequence[str]) -> pd.
     if frame.empty or "market_scope" not in frame.columns:
         return frame.reset_index(drop=True)
     result = frame.copy()
+    present_scopes = [str(scope) for scope in result["market_scope"].dropna().astype(str).unique()]
+    ordered_scopes = [
+        *[scope for scope in _MARKET_SCOPE_ORDER if scope in set(present_scopes)],
+        *[scope for scope in present_scopes if scope not in set(_MARKET_SCOPE_ORDER)],
+    ]
     result["market_scope"] = pd.Categorical(
         result["market_scope"].astype(str),
-        categories=[scope for scope in _MARKET_SCOPE_ORDER if scope in set(result["market_scope"])],
+        categories=ordered_scopes,
         ordered=True,
     )
     return result.sort_values(["market_scope", *extra_columns], kind="stable").reset_index(drop=True)

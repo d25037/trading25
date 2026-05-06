@@ -101,6 +101,8 @@
   - Prime top 5% で低PBRの追加 weight が小型・低forward PERに吸収されるのかを、PBR weight 感度と入替銘柄 profile で確認する実験。
 - [market-behavior/annual-market-specific-value-score-profile/](./market-behavior/annual-market-specific-value-score-profile/README.md)
   - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
+- [market-behavior/annual-large-universe-value-profile/](./market-behavior/annual-large-universe-value-profile/README.md)
+  - `TOPIX100` / `TOPIX500` 相当の大型 universe で、小型・低PBR・低forward PER のバランスが Prime / Standard profile からどう変わるかを確認する実験。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)
   - 低forward PER を positive-low と non-positive に分解し、低PBR + 小型 composite への寄与を event-level と portfolio lens で確認する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
