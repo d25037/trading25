@@ -103,6 +103,8 @@
   - Prime / Standard で小型・低PBR・低forward PER の配分を分け、Ranking page の `standard_pbr_tilt` / `prime_size_tilt` に落とした decision record。
 - [market-behavior/annual-large-universe-value-profile/](./market-behavior/annual-large-universe-value-profile/README.md)
   - `TOPIX100` / `TOPIX500` 相当の大型 universe で、小型・低PBR・低forward PER のバランスが Prime / Standard profile からどう変わるかを確認する実験。
+- [market-behavior/annual-large-universe-factor-family/](./market-behavior/annual-large-universe-factor-family/README.md)
+  - 大型 universe の低forward PER profile を、CFO yield、配当、営業利益率、quality / payout 系 fundamental factor で補強できるか確認する実験。
 - [market-behavior/annual-forward-per-regime-decomposition/](./market-behavior/annual-forward-per-regime-decomposition/README.md)
   - 低forward PER を positive-low と non-positive に分解し、低PBR + 小型 composite への寄与を event-level と portfolio lens で確認する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
