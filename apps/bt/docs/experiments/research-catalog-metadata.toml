@@ -115,6 +115,19 @@ relatedExperiments = [
   "strategy-audit/forward-eps-technical-horizon-decomposition",
 ]
 
+[experiments."market-behavior/new-high-momentum-research"]
+family = "Market Behavior"
+status = "candidate"
+decision = "N日新高値は単独long signalではなく候補生成に留める。Prime ex TOPIX500 / Standard では low PBR、CFO positive、quality、volume+quality が補助条件として有効だが、Growth 新高値と quality を伴わない出来高急増は避ける。"
+promotedSurface = "Research"
+riskFlags = ["new-high-momentum", "anchoring-reference", "volume-crowding", "pit-statement-as-of", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/high-zone-bearish-price-action",
+  "market-behavior/volume-ratio-future-return-regime",
+  "strategy-audit/range-break-trade-archetype-decomposition",
+  "market-behavior/annual-market-specific-value-score-profile",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"
