@@ -1447,6 +1447,57 @@ class TestGetValueCompositeRanking:
         assert result.item.pbr == pytest.approx(1.2)
         assert result.item.latestFyDisclosedDate == "2023-01-10"
 
+    def test_value_composite_score_falls_back_to_symbol_latest_price_date(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "39470",
+                    "Thin Standard",
+                    "THIN",
+                    "standard",
+                    "S",
+                    "S17",
+                    "素材",
+                    "S33",
+                    "パルプ・紙",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("39470", "2024-01-18", 2370.0, 2370.0, 2370.0, 2370.0, 600, 1.0, None),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    forecast_eps, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("39470", "2024-01-10", 320.0, "FY", 256.0, 4800.0, 10_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_score("3947")
+        reader.close()
+
+        assert result.date == "2024-01-18"
+        assert result.scoreAvailable is True
+        assert result.unsupportedReason is None
+        assert result.market == "standard"
+        assert result.item is not None
+        assert result.item.code == "39470"
+        assert result.item.currentPrice == pytest.approx(2370.0)
+
     def test_value_composite_score_reports_missing_bps(self, ranking_db):
         conn = duckdb.connect(ranking_db)
         try:

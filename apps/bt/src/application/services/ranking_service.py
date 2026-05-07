@@ -110,6 +110,14 @@ def _normalize_equity_code(code: object) -> str:
     return text
 
 
+def _equity_code_variants(code: object) -> tuple[str, ...]:
+    normalized = _normalize_equity_code(code)
+    variants = {normalized}
+    if len(normalized) == 4 and normalized.isdigit():
+        variants.add(f"{normalized}0")
+    return tuple(sorted(variants))
+
+
 def _finite_or_none(value: Any) -> float | None:
     number = _to_nullable_float(value)
     if number is None or not math.isfinite(number):
@@ -602,6 +610,10 @@ class RankingService:
         if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
             raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
         target_date = self._resolve_value_composite_target_date(date)
+        target_date = self._resolve_value_composite_symbol_target_date(
+            code,
+            target_date,
+        )
         _, all_query_market_codes = resolve_market_codes(
             "prime,standard,growth",
             fallback=["prime", "standard", "growth"],
@@ -733,6 +745,26 @@ class RankingService:
         if date_row is None or date_row["max_date"] is None:
             raise ValueError("No trading data available in database")
         return str(date_row["max_date"])
+
+    def _resolve_value_composite_symbol_target_date(
+        self,
+        code: str,
+        target_date: str,
+    ) -> str:
+        code_variants = _equity_code_variants(code)
+        placeholders = ",".join("?" for _ in code_variants)
+        row = self._reader.query_one(
+            f"""
+            SELECT MAX(date) AS max_date
+            FROM stock_data
+            WHERE date <= ?
+              AND code IN ({placeholders})
+            """,
+            (target_date, *code_variants),
+        )
+        if row is None or row["max_date"] is None:
+            return target_date
+        return str(row["max_date"])
 
     def _load_value_composite_scored_frame(
         self,
