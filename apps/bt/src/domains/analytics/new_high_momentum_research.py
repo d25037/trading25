@@ -155,6 +155,42 @@ CONDITION_DEFINITIONS: tuple[FilterDefinition, ...] = (
         "pbr > 0 AND pbr <= 1.0",
     ),
     FilterDefinition(
+        "annual_value",
+        "low_forward_per_le_10",
+        "Forward PER <= 10",
+        "forward_per > 0 AND forward_per <= 10",
+    ),
+    FilterDefinition(
+        "annual_value",
+        "low_forward_per_le_15",
+        "Forward PER <= 15",
+        "forward_per > 0 AND forward_per <= 15",
+    ),
+    FilterDefinition(
+        "annual_value",
+        "small_market_cap_bottom_30",
+        "Bottom 30% market cap among same-day new-high events",
+        "market_cap_event_percentile <= 0.30",
+    ),
+    FilterDefinition(
+        "annual_value",
+        "low_pbr_forward_per_15",
+        "PBR <= 1.0 and forward PER <= 15",
+        "pbr > 0 AND pbr <= 1.0 AND forward_per > 0 AND forward_per <= 15",
+    ),
+    FilterDefinition(
+        "annual_value",
+        "annual_value_score_ge_2",
+        "At least 2 of low PBR / low forward PER / small cap",
+        "annual_value_score >= 2",
+    ),
+    FilterDefinition(
+        "annual_value",
+        "annual_value_score_3",
+        "Low PBR, low forward PER, and small cap",
+        "annual_value_score = 3",
+    ),
+    FilterDefinition(
         "fundamental",
         "forward_eps_growth_positive",
         "Forecast EPS > actual EPS",
@@ -258,7 +294,13 @@ def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
             {key: index for index, key in enumerate(UNIVERSE_ORDER)}
         )
     if "condition_family" in result.columns:
-        family_order = {"baseline": 0, "technical": 1, "fundamental": 2, "interaction": 3}
+        family_order = {
+            "baseline": 0,
+            "technical": 1,
+            "fundamental": 2,
+            "annual_value": 3,
+            "interaction": 4,
+        }
         result["_condition_family_order"] = result["condition_family"].map(family_order)
     if "condition_key" in result.columns:
         result["_condition_order"] = result["condition_key"].map(
@@ -532,6 +574,7 @@ def _create_panel_tables(
                     CAST(s.equity AS DOUBLE) AS equity,
                     CAST(s.total_assets AS DOUBLE) AS total_assets,
                     CAST(s.bps AS DOUBLE) AS bps,
+                    CAST(s.shares_outstanding AS DOUBLE) AS shares_outstanding,
                     ROW_NUMBER() OVER (
                         PARTITION BY e.panel_id
                         ORDER BY s.disclosed_date DESC, s.type_of_current_period DESC
@@ -545,35 +588,60 @@ def _create_panel_tables(
                 SELECT *
                 FROM statement_candidates
                 WHERE row_priority = 1
+            ),
+            enriched AS (
+                SELECT
+                    e.*,
+                    ls.disclosed_date,
+                    ls.period_type,
+                    ls.document_type,
+                    ls.eps,
+                    ls.forecast_eps,
+                    ls.profit,
+                    ls.sales,
+                    ls.operating_cash_flow,
+                    ls.equity,
+                    ls.total_assets,
+                    ls.bps,
+                    ls.shares_outstanding,
+                    ls.disclosed_date IS NOT NULL AS statement_available,
+                    CASE WHEN ls.bps > 0 THEN e.close / ls.bps END AS pbr,
+                    CASE WHEN ls.eps > 0 THEN e.close / ls.eps END AS per,
+                    CASE WHEN ls.forecast_eps > 0 THEN e.close / ls.forecast_eps END
+                        AS forward_per,
+                    CASE WHEN ls.shares_outstanding > 0 THEN e.close * ls.shares_outstanding / 1e9 END
+                        AS market_cap_bil_jpy,
+                    CASE WHEN ls.total_assets > 0 THEN ls.equity / ls.total_assets * 100 END
+                        AS equity_ratio_pct,
+                    (
+                        CASE WHEN ls.profit > 0 THEN 1 ELSE 0 END
+                        + CASE WHEN ls.forecast_eps > 0 THEN 1 ELSE 0 END
+                        + CASE WHEN ls.operating_cash_flow > 0 THEN 1 ELSE 0 END
+                        + CASE WHEN ls.total_assets > 0 AND ls.equity / ls.total_assets >= 0.30
+                            THEN 1 ELSE 0 END
+                    ) AS quality_score
+                FROM new_high_momentum_events_base e
+                LEFT JOIN latest_statement ls ON ls.panel_id = e.panel_id
+            ),
+            ranked AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN market_cap_bil_jpy > 0 THEN percent_rank() OVER (
+                            PARTITION BY universe_key, date
+                            ORDER BY market_cap_bil_jpy ASC NULLS LAST
+                        )
+                    END AS market_cap_event_percentile
+                FROM enriched
             )
             SELECT
-                e.*,
-                ls.disclosed_date,
-                ls.period_type,
-                ls.document_type,
-                ls.eps,
-                ls.forecast_eps,
-                ls.profit,
-                ls.sales,
-                ls.operating_cash_flow,
-                ls.equity,
-                ls.total_assets,
-                ls.bps,
-                ls.disclosed_date IS NOT NULL AS statement_available,
-                CASE WHEN ls.bps > 0 THEN e.close / ls.bps END AS pbr,
-                CASE WHEN ls.eps > 0 THEN e.close / ls.eps END AS per,
-                CASE WHEN ls.forecast_eps > 0 THEN e.close / ls.forecast_eps END AS forward_per,
-                CASE WHEN ls.total_assets > 0 THEN ls.equity / ls.total_assets * 100 END
-                    AS equity_ratio_pct,
+                *,
                 (
-                    CASE WHEN ls.profit > 0 THEN 1 ELSE 0 END
-                    + CASE WHEN ls.forecast_eps > 0 THEN 1 ELSE 0 END
-                    + CASE WHEN ls.operating_cash_flow > 0 THEN 1 ELSE 0 END
-                    + CASE WHEN ls.total_assets > 0 AND ls.equity / ls.total_assets >= 0.30
-                        THEN 1 ELSE 0 END
-                ) AS quality_score
-            FROM new_high_momentum_events_base e
-            LEFT JOIN latest_statement ls ON ls.panel_id = e.panel_id
+                    CASE WHEN pbr > 0 AND pbr <= 1.0 THEN 1 ELSE 0 END
+                    + CASE WHEN forward_per > 0 AND forward_per <= 15.0 THEN 1 ELSE 0 END
+                    + CASE WHEN market_cap_event_percentile <= 0.30 THEN 1 ELSE 0 END
+                ) AS annual_value_score
+            FROM ranked
             """
         )
     else:
@@ -593,12 +661,16 @@ def _create_panel_tables(
                 NULL::DOUBLE AS equity,
                 NULL::DOUBLE AS total_assets,
                 NULL::DOUBLE AS bps,
+                NULL::DOUBLE AS shares_outstanding,
                 FALSE AS statement_available,
                 NULL::DOUBLE AS pbr,
                 NULL::DOUBLE AS per,
                 NULL::DOUBLE AS forward_per,
+                NULL::DOUBLE AS market_cap_bil_jpy,
+                NULL::DOUBLE AS market_cap_event_percentile,
                 NULL::DOUBLE AS equity_ratio_pct,
-                NULL::INTEGER AS quality_score
+                NULL::INTEGER AS quality_score,
+                NULL::INTEGER AS annual_value_score
             FROM new_high_momentum_events_base
             """
         )
@@ -694,7 +766,12 @@ def _aggregate_condition_summary(
                             avg(trading_value_ratio_20d) AS mean_trading_value_ratio_20d,
                             avg(prior_return_20d) AS mean_prior_return_20d,
                             avg(range_position_252d) AS mean_range_position_252d,
+                            avg(pbr) AS mean_pbr,
+                            avg(forward_per) AS mean_forward_per,
+                            median(forward_per) AS median_forward_per,
+                            avg(market_cap_bil_jpy) AS mean_market_cap_bil_jpy,
                             avg(quality_score) AS mean_quality_score,
+                            avg(annual_value_score) AS mean_annual_value_score,
                             avg(CASE WHEN statement_available THEN 1.0 ELSE 0.0 END)
                                 AS statement_coverage_rate
                         FROM filtered
@@ -775,7 +852,9 @@ def _build_top_candidates(summary_df: pd.DataFrame) -> pd.DataFrame:
     if summary_df.empty:
         return summary_df.copy()
     scoped = summary_df.loc[
-        summary_df["condition_family"].isin(["technical", "fundamental", "interaction"])
+        summary_df["condition_family"].isin(
+            ["technical", "fundamental", "annual_value", "interaction"]
+        )
         & summary_df["horizon_days"].eq(20)
         & (summary_df["event_count"] >= 100)
         & (summary_df["unique_code_count"] >= 30)
@@ -821,7 +900,11 @@ def _build_sampled_events(
             prior_return_20d,
             range_position_252d,
             quality_score,
+            annual_value_score,
             pbr,
+            forward_per,
+            market_cap_bil_jpy,
+            market_cap_event_percentile,
             forecast_eps,
             eps,
             return_next_open_to_close_{sample_horizon}d AS sample_forward_return,

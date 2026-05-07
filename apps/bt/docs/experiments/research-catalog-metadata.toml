@@ -118,7 +118,7 @@ relatedExperiments = [
 [experiments."market-behavior/new-high-momentum-research"]
 family = "Market Behavior"
 status = "candidate"
-decision = "N日新高値は単独long signalではなく候補生成に留める。Prime ex TOPIX500 / Standard では low PBR、CFO positive、quality、volume+quality が補助条件として有効だが、Growth 新高値と quality を伴わない出来高急増は避ける。"
+decision = "N日新高値は単独long signalではなく候補生成に留める。annual value の low PBR / low forward PER / small cap を重ねると Prime ex TOPIX500 / Standard で効果が大きく改善し、quality や volume+quality より clean。Growth 新高値単体と quality を伴わない出来高急増は避ける。"
 promotedSurface = "Research"
 riskFlags = ["new-high-momentum", "anchoring-reference", "volume-crowding", "pit-statement-as-of", "portfolio-lens-needed"]
 relatedExperiments = [

@@ -226,8 +226,15 @@ def test_run_new_high_momentum_research_builds_event_tables(tmp_path: Path) -> N
     quality_rows = result.new_high_summary_df.loc[
         result.new_high_summary_df["condition_key"].eq("quality_score_ge_3")
     ]
+    annual_value_rows = result.new_high_summary_df.loc[
+        result.new_high_summary_df["condition_key"].isin(
+            ["low_forward_per_le_15", "small_market_cap_bottom_30", "annual_value_score_ge_2"]
+        )
+    ]
     assert not quality_rows.empty
+    assert not annual_value_rows.empty
     assert not result.sampled_events_df.empty
+    assert "market_cap_bil_jpy" in result.sampled_events_df.columns
 
 
 def test_new_high_momentum_uses_statement_as_of_signal_date(tmp_path: Path) -> None:
