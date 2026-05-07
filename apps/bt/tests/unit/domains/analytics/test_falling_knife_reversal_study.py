@@ -38,6 +38,26 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE stock_master_daily (
+            date TEXT NOT NULL,
+            code TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            company_name_english TEXT,
+            market_code TEXT NOT NULL,
+            market_name TEXT NOT NULL,
+            sector_17_code TEXT NOT NULL,
+            sector_17_name TEXT NOT NULL,
+            sector_33_code TEXT NOT NULL,
+            sector_33_name TEXT NOT NULL,
+            scale_category TEXT,
+            listed_date TEXT,
+            created_at TEXT,
+            PRIMARY KEY (date, code)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE stock_data (
             code TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -125,6 +145,62 @@ def _build_test_market_db(db_path: Path) -> None:
             ],
         )
         dates = pd.bdate_range("2025-01-06", periods=120).strftime("%Y-%m-%d")
+        master_rows: list[tuple[object, ...]] = []
+        for date in dates:
+            master_rows.extend(
+                [
+                    (
+                        date,
+                        "1111",
+                        "Prime Falling Knife",
+                        "Prime Falling Knife",
+                        "0111",
+                        "プライム",
+                        "1",
+                        "A",
+                        "1",
+                        "A",
+                        "TOPIX Small 1",
+                        "2000-01-01",
+                        None,
+                    ),
+                    (
+                        date,
+                        "2222",
+                        "Prime Stable",
+                        "Prime Stable",
+                        "0111",
+                        "プライム",
+                        "1",
+                        "A",
+                        "1",
+                        "A",
+                        "TOPIX Small 1",
+                        "2000-01-01",
+                        None,
+                    ),
+                ]
+            )
+        conn.executemany(
+            """
+            INSERT INTO stock_master_daily (
+                date,
+                code,
+                company_name,
+                company_name_english,
+                market_code,
+                market_name,
+                sector_17_code,
+                sector_17_name,
+                sector_33_code,
+                sector_33_name,
+                scale_category,
+                listed_date,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            master_rows,
+        )
         falling_prices = _price_path()
         stable_prices = [100.0 * (1.0005**idx) for idx in range(120)]
         rows: list[tuple[object, ...]] = []

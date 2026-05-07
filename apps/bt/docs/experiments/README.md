@@ -49,6 +49,8 @@
   - Growth market の bad tail が市場区分そのものか、PIT-safe なファンダ quality proxy で説明できるかを分解する実験。
 - [market-behavior/falling-knife-non-rebound-fundamental-profile/](./market-behavior/falling-knife-non-rebound-fundamental-profile/README.md)
   - falling knife のうち、リバウンドしない銘柄にどんな PIT-safe ファンダ特徴があるかを特徴分析として観察する実験。
+- [market-behavior/falling-knife-long-horizon-technical-profile/](./market-behavior/falling-knife-long-horizon-technical-profile/README.md)
+  - falling knife に 1年 return / 252日安値からの rebound / 1年 range 位置を重ね、annual value で効いた長期テクニカルが急落局面でも使えるかを見る実験。
 - [market-behavior/topix-extreme-close-to-close-mode/](./market-behavior/topix-extreme-close-to-close-mode/README.md)
   - TOPIX の日次 close-to-close extreme mode で bullish / bearish segment と forward return を比較する実験。
 - [market-behavior/topix-streak-extreme-mode/](./market-behavior/topix-streak-extreme-mode/README.md)

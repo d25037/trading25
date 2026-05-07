@@ -20,6 +20,20 @@ relatedExperiments = [
   "market-behavior/falling-knife-non-rebound-fundamental-profile",
 ]
 
+[experiments."market-behavior/falling-knife-long-horizon-technical-profile"]
+family = "Falling Knife"
+status = "candidate"
+decision = "annual value で効いた rebound_from_252d_low_pct は falling knife では平均と左尾が同時に増えるため、単独 hard filter にしない。range_position_252d の低〜中位は補助 diagnostic 候補だが、第一条件は引き続き非Growth / quality / valuation gate とする。"
+promotedSurface = "Research"
+riskFlags = ["tail-risk", "technical-profile", "long-horizon", "not-standalone-alpha", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/falling-knife-reversal-study",
+  "market-behavior/falling-knife-bad-tail-pruning",
+  "market-behavior/falling-knife-non-rebound-fundamental-profile",
+  "market-behavior/annual-value-technical-feature-importance",
+  "market-behavior/annual-value-rebound-range-position-decomposition",
+]
+
 [experiments."market-behavior/annual-value-composite-selection"]
 family = "Annual Fundamentals"
 status = "ranking_surface"

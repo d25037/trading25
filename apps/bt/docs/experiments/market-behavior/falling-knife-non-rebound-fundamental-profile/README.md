@@ -4,7 +4,7 @@
 
 ### Decision
 
-この実験は除外 rule の即時採用ではなく、non-rebound を説明する feature shortlist として採用する。現時点で最も強い候補は `PBR >= 3x`、Growth market、Profit <= 0、`quality_score < 3`、FY actual EPS <= 0、forward PER >= 40x、forecast EPS <= 0。特に `PBR >= 3x` は sample 26,830、non-rebound rate 53.21%、baseline 47.23% に対する prevalence lift +4.20pt、severe loss rate 18.85% で、valuation 側の最有力 bad feature として次の rule 検証に進める。
+この実験は除外 rule の即時採用ではなく、non-rebound を説明する feature shortlist として採用する。PIT master v3 rerun で最も強い候補は Growth market、`missing statement or quality_score < 3`、Profit <= 0、`PBR >= 3x`、`quality_score < 3`、FY actual EPS <= 0、forecast EPS <= 0、forward PER >= 40x。特に `PBR >= 3x` は sample 11,102、non-rebound rate 52.85%、baseline 45.16% に対する prevalence lift +5.24pt、severe loss rate 17.59% で、valuation 側の最有力 bad feature として次の rule 検証に進める。
 
 ### Why This Research Was Run
 
@@ -12,7 +12,7 @@
 
 ### Data Scope / PIT Assumptions
 
-入力は `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef` の event bundle。分析期間は 2016-06-01 から 2026-04-27、horizon は 20 sessions、rebound は `catch_return_20d > 0%`、non-rebound は `catch_return_20d <= 0%`、severe loss は `catch_return_20d <= -10%`。baseline events は 153,189、rebound は 80,834、non-rebound は 72,355、non-rebound rate は 47.23%、statement coverage は 99.57%。fundamental join は `disclosed_date <= signal_date` に限定してから latest row を選ぶ。PBR と trailing PER は signal date 以前に開示された latest FY BPS / actual EPS、forward PER は signal date 以前の latest non-null forecast EPS を使う。PER / forward PER の分母が非正の場合は missing に混ぜず、`non_positive_eps` / `non_positive_forecast_eps` として別 bucket にした。
+入力は `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master` の event bundle。分析期間は 2022-05-02 から 2026-04-30、horizon は 20 sessions、rebound は `catch_return_20d > 0%`、non-rebound は `catch_return_20d <= 0%`、severe loss は `catch_return_20d <= -10%`。baseline events は 65,804、rebound は 36,087、non-rebound は 29,717、non-rebound rate は 45.16%、statement coverage は 94.13%。前段 event は `market.duckdb` v3 の `stock_data` と `stock_master_daily` の同日 join で作られている。fundamental join は `disclosed_date <= signal_date` に限定してから latest row を選ぶ。PBR と trailing PER は signal date 以前に開示された latest FY BPS / actual EPS、forward PER は signal date 以前の latest non-null forecast EPS を使う。PER / forward PER の分母が非正の場合は missing に混ぜず、`non_positive_eps` / `non_positive_forecast_eps` として別 bucket にした。
 
 ### Main Findings
 
@@ -20,72 +20,72 @@
 
 | Metric | Value |
 | --- | ---: |
-| events | `20,844` |
-| non-rebound rate | `53.71%` |
-| median return | `-0.77%` |
-| severe loss | `20.29%` |
-| non-rebound prevalence | `15.47%` |
-| rebound prevalence | `11.94%` |
-| prevalence lift | `+3.54pt` |
+| events | `13,725` |
+| non-rebound rate | `51.80%` |
+| median return | `-0.24%` |
+| severe loss | `16.54%` |
+| non-rebound prevalence | `23.92%` |
+| rebound prevalence | `18.33%` |
+| prevalence lift | `+5.59pt` |
 
 #### `PBR >= 3x` は valuation 側で最も強い bad feature。
 
 | Metric | Value |
 | --- | ---: |
-| events | `26,830` |
-| non-rebound rate | `53.21%` |
-| median return | `-0.49%` |
-| severe loss | `18.85%` |
-| prevalence lift | `+4.20pt` |
+| events | `11,102` |
+| non-rebound rate | `52.85%` |
+| median return | `-0.39%` |
+| severe loss | `17.59%` |
+| prevalence lift | `+5.24pt` |
 
 #### Profit <= 0 は単一の損益 sign として強い。
 
 | Metric | Value |
 | --- | ---: |
-| events | `29,861` |
-| non-rebound rate | `51.17%` |
-| severe loss | `13.46%` |
-| prevalence lift | `+3.08pt` |
+| events | `12,773` |
+| non-rebound rate | `52.16%` |
+| severe loss | `12.49%` |
+| prevalence lift | `+5.48pt` |
 
 #### low quality は広い bad-tail contributor だが、単独では lift が薄い。
 
 | Slice | Events | Non-rebound rate | Severe loss | Prevalence lift |
 | --- | ---: | ---: | ---: | ---: |
-| `quality_score < 3` | `47,286` | `49.49%` | `12.74%` | `+2.79pt` |
-| `missing statement or quality_score < 3` | `47,947` | `49.62%` | `12.94%` | `+2.99pt` |
+| `quality_score < 3` | `18,719` | `49.64%` | `11.36%` | `+5.15pt` |
+| `missing statement or quality_score < 3` | `22,584` | `49.12%` | `11.05%` | `+5.49pt` |
 
 #### EPS/forecast EPS の非正分母は missing ではなく bad feature として扱う。
 
 | Slice | Events | Non-rebound rate | Severe loss |
 | --- | ---: | ---: | ---: |
-| FY actual EPS <= 0 | `23,691` | `51.73%` | `14.60%` |
-| forecast EPS <= 0 | `10,096` | `52.59%` | `15.16%` |
+| FY actual EPS <= 0 | `10,547` | `52.08%` | `13.62%` |
+| forecast EPS <= 0 | `4,386` | `53.65%` | `14.57%` |
 
 #### 高 forward PER は悪く、低 forward PER は defensive bucket として残る。
 
 | Bucket | Events | Non-rebound rate | Severe loss | Readout |
 | --- | ---: | ---: | ---: | --- |
-| forward PER >= 40x | `19,761` | `51.77%` | `14.87%` | bad-tail bucket |
-| forward PER 10-15x | `30,283` | `45.33%` | `8.00%` | defensive bucket |
-| forward PER < 10x | `44,105` | `42.38%` | `8.04%` | defensive bucket |
+| forward PER >= 40x | `7,413` | `51.48%` | `13.02%` | bad-tail bucket |
+| forward PER 10-15x | `13,461` | `42.72%` | `5.36%` | defensive bucket |
+| forward PER < 10x | `16,600` | `38.05%` | `4.93%` | defensive bucket |
 
 #### 低PBRは defensive bucket として機能している。
 
 | Bucket | Non-rebound rate | Severe loss |
 | --- | ---: | ---: |
-| PBR 0.5-1x | `44.10%` | `6.92%` |
-| PBR < 0.5x | `43.13%` | `6.78%` |
+| PBR 0.5-1x | `40.47%` | `3.97%` |
+| PBR < 0.5x | `39.02%` | `3.44%` |
 
 #### Growth risk は quality score だけでは消えない。
 
 | Growth quality slice | Events | Non-rebound rate | Severe loss |
 | --- | ---: | ---: | ---: |
-| low quality | `10,177` | `54.42%` | `20.69%` |
-| high quality | `10,435` | `52.86%` | `19.44%` |
+| low quality | `5,980` | `53.63%` | `17.81%` |
+| high quality | `6,972` | `50.30%` | `15.13%` |
 
 ### Interpretation
 
-non-rebound は Growth、赤字、低 quality、高 Daily RAR、negative forecast EPS、高 PBR、高 forward PER に偏っている。ただし、fundamental quality だけでは説明が足りない。Growth high quality でも non-rebound rate 52.86%、severe loss rate 19.44% であり、Growth の市場特性、sentiment regime、valuation unwind が quality score の外側に残っている。valuation では PBR >= 3x が forward PER >= 40x より強く、FY actual EPS <= 0 や forecast EPS <= 0 は「PER missing」ではなく、それ自体が bad feature として扱うべき。
+non-rebound は Growth、赤字、低 quality、negative forecast EPS、高 PBR、高 forward PER に偏っている。ただし、fundamental quality だけでは説明が足りない。Growth high quality でも non-rebound rate 50.30%、severe loss rate 15.13% であり、Growth の市場特性、sentiment regime、valuation unwind が quality score の外側に残っている。valuation では PBR >= 3x が forward PER >= 40x より強く、FY actual EPS <= 0 や forecast EPS <= 0 は「PER missing」ではなく、それ自体が bad feature として扱うべき。
 
 ### Production Implication
 
@@ -93,15 +93,15 @@ non-rebound は Growth、赤字、低 quality、高 Daily RAR、negative forecas
 
 ### Caveats
 
-この分析は descriptive profile であり、因果推定や最適化済み rule ではない。event-level の 20営業日 outcome なので、同時保有、資金配分、約定、手数料、売買容量は未反映。valuation は PIT-safe に FY row を使うよう修正済みだが、PBR/PER は業種差や資本構成差を調整していない。PBR missing は 2.45%、forward PER missing は 2.63%、forward EPS non-positive bucket は 9.07% であり、coverage gap と非正 EPS を混同しない前提で読む必要がある。
+この分析は descriptive profile であり、因果推定や最適化済み rule ではない。event-level の 20営業日 outcome なので、同時保有、資金配分、約定、手数料、売買容量は未反映。valuation は PIT-safe に FY row を使うよう修正済みだが、PBR/PER は業種差や資本構成差を調整していない。statement coverage は 94.13%。coverage gap と非正 EPS を混同しない前提で読む必要がある。
 
 ### Source Artifacts
 
 - Baseline note: `apps/bt/docs/experiments/market-behavior/falling-knife-non-rebound-fundamental-profile/baseline-2026-04-27.md`
-- Output bundle: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260429_204122_e60eacef`
-- Summary markdown: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260429_204122_e60eacef/summary.md`
-- Summary JSON: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260429_204122_e60eacef/summary.json`
-- Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef`
+- Output bundle: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master`
+- Summary markdown: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master/summary.md`
+- Summary JSON: `/tmp/trading25-research/market-behavior/falling-knife-non-rebound-fundamental-profile/20260506_falling_knife_non_rebound_v3_pit_master/summary.json`
+- Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`
 
 ## Purpose
 

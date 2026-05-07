@@ -4,7 +4,7 @@
 
 ### Decision
 
-production へ直接持ち込む候補としては、v3 rerun でも `exclude_growth_or_q5_rar` を第一候補にする。severe loss rate を `10.66%` から `8.73%` へ下げ、kept median を `0.49%` から `0.68%` へ上げ、mean return cost も `-0.08pt` と悪化しないため、左尾削減と rebound exposure の維持のバランスが最も良い。`exclude_deep_60d_drawdown` は severe loss reduction が最大だが、kept mean が `1.29%` から `0.87%` に落ち、右尾 p90 も `12.79%` から `10.43%` に縮むため、単独 production rule としては強すぎる。
+production へ直接持ち込む候補としては、PIT master v3 rerun でも `exclude_growth_or_q5_rar` を第一候補にする。severe loss rate を `8.31%` から `5.85%` へ下げ、kept median を `0.74%` から `0.96%` へ上げ、mean return cost も `0.01pt` とほぼ悪化しないため、左尾削減と rebound exposure の維持のバランスが最も良い。`exclude_deep_60d_drawdown` も同じ severe loss reduction を出すが、kept mean が `2.02%` から `1.70%` に落ち、右尾 p90 も `12.99%` から `11.04%` に縮むため、単独 production rule としては強すぎる。
 
 ### Why This Research Was Run
 
@@ -12,7 +12,7 @@ production へ直接持ち込む候補としては、v3 rerun でも `exclude_gr
 
 ### Data Scope / PIT Assumptions
 
-入力 bundle は `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef`、input run id は `20260429_204107_e60eacef`。分析範囲は `2016-06-01 -> 2026-04-27`、horizon は `20` sessions、severe loss threshold は `-10.00%`、baseline trades は `153,189`。前段の signal は signal date close までの特徴量だけで作られ、entry は翌営業日 open なので、この pruning study も前段 event_df の PIT 前提を継承する。pruning rule は事後 return を条件に使わず、market、Daily Risk Adjusted Return bucket、falling-knife 条件 flag、condition_count で kept / removed を比較した。
+入力 bundle は `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`、input run id は `20260506_falling_knife_reversal_v3_pit_master`。分析範囲は `2022-05-02 -> 2026-04-30`、horizon は `20` sessions、severe loss threshold は `-10.00%`、baseline trades は `65,804`。前段の signal は `market.duckdb` v3 の `stock_data` と `stock_master_daily` の同日 join で作られ、entry は翌営業日 open なので、この pruning study も前段 event_df の PIT 前提を継承する。pruning rule は事後 return を条件に使わず、market、Daily Risk Adjusted Return bucket、falling-knife 条件 flag、condition_count で kept / removed を比較した。
 
 ### Main Findings
 
@@ -20,70 +20,70 @@ production へ直接持ち込む候補としては、v3 rerun でも `exclude_gr
 
 | Scope | Mean | Median | P10 | P90 | Severe loss |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| baseline | `1.29%` | `0.49%` | `-10.45%` | `12.79%` | `10.66%` |
+| baseline | `2.02%` | `0.74%` | `-8.86%` | `12.99%` | `8.31%` |
 
 #### 第一候補は `exclude_growth_or_q5_rar`。左尾を下げつつ rebound exposure を残しやすい。
 
 | Metric | Value |
 | --- | ---: |
-| removed trades | `46,146` |
-| removed fraction | `30.12%` |
-| kept trades | `107,043` |
-| kept mean | `1.38%` |
-| kept median | `0.68%` |
-| kept p10 | `-9.11%` |
-| kept p90 | `12.03%` |
-| kept severe loss | `8.73%` |
-| severe loss reduction | `1.93pt` |
-| removed severe loss share | `42.79%` |
+| removed trades | `23,596` |
+| removed fraction | `35.86%` |
+| kept trades | `42,208` |
+| kept mean | `2.01%` |
+| kept median | `0.96%` |
+| kept p10 | `-7.24%` |
+| kept p90 | `11.87%` |
+| kept severe loss | `5.85%` |
+| severe loss reduction | `2.46pt` |
+| removed severe loss share | `54.82%` |
 
 #### `exclude_deep_60d_drawdown` は左尾削減は最大だが、反発右尾も削りすぎる。
 
 | Metric | Value |
 | --- | ---: |
-| removed trades | `34,925` |
-| removed fraction | `22.80%` |
-| kept severe loss | `8.27%` |
-| kept mean | `0.87%` |
-| kept median | `0.43%` |
-| kept p90 | `10.43%` |
+| removed trades | `13,353` |
+| removed fraction | `20.29%` |
+| kept severe loss | `5.85%` |
+| kept mean | `1.70%` |
+| kept median | `0.76%` |
+| kept p90 | `11.04%` |
 
 #### `exclude_growth` 単独でも有効だが、market hard exclusion としては別途検証が必要。
 
 | Scope | Trades | Mean | Median | P10 | Severe loss |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| kept after `exclude_growth` | `132,345` | `1.36%` | `0.60%` | `-9.41%` | `9.14%` |
-| removed Growth segment | `20,844` | `0.88%` | `-0.77%` | `-16.20%` | `20.29%` |
-| removed fraction | `13.61%` | n/a | n/a | n/a | n/a |
+| kept after `exclude_growth` | `52,079` | `2.17%` | `0.90%` | `-7.44%` | `6.14%` |
+| removed Growth segment | `13,725` | `1.49%` | `-0.24%` | `-13.57%` | `16.54%` |
+| removed fraction | `20.86%` | n/a | n/a | n/a | n/a |
 
 #### Daily Risk Adjusted Return は「低いほど悪い」ではなく、bucket の読み替えが必要。
 
 | Bucket | Mean | Median | Severe loss |
 | --- | ---: | ---: | ---: |
-| `unbucketed` | `1.59%` | `0.61%` | `24.08%` |
-| `Q5_highest` | `1.13%` | `0.07%` | `12.93%` |
-| `Q1_lowest` | `2.02%` | `1.05%` | `11.74%` |
+| `unbucketed` | `3.22%` | `2.25%` | `16.65%` |
+| `Q5_highest` | `2.45%` | `0.39%` | `10.21%` |
+| `Q1_lowest` | `1.79%` | `0.88%` | `9.54%` |
 
 ### Interpretation
 
-bad-tail pruning は「一番大きく severe loss を減らす rule」を選ぶ問題ではない。`deep_60d_drawdown` や `condition_count >= 3` は危険局面をよく捕まえるが、同時に removed 側の mean や p90 が高く、急反発の右尾も削る。`exclude_growth_or_q5_rar` は、グロースの構造的な左尾と Daily RAR Q5/unbucketed 近辺の不安定さを合わせて取り除き、kept 側の median と p10 を改善しながら mean を維持できる点が実用的。
+bad-tail pruning は「一番大きく severe loss を減らす rule」を選ぶ問題ではない。`deep_60d_drawdown` は危険局面をよく捕まえるが、同時に removed 側の mean や p90 が高く、急反発の右尾も削る。`exclude_growth_or_q5_rar` は、グロースの構造的な左尾と Daily RAR Q5 近辺の不安定さを合わせて取り除き、kept 側の median と p10 を改善しながら mean を維持できる点が実用的。
 
 ### Production Implication
 
-falling-knife 系の production 化は、positive selection よりも bad-tail exclusion を先に入れる。第一候補は `market_name == グロース OR risk_adjusted_bucket == Q5_highest` の除外で、実装前には既存 strategy universe、売買頻度、capacity、保有重複への影響を確認する。より defensive な profile が必要な場合だけ `deep_60d_drawdown` 除外を追加検討するが、その場合は mean cost `0.40pt` と p90 低下を許容する前提にする。
+falling-knife 系の production 化は、positive selection よりも bad-tail exclusion を先に入れる。第一候補は `market_name == グロース OR risk_adjusted_bucket == Q5_highest` の除外で、実装前には既存 strategy universe、売買頻度、capacity、保有重複への影響を確認する。より defensive な profile が必要な場合だけ `deep_60d_drawdown` 除外を追加検討するが、その場合は mean cost `0.33pt` と p90 低下を許容する前提にする。
 
 ### Caveats
 
-この readout は `20260429_204120_e60eacef` bundle の単一 run に基づく。manifest は `git_dirty: true` を示しており、入力 event bundle は market.duckdb v3 由来である。rule は 20d `catch_next_open` return の分布に対する後段評価で、実際の production では同時保有数、約定コスト、position sizing、既存 entry/exit との重なりで効果が薄まる可能性がある。`Q5_highest` の意味は前段の Daily Risk Adjusted Return bucket 定義に依存するため、lookback や bucket 生成方法を変えた場合は再検証が必要。
+この readout は `20260506_falling_knife_bad_tail_v3_pit_master` bundle の単一 run に基づく。manifest は `git_dirty: true` を示しており、入力 event bundle は `market.duckdb` v3 + `stock_master_daily` 同日 join 由来である。rule は 20d `catch_next_open` return の分布に対する後段評価で、実際の production では同時保有数、約定コスト、position sizing、既存 entry/exit との重なりで効果が薄まる可能性がある。`Q5_highest` の意味は前段の Daily Risk Adjusted Return bucket 定義に依存するため、lookback や bucket 生成方法を変えた場合は再検証が必要。
 
 ### Source Artifacts
 
-- Bundle: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260429_204120_e60eacef`
-- Summary: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260429_204120_e60eacef/summary.md`
-- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260429_204120_e60eacef/summary.json`
-- Tables: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260429_204120_e60eacef/results.duckdb` (`rule_summary_df`, `segment_summary_df`)
-- Manifest: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260429_204120_e60eacef/manifest.json`
-- Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260429_204107_e60eacef`
+- Bundle: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master`
+- Summary: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/summary.md`
+- Published numbers: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/summary.json`
+- Tables: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/results.duckdb` (`rule_summary_df`, `segment_summary_df`)
+- Manifest: `/tmp/trading25-research/market-behavior/falling-knife-bad-tail-pruning/20260506_falling_knife_bad_tail_v3_pit_master/manifest.json`
+- Input bundle: `/tmp/trading25-research/market-behavior/falling-knife-reversal-study/20260506_falling_knife_reversal_v3_pit_master`
 
 ## Purpose
 

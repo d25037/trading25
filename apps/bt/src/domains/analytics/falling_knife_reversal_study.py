@@ -221,23 +221,25 @@ def _query_daily_price_df(
         market_filter_sql = f"WHERE market_code IN ({placeholders})"
         params.extend(normalized_market_codes)
     sql = f"""
-        WITH stocks_snapshot AS (
+        WITH stock_master_snapshot AS (
             SELECT
+                date,
                 normalized_code,
                 company_name,
                 market_code,
                 market_name
             FROM (
                 SELECT
+                    date,
                     {normalized_code_sql} AS normalized_code,
                     company_name,
                     market_code,
                     market_name,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code_sql}
+                        PARTITION BY date, {normalized_code_sql}
                         ORDER BY {_PREFER_4DIGIT_ORDER_SQL}, code
                     ) AS row_priority
-                FROM stocks
+                FROM stock_master_daily
                 {market_filter_sql}
             )
             WHERE row_priority = 1
@@ -276,18 +278,18 @@ def _query_daily_price_df(
         SELECT
             stock_daily.date,
             stock_daily.code,
-            stocks_snapshot.company_name,
-            COALESCE(stocks_snapshot.market_code, 'unmapped_latest_stocks') AS market_code,
-            COALESCE(stocks_snapshot.market_name, 'UNMAPPED_LATEST_STOCKS') AS market_name,
+            stock_master_snapshot.company_name,
+            stock_master_snapshot.market_code,
+            stock_master_snapshot.market_name,
             stock_daily.open,
             stock_daily.high,
             stock_daily.low,
             stock_daily.close,
             stock_daily.volume
         FROM stock_daily
-        LEFT JOIN stocks_snapshot
-            ON stocks_snapshot.normalized_code = stock_daily.code
-        WHERE stocks_snapshot.normalized_code IS NOT NULL
+        INNER JOIN stock_master_snapshot
+            ON stock_master_snapshot.date = stock_daily.date
+            AND stock_master_snapshot.normalized_code = stock_daily.code
         ORDER BY stock_daily.code, stock_daily.date
     """
     return conn.execute(sql, params).fetchdf()
