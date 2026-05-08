@@ -102,6 +102,30 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-technical-filter",
 ]
 
+[experiments."market-behavior/standard-value-pump-fade-decomposition"]
+family = "Annual Fundamentals"
+status = "observed"
+decision = "Standard value ranking の pump/fade 候補は単純除外ではなく、right-tail capture と left-tail budget cost が同居する bucket。Ranking では diagnostic、portfolio では sizing haircut / risk budget として扱う。"
+promotedSurface = "Research"
+riskFlags = ["pump-fade", "monthly-high-fade", "microcap", "liquidity", "technical-profile", "right-tail-capture", "left-tail-cost", "portfolio-lens-needed"]
+relatedExperiments = [
+  "market-behavior/annual-value-composite-selection",
+  "market-behavior/annual-value-breakout-periodic-rebalance",
+  "market-behavior/speculative-volume-surge-follow-on",
+]
+
+[experiments."market-behavior/standard-value-pump-fade-portfolio-filter"]
+family = "Annual Fundamentals"
+status = "observed"
+decision = "standard / prime_size_tilt / adv10m / breakout_additive / 120d20 / 3m / top10 の daily portfolio で base CAGR 64.22% / Sharpe 2.23 を再現。月足高値基準のpump/fade hard filterはCAGR/Sharpeを落とし、risk_score>=3補充ありだけSharpeが2.24へ微増するがmaxDDは悪化するため、hard excludeではなくdiagnosticとsizing haircut候補として扱う。"
+promotedSurface = "Research"
+riskFlags = ["pump-fade", "monthly-high-fade", "hard-filter-rejected", "portfolio-lens", "right-tail-capture", "sizing-haircut-candidate"]
+relatedExperiments = [
+  "market-behavior/standard-value-pump-fade-decomposition",
+  "market-behavior/annual-value-breakout-periodic-rebalance",
+  "market-behavior/annual-value-composite-selection",
+]
+
 [experiments."market-behavior/annual-prime-value-technical-risk-decomposition"]
 family = "Annual Fundamentals"
 status = "candidate"
