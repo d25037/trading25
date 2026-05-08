@@ -23,6 +23,10 @@ export interface RankingItem {
   changeAmount?: number;
   changePercentage?: number;
   lookbackDays?: number;
+  per?: number | null;
+  forwardPer?: number | null;
+  pbr?: number | null;
+  marketCap?: number | null;
 }
 
 export interface Rankings {

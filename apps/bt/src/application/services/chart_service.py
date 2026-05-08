@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from typing import Any
 
-from src.shared.utils.market_code_alias import resolve_market_codes
+from src.domains.fundamentals import (
+    FundamentalsCalculator,
+    market_statement_row_to_jquants_statement,
+)
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.synthetic_indices import (
     NT_RATIO_SYNTHETIC_INDEX_CATEGORY,
@@ -38,6 +42,8 @@ from src.entrypoints.http.schemas.chart import (
 )
 from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.shared.utils.market_code_alias import resolve_market_codes
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 
 
 def _now_iso() -> str:
@@ -52,6 +58,15 @@ def _db_stock_code_candidates(code: str) -> tuple[str, ...]:
 def _normalize_middle_dot(text: str) -> str:
     """全角中黒 (・ U+30FB) を半角中黒 (･ U+FF65) に変換"""
     return text.replace("\u30fb", "\uff65")
+
+
+def _normalize_sector_filter_name(text: str) -> str:
+    """表示用 index 名を stocks の sector 名へ寄せる。"""
+    normalized = _normalize_middle_dot(text.strip())
+    for prefix in ("東証業種別 ", "TOPIX-17 "):
+        if normalized.startswith(prefix):
+            return normalized.removeprefix(prefix).strip()
+    return normalized
 
 
 _SCALAR_SYNTHETIC_INDEX_LIST_SPECS: tuple[
@@ -140,6 +155,7 @@ class ChartService:
         reader: MarketDbReadable | None,
     ) -> None:
         self._reader = reader
+        self._fundamentals_calculator = FundamentalsCalculator()
 
     # --- Indices ---
 
@@ -450,6 +466,88 @@ class ChartService:
 
     # --- Sector Stocks ---
 
+    def _load_statement_rows_for_stock(
+        self,
+        code: str,
+        *,
+        as_of_date: str,
+    ) -> list[dict[str, Any]]:
+        if self._reader is None:
+            return []
+        candidates = _db_stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in candidates)
+        try:
+            return self._reader.query(
+                f"""
+                SELECT *
+                FROM statements
+                WHERE code IN ({placeholders})
+                  AND disclosed_date <= ?
+                ORDER BY disclosed_date ASC
+                """,
+                (*candidates, as_of_date),
+            )
+        except Exception:  # noqa: BLE001 - old test/local DBs may not have statements
+            return []
+
+    def _load_adjustment_events_for_stock(
+        self,
+        code: str,
+        *,
+        as_of_date: str,
+    ) -> list[ShareAdjustmentEvent]:
+        if self._reader is None:
+            return []
+        candidates = _db_stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in candidates)
+        try:
+            rows = self._reader.query(
+                f"""
+                SELECT date, adjustment_factor
+                FROM stock_data_raw
+                WHERE code IN ({placeholders})
+                  AND date <= ?
+                  AND adjustment_factor IS NOT NULL
+                  AND adjustment_factor != 1.0
+                ORDER BY date ASC
+                """,
+                (*candidates, as_of_date),
+            )
+        except Exception:  # noqa: BLE001 - stock_data_raw is unavailable in some old DBs
+            return []
+        return [
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+            for row in rows
+        ]
+
+    def _calculate_latest_sector_valuation(
+        self,
+        code: str,
+        *,
+        close: float,
+        price_date: str,
+    ):
+        statement_rows = self._load_statement_rows_for_stock(code, as_of_date=price_date)
+        if not statement_rows:
+            return None
+        statements = [
+            market_statement_row_to_jquants_statement(row, code_fallback=code)
+            for row in statement_rows
+        ]
+        return self._fundamentals_calculator.calculate_latest_valuation(
+            statements,
+            close=close,
+            price_date=price_date,
+            prefer_consolidated=True,
+            share_adjustment_events=self._load_adjustment_events_for_stock(
+                code,
+                as_of_date=price_date,
+            ),
+        )
+
     def get_sector_stocks(
         self,
         sector33_name: str | None = None,
@@ -490,9 +588,9 @@ class ChartService:
             fallback=["prime", "standard"],
         )
 
-        # セクター名の中黒正規化
-        norm_s33 = _normalize_middle_dot(sector33_name) if sector33_name else None
-        norm_s17 = _normalize_middle_dot(sector17_name) if sector17_name else None
+        # セクター名は index_master の表示名と stocks の分類名で接頭辞が異なる。
+        norm_s33 = _normalize_sector_filter_name(sector33_name) if sector33_name else None
+        norm_s17 = _normalize_sector_filter_name(sector17_name) if sector17_name else None
 
         # SQL 構築
         conditions = ["curr.date = ?"]
@@ -509,10 +607,10 @@ class ChartService:
         where_params: list[str | int] = [latest_date]
 
         if norm_s33:
-            conditions.append("s.sector_33_name = ?")
+            conditions.append("replace(s.sector_33_name, '・', '･') = ?")
             where_params.append(norm_s33)
         if norm_s17:
-            conditions.append("s.sector_17_name = ?")
+            conditions.append("replace(s.sector_17_name, '・', '･') = ?")
             where_params.append(norm_s17)
         if query_market_codes:
             placeholders = ",".join("?" for _ in query_market_codes)
@@ -537,6 +635,8 @@ class ChartService:
         )"""
 
         base_join = "LEFT JOIN stock_data base ON curr.code = base.code AND base.date = ?" if base_date else ""
+        valuation_sort_fields = {"per", "forwardPer", "pbr", "marketCap"}
+        limit_clause = "" if sort_by in valuation_sort_fields else "LIMIT ?"
 
         if base_date:
             select_fields = f"""s.code, s.company_name, s.market_code, s.sector_33_name,
@@ -549,37 +649,69 @@ class ChartService:
                 curr.close as current_price, curr.volume,
                 {tv_subquery} as trading_value"""
 
-        sql = f"""SELECT {select_fields}
+        sql = f"""
+            SELECT {select_fields}
             FROM stock_data curr
             JOIN stocks s ON s.code = curr.code
             {base_join}
             WHERE {' AND '.join(conditions)}
             {order_clause}
-            LIMIT ?"""
+            {limit_clause}"""
 
         # パラメータ順: サブクエリ → JOIN → WHERE → LIMIT
-        all_params: list[str | int] = [*sub_params, *join_params, *where_params, limit]
+        all_params: list[str | int] = [
+            *sub_params,
+            *join_params,
+            *where_params,
+        ]
+        if sort_by not in valuation_sort_fields:
+            all_params.append(limit)
 
         rows = self._reader.query(sql, tuple(all_params))
 
-        stocks = [
-            SectorStockItem(
-                rank=i + 1,
-                code=row["code"],
-                companyName=row["company_name"],
-                marketCode=row["market_code"],
-                sector33Name=row["sector_33_name"],
-                currentPrice=row["current_price"],
-                volume=row["volume"],
-                tradingValue=row["trading_value"],
-                tradingValueAverage=row["trading_value"],
-                basePrice=row["base_price"] if base_date else None,
-                changeAmount=row["change_amount"] if base_date else None,
-                changePercentage=row["change_percentage"] if base_date else None,
-                lookbackDays=lookback_days,
+        stocks: list[SectorStockItem] = []
+        for i, row in enumerate(rows):
+            valuation = self._calculate_latest_sector_valuation(
+                str(row["code"]),
+                close=float(row["current_price"]),
+                price_date=str(latest_date),
             )
-            for i, row in enumerate(rows)
-        ]
+            stocks.append(
+                SectorStockItem(
+                    rank=i + 1,
+                    code=row["code"],
+                    companyName=row["company_name"],
+                    marketCode=row["market_code"],
+                    sector33Name=row["sector_33_name"],
+                    currentPrice=row["current_price"],
+                    volume=row["volume"],
+                    tradingValue=row["trading_value"],
+                    tradingValueAverage=row["trading_value"],
+                    per=valuation.per if valuation is not None else None,
+                    forwardPer=valuation.forwardPer if valuation is not None else None,
+                    pbr=valuation.pbr if valuation is not None else None,
+                    marketCap=valuation.marketCap if valuation is not None else None,
+                    basePrice=row["base_price"] if base_date else None,
+                    changeAmount=row["change_amount"] if base_date else None,
+                    changePercentage=row["change_percentage"] if base_date else None,
+                    lookbackDays=lookback_days,
+                )
+            )
+
+        if sort_by in valuation_sort_fields:
+            valued_stocks = [
+                item for item in stocks if getattr(item, sort_by) is not None
+            ]
+            missing_stocks = [
+                item for item in stocks if getattr(item, sort_by) is None
+            ]
+            valued_stocks.sort(
+                key=lambda item: float(getattr(item, sort_by)),
+                reverse=sort_order == "desc",
+            )
+            stocks = [*valued_stocks, *missing_stocks][:limit]
+            for i, item in enumerate(stocks):
+                item.rank = i + 1
 
         return SectorStocksResponse(
             sector33Name=sector33_name,

@@ -151,7 +151,15 @@ def get_sector_stocks(
     sector17Name: str | None = Query(default=None, description="17業種名"),
     markets: str = Query(default="prime,standard", description="市場フィルタ"),
     lookbackDays: int = Query(default=5, ge=1, le=100, description="振り返り日数"),
-    sortBy: Literal["tradingValue", "changePercentage", "code"] = Query(default="tradingValue"),
+    sortBy: Literal[
+        "tradingValue",
+        "changePercentage",
+        "code",
+        "per",
+        "forwardPer",
+        "pbr",
+        "marketCap",
+    ] = Query(default="tradingValue"),
     sortOrder: Literal["asc", "desc"] = Query(default="desc"),
     limit: int = Query(default=100, ge=1, le=500, description="最大件数"),
 ) -> SectorStocksResponse:

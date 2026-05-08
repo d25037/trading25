@@ -7959,10 +7959,18 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /** Forwardper */
+            forwardPer?: number | null;
             /** Lookbackdays */
             lookbackDays?: number | null;
+            /** Marketcap */
+            marketCap?: number | null;
             /** Marketcode */
             marketCode: string;
+            /** Pbr */
+            pbr?: number | null;
+            /** Per */
+            per?: number | null;
             /** Previousprice */
             previousPrice?: number | null;
             /** Rank */
@@ -8696,10 +8704,18 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /** Forwardper */
+            forwardPer?: number | null;
             /** Lookbackdays */
             lookbackDays?: number | null;
+            /** Marketcap */
+            marketCap?: number | null;
             /** Marketcode */
             marketCode: string;
+            /** Pbr */
+            pbr?: number | null;
+            /** Per */
+            per?: number | null;
             /** Rank */
             rank: number;
             /** Sector33Name */
@@ -11514,10 +11530,17 @@ export interface operations {
         parameters: {
             query?: {
                 date?: string | null;
+                /** @description Maximum rows per ranking. Use 0 for no row limit. */
                 limit?: number;
                 markets?: string;
                 lookbackDays?: number;
                 periodDays?: number;
+                /** @description Optional TOPIX-33/industry sector name filter */
+                sector33Name?: string | null;
+                /** @description Optional TOPIX-17 sector name filter */
+                sector17Name?: string | null;
+                /** @description Include PER, forward PER, PBR, and market cap */
+                includeValuation?: boolean;
             };
             header?: never;
             path?: never;
@@ -12099,7 +12122,7 @@ export interface operations {
                 markets?: string;
                 /** @description 振り返り日数 */
                 lookbackDays?: number;
-                sortBy?: "tradingValue" | "changePercentage" | "code";
+                sortBy?: "tradingValue" | "changePercentage" | "code" | "per" | "forwardPer" | "pbr" | "marketCap";
                 sortOrder?: "asc" | "desc";
                 /** @description 最大件数 */
                 limit?: number;

@@ -2696,6 +2696,81 @@ class TestCalculateDailyValuation:
         assert result[0].marketCap == 500000.0
         assert result[0].freeFloatMarketCap == 450000.0
 
+    def test_daily_valuation_negative_eps_does_not_emit_negative_per(
+        self, service: FundamentalsService
+    ):
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-05-15",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "EPS": -100.0,
+                    "BPS": 1000.0,
+                    "ShOutFY": 1000,
+                }
+            ),
+        ]
+
+        result = service._calculate_daily_valuation(
+            statements,
+            {"2024-06-20": 500.0},
+            True,
+        )
+
+        assert len(result) == 1
+        assert result[0].per is None
+        assert result[0].pbr == 0.5
+
+    def test_daily_valuation_forward_per_prefers_latest_quarterly_revision_as_of_price_date(
+        self, service: FundamentalsService
+    ):
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-05-15",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "EPS": 100.0,
+                    "BPS": 1000.0,
+                    "NxFEPS": 350.0,
+                    "ShOutFY": 1000,
+                }
+            ),
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-08-15",
+                    "CurPerType": "1Q",
+                    "CurPerEn": "2024-06-30",
+                    "FEPS": 400.0,
+                    "ShOutFY": 1000,
+                }
+            ),
+        ]
+
+        result = service._calculate_daily_valuation(
+            statements,
+            {
+                "2024-07-01": 700.0,
+                "2024-09-01": 700.0,
+            },
+            True,
+        )
+
+        assert result[0].forwardPer == 2.0
+        assert result[0].forwardEps == 350.0
+        assert result[0].forwardEpsDisclosedDate == "2024-05-15"
+        assert result[0].forwardEpsSource == "fy"
+        assert result[1].forwardPer == 1.75
+        assert result[1].forwardEps == 400.0
+        assert result[1].forwardEpsDisclosedDate == "2024-08-15"
+        assert result[1].forwardEpsSource == "revised"
+
     def test_daily_valuation_adjusts_share_basis_after_stock_split(
         self, service: FundamentalsService
     ):

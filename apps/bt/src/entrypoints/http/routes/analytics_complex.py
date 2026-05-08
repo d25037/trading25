@@ -80,10 +80,13 @@ def _normalize_factor_regression_symbol(symbol: str) -> str:
 async def get_ranking(
     request: Request,
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=0, le=1000, description="Maximum rows per ranking. Use 0 for no row limit."),
     markets: str = Query("prime"),
     lookbackDays: int = Query(1, ge=1, le=100),
     periodDays: int = Query(250, ge=1, le=250),
+    sector33Name: str | None = Query(None, description="Optional TOPIX-33/industry sector name filter"),
+    sector17Name: str | None = Query(None, description="Optional TOPIX-17 sector name filter"),
+    includeValuation: bool = Query(False, description="Include PER, forward PER, PBR, and market cap"),
 ) -> MarketRankingResponse:
     """マーケットランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -100,6 +103,9 @@ async def get_ranking(
             markets=markets,
             lookback_days=lookbackDays,
             period_days=periodDays,
+            sector33_name=sector33Name,
+            sector17_name=sector17Name,
+            include_valuation=includeValuation,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

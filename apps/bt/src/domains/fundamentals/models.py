@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -83,9 +84,13 @@ class DailyValuationDataPoint(BaseModel):
     date: str
     close: float
     per: float | None = None
+    forwardPer: float | None = None
     pbr: float | None = None
     marketCap: float | None = None
     freeFloatMarketCap: float | None = None
+    forwardEps: float | None = None
+    forwardEpsDisclosedDate: str | None = None
+    forwardEpsSource: Literal["revised", "fy"] | None = None
 
 
 @dataclass
@@ -93,6 +98,9 @@ class FYDataPoint:
     disclosed_date: str
     eps: float | None
     bps: float | None
+    forward_eps: float | None = None
+    forward_eps_disclosed_date: str | None = None
+    forward_eps_source: Literal["revised", "fy"] | None = None
 
 
 EMPTY_PREV_CASH_FLOW: dict[str, float | None] = {

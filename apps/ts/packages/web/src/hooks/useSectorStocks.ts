@@ -11,6 +11,10 @@ export interface SectorStockItem {
   currentPrice: number;
   volume: number;
   tradingValue?: number;
+  per?: number | null;
+  forwardPer?: number | null;
+  pbr?: number | null;
+  marketCap?: number | null;
   basePrice?: number;
   changeAmount?: number;
   changePercentage?: number;
@@ -33,7 +37,7 @@ export interface SectorStocksParams {
   sector17Name?: string;
   markets?: string;
   lookbackDays?: number;
-  sortBy?: 'tradingValue' | 'changePercentage' | 'code';
+  sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
 }

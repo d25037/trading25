@@ -549,6 +549,25 @@ class TestGetRankings:
         assert "prime" in market_codes
         assert "0111" in market_codes
 
+    def test_trading_value_ranking_includes_daily_change(self, service):
+        result = service.get_rankings(date="2024-01-19", markets="prime", limit=20)
+        sony = next(item for item in result.rankings.tradingValue if item.code == "67580")
+
+        assert sony.currentPrice == pytest.approx(13200.0)
+        assert sony.previousPrice == pytest.approx(13150.0)
+        assert sony.changeAmount == pytest.approx(50.0)
+        assert sony.changePercentage == pytest.approx(50.0 / 13150.0 * 100.0)
+
+    def test_trading_value_average_ranking_includes_lookback_change(self, service):
+        result = service.get_rankings(date="2024-01-19", markets="prime", lookback_days=3, limit=20)
+        toyota = next(item for item in result.rankings.tradingValue if item.code == "72030")
+
+        assert toyota.currentPrice == pytest.approx(2540.0)
+        assert toyota.basePrice == pytest.approx(2500.0)
+        assert toyota.changeAmount == pytest.approx(40.0)
+        assert toyota.changePercentage == pytest.approx(40.0 / 2500.0 * 100.0)
+        assert toyota.lookbackDays == 3
+
     def test_rankings_support_mixed_stock_and_stock_data_code_formats(self, service):
         result = service.get_rankings(markets="prime", limit=50)
         codes = {item.code for item in result.rankings.tradingValue}
@@ -588,6 +607,14 @@ class TestGetRankings:
         result = service.get_rankings(limit=1)
         assert len(result.rankings.tradingValue) <= 1
         assert len(result.rankings.gainers) <= 1
+
+    def test_zero_limit_returns_all_matching_rows_for_sector_sorting(self, service):
+        limited = service.get_rankings(markets="prime,standard", sector33_name="情報通信", limit=1)
+        unlimited = service.get_rankings(markets="prime,standard", sector33_name="情報通信", limit=0)
+
+        assert len(limited.rankings.tradingValue) == 1
+        assert len(unlimited.rankings.tradingValue) > len(limited.rankings.tradingValue)
+        assert {item.sector33Name for item in unlimited.rankings.tradingValue} == {"情報通信"}
 
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)

@@ -25,6 +25,7 @@ const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTA
 const mockSetValueCompositeRankingParams = vi.fn((params: typeof DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS) => {
   mockRouteState.valueCompositeRankingParams = params;
 });
+const mockUseRanking = vi.fn();
 const mockRouteState = {
   activeSubTab: 'ranking' as RankingPageTab,
   activeDailyView: 'stocks' as 'stocks' | 'indices',
@@ -47,20 +48,7 @@ vi.mock('@/hooks/usePageRouteState', () => ({
 }));
 
 vi.mock('@/hooks/useRanking', () => ({
-  useRanking: () => ({
-    data: {
-      rankings: {
-        tradingValue: [],
-        gainers: [],
-        losers: [],
-        periodHigh: [],
-        periodLow: [],
-      },
-      indexPerformance: [],
-    },
-    isLoading: false,
-    error: null,
-  }),
+  useRanking: (...args: unknown[]) => mockUseRanking(...args),
 }));
 
 vi.mock('@/hooks/useFundamentalRanking', () => ({
@@ -101,10 +89,25 @@ vi.mock('@/components/Ranking', () => ({
   ),
   RankingFilters: () => <div>Ranking Filters</div>,
   RankingSummary: () => <div>Ranking Summary</div>,
-  RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('6758')}>
-      Ranking Row
-    </button>
+  RankingTable: ({
+    onStockClick,
+    showValuation,
+    showChangeForTradingValue,
+    enableColumnSort,
+  }: {
+    onStockClick: (code: string) => void;
+    showValuation?: boolean;
+    showChangeForTradingValue?: boolean;
+    enableColumnSort?: boolean;
+  }) => (
+    <div>
+      <span>{showValuation ? 'valuation columns enabled' : 'valuation columns disabled'}</span>
+      <span>{showChangeForTradingValue ? 'trading value change enabled' : 'trading value change disabled'}</span>
+      <span>{enableColumnSort ? 'column sort enabled' : 'column sort disabled'}</span>
+      <button type="button" onClick={() => onStockClick('6758')}>
+        Ranking Row
+      </button>
+    </div>
   ),
 }));
 
@@ -141,6 +144,21 @@ describe('RankingPage', () => {
     mockSetRankingParams.mockClear();
     mockSetFundamentalRankingParams.mockClear();
     mockSetValueCompositeRankingParams.mockClear();
+    mockUseRanking.mockReset();
+    mockUseRanking.mockReturnValue({
+      data: {
+        rankings: {
+          tradingValue: [],
+          gainers: [],
+          losers: [],
+          periodHigh: [],
+          periodLow: [],
+        },
+        indexPerformance: [],
+      },
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('renders daily ranking by default', () => {
@@ -155,6 +173,10 @@ describe('RankingPage', () => {
     expect(screen.getByRole('button', { name: 'Value Scores' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
+    expect(screen.getByText('valuation columns enabled')).toBeInTheDocument();
+    expect(screen.getByText('trading value change enabled')).toBeInTheDocument();
+    expect(screen.getByText('column sort enabled')).toBeInTheDocument();
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
   });
 
   it('switches to fundamental ranking tab', async () => {
@@ -204,6 +226,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: false }), true);
   });
 
   it('navigates to indices when an index row is selected', async () => {
@@ -223,5 +246,4 @@ describe('RankingPage', () => {
     await user.click(screen.getByText('Value Score Row'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '9984' } });
   });
-
 });

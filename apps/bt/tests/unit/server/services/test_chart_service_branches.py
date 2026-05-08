@@ -10,15 +10,17 @@ class FakeReader:
     def __init__(self, query_one_results=None, query_results=None):
         self.query_one_results = list(query_one_results or [])
         self.query_results = list(query_results or [])
+        self.query_one_calls = []
+        self.query_calls = []
 
     def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
-        del sql, params
+        self.query_one_calls.append((sql, params))
         if self.query_one_results:
             return self.query_one_results.pop(0)
         return None
 
     def query(self, sql, params=()):  # noqa: ANN001, ANN201
-        del sql, params
+        self.query_calls.append((sql, params))
         if self.query_results:
             return self.query_results.pop(0)
         return []
@@ -303,7 +305,38 @@ class TestMiscBranches:
                         "change_amount": 20.0,
                         "change_percentage": 0.81,
                     }
-                ]
+                ],
+                [
+                    {
+                        "code": "72030",
+                        "disclosed_date": "2026-01-15",
+                        "earnings_per_share": 200.0,
+                        "profit": None,
+                        "equity": None,
+                        "type_of_current_period": "FY",
+                        "type_of_document": "FinancialStatements",
+                        "next_year_forecast_earnings_per_share": 250.0,
+                        "bps": 2777.777777777778,
+                        "sales": None,
+                        "operating_profit": None,
+                        "ordinary_profit": None,
+                        "operating_cash_flow": None,
+                        "dividend_fy": None,
+                        "forecast_dividend_fy": None,
+                        "next_year_forecast_dividend_fy": None,
+                        "payout_ratio": None,
+                        "forecast_payout_ratio": None,
+                        "next_year_forecast_payout_ratio": None,
+                        "forecast_eps": None,
+                        "investing_cash_flow": None,
+                        "financing_cash_flow": None,
+                        "cash_and_equivalents": None,
+                        "total_assets": None,
+                        "shares_outstanding": 500_000_000,
+                        "treasury_shares": 0,
+                    }
+                ],
+                [],
             ],
         )
         service = ChartService(reader)
@@ -315,3 +348,32 @@ class TestMiscBranches:
         assert result is not None
         assert len(result.stocks) == 1
         assert result.stocks[0].basePrice == 2480.0
+        assert result.stocks[0].per == 12.5
+        assert result.stocks[0].forwardPer == 10.0
+        assert result.stocks[0].pbr == 0.9
+        assert result.stocks[0].marketCap == 1.25e12
+        assert "輸送･機器" in reader.query_calls[0][1]
+
+    def test_sector_stocks_normalizes_index_display_prefixes_for_filters(self):
+        reader = FakeReader(
+            query_one_results=[
+                {"max_date": "2026-02-06"},
+                {"date": "2026-02-05"},
+                {"date": "2026-01-16"},
+            ],
+            query_results=[[]],
+        )
+        service = ChartService(reader)
+
+        result = service.get_sector_stocks(
+            sector33_name="東証業種別 水産・農林業",
+            markets="prime",
+            lookback_days=1,
+        )
+
+        assert result is not None
+        params = reader.query_calls[-1][1]
+        sql = reader.query_calls[-1][0]
+        assert "replace(s.sector_33_name, '・', '･') = ?" in sql
+        assert "水産･農林業" in params
+        assert "東証業種別 水産・農林業" not in params

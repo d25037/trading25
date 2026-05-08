@@ -122,12 +122,12 @@ function IndexPerformanceCard({
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2">
-          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Close</p>
+          <p className="text-[10px] font-semibold text-muted-foreground">終値</p>
           <p className="mt-0.5 font-semibold tabular-nums text-foreground">{formatIndexLevel(item.currentClose)}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{item.currentDate}</p>
         </div>
         <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2">
-          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">Base / {lookbackDays}D</p>
+          <p className="text-[10px] font-semibold text-muted-foreground">基準 / {lookbackDays}日</p>
           <p className="mt-0.5 font-semibold tabular-nums text-foreground">{formatIndexLevel(item.baseClose)}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{item.baseDate}</p>
         </div>
@@ -184,13 +184,13 @@ function IndexPerformanceRowsTable({
     <table className="w-full text-xs">
       <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
         <tr>
-          <th className="w-20 px-2 py-1.5 text-left">Code</th>
-          <th className="px-2 py-1.5 text-left">Index</th>
-          <th className="w-28 px-2 py-1.5 text-right">Close</th>
-          <th className="w-24 px-2 py-1.5 text-left">Date</th>
-          <th className="w-28 px-2 py-1.5 text-right">Base Close</th>
-          <th className="w-24 px-2 py-1.5 text-left">Base Date</th>
-          <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}D</th>
+          <th className="w-20 px-2 py-1.5 text-left">コード</th>
+          <th className="px-2 py-1.5 text-left">指数名</th>
+          <th className="w-28 px-2 py-1.5 text-right">終値</th>
+          <th className="w-24 px-2 py-1.5 text-left">日付</th>
+          <th className="w-28 px-2 py-1.5 text-right">基準終値</th>
+          <th className="w-24 px-2 py-1.5 text-left">基準日</th>
+          <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}日騰落率</th>
         </tr>
       </thead>
       <tbody>
@@ -248,14 +248,12 @@ export function IndexPerformanceTable({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-foreground">
-              Indices
+              指数一覧
               {rows.length > 0 ? (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">({rows.length})</span>
               ) : null}
             </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Baseline: {lookbackDays} trading sessions before each index close
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">基準: 各指数終値の {lookbackDays} 営業日前</p>
           </div>
         </div>
       </div>

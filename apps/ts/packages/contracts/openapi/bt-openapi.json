@@ -10816,6 +10816,17 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "forwardPer": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardper"
+          },
           "lookbackDays": {
             "anyOf": [
               {
@@ -10827,9 +10838,42 @@
             ],
             "title": "Lookbackdays"
           },
+          "marketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marketcap"
+          },
           "marketCode": {
             "title": "Marketcode",
             "type": "string"
+          },
+          "pbr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbr"
+          },
+          "per": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per"
           },
           "previousPrice": {
             "anyOf": [
@@ -12862,6 +12906,17 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "forwardPer": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardper"
+          },
           "lookbackDays": {
             "anyOf": [
               {
@@ -12873,9 +12928,42 @@
             ],
             "title": "Lookbackdays"
           },
+          "marketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marketcap"
+          },
           "marketCode": {
             "title": "Marketcode",
             "type": "string"
+          },
+          "pbr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbr"
+          },
+          "per": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per"
           },
           "rank": {
             "title": "Rank",
@@ -18869,13 +18957,15 @@
             }
           },
           {
+            "description": "Maximum rows per ranking. Use 0 for no row limit.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 20,
-              "maximum": 100,
-              "minimum": 1,
+              "description": "Maximum rows per ranking. Use 0 for no row limit.",
+              "maximum": 1000,
+              "minimum": 0,
               "title": "Limit",
               "type": "integer"
             }
@@ -18912,6 +19002,54 @@
               "minimum": 1,
               "title": "Perioddays",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Optional TOPIX-33/industry sector name filter",
+            "in": "query",
+            "name": "sector33Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional TOPIX-33/industry sector name filter",
+              "title": "Sector33Name"
+            }
+          },
+          {
+            "description": "Optional TOPIX-17 sector name filter",
+            "in": "query",
+            "name": "sector17Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional TOPIX-17 sector name filter",
+              "title": "Sector17Name"
+            }
+          },
+          {
+            "description": "Include PER, forward PER, PBR, and market cap",
+            "in": "query",
+            "name": "includeValuation",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include PER, forward PER, PBR, and market cap",
+              "title": "Includevaluation",
+              "type": "boolean"
             }
           }
         ],
@@ -19763,7 +19901,11 @@
               "enum": [
                 "tradingValue",
                 "changePercentage",
-                "code"
+                "code",
+                "per",
+                "forwardPer",
+                "pbr",
+                "marketCap"
               ],
               "title": "Sortby",
               "type": "string"

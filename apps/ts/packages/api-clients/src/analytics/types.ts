@@ -44,6 +44,10 @@ export interface RankingItem {
   changeAmount?: number;
   changePercentage?: number;
   lookbackDays?: number;
+  per?: number | null;
+  forwardPer?: number | null;
+  pbr?: number | null;
+  marketCap?: number | null;
 }
 
 export interface Rankings {
@@ -83,6 +87,9 @@ export interface MarketRankingParams {
   markets?: string;
   lookbackDays?: number;
   periodDays?: number;
+  sector33Name?: string;
+  sector17Name?: string;
+  includeValuation?: boolean;
 }
 
 export interface FundamentalsParams {
@@ -153,7 +160,7 @@ export interface SectorStocksParams {
   sector17Name?: string;
   markets?: string;
   lookbackDays?: number;
-  sortBy?: 'tradingValue' | 'changePercentage' | 'code';
+  sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
 }

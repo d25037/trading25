@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from typing import Literal
 
 import pandas as pd
 
@@ -26,6 +27,7 @@ from .models import (
     FYDataPoint,
     FundamentalDataPoint,
 )
+from .valuation_primitives import market_cap_from_price_and_shares, valuation_ratio
 
 
 class FundamentalsCalculator:
@@ -255,6 +257,23 @@ class FundamentalsCalculator:
         close_series: pd.Series[float] = daily_ohlcv["Close"]
         return {k.strftime("%Y-%m-%d"): v for k, v in close_series.items()}
 
+    def calculate_latest_valuation(
+        self,
+        statements: list[JQuantsStatement],
+        *,
+        close: float,
+        price_date: str,
+        prefer_consolidated: bool,
+        share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
+    ) -> DailyValuationDataPoint | None:
+        values = self._calculate_daily_valuation(
+            statements,
+            {price_date: close},
+            prefer_consolidated,
+            share_adjustment_events=share_adjustment_events,
+        )
+        return values[-1] if values else None
+
     def _get_stock_prices_for_statements(
         self,
         statements: list[JQuantsStatement],
@@ -468,14 +487,10 @@ class FundamentalsCalculator:
         return (net_profit / net_sales) * 100
 
     def _calculate_per(self, eps: float | None, stock_price: float | None) -> float | None:
-        if eps is None or stock_price is None or eps == 0:
-            return None
-        return stock_price / eps
+        return valuation_ratio(stock_price, eps)
 
     def _calculate_pbr(self, bps: float | None, stock_price: float | None) -> float | None:
-        if bps is None or stock_price is None or bps <= 0:
-            return None
-        return stock_price / bps
+        return valuation_ratio(stock_price, bps)
 
     def _calculate_simple_fcf(self, cfo: float | None, cfi: float | None) -> float | None:
         if cfo is None or cfi is None:
@@ -771,17 +786,23 @@ class FundamentalsCalculator:
             if applicable_fy is None:
                 continue
 
-            per = None
-            pbr = None
-            market_cap = None
+            forward_eps, forward_eps_disclosed_date, forward_eps_source = (
+                self._resolve_forward_eps_for_daily_valuation(
+                    statements,
+                    applicable_fy,
+                    prefer_consolidated,
+                    baseline_shares,
+                    date_str,
+                )
+            )
+            per = self._round_or_none(valuation_ratio(close, applicable_fy.eps))
+            forward_per = self._round_or_none(valuation_ratio(close, forward_eps))
+            pbr = self._round_or_none(valuation_ratio(close, applicable_fy.bps))
+            market_cap = self._round_or_none(
+                market_cap_from_price_and_shares(close, baseline_shares)
+            )
             free_float_market_cap = None
-
-            if applicable_fy.eps is not None and applicable_fy.eps != 0:
-                per = round(close / applicable_fy.eps, 2)
-            if applicable_fy.bps is not None and applicable_fy.bps > 0:
-                pbr = round(close / applicable_fy.bps, 2)
-            if baseline_shares is not None and baseline_shares != 0:
-                market_cap = self._round_or_none(calc_market_cap_scalar(close, baseline_shares, 0.0))
+            if baseline_shares is not None:
                 free_float_market_cap = self._round_or_none(
                     calc_market_cap_scalar(close, baseline_shares, baseline_treasury_shares)
                 )
@@ -791,9 +812,13 @@ class FundamentalsCalculator:
                     date=date_str,
                     close=close,
                     per=per,
+                    forwardPer=forward_per,
                     pbr=pbr,
                     marketCap=market_cap,
                     freeFloatMarketCap=free_float_market_cap,
+                    forwardEps=forward_eps,
+                    forwardEpsDisclosedDate=forward_eps_disclosed_date,
+                    forwardEpsSource=forward_eps_source,
                 )
             )
         return result
@@ -810,21 +835,81 @@ class FundamentalsCalculator:
                 continue
             eps = self._calculate_eps(stmt, prefer_consolidated)
             bps = self._calculate_bps(stmt, prefer_consolidated)
+            forecast_eps, _ = self._get_forecast_eps(stmt, eps, prefer_consolidated)
             adjusted_eps = self._compute_adjusted_value(eps, stmt.ShOutFY, baseline_shares)
             adjusted_bps = self._compute_adjusted_value(bps, stmt.ShOutFY, baseline_shares)
+            adjusted_forecast_eps = self._compute_adjusted_value(
+                forecast_eps,
+                stmt.ShOutFY,
+                baseline_shares,
+            )
             display_eps = adjusted_eps if adjusted_eps is not None else eps
             display_bps = adjusted_bps if adjusted_bps is not None else bps
+            display_forecast_eps = (
+                adjusted_forecast_eps
+                if adjusted_forecast_eps is not None
+                else self._round_or_none(forecast_eps)
+            )
             if not self._has_valid_valuation_metrics(display_eps, display_bps):
                 continue
-            fy_data.append(FYDataPoint(disclosed_date=stmt.DiscDate, eps=display_eps, bps=display_bps))
+            fy_data.append(
+                FYDataPoint(
+                    disclosed_date=stmt.DiscDate,
+                    eps=display_eps,
+                    bps=display_bps,
+                    forward_eps=display_forecast_eps,
+                    forward_eps_disclosed_date=(
+                        stmt.DiscDate if display_forecast_eps is not None else None
+                    ),
+                    forward_eps_source="fy" if display_forecast_eps is not None else None,
+                )
+            )
 
         fy_data.sort(key=lambda x: x.disclosed_date)
         return fy_data
 
     def _has_valid_valuation_metrics(self, eps: float | None, bps: float | None) -> bool:
-        eps_valid = eps is not None and eps != 0
+        eps_valid = eps is not None and eps > 0
         bps_valid = bps is not None and bps > 0
         return eps_valid or bps_valid
+
+    def _resolve_forward_eps_for_daily_valuation(
+        self,
+        statements: list[JQuantsStatement],
+        applicable_fy: FYDataPoint,
+        prefer_consolidated: bool,
+        baseline_shares: float | None,
+        date_str: str,
+    ) -> tuple[float | None, str | None, Literal["revised", "fy"] | None]:
+        quarterly_statements = [
+            stmt
+            for stmt in statements
+            if normalize_period_type(stmt.CurPerType) in {"1Q", "2Q", "3Q"}
+            and applicable_fy.disclosed_date < stmt.DiscDate <= date_str
+        ]
+        quarterly_statements.sort(key=lambda stmt: stmt.DiscDate, reverse=True)
+        for stmt in quarterly_statements:
+            forecast_eps = stmt.FEPS if prefer_consolidated else stmt.FNCEPS
+            if forecast_eps is None:
+                continue
+            adjusted_forecast_eps = self._compute_adjusted_value(
+                forecast_eps,
+                stmt.ShOutFY,
+                baseline_shares,
+            )
+            return (
+                adjusted_forecast_eps
+                if adjusted_forecast_eps is not None
+                else self._round_or_none(forecast_eps),
+                stmt.DiscDate,
+                "revised",
+            )
+
+        return (
+            applicable_fy.forward_eps,
+            applicable_fy.forward_eps_disclosed_date,
+            applicable_fy.forward_eps_source,
+        )
 
     def _find_applicable_fy(self, fy_data_points: list[FYDataPoint], date_str: str) -> FYDataPoint | None:
         applicable_fy: FYDataPoint | None = None
@@ -869,15 +954,18 @@ class FundamentalsCalculator:
 
     def _apply_fy_data_to_metrics(self, metrics: FundamentalDataPoint, data: list[FundamentalDataPoint]) -> FundamentalDataPoint:
         latest_fy = next((d for d in data if d.periodType == "FY" and self._has_actual_financial_data(d)), None)
-        if latest_fy is None or latest_fy.eps is None or latest_fy.eps == 0:
+        if latest_fy is None:
             return metrics
 
         fy_per = None
         fy_pbr = None
         if metrics.stockPrice is not None:
-            fy_per = round(metrics.stockPrice / latest_fy.eps, 2)
-            if latest_fy.bps is not None and latest_fy.bps > 0:
-                fy_pbr = round(metrics.stockPrice / latest_fy.bps, 2)
+            fy_per = self._round_or_none(
+                valuation_ratio(metrics.stockPrice, latest_fy.eps)
+            )
+            fy_pbr = self._round_or_none(
+                valuation_ratio(metrics.stockPrice, latest_fy.bps)
+            )
 
         return FundamentalDataPoint(
             **{

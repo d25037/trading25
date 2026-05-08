@@ -11,6 +11,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from src.domains.fundamentals.valuation_primitives import valuation_ratio_series
 from src.shared.models.signals import normalize_bool_series
 
 from .fundamental_helpers import _calc_ratio_signal
@@ -44,7 +45,7 @@ def is_undervalued_by_per(
         - exclude_negative=Trueの場合、PERが負の値はFalseを返す（損失企業除外）
         - 推奨period_type: "FY"（通期EPSベースで計算）
     """
-    per = close / eps.where(eps > 0, np.nan)
+    per = valuation_ratio_series(close, eps)
     return _calc_ratio_signal(per, threshold, condition, exclude_negative)
 
 
@@ -81,7 +82,7 @@ def is_undervalued_by_pbr(
     close_common = close.reindex(common_index)
     bps_common = bps.reindex(common_index)
 
-    pbr = close_common / bps_common.where(bps_common > 0, np.nan)
+    pbr = valuation_ratio_series(close_common, bps_common)
     pbr_signal = _calc_ratio_signal(pbr, threshold, condition, exclude_negative)
 
     result = pd.Series(False, index=close.index)
@@ -119,6 +120,6 @@ def is_undervalued_growth_by_peg(
     """
     valid_eps = eps.where(eps > 0, np.nan)
     eps_growth_rate = (next_year_forecast_eps - eps) / valid_eps
-    per = close / valid_eps
+    per = valuation_ratio_series(close, eps)
     peg_ratio = per / eps_growth_rate.where(eps_growth_rate > 0, np.nan)
     return _calc_ratio_signal(peg_ratio, threshold, condition)
