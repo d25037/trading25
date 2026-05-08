@@ -119,7 +119,8 @@ APIエンドポイントの確認・デバッグ時は正式名の **`ts-api-end
 
 ### User-Level Skills
 
-ユーザーレベルのスキル（`~/.codex/skills/`）も利用可能:
+ユーザーレベルの process skill（`~/.agents/skills/`）も利用可能。ts 作業では必ず root `AGENTS.md` と project-specific skills を優先する。
 
-- **`local-issues`** — legacy archive 参照用。active/open task の SoT は GitHub Issues なので、新規・更新・クローズの管理には使わない。
-- **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。
+- **`aicheck`** — review / validation / commit 前確認。ts では `bun` typecheck / lint / focused tests / OpenAPI contract sync を変更範囲に合わせて使う。
+- **`finish`** — 検証済み変更の docs 確認、明示 staging、commit / push / PR handoff。`scripts/prepush-ci.sh` が必要な場面ではこれを優先する。
+- **`gh-pr-review-merge`** — GitHub PR のレビュー、required checks 確認、明示確認後の merge。

@@ -225,9 +225,10 @@ OpenClaw 固有の詳細運用メモは repo 外（例: `/home/open_shiro/.openc
 
 ## Skills ガバナンス
 
-- プロジェクト正本のスキルは `/.codex/skills` に配置する
-- repo 内の agent-facing instruction は `AGENTS.md`、プロジェクトスキルは `/.codex/skills` を唯一の SoT とする
-- `CLAUDE.md` / `.claude/` / `.agents/` は非対応。互換 symlink や mirror directory を追加しない
+- repo 内の agent-facing instruction は `AGENTS.md`、プロジェクト固有の domain skill は `/.codex/skills` を唯一の SoT とする
+- `/.codex/skills` は bt/ts/API/research などの domain skill に限定する。`aicheck` / `finish` のような横断 process skill は user-level skill を使い、この repo に同名 skill を追加しない
+- user-level process skill は `~/.agents/skills` の `aicheck` / `finish` / `gh-pr-review-merge` / `code-simplifier` / `codex-skills` を使える。実行時は必ずこの `AGENTS.md` と該当する `/.codex/skills/*` を優先して読む
+- repo 内の `CLAUDE.md` / `.claude/` / `.agents/` は非対応。互換 symlink や mirror directory を追加しない
 - 参照生成: `scripts/skills/refresh_skill_references.py`
 - 監査: `scripts/skills/audit_skills.py --strict-legacy`（legacy Claude/agents path 再混入の検知）
 
