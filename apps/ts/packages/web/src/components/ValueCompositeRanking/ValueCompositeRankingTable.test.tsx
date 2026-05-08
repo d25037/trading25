@@ -13,6 +13,7 @@ function buildResponse(
     metricKey: 'standard_value_composite',
     scoreMethod: markets.includes('prime') ? 'prime_size_tilt' : 'standard_pbr_tilt',
     forwardEpsMode: 'latest',
+    applyLiquidityFilter: true,
     scorePolicy: 'test',
     weights: {},
     itemCount: 1,

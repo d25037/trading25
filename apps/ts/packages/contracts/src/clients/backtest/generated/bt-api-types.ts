@@ -10835,8 +10835,12 @@ export interface components {
          * @description Value-composite ranking item.
          */
         ValueCompositeRankingItem: {
+            /** Avgtradingvalue60Dmiljpy */
+            avgTradingValue60dMilJpy?: number | null;
             /** Bps */
             bps?: number | null;
+            /** Breakoutboost */
+            breakoutBoost?: number | null;
             /** Code */
             code: string;
             /** Companyname */
@@ -10853,6 +10857,8 @@ export interface components {
             forwardPer: number;
             /** Latestfydiscloseddate */
             latestFyDisclosedDate?: string | null;
+            /** Liquidityeligible */
+            liquidityEligible?: boolean | null;
             /** Lowforwardperscore */
             lowForwardPerScore: number;
             /** Lowpbrscore */
@@ -10867,6 +10873,8 @@ export interface components {
             rank: number;
             /** Score */
             score: number;
+            /** Scorebeforeboost */
+            scoreBeforeBoost?: number | null;
             /** Sector33Name */
             sector33Name: string;
             /** Smallmarketcapscore */
@@ -10880,6 +10888,17 @@ export interface components {
          * @description Value-composite ranking response.
          */
         ValueCompositeRankingResponse: {
+            /**
+             * Applyliquidityfilter
+             * @default true
+             */
+            applyLiquidityFilter: boolean;
+            /** Breakoutlookbacksessions */
+            breakoutLookbackSessions?: number | null;
+            /** Breakoutscoreboost */
+            breakoutScoreBoost?: number | null;
+            /** Breakoutwindow */
+            breakoutWindow?: number | null;
             /** Date */
             date: string;
             /**
@@ -10901,11 +10920,17 @@ export interface components {
              * @constant
              */
             metricKey: "standard_value_composite";
+            /** Profileid */
+            profileId?: ("standard_breakout_120d20" | "prime_size75_forward_per25") | null;
+            /** Profilelabel */
+            profileLabel?: string | null;
+            /** Rebalancemonths */
+            rebalanceMonths?: number | null;
             /**
              * Scoremethod
              * @enum {string}
              */
-            scoreMethod: "standard_pbr_tilt" | "prime_size_tilt" | "equal_weight";
+            scoreMethod: "standard_pbr_tilt" | "prime_size_tilt" | "prime_size75_forward_per25" | "equal_weight";
             /** Scorepolicy */
             scorePolicy: string;
             /** Weights */
@@ -10945,7 +10970,7 @@ export interface components {
             /** Scoreavailable */
             scoreAvailable: boolean;
             /** Scoremethod */
-            scoreMethod?: ("standard_pbr_tilt" | "prime_size_tilt" | "equal_weight") | null;
+            scoreMethod?: ("standard_pbr_tilt" | "prime_size_tilt" | "prime_size75_forward_per25" | "equal_weight") | null;
             /** Scorepolicy */
             scorePolicy?: string | null;
             /**
@@ -10965,10 +10990,28 @@ export interface components {
          * @description Entry-as-of raw technical metrics for value-composite ranking.
          */
         ValueCompositeTechnicalMetrics: {
+            /** Avgtradingvalue60Dmiljpy */
+            avgTradingValue60dMilJpy?: number | null;
+            /** Avgtradingvalue60Dsourcesessions */
+            avgTradingValue60dSourceSessions?: number | null;
+            /** Breakoutfeaturedate */
+            breakoutFeatureDate?: string | null;
+            /** Closetopriorhigh120Dpct */
+            closeToPriorHigh120dPct?: number | null;
+            /** Closetopriorhigh20Dpct */
+            closeToPriorHigh20dPct?: number | null;
+            /** Dayssincenewhigh120D */
+            daysSinceNewHigh120d?: number | null;
+            /** Dayssincenewhigh20D */
+            daysSinceNewHigh20d?: number | null;
             /** Downsidevolatility60Dpct */
             downsideVolatility60dPct?: number | null;
             /** Featuredate */
             featureDate?: string | null;
+            /** Newhigh120D */
+            newHigh120d?: boolean | null;
+            /** Newhigh20D */
+            newHigh20d?: boolean | null;
             /** Reboundfrom252Dlowpct */
             reboundFrom252dLowPct?: number | null;
             /** Return252Dpct */
@@ -12302,8 +12345,10 @@ export interface operations {
                 date?: string | null;
                 limit?: number;
                 markets?: string;
-                scoreMethod?: "standard_pbr_tilt" | "prime_size_tilt" | "equal_weight";
+                profileId?: ("standard_breakout_120d20" | "prime_size75_forward_per25") | null;
+                scoreMethod?: ("standard_pbr_tilt" | "prime_size_tilt" | "prime_size75_forward_per25" | "equal_weight") | null;
                 forwardEpsMode?: "latest" | "fy";
+                applyLiquidityFilter?: boolean;
             };
             header?: never;
             path?: never;

@@ -18,6 +18,7 @@ import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ra
 import type { ScreeningParams } from '@/types/screening';
 import type {
   ValueCompositeForwardEpsMode,
+  ValueCompositeProfileId,
   ValueCompositeRankingParams,
   ValueCompositeScoreMethod,
 } from '@/types/valueCompositeRanking';
@@ -97,7 +98,9 @@ export interface RankingRouteSearch {
   valueDate?: string;
   valueLimit?: number;
   valueMarkets?: string;
+  valueProfileId?: ValueCompositeProfileId;
   valueScoreMethod?: ValueCompositeScoreMethod;
+  valueApplyLiquidityFilter?: boolean;
   valueForwardEpsMode?: ValueCompositeForwardEpsMode;
 }
 
@@ -124,6 +127,12 @@ const RANKING_PAGE_TABS: RankingPageTab[] = ['ranking', 'fundamentalRanking', 'v
 const VALUE_COMPOSITE_SCORE_METHOD_VALUES: ValueCompositeScoreMethod[] = [
   'standard_pbr_tilt',
   'prime_size_tilt',
+  'prime_size75_forward_per25',
+  'equal_weight',
+];
+const VALUE_COMPOSITE_PROFILE_VALUES: ValueCompositeProfileId[] = [
+  'standard_breakout_120d20',
+  'prime_size75_forward_per25',
 ];
 const VALUE_COMPOSITE_FORWARD_EPS_MODE_VALUES: ValueCompositeForwardEpsMode[] = ['latest', 'fy'];
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices'];
@@ -220,6 +229,10 @@ function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined
 
 function normalizeValueCompositeScoreMethod(value: unknown): ValueCompositeScoreMethod | undefined {
   return normalizeEnum(normalizeString(value), VALUE_COMPOSITE_SCORE_METHOD_VALUES);
+}
+
+function normalizeValueCompositeProfileId(value: unknown): ValueCompositeProfileId | undefined {
+  return normalizeEnum(normalizeString(value), VALUE_COMPOSITE_PROFILE_VALUES);
 }
 
 function normalizeValueCompositeForwardEpsMode(value: unknown): ValueCompositeForwardEpsMode | undefined {
@@ -548,7 +561,9 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
       ['date', search.valueDate],
       ['limit', search.valueLimit],
       ['markets', search.valueMarkets],
+      ['profileId', search.valueProfileId],
       ['scoreMethod', search.valueScoreMethod],
+      ['applyLiquidityFilter', search.valueApplyLiquidityFilter],
       ['forwardEpsMode', search.valueForwardEpsMode],
     ]),
   };
@@ -719,7 +734,9 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'valueDate', normalizeString(search.valueDate));
   assignIfDefined(next, 'valueLimit', normalizePositiveInt(search.valueLimit));
   assignIfDefined(next, 'valueMarkets', normalizeString(search.valueMarkets));
+  assignIfDefined(next, 'valueProfileId', normalizeValueCompositeProfileId(search.valueProfileId));
   assignIfDefined(next, 'valueScoreMethod', normalizeValueCompositeScoreMethod(search.valueScoreMethod));
+  assignIfDefined(next, 'valueApplyLiquidityFilter', normalizeBoolean(search.valueApplyLiquidityFilter));
   assignIfDefined(next, 'valueForwardEpsMode', normalizeValueCompositeForwardEpsMode(search.valueForwardEpsMode));
   return next;
 }
@@ -802,9 +819,21 @@ export function serializeRankingSearch(state: {
   );
   assignIfDefinedAndNotDefault(
     next,
+    'valueProfileId',
+    state.valueCompositeRankingParams.profileId,
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.profileId
+  );
+  assignIfDefinedAndNotDefault(
+    next,
     'valueScoreMethod',
     state.valueCompositeRankingParams.scoreMethod,
     DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.scoreMethod
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'valueApplyLiquidityFilter',
+    state.valueCompositeRankingParams.applyLiquidityFilter,
+    DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS.applyLiquidityFilter
   );
   assignIfDefinedAndNotDefault(
     next,

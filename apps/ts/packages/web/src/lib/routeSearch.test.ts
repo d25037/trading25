@@ -227,7 +227,8 @@ describe('routeSearch', () => {
       valueDate: '2026-04-24',
       valueMarkets: 'standard',
       valueLimit: '100',
-      valueScoreMethod: 'prime_size_tilt',
+      valueProfileId: 'prime_size75_forward_per25',
+      valueApplyLiquidityFilter: false,
       valueForwardEpsMode: 'fy',
     });
 
@@ -238,14 +239,16 @@ describe('routeSearch', () => {
       date: '2026-04-24',
       markets: 'standard',
       limit: 100,
-      scoreMethod: 'prime_size_tilt',
+      profileId: 'prime_size75_forward_per25',
+      applyLiquidityFilter: false,
       forwardEpsMode: 'fy',
     });
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'valueComposite',
       valueDate: '2026-04-24',
       valueLimit: 100,
-      valueScoreMethod: 'prime_size_tilt',
+      valueProfileId: 'prime_size75_forward_per25',
+      valueApplyLiquidityFilter: false,
       valueForwardEpsMode: 'fy',
     });
   });

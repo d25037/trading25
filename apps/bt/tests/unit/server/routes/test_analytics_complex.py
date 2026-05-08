@@ -495,7 +495,7 @@ class TestValueCompositeRanking:
         assert data["scoreMethod"] == "standard_pbr_tilt"
         assert data["forwardEpsMode"] == "latest"
         assert data["markets"] == ["standard"]
-        assert "no ADV60 floor" in data["scorePolicy"]
+        assert "requires PBR > 0 and forward PER > 0" in data["scorePolicy"]
         assert data["weights"] == {
             "smallMarketCap": 0.35,
             "lowPbr": 0.4,
@@ -556,6 +556,22 @@ class TestValueCompositeRanking:
             "smallMarketCap": 0.465,
             "lowPbr": 0.05,
             "lowForwardPer": 0.485,
+        }
+
+    def test_profile_id_parameter(self, analytics_client):
+        resp = analytics_client.get(
+            "/api/analytics/value-composite-ranking?markets=prime&profileId=prime_size75_forward_per25"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["profileId"] == "prime_size75_forward_per25"
+        assert data["profileLabel"] == "Prime size75 / forward PER25"
+        assert data["scoreMethod"] == "prime_size75_forward_per25"
+        assert data["rebalanceMonths"] == 2
+        assert data["weights"] == {
+            "smallMarketCap": 0.75,
+            "lowPbr": 0.0,
+            "lowForwardPer": 0.25,
         }
 
     def test_422_no_db(self):

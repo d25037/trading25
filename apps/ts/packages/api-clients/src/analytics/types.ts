@@ -199,7 +199,12 @@ export interface FundamentalRankingParams {
   forecastAboveAllActuals?: boolean;
 }
 
-export type ValueCompositeScoreMethod = 'standard_pbr_tilt' | 'prime_size_tilt' | 'equal_weight';
+export type ValueCompositeScoreMethod =
+  | 'standard_pbr_tilt'
+  | 'prime_size_tilt'
+  | 'prime_size75_forward_per25'
+  | 'equal_weight';
+export type ValueCompositeProfileId = 'standard_breakout_120d20' | 'prime_size75_forward_per25';
 export type ValueCompositeForwardEpsMode = 'latest' | 'fy';
 export type ValueCompositeScoreUnavailableReason =
   | 'not_found'
@@ -210,11 +215,20 @@ export type ValueCompositeScoreUnavailableReason =
 
 export interface ValueCompositeTechnicalMetrics {
   featureDate?: string | null;
+  breakoutFeatureDate?: string | null;
   reboundFrom252dLowPct?: number | null;
   return252dPct?: number | null;
   volatility20dPct?: number | null;
   volatility60dPct?: number | null;
   downsideVolatility60dPct?: number | null;
+  avgTradingValue60dMilJpy?: number | null;
+  avgTradingValue60dSourceSessions?: number | null;
+  newHigh20d?: boolean | null;
+  daysSinceNewHigh20d?: number | null;
+  closeToPriorHigh20dPct?: number | null;
+  newHigh120d?: boolean | null;
+  daysSinceNewHigh120d?: number | null;
+  closeToPriorHigh120dPct?: number | null;
 }
 
 export interface ValueCompositeRankingItem {
@@ -226,6 +240,10 @@ export interface ValueCompositeRankingItem {
   currentPrice: number;
   volume: number;
   score: number;
+  scoreBeforeBoost?: number | null;
+  breakoutBoost?: number | null;
+  liquidityEligible?: boolean | null;
+  avgTradingValue60dMilJpy?: number | null;
   lowPbrScore: number;
   smallMarketCapScore: number;
   lowForwardPerScore: number;
@@ -244,8 +262,15 @@ export interface ValueCompositeRankingResponse {
   date: string;
   markets: string[];
   metricKey: 'standard_value_composite';
+  profileId?: ValueCompositeProfileId | null;
+  profileLabel?: string | null;
   scoreMethod: ValueCompositeScoreMethod;
   forwardEpsMode: ValueCompositeForwardEpsMode;
+  rebalanceMonths?: number | null;
+  breakoutWindow?: number | null;
+  breakoutLookbackSessions?: number | null;
+  breakoutScoreBoost?: number | null;
+  applyLiquidityFilter: boolean;
   scorePolicy: string;
   weights: Record<string, number>;
   itemCount: number;
@@ -275,7 +300,9 @@ export interface ValueCompositeRankingParams {
   date?: string;
   limit?: number;
   markets?: string;
+  profileId?: ValueCompositeProfileId;
   scoreMethod?: ValueCompositeScoreMethod;
+  applyLiquidityFilter?: boolean;
   forwardEpsMode?: ValueCompositeForwardEpsMode;
 }
 

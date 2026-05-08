@@ -17164,6 +17164,17 @@
       "ValueCompositeRankingItem": {
         "description": "Value-composite ranking item.",
         "properties": {
+          "avgTradingValue60dMilJpy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avgtradingvalue60Dmiljpy"
+          },
           "bps": {
             "anyOf": [
               {
@@ -17174,6 +17185,17 @@
               }
             ],
             "title": "Bps"
+          },
+          "breakoutBoost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakoutboost"
           },
           "code": {
             "title": "Code",
@@ -17239,6 +17261,17 @@
             ],
             "title": "Latestfydiscloseddate"
           },
+          "liquidityEligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidityeligible"
+          },
           "lowForwardPerScore": {
             "title": "Lowforwardperscore",
             "type": "number"
@@ -17266,6 +17299,17 @@
           "score": {
             "title": "Score",
             "type": "number"
+          },
+          "scoreBeforeBoost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scorebeforeboost"
           },
           "sector33Name": {
             "title": "Sector33Name",
@@ -17312,6 +17356,44 @@
       "ValueCompositeRankingResponse": {
         "description": "Value-composite ranking response.",
         "properties": {
+          "applyLiquidityFilter": {
+            "default": true,
+            "title": "Applyliquidityfilter",
+            "type": "boolean"
+          },
+          "breakoutLookbackSessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakoutlookbacksessions"
+          },
+          "breakoutScoreBoost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakoutscoreboost"
+          },
+          "breakoutWindow": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakoutwindow"
+          },
           "date": {
             "title": "Date",
             "type": "string"
@@ -17352,10 +17434,48 @@
             "title": "Metrickey",
             "type": "string"
           },
+          "profileId": {
+            "anyOf": [
+              {
+                "enum": [
+                  "standard_breakout_120d20",
+                  "prime_size75_forward_per25"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profileid"
+          },
+          "profileLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profilelabel"
+          },
+          "rebalanceMonths": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rebalancemonths"
+          },
           "scoreMethod": {
             "enum": [
               "standard_pbr_tilt",
               "prime_size_tilt",
+              "prime_size75_forward_per25",
               "equal_weight"
             ],
             "title": "Scoremethod",
@@ -17468,6 +17588,7 @@
                 "enum": [
                   "standard_pbr_tilt",
                   "prime_size_tilt",
+                  "prime_size75_forward_per25",
                   "equal_weight"
                 ],
                 "type": "string"
@@ -17533,6 +17654,83 @@
       "ValueCompositeTechnicalMetrics": {
         "description": "Entry-as-of raw technical metrics for value-composite ranking.",
         "properties": {
+          "avgTradingValue60dMilJpy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avgtradingvalue60Dmiljpy"
+          },
+          "avgTradingValue60dSourceSessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avgtradingvalue60Dsourcesessions"
+          },
+          "breakoutFeatureDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakoutfeaturedate"
+          },
+          "closeToPriorHigh120dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closetopriorhigh120Dpct"
+          },
+          "closeToPriorHigh20dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closetopriorhigh20Dpct"
+          },
+          "daysSinceNewHigh120d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dayssincenewhigh120D"
+          },
+          "daysSinceNewHigh20d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dayssincenewhigh20D"
+          },
           "downsideVolatility60dPct": {
             "anyOf": [
               {
@@ -17554,6 +17752,28 @@
               }
             ],
             "title": "Featuredate"
+          },
+          "newHigh120d": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newhigh120D"
+          },
+          "newHigh20d": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newhigh20D"
           },
           "reboundFrom252dLowPct": {
             "anyOf": [
@@ -19945,17 +20165,44 @@
           },
           {
             "in": "query",
+            "name": "profileId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "standard_breakout_120d20",
+                    "prime_size75_forward_per25"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profileid"
+            }
+          },
+          {
+            "in": "query",
             "name": "scoreMethod",
             "required": false,
             "schema": {
-              "default": "standard_pbr_tilt",
-              "enum": [
-                "standard_pbr_tilt",
-                "prime_size_tilt",
-                "equal_weight"
+              "anyOf": [
+                {
+                  "enum": [
+                    "standard_pbr_tilt",
+                    "prime_size_tilt",
+                    "prime_size75_forward_per25",
+                    "equal_weight"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Scoremethod",
-              "type": "string"
+              "title": "Scoremethod"
             }
           },
           {
@@ -19970,6 +20217,16 @@
               ],
               "title": "Forwardepsmode",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "applyLiquidityFilter",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Applyliquidityfilter",
+              "type": "boolean"
             }
           }
         ],

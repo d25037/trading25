@@ -176,7 +176,7 @@ describe('RankingPage', () => {
     await user.click(screen.getByRole('button', { name: 'Value Scores' }));
     view.rerender(<RankingPage />);
 
-    expect(screen.getByText('Standard PBR tilt score')).toBeInTheDocument();
+    expect(screen.getByText('Standard value + 120d breakout boost')).toBeInTheDocument();
     expect(screen.getByText('Value Score Filters')).toBeInTheDocument();
     expect(screen.getByText('Value Score Summary')).toBeInTheDocument();
   });

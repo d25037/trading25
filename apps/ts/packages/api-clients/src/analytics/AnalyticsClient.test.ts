@@ -100,12 +100,14 @@ describe('AnalyticsClient', () => {
       date: '2026-04-24',
       limit: 50,
       markets: 'standard',
+      profileId: 'standard_breakout_120d20',
       scoreMethod: 'equal_weight',
+      applyLiquidityFilter: false,
       forwardEpsMode: 'fy',
     });
 
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/value-composite-ranking?date=2026-04-24&limit=50&markets=standard&scoreMethod=equal_weight&forwardEpsMode=fy'
+      'http://localhost:3002/api/analytics/value-composite-ranking?date=2026-04-24&limit=50&markets=standard&profileId=standard_breakout_120d20&scoreMethod=equal_weight&applyLiquidityFilter=false&forwardEpsMode=fy'
     );
   });
 

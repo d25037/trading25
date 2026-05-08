@@ -28,6 +28,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     ValueCompositeRankingResponse,
     ValueCompositeForwardEpsMode,
+    ValueCompositeProfileId,
     ValueCompositeScoreResponse,
     ValueCompositeScoreMethod,
 )
@@ -186,8 +187,10 @@ async def get_value_composite_ranking(
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(50, ge=1, le=200),
     markets: str = Query("standard"),
-    scoreMethod: ValueCompositeScoreMethod = Query("standard_pbr_tilt"),
+    profileId: ValueCompositeProfileId | None = Query(None),
+    scoreMethod: ValueCompositeScoreMethod | None = Query(None),
     forwardEpsMode: ValueCompositeForwardEpsMode = Query("latest"),
+    applyLiquidityFilter: bool = Query(True),
 ) -> ValueCompositeRankingResponse:
     """小型バリュー複合スコアランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -203,7 +206,9 @@ async def get_value_composite_ranking(
             limit=limit,
             markets=markets,
             score_method=scoreMethod,
+            profile_id=profileId,
             forward_eps_mode=forwardEpsMode,
+            apply_liquidity_filter=applyLiquidityFilter,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

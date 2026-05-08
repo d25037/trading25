@@ -13,7 +13,12 @@ from pydantic import BaseModel, Field
 ValueCompositeScoreMethod = Literal[
     "standard_pbr_tilt",
     "prime_size_tilt",
+    "prime_size75_forward_per25",
     "equal_weight",
+]
+ValueCompositeProfileId = Literal[
+    "standard_breakout_120d20",
+    "prime_size75_forward_per25",
 ]
 ValueCompositeForwardEpsMode = Literal["latest", "fy"]
 ValueCompositeScoreUnavailableReason = Literal[
@@ -118,11 +123,20 @@ class ValueCompositeTechnicalMetrics(BaseModel):
     """Entry-as-of raw technical metrics for value-composite ranking."""
 
     featureDate: str | None = None
+    breakoutFeatureDate: str | None = None
     reboundFrom252dLowPct: float | None = None
     return252dPct: float | None = None
     volatility20dPct: float | None = None
     volatility60dPct: float | None = None
     downsideVolatility60dPct: float | None = None
+    avgTradingValue60dMilJpy: float | None = None
+    avgTradingValue60dSourceSessions: int | None = None
+    newHigh20d: bool | None = None
+    daysSinceNewHigh20d: int | None = None
+    closeToPriorHigh20dPct: float | None = None
+    newHigh120d: bool | None = None
+    daysSinceNewHigh120d: int | None = None
+    closeToPriorHigh120dPct: float | None = None
 
 
 class ValueCompositeRankingItem(BaseModel):
@@ -136,6 +150,10 @@ class ValueCompositeRankingItem(BaseModel):
     currentPrice: float
     volume: float
     score: float
+    scoreBeforeBoost: float | None = None
+    breakoutBoost: float | None = None
+    liquidityEligible: bool | None = None
+    avgTradingValue60dMilJpy: float | None = None
     lowPbrScore: float
     smallMarketCapScore: float
     lowForwardPerScore: float
@@ -156,8 +174,15 @@ class ValueCompositeRankingResponse(BaseModel):
     date: str
     markets: list[str]
     metricKey: Literal["standard_value_composite"] = "standard_value_composite"
+    profileId: ValueCompositeProfileId | None = None
+    profileLabel: str | None = None
     scoreMethod: ValueCompositeScoreMethod
     forwardEpsMode: ValueCompositeForwardEpsMode
+    rebalanceMonths: int | None = None
+    breakoutWindow: int | None = None
+    breakoutLookbackSessions: int | None = None
+    breakoutScoreBoost: float | None = None
+    applyLiquidityFilter: bool = True
     scorePolicy: str
     weights: dict[str, float]
     itemCount: int

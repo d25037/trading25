@@ -35,6 +35,11 @@ PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
     "low_pbr_score": 0.05,
     "low_forward_per_score": 0.485,
 }
+PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
+    "small_market_cap_score": 0.75,
+    "low_pbr_score": 0.0,
+    "low_forward_per_score": 0.25,
+}
 EQUAL_VALUE_COMPOSITE_WEIGHTS: dict[str, float] = {
     column: 1.0 for column in VALUE_COMPOSITE_CORE_SCORE_COLUMNS
 }

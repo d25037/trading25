@@ -41,7 +41,8 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 export const DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS: ValueCompositeRankingParams = {
   markets: 'standard',
   limit: 50,
-  scoreMethod: 'standard_pbr_tilt',
+  profileId: 'standard_breakout_120d20',
+  applyLiquidityFilter: true,
   forwardEpsMode: 'latest',
 };
 

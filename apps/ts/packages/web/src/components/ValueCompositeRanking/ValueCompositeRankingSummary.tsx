@@ -31,13 +31,13 @@ export function ValueCompositeRankingSummary({ data }: ValueCompositeRankingSumm
           icon: Calendar,
           label: 'Date',
           value: data.date,
-          meta: data.markets.join(', '),
+          meta: data.rebalanceMonths ? `${data.markets.join(', ')} / ${data.rebalanceMonths}m` : data.markets.join(', '),
         },
         {
           icon: TrendingUp,
-          label: 'Top Score',
+          label: data.profileLabel ?? 'Top Score',
           value: formatScore(topItem?.score),
-          meta: topItem?.code || '-',
+          meta: topItem?.breakoutBoost ? `${topItem.code} / boost ${formatScore(topItem.breakoutBoost)}` : topItem?.code || '-',
           tone: 'positive',
         },
         {

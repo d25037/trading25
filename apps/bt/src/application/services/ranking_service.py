@@ -8,6 +8,7 @@ Hono MarketRankingService 互換。
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from collections.abc import Mapping
 from typing import Any, Literal, cast
@@ -39,6 +40,7 @@ from src.domains.analytics.fundamental_ranking import (
 )
 from src.domains.analytics.value_composite_scoring import (
     EQUAL_VALUE_COMPOSITE_WEIGHTS,
+    PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
     PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     VALUE_COMPOSITE_SCORE_COLUMN,
@@ -58,6 +60,7 @@ from src.entrypoints.http.schemas.ranking import (
     ValueCompositeTechnicalMetrics,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
+    ValueCompositeProfileId,
     ValueCompositeScoreUnavailableReason,
     ValueCompositeScoreMethod,
 )
@@ -123,6 +126,13 @@ def _finite_or_none(value: Any) -> float | None:
     if number is None or not math.isfinite(number):
         return None
     return number
+
+
+def _int_or_none(value: Any) -> int | None:
+    number = _finite_or_none(value)
+    if number is None:
+        return None
+    return int(number)
 
 
 def _str_or_none(value: Any) -> str | None:
@@ -224,13 +234,28 @@ _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 _VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
 _VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
-    "requires PBR > 0 and forward PER > 0; no ADV60 floor"
+    "requires PBR > 0 and forward PER > 0"
 )
+
+
+@dataclass(frozen=True)
+class _ValueCompositeProfileSpec:
+    profile_id: ValueCompositeProfileId
+    label: str
+    score_method: ValueCompositeScoreMethod
+    rebalance_months: int
+    min_adv60_mil_jpy: float | None = None
+    breakout_window: int | None = None
+    breakout_lookback_sessions: int | None = None
+    breakout_score_boost: float | None = None
+
+
 _VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[
     ValueCompositeScoreMethod, dict[str, float]
 ] = {
     "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     "prime_size_tilt": PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
+    "prime_size75_forward_per25": PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
     "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
 }
 _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
@@ -246,9 +271,32 @@ _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = 
         "Prime size tilt research weights: 46.5% small market cap + 5% low PBR + "
         f"48.5% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
     ),
+    "prime_size75_forward_per25": (
+        "Prime production candidate weights: 75% small market cap + 0% low PBR + "
+        f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
     "equal_weight": (
         "Equal weight across small market cap, low PBR, and low forward PER; "
         f"{_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
+    ),
+}
+_VALUE_COMPOSITE_PROFILE_BY_ID: dict[ValueCompositeProfileId, _ValueCompositeProfileSpec] = {
+    "standard_breakout_120d20": _ValueCompositeProfileSpec(
+        profile_id="standard_breakout_120d20",
+        label="Standard value + 120d breakout boost",
+        score_method="prime_size_tilt",
+        rebalance_months=3,
+        min_adv60_mil_jpy=10.0,
+        breakout_window=120,
+        breakout_lookback_sessions=20,
+        breakout_score_boost=0.10,
+    ),
+    "prime_size75_forward_per25": _ValueCompositeProfileSpec(
+        profile_id="prime_size75_forward_per25",
+        label="Prime size75 / forward PER25",
+        score_method="prime_size75_forward_per25",
+        rebalance_months=2,
+        min_adv60_mil_jpy=10.0,
     ),
 }
 _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str] = {
@@ -546,17 +594,27 @@ class RankingService:
         date: str | None = None,
         limit: int = 50,
         markets: str = "standard",
-        score_method: ValueCompositeScoreMethod = "standard_pbr_tilt",
+        score_method: ValueCompositeScoreMethod | None = None,
+        profile_id: ValueCompositeProfileId | None = None,
         forward_eps_mode: ValueCompositeForwardEpsMode = "latest",
+        apply_liquidity_filter: bool = True,
     ) -> ValueCompositeRankingResponse:
         """Standard市場向けの小型バリュー複合スコアランキングを取得"""
 
-        if score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
+        profile = _VALUE_COMPOSITE_PROFILE_BY_ID.get(profile_id) if profile_id else None
+        resolved_score_method = (
+            profile.score_method
+            if profile is not None
+            else score_method or "standard_pbr_tilt"
+        )
+        if score_method is not None and score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
             raise ValueError(f"Unsupported scoreMethod: {score_method}")
+        if resolved_score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
+            raise ValueError(f"Unsupported scoreMethod: {resolved_score_method}")
         if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
             raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
         weights = _normalize_value_composite_weights(
-            _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method]
+            _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[resolved_score_method]
         )
         requested_market_codes, query_market_codes = resolve_market_codes(
             markets,
@@ -568,7 +626,24 @@ class RankingService:
             query_market_codes=query_market_codes,
             weights=weights,
             forward_eps_mode=forward_eps_mode,
-        ).head(limit)
+        )
+        if profile is not None and not scored.empty:
+            scored = self._append_value_composite_profile_metrics(
+                scored,
+                target_date=target_date,
+                profile=profile,
+            )
+            scored = self._apply_value_composite_profile(
+                scored,
+                profile,
+                apply_liquidity_filter=apply_liquidity_filter,
+            )
+            scored = scored.sort_values(
+                [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+                ascending=[False, True],
+                kind="stable",
+            ).reset_index(drop=True)
+        scored = scored.head(limit)
         scored = self._append_value_composite_technical_metrics(
             scored,
             target_date=target_date,
@@ -583,11 +658,34 @@ class RankingService:
             date=target_date,
             markets=requested_market_codes,
             metricKey=_VALUE_COMPOSITE_METRIC_KEY,
-            scoreMethod=score_method,
+            profileId=profile.profile_id if profile is not None else None,
+            profileLabel=profile.label if profile is not None else None,
+            scoreMethod=resolved_score_method,
             forwardEpsMode=forward_eps_mode,
+            rebalanceMonths=profile.rebalance_months if profile is not None else None,
+            breakoutWindow=profile.breakout_window if profile is not None else None,
+            breakoutLookbackSessions=(
+                profile.breakout_lookback_sessions if profile is not None else None
+            ),
+            breakoutScoreBoost=profile.breakout_score_boost if profile is not None else None,
+            applyLiquidityFilter=apply_liquidity_filter,
             scorePolicy=(
-                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+                f"{profile.label + ': ' if profile is not None else ''}"
+                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[resolved_score_method]}; "
                 f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+                + (
+                    f"; breakout additive boost: {profile.breakout_window}d high within "
+                    f"{profile.breakout_lookback_sessions} sessions, boost "
+                    f"{profile.breakout_score_boost:g}"
+                    if profile is not None and profile.breakout_window is not None
+                    else ""
+                )
+                + (
+                    f"; {'hard' if apply_liquidity_filter else 'diagnostic'} "
+                    f"ADV60 >= {profile.min_adv60_mil_jpy:g}mn JPY liquidity floor"
+                    if profile is not None and profile.min_adv60_mil_jpy is not None
+                    else ""
+                )
             ),
             weights={
                 "smallMarketCap": weights["small_market_cap_score"],
@@ -598,6 +696,40 @@ class RankingService:
             items=items,
             lastUpdated=_now_iso(),
         )
+
+    def _apply_value_composite_profile(
+        self,
+        frame: pd.DataFrame,
+        profile: _ValueCompositeProfileSpec,
+        *,
+        apply_liquidity_filter: bool,
+    ) -> pd.DataFrame:
+        if frame.empty:
+            return frame.copy()
+        result = frame.copy()
+        base_score = pd.to_numeric(result[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce")
+        result["score_before_boost"] = base_score
+        result["breakout_boost"] = 0.0
+        if profile.breakout_window is not None and profile.breakout_lookback_sessions is not None:
+            days_column = f"days_since_new_high_{profile.breakout_window}d"
+            if days_column in result.columns and profile.breakout_score_boost is not None:
+                denominator = max(int(profile.breakout_lookback_sessions), 1)
+                days_since = pd.to_numeric(result[days_column], errors="coerce")
+                recency = (
+                    (denominator - days_since.clip(lower=0, upper=denominator))
+                    / denominator
+                ).fillna(0.0)
+                result["breakout_boost"] = recency * float(profile.breakout_score_boost)
+        result[VALUE_COMPOSITE_SCORE_COLUMN] = base_score + pd.to_numeric(
+            result["breakout_boost"],
+            errors="coerce",
+        ).fillna(0.0)
+        if profile.min_adv60_mil_jpy is not None:
+            adv60 = pd.to_numeric(result["avg_trading_value_60d_mil_jpy"], errors="coerce")
+            result["liquidity_eligible"] = adv60 >= float(profile.min_adv60_mil_jpy)
+            if apply_liquidity_filter:
+                result = result[result["liquidity_eligible"]].copy()
+        return result
 
     def get_value_composite_score(
         self,
@@ -923,11 +1055,20 @@ class RankingService:
         )
         technical_columns = (
             "technical_feature_date",
+            "breakout_feature_date",
             "rebound_from_252d_low_pct",
             "return_252d_pct",
             "volatility_20d_pct",
             "volatility_60d_pct",
             "downside_volatility_60d_pct",
+            "avg_trading_value_60d_mil_jpy",
+            "avg_trading_value_60d_source_sessions",
+            "new_high_20d",
+            "days_since_new_high_20d",
+            "close_to_prior_high_20d_pct",
+            "new_high_120d",
+            "days_since_new_high_120d",
+            "close_to_prior_high_120d_pct",
         )
         normalized_codes = result["code"].map(_normalize_equity_code)
         for column in technical_columns:
@@ -935,6 +1076,256 @@ class RankingService:
                 lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
             )
         return result
+
+    def _append_value_composite_profile_metrics(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_date: str,
+        profile: _ValueCompositeProfileSpec,
+    ) -> pd.DataFrame:
+        if frame.empty:
+            return frame.copy()
+        result = frame.copy()
+        profile_metrics = self._load_value_composite_profile_metrics(
+            target_date=target_date,
+            codes=[str(code) for code in result["code"].tolist()],
+            profile=profile,
+        )
+        technical_columns = [
+            "avg_trading_value_60d_mil_jpy",
+            "avg_trading_value_60d_source_sessions",
+        ]
+        if profile.breakout_window is not None:
+            technical_columns.extend(
+                [
+                    f"new_high_{profile.breakout_window}d",
+                    f"days_since_new_high_{profile.breakout_window}d",
+                    f"close_to_prior_high_{profile.breakout_window}d_pct",
+                ]
+            )
+        normalized_codes = result["code"].map(_normalize_equity_code)
+        for column in technical_columns:
+            result[column] = normalized_codes.map(
+                lambda code, column=column: profile_metrics.get(str(code), {}).get(column)
+            )
+        return result
+
+    def _load_value_composite_profile_metrics(
+        self,
+        *,
+        target_date: str,
+        codes: list[str],
+        profile: _ValueCompositeProfileSpec,
+    ) -> dict[str, dict[str, Any]]:
+        normalized_codes = sorted({_normalize_equity_code(code) for code in codes})
+        if not normalized_codes:
+            return {}
+
+        placeholders = ",".join("?" for _ in normalized_codes)
+        normalized = _normalized_code_sql("code")
+        order = _prefer_4digit_order_sql("code")
+        required_session_offset = 0
+        if profile.min_adv60_mil_jpy is not None:
+            required_session_offset = max(required_session_offset, 59)
+        if profile.breakout_window is not None:
+            required_session_offset = max(
+                required_session_offset,
+                int(profile.breakout_window)
+                + int(profile.breakout_lookback_sessions or 0),
+            )
+        start_date = self._get_trading_date_before(target_date, required_session_offset)
+        lower_bound_clause = " AND date >= ?" if start_date is not None else ""
+        params: tuple[Any, ...] = (
+            (target_date, start_date, *normalized_codes)
+            if start_date is not None
+            else (target_date, *normalized_codes)
+        )
+
+        if profile.breakout_window is None:
+            sql = f"""
+                WITH signal_history AS (
+                    SELECT
+                        normalized_code,
+                        date,
+                        close,
+                        volume,
+                        close * volume AS trading_value
+                    FROM (
+                        SELECT
+                            {normalized} AS normalized_code,
+                            date,
+                            close,
+                            volume,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY {normalized}, date
+                                ORDER BY {order}
+                            ) AS rn
+                        FROM stock_data
+                        WHERE date < ?{lower_bound_clause}
+                          AND {normalized} IN ({placeholders})
+                    )
+                    WHERE rn = 1
+                ),
+                signal_metrics AS (
+                    SELECT
+                        normalized_code,
+                        date,
+                        AVG(trading_value) OVER (
+                            PARTITION BY normalized_code
+                            ORDER BY date
+                            ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                        ) AS avg_trading_value_60d,
+                        COUNT(trading_value) OVER (
+                            PARTITION BY normalized_code
+                            ORDER BY date
+                            ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                        ) AS avg_trading_value_60d_source_sessions,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY normalized_code ORDER BY date DESC
+                        ) AS latest_signal_rank
+                    FROM signal_history
+                )
+                SELECT
+                    normalized_code,
+                    CASE
+                        WHEN avg_trading_value_60d_source_sessions >= 60
+                        THEN avg_trading_value_60d / 1000000.0
+                        ELSE NULL
+                    END AS avg_trading_value_60d_mil_jpy,
+                    avg_trading_value_60d_source_sessions
+                FROM signal_metrics
+                WHERE latest_signal_rank = 1
+            """
+            rows = self._reader.query(sql, params)
+            return {
+                str(row["normalized_code"]): {
+                    "avg_trading_value_60d_mil_jpy": _finite_or_none(
+                        row["avg_trading_value_60d_mil_jpy"]
+                    ),
+                    "avg_trading_value_60d_source_sessions": _int_or_none(
+                        row["avg_trading_value_60d_source_sessions"]
+                    ),
+                }
+                for row in rows
+            }
+
+        breakout_window = int(profile.breakout_window)
+        sql = f"""
+            WITH signal_history AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    high,
+                    close,
+                    volume,
+                    close * volume AS trading_value,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code ORDER BY date
+                    ) AS signal_row_number
+                FROM (
+                    SELECT
+                        {normalized} AS normalized_code,
+                        date,
+                        high,
+                        close,
+                        volume,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {normalized}, date
+                            ORDER BY {order}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date < ?{lower_bound_clause}
+                      AND {normalized} IN ({placeholders})
+                )
+                WHERE rn = 1
+            ),
+            signal_metrics AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    high,
+                    close,
+                    signal_row_number,
+                    MAX(high) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN {breakout_window} PRECEDING AND 1 PRECEDING
+                    ) AS prior_high,
+                    AVG(trading_value) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS avg_trading_value_60d,
+                    COUNT(trading_value) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS avg_trading_value_60d_source_sessions,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code ORDER BY date DESC
+                    ) AS latest_signal_rank
+                FROM signal_history
+            ),
+            signal_flags AS (
+                SELECT
+                    *,
+                    prior_high IS NOT NULL AND high > prior_high AS new_high
+                FROM signal_metrics
+            ),
+            latest_signal AS (
+                SELECT *
+                FROM signal_flags
+                WHERE latest_signal_rank = 1
+            ),
+            latest_breakout AS (
+                SELECT
+                    normalized_code,
+                    MAX(CASE WHEN new_high THEN signal_row_number ELSE NULL END)
+                        AS latest_new_high_row_number
+                FROM signal_flags
+                GROUP BY normalized_code
+            )
+            SELECT
+                latest_signal.normalized_code,
+                CASE
+                    WHEN latest_signal.avg_trading_value_60d_source_sessions >= 60
+                    THEN latest_signal.avg_trading_value_60d / 1000000.0
+                    ELSE NULL
+                END AS avg_trading_value_60d_mil_jpy,
+                latest_signal.avg_trading_value_60d_source_sessions,
+                latest_signal.new_high,
+                latest_signal.signal_row_number - latest_breakout.latest_new_high_row_number
+                    AS days_since_new_high,
+                CASE
+                    WHEN latest_signal.prior_high IS NULL OR latest_signal.prior_high = 0
+                    THEN NULL
+                    ELSE (latest_signal.close / latest_signal.prior_high - 1.0) * 100.0
+                END AS close_to_prior_high_pct
+            FROM latest_signal
+            LEFT JOIN latest_breakout USING (normalized_code)
+        """
+        rows = self._reader.query(sql, params)
+        return {
+            str(row["normalized_code"]): {
+                "avg_trading_value_60d_mil_jpy": _finite_or_none(
+                    row["avg_trading_value_60d_mil_jpy"]
+                ),
+                "avg_trading_value_60d_source_sessions": _int_or_none(
+                    row["avg_trading_value_60d_source_sessions"]
+                ),
+                f"new_high_{breakout_window}d": (
+                    bool(row["new_high"]) if row["new_high"] is not None else None
+                ),
+                f"days_since_new_high_{breakout_window}d": _int_or_none(
+                    row["days_since_new_high"]
+                ),
+                f"close_to_prior_high_{breakout_window}d_pct": _finite_or_none(
+                    row["close_to_prior_high_pct"]
+                ),
+            }
+            for row in rows
+        }
 
     def _load_value_composite_technical_metrics(
         self,
@@ -1027,25 +1418,141 @@ class RankingService:
                         PARTITION BY normalized_code ORDER BY date DESC
                     ) AS latest_rank
                 FROM returns
+            ),
+            latest_metrics AS (
+                SELECT
+                    normalized_code,
+                    date AS technical_feature_date,
+                    rebound_from_252d_low_pct,
+                    return_252d_pct,
+                    CASE WHEN volatility_20d_count >= 20 THEN volatility_20d_pct ELSE NULL END AS volatility_20d_pct,
+                    CASE WHEN volatility_60d_count >= 60 THEN volatility_60d_pct ELSE NULL END AS volatility_60d_pct,
+                    CASE
+                        WHEN downside_volatility_60d_count >= 2 THEN downside_volatility_60d_pct
+                        ELSE NULL
+                    END AS downside_volatility_60d_pct
+                FROM metrics
+                WHERE latest_rank = 1
+            ),
+            signal_history AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    high,
+                    close,
+                    volume,
+                    close * volume AS trading_value,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code ORDER BY date
+                    ) AS signal_row_number
+                FROM (
+                    SELECT
+                        {normalized} AS normalized_code,
+                        date,
+                        high,
+                        close,
+                        volume,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {normalized}, date
+                            ORDER BY {order}
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date < ?
+                      AND {normalized} IN ({placeholders})
+                )
+                WHERE rn = 1
+            ),
+            signal_metrics AS (
+                SELECT
+                    normalized_code,
+                    date,
+                    high,
+                    close,
+                    signal_row_number,
+                    MAX(high) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING
+                    ) AS prior_high_20d,
+                    MAX(high) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 120 PRECEDING AND 1 PRECEDING
+                    ) AS prior_high_120d,
+                    AVG(trading_value) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS avg_trading_value_60d,
+                    COUNT(trading_value) OVER (
+                        PARTITION BY normalized_code
+                        ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS avg_trading_value_60d_source_sessions,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY normalized_code ORDER BY date DESC
+                    ) AS latest_signal_rank
+                FROM signal_history
+            ),
+            signal_flags AS (
+                SELECT
+                    *,
+                    prior_high_20d IS NOT NULL AND high > prior_high_20d AS new_high_20d,
+                    prior_high_120d IS NOT NULL AND high > prior_high_120d AS new_high_120d
+                FROM signal_metrics
+            ),
+            latest_signal AS (
+                SELECT *
+                FROM signal_flags
+                WHERE latest_signal_rank = 1
+            ),
+            latest_breakout AS (
+                SELECT
+                    normalized_code,
+                    MAX(CASE WHEN new_high_20d THEN signal_row_number ELSE NULL END)
+                        AS latest_new_high_20d_row_number,
+                    MAX(CASE WHEN new_high_120d THEN signal_row_number ELSE NULL END)
+                        AS latest_new_high_120d_row_number
+                FROM signal_flags
+                GROUP BY normalized_code
             )
             SELECT
-                normalized_code,
-                date AS technical_feature_date,
-                rebound_from_252d_low_pct,
-                return_252d_pct,
-                CASE WHEN volatility_20d_count >= 20 THEN volatility_20d_pct ELSE NULL END AS volatility_20d_pct,
-                CASE WHEN volatility_60d_count >= 60 THEN volatility_60d_pct ELSE NULL END AS volatility_60d_pct,
+                latest_metrics.*,
+                latest_signal.date AS breakout_feature_date,
                 CASE
-                    WHEN downside_volatility_60d_count >= 2 THEN downside_volatility_60d_pct
+                    WHEN latest_signal.avg_trading_value_60d_source_sessions >= 60
+                    THEN latest_signal.avg_trading_value_60d / 1000000.0
                     ELSE NULL
-                END AS downside_volatility_60d_pct
-            FROM metrics
-            WHERE latest_rank = 1
+                END AS avg_trading_value_60d_mil_jpy,
+                latest_signal.avg_trading_value_60d_source_sessions,
+                latest_signal.new_high_20d,
+                latest_signal.signal_row_number - latest_breakout.latest_new_high_20d_row_number
+                    AS days_since_new_high_20d,
+                CASE
+                    WHEN latest_signal.prior_high_20d IS NULL OR latest_signal.prior_high_20d = 0
+                    THEN NULL
+                    ELSE (latest_signal.close / latest_signal.prior_high_20d - 1.0) * 100.0
+                END AS close_to_prior_high_20d_pct,
+                latest_signal.new_high_120d,
+                latest_signal.signal_row_number - latest_breakout.latest_new_high_120d_row_number
+                    AS days_since_new_high_120d,
+                CASE
+                    WHEN latest_signal.prior_high_120d IS NULL OR latest_signal.prior_high_120d = 0
+                    THEN NULL
+                    ELSE (latest_signal.close / latest_signal.prior_high_120d - 1.0) * 100.0
+                END AS close_to_prior_high_120d_pct
+            FROM latest_metrics
+            LEFT JOIN latest_signal USING (normalized_code)
+            LEFT JOIN latest_breakout USING (normalized_code)
         """
-        rows = self._reader.query(sql, (target_date, *normalized_codes))
+        rows = self._reader.query(
+            sql,
+            (target_date, *normalized_codes, target_date, *normalized_codes),
+        )
         return {
             str(row["normalized_code"]): {
                 "technical_feature_date": _str_or_none(row["technical_feature_date"]),
+                "breakout_feature_date": _str_or_none(row["breakout_feature_date"]),
                 "rebound_from_252d_low_pct": _finite_or_none(
                     row["rebound_from_252d_low_pct"]
                 ),
@@ -1054,6 +1561,32 @@ class RankingService:
                 "volatility_60d_pct": _finite_or_none(row["volatility_60d_pct"]),
                 "downside_volatility_60d_pct": _finite_or_none(
                     row["downside_volatility_60d_pct"]
+                ),
+                "avg_trading_value_60d_mil_jpy": _finite_or_none(
+                    row["avg_trading_value_60d_mil_jpy"]
+                ),
+                "avg_trading_value_60d_source_sessions": _int_or_none(
+                    row["avg_trading_value_60d_source_sessions"]
+                ),
+                "new_high_20d": (
+                    bool(row["new_high_20d"]) if row["new_high_20d"] is not None else None
+                ),
+                "days_since_new_high_20d": _int_or_none(
+                    row["days_since_new_high_20d"]
+                ),
+                "close_to_prior_high_20d_pct": _finite_or_none(
+                    row["close_to_prior_high_20d_pct"]
+                ),
+                "new_high_120d": (
+                    bool(row["new_high_120d"])
+                    if row["new_high_120d"] is not None
+                    else None
+                ),
+                "days_since_new_high_120d": _int_or_none(
+                    row["days_since_new_high_120d"]
+                ),
+                "close_to_prior_high_120d_pct": _finite_or_none(
+                    row["close_to_prior_high_120d_pct"]
                 ),
             }
             for row in rows
@@ -1463,6 +1996,16 @@ class RankingService:
             currentPrice=float(row["current_price"]),
             volume=float(row["volume"]),
             score=float(row[VALUE_COMPOSITE_SCORE_COLUMN]),
+            scoreBeforeBoost=_finite_or_none(row.get("score_before_boost")),
+            breakoutBoost=_finite_or_none(row.get("breakout_boost")),
+            liquidityEligible=(
+                bool(row.get("liquidity_eligible"))
+                if row.get("liquidity_eligible") is not None
+                else None
+            ),
+            avgTradingValue60dMilJpy=_finite_or_none(
+                row.get("avg_trading_value_60d_mil_jpy")
+            ),
             lowPbrScore=float(row["low_pbr_score"]),
             smallMarketCapScore=float(row["small_market_cap_score"]),
             lowForwardPerScore=float(row["low_forward_per_score"]),
@@ -1476,6 +2019,7 @@ class RankingService:
             forwardEpsSource=cast(Literal["revised", "fy"] | None, source),
             technicalMetrics=ValueCompositeTechnicalMetrics(
                 featureDate=_str_or_none(row.get("technical_feature_date")),
+                breakoutFeatureDate=_str_or_none(row.get("breakout_feature_date")),
                 reboundFrom252dLowPct=_finite_or_none(
                     row.get("rebound_from_252d_low_pct")
                 ),
@@ -1484,6 +2028,34 @@ class RankingService:
                 volatility60dPct=_finite_or_none(row.get("volatility_60d_pct")),
                 downsideVolatility60dPct=_finite_or_none(
                     row.get("downside_volatility_60d_pct")
+                ),
+                avgTradingValue60dMilJpy=_finite_or_none(
+                    row.get("avg_trading_value_60d_mil_jpy")
+                ),
+                avgTradingValue60dSourceSessions=_int_or_none(
+                    row.get("avg_trading_value_60d_source_sessions")
+                ),
+                newHigh20d=(
+                    bool(row.get("new_high_20d"))
+                    if row.get("new_high_20d") is not None
+                    else None
+                ),
+                daysSinceNewHigh20d=_int_or_none(
+                    row.get("days_since_new_high_20d")
+                ),
+                closeToPriorHigh20dPct=_finite_or_none(
+                    row.get("close_to_prior_high_20d_pct")
+                ),
+                newHigh120d=(
+                    bool(row.get("new_high_120d"))
+                    if row.get("new_high_120d") is not None
+                    else None
+                ),
+                daysSinceNewHigh120d=_int_or_none(
+                    row.get("days_since_new_high_120d")
+                ),
+                closeToPriorHigh120dPct=_finite_or_none(
+                    row.get("close_to_prior_high_120d_pct")
                 ),
             ),
         )

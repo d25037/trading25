@@ -89,7 +89,9 @@ export class AnalyticsClient {
       date: params.date,
       limit: params.limit,
       markets: params.markets,
+      profileId: params.profileId,
       scoreMethod: params.scoreMethod,
+      applyLiquidityFilter: params.applyLiquidityFilter,
       forwardEpsMode: params.forwardEpsMode,
     });
   }

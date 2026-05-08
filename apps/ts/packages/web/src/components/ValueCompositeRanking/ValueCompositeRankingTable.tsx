@@ -21,6 +21,11 @@ function formatScore(value: number): string {
   return value.toLocaleString('ja-JP', { maximumFractionDigits: 3 });
 }
 
+function formatNullableScore(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toLocaleString('ja-JP', { maximumFractionDigits: 3 });
+}
+
 function formatRatio(value: number): string {
   if (!Number.isFinite(value)) return '-';
   return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 2 })}x`;
@@ -31,7 +36,17 @@ function formatMarketCapBil(value: number): string {
   return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}bn`;
 }
 
-type TechnicalMetricKey = Exclude<keyof NonNullable<ValueCompositeRankingItem['technicalMetrics']>, 'featureDate'>;
+function formatAdv60(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}mn`;
+}
+
+type TechnicalMetricKey =
+  | 'reboundFrom252dLowPct'
+  | 'return252dPct'
+  | 'volatility20dPct'
+  | 'volatility60dPct'
+  | 'downsideVolatility60dPct';
 
 interface TechnicalMetricColumn {
   metric: TechnicalMetricKey;
@@ -77,13 +92,23 @@ function formatTechnicalPercent(value: number | null | undefined, signed: boolea
   return `${value >= 0 ? '+' : '-'}${formatted}%`;
 }
 
+function getDaysSinceBreakout(
+  metrics: ValueCompositeRankingItem['technicalMetrics'],
+  breakoutWindow: number | null | undefined
+): number | null | undefined {
+  if (breakoutWindow === 120) return metrics?.daysSinceNewHigh120d;
+  return metrics?.daysSinceNewHigh20d;
+}
+
 function ValueCompositeRankingRow({
   item,
   technicalColumns,
+  breakoutWindow,
   onStockClick,
 }: {
   item: ValueCompositeRankingItem;
   technicalColumns: TechnicalMetricColumn[];
+  breakoutWindow: number | null | undefined;
   onStockClick: (code: string) => void;
 }) {
   return (
@@ -96,6 +121,21 @@ function ValueCompositeRankingRow({
       <td className="px-2 py-1.5 truncate max-w-[180px]">{item.companyName}</td>
       <td className="px-2 py-1.5 truncate max-w-[100px] text-muted-foreground">{item.sector33Name}</td>
       <td className="px-2 py-1.5 text-right font-medium tabular-nums">{formatScore(item.score)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+        {formatNullableScore(item.breakoutBoost)}
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+        {getDaysSinceBreakout(item.technicalMetrics, breakoutWindow) ?? '-'}
+      </td>
+      <td
+        className={
+          item.liquidityEligible === false
+            ? 'px-2 py-1.5 text-right tabular-nums text-amber-700'
+            : 'px-2 py-1.5 text-right tabular-nums text-muted-foreground'
+        }
+      >
+        {formatAdv60(item.avgTradingValue60dMilJpy ?? item.technicalMetrics?.avgTradingValue60dMilJpy)}
+      </td>
       {technicalColumns.map((column) => (
         <td key={column.metric} className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
           {formatTechnicalPercent(item.technicalMetrics?.[column.metric], column.signed)}
@@ -112,8 +152,9 @@ function ValueCompositeRankingRow({
 export function ValueCompositeRankingTable({ data, isLoading, error, onStockClick }: ValueCompositeRankingTableProps) {
   const items = data?.items ?? [];
   const technicalColumns = resolveTechnicalColumns(data?.markets ?? [], items);
-  const columnCount = 9 + technicalColumns.length;
+  const columnCount = 12 + technicalColumns.length;
   const shouldVirtualize = items.length >= VIRTUALIZATION_THRESHOLD;
+  const breakoutHeader = data?.breakoutWindow ? `${data.breakoutWindow}d BO` : 'BO';
   const virtual = useVirtualizedRows(items, {
     enabled: shouldVirtualize,
     rowHeight: VALUE_ROW_HEIGHT,
@@ -147,6 +188,9 @@ export function ValueCompositeRankingTable({ data, isLoading, error, onStockClic
                 <th className="text-left px-2 py-1.5">Company</th>
                 <th className="text-left px-2 py-1.5 w-24">Sector</th>
                 <th className="text-right px-2 py-1.5 w-20">Score</th>
+                <th className="text-right px-2 py-1.5 w-20">Boost</th>
+                <th className="text-right px-2 py-1.5 w-20">{breakoutHeader}</th>
+                <th className="text-right px-2 py-1.5 w-24">ADV60</th>
                 {technicalColumns.map((column) => (
                   <th key={column.metric} className="text-right px-2 py-1.5 w-24">
                     {column.label}
@@ -169,6 +213,7 @@ export function ValueCompositeRankingTable({ data, isLoading, error, onStockClic
                   key={`${item.code}-${item.rank}-${data?.date ?? ''}`}
                   item={item}
                   technicalColumns={technicalColumns}
+                  breakoutWindow={data?.breakoutWindow}
                   onStockClick={onStockClick}
                 />
               ))}

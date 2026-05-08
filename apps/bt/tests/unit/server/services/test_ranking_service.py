@@ -906,7 +906,7 @@ class TestGetValueCompositeRanking:
         assert result.markets == ["standard"]
         assert result.metricKey == "standard_value_composite"
         assert result.scoreMethod == "standard_pbr_tilt"
-        assert "no ADV60 floor" in result.scorePolicy
+        assert "requires PBR > 0 and forward PER > 0" in result.scorePolicy
         assert result.weights == {
             "smallMarketCap": 0.35,
             "lowPbr": 0.4,
@@ -1186,6 +1186,187 @@ class TestGetValueCompositeRanking:
             "smallMarketCap": 0.465,
             "lowPbr": 0.05,
             "lowForwardPer": 0.485,
+        }
+
+    def test_value_composite_ranking_standard_breakout_profile_adds_prior_session_boost(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    next_year_forecast_earnings_per_share, bps, shares_outstanding
+                )
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                ("99840", "2024-01-10", 50.0, "FY", 104.0, 1000.0, 10_000_000.0),
+            )
+            start = calendar_date(2023, 9, 1)
+            for i in range(140):
+                current_date = start + timedelta(days=i)
+                close = 400.0 + i
+                high = close + 1.0
+                if current_date.isoformat() == "2024-01-18":
+                    high = 600.0
+                    close = 590.0
+                conn.execute(
+                    "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "99840",
+                        current_date.isoformat(),
+                        close,
+                        high,
+                        close - 1.0,
+                        close,
+                        200_000,
+                        1.0,
+                        None,
+                    ),
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(
+            markets="standard",
+            limit=10,
+            profile_id="standard_breakout_120d20",
+        )
+        reader.close()
+
+        item = next((row for row in result.items if row.code == "99840"), None)
+        assert result.profileId == "standard_breakout_120d20"
+        assert result.profileLabel == "Standard value + 120d breakout boost"
+        assert result.scoreMethod == "prime_size_tilt"
+        assert result.rebalanceMonths == 3
+        assert result.breakoutWindow == 120
+        assert result.breakoutLookbackSessions == 20
+        assert result.breakoutScoreBoost == pytest.approx(0.1)
+        assert item is not None
+        assert item.scoreBeforeBoost is not None
+        assert item.breakoutBoost == pytest.approx(0.1)
+        assert item.score == pytest.approx(item.scoreBeforeBoost + 0.1)
+        assert item.avgTradingValue60dMilJpy is not None
+        assert item.liquidityEligible is True
+        assert item.technicalMetrics is not None
+        assert item.technicalMetrics.breakoutFeatureDate == "2024-01-18"
+        assert item.technicalMetrics.newHigh120d is True
+        assert item.technicalMetrics.daysSinceNewHigh120d == 0
+
+    def test_value_composite_ranking_standard_profile_hard_filters_below_adv60_floor(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            for code, company, volume in [
+                ("77770", "Liquid Standard", 200_000),
+                ("88880", "Thin Standard", 1_000),
+            ]:
+                conn.execute(
+                    "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        company,
+                        company,
+                        "standard",
+                        "S",
+                        "S17",
+                        "情報",
+                        "S33",
+                        "情報通信",
+                        None,
+                        "2000-01-01",
+                        None,
+                        None,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        next_year_forecast_earnings_per_share, bps, shares_outstanding
+                    )
+                    VALUES (?,?,?,?,?,?,?)
+                    """,
+                    (code, "2024-01-10", 50.0, "FY", 100.0, 1000.0, 10_000_000.0),
+                )
+                start = calendar_date(2023, 11, 15)
+                for i in range(66):
+                    current_date = start + timedelta(days=i)
+                    close = 100.0 + i
+                    conn.execute(
+                        "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            code,
+                            current_date.isoformat(),
+                            close,
+                            close + 1.0,
+                            close - 1.0,
+                            close,
+                            volume,
+                            1.0,
+                            None,
+                        ),
+                    )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(
+            markets="standard",
+            limit=10,
+            profile_id="standard_breakout_120d20",
+        )
+        reader.close()
+
+        codes = {item.code for item in result.items}
+        assert result.applyLiquidityFilter is True
+        assert "77770" in codes
+        assert "88880" not in codes
+        assert "hard ADV60 >= 10mn JPY liquidity floor" in result.scorePolicy
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        without_filter = svc.get_value_composite_ranking(
+            markets="standard",
+            limit=10,
+            profile_id="standard_breakout_120d20",
+            apply_liquidity_filter=False,
+        )
+        reader.close()
+
+        codes_without_filter = {item.code for item in without_filter.items}
+        assert without_filter.applyLiquidityFilter is False
+        assert "88880" in codes_without_filter
+        thin_item = next(item for item in without_filter.items if item.code == "88880")
+        assert thin_item.liquidityEligible is False
+        assert "diagnostic ADV60 >= 10mn JPY liquidity floor" in without_filter.scorePolicy
+
+    def test_value_composite_ranking_prime_profile_uses_size75_forward_per25_weights(
+        self, ranking_db
+    ):
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(
+            markets="prime",
+            limit=10,
+            profile_id="prime_size75_forward_per25",
+        )
+        reader.close()
+
+        assert result.profileId == "prime_size75_forward_per25"
+        assert result.profileLabel == "Prime size75 / forward PER25"
+        assert result.scoreMethod == "prime_size75_forward_per25"
+        assert result.rebalanceMonths == 2
+        assert result.breakoutWindow is None
+        assert result.weights == {
+            "smallMarketCap": 0.75,
+            "lowPbr": 0.0,
+            "lowForwardPer": 0.25,
         }
 
     def test_value_composite_score_returns_market_specific_rank_for_symbol(

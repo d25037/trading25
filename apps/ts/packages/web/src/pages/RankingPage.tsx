@@ -34,7 +34,7 @@ import { useValueCompositeRanking } from '@/hooks/useValueCompositeRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
-import type { ValueCompositeRankingParams, ValueCompositeScoreMethod } from '@/types/valueCompositeRanking';
+import type { ValueCompositeProfileId, ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
 
 const subTabs = [
   { value: 'ranking' as RankingPageTab, label: 'Daily Ranking', icon: BarChart3 },
@@ -47,14 +47,11 @@ const dailyViewTabs = [
   { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
 
-function getValueCompositeScoreMethodLabel(method: ValueCompositeScoreMethod | undefined): string {
-  if (method === 'equal_weight') {
-    return 'Equal-weight value score';
+function getValueCompositeProfileLabel(profileId: ValueCompositeProfileId | undefined): string {
+  if (profileId === 'prime_size75_forward_per25') {
+    return 'Prime size75 / forward PER25';
   }
-  if (method === 'prime_size_tilt') {
-    return 'Prime size tilt score';
-  }
-  return 'Standard PBR tilt score';
+  return 'Standard value + 120d breakout boost';
 }
 
 function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {
@@ -197,7 +194,7 @@ function buildIntroMetaItems(
   }
   if (activeSubTab === 'valueComposite') {
     return [
-      { label: 'Mode', value: getValueCompositeScoreMethodLabel(valueCompositeRankingParams.scoreMethod) },
+      { label: 'Profile', value: getValueCompositeProfileLabel(valueCompositeRankingParams.profileId) },
       { label: 'EPS Basis', value: getValueCompositeForwardEpsModeLabel(valueCompositeRankingParams.forwardEpsMode) },
       { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
     ];
