@@ -1234,9 +1234,10 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sync_daily_stock_master_uses_rest_when_bulk_is_not_cheaper() -> None:
+async def test_sync_daily_stock_master_uses_bulk_when_paginated_rest_estimate_is_higher() -> None:
     market_db = DummyMarketDb()
     client = InitialSyncClient(topix_dates=["2026-02-06"])
+    progress_stages: list[str] = []
     plan = BulkFetchPlan(
         endpoint="/equities/master",
         files=[
@@ -1249,7 +1250,7 @@ async def test_sync_daily_stock_master_uses_rest_when_bulk_is_not_cheaper() -> N
             )
         ],
         list_api_calls=1,
-        estimated_api_calls=1,
+        estimated_api_calls=3,
         estimated_cache_hits=0,
         estimated_cache_misses=1,
     )
@@ -1268,7 +1269,59 @@ async def test_sync_daily_stock_master_uses_rest_when_bulk_is_not_cheaper() -> N
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
-        on_progress=lambda *_: None,
+        on_progress=lambda stage, *_: progress_stages.append(stage),
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 1
+    assert bulk_service.fetch_calls == ["/equities/master"]
+    assert [call for call in client.calls if call[0] == "/equities/master"] == []
+    assert progress_stages
+    assert set(progress_stages) == {"stock_master_daily"}
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_uses_rest_when_bulk_estimate_is_higher() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06"])
+    progress_stages: list[str] = []
+    plan = BulkFetchPlan(
+        endpoint="/equities/master",
+        files=[
+            BulkFileInfo(
+                key="equities-master-202602-a.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            ),
+            BulkFileInfo(
+                key="equities-master-202602-b.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            ),
+        ],
+        list_api_calls=1,
+        estimated_api_calls=5,
+        estimated_cache_hits=0,
+        estimated_cache_misses=2,
+    )
+    bulk_service = _PlanAndFetchBulkService(plan=plan, rows=[])
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda stage, *_: progress_stages.append(stage),
         bulk_service=bulk_service,
         bulk_probe_disabled=False,
     )
@@ -1286,6 +1339,8 @@ async def test_sync_daily_stock_master_uses_rest_when_bulk_is_not_cheaper() -> N
     assert [
         params for path, params in client.calls if path == "/equities/master"
     ] == [{"date": "20260206"}]
+    assert progress_stages
+    assert set(progress_stages) == {"stock_master_daily"}
 
 
 @pytest.mark.asyncio
@@ -1346,11 +1401,15 @@ async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() ->
         "2026-02-06",
         "2026-02-10",
     }
-    assert len(market_db.stock_master_daily_batch_upserts) == 1
+    assert len(market_db.stock_master_daily_batch_upserts) == 2
     assert [
         (row["date"], row["code"])
         for row in market_db.stock_master_daily_batch_upserts[0]
     ] == [("2026-02-06", "7203")]
+    assert [
+        (row["date"], row["code"])
+        for row in market_db.stock_master_daily_batch_upserts[1]
+    ] == [("2026-02-10", "7203")]
 
 
 @pytest.mark.asyncio
@@ -1379,6 +1438,33 @@ async def test_sync_daily_stock_master_bulk_probe_failure_does_not_disable_later
     assert [
         params for path, params in client.calls if path == "/equities/master"
     ] == [{"date": "20260206"}, {"date": "20260210"}]
+
+
+@pytest.mark.asyncio
+async def test_sync_daily_stock_master_aborts_large_rest_fallback_when_bulk_unavailable() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10", "2026-02-12", "2026-02-13"])
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
+        bulk_service=_PlanOnlyBulkService(RuntimeError("master bulk unsupported")),
+        bulk_probe_disabled=False,
+    )
+
+    with pytest.raises(RuntimeError, match="Refusing stock_master_daily REST fallback for 4 dates"):
+        await _sync_daily_stock_master(
+            ctx,
+            target_dates=["2026-02-06", "2026-02-10", "2026-02-12", "2026-02-13"],
+            progress_current=1,
+            progress_total=8,
+            allow_large_rest_fallback=False,
+        )
+
+    assert ctx.bulk_probe_disabled is False
+    assert [call for call in client.calls if call[0] == "/equities/master"] == []
+    assert any("estimated REST calls=16" in message for message in progress_messages)
 
 
 class InitialSyncClient:

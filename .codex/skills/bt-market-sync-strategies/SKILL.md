@@ -28,9 +28,10 @@ description: bt の market 同期（initial、incremental、repair）と intrada
 1. mode ごとの解決規則（`initial` / `incremental` / `repair`）を確認する。
 2. `incremental` では anchor、cold-start bootstrap、new date 抽出、`missing_stock_dates` backfill の順で判断する。
 3. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。
-4. stock price は `Adj*` を永続 SoT にせず、raw `O/H/L/C/Vo + AdjFactor` を ingest して local projection で `stock_data` を再生成する。
-5. minute bars は `/equities/bars/minute` から raw `O/H/L/C/Vo/Va` を `stock_data_minute_raw` へ保存し、daily `stock_data` / `topix_data` と SoT を混ぜない。
-6. OHLCV 欠損行、placeholder backfill、metadata 更新規約を確認する。
+4. 外部 API 側だけでなく、取得後の local DB 処理（DuckDB/metadata DB publish、relation-based upsert、`executemany` fallback、Parquet export、index/rebuild）まで同じ調査単位で確認する。UI 上の「fetch stuck」は DB publish/rebuild 中の progress 表示不足でも起きる。
+5. stock price は `Adj*` を永続 SoT にせず、raw `O/H/L/C/Vo + AdjFactor` を ingest して local projection で `stock_data` を再生成する。
+6. minute bars は `/equities/bars/minute` から raw `O/H/L/C/Vo/Va` を `stock_data_minute_raw` へ保存し、daily `stock_data` / `topix_data` と SoT を混ぜない。
+7. OHLCV 欠損行、placeholder backfill、metadata 更新規約を確認する。
 
 ## Guardrails
 
@@ -42,6 +43,8 @@ description: bt の market 同期（initial、incremental、repair）と intrada
 - `repair` は listed-market fundamentals backfill など非 price warning の回復に限定し、adjustment refresh を復活させない。
 - `indices_data` は master 補完（placeholder backfill）前提を維持する。
 - minute freshness は現状 `16:45 JST` cutoff の wall-clock policy で、exchange holiday 精度が必要なら別途 `markets/calendar` を minute 側の補助ソースとして扱う。
+- bulk/rest の外部 request 数だけで「高速」と判断しない。大量行 stage は `time_series_store` の relation-based upsert を使っているか、small-batch `executemany` が許容範囲か、最後の `index_*` / rebuild / export が進捗表示されるかを確認する。
+- `market.duckdb` に書く stage で REST fallback を許す場合は、想定 request 数、pagination、DB publish 件数、index/rebuild コストの上限を確認し、長時間直列処理になる場合は fail-fast または bulk 必須化を検討する。
 
 ## Verification
 
