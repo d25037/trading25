@@ -289,6 +289,8 @@ _BULK_STOCK_MASTER_KEY_ALIASES: dict[str, str] = {
     "mktnm": "MktNm",
     "marketcodename": "MktNm",
     "marketname": "MktNm",
+    "listeddate": "ListedDate",
+    "listingdate": "ListedDate",
 }
 
 _BULK_FINS_KEY_ALIASES: dict[str, str] = {
@@ -1751,6 +1753,11 @@ class IncrementalSyncStrategy:
             errors.extend(master_sync["errors"])
             if master_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+            listed_market_target_rows = await asyncio.to_thread(
+                ctx.market_db.get_fundamentals_target_stock_rows
+            )
+            if not listed_market_target_rows:
+                listed_market_target_rows = stock_rows
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
@@ -2166,11 +2173,7 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            fundamentals_target_rows = _extract_listed_market_target_rows(stock_rows)
-            if not fundamentals_target_rows:
-                fundamentals_target_rows = await asyncio.to_thread(
-                    ctx.market_db.get_fundamentals_target_stock_rows
-                )
+            fundamentals_target_rows = _extract_listed_market_target_rows(listed_market_target_rows)
 
             fundamentals_sync = await _sync_fundamentals_incremental(
                 ctx,
@@ -2191,9 +2194,13 @@ class IncrementalSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             all_stock_codes = _collect_unique_codes(
-                [str(row.get("code", "")) for row in stock_rows if row.get("code")]
+                [
+                    str(row.get("code", ""))
+                    for row in [*listed_market_target_rows, *stock_rows]
+                    if row.get("code")
+                ]
             )
-            margin_target_codes = extract_listed_market_codes(stock_rows)
+            margin_target_codes = extract_listed_market_codes(listed_market_target_rows)
             margin_frontier = (
                 _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
                 or inspection.topix_max
@@ -3778,7 +3785,7 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "sector_33_code": d.get("S33", ""),
             "sector_33_name": d.get("S33Nm", ""),
             "scale_category": d.get("ScaleCat"),
-            "listed_date": d.get("Date", ""),
+            "listed_date": d.get("ListedDate") or d.get("ListingDate") or d.get("listed_date") or "",
             "created_at": datetime.now(UTC).isoformat(),
         })
     return rows
@@ -3853,7 +3860,6 @@ async def _sync_daily_stock_master(
         date_to=date_to,
         exact_dates=normalized_dates,
         min_rest_calls_to_probe_bulk=1,
-        require_bulk=True,
         disable_future_bulk_on_probe_failure=False,
     )
     api_calls += decision.planner_api_calls

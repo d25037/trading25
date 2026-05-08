@@ -1121,6 +1121,29 @@ def test_group_stock_master_bulk_rows_uses_default_snapshot_date_for_daily_file(
     assert skipped == {}
 
 
+def test_convert_stock_rows_keeps_snapshot_date_out_of_listed_date() -> None:
+    rows = _convert_stock_rows([
+        {
+            "Date": "2026-02-10",
+            "Code": "72030",
+            "CoName": "トヨタ自動車",
+            "Mkt": "0111",
+            "MktNm": "プライム",
+            "ListedDate": "1949-05-16",
+        },
+        {
+            "Date": "2026-02-10",
+            "Code": "67580",
+            "CoName": "ソニーグループ",
+            "Mkt": "0111",
+            "MktNm": "プライム",
+        },
+    ])
+
+    assert rows[0]["listed_date"] == "1949-05-16"
+    assert rows[1]["listed_date"] == ""
+
+
 @pytest.mark.asyncio
 async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
     market_db = DummyMarketDb()
@@ -1137,7 +1160,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
             )
         ],
         list_api_calls=1,
-        estimated_api_calls=3,
+        estimated_api_calls=1,
         estimated_cache_hits=0,
         estimated_cache_misses=1,
     )
@@ -1211,6 +1234,61 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sync_daily_stock_master_uses_rest_when_bulk_is_not_cheaper() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-06"])
+    plan = BulkFetchPlan(
+        endpoint="/equities/master",
+        files=[
+            BulkFileInfo(
+                key="equities-master-202602.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _PlanAndFetchBulkService(
+        plan=plan,
+        rows=[
+            {
+                "Date": "2026-02-06",
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+            }
+        ],
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    result = await _sync_daily_stock_master(
+        ctx,
+        target_dates=["2026-02-06"],
+        progress_current=1,
+        progress_total=8,
+    )
+
+    assert result["cancelled"] is False
+    assert result["updated"] == 1
+    assert bulk_service.fetch_calls == []
+    assert [
+        params for path, params in client.calls if path == "/equities/master"
+    ] == [{"date": "20260206"}]
+
+
+@pytest.mark.asyncio
 async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() -> None:
     market_db = DummyMarketDb()
     client = InitialSyncClient(topix_dates=["2026-02-06", "2026-02-10"])
@@ -1226,7 +1304,7 @@ async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() ->
             )
         ],
         list_api_calls=1,
-        estimated_api_calls=3,
+        estimated_api_calls=1,
         estimated_cache_hits=0,
         estimated_cache_misses=1,
     )
@@ -3732,6 +3810,91 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
     assert result.success
     assert len(market_db.stocks_rows) == 1
     assert any(path == "/indices/bars/daily/topix" and params == {} for path, params in client.calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_uses_current_db_universe_after_historical_master_backfill() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260210", latest_stock_data_date="20260210")
+    market_db.topix_rows = [
+        {"date": "2026-02-04", "open": 100, "high": 101, "low": 99, "close": 100},
+        {"date": "2026-02-10", "open": 102, "high": 103, "low": 101, "close": 102},
+    ]
+    market_db.stock_master_daily_rows = [
+        {
+            "date": "2026-02-10",
+            "code": "6758",
+            "company_name": "ソニーグループ",
+            "market_code": "0111",
+            "market_name": "プライム",
+            "sector_17_code": "6",
+            "sector_17_name": "電気機器",
+            "sector_33_code": "3650",
+            "sector_33_name": "電気機器",
+            "listed_date": "1958-12-01",
+        }
+    ]
+    market_db.upsert_stocks([
+        {
+            "code": "6758",
+            "company_name": "ソニーグループ",
+            "market_code": "0111",
+            "market_name": "プライム",
+            "sector_17_code": "6",
+            "sector_17_name": "電気機器",
+            "sector_33_code": "3650",
+            "sector_33_name": "電気機器",
+            "listed_date": "1958-12-01",
+        }
+    ])
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = datetime.now(
+        ZoneInfo("Asia/Tokyo")
+    ).date().isoformat()
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Date": "2026-02-04",
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+            }
+        ],
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-02-10", "EPS": 80.0}],
+        },
+        margin_by_code={
+            "6758": [{"Code": "67580", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200}],
+        },
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    fundamentals_codes = [
+        str((params or {}).get("code"))
+        for path, params in client.calls
+        if path == "/fins/summary" and (params or {}).get("code")
+    ]
+    margin_codes = [
+        str((params or {}).get("code"))
+        for path, params in client.calls
+        if path == "/markets/margin-interest" and (params or {}).get("code")
+    ]
+    assert "67580" in fundamentals_codes
+    assert "72030" not in fundamentals_codes
+    assert margin_codes == ["67580"]
+    assert "72030" not in margin_codes
 
 
 @pytest.mark.asyncio
