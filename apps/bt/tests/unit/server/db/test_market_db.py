@@ -221,6 +221,71 @@ class TestMarketDbBasics:
             {"date": "2024-01-04", "code": "", "company_name": "missing code"},
         ]) == 0
 
+    def test_stock_master_intervals_ignore_snapshot_date_listed_date_pollution(
+        self, market_db: MarketDb
+    ) -> None:
+        market_db.upsert_stock_master_daily_rows([
+            {
+                "date": "2024-01-04",
+                "code": "7203",
+                "company_name": "トヨタ自動車",
+                "company_name_english": "TOYOTA MOTOR",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "2024-01-04",
+                "created_at": "first",
+            },
+            {
+                "date": "2024-01-05",
+                "code": "7203",
+                "company_name": "トヨタ自動車",
+                "company_name_english": "TOYOTA MOTOR",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "2024-01-05",
+                "created_at": "second",
+            },
+            {
+                "date": "2024-01-05",
+                "code": "6758",
+                "company_name": "ソニーグループ",
+                "company_name_english": "SONY GROUP",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "1",
+                "sector_17_name": "電機",
+                "sector_33_code": "3650",
+                "sector_33_name": "電気機器",
+                "scale_category": "TOPIX Core30",
+                "listed_date": "1958-12-01",
+                "created_at": "third",
+            },
+        ])
+
+        assert market_db.rebuild_stock_master_intervals() == 2
+        rows = market_db._fetchall(
+            """
+            SELECT code, valid_from, valid_to, listed_date
+            FROM stock_master_intervals
+            ORDER BY code
+            """
+        )
+
+        assert rows == [
+            ("6758", "2024-01-05", "2024-01-05", "1958-12-01"),
+            ("7203", "2024-01-04", "2024-01-05", ""),
+        ]
+
     def test_stock_master_daily_pit_query_filters(self, market_db: MarketDb) -> None:
         market_db.upsert_topix_data([
             {"date": "2024-01-04", "open": 1, "high": 2, "low": 1, "close": 2, "created_at": "now"},

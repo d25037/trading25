@@ -1246,7 +1246,16 @@ class MarketDb:
                 market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
                 sector_33_name, scale_category, listed_date, created_at
             )
-            WITH fingerprinted AS (
+            WITH cleaned AS (
+                SELECT
+                    *,
+                    CASE
+                        WHEN listed_date IS NULL THEN ''
+                        WHEN listed_date = date THEN ''
+                        ELSE listed_date
+                    END AS stable_listed_date
+                FROM stock_master_daily
+            ), fingerprinted AS (
                 SELECT
                     *,
                     md5(concat_ws('|',
@@ -1254,9 +1263,9 @@ class MarketDb:
                         coalesce(market_code, ''), coalesce(market_name, ''),
                         coalesce(sector_17_code, ''), coalesce(sector_17_name, ''),
                         coalesce(sector_33_code, ''), coalesce(sector_33_name, ''),
-                        coalesce(scale_category, ''), coalesce(listed_date, '')
+                        coalesce(scale_category, ''), stable_listed_date
                     )) AS fingerprint
-                FROM stock_master_daily
+                FROM cleaned
             ), marked AS (
                 SELECT
                     *,
@@ -1285,7 +1294,7 @@ class MarketDb:
                 any_value(sector_33_code),
                 any_value(sector_33_name),
                 any_value(scale_category),
-                any_value(listed_date),
+                any_value(stable_listed_date),
                 max(created_at)
             FROM grouped
             GROUP BY code, interval_group, fingerprint
