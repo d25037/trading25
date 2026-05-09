@@ -198,6 +198,18 @@ relatedExperiments = [
   "market-behavior/annual-value-periodic-rebalance",
 ]
 
+[experiments."market-behavior/turtle-like-momentum-research"]
+family = "Momentum"
+status = "observed"
+decision = "Donchian channel Turtle-like breakout は trade return skew と右尾を明確に作るが、long-only 日本株の日足 portfolio lens では best Sharpe が0.64程度で core alpha には弱い。value filter ではなく別 sleeve / trend-following diagnostic として扱う。"
+promotedSurface = "Research"
+riskFlags = ["trend-following", "daily-execution-approximation", "right-tail", "deep-drawdown", "not-core-alpha"]
+relatedExperiments = [
+  "market-behavior/classical-momentum-research",
+  "market-behavior/annual-value-breakout-periodic-rebalance",
+  "market-behavior/new-high-momentum-research",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"

@@ -123,6 +123,8 @@
   - `range_break_v15` の実トレード台帳を、entry 前日時点の breakout maturity / overheat / liquidity / beta / market regime / value exposure で分解する実験。
 - [market-behavior/classical-momentum-research/](./market-behavior/classical-momentum-research/README.md)
   - `6-1` / `12-1` に近い中期 cross-sectional momentum を market 別 long-only portfolio lens で検証する研究。
+- [market-behavior/turtle-like-momentum-research/](./market-behavior/turtle-like-momentum-research/README.md)
+  - Donchian channel breakout / exit を日足で近似し、Turtle-like trend following の右尾・drawdown・market差を確認する実験。
 - [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)
   - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
 - [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)
