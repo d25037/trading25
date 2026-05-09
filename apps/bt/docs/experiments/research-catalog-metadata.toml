@@ -231,6 +231,20 @@ riskFlags = ["live-strategy-context"]
 relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
   "market-behavior/annual-fundamental-confounder-analysis",
+  "strategy-audit/forward-eps-component-decomposition",
+]
+
+[experiments."strategy-audit/forward-eps-component-decomposition"]
+family = "Strategy Audit"
+status = "candidate"
+decision = "forward_eps_driven は Standard では value 成分が主因、Prime では volume attention の右尾と price-momentum tail control が主題。entry hard filter ではなく market-specific sizing / risk budget 研究へ進める。"
+promotedSurface = "Strategy"
+riskFlags = ["live-strategy-context", "component-decomposition", "market-specific", "portfolio-lens-needed", "train-only-calibration-needed"]
+relatedExperiments = [
+  "strategy-audit/forward-eps-trade-archetype-decomposition",
+  "strategy-audit/forward-eps-technical-horizon-decomposition",
+  "market-behavior/annual-market-specific-value-score-profile",
+  "market-behavior/margin-balance-supply-demand",
 ]
 
 [experiments."strategy-audit/forward-eps-technical-horizon-decomposition"]
@@ -241,7 +255,7 @@ promotedSurface = "Strategy"
 riskFlags = ["tail-risk", "candidate-rule", "portfolio-lens-needed"]
 relatedExperiments = [
   "strategy-audit/forward-eps-trade-archetype-decomposition",
-  "strategy-audit/forward-eps-driven-v3-factor-decomposition",
+  "strategy-audit/forward-eps-component-decomposition",
 ]
 
 [experiments."market-behavior/falling-knife-bad-tail-pruning"]

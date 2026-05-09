@@ -117,6 +117,8 @@
   - 低forward PER を positive-low と non-positive に分解し、低PBR + 小型 composite への寄与を event-level と portfolio lens で確認する実験。
 - [strategy-audit/forward-eps-trade-archetype-decomposition/](./strategy-audit/forward-eps-trade-archetype-decomposition/README.md)
   - `forward_eps_driven` の実トレード台帳を起点に、forward EPS 成長・出来高・地合い・低PBR/低forward PER/小型の価値露出を市場別に分解する実験。
+- [strategy-audit/forward-eps-component-decomposition/](./strategy-audit/forward-eps-component-decomposition/README.md)
+  - `forward_eps_driven` の実現トレードを value / earnings expectation / volume attention / price momentum に分け、Prime と Standard で何が効いているかを分解する実験。
 - [strategy-audit/forward-eps-technical-horizon-decomposition/](./strategy-audit/forward-eps-technical-horizon-decomposition/README.md)
   - `forward_eps_driven` の実トレード台帳を、entry 前日時点の `RSI` / `run-up` / `risk-adjusted-return` 10/20/60 horizon で分解し、Prime の overheat tail を検証する実験。
 - [strategy-audit/range-break-trade-archetype-decomposition/](./strategy-audit/range-break-trade-archetype-decomposition/README.md)
