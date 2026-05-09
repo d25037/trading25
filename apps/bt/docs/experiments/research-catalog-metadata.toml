@@ -174,6 +174,18 @@ relatedExperiments = [
   "market-behavior/annual-market-specific-value-score-profile",
 ]
 
+[experiments."market-behavior/classical-momentum-research"]
+family = "Market Behavior"
+status = "observed"
+decision = "Classical momentum は TOPIX500 / Prime ex TOPIX500 で弱い positive continuation は出るが、value periodic の core alpha には届かない。Standard / Growth は単独採用せず、value 上位内の補助 diagnostic や sector/residual momentum の再検証候補に留める。"
+promotedSurface = "Research"
+riskFlags = ["momentum", "long-only", "portfolio-lens", "turnover-cost-unmodeled", "sector-beta-uncontrolled", "not-core-alpha"]
+relatedExperiments = [
+  "market-behavior/new-high-momentum-research",
+  "market-behavior/annual-value-breakout-periodic-rebalance",
+  "market-behavior/annual-value-periodic-rebalance",
+]
+
 [experiments."market-behavior/annual-market-specific-value-score-profile"]
 family = "Annual Fundamentals"
 status = "ranking_surface"

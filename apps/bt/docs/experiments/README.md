@@ -119,6 +119,8 @@
   - `forward_eps_driven` の実トレード台帳を、entry 前日時点の `RSI` / `run-up` / `risk-adjusted-return` 10/20/60 horizon で分解し、Prime の overheat tail を検証する実験。
 - [strategy-audit/range-break-trade-archetype-decomposition/](./strategy-audit/range-break-trade-archetype-decomposition/README.md)
   - `range_break_v15` の実トレード台帳を、entry 前日時点の breakout maturity / overheat / liquidity / beta / market regime / value exposure で分解する実験。
+- [market-behavior/classical-momentum-research/](./market-behavior/classical-momentum-research/README.md)
+  - `6-1` / `12-1` に近い中期 cross-sectional momentum を market 別 long-only portfolio lens で検証する研究。
 - [market-behavior/stop-limit-daily-classification/](./market-behavior/stop-limit-daily-classification/README.md)
   - JPX 制限値幅の標準テーブルを前日終値ベースで当て、ストップ高 / ストップ安の exact hit を market / intraday state / close-at-limit で分類する実験。
 - [market-behavior/stop-limit-buy-only-next-close-followthrough/](./market-behavior/stop-limit-buy-only-next-close-followthrough/README.md)

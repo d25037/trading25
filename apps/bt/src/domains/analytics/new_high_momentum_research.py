@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 
+from src.domains.analytics.annual_value_composite_selection import _daily_stats, _series_mean
 from src.domains.analytics.deterministic_sampling import select_deterministic_samples
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -63,7 +64,17 @@ TABLE_FIELD_NAMES: tuple[str, ...] = (
     "universe_summary_df",
     "new_high_summary_df",
     "top_candidates_df",
+    "portfolio_event_df",
+    "portfolio_daily_df",
+    "portfolio_summary_df",
     "sampled_events_df",
+)
+PORTFOLIO_CONDITION_KEYS: tuple[str, ...] = (
+    "all",
+    "low_forward_per_le_10",
+    "low_pbr_forward_per_15",
+    "annual_value_score_ge_2",
+    "annual_value_score_3",
 )
 
 
@@ -235,6 +246,9 @@ class NewHighMomentumResearchResult:
     universe_summary_df: pd.DataFrame
     new_high_summary_df: pd.DataFrame
     top_candidates_df: pd.DataFrame
+    portfolio_event_df: pd.DataFrame
+    portfolio_daily_df: pd.DataFrame
+    portfolio_summary_df: pd.DataFrame
     sampled_events_df: pd.DataFrame
 
 
@@ -358,6 +372,10 @@ def _create_panel_tables(
         f"lead(close, {horizon}) over (partition by code order by date) as future_close_{horizon}d"
         for horizon in horizons
     )
+    lead_date_exprs = ",\n                ".join(
+        f"lead(date, {horizon}) over (partition by code order by date) as future_date_{horizon}d"
+        for horizon in horizons
+    )
     return_exprs = ",\n            ".join(
         f"case when next_open > 0 and future_close_{horizon}d > 0 "
         f"then future_close_{horizon}d / next_open - 1 end as return_next_open_to_close_{horizon}d"
@@ -449,8 +467,10 @@ def _create_panel_tables(
                 lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close,
                 lag(close, 20) OVER (PARTITION BY code ORDER BY date) AS close_lag_20d,
                 lag(close, 60) OVER (PARTITION BY code ORDER BY date) AS close_lag_60d,
+                lead(date, 1) OVER (PARTITION BY code ORDER BY date) AS next_date,
                 lead(open, 1) OVER (PARTITION BY code ORDER BY date) AS next_open,
                 {lead_close_exprs},
+                {lead_date_exprs},
                 {rolling_high_exprs},
                 min(low) OVER (
                     PARTITION BY code ORDER BY date
@@ -521,6 +541,10 @@ def _create_panel_tables(
     event_columns = ", ".join(f"new_high_{window}d" for window in high_windows)
     return_columns = ", ".join(
         [
+            "next_date",
+            "next_open",
+            *[f"future_date_{horizon}d" for horizon in horizons],
+            *[f"future_close_{horizon}d" for horizon in horizons],
             *[f"return_next_open_to_close_{horizon}d" for horizon in horizons],
             *[f"topix_return_{horizon}d" for horizon in horizons],
             *[f"excess_return_vs_topix_{horizon}d" for horizon in horizons],
@@ -927,6 +951,330 @@ def _build_sampled_events(
     )
 
 
+def _portfolio_condition_definitions() -> tuple[FilterDefinition, ...]:
+    by_key = {condition.key: condition for condition in CONDITION_DEFINITIONS}
+    return tuple(by_key[key] for key in PORTFOLIO_CONDITION_KEYS if key in by_key)
+
+
+def _build_portfolio_event_df(
+    conn: Any,
+    *,
+    high_windows: tuple[int, ...],
+    horizons: tuple[int, ...],
+) -> pd.DataFrame:
+    columns = [
+        "universe_key",
+        "universe_label",
+        "new_high_window",
+        "condition_family",
+        "condition_key",
+        "condition_label",
+        "horizon_days",
+        "signal_date",
+        "entry_date",
+        "exit_date",
+        "code",
+        "company_name",
+        "entry_open",
+        "exit_close",
+        "forward_return",
+        "topix_return",
+        "excess_return_vs_topix",
+        "annual_value_score",
+        "pbr",
+        "forward_per",
+        "market_cap_bil_jpy",
+        "market_cap_event_percentile",
+    ]
+    frames: list[pd.DataFrame] = []
+    for window in high_windows:
+        event_expression = f"new_high_{window}d"
+        for horizon in horizons:
+            return_column = f"return_next_open_to_close_{horizon}d"
+            topix_column = f"topix_return_{horizon}d"
+            excess_column = f"excess_return_vs_topix_{horizon}d"
+            exit_date_column = f"future_date_{horizon}d"
+            for condition in _portfolio_condition_definitions():
+                frame = conn.execute(
+                    f"""
+                    SELECT
+                        universe_key,
+                        {window} AS new_high_window,
+                        '{condition.family}' AS condition_family,
+                        '{condition.key}' AS condition_key,
+                        '{condition.label}' AS condition_label,
+                        {horizon} AS horizon_days,
+                        date AS signal_date,
+                        next_date AS entry_date,
+                        {exit_date_column} AS exit_date,
+                        code,
+                        company_name,
+                        next_open AS entry_open,
+                        future_close_{horizon}d AS exit_close,
+                        {return_column} AS forward_return,
+                        {topix_column} AS topix_return,
+                        {excess_column} AS excess_return_vs_topix,
+                        annual_value_score,
+                        pbr,
+                        forward_per,
+                        market_cap_bil_jpy,
+                        market_cap_event_percentile
+                    FROM new_high_momentum_events
+                    WHERE {event_expression}
+                      AND ({condition.expression})
+                      AND next_date IS NOT NULL
+                      AND {exit_date_column} IS NOT NULL
+                      AND next_open > 0
+                      AND future_close_{horizon}d > 0
+                      AND {return_column} IS NOT NULL
+                    """
+                ).fetchdf()
+                if frame.empty:
+                    continue
+                frame["universe_label"] = frame["universe_key"].map(UNIVERSE_LABELS)
+                frames.append(frame)
+    if not frames:
+        return pd.DataFrame(columns=columns)
+    result = pd.concat(frames, ignore_index=True, sort=False)
+    for column in columns:
+        if column not in result.columns:
+            result[column] = None
+    return _sort_table(result[columns])
+
+
+def _build_portfolio_daily_df(
+    conn: Any,
+    portfolio_event_df: pd.DataFrame,
+    *,
+    analysis_start_date: str | None,
+    analysis_end_date: str | None,
+) -> pd.DataFrame:
+    columns = [
+        "universe_key",
+        "universe_label",
+        "new_high_window",
+        "condition_key",
+        "condition_label",
+        "horizon_days",
+        "date",
+        "active_positions",
+        "mean_daily_return",
+        "mean_daily_return_pct",
+        "portfolio_value",
+        "drawdown_pct",
+    ]
+    if portfolio_event_df.empty:
+        return pd.DataFrame(columns=columns)
+    event_df = portfolio_event_df.copy()
+    conn.register("new_high_value_portfolio_events_input", event_df)
+    start_date = analysis_start_date or str(event_df["entry_date"].min())
+    end_date = analysis_end_date or str(event_df["exit_date"].max())
+    price_code = normalize_code_sql("sd.code")
+    daily = conn.execute(
+        f"""
+        WITH raw_prices AS (
+            SELECT
+                {price_code} AS code,
+                sd.date,
+                sd.close,
+                row_number() OVER (
+                    PARTITION BY {price_code}, sd.date
+                    ORDER BY CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END, sd.code
+                ) AS row_rank
+            FROM stock_data sd
+            WHERE sd.date >= ?
+              AND sd.date <= (SELECT max(exit_date) FROM new_high_value_portfolio_events_input)
+              AND sd.close > 0
+        ),
+        prices AS (
+            SELECT
+                code,
+                date,
+                close,
+                lag(close) OVER (PARTITION BY code ORDER BY date) AS prev_close
+            FROM raw_prices
+            WHERE row_rank = 1
+        ),
+        active_daily AS (
+            SELECT
+                e.universe_key,
+                e.universe_label,
+                e.new_high_window,
+                e.condition_key,
+                e.condition_label,
+                e.horizon_days,
+                p.date,
+                count(*) AS active_positions,
+                avg(
+                    CASE
+                        WHEN p.date = e.entry_date THEN p.close / nullif(e.entry_open, 0) - 1
+                        ELSE p.close / nullif(p.prev_close, 0) - 1
+                    END
+                ) AS mean_daily_return
+            FROM new_high_value_portfolio_events_input e
+            JOIN prices p
+              ON p.code = e.code
+             AND p.date >= e.entry_date
+             AND p.date <= e.exit_date
+            GROUP BY
+                e.universe_key,
+                e.universe_label,
+                e.new_high_window,
+                e.condition_key,
+                e.condition_label,
+                e.horizon_days,
+                p.date
+        ),
+        configs AS (
+            SELECT DISTINCT
+                universe_key,
+                universe_label,
+                new_high_window,
+                condition_key,
+                condition_label,
+                horizon_days
+            FROM new_high_value_portfolio_events_input
+        ),
+        calendar AS (
+            SELECT date
+            FROM topix_data
+            WHERE date >= ?
+              AND date <= ?
+        ),
+        dense_daily AS (
+            SELECT
+                c.universe_key,
+                c.universe_label,
+                c.new_high_window,
+                c.condition_key,
+                c.condition_label,
+                c.horizon_days,
+                cal.date,
+                coalesce(a.active_positions, 0) AS active_positions,
+                coalesce(a.mean_daily_return, 0.0) AS mean_daily_return
+            FROM configs c
+            CROSS JOIN calendar cal
+            LEFT JOIN active_daily a
+              ON a.universe_key = c.universe_key
+             AND a.new_high_window = c.new_high_window
+             AND a.condition_key = c.condition_key
+             AND a.horizon_days = c.horizon_days
+             AND a.date = cal.date
+        )
+        SELECT
+            *,
+            mean_daily_return * 100.0 AS mean_daily_return_pct
+        FROM dense_daily
+        ORDER BY universe_key, new_high_window, condition_key, horizon_days, date
+        """,
+        [start_date, start_date, end_date],
+    ).fetchdf()
+    conn.unregister("new_high_value_portfolio_events_input")
+    if daily.empty:
+        return pd.DataFrame(columns=columns)
+    daily["portfolio_value"] = pd.NA
+    daily["drawdown_pct"] = pd.NA
+    group_columns = ["universe_key", "new_high_window", "condition_key", "horizon_days"]
+    for _, group in daily.groupby(group_columns, sort=False):
+        idx = list(group.index)
+        values = (1.0 + pd.to_numeric(daily.loc[idx, "mean_daily_return"])).cumprod()
+        peaks = values.cummax()
+        daily.loc[idx, "portfolio_value"] = values.to_numpy()
+        daily.loc[idx, "drawdown_pct"] = ((values / peaks - 1.0) * 100.0).to_numpy()
+    for column in columns:
+        if column not in daily.columns:
+            daily[column] = None
+    return _sort_table(daily[columns])
+
+
+def _build_portfolio_summary_df(
+    portfolio_daily_df: pd.DataFrame,
+    portfolio_event_df: pd.DataFrame,
+) -> pd.DataFrame:
+    columns = [
+        "universe_key",
+        "universe_label",
+        "new_high_window",
+        "condition_key",
+        "condition_label",
+        "horizon_days",
+        "event_count",
+        "unique_code_count",
+        "active_days",
+        "avg_active_positions",
+        "max_active_positions",
+        "total_return_pct",
+        "cagr_pct",
+        "max_drawdown_pct",
+        "annualized_volatility_pct",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "calmar_ratio",
+        "mean_forward_return_pct",
+        "mean_excess_return_vs_topix_pct",
+        "win_rate_pct",
+    ]
+    if portfolio_daily_df.empty:
+        return pd.DataFrame(columns=columns)
+    group_columns = ["universe_key", "new_high_window", "condition_key", "horizon_days"]
+    event_stats = {
+        tuple(keys): group
+        for keys, group in portfolio_event_df.groupby(group_columns, sort=False)
+    }
+    records: list[dict[str, Any]] = []
+    for keys, group in portfolio_daily_df.groupby(group_columns, sort=False):
+        event_group = event_stats.get(tuple(keys), pd.DataFrame())
+        total_return = float(group["portfolio_value"].iloc[-1] - 1.0)
+        start_date = str(group["date"].iloc[0])
+        end_date = str(group["date"].iloc[-1])
+        period_days = (pd.Timestamp(end_date) - pd.Timestamp(start_date)).days
+        cagr = None
+        if period_days > 0 and total_return > -1.0:
+            cagr = (1.0 + total_return) ** (365.25 / period_days) - 1.0
+        drawdown = pd.to_numeric(group["drawdown_pct"], errors="coerce").min()
+        max_drawdown_pct = float(drawdown) if pd.notna(drawdown) else None
+        returns = (
+            pd.to_numeric(event_group["forward_return"], errors="coerce").dropna()
+            if "forward_return" in event_group
+            else pd.Series(dtype="float64")
+        )
+        excess = (
+            pd.to_numeric(event_group["excess_return_vs_topix"], errors="coerce").dropna()
+            if "excess_return_vs_topix" in event_group
+            else pd.Series(dtype="float64")
+        )
+        records.append(
+            {
+                "universe_key": keys[0],
+                "universe_label": str(group["universe_label"].iloc[0]),
+                "new_high_window": int(keys[1]),
+                "condition_key": keys[2],
+                "condition_label": str(group["condition_label"].iloc[0]),
+                "horizon_days": int(keys[3]),
+                "event_count": int(len(event_group)),
+                "unique_code_count": int(event_group["code"].nunique()) if not event_group.empty else 0,
+                "active_days": int((pd.to_numeric(group["active_positions"]) > 0).sum()),
+                "avg_active_positions": _series_mean(group["active_positions"]),
+                "max_active_positions": int(pd.to_numeric(group["active_positions"]).max()),
+                "total_return_pct": total_return * 100.0,
+                "cagr_pct": cagr * 100.0 if cagr is not None else None,
+                "max_drawdown_pct": max_drawdown_pct,
+                **_daily_stats(group["mean_daily_return"]),
+                "calmar_ratio": (
+                    cagr / abs(max_drawdown_pct / 100.0)
+                    if cagr is not None and max_drawdown_pct is not None and max_drawdown_pct < -1e-12
+                    else None
+                ),
+                "mean_forward_return_pct": float(returns.mean() * 100.0) if not returns.empty else None,
+                "mean_excess_return_vs_topix_pct": (
+                    float(excess.mean() * 100.0) if not excess.empty else None
+                ),
+                "win_rate_pct": float((returns > 0.0).mean() * 100.0) if not returns.empty else None,
+            }
+        )
+    return _sort_table(pd.DataFrame(records)[columns])
+
+
 def run_new_high_momentum_research(
     db_path: str,
     *,
@@ -988,6 +1336,21 @@ def run_new_high_momentum_research(
             horizons=normalized_horizons,
         )
         top_candidates_df = _build_top_candidates(new_high_summary_df)
+        portfolio_event_df = _build_portfolio_event_df(
+            conn,
+            high_windows=normalized_windows,
+            horizons=normalized_horizons,
+        )
+        portfolio_daily_df = _build_portfolio_daily_df(
+            conn,
+            portfolio_event_df,
+            analysis_start_date=analysis_start_date,
+            analysis_end_date=analysis_end_date,
+        )
+        portfolio_summary_df = _build_portfolio_summary_df(
+            portfolio_daily_df,
+            portfolio_event_df,
+        )
         sampled_events_df = _build_sampled_events(
             conn,
             high_windows=normalized_windows,
@@ -1011,6 +1374,9 @@ def run_new_high_momentum_research(
             universe_summary_df=universe_summary_df,
             new_high_summary_df=new_high_summary_df,
             top_candidates_df=top_candidates_df,
+            portfolio_event_df=portfolio_event_df,
+            portfolio_daily_df=portfolio_daily_df,
+            portfolio_summary_df=portfolio_summary_df,
             sampled_events_df=sampled_events_df,
         )
 
@@ -1031,6 +1397,16 @@ def _format_int(value: object) -> str:
     except (TypeError, ValueError):
         return "-"
     return f"{number:,}"
+
+
+def _format_number(value: object, *, digits: int = 2, suffix: str = "") -> str:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "-"
+    if pd.isna(number):
+        return "-"
+    return f"{number:.{digits}f}{suffix}"
 
 
 def _build_research_bundle_summary_markdown(result: NewHighMomentumResearchResult) -> str:
@@ -1119,6 +1495,43 @@ def _build_research_bundle_summary_markdown(result: NewHighMomentumResearchResul
                         _format_pct(row.mean_excess_return_vs_topix),
                         _format_pct(row.mean_excess_lift_vs_new_high_baseline),
                         _format_pct(row.mean_lift_vs_same_universe_day),
+                    ]
+                )
+                + " |"
+            )
+    lines.extend(["", "## Event-Driven Portfolio (252d New High + Value Conditions)", ""])
+    portfolio = result.portfolio_summary_df.loc[
+        result.portfolio_summary_df["new_high_window"].eq(252)
+        & result.portfolio_summary_df["horizon_days"].isin([20, 60])
+        & result.portfolio_summary_df["universe_key"].isin(["prime_ex_topix500", "standard"])
+    ]
+    if portfolio.empty:
+        lines.append("_No portfolio rows._")
+    else:
+        lines.extend(
+            [
+                "| Universe | Condition | Hold | Events | Avg active | CAGR | Sharpe | MaxDD | Event mean |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for row in portfolio.sort_values(
+            ["universe_key", "horizon_days", "sharpe_ratio"],
+            ascending=[True, True, False],
+            kind="stable",
+        ).itertuples(index=False):
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        f"`{row.universe_key}`",
+                        f"`{row.condition_key}`",
+                        _format_int(row.horizon_days),
+                        _format_int(row.event_count),
+                        _format_number(row.avg_active_positions, digits=1),
+                        _format_number(row.cagr_pct, suffix="%"),
+                        _format_number(row.sharpe_ratio),
+                        _format_number(row.max_drawdown_pct, suffix="%"),
+                        _format_number(row.mean_forward_return_pct, suffix="%"),
                     ]
                 )
                 + " |"

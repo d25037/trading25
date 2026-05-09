@@ -233,6 +233,10 @@ def test_run_new_high_momentum_research_builds_event_tables(tmp_path: Path) -> N
     ]
     assert not quality_rows.empty
     assert not annual_value_rows.empty
+    assert not result.portfolio_event_df.empty
+    assert not result.portfolio_daily_df.empty
+    assert not result.portfolio_summary_df.empty
+    assert "cagr_pct" in result.portfolio_summary_df.columns
     assert not result.sampled_events_df.empty
     assert "market_cap_bil_jpy" in result.sampled_events_df.columns
 
@@ -279,3 +283,4 @@ def test_new_high_momentum_bundle_roundtrip(tmp_path: Path) -> None:
     assert bundle.experiment_id == NEW_HIGH_MOMENTUM_EXPERIMENT_ID
     assert loaded.high_windows == (5,)
     assert loaded.new_high_summary_df.shape == result.new_high_summary_df.shape
+    assert loaded.portfolio_summary_df.shape == result.portfolio_summary_df.shape
