@@ -1,16 +1,18 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
-import { type CSSProperties, type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
+import { type CSSProperties, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinePriceChart } from '@/components/Chart/LinePriceChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@/components/Layout/Workspace';
+import { RankingTable } from '@/components/Ranking';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
 import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
-import { type SectorStockItem, useSectorStocks } from '@/hooks/useSectorStocks';
+import { useRanking } from '@/hooks/useRanking';
 import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
 import type { IndexItem } from '@/types/indices';
+import type { RankingParams } from '@/types/ranking';
 import { formatDateShort, formatPercentage } from '@/utils/formatters';
 import {
   buildTopixMultiTimeframeModeAnalysis,
@@ -22,9 +24,6 @@ import {
   type TopixModeAnalysis,
   type TopixModePoint,
 } from '@/utils/topixMode';
-
-type SortField = 'tradingValue' | 'changePercentage' | 'code';
-type SortOrder = 'asc' | 'desc';
 
 const BENCHMARK_DISPLAY_ORDER: Record<string, number> = {
   N225_UNDERPX: 0,
@@ -45,16 +44,18 @@ const NIKKEI_PARENT_INDEX_CODE = 'N225_UNDERPX';
 const NIKKEI_VI_INDEX_CODE = 'N225_VI';
 const TOPIX_PRIMARY_INDEX_CODES = new Set(['1321', 'TOPIX']);
 
-const MARKET_LABELS: Record<string, string> = {
-  prime: 'P',
-  standard: 'S',
-  growth: 'G',
-};
-
 const TOPIX_MODE_TONE_CLASSES: Record<TopixMode, string> = {
   bullish: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
   bearish: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
 };
+
+const SECTOR_CHART_HEIGHT_RATIO = 0.7;
+const SECTOR_CHART_BODY_BASE_HEIGHT = 400;
+const SECTOR_CHART_BODY_HEIGHT = Math.round(SECTOR_CHART_BODY_BASE_HEIGHT * SECTOR_CHART_HEIGHT_RATIO);
+const SECTOR_CHART_PANEL_MIN_HEIGHT = SECTOR_CHART_BODY_HEIGHT + 84;
+const SECTOR_STOCK_FETCH_ALL_LIMIT = 0;
+const SECTOR_TABLE_MIN_HEIGHT = 680;
+const SECTOR_WORKSPACE_GAP = 12;
 
 const TOPIX_MODE_BAR_CLASSES: Record<TopixMode, string> = {
   bullish: 'bg-emerald-500/85',
@@ -68,23 +69,12 @@ const TOPIX_STATE_TONE_CLASSES = {
   long_bearish__short_bearish: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300',
 } as const;
 
-function formatNumber(value: number | undefined): string {
-  if (value === undefined || value === null) return '-';
-  return value.toLocaleString();
-}
-
-function formatTradingValue(value: number | undefined): string {
+function formatJapaneseLargeValue(value: number | null | undefined): string {
   if (value === undefined || value === null) return '-';
   if (value >= 1e12) return `${(value / 1e12).toFixed(2)}兆`;
   if (value >= 1e8) return `${(value / 1e8).toFixed(0)}億`;
   if (value >= 1e4) return `${(value / 1e4).toFixed(0)}万`;
   return value.toLocaleString();
-}
-
-function formatChangePercentage(value: number | undefined): string {
-  if (value === undefined || value === null) return '-';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
 }
 
 function formatLatestIndexValue(value: number | null, code: string | null | undefined): string {
@@ -170,15 +160,6 @@ function useObservedElementHeight<T extends HTMLElement>() {
   return [ref, height] as const;
 }
 
-interface SortableHeaderProps {
-  field: SortField;
-  currentField: SortField;
-  order: SortOrder;
-  onSort: (field: SortField) => void;
-  children: ReactNode;
-  align?: 'left' | 'right';
-}
-
 function CompactMetaStrip({
   items,
   className,
@@ -197,9 +178,7 @@ function CompactMetaStrip({
           key={item.label}
           className="flex shrink-0 items-baseline gap-2 rounded-full border border-border/70 bg-[var(--app-surface-muted)] px-3 py-1.5"
         >
-          <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {item.label}
-          </dt>
+          <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</dt>
           <dd className="max-w-[14rem] truncate text-sm font-medium text-foreground">{item.value}</dd>
         </div>
       ))}
@@ -437,32 +416,6 @@ function TopixModePanel({ analysis }: { analysis: TopixModeAnalysis | null }) {
   );
 }
 
-function SortableHeader({ field, currentField, order, onSort, children, align = 'left' }: SortableHeaderProps) {
-  const isActive = field === currentField;
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(field)}
-      className={cn(
-        'flex items-center gap-1 text-xs font-medium uppercase tracking-wider transition-colors hover:text-foreground',
-        isActive ? 'text-foreground' : 'text-muted-foreground',
-        align === 'right' && 'justify-end w-full'
-      )}
-    >
-      {children}
-      {isActive ? (
-        order === 'desc' ? (
-          <ArrowDown className="h-3 w-3" />
-        ) : (
-          <ArrowUp className="h-3 w-3" />
-        )
-      ) : (
-        <ArrowUpDown className="h-3 w-3 opacity-50" />
-      )}
-    </button>
-  );
-}
-
 interface IndicesListProps {
   indices: IndexItem[];
   selectedCode: string | null;
@@ -516,9 +469,7 @@ function IndicesList({ indices, selectedCode, onSelect, isLoading, containerRef 
 
           return (
             <section key={category} className="space-y-1.5">
-              <SectionEyebrow className="px-1">
-                {INDEX_CATEGORY_LABELS[category] ?? category}
-              </SectionEyebrow>
+              <SectionEyebrow className="px-1">{INDEX_CATEGORY_LABELS[category] ?? category}</SectionEyebrow>
               <div className="space-y-1">
                 {categoryIndices.map((index) => {
                   const isSelected = selectedCode === index.code;
@@ -560,11 +511,9 @@ interface SectorStocksListProps {
 }
 
 function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight }: SectorStocksListProps) {
-  const [sortBy, setSortBy] = useState<SortField>('tradingValue');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [lookbackDays, setLookbackDays] = useState(5);
-  const [markets, setMarkets] = useState('prime');
-  const resolvedPanelMinHeight = panelMinHeight ? Math.max(panelMinHeight, 320) : 280;
+  const [markets, setMarkets] = useState('prime,standard,growth');
+  const resolvedPanelMinHeight = panelMinHeight ? Math.max(panelMinHeight, SECTOR_TABLE_MIN_HEIGHT) : 480;
   const panelStyle: CSSProperties = panelMinHeight
     ? {
         height: `${resolvedPanelMinHeight}px`,
@@ -574,169 +523,77 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
         minHeight: `${resolvedPanelMinHeight}px`,
       };
 
-  const params = sectorType === 'sector33' ? { sector33Name: sectorName } : { sector17Name: sectorName };
-
-  const { data, isLoading, error } = useSectorStocks(
-    {
-      ...params,
+  const rankingParams = useMemo<RankingParams>(
+    () => ({
+      ...(sectorType === 'sector33' ? { sector33Name: sectorName } : { sector17Name: sectorName }),
       markets,
-      sortBy,
-      sortOrder,
       lookbackDays,
-      limit: 100,
-    },
-    true
+      limit: SECTOR_STOCK_FETCH_ALL_LIMIT,
+      includeValuation: true,
+    }),
+    [lookbackDays, markets, sectorName, sectorType]
   );
 
-  const handleSort = (field: SortField) => {
-    if (field === sortBy) {
-      setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
-    } else {
-      setSortBy(field);
-      setSortOrder('desc');
-    }
-  };
+  const { data, isLoading, error } = useRanking(rankingParams, true);
+
+  const headerActions = (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">市場</span>
+        <Select value={markets} onValueChange={setMarkets}>
+          <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="prime">プライム</SelectItem>
+            <SelectItem value="standard">スタンダード</SelectItem>
+            <SelectItem value="growth">グロース</SelectItem>
+            <SelectItem value="prime,standard">P + S</SelectItem>
+            <SelectItem value="prime,standard,growth">全市場</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">比較期間</span>
+        <Select value={lookbackDays.toString()} onValueChange={(value) => setLookbackDays(Number(value))}>
+          <SelectTrigger className="h-8 w-28 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="1">前日比</SelectItem>
+            <SelectItem value="5">5営業日</SelectItem>
+            <SelectItem value="10">10営業日</SelectItem>
+            <SelectItem value="20">20営業日</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </>
+  );
 
   return (
-    <Surface className="flex flex-col overflow-hidden lg:min-h-0" style={panelStyle}>
-      <div className="border-b border-border/70 px-4 py-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-1">
-            <SectionEyebrow>Constituents</SectionEyebrow>
-            <h3 className="text-base font-semibold text-foreground">
-              銘柄一覧
-              {data?.stocks.length !== undefined ? (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">({data.stocks.length}銘柄)</span>
-              ) : null}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {sectorName} constituent view sorted by trading value, change, or code.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">市場</span>
-              <Select value={markets} onValueChange={setMarkets}>
-                <SelectTrigger className="h-8 w-36 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="prime">プライム</SelectItem>
-                  <SelectItem value="standard">スタンダード</SelectItem>
-                  <SelectItem value="growth">グロース</SelectItem>
-                  <SelectItem value="prime,standard">P + S</SelectItem>
-                  <SelectItem value="prime,standard,growth">全市場</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">比較期間</span>
-              <Select value={lookbackDays.toString()} onValueChange={(value) => setLookbackDays(Number(value))}>
-                <SelectTrigger className="h-8 w-28 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">前日比</SelectItem>
-                  <SelectItem value="5">5営業日</SelectItem>
-                  <SelectItem value="10">10営業日</SelectItem>
-                  <SelectItem value="20">20営業日</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-[16rem] flex-1 overflow-auto">
-        {isLoading ? (
-          <div className="flex h-40 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : error ? (
-          <div className="flex h-40 items-center justify-center px-4 text-center text-sm text-destructive">
-            {error.message}
-          </div>
-        ) : !data?.stocks.length ? (
-          <div className="flex h-40 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            銘柄が見つかりません
-          </div>
-        ) : (
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
-              <tr>
-                <th className="w-12 p-2 text-left">#</th>
-                <th className="w-20 p-2 text-left">
-                  <SortableHeader field="code" currentField={sortBy} order={sortOrder} onSort={handleSort}>
-                    コード
-                  </SortableHeader>
-                </th>
-                <th className="w-12 p-2 text-center">市場</th>
-                <th className="p-2 text-left">銘柄名</th>
-                <th className="w-24 p-2 text-right">現在値</th>
-                <th className="w-28 p-2 text-right">
-                  <SortableHeader
-                    field="tradingValue"
-                    currentField={sortBy}
-                    order={sortOrder}
-                    onSort={handleSort}
-                    align="right"
-                  >
-                    売買代金(15日)
-                  </SortableHeader>
-                </th>
-                <th className="w-24 p-2 text-right">
-                  <SortableHeader
-                    field="changePercentage"
-                    currentField={sortBy}
-                    order={sortOrder}
-                    onSort={handleSort}
-                    align="right"
-                  >
-                    騰落率
-                  </SortableHeader>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.stocks.map((stock: SectorStockItem) => {
-                const isPositive = (stock.changePercentage ?? 0) > 0;
-                const isNegative = (stock.changePercentage ?? 0) < 0;
-
-                return (
-                  <tr
-                    key={stock.code}
-                    className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
-                    onClick={() => onStockClick(stock.code)}
-                  >
-                    <td className="p-2 text-muted-foreground tabular-nums">{stock.rank}</td>
-                    <td className="p-2 font-medium">{stock.code}</td>
-                    <td className="p-2 text-center text-muted-foreground">
-                      {MARKET_LABELS[stock.marketCode] || stock.marketCode}
-                    </td>
-                    <td className="max-w-[200px] truncate p-2">{stock.companyName}</td>
-                    <td className="p-2 text-right tabular-nums">{formatNumber(stock.currentPrice)}</td>
-                    <td className="p-2 text-right tabular-nums">{formatTradingValue(stock.tradingValue)}</td>
-                    <td
-                      className={cn(
-                        'p-2 text-right tabular-nums',
-                        isPositive && 'text-green-600 dark:text-green-400',
-                        isNegative && 'text-red-600 dark:text-red-400'
-                      )}
-                    >
-                      <span className="flex items-center justify-end gap-1">
-                        {isPositive ? <TrendingUp className="h-3 w-3" /> : null}
-                        {isNegative ? <TrendingDown className="h-3 w-3" /> : null}
-                        {formatChangePercentage(stock.changePercentage)}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </Surface>
+    <RankingTable
+      rankings={data?.rankings}
+      isLoading={isLoading}
+      error={error}
+      onStockClick={onStockClick}
+      title="銘柄一覧"
+      eyebrow="Daily Ranking"
+      periodDays={data?.periodDays}
+      showValuation
+      showMarket
+      showChangeForTradingValue
+      enableColumnSort
+      emptyMessage="銘柄が見つかりません"
+      emptySubMessage="市場や比較期間を変更してください"
+      formatLargeValue={formatJapaneseLargeValue}
+      labels={{
+        tradingValue: lookbackDays === 1 ? '売買代金' : `売買代金(${lookbackDays}日)`,
+      }}
+      headerActions={headerActions}
+      className="flex flex-col overflow-hidden lg:min-h-0"
+      style={panelStyle}
+      testId="sector-stocks-panel"
+    />
   );
 }
 
@@ -782,6 +639,7 @@ interface LoadedIndexChartProps {
   viErrorMessage?: string;
   workspaceStyle: CSSProperties;
   chartPanelStyle: CSSProperties;
+  chartBodyHeight: number | null;
   sectorPanelMinHeight: number | null;
   sectorType?: 'sector33' | 'sector17';
   sectorName: string | null;
@@ -789,21 +647,23 @@ interface LoadedIndexChartProps {
   isSyntheticIndex: boolean;
 }
 
-function resolveIndexChartLayout(
-  panelMinHeight: number | null | undefined,
-  isSectorIndex: boolean
-) {
+function resolveIndexChartLayout(panelMinHeight: number | null | undefined, isSectorIndex: boolean) {
   const workspaceMinHeight = panelMinHeight ? Math.max(panelMinHeight, 432) : 432;
-  const chartMinHeight = isSectorIndex ? Math.max(workspaceMinHeight, 520) : workspaceMinHeight;
-  const sectorMinHeight = isSectorIndex
-    ? Math.max(Math.round(workspaceMinHeight * 0.55), 320)
-    : null;
+  const chartBodyHeight = isSectorIndex ? SECTOR_CHART_BODY_HEIGHT : null;
+  const chartMinHeight = isSectorIndex ? SECTOR_CHART_PANEL_MIN_HEIGHT : workspaceMinHeight;
+  const sectorMinHeight =
+    isSectorIndex && panelMinHeight
+      ? Math.max(SECTOR_TABLE_MIN_HEIGHT, workspaceMinHeight - chartMinHeight - SECTOR_WORKSPACE_GAP)
+      : isSectorIndex
+        ? SECTOR_TABLE_MIN_HEIGHT
+        : null;
 
   return {
     workspaceMinHeight,
     chartPanelStyle: { minHeight: `${chartMinHeight}px` } satisfies CSSProperties,
     workspaceStyle: { minHeight: `${workspaceMinHeight}px` } satisfies CSSProperties,
     surfaceStyle: { minHeight: `${workspaceMinHeight}px` } satisfies CSSProperties,
+    chartBodyHeight,
     sectorPanelMinHeight: sectorMinHeight,
   };
 }
@@ -818,10 +678,7 @@ function resolveIndexChartCategoryLabel(indexInfo?: IndexItem): string {
   return INDEX_CATEGORY_LABELS[indexInfo.category] ?? indexInfo.category;
 }
 
-function resolveSyntheticDescription(
-  isSyntheticIndex: boolean,
-  code: string | null | undefined
-): string | null {
+function resolveSyntheticDescription(isSyntheticIndex: boolean, code: string | null | undefined): string | null {
   if (!isSyntheticIndex) {
     return null;
   }
@@ -831,9 +688,7 @@ function resolveSyntheticDescription(
   return SYNTHETIC_INDEX_DESCRIPTIONS[code] ?? DEFAULT_SYNTHETIC_DESCRIPTION;
 }
 
-function toLinePriceData(
-  data: { data?: readonly { date: string; close: number }[] } | null | undefined
-) {
+function toLinePriceData(data: { data?: readonly { date: string; close: number }[] } | null | undefined) {
   if (!data?.data) {
     return [];
   }
@@ -841,6 +696,59 @@ function toLinePriceData(
     time: point.date,
     value: point.close,
   }));
+}
+
+interface IndexMainChartAreaProps {
+  isSectorIndex: boolean;
+  isSyntheticIndex: boolean;
+  chartData: {
+    time: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }[];
+  lineData: {
+    time: string;
+    value: number;
+  }[];
+  chartBodyHeight: number | null;
+}
+
+function IndexMainChartArea({
+  isSectorIndex,
+  isSyntheticIndex,
+  chartData,
+  lineData,
+  chartBodyHeight,
+}: IndexMainChartAreaProps) {
+  const chartBodyStyle = chartBodyHeight
+    ? ({ height: `${chartBodyHeight}px`, minHeight: `${chartBodyHeight}px` } satisfies CSSProperties)
+    : undefined;
+  const chartBodyClassName = isSectorIndex ? 'shrink-0' : 'min-h-[24rem] flex-1';
+
+  return (
+    <>
+      {!isSectorIndex ? (
+        <div className="border-b border-border/70 px-4 py-3">
+          <SectionEyebrow>Chart</SectionEyebrow>
+          <h3 className="mt-1 text-sm font-semibold text-foreground">
+            Price Chart ({isSyntheticIndex ? lineData.length : chartData.length} data points)
+          </h3>
+        </div>
+      ) : null}
+
+      <div className={cn('p-0', chartBodyClassName)} style={chartBodyStyle} data-testid="index-chart-body">
+        <div className="h-full">
+          {isSyntheticIndex ? (
+            <LinePriceChart data={lineData} height={chartBodyHeight ?? undefined} />
+          ) : (
+            <StockChart data={chartData} height={chartBodyHeight ?? undefined} />
+          )}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function renderIndexChartState(
@@ -943,6 +851,7 @@ function LoadedIndexChart({
   viErrorMessage,
   workspaceStyle,
   chartPanelStyle,
+  chartBodyHeight,
   sectorPanelMinHeight,
   sectorType,
   sectorName,
@@ -973,13 +882,29 @@ function LoadedIndexChart({
 
   return (
     <div className="space-y-3" style={workspaceStyle}>
-      <Surface className="flex flex-col overflow-hidden lg:min-h-0" style={chartPanelStyle}>
-        <div className="border-b border-border/70 px-4 py-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <Surface
+        className="flex flex-col overflow-hidden lg:min-h-0"
+        style={chartPanelStyle}
+        data-testid="index-chart-panel"
+      >
+        <div className={cn('border-b border-border/70 px-4', isSectorIndex ? 'py-2.5' : 'py-4')}>
+          <div
+            className={cn(
+              'flex flex-col lg:flex-row lg:items-end lg:justify-between',
+              isSectorIndex ? 'gap-2' : 'gap-4'
+            )}
+          >
             <div className="min-w-0 space-y-2">
               <SectionEyebrow>Results</SectionEyebrow>
               <div className="space-y-1">
-                <h2 className="truncate text-2xl font-semibold tracking-tight text-foreground">{data.name}</h2>
+                <h2
+                  className={cn(
+                    'truncate font-semibold tracking-tight text-foreground',
+                    isSectorIndex ? 'text-lg' : 'text-2xl'
+                  )}
+                >
+                  {data.name}
+                </h2>
                 <CompactMetaStrip
                   items={[
                     { label: 'Code', value: data.code },
@@ -990,9 +915,19 @@ function LoadedIndexChart({
               </div>
               {syntheticDescription ? <p className="text-xs text-muted-foreground">{syntheticDescription}</p> : null}
             </div>
-            <div className="shrink-0 rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] px-4 py-3">
+            <div
+              className={cn(
+                'shrink-0 rounded-2xl border border-border/70 bg-[var(--app-surface-muted)]',
+                isSectorIndex ? 'px-3 py-2' : 'px-4 py-3'
+              )}
+            >
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Latest</p>
-              <p className="mt-1 whitespace-nowrap text-xl font-semibold tracking-tight text-foreground tabular-nums">
+              <p
+                className={cn(
+                  'mt-1 whitespace-nowrap font-semibold tracking-tight text-foreground tabular-nums',
+                  isSectorIndex ? 'text-lg' : 'text-xl'
+                )}
+              >
                 {formatLatestIndexValue(latestPrice, data.code)}
               </p>
               <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">{categoryLabel}</p>
@@ -1002,18 +937,13 @@ function LoadedIndexChart({
 
         <TopixModePanel analysis={topixModeAnalysis} />
 
-        <div className="border-b border-border/70 px-4 py-3">
-          <SectionEyebrow>Chart</SectionEyebrow>
-          <h3 className="mt-1 text-sm font-semibold text-foreground">
-            Price Chart ({isSyntheticIndex ? lineData.length : chartData.length} data points)
-          </h3>
-        </div>
-
-        <div className="min-h-[24rem] flex-1 p-0">
-          <div className="h-full min-h-[24rem]">
-            {isSyntheticIndex ? <LinePriceChart data={lineData} /> : <StockChart data={chartData} />}
-          </div>
-        </div>
+        <IndexMainChartArea
+          isSectorIndex={isSectorIndex}
+          isSyntheticIndex={isSyntheticIndex}
+          chartData={chartData}
+          lineData={lineData}
+          chartBodyHeight={chartBodyHeight}
+        />
 
         {showViSubChart ? (
           <IndexViSubChart lineData={viLineData} isLoading={viIsLoading} errorMessage={viErrorMessage} />
@@ -1044,10 +974,8 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
   const isSectorIndex = indexInfo?.category === 'sector33' || indexInfo?.category === 'sector17';
   const isSyntheticIndex = indexInfo?.category === 'synthetic';
   const sectorType = indexInfo?.category as 'sector33' | 'sector17' | undefined;
-  const { workspaceStyle, chartPanelStyle, surfaceStyle, sectorPanelMinHeight } = resolveIndexChartLayout(
-    panelMinHeight,
-    isSectorIndex
-  );
+  const { workspaceStyle, chartPanelStyle, surfaceStyle, chartBodyHeight, sectorPanelMinHeight } =
+    resolveIndexChartLayout(panelMinHeight, isSectorIndex);
 
   const chartData = useMemo(() => {
     if (!data?.data) return [];
@@ -1101,6 +1029,7 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
       viErrorMessage={viError?.message}
       workspaceStyle={workspaceStyle}
       chartPanelStyle={chartPanelStyle}
+      chartBodyHeight={chartBodyHeight}
       sectorPanelMinHeight={sectorPanelMinHeight}
       sectorType={sectorType}
       sectorName={sectorName}

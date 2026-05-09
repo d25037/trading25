@@ -10,7 +10,7 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS, VOLUME_SCALE_MARGINS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';
@@ -51,6 +51,7 @@ interface StockChartProps {
   bollingerBands?: BollingerBandsData[];
   vwema?: IndicatorValue[];
   signalMarkers?: SignalMarkerData[];
+  height?: number;
 }
 
 // Helper function to create volume series
@@ -167,6 +168,7 @@ export function StockChart({
   bollingerBands,
   vwema,
   signalMarkers = [],
+  height,
 }: StockChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -188,6 +190,8 @@ export function StockChart({
   const [crosshairData, setCrosshairData] = useState<CrosshairOHLC | null>(null);
 
   const { settings } = useChartStore();
+  const visibleBarsRef = useRef(settings.visibleBars);
+  visibleBarsRef.current = settings.visibleBars;
 
   // Initialize chart once on mount
   useEffect(() => {
@@ -198,7 +202,7 @@ export function StockChart({
     }
 
     // Create chart - use container dimensions or fallback to fixed height
-    const containerHeight = chartContainerRef.current.clientHeight || CHART_DIMENSIONS.DEFAULT_HEIGHT;
+    const containerHeight = chartContainerRef.current.clientHeight || height || CHART_DIMENSIONS.DEFAULT_HEIGHT;
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { color: 'transparent' },
@@ -230,6 +234,20 @@ export function StockChart({
 
     candlestickSeriesRef.current = candlestickSeries;
 
+    const initialData = dataRef.current;
+    if (initialData.length) {
+      candlestickSeries.setData(
+        initialData.map((item) => ({
+          time: item.time,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+        }))
+      );
+      setChartVisibleBars(chart, initialData.length, visibleBarsRef.current);
+    }
+
     chart.subscribeCrosshairMove((param) => {
       const ohlcData = param.time && param.seriesData?.get(candlestickSeries);
       if (ohlcData && 'open' in ohlcData) {
@@ -251,7 +269,7 @@ export function StockChart({
       vwemaSeriesRef.current = null;
       signalMarkersRef.current = null;
     };
-  }, []); // Remove showVolume dependency
+  }, [height]); // Remove showVolume dependency
 
   // Handle volume series toggle separately
   useEffect(() => {
@@ -433,8 +451,10 @@ export function StockChart({
     return () => resizeObserver.disconnect();
   }, []);
 
+  const wrapperStyle = height !== undefined ? ({ height } satisfies CSSProperties) : undefined;
+
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full" style={wrapperStyle}>
       <div ref={chartContainerRef} className="absolute inset-0" />
       {crosshairData && <OHLCOverlay data={crosshairData} />}
       {!data.length && (

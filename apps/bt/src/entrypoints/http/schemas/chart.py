@@ -133,6 +133,10 @@ class SectorStockItem(BaseModel):
     volume: float
     tradingValue: float | None = None
     tradingValueAverage: float | None = None
+    per: float | None = None
+    forwardPer: float | None = None
+    pbr: float | None = None
+    marketCap: float | None = None
     basePrice: float | None = None
     changeAmount: float | None = None
     changePercentage: float | None = None

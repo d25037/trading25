@@ -1,0 +1,513 @@
+import { ArrowDown, ArrowUp, ArrowUpDown, TrendingUp } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
+import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
+import { cn } from '@/lib/utils';
+import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
+
+export type EquitySortField = 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
+export type EquitySortOrder = 'asc' | 'desc';
+export type EquityRankingLabels = Record<
+  'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
+  string
+>;
+
+export interface EquityRankingItem {
+  rank: number;
+  code: string;
+  companyName: string;
+  marketCode: string;
+  sector33Name: string;
+  currentPrice: number;
+  volume: number;
+  tradingValue?: number | null;
+  tradingValueAverage?: number | null;
+  changePercentage?: number | null;
+  per?: number | null;
+  forwardPer?: number | null;
+  pbr?: number | null;
+  marketCap?: number | null;
+}
+
+interface EquityRankingTableProps<T extends EquityRankingItem> {
+  items: T[];
+  isLoading: boolean;
+  error: Error | null;
+  onStockClick: (code: string) => void;
+  showChange?: boolean;
+  showMarket?: boolean;
+  showValuation?: boolean;
+  emptyMessage?: string;
+  emptySubMessage?: string;
+  formatLargeValue?: (value: number | null | undefined) => string;
+  labels?: Partial<EquityRankingLabels>;
+  sortState?: {
+    field: EquitySortField;
+    order: EquitySortOrder;
+    onSort: (field: EquitySortField) => void;
+  };
+}
+
+const VIRTUALIZATION_THRESHOLD = 120;
+const ROW_HEIGHT = 36;
+const CARD_ROW_HEIGHT = 128;
+const VIEWPORT_HEIGHT = 520;
+const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
+  code: 'コード',
+  market: '市場',
+  company: '銘柄名',
+  sector: '業種',
+  price: '現在値',
+  marketCap: '時価総額',
+  tradingValue: '売買代金',
+  change: '騰落率',
+};
+
+function getIsMobileLayout(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 1023px)').matches
+  );
+}
+
+function useIsMobileLayout(): boolean {
+  const [isMobileLayout, setIsMobileLayout] = useState(getIsMobileLayout);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const updateLayout = () => setIsMobileLayout(mediaQuery.matches);
+    updateLayout();
+    mediaQuery.addEventListener('change', updateLayout);
+    return () => mediaQuery.removeEventListener('change', updateLayout);
+  }, []);
+
+  return isMobileLayout;
+}
+
+function formatNullableTradingValue(value: number | null | undefined): string {
+  return value == null ? '-' : formatTradingValue(value);
+}
+
+function formatRatio(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(2)}x`;
+}
+
+function formatChangePercentage(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function SortHeader({
+  field,
+  sortState,
+  align = 'left',
+  children,
+}: {
+  field: EquitySortField;
+  sortState?: EquityRankingTableProps<EquityRankingItem>['sortState'];
+  align?: 'left' | 'right';
+  children: ReactNode;
+}) {
+  if (!sortState) {
+    return <span>{children}</span>;
+  }
+  const isActive = sortState.field === field;
+  const Icon = isActive ? (sortState.order === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <button
+      type="button"
+      onClick={() => sortState.onSort(field)}
+      className={cn(
+        'inline-flex items-center gap-1 font-semibold transition-colors hover:text-foreground',
+        align === 'right' && 'justify-end'
+      )}
+    >
+      {children}
+      <Icon className={cn('h-3 w-3', isActive ? 'text-primary' : 'text-muted-foreground')} />
+    </button>
+  );
+}
+
+function VirtualSpacer({ height }: { height: number }) {
+  if (height <= 0) return null;
+  return <div aria-hidden="true" className="shrink-0" style={{ height }} />;
+}
+
+function EquityCard<T extends EquityRankingItem>({
+  item,
+  onStockClick,
+  showChange,
+  showValuation,
+  formatLargeValue,
+  labels,
+}: {
+  item: T;
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  showValuation: boolean;
+  formatLargeValue: (value: number | null | undefined) => string;
+  labels: EquityRankingLabels;
+}) {
+  const isPositive = (item.changePercentage ?? 0) >= 0;
+  return (
+    <button
+      type="button"
+      onClick={() => onStockClick(item.code)}
+      className="min-h-[7.5rem] w-full rounded-lg border border-border/60 bg-background/80 p-3 text-left shadow-sm transition-colors hover:bg-[var(--app-surface-muted)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-[var(--app-surface-muted)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">
+              #{item.rank}
+            </span>
+            <span className="font-mono text-sm font-semibold text-primary">{item.code}</span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold text-foreground">{item.companyName}</p>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.sector33Name}</p>
+        </div>
+        {showChange ? (
+          <span
+            className={cn(
+              'shrink-0 text-sm font-semibold tabular-nums',
+              isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+            )}
+          >
+            {formatChangePercentage(item.changePercentage)}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <Metric label={labels.price} value={formatPriceJPY(item.currentPrice)} />
+        <Metric
+          label={showChange ? labels.change : labels.tradingValue}
+          value={
+            showChange
+              ? formatChangePercentage(item.changePercentage)
+              : formatLargeValue(item.tradingValue ?? item.tradingValueAverage)
+          }
+        />
+        {showValuation ? (
+          <>
+            <Metric label="PER" value={formatRatio(item.per)} />
+            <Metric label="Fwd PER" value={formatRatio(item.forwardPer)} />
+          </>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2">
+      <p className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</p>
+      <p className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function EquityCardList<T extends EquityRankingItem>({
+  items,
+  onStockClick,
+  showChange,
+  showValuation,
+  formatLargeValue,
+  labels,
+  paddingTop,
+  paddingBottom,
+  shouldVirtualize,
+}: {
+  items: T[];
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  showValuation: boolean;
+  formatLargeValue: (value: number | null | undefined) => string;
+  labels: EquityRankingLabels;
+  paddingTop: number;
+  paddingBottom: number;
+  shouldVirtualize: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-3">
+      {shouldVirtualize ? <VirtualSpacer height={paddingTop} /> : null}
+      {items.map((item) => (
+        <EquityCard
+          key={`${item.code}-${item.rank}`}
+          item={item}
+          onStockClick={onStockClick}
+          showChange={showChange}
+          showValuation={showValuation}
+          formatLargeValue={formatLargeValue}
+          labels={labels}
+        />
+      ))}
+      {shouldVirtualize ? <VirtualSpacer height={paddingBottom} /> : null}
+    </div>
+  );
+}
+
+function DesktopEquityTable<T extends EquityRankingItem>({
+  items,
+  onStockClick,
+  showChange,
+  showMarket,
+  showValuation,
+  formatLargeValue,
+  labels,
+  sortState,
+  columnCount,
+  paddingTop,
+  paddingBottom,
+  shouldVirtualize,
+}: {
+  items: T[];
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  showMarket: boolean;
+  showValuation: boolean;
+  formatLargeValue: (value: number | null | undefined) => string;
+  labels: EquityRankingLabels;
+  sortState?: EquityRankingTableProps<T>['sortState'];
+  columnCount: number;
+  paddingTop: number;
+  paddingBottom: number;
+  shouldVirtualize: boolean;
+}) {
+  return (
+    <table className="w-full text-xs">
+      <DesktopEquityHeader
+        showChange={showChange}
+        showMarket={showMarket}
+        showValuation={showValuation}
+        labels={labels}
+        sortState={sortState}
+      />
+      <tbody>
+        {shouldVirtualize && paddingTop > 0 ? (
+          <tr>
+            <td colSpan={columnCount} className="p-0" style={{ height: paddingTop }} />
+          </tr>
+        ) : null}
+        {items.map((item) => (
+          <DesktopEquityRow
+            key={`${item.code}-${item.rank}`}
+            item={item}
+            onStockClick={onStockClick}
+            showChange={showChange}
+            showMarket={showMarket}
+            showValuation={showValuation}
+            formatLargeValue={formatLargeValue}
+          />
+        ))}
+        {shouldVirtualize && paddingBottom > 0 ? (
+          <tr>
+            <td colSpan={columnCount} className="p-0" style={{ height: paddingBottom }} />
+          </tr>
+        ) : null}
+      </tbody>
+    </table>
+  );
+}
+
+function DesktopEquityHeader<T extends EquityRankingItem>({
+  showChange,
+  showMarket,
+  showValuation,
+  labels,
+  sortState,
+}: {
+  showChange: boolean;
+  showMarket: boolean;
+  showValuation: boolean;
+  labels: EquityRankingLabels;
+  sortState?: EquityRankingTableProps<T>['sortState'];
+}) {
+  return (
+    <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
+      <tr>
+        <th className="w-12 px-2 py-1.5 text-center">#</th>
+        <th className="w-20 px-2 py-1.5 text-left">
+          <SortHeader field="code" sortState={sortState}>
+            {labels.code}
+          </SortHeader>
+        </th>
+        {showMarket ? <th className="w-16 px-2 py-1.5 text-center">{labels.market}</th> : null}
+        <th className="px-2 py-1.5 text-left">{labels.company}</th>
+        <th className="w-24 px-2 py-1.5 text-left">{labels.sector}</th>
+        <th className="w-24 px-2 py-1.5 text-right">{labels.price}</th>
+        {showValuation ? <ValuationHeaders labels={labels} sortState={sortState} /> : null}
+        <th className="w-28 px-2 py-1.5 text-right">
+          <SortHeader field="tradingValue" sortState={sortState} align="right">
+            {labels.tradingValue}
+          </SortHeader>
+        </th>
+        {showChange ? (
+          <th className="w-24 px-2 py-1.5 text-right">
+            <SortHeader field="changePercentage" sortState={sortState} align="right">
+              {labels.change}
+            </SortHeader>
+          </th>
+        ) : null}
+      </tr>
+    </thead>
+  );
+}
+
+function ValuationHeaders<T extends EquityRankingItem>({
+  labels,
+  sortState,
+}: {
+  labels: EquityRankingLabels;
+  sortState?: EquityRankingTableProps<T>['sortState'];
+}) {
+  return (
+    <>
+      <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="per" sortState={sortState} align="right">
+          PER
+        </SortHeader>
+      </th>
+      <th className="w-24 px-2 py-1.5 text-right">
+        <SortHeader field="forwardPer" sortState={sortState} align="right">
+          Fwd PER
+        </SortHeader>
+      </th>
+      <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="pbr" sortState={sortState} align="right">
+          PBR
+        </SortHeader>
+      </th>
+      <th className="w-28 px-2 py-1.5 text-right">
+        <SortHeader field="marketCap" sortState={sortState} align="right">
+          {labels.marketCap}
+        </SortHeader>
+      </th>
+    </>
+  );
+}
+
+function DesktopEquityRow<T extends EquityRankingItem>({
+  item,
+  onStockClick,
+  showChange,
+  showMarket,
+  showValuation,
+  formatLargeValue,
+}: {
+  item: T;
+  onStockClick: (code: string) => void;
+  showChange: boolean;
+  showMarket: boolean;
+  showValuation: boolean;
+  formatLargeValue: (value: number | null | undefined) => string;
+}) {
+  const isPositive = (item.changePercentage ?? 0) >= 0;
+  return (
+    <tr
+      className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
+      onClick={() => onStockClick(item.code)}
+    >
+      <td className="px-2 py-1.5 text-center font-medium tabular-nums">{item.rank}</td>
+      <td className="px-2 py-1.5 font-medium">{item.code}</td>
+      {showMarket ? <td className="px-2 py-1.5 text-center text-muted-foreground">{item.marketCode}</td> : null}
+      <td className="max-w-[200px] truncate px-2 py-1.5">{item.companyName}</td>
+      <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
+      {showValuation ? (
+        <>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.per)}</td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPer)}</td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
+        </>
+      ) : null}
+      <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+        {formatLargeValue(item.tradingValue ?? item.tradingValueAverage)}
+      </td>
+      {showChange ? (
+        <td
+          className={cn(
+            'px-2 py-1.5 text-right font-medium tabular-nums',
+            isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          )}
+        >
+          {formatChangePercentage(item.changePercentage)}
+        </td>
+      ) : null}
+    </tr>
+  );
+}
+
+export function EquityRankingTable<T extends EquityRankingItem>({
+  items,
+  isLoading,
+  error,
+  onStockClick,
+  showChange = false,
+  showMarket = false,
+  showValuation = false,
+  emptyMessage = 'No ranking data available',
+  emptySubMessage = 'Try a different date or market',
+  formatLargeValue = formatNullableTradingValue,
+  labels,
+  sortState,
+}: EquityRankingTableProps<T>) {
+  const isMobileLayout = useIsMobileLayout();
+  const shouldVirtualize = items.length >= VIRTUALIZATION_THRESHOLD;
+  const resolvedLabels = { ...DEFAULT_EQUITY_RANKING_LABELS, ...labels };
+  const virtual = useVirtualizedRows(items, {
+    enabled: shouldVirtualize,
+    rowHeight: isMobileLayout ? CARD_ROW_HEIGHT : ROW_HEIGHT,
+    viewportHeight: VIEWPORT_HEIGHT,
+  });
+  const columnCount = 6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 4 : 0);
+
+  return (
+    <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
+      <DataStateWrapper
+        isLoading={isLoading}
+        error={error}
+        isEmpty={items.length === 0}
+        emptyMessage={emptyMessage}
+        emptySubMessage={emptySubMessage}
+        emptyIcon={<TrendingUp className="h-8 w-8" />}
+        height="h-full min-h-[18rem]"
+      >
+        {isMobileLayout ? (
+          <EquityCardList
+            items={virtual.visibleItems}
+            onStockClick={onStockClick}
+            showChange={showChange}
+            showValuation={showValuation}
+            formatLargeValue={formatLargeValue}
+            labels={resolvedLabels}
+            paddingTop={virtual.paddingTop}
+            paddingBottom={virtual.paddingBottom}
+            shouldVirtualize={shouldVirtualize}
+          />
+        ) : (
+          <DesktopEquityTable
+            items={virtual.visibleItems}
+            onStockClick={onStockClick}
+            showChange={showChange}
+            showMarket={showMarket}
+            showValuation={showValuation}
+            formatLargeValue={formatLargeValue}
+            labels={resolvedLabels}
+            sortState={sortState}
+            columnCount={columnCount}
+            paddingTop={virtual.paddingTop}
+            paddingBottom={virtual.paddingBottom}
+            shouldVirtualize={shouldVirtualize}
+          />
+        )}
+      </DataStateWrapper>
+    </div>
+  );
+}

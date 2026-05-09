@@ -1,5 +1,5 @@
 import { createChart, type IChartApi, type ISeriesApi, LineSeries } from 'lightweight-charts';
-import { useEffect, useRef } from 'react';
+import { type CSSProperties, useEffect, useRef } from 'react';
 import { PAGE_SCROLL_CHART_INTERACTION_OPTIONS } from '@/components/Chart/chartInteractionOptions';
 import { CHART_COLORS, CHART_DIMENSIONS, CHART_LINE_WIDTHS } from '@/lib/constants';
 import { useChartStore } from '@/stores/chartStore';
@@ -11,6 +11,7 @@ export interface LinePricePoint {
 
 interface LinePriceChartProps {
   data?: LinePricePoint[];
+  height?: number;
 }
 
 function setChartVisibleBars(chart: IChartApi, dataLength: number, barsToShow: number) {
@@ -25,11 +26,15 @@ function setChartVisibleBars(chart: IChartApi, dataLength: number, barsToShow: n
   });
 }
 
-export function LinePriceChart({ data = [] }: LinePriceChartProps) {
+export function LinePriceChart({ data = [], height }: LinePriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const dataRef = useRef<LinePricePoint[]>(data);
+  dataRef.current = data;
   const { settings } = useChartStore();
+  const visibleBarsRef = useRef(settings.visibleBars);
+  visibleBarsRef.current = settings.visibleBars;
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -47,7 +52,7 @@ export function LinePriceChart({ data = [] }: LinePriceChartProps) {
         horzLines: { color: CHART_COLORS.GRID },
       },
       width: container.clientWidth,
-      height: container.clientHeight || CHART_DIMENSIONS.DEFAULT_HEIGHT,
+      height: container.clientHeight || height || CHART_DIMENSIONS.DEFAULT_HEIGHT,
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
@@ -65,12 +70,17 @@ export function LinePriceChart({ data = [] }: LinePriceChartProps) {
     chartRef.current = chart;
     lineSeriesRef.current = lineSeries;
 
+    if (dataRef.current.length) {
+      lineSeries.setData(dataRef.current);
+      setChartVisibleBars(chart, dataRef.current.length, visibleBarsRef.current);
+    }
+
     return () => {
       chart.remove();
       chartRef.current = null;
       lineSeriesRef.current = null;
     };
-  }, []);
+  }, [height]);
 
   useEffect(() => {
     const lineSeries = lineSeriesRef.current;
@@ -107,8 +117,10 @@ export function LinePriceChart({ data = [] }: LinePriceChartProps) {
     return () => resizeObserver.disconnect();
   }, []);
 
+  const wrapperStyle = height !== undefined ? ({ height } satisfies CSSProperties) : undefined;
+
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full" style={wrapperStyle}>
       <div ref={chartContainerRef} className="absolute inset-0" />
       {!data.length && (
         <div className="absolute inset-0 flex items-center justify-center">

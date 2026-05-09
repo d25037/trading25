@@ -44,14 +44,14 @@ describe('IndexPerformanceTable', () => {
       <IndexPerformanceTable items={[]} isLoading={false} error={null} onIndexClick={vi.fn()} lookbackDays={10} />
     );
 
-    expect(screen.getByText('Baseline: 10 trading sessions before each index close')).toBeInTheDocument();
+    expect(screen.getByText('基準: 各指数終値の 10 営業日前')).toBeInTheDocument();
     expect(screen.getByText('No index performance data available')).toBeInTheDocument();
   });
 
   it('falls back to 5-day baseline when no rows or selected lookback are provided', () => {
     render(<IndexPerformanceTable items={undefined} isLoading={false} error={null} onIndexClick={vi.fn()} />);
 
-    expect(screen.getByText('Baseline: 5 trading sessions before each index close')).toBeInTheDocument();
+    expect(screen.getByText('基準: 各指数終値の 5 営業日前')).toBeInTheDocument();
   });
 
   it('sorts rows by change, category, and code, then handles row clicks', () => {
@@ -89,7 +89,7 @@ describe('IndexPerformanceTable', () => {
     expect(jpx400Row).toHaveTextContent('JPX400');
     expect(n225Row).toHaveTextContent('N225');
     expect(mothersRow).toHaveTextContent('MOTHERS');
-    expect(screen.getByRole('columnheader', { name: '3D' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '3日騰落率' })).toBeInTheDocument();
 
     fireEvent.click(jpx400Row);
     expect(onIndexClick).toHaveBeenCalledWith('JPX400');
@@ -108,7 +108,7 @@ describe('IndexPerformanceTable', () => {
       />
     );
 
-    expect(screen.queryByRole('columnheader', { name: 'Code' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'コード' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /N225/ }));
     expect(onIndexClick).toHaveBeenCalledWith('N225');
   });

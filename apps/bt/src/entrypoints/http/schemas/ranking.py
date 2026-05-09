@@ -47,6 +47,10 @@ class RankingItem(BaseModel):
     changeAmount: float | None = None
     changePercentage: float | None = None
     lookbackDays: int | None = None
+    per: float | None = None
+    forwardPer: float | None = None
+    pbr: float | None = None
+    marketCap: float | None = None
 
 
 class Rankings(BaseModel):

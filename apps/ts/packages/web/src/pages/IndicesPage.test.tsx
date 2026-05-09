@@ -17,6 +17,10 @@ type SectorStockItem = {
   currentPrice: number;
   tradingValue: number;
   changePercentage: number;
+  per?: number | null;
+  forwardPer?: number | null;
+  pbr?: number | null;
+  marketCap?: number | null;
 };
 
 let selectedIndexCode: string | null = null;
@@ -28,7 +32,7 @@ const mockNavigate = vi.fn();
 
 const mockUseIndicesList = vi.fn();
 const mockUseIndexData = vi.fn();
-const mockUseSectorStocks = vi.fn();
+const mockUseRanking = vi.fn();
 
 vi.mock('@/hooks/usePageRouteState', () => ({
   useIndicesRouteState: () => ({
@@ -47,16 +51,24 @@ vi.mock('@/hooks/useIndices', () => ({
   useIndexData: (code: string | null) => mockUseIndexData(code),
 }));
 
-vi.mock('@/hooks/useSectorStocks', () => ({
-  useSectorStocks: (...args: unknown[]) => mockUseSectorStocks(...args),
+vi.mock('@/hooks/useRanking', () => ({
+  useRanking: (...args: unknown[]) => mockUseRanking(...args),
 }));
 
 vi.mock('@/components/Chart/StockChart', () => ({
-  StockChart: () => <div>StockChart</div>,
+  StockChart: ({ height }: { height?: number }) => (
+    <div data-height={height ?? ''} data-testid="stock-chart">
+      StockChart
+    </div>
+  ),
 }));
 
 vi.mock('@/components/Chart/LinePriceChart', () => ({
-  LinePriceChart: () => <div>LinePriceChart</div>,
+  LinePriceChart: ({ height }: { height?: number }) => (
+    <div data-height={height ?? ''} data-testid="line-price-chart">
+      LinePriceChart
+    </div>
+  ),
 }));
 
 const makeIndicesList = () => ({
@@ -82,6 +94,22 @@ const makeSectorIndexData = () => ({
   code: '1305',
   name: 'TOPIX-33 Energy',
   category: 'sector33',
+});
+
+const makeRankingResponse = (items: SectorStockItem[] = []) => ({
+  date: '2026-02-13',
+  markets: ['prime'],
+  lookbackDays: 5,
+  periodDays: 250,
+  rankings: {
+    tradingValue: items,
+    gainers: items,
+    losers: items,
+    periodHigh: items,
+    periodLow: items,
+  },
+  indexPerformance: [],
+  lastUpdated: '2026-02-13T00:00:00Z',
 });
 
 const makeTopixIndexData = () => ({
@@ -193,8 +221,8 @@ beforeEach(() => {
     error: null,
   }));
 
-  mockUseSectorStocks.mockReturnValue({
-    data: { stocks: [] },
+  mockUseRanking.mockReturnValue({
+    data: makeRankingResponse([]),
     isLoading: false,
     error: null,
   });
@@ -224,20 +252,18 @@ describe('IndicesPage', () => {
         error: null,
       };
     });
-    mockUseSectorStocks.mockReturnValue({
-      data: {
-        stocks: [
-          {
-            code: '1301',
-            rank: 1,
-            marketCode: 'prime',
-            companyName: 'Sample Energy',
-            currentPrice: 2400,
-            tradingValue: 1000,
-            changePercentage: 2.5,
-          } satisfies SectorStockItem,
-        ],
-      } as { stocks: SectorStockItem[]; totalCount?: number },
+    mockUseRanking.mockReturnValue({
+      data: makeRankingResponse([
+        {
+          code: '1301',
+          rank: 1,
+          marketCode: 'prime',
+          companyName: 'Sample Energy',
+          currentPrice: 2400,
+          tradingValue: 1000,
+          changePercentage: 2.5,
+        } satisfies SectorStockItem,
+      ]),
       isLoading: false,
       error: null,
     });
@@ -451,7 +477,9 @@ describe('IndicesPage', () => {
     expect(indexButtons[0]).toHaveAttribute('aria-label', 'Select 日経平均');
     expect(indexButtons[1]).toHaveAttribute('aria-label', 'Select 日経VI');
     expect(indexButtons[2]).toHaveAttribute('aria-label', 'Select NT倍率');
-    expect(screen.getByText('Daily BaseVol reference series derived from local N225 options snapshot')).toBeInTheDocument();
+    expect(
+      screen.getByText('Daily BaseVol reference series derived from local N225 options snapshot')
+    ).toBeInTheDocument();
     expect(screen.getByText('22.34')).toBeInTheDocument();
     expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
   });
@@ -507,7 +535,7 @@ describe('IndicesPage', () => {
       error: null,
     });
 
-    mockUseSectorStocks.mockReturnValue({
+    mockUseRanking.mockReturnValue({
       data: null,
       isLoading: true,
       error: null,
@@ -515,7 +543,7 @@ describe('IndicesPage', () => {
     const { rerender } = render(<IndicesPage />);
     expect(document.querySelector('.animate-spin')).not.toBeNull();
 
-    mockUseSectorStocks.mockReturnValue({
+    mockUseRanking.mockReturnValue({
       data: null,
       isLoading: false,
       error: new Error('sector fetch failed'),
@@ -523,46 +551,52 @@ describe('IndicesPage', () => {
     rerender(<IndicesPage />);
     expect(screen.getByText('sector fetch failed')).toBeInTheDocument();
 
-    mockUseSectorStocks.mockReturnValue({
-      data: { stocks: [] },
+    mockUseRanking.mockReturnValue({
+      data: makeRankingResponse([]),
       isLoading: false,
       error: null,
     });
     rerender(<IndicesPage />);
     expect(screen.getByText('銘柄が見つかりません')).toBeInTheDocument();
 
-    mockUseSectorStocks.mockReturnValue({
-      data: {
-        stocks: [
-          {
-            code: '1301',
-            rank: 1,
-            marketCode: 'prime',
-            companyName: 'Positive Stock',
-            currentPrice: 3000,
-            tradingValue: 1_000_000_000_000,
-            changePercentage: 2.5,
-          },
-          {
-            code: '1302',
-            rank: 2,
-            marketCode: 'standard',
-            companyName: 'Negative Stock',
-            currentPrice: 1500,
-            tradingValue: 100_000_000,
-            changePercentage: -1.25,
-          },
-          {
-            code: '1303',
-            rank: 3,
-            marketCode: 'other',
-            companyName: 'Flat Stock',
-            currentPrice: 800,
-            tradingValue: 10_000,
-            changePercentage: 0,
-          },
-        ] satisfies SectorStockItem[],
-      },
+    mockUseRanking.mockReturnValue({
+      data: makeRankingResponse([
+        {
+          code: '1301',
+          rank: 1,
+          marketCode: 'prime',
+          companyName: 'Positive Stock',
+          currentPrice: 3000,
+          tradingValue: 1_000_000_000_000,
+          changePercentage: 2.5,
+          per: 12.34,
+          forwardPer: 9.87,
+          pbr: 0.76,
+          marketCap: 1_230_000_000_000,
+        },
+        {
+          code: '1302',
+          rank: 2,
+          marketCode: 'standard',
+          companyName: 'Negative Stock',
+          currentPrice: 1500,
+          tradingValue: 100_000_000,
+          changePercentage: -1.25,
+          per: null,
+          forwardPer: null,
+          pbr: null,
+          marketCap: null,
+        },
+        {
+          code: '1303',
+          rank: 3,
+          marketCode: 'other',
+          companyName: 'Flat Stock',
+          currentPrice: 800,
+          tradingValue: 10_000,
+          changePercentage: 0,
+        },
+      ] satisfies SectorStockItem[]),
       isLoading: false,
       error: null,
     });
@@ -571,17 +605,35 @@ describe('IndicesPage', () => {
     expect(screen.getByText('1.00兆')).toBeInTheDocument();
     expect(screen.getByText('1億')).toBeInTheDocument();
     expect(screen.getByText('1万')).toBeInTheDocument();
+    expect(screen.getByText('12.34x')).toBeInTheDocument();
+    expect(screen.getByText('9.87x')).toBeInTheDocument();
+    expect(screen.getByText('0.76x')).toBeInTheDocument();
+    expect(screen.getByText('1.23兆')).toBeInTheDocument();
     expect(screen.getByText('+2.50%')).toBeInTheDocument();
     expect(screen.getByText('-1.25%')).toBeInTheDocument();
     expect(screen.getByText('0.00%')).toBeInTheDocument();
     expect(screen.getByText('other')).toBeInTheDocument();
+    expect(screen.getByTestId('index-chart-panel')).toHaveStyle({ minHeight: '364px' });
+    expect(screen.getByTestId('index-chart-body')).toHaveStyle({ height: '280px' });
+    expect(screen.getByTestId('stock-chart')).toHaveAttribute('data-height', '280');
+    expect(screen.getByTestId('sector-stocks-panel')).toHaveStyle({ minHeight: '680px' });
 
     await user.click(screen.getByRole('button', { name: 'コード' }));
-    let latestCall = mockUseSectorStocks.mock.calls.at(-1);
-    expect(latestCall?.[0]).toMatchObject({ sortBy: 'code', sortOrder: 'desc' });
+    let latestCall = mockUseRanking.mock.calls.at(-1);
+    expect(latestCall?.[0]).toMatchObject({
+      sector33Name: 'TOPIX-33 Energy',
+      markets: 'prime,standard,growth',
+      includeValuation: true,
+      limit: 0,
+    });
 
     await user.click(screen.getByRole('button', { name: 'コード' }));
-    latestCall = mockUseSectorStocks.mock.calls.at(-1);
-    expect(latestCall?.[0]).toMatchObject({ sortBy: 'code', sortOrder: 'asc' });
+    latestCall = mockUseRanking.mock.calls.at(-1);
+    expect(latestCall?.[0]).toMatchObject({
+      sector33Name: 'TOPIX-33 Energy',
+      markets: 'prime,standard,growth',
+      includeValuation: true,
+      limit: 0,
+    });
   });
 });

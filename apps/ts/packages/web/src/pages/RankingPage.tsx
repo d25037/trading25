@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { BarChart3, TrendingUp } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   FundamentalRankingFilters,
   FundamentalRankingSummary,
@@ -15,12 +15,7 @@ import {
   SplitSidebar,
   Surface,
 } from '@/components/Layout/Workspace';
-import {
-  IndexPerformanceTable,
-  RANKING_LOOKBACK_OPTIONS,
-  RankingFilters,
-  RankingTable,
-} from '@/components/Ranking';
+import { IndexPerformanceTable, RANKING_LOOKBACK_OPTIONS, RankingFilters, RankingTable } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import {
   ValueCompositeRankingFilters,
@@ -265,6 +260,9 @@ function RankingContent({
       error={rankingQuery.error}
       onStockClick={onStockClick}
       periodDays={rankingParams.periodDays}
+      showValuation
+      showChangeForTradingValue
+      enableColumnSort
     />
   );
 }
@@ -283,7 +281,14 @@ export function RankingPage() {
     setValueCompositeRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
-  const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
+  const rankingQueryParams = useMemo(
+    () => ({
+      ...rankingParams,
+      includeValuation: activeDailyView === 'stocks',
+    }),
+    [activeDailyView, rankingParams]
+  );
+  const rankingQuery = useRanking(rankingQueryParams, activeSubTab === 'ranking');
   const fundamentalRankingQuery = useFundamentalRanking(
     fundamentalRankingParams,
     activeSubTab === 'fundamentalRanking'

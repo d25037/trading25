@@ -22,4 +22,7 @@ export interface RankingParams {
   markets?: string;
   lookbackDays?: number;
   periodDays?: number;
+  sector33Name?: string;
+  sector17Name?: string;
+  includeValuation?: boolean;
 }

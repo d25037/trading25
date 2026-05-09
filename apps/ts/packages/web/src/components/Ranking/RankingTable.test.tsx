@@ -57,7 +57,7 @@ describe('RankingTable', () => {
   it('renders trading value rows by default', () => {
     render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={vi.fn()} />);
     expect(screen.getByText('Company 1')).toBeInTheDocument();
-    expect(screen.queryByText('Change')).not.toBeInTheDocument();
+    expect(screen.queryByText('騰落率')).not.toBeInTheDocument();
   });
 
   it('switches to period tab and updates change header', async () => {
@@ -73,8 +73,8 @@ describe('RankingTable', () => {
     );
 
     await user.click(screen.getByRole('combobox'));
-    await user.click(screen.getByRole('option', { name: '30D High' }));
-    expect(screen.getByText('Break %')).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: '30日高値' }));
+    expect(screen.getByText('騰落率')).toBeInTheDocument();
   });
 
   it('renders mobile ranking cards and keeps stock navigation', async () => {
@@ -84,7 +84,7 @@ describe('RankingTable', () => {
 
     render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
 
-    expect(screen.queryByRole('columnheader', { name: 'Code' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'コード' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /7000/ })).toHaveTextContent('Company 1');
 
     await user.click(screen.getByRole('button', { name: /7000/ }));
