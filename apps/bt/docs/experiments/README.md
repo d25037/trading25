@@ -99,6 +99,8 @@
   - Standard value ranking 上位候補を、普通の value と月足高値から大きく沈んだ pump/fade 的候補に分解する実験。
 - [market-behavior/standard-value-pump-fade-portfolio-filter/](./market-behavior/standard-value-pump-fade-portfolio-filter/README.md)
   - Standard value+breakout portfolio に月足高値基準の pump/fade hard filter を重ね、同じ daily portfolio metric 定義で CAGR / Sharpe / maxDD を比較する実験。
+- [market-behavior/value-breakout-overheat-filter/](./market-behavior/value-breakout-overheat-filter/README.md)
+  - value+breakout / value-only portfolio に forward EPS 研究由来の短期過熱 Q80 overlap rule を重ね、hard exclude と 0.5x haircut を比較する実験。
 - [market-behavior/annual-prime-value-technical-risk-decomposition/](./market-behavior/annual-prime-value-technical-risk-decomposition/README.md)
   - Prime value で強く見えた stock volatility 系の technical effect が alpha なのか risk exposure なのかを beta / idiosyncratic volatility / p10 で切り分ける実験。
 - [market-behavior/annual-prime-value-volume-volatility-participation/](./market-behavior/annual-prime-value-volume-volatility-participation/README.md)

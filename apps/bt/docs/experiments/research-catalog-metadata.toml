@@ -126,6 +126,18 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
 ]
 
+[experiments."market-behavior/value-breakout-overheat-filter"]
+family = "Annual Fundamentals"
+status = "candidate"
+decision = "forward EPS 由来の短期過熱 Q80 overlap rule は value+breakout の hard exclude には採用しない。Standard/Prime とも short_climax_10d の 0.5x haircut は Sharpe を小幅改善するため、Ranking diagnostic / sizing haircut 候補として残す。"
+promotedSurface = "Research"
+riskFlags = ["technical-filter", "hard-filter-rejected", "portfolio-lens", "sizing-haircut-candidate", "market-specific"]
+relatedExperiments = [
+  "market-behavior/annual-value-breakout-periodic-rebalance",
+  "market-behavior/standard-value-pump-fade-portfolio-filter",
+  "strategy-audit/forward-eps-technical-horizon-decomposition",
+]
+
 [experiments."market-behavior/annual-prime-value-technical-risk-decomposition"]
 family = "Annual Fundamentals"
 status = "candidate"
