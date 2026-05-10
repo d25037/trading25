@@ -162,6 +162,18 @@ relatedExperiments = [
   "market-behavior/annual-value-composite-selection",
 ]
 
+[experiments."market-behavior/free-float-liquidity-gap"]
+family = "Market Behavior"
+status = "observed"
+decision = "ADV_N は alpha ではなく free-float 時価総額に対する liquidity/capacity diagnostic として扱う。Prime は free-float cap で ADV をよく説明でき high residual も平均 excess が強いが、Standard は回帰説明力が低く high residual の median/win rate が悪いため crowding/sizing caution 候補として見る。"
+promotedSurface = "Research"
+riskFlags = ["liquidity-diagnostic", "free-float-proxy", "market-specific", "not-standalone-alpha", "capacity-diagnostic"]
+relatedExperiments = [
+  "market-behavior/annual-prime-value-volume-volatility-participation",
+  "market-behavior/standard-value-pump-fade-decomposition",
+  "market-behavior/value-breakout-overheat-filter",
+]
+
 [experiments."market-behavior/margin-balance-supply-demand"]
 family = "Supply Demand"
 status = "candidate"
