@@ -61,7 +61,7 @@ describe('router', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/symbol-workbench');
     });
-    expect(screen.getByRole('heading', { name: 'Symbol Workbench Page' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Symbol Workbench Page' })).toBeInTheDocument();
   });
 
   it('shows migration guidance for legacy ?tab= query links', async () => {
@@ -138,7 +138,7 @@ describe('router', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/screening');
     });
-    expect(screen.getByRole('heading', { name: 'Screening Page' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Screening Page' })).toBeInTheDocument();
   });
 
   it('redirects screening ranking tabs to /ranking', async () => {
@@ -148,7 +148,7 @@ describe('router', () => {
       expect(window.location.pathname).toBe('/ranking');
     });
     expect(window.location.search).toBe('?rankingMarkets=growth');
-    expect(screen.getByRole('heading', { name: 'Ranking Page' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Ranking Page' })).toBeInTheDocument();
   });
 
   it('redirects legacy /settings path to /market-db', async () => {

@@ -1,28 +1,18 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet, redirect } from '@tanstack/react-router';
+import { type ComponentType, lazy, Suspense } from 'react';
 import { MainLayout } from '@/components/Layout/MainLayout';
 import {
   getRankingStateFromScreeningSearch,
   serializeRankingSearch,
   validateBacktestSearch,
-  validateSymbolWorkbenchSearch,
   validateIndicesSearch,
   validateOptions225Search,
   validatePortfolioSearch,
-  validateResearchSearch,
   validateRankingSearch,
+  validateResearchSearch,
   validateScreeningSearch,
+  validateSymbolWorkbenchSearch,
 } from '@/lib/routeSearch';
-import { BacktestPage } from '@/pages/BacktestPage';
-import { SymbolWorkbenchPage } from '@/pages/SymbolWorkbenchPage';
-import { HistoryPage } from '@/pages/HistoryPage';
-import { IndicesPage } from '@/pages/IndicesPage';
-import { N225OptionsPage } from '@/pages/N225OptionsPage';
-import { PortfolioPage } from '@/pages/PortfolioPage';
-import { ResearchDetailPage } from '@/pages/ResearchDetailPage';
-import { RankingPage } from '@/pages/RankingPage';
-import { ResearchPage } from '@/pages/ResearchPage';
-import { ScreeningPage } from '@/pages/ScreeningPage';
-import { SettingsPage } from '@/pages/SettingsPage';
 import { DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS } from '@/stores/screeningStore';
 
 const CANONICAL_SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
@@ -45,6 +35,60 @@ function isLegacyTab(value: string): value is LegacyTab {
 type IndexRouteSearch = {
   tab?: string;
 };
+
+function PageLoadingFallback() {
+  return (
+    <div className="flex min-h-[12rem] items-center justify-center p-6 text-sm text-muted-foreground">
+      Loading page...
+    </div>
+  );
+}
+
+function createLazyRouteComponent(load: () => Promise<{ default: ComponentType }>) {
+  const LazyRoutePage = lazy(load);
+
+  return function LazyRouteComponent() {
+    return (
+      <Suspense fallback={<PageLoadingFallback />}>
+        <LazyRoutePage />
+      </Suspense>
+    );
+  };
+}
+
+const SymbolWorkbenchPage = createLazyRouteComponent(() =>
+  import('@/pages/SymbolWorkbenchPage').then((module) => ({ default: module.SymbolWorkbenchPage }))
+);
+const PortfolioPage = createLazyRouteComponent(() =>
+  import('@/pages/PortfolioPage').then((module) => ({ default: module.PortfolioPage }))
+);
+const IndicesPage = createLazyRouteComponent(() =>
+  import('@/pages/IndicesPage').then((module) => ({ default: module.IndicesPage }))
+);
+const ResearchPage = createLazyRouteComponent(() =>
+  import('@/pages/ResearchPage').then((module) => ({ default: module.ResearchPage }))
+);
+const ResearchDetailPage = createLazyRouteComponent(() =>
+  import('@/pages/ResearchDetailPage').then((module) => ({ default: module.ResearchDetailPage }))
+);
+const N225OptionsPage = createLazyRouteComponent(() =>
+  import('@/pages/N225OptionsPage').then((module) => ({ default: module.N225OptionsPage }))
+);
+const ScreeningPage = createLazyRouteComponent(() =>
+  import('@/pages/ScreeningPage').then((module) => ({ default: module.ScreeningPage }))
+);
+const RankingPage = createLazyRouteComponent(() =>
+  import('@/pages/RankingPage').then((module) => ({ default: module.RankingPage }))
+);
+const BacktestPage = createLazyRouteComponent(() =>
+  import('@/pages/BacktestPage').then((module) => ({ default: module.BacktestPage }))
+);
+const HistoryPage = createLazyRouteComponent(() =>
+  import('@/pages/HistoryPage').then((module) => ({ default: module.HistoryPage }))
+);
+const SettingsPage = createLazyRouteComponent(() =>
+  import('@/pages/SettingsPage').then((module) => ({ default: module.SettingsPage }))
+);
 
 function RootLayout() {
   return (
