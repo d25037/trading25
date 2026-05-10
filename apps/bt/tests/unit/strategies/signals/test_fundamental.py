@@ -1576,11 +1576,10 @@ class TestExcludeNegativeParameter:
         # 正のEPS部分はPER=10 < 15なのでTrue
         assert signal.iloc[20:].all()
 
-    def test_per_exclude_negative_false_with_valid_negative_per(self):
-        """PER: exclude_negative=Falseで計算上負になるPERも対象"""
-        # 株価が負の場合（実際にはありえないが、テスト用）
+    def test_per_exclude_negative_false_still_rejects_invalid_negative_price(self):
+        """PER: exclude_negative=Falseでも不正な負の株価は除外"""
+        # 株価が負の場合（実際にはありえない）は valuation ratio として不正
         close_with_negative = self.close.copy()
-        # 正のEPSで負のclose → 負のPER
         close_with_negative.iloc[30:40] = -100
 
         signal_exclude = is_undervalued_by_per(
@@ -1600,8 +1599,8 @@ class TestExcludeNegativeParameter:
 
         # exclude=Trueの場合、負のPERはFalse
         assert not signal_exclude.iloc[30:40].any()
-        # exclude=Falseの場合、負のPER < 0 → True
-        assert signal_include.iloc[30:40].all()
+        # exclude=Falseでも、price <= 0 は valuation ratio のSoTでは無効
+        assert not signal_include.iloc[30:40].any()
 
     def test_pbr_exclude_negative_true_default(self):
         """PBR: exclude_negative=True（デフォルト）で負のPBRを除外"""
