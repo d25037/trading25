@@ -222,6 +222,17 @@ export function StockChart({
     });
 
     chartRef.current = chart;
+    const cleanupChart = () => {
+      chart.remove();
+      chartRef.current = null;
+      candlestickSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      atrSupportSeriesRef.current = null;
+      nBarSupportSeriesRef.current = null;
+      bollingerUpperSeriesRef.current = null;
+      vwemaSeriesRef.current = null;
+      signalMarkersRef.current = null;
+    };
 
     // Add candlestick series using v5 API (global standard: up=green, down=red)
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
@@ -231,6 +242,11 @@ export function StockChart({
       wickUpColor: CHART_COLORS.UP,
       wickDownColor: CHART_COLORS.DOWN,
     });
+
+    if (!candlestickSeries) {
+      logger.warn('Candlestick series creation failed; skipping stock chart data initialization');
+      return cleanupChart;
+    }
 
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -257,18 +273,7 @@ export function StockChart({
       }
     });
 
-    // Cleanup function
-    return () => {
-      chart.remove();
-      chartRef.current = null;
-      candlestickSeriesRef.current = null;
-      volumeSeriesRef.current = null;
-      atrSupportSeriesRef.current = null;
-      nBarSupportSeriesRef.current = null;
-      bollingerUpperSeriesRef.current = null;
-      vwemaSeriesRef.current = null;
-      signalMarkersRef.current = null;
-    };
+    return cleanupChart;
   }, [height]); // Remove showVolume dependency
 
   // Handle volume series toggle separately
