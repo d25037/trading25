@@ -186,6 +186,18 @@ relatedExperiments = [
   "strategy-audit/forward-eps-trade-archetype-decomposition",
 ]
 
+[experiments."market-behavior/free-float-liquidity-prime-momentum-interaction"]
+family = "Market Behavior"
+status = "observed"
+decision = "Prime では free-float liquidity residual が 20d/60d price momentum control 後も forward excess に残り、positive momentum x high residual の bucket spread も positive x neutral を上回った。momentum trade の一部は price trend 単体ではなく、free-float cap 対比の participation/re-rating を取っている可能性がある。"
+promotedSurface = "Research"
+riskFlags = ["prime-only", "momentum-confounding", "liquidity-diagnostic", "not-standalone-alpha", "entry-close-diagnostic"]
+relatedExperiments = [
+  "market-behavior/free-float-liquidity-regime-decomposition",
+  "market-behavior/free-float-liquidity-gap",
+  "market-behavior/new-high-momentum-research",
+]
+
 [experiments."market-behavior/margin-balance-supply-demand"]
 family = "Supply Demand"
 status = "candidate"
