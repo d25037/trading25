@@ -19,12 +19,20 @@ from src.entrypoints.http.schemas.analytics_common import (
 class FundamentalsComputeRequest(BaseModel):
     """Request body for fundamentals computation."""
 
-    symbol: str = Field(..., description="Stock code (4-5 digits)", json_schema_extra={"example": "7203"})
+    symbol: str = Field(
+        ...,
+        description="Stock code (4-5 digits)",
+        json_schema_extra={"example": "7203"},
+    )
     from_date: str | None = Field(
-        None, description="Start date (YYYY-MM-DD)", json_schema_extra={"example": "2020-01-01"}
+        None,
+        description="Start date (YYYY-MM-DD)",
+        json_schema_extra={"example": "2020-01-01"},
     )
     to_date: str | None = Field(
-        None, description="End date (YYYY-MM-DD)", json_schema_extra={"example": "2025-12-31"}
+        None,
+        description="End date (YYYY-MM-DD)",
+        json_schema_extra={"example": "2025-12-31"},
     )
     period_type: Literal["all", "FY", "1Q", "2Q", "3Q"] = Field(
         default="all", description="Filter by period type (FY, 1Q, 2Q, 3Q)"
@@ -72,7 +80,9 @@ class FundamentalDataPoint(BaseModel):
     adjustedBps: float | None = Field(
         None, description="Adjusted BPS using share count (JPY)"
     )
-    dividendFy: float | None = Field(None, description="Dividend per share for FY (JPY)")
+    dividendFy: float | None = Field(
+        None, description="Dividend per share for FY (JPY)"
+    )
     adjustedDividendFy: float | None = Field(
         None, description="Adjusted FY dividend per share using share count (JPY)"
     )
@@ -80,15 +90,19 @@ class FundamentalDataPoint(BaseModel):
         None, description="Forecast dividend per share for FY (JPY)"
     )
     adjustedForecastDividendFy: float | None = Field(
-        None, description="Adjusted forecast FY dividend per share using share count (JPY)"
+        None,
+        description="Adjusted forecast FY dividend per share using share count (JPY)",
     )
     forecastDividendFyChangeRate: float | None = Field(
         None, description="Forecast dividend change rate from actual dividend (%)"
     )
     payoutRatio: float | None = Field(None, description="Payout ratio (%)")
-    forecastPayoutRatio: float | None = Field(None, description="Forecast payout ratio (%)")
+    forecastPayoutRatio: float | None = Field(
+        None, description="Forecast payout ratio (%)"
+    )
     forecastPayoutRatioChangeRate: float | None = Field(
-        None, description="Forecast payout ratio change rate from actual payout ratio (%)"
+        None,
+        description="Forecast payout ratio change rate from actual payout ratio (%)",
     )
     per: float | None = Field(None, description="Price to earnings ratio")
     pbr: float | None = Field(None, description="Price to book ratio")
@@ -189,6 +203,64 @@ class DailyValuationDataPoint(BaseModel):
     )
 
 
+class LiquidityProfileWindow(BaseModel):
+    """Free-float liquidity profile for one ADV window."""
+
+    advWindow: int = Field(..., description="ADV window in trading sessions")
+    averageTradingValue: float | None = Field(
+        None, description="N-day average trading value (JPY)"
+    )
+    freeFloatTradingValueRatioPct: float | None = Field(
+        None, description="ADV / free-float market cap (%)"
+    )
+    liquidityResidualZ: float | None = Field(
+        None,
+        description="Z-score of log ADV residual against Prime free-float market cap regression",
+    )
+    liquidityImpliedFreeFloatMarketCap: float | None = Field(
+        None,
+        description="Free-float market cap implied by current ADV using Prime regression (JPY)",
+    )
+    liquidityImpliedPrice: float | None = Field(
+        None,
+        description="Price implied by liquidity-implied free-float market cap (JPY)",
+    )
+    liquidityImpliedPriceGapPct: float | None = Field(
+        None, description="Liquidity-implied price gap versus latest close (%)"
+    )
+    liquidityRegime: str | None = Field(
+        None, description="Prime-only liquidity regime label"
+    )
+    regressionAlpha: float | None = Field(None, description="Regression intercept")
+    regressionBeta: float | None = Field(None, description="Regression slope")
+    regressionRSquared: float | None = Field(None, description="Regression R-squared")
+    regressionObservationCount: int | None = Field(
+        None, description="Number of Prime observations used in regression"
+    )
+
+
+class LiquidityProfile(BaseModel):
+    """Prime-only free-float liquidity diagnostic."""
+
+    supported: bool = Field(
+        ..., description="Whether the profile is supported for this symbol"
+    )
+    unsupportedReason: str | None = Field(None, description="Reason when unsupported")
+    modelScope: str = Field(default="prime", description="Regression model scope")
+    date: str | None = Field(None, description="Observation date")
+    currentPrice: float | None = Field(None, description="Latest close (JPY)")
+    freeFloatMarketCap: float | None = Field(
+        None, description="Latest free-float market cap (JPY)"
+    )
+    recentReturn20dPct: float | None = Field(
+        None, description="Recent 20-session return (%)"
+    )
+    recentReturn60dPct: float | None = Field(
+        None, description="Recent 60-session return (%)"
+    )
+    windows: list[LiquidityProfileWindow] = Field(default_factory=list)
+
+
 class FundamentalsComputeResponse(BaseModel):
     """Response for fundamentals computation."""
 
@@ -202,6 +274,10 @@ class FundamentalsComputeResponse(BaseModel):
     )
     dailyValuation: list[DailyValuationDataPoint] | None = Field(
         None, description="Daily PER/PBR time-series"
+    )
+    liquidityProfile: LiquidityProfile | None = Field(
+        None,
+        description="Prime-only free-float liquidity diagnostic for Symbol Workbench",
     )
     tradingValuePeriod: int = Field(
         ..., description="Rolling period used for market cap to trading value ratio"

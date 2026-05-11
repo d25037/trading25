@@ -26,6 +26,7 @@ from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.shared.config.settings import get_settings
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.market_code_alias import expand_market_codes
 from src.shared.utils.snapshot_ids import (
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
@@ -94,7 +95,9 @@ def _rows_to_records(
     ]
 
 
-def _resolve_dataset_artifact(dataset_name: str) -> tuple[Literal["duckdb-parquet"], str, str]:
+def _resolve_dataset_artifact(
+    dataset_name: str,
+) -> tuple[Literal["duckdb-parquet"], str, str]:
     normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)
     if normalized_dataset_name is None:
         raise FileNotFoundError(f"Dataset not found: {dataset_name}")
@@ -106,7 +109,11 @@ def _resolve_dataset_artifact(dataset_name: str) -> tuple[Literal["duckdb-parque
     manifest_path = snapshot_root / "manifest.v2.json"
 
     if duckdb_path.exists() and manifest_path.exists():
-        return "duckdb-parquet", str(snapshot_root.resolve()), str(duckdb_path.resolve())
+        return (
+            "duckdb-parquet",
+            str(snapshot_root.resolve()),
+            str(duckdb_path.resolve()),
+        )
 
     raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
@@ -125,11 +132,15 @@ def _resolve_dataset_db(dataset_name: str) -> DatasetSnapshotReader:
 def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
     normalized_snapshot_id = normalize_market_snapshot_id(snapshot_id)
     settings = get_settings()
-    market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
+    market_timeseries_dir = str(
+        getattr(settings, "market_timeseries_dir", "") or ""
+    ).strip()
     if not market_timeseries_dir:
         raise FileNotFoundError("MARKET_TIMESERIES_DIR is not configured")
 
-    market_duckdb_path = (Path(market_timeseries_dir).resolve() / "market.duckdb").resolve()
+    market_duckdb_path = (
+        Path(market_timeseries_dir).resolve() / "market.duckdb"
+    ).resolve()
     if not market_duckdb_path.exists():
         raise FileNotFoundError(f"market.duckdb not found: {market_duckdb_path}")
 
@@ -226,7 +237,9 @@ def _build_stock_code_map_values(stock_codes: list[str]) -> tuple[str, list[Any]
     entries: list[tuple[str, str, int]] = []
     seen: set[tuple[str, str]] = set()
     for requested_code in stock_codes:
-        for priority, candidate_code in enumerate(stock_code_candidates(requested_code)):
+        for priority, candidate_code in enumerate(
+            stock_code_candidates(requested_code)
+        ):
             key = (requested_code, candidate_code)
             if key in seen:
                 continue
@@ -247,7 +260,9 @@ def _row_value(row: Any, key: str) -> Any:
         return getattr(row, key)
 
 
-def _group_rows_by_requested_code(rows: list[Any], stock_codes: list[str]) -> dict[str, list[Any]]:
+def _group_rows_by_requested_code(
+    rows: list[Any], stock_codes: list[str]
+) -> dict[str, list[Any]]:
     result: dict[str, list[Any]] = {code: [] for code in stock_codes}
     for row in rows:
         result.setdefault(str(_row_value(row, "requested_code")), []).append(row)
@@ -367,7 +382,11 @@ class DirectDatasetClient:
         if codes and not df.empty:
             code_set = set(codes)
             df = pd.DataFrame(
-                [record for record in df.to_dict(orient="records") if record["indexCode"] in code_set]
+                [
+                    record
+                    for record in df.to_dict(orient="records")
+                    if record["indexCode"] in code_set
+                ]
             )
         return df
 
@@ -415,7 +434,11 @@ class DirectDatasetClient:
         if codes and not df.empty:
             code_set = set(codes)
             df = pd.DataFrame(
-                [record for record in df.to_dict(orient="records") if record["stockCode"] in code_set]
+                [
+                    record
+                    for record in df.to_dict(orient="records")
+                    if record["stockCode"] in code_set
+                ]
             )
         return df
 
@@ -484,13 +507,17 @@ class DirectDatasetClient:
 
     def get_all_sectors(self) -> pd.DataFrame:
         mapping_df = self.get_sector_mapping()
-        counts = {row.sectorName: row.count for row in self._db.get_sectors_with_count()}
+        counts = {
+            row.sectorName: row.count for row in self._db.get_sectors_with_count()
+        }
 
         if mapping_df.empty:
             return pd.DataFrame()
 
         mapping_df = mapping_df.copy()
-        mapping_df["stock_count"] = mapping_df["sector_name"].map(counts).fillna(0).astype(int)
+        mapping_df["stock_count"] = (
+            mapping_df["sector_name"].map(counts).fillna(0).astype(int)
+        )
         return mapping_df
 
 
@@ -857,6 +884,137 @@ class DirectMarketClient:
         ]
         return convert_ohlcv_response(records)
 
+    def get_prime_free_float_liquidity_regression_panel(
+        self,
+        target_date: str,
+        *,
+        adv_windows: tuple[int, ...] = (20, 60),
+    ) -> pd.DataFrame:
+        """Return Prime cross-section for free-float liquidity regression."""
+        if not target_date or not adv_windows:
+            return pd.DataFrame()
+
+        reader = _resolve_market_reader()
+        max_window = max(adv_windows)
+        start_date = (
+            pd.Timestamp(target_date) - pd.Timedelta(days=max_window * 4 + 30)
+        ).strftime("%Y-%m-%d")
+        prime_codes = tuple(expand_market_codes(["prime"]))
+        market_placeholders = ",".join("?" for _ in prime_codes)
+        normalize_code_sql = (
+            "CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0' "
+            "THEN substr(code, 1, length(code) - 1) ELSE code END"
+        )
+        adv_columns = ",\n".join(
+            [
+                (
+                    f"AVG(close * volume) OVER (PARTITION BY code ORDER BY date "
+                    f"ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv{window}_jpy,\n"
+                    f"COUNT(*) OVER (PARTITION BY code ORDER BY date "
+                    f"ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv{window}_count"
+                )
+                for window in adv_windows
+            ]
+        )
+        select_adv_columns = ",\n".join(
+            [
+                f"CASE WHEN adv{window}_count >= {window} THEN adv{window}_jpy ELSE NULL END AS adv{window}_jpy"
+                for window in adv_windows
+            ]
+        )
+        rows = reader.query(
+            f"""
+            WITH prime_codes AS (
+                SELECT
+                    CASE
+                        WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
+                            THEN substr(code, 1, length(code) - 1)
+                        ELSE code
+                    END AS code
+                FROM stocks_latest
+                WHERE lower(trim(market_code)) IN ({market_placeholders})
+            ),
+            price_base AS (
+                SELECT *
+                FROM (
+                    SELECT
+                        {normalize_code_sql} AS code,
+                        date,
+                        close,
+                        volume,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {normalize_code_sql}, date
+                            ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                        ) AS rn
+                    FROM stock_data
+                    WHERE date >= ?
+                      AND date <= ?
+                      AND close > 0
+                      AND volume IS NOT NULL
+                )
+                WHERE rn = 1
+            ),
+            statement_base AS (
+                SELECT *
+                FROM (
+                    SELECT
+                        {normalize_code_sql} AS code,
+                        disclosed_date,
+                        shares_outstanding,
+                        treasury_shares,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {normalize_code_sql}, disclosed_date
+                            ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                        ) AS rn
+                    FROM statements
+                    WHERE disclosed_date <= ?
+                      AND shares_outstanding > 0
+                )
+                WHERE rn = 1
+            ),
+            statement_asof AS (
+                SELECT code, shares_outstanding, treasury_shares
+                FROM (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY code
+                            ORDER BY disclosed_date DESC
+                        ) AS rn
+                    FROM statement_base
+                )
+                WHERE rn = 1
+            ),
+            prime_price AS (
+                SELECT price_base.*
+                FROM price_base
+                JOIN prime_codes USING (code)
+            ),
+            with_adv AS (
+                SELECT
+                    *,
+                    {adv_columns}
+                FROM prime_price
+            )
+            SELECT
+                code,
+                date,
+                close,
+                volume,
+                st.shares_outstanding,
+                st.treasury_shares,
+                close * (st.shares_outstanding - coalesce(st.treasury_shares, 0)) AS free_float_market_cap,
+                {select_adv_columns}
+            FROM with_adv
+            JOIN statement_asof st USING (code)
+            WHERE date = ?
+              AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
+            ORDER BY code
+            """,
+            (*prime_codes, start_date, target_date, target_date, target_date),
+        )
+        return pd.DataFrame([dict(row.items()) for row in rows])
+
     def get_stock_adjustment_events(
         self,
         stock_code: str,
@@ -1068,7 +1226,9 @@ class DirectMarketDataClient:
     def get_available_stocks(self, min_records: int = 100) -> pd.DataFrame:
         return self.get_stock_list(min_records=min_records, detail=True)
 
-    def get_topix(self, start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
+    def get_topix(
+        self, start_date: str | None = None, end_date: str | None = None
+    ) -> pd.DataFrame:
         return self._market.get_topix(start_date, end_date)
 
     def get_margin(
@@ -1123,7 +1283,9 @@ def _create_http_market_client() -> MarketAPIClient:
 DirectMarketDatasetClient = DirectMarketDataClient
 
 
-def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient | DirectMarketDataClient:
+def get_dataset_client(
+    dataset_name: str,
+) -> DatasetAPIClient | DirectDatasetClient | DirectMarketDataClient:
     """Return HTTP or direct dataset client based on active data-access mode."""
     if should_use_direct_db():
         if dataset_name in UNIVERSE_PRESET_NAMES:

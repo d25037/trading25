@@ -4455,6 +4455,17 @@
             ],
             "description": "Latest metrics with daily valuation"
           },
+          "liquidityProfile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiquidityProfile"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prime-only free-float liquidity diagnostic for Symbol Workbench"
+          },
           "provenance": {
             "$ref": "#/components/schemas/DataProvenance"
           },
@@ -6888,6 +6899,253 @@
           "history"
         ],
         "title": "LabOptimizeResult",
+        "type": "object"
+      },
+      "LiquidityProfile": {
+        "description": "Prime-only free-float liquidity diagnostic.",
+        "properties": {
+          "currentPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest close (JPY)",
+            "title": "Currentprice"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Observation date",
+            "title": "Date"
+          },
+          "freeFloatMarketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest free-float market cap (JPY)",
+            "title": "Freefloatmarketcap"
+          },
+          "modelScope": {
+            "default": "prime",
+            "description": "Regression model scope",
+            "title": "Modelscope",
+            "type": "string"
+          },
+          "recentReturn20dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recent 20-session return (%)",
+            "title": "Recentreturn20Dpct"
+          },
+          "recentReturn60dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recent 60-session return (%)",
+            "title": "Recentreturn60Dpct"
+          },
+          "supported": {
+            "description": "Whether the profile is supported for this symbol",
+            "title": "Supported",
+            "type": "boolean"
+          },
+          "unsupportedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reason when unsupported",
+            "title": "Unsupportedreason"
+          },
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/LiquidityProfileWindow"
+            },
+            "title": "Windows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "supported"
+        ],
+        "title": "LiquidityProfile",
+        "type": "object"
+      },
+      "LiquidityProfileWindow": {
+        "description": "Free-float liquidity profile for one ADV window.",
+        "properties": {
+          "advWindow": {
+            "description": "ADV window in trading sessions",
+            "title": "Advwindow",
+            "type": "integer"
+          },
+          "averageTradingValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "N-day average trading value (JPY)",
+            "title": "Averagetradingvalue"
+          },
+          "freeFloatTradingValueRatioPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ADV / free-float market cap (%)",
+            "title": "Freefloattradingvalueratiopct"
+          },
+          "liquidityImpliedFreeFloatMarketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-float market cap implied by current ADV using Prime regression (JPY)",
+            "title": "Liquidityimpliedfreefloatmarketcap"
+          },
+          "liquidityImpliedPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Price implied by liquidity-implied free-float market cap (JPY)",
+            "title": "Liquidityimpliedprice"
+          },
+          "liquidityImpliedPriceGapPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Liquidity-implied price gap versus latest close (%)",
+            "title": "Liquidityimpliedpricegappct"
+          },
+          "liquidityRegime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Prime-only liquidity regime label",
+            "title": "Liquidityregime"
+          },
+          "liquidityResidualZ": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Z-score of log ADV residual against Prime free-float market cap regression",
+            "title": "Liquidityresidualz"
+          },
+          "regressionAlpha": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Regression intercept",
+            "title": "Regressionalpha"
+          },
+          "regressionBeta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Regression slope",
+            "title": "Regressionbeta"
+          },
+          "regressionObservationCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of Prime observations used in regression",
+            "title": "Regressionobservationcount"
+          },
+          "regressionRSquared": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Regression R-squared",
+            "title": "Regressionrsquared"
+          }
+        },
+        "required": [
+          "advWindow"
+        ],
+        "title": "LiquidityProfileWindow",
         "type": "object"
       },
       "ListedMarketCoverage": {

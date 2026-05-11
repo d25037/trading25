@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, cast
 from collections.abc import Iterable
 
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -21,10 +22,13 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
+    LiquidityProfile,
+    LiquidityProfileWindow,
 )
 from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
 from src.infrastructure.data_access.clients import DirectMarketClient
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+from src.shared.utils.market_code_alias import normalize_market_scope
 
 # Backward-compatible symbol for tests patching module-local client constructor.
 MarketDataClient = DirectMarketClient
@@ -114,7 +118,9 @@ class FundamentalsService:
         doc_type = cls._normalize_required_text(row.get("typeOfDocument"))
         period_type = cls._normalize_required_text(row.get("typeOfCurrentPeriod"))
         dividend_fy = cls._normalize_optional_float(row.get("dividendFY"))
-        forecast_dividend_fy = cls._normalize_optional_float(row.get("forecastDividendFY"))
+        forecast_dividend_fy = cls._normalize_optional_float(
+            row.get("forecastDividendFY")
+        )
         next_year_forecast_dividend_fy = cls._normalize_optional_float(
             row.get("nextYearForecastDividendFY")
         )
@@ -148,16 +154,22 @@ class FundamentalsService:
             TrShFY=cls._normalize_optional_float(row.get("treasuryShares")),
             AvgSh=cls._normalize_optional_float(row.get("sharesOutstanding")),
             FEPS=cls._normalize_optional_float(row.get("forecastEps")),
-            NxFEPS=cls._normalize_optional_float(row.get("nextYearForecastEarningsPerShare")),
+            NxFEPS=cls._normalize_optional_float(
+                row.get("nextYearForecastEarningsPerShare")
+            ),
             DivFY=dividend_fy,
             DivAnn=dividend_fy,
             PayoutRatioAnn=cls._normalize_optional_float(row.get("payoutRatio")),
             FDivFY=forecast_dividend_fy,
             FDivAnn=forecast_dividend_fy,
-            FPayoutRatioAnn=cls._normalize_optional_float(row.get("forecastPayoutRatio")),
+            FPayoutRatioAnn=cls._normalize_optional_float(
+                row.get("forecastPayoutRatio")
+            ),
             NxFDivFY=next_year_forecast_dividend_fy,
             NxFDivAnn=next_year_forecast_dividend_fy,
-            NxFPayoutRatioAnn=cls._normalize_optional_float(row.get("nextYearForecastPayoutRatio")),
+            NxFPayoutRatioAnn=cls._normalize_optional_float(
+                row.get("nextYearForecastPayoutRatio")
+            ),
             NCSales=None,
             NCOP=None,
             NCOdP=None,
@@ -210,11 +222,23 @@ class FundamentalsService:
     def _get_daily_stock_prices(self, symbol: str) -> dict[str, float]:
         return self._calculator._to_daily_close_map(self._get_daily_stock_ohlcv(symbol))
 
+    @staticmethod
+    def _round_optional_float(value: Any, digits: int = 4) -> float | None:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(numeric):
+            return None
+        return round(numeric, digits)
+
     def _get_stock_adjustment_events(self, symbol: str) -> list[ShareAdjustmentEvent]:
         try:
             getter = getattr(self.market_client, "get_stock_adjustment_events")
         except Exception as e:
-            logger.warning(f"Failed to access stock adjustment events client for {symbol}: {e}")
+            logger.warning(
+                f"Failed to access stock adjustment events client for {symbol}: {e}"
+            )
             return []
         if not callable(getter):
             return []
@@ -223,11 +247,259 @@ class FundamentalsService:
         except Exception as e:
             logger.warning(f"Failed to get stock adjustment events for {symbol}: {e}")
             return []
-        return [
-            event
-            for event in events
-            if isinstance(event, ShareAdjustmentEvent)
-        ]
+        return [event for event in events if isinstance(event, ShareAdjustmentEvent)]
+
+    def _build_prime_liquidity_profile(
+        self,
+        *,
+        stock_info: StockInfo | None,
+        daily_ohlcv: pd.DataFrame,
+        daily_valuation: list[DomainDailyValuationDataPoint],
+        adv_windows: tuple[int, ...] = (20, 60),
+    ) -> LiquidityProfile:
+        market_scope = normalize_market_scope(
+            stock_info.marketCode if stock_info else None,
+            market_name=stock_info.marketName if stock_info else None,
+            default=None,
+        )
+        if market_scope != "prime":
+            return LiquidityProfile(
+                supported=False,
+                unsupportedReason="prime_only_model",
+                modelScope="prime",
+            )
+        if daily_ohlcv.empty or not daily_valuation:
+            return LiquidityProfile(
+                supported=False,
+                unsupportedReason="missing_price_or_valuation",
+                modelScope="prime",
+            )
+
+        latest_valuation = next(
+            (
+                item
+                for item in reversed(daily_valuation)
+                if item.freeFloatMarketCap is not None
+                and item.freeFloatMarketCap > 0
+                and item.close > 0
+            ),
+            None,
+        )
+        if latest_valuation is None:
+            return LiquidityProfile(
+                supported=False,
+                unsupportedReason="missing_free_float_market_cap",
+                modelScope="prime",
+            )
+        latest_free_float_market_cap = float(cast(float, latest_valuation.freeFloatMarketCap))
+        latest_close = float(latest_valuation.close)
+
+        price_frame = daily_ohlcv.copy()
+        price_frame.index = pd.to_datetime(price_frame.index)
+        price_frame["date"] = price_frame.index.strftime("%Y-%m-%d")
+        price_frame = price_frame.sort_index()
+        recent_return_20d = self._recent_return_pct(
+            price_frame, latest_valuation.date, 20
+        )
+        recent_return_60d = self._recent_return_pct(
+            price_frame, latest_valuation.date, 60
+        )
+
+        regression_panel = (
+            self.market_client.get_prime_free_float_liquidity_regression_panel(
+                latest_valuation.date,
+                adv_windows=adv_windows,
+            )
+        )
+        windows: list[LiquidityProfileWindow] = []
+        for adv_window in adv_windows:
+            window_profile = self._build_prime_liquidity_profile_window(
+                regression_panel=regression_panel,
+                price_frame=price_frame,
+                date=latest_valuation.date,
+                current_price=latest_close,
+                free_float_market_cap=latest_free_float_market_cap,
+                adv_window=adv_window,
+                recent_return_20d_pct=recent_return_20d,
+                recent_return_60d_pct=recent_return_60d,
+            )
+            windows.append(window_profile)
+
+        return LiquidityProfile(
+            supported=any(item.averageTradingValue is not None for item in windows),
+            unsupportedReason=None
+            if any(item.averageTradingValue is not None for item in windows)
+            else "insufficient_prime_regression_sample",
+            modelScope="prime",
+            date=latest_valuation.date,
+            currentPrice=self._round_optional_float(latest_close, 4),
+            freeFloatMarketCap=self._round_optional_float(
+                latest_free_float_market_cap,
+                2,
+            ),
+            recentReturn20dPct=recent_return_20d,
+            recentReturn60dPct=recent_return_60d,
+            windows=windows,
+        )
+
+    def _build_prime_liquidity_profile_window(
+        self,
+        *,
+        regression_panel: pd.DataFrame,
+        price_frame: pd.DataFrame,
+        date: str,
+        current_price: float,
+        free_float_market_cap: float,
+        adv_window: int,
+        recent_return_20d_pct: float | None,
+        recent_return_60d_pct: float | None,
+    ) -> LiquidityProfileWindow:
+        adv_column = f"adv{adv_window}_jpy"
+        average_trading_value = self._average_trading_value(
+            price_frame,
+            date,
+            adv_window,
+        )
+        base_payload: dict[str, Any] = {
+            "advWindow": adv_window,
+            "averageTradingValue": self._round_optional_float(average_trading_value, 2),
+            "freeFloatTradingValueRatioPct": self._round_optional_float(
+                (average_trading_value / free_float_market_cap) * 100.0
+                if average_trading_value is not None and free_float_market_cap > 0
+                else None,
+                4,
+            ),
+        }
+        if average_trading_value is None or regression_panel.empty:
+            return LiquidityProfileWindow(**base_payload)
+
+        panel = regression_panel[[adv_column, "free_float_market_cap"]].copy()
+        panel[adv_column] = pd.to_numeric(panel[adv_column], errors="coerce")
+        panel["free_float_market_cap"] = pd.to_numeric(
+            panel["free_float_market_cap"],
+            errors="coerce",
+        )
+        panel = panel[
+            (panel[adv_column] > 0) & (panel["free_float_market_cap"] > 0)
+        ].dropna()
+        if len(panel) < 100:
+            return LiquidityProfileWindow(**base_payload)
+
+        x = np.log(panel["free_float_market_cap"].to_numpy(dtype=float))
+        y = np.log(panel[adv_column].to_numpy(dtype=float))
+        regression = self._fit_simple_regression(y, x)
+        if regression is None:
+            return LiquidityProfileWindow(**base_payload)
+        alpha, beta, r_squared, residual_std = regression
+        if beta <= 0 or residual_std <= 0:
+            return LiquidityProfileWindow(**base_payload)
+
+        log_adv = float(np.log(average_trading_value))
+        log_ffcap = float(np.log(free_float_market_cap))
+        expected_log_adv = alpha + beta * log_ffcap
+        residual = log_adv - expected_log_adv
+        residual_z = residual / residual_std
+        implied_ffcap = float(np.exp((log_adv - alpha) / beta))
+        implied_price = current_price * implied_ffcap / free_float_market_cap
+        implied_price_gap_pct = (implied_price / current_price - 1.0) * 100.0
+
+        return LiquidityProfileWindow(
+            **base_payload,
+            liquidityResidualZ=self._round_optional_float(residual_z, 4),
+            liquidityImpliedFreeFloatMarketCap=self._round_optional_float(
+                implied_ffcap, 2
+            ),
+            liquidityImpliedPrice=self._round_optional_float(implied_price, 4),
+            liquidityImpliedPriceGapPct=self._round_optional_float(
+                implied_price_gap_pct, 4
+            ),
+            liquidityRegime=self._classify_liquidity_regime(
+                residual_z,
+                recent_return_20d_pct,
+                recent_return_60d_pct,
+            ),
+            regressionAlpha=self._round_optional_float(alpha, 6),
+            regressionBeta=self._round_optional_float(beta, 6),
+            regressionRSquared=self._round_optional_float(r_squared, 6),
+            regressionObservationCount=int(len(panel)),
+        )
+
+    @staticmethod
+    def _average_trading_value(
+        price_frame: pd.DataFrame,
+        date: str,
+        window: int,
+    ) -> float | None:
+        eligible = price_frame[price_frame["date"] <= date].tail(window)
+        if len(eligible) < window:
+            return None
+        close = pd.to_numeric(eligible["Close"], errors="coerce")
+        volume = pd.to_numeric(eligible["Volume"], errors="coerce")
+        trading_value = (close * volume).dropna()
+        if len(trading_value) < window:
+            return None
+        value = float(trading_value.mean())
+        return value if value > 0 else None
+
+    @staticmethod
+    def _recent_return_pct(
+        price_frame: pd.DataFrame,
+        date: str,
+        window: int,
+    ) -> float | None:
+        eligible = price_frame[price_frame["date"] <= date].tail(window + 1)
+        if len(eligible) < window + 1:
+            return None
+        close = pd.to_numeric(eligible["Close"], errors="coerce")
+        current = float(close.iloc[-1])
+        prior = float(close.iloc[0])
+        if prior <= 0 or current <= 0:
+            return None
+        return round((current / prior - 1.0) * 100.0, 4)
+
+    @staticmethod
+    def _fit_simple_regression(
+        y: np.ndarray[Any, np.dtype[np.float64]],
+        x: np.ndarray[Any, np.dtype[np.float64]],
+    ) -> tuple[float, float, float, float] | None:
+        if len(y) != len(x) or len(y) < 3:
+            return None
+        design = np.column_stack([np.ones(len(x)), x])
+        beta_values, *_ = np.linalg.lstsq(design, y, rcond=None)
+        fitted = design @ beta_values
+        residual = y - fitted
+        total = y - y.mean()
+        ss_total = float(total @ total)
+        if ss_total <= 0:
+            return None
+        dof = len(y) - design.shape[1]
+        if dof <= 0:
+            return None
+        residual_std = float(np.sqrt((residual @ residual) / dof))
+        r_squared = float(1.0 - (residual @ residual) / ss_total)
+        return (
+            float(beta_values[0]),
+            float(beta_values[1]),
+            r_squared,
+            residual_std,
+        )
+
+    @staticmethod
+    def _classify_liquidity_regime(
+        residual_z: float,
+        recent_return_20d_pct: float | None,
+        recent_return_60d_pct: float | None,
+    ) -> str:
+        returns = [recent_return_20d_pct, recent_return_60d_pct]
+        valid_returns = [value for value in returns if value is not None]
+        if residual_z >= 1.0 and len(valid_returns) == 2:
+            if all(value >= 0 for value in valid_returns):
+                return "rerating_participation"
+            if any(value < 0 for value in valid_returns):
+                return "distribution_stress"
+        if residual_z <= -1.0:
+            return "stale_liquidity"
+        return "neutral"
 
     def compute_fundamentals(
         self, request: FundamentalsComputeRequest
@@ -267,6 +539,11 @@ class FundamentalsService:
             request.prefer_consolidated,
             share_adjustment_events=share_adjustment_events,
         )
+        liquidity_profile = self._build_prime_liquidity_profile(
+            stock_info=stock_info,
+            daily_ohlcv=daily_ohlcv,
+            daily_valuation=daily_valuation,
+        )
 
         filtered_statements = self._calculator._filter_statements(
             statements, request.period_type, request.from_date, request.to_date
@@ -286,6 +563,7 @@ class FundamentalsService:
                 companyName=stock_info.companyName if stock_info else None,
                 data=[],
                 dailyValuation=api_daily_valuation,
+                liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
@@ -389,6 +667,7 @@ class FundamentalsService:
             data=api_data,
             latestMetrics=api_latest_metrics,
             dailyValuation=api_daily_valuation,
+            liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
             lastUpdated=datetime.now().isoformat(),

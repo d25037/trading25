@@ -5085,6 +5085,8 @@ export interface components {
             lastUpdated: string;
             /** @description Latest metrics with daily valuation */
             latestMetrics?: components["schemas"]["FundamentalDataPoint"] | null;
+            /** @description Prime-only free-float liquidity diagnostic for Symbol Workbench */
+            liquidityProfile?: components["schemas"]["LiquidityProfile"] | null;
             provenance: components["schemas"]["DataProvenance"];
             /**
              * Symbol
@@ -6411,6 +6413,121 @@ export interface components {
             total_trials: number;
             /** @description Verification summary for top-ranked candidates */
             verification?: components["schemas"]["VerificationSummary"] | null;
+        };
+        /**
+         * LiquidityProfile
+         * @description Prime-only free-float liquidity diagnostic.
+         */
+        LiquidityProfile: {
+            /**
+             * Currentprice
+             * @description Latest close (JPY)
+             */
+            currentPrice?: number | null;
+            /**
+             * Date
+             * @description Observation date
+             */
+            date?: string | null;
+            /**
+             * Freefloatmarketcap
+             * @description Latest free-float market cap (JPY)
+             */
+            freeFloatMarketCap?: number | null;
+            /**
+             * Modelscope
+             * @description Regression model scope
+             * @default prime
+             */
+            modelScope: string;
+            /**
+             * Recentreturn20Dpct
+             * @description Recent 20-session return (%)
+             */
+            recentReturn20dPct?: number | null;
+            /**
+             * Recentreturn60Dpct
+             * @description Recent 60-session return (%)
+             */
+            recentReturn60dPct?: number | null;
+            /**
+             * Supported
+             * @description Whether the profile is supported for this symbol
+             */
+            supported: boolean;
+            /**
+             * Unsupportedreason
+             * @description Reason when unsupported
+             */
+            unsupportedReason?: string | null;
+            /** Windows */
+            windows?: components["schemas"]["LiquidityProfileWindow"][];
+        };
+        /**
+         * LiquidityProfileWindow
+         * @description Free-float liquidity profile for one ADV window.
+         */
+        LiquidityProfileWindow: {
+            /**
+             * Advwindow
+             * @description ADV window in trading sessions
+             */
+            advWindow: number;
+            /**
+             * Averagetradingvalue
+             * @description N-day average trading value (JPY)
+             */
+            averageTradingValue?: number | null;
+            /**
+             * Freefloattradingvalueratiopct
+             * @description ADV / free-float market cap (%)
+             */
+            freeFloatTradingValueRatioPct?: number | null;
+            /**
+             * Liquidityimpliedfreefloatmarketcap
+             * @description Free-float market cap implied by current ADV using Prime regression (JPY)
+             */
+            liquidityImpliedFreeFloatMarketCap?: number | null;
+            /**
+             * Liquidityimpliedprice
+             * @description Price implied by liquidity-implied free-float market cap (JPY)
+             */
+            liquidityImpliedPrice?: number | null;
+            /**
+             * Liquidityimpliedpricegappct
+             * @description Liquidity-implied price gap versus latest close (%)
+             */
+            liquidityImpliedPriceGapPct?: number | null;
+            /**
+             * Liquidityregime
+             * @description Prime-only liquidity regime label
+             */
+            liquidityRegime?: string | null;
+            /**
+             * Liquidityresidualz
+             * @description Z-score of log ADV residual against Prime free-float market cap regression
+             */
+            liquidityResidualZ?: number | null;
+            /**
+             * Regressionalpha
+             * @description Regression intercept
+             */
+            regressionAlpha?: number | null;
+            /**
+             * Regressionbeta
+             * @description Regression slope
+             */
+            regressionBeta?: number | null;
+            /**
+             * Regressionobservationcount
+             * @description Number of Prime observations used in regression
+             */
+            regressionObservationCount?: number | null;
+            /**
+             * Regressionrsquared
+             * @description Regression R-squared
+             */
+            regressionRSquared?: number | null;
         };
         /** ListedMarketCoverage */
         ListedMarketCoverage: {
