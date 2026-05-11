@@ -173,6 +173,33 @@ export interface ApiDailyValuationDataPoint {
   freeFloatMarketCap?: number | null;
 }
 
+export interface ApiLiquidityProfileWindow {
+  advWindow: number;
+  averageTradingValue?: number | null;
+  freeFloatTradingValueRatioPct?: number | null;
+  liquidityResidualZ?: number | null;
+  liquidityImpliedFreeFloatMarketCap?: number | null;
+  liquidityImpliedPrice?: number | null;
+  liquidityImpliedPriceGapPct?: number | null;
+  liquidityRegime?: string | null;
+  regressionAlpha?: number | null;
+  regressionBeta?: number | null;
+  regressionRSquared?: number | null;
+  regressionObservationCount?: number | null;
+}
+
+export interface ApiLiquidityProfile {
+  supported: boolean;
+  unsupportedReason?: string | null;
+  modelScope: string;
+  date?: string | null;
+  currentPrice?: number | null;
+  freeFloatMarketCap?: number | null;
+  recentReturn20dPct?: number | null;
+  recentReturn60dPct?: number | null;
+  windows: ApiLiquidityProfileWindow[];
+}
+
 /**
  * Single data point for fundamental metrics time series
  */
@@ -307,6 +334,8 @@ export interface ApiFundamentalsResponse {
   latestMetrics?: ApiFundamentalDataPoint;
   /** Daily PER/PBR time series (calculated with daily close prices and FY EPS/BPS) */
   dailyValuation?: ApiDailyValuationDataPoint[];
+  /** Prime-only free-float liquidity diagnostic for Symbol Workbench */
+  liquidityProfile?: ApiLiquidityProfile | null;
   /** Rolling average period used for trading value to market cap ratio (days) */
   tradingValuePeriod: number;
   /** Lookback FY count used for forecast-vs-actual EPS comparison */

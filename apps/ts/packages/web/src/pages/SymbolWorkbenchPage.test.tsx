@@ -1065,7 +1065,38 @@ describe('SymbolWorkbenchPage', () => {
     });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
-        data: options?.enabled ? { dailyValuation: [{ marketCap: 1000000000, freeFloatMarketCap: 800000000 }] } : null,
+        data: options?.enabled
+          ? {
+              dailyValuation: [{ marketCap: 1000000000, freeFloatMarketCap: 800000000 }],
+              liquidityProfile: {
+                supported: true,
+                modelScope: 'prime',
+                date: '2026-05-08',
+                recentReturn20dPct: 8.45,
+                recentReturn60dPct: 18.32,
+                windows: [
+                  {
+                    advWindow: 20,
+                    averageTradingValue: 300000000,
+                    freeFloatTradingValueRatioPct: 3.75,
+                    liquidityResidualZ: 1.4,
+                    liquidityImpliedPrice: 1234,
+                    liquidityImpliedPriceGapPct: 23.4,
+                    liquidityRegime: 'rerating_participation',
+                  },
+                  {
+                    advWindow: 60,
+                    averageTradingValue: 250000000,
+                    freeFloatTradingValueRatioPct: 3.12,
+                    liquidityResidualZ: 1.2,
+                    liquidityImpliedPrice: 1180,
+                    liquidityImpliedPriceGapPct: 18.0,
+                    liquidityRegime: 'rerating_participation',
+                  },
+                ],
+              },
+            }
+          : null,
       })
     );
 
@@ -1085,6 +1116,11 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('輸送用機器')).toBeInTheDocument();
     expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
     expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
+    expect(screen.getByText('Prime Liquidity')).toBeInTheDocument();
+    expect(screen.getByText('流動性示唆株価 ADV60')).toBeInTheDocument();
+    expect(screen.getByText('1,180円 (+18.0%)')).toBeInTheDocument();
+    expect(screen.getByText('Liquidity Residual')).toBeInTheDocument();
+    expect(screen.getByText('+1.20 / Re-rating')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
     fireEvent.click(screen.getByRole('button', { name: /B\.C\./i }));

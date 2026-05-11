@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
+import type { ApiLiquidityProfile, DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
 import { AlertCircle, BookOpen, Loader2, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
@@ -169,6 +169,97 @@ function ChartHeaderInfoField({ label, value }: { label: string; value: string }
     <div className="min-w-0 border-l border-border/70 pl-3">
       <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
       <div className="truncate text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function formatYenPrice(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: value >= 100 ? 0 : 1 })}円`;
+}
+
+function formatSignedPercent(value: number | null | undefined, digits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(digits)}%`;
+}
+
+function formatPercent(value: number | null | undefined, digits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(digits)}%`;
+}
+
+function formatSignedNumber(value: number | null | undefined, digits = 2): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(digits)}`;
+}
+
+function formatLiquidityRegime(value: string | null | undefined): string {
+  switch (value) {
+    case 'rerating_participation':
+      return 'Re-rating';
+    case 'distribution_stress':
+      return 'Stress';
+    case 'stale_liquidity':
+      return 'Stale';
+    case 'neutral':
+      return 'Neutral';
+    default:
+      return '-';
+  }
+}
+
+function LiquidityProfileStrip({ profile }: { profile: ApiLiquidityProfile | null | undefined }) {
+  if (!profile) return null;
+  if (!profile.supported) {
+    return (
+      <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+        Liquidity: <span className="font-medium text-foreground">Prime model only</span>
+      </div>
+    );
+  }
+
+  const adv60 = profile.windows.find((item) => item.advWindow === 60);
+  const adv20 = profile.windows.find((item) => item.advWindow === 20);
+  const primary = adv60 ?? adv20;
+  if (!primary) return null;
+
+  return (
+    <div className="mt-4 border-t border-border/60 pt-3">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="uppercase tracking-[0.14em] text-muted-foreground">Prime Liquidity</span>
+        <span className="font-medium text-foreground">{profile.date ?? '-'}</span>
+        <span className="text-muted-foreground">
+          20d/60d {formatSignedPercent(profile.recentReturn20dPct)} / {formatSignedPercent(profile.recentReturn60dPct)}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <ChartHeaderInfoField
+          label={`流動性示唆株価 ADV${primary.advWindow}`}
+          value={`${formatYenPrice(primary.liquidityImpliedPrice)} (${formatSignedPercent(
+            primary.liquidityImpliedPriceGapPct
+          )})`}
+        />
+        <ChartHeaderInfoField
+          label={`ADV${primary.advWindow} / Free Float`}
+          value={formatPercent(primary.freeFloatTradingValueRatioPct, 2)}
+        />
+        <ChartHeaderInfoField
+          label="Liquidity Residual"
+          value={`${formatSignedNumber(primary.liquidityResidualZ)} / ${formatLiquidityRegime(primary.liquidityRegime)}`}
+        />
+        <ChartHeaderInfoField
+          label={adv20 && adv60 ? 'ADV20 / ADV60' : `ADV${primary.advWindow}`}
+          value={
+            adv20 && adv60
+              ? `${formatMarketCap(adv20.averageTradingValue ?? null)} / ${formatMarketCap(
+                  adv60.averageTradingValue ?? null
+                )}`
+              : formatMarketCap(primary.averageTradingValue ?? null)
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -732,6 +823,7 @@ function ChartHeader({
   selectedSymbol,
   stockInfo,
   latestMarketCaps,
+  liquidityProfile,
   strategyName,
   matchedDate,
   signalProvenance,
@@ -746,6 +838,7 @@ function ChartHeader({
   selectedSymbol: string;
   stockInfo: StockInfoResponse | undefined;
   latestMarketCaps: ChartHeaderMarketCaps;
+  liquidityProfile: ApiLiquidityProfile | null | undefined;
   strategyName: string | null;
   matchedDate: string | null;
   signalProvenance: DataProvenance | null | undefined;
@@ -867,6 +960,8 @@ function ChartHeader({
             value={formatMarketCap(latestMarketCaps.issuedShares)}
           />
         </div>
+
+        <LiquidityProfileStrip profile={liquidityProfile} />
 
         {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (
           <div className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
@@ -1349,6 +1444,7 @@ export function SymbolWorkbenchPage() {
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
             latestMarketCaps={latestMarketCaps}
+            liquidityProfile={fundamentalsData?.liquidityProfile}
             strategyName={strategyName}
             matchedDate={matchedDate}
             signalProvenance={signalResponse?.provenance}
