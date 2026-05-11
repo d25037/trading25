@@ -10,6 +10,7 @@ export type EquitySortField =
   | 'tradingValue'
   | 'changePercentage'
   | 'code'
+  | 'currentPrice'
   | 'per'
   | 'forwardPer'
   | 'pbr'
@@ -179,6 +180,7 @@ function VirtualSpacer({ height }: { height: number }) {
 
 function EquityCard<T extends EquityRankingItem>({
   item,
+  rowNumber,
   onStockClick,
   showChange,
   showValuation,
@@ -187,6 +189,7 @@ function EquityCard<T extends EquityRankingItem>({
   labels,
 }: {
   item: T;
+  rowNumber: number;
   onStockClick: (code: string) => void;
   showChange: boolean;
   showValuation: boolean;
@@ -205,7 +208,7 @@ function EquityCard<T extends EquityRankingItem>({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-[var(--app-surface-muted)] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">
-              #{item.rank}
+              {rowNumber}
             </span>
             <span className="font-mono text-sm font-semibold text-primary">{item.code}</span>
           </div>
@@ -269,6 +272,7 @@ function EquityCardList<T extends EquityRankingItem>({
   labels,
   paddingTop,
   paddingBottom,
+  startIndex,
   shouldVirtualize,
 }: {
   items: T[];
@@ -280,15 +284,17 @@ function EquityCardList<T extends EquityRankingItem>({
   labels: EquityRankingLabels;
   paddingTop: number;
   paddingBottom: number;
+  startIndex: number;
   shouldVirtualize: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 p-3">
       {shouldVirtualize ? <VirtualSpacer height={paddingTop} /> : null}
-      {items.map((item) => (
+      {items.map((item, index) => (
         <EquityCard
-          key={`${item.code}-${item.rank}`}
+          key={`${item.code}-${startIndex + index}`}
           item={item}
+          rowNumber={startIndex + index + 1}
           onStockClick={onStockClick}
           showChange={showChange}
           showValuation={showValuation}
@@ -315,6 +321,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   columnCount,
   paddingTop,
   paddingBottom,
+  startIndex,
   shouldVirtualize,
 }: {
   items: T[];
@@ -329,6 +336,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   columnCount: number;
   paddingTop: number;
   paddingBottom: number;
+  startIndex: number;
   shouldVirtualize: boolean;
 }) {
   return (
@@ -347,10 +355,11 @@ function DesktopEquityTable<T extends EquityRankingItem>({
             <td colSpan={columnCount} className="p-0" style={{ height: paddingTop }} />
           </tr>
         ) : null}
-        {items.map((item) => (
+        {items.map((item, index) => (
           <DesktopEquityRow
-            key={`${item.code}-${item.rank}`}
+            key={`${item.code}-${startIndex + index}`}
             item={item}
+            rowNumber={startIndex + index + 1}
             onStockClick={onStockClick}
             showChange={showChange}
             showMarket={showMarket}
@@ -387,7 +396,7 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
   return (
     <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
       <tr>
-        <th className="w-12 px-2 py-1.5 text-center">#</th>
+        <th className="w-12 px-2 py-1.5 text-center">行</th>
         <th className="w-20 px-2 py-1.5 text-left">
           <SortHeader field="code" sortState={sortState}>
             {labels.code}
@@ -396,7 +405,11 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
         {showMarket ? <th className="w-16 px-2 py-1.5 text-center">{labels.market}</th> : null}
         <th className="px-2 py-1.5 text-left">{labels.company}</th>
         <th className="w-24 px-2 py-1.5 text-left">{labels.sector}</th>
-        <th className="w-24 px-2 py-1.5 text-right">{labels.price}</th>
+        <th className="w-24 px-2 py-1.5 text-right">
+          <SortHeader field="currentPrice" sortState={sortState} align="right">
+            {labels.price}
+          </SortHeader>
+        </th>
         {showValuation ? <ValuationHeaders labels={labels} sortState={sortState} /> : null}
         {showLiquidity ? <LiquidityHeaders sortState={sortState} /> : null}
         <th className="w-28 px-2 py-1.5 text-right">
@@ -473,6 +486,7 @@ function ValuationHeaders<T extends EquityRankingItem>({
 
 function DesktopEquityRow<T extends EquityRankingItem>({
   item,
+  rowNumber,
   onStockClick,
   showChange,
   showMarket,
@@ -481,6 +495,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   formatLargeValue,
 }: {
   item: T;
+  rowNumber: number;
   onStockClick: (code: string) => void;
   showChange: boolean;
   showMarket: boolean;
@@ -494,7 +509,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       className="cursor-pointer border-b border-border/30 transition-colors hover:bg-[var(--app-surface-muted)]"
       onClick={() => onStockClick(item.code)}
     >
-      <td className="px-2 py-1.5 text-center font-medium tabular-nums">{item.rank}</td>
+      <td className="px-2 py-1.5 text-center font-medium tabular-nums text-muted-foreground">{rowNumber}</td>
       <td className="px-2 py-1.5 font-medium">{item.code}</td>
       {showMarket ? <td className="px-2 py-1.5 text-center text-muted-foreground">{item.marketCode}</td> : null}
       <td className="max-w-[200px] truncate px-2 py-1.5">{item.companyName}</td>
@@ -589,6 +604,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             labels={resolvedLabels}
             paddingTop={virtual.paddingTop}
             paddingBottom={virtual.paddingBottom}
+            startIndex={virtual.startIndex}
             shouldVirtualize={shouldVirtualize}
           />
         ) : (
@@ -605,6 +621,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             columnCount={columnCount}
             paddingTop={virtual.paddingTop}
             paddingBottom={virtual.paddingBottom}
+            startIndex={virtual.startIndex}
             shouldVirtualize={shouldVirtualize}
           />
         )}

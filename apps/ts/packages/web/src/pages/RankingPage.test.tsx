@@ -6,14 +6,14 @@ import {
   DEFAULT_RANKING_PARAMS,
   DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS,
 } from '@/stores/screeningStore';
-import type { RankingPageTab } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
 const mockNavigate = vi.fn();
 const mockSetActiveSubTab = vi.fn((tab: RankingPageTab) => {
   mockRouteState.activeSubTab = tab;
 });
-const mockSetActiveDailyView = vi.fn((view: 'stocks' | 'indices') => {
+const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
   mockRouteState.activeDailyView = view;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
@@ -28,7 +28,7 @@ const mockSetValueCompositeRankingParams = vi.fn((params: typeof DEFAULT_VALUE_C
 const mockUseRanking = vi.fn();
 const mockRouteState = {
   activeSubTab: 'ranking' as RankingPageTab,
-  activeDailyView: 'stocks' as 'stocks' | 'indices',
+  activeDailyView: 'stocks' as RankingDailyView,
   setActiveSubTab: mockSetActiveSubTab,
   setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
@@ -88,19 +88,26 @@ vi.mock('@/components/Ranking', () => ({
     </button>
   ),
   RankingFilters: () => <div>Ranking Filters</div>,
+  TechnicalEventFilters: () => <div>Technical Event Filters</div>,
   RankingSummary: () => <div>Ranking Summary</div>,
   RankingTable: ({
+    items,
     onStockClick,
+    title,
     showValuation,
     showChangeForTradingValue,
     enableColumnSort,
   }: {
+    items?: unknown[];
     onStockClick: (code: string) => void;
+    title?: string;
     showValuation?: boolean;
     showChangeForTradingValue?: boolean;
     enableColumnSort?: boolean;
   }) => (
     <div>
+      <span>{title ?? 'Market Rankings'}</span>
+      <span>items:{items?.length ?? 0}</span>
       <span>{showValuation ? 'valuation columns enabled' : 'valuation columns disabled'}</span>
       <span>{showChangeForTradingValue ? 'trading value change enabled' : 'trading value change disabled'}</span>
       <span>{enableColumnSort ? 'column sort enabled' : 'column sort disabled'}</span>
@@ -148,11 +155,11 @@ describe('RankingPage', () => {
     mockUseRanking.mockReturnValue({
       data: {
         rankings: {
-          tradingValue: [],
+          tradingValue: [{ code: '6758' }],
           gainers: [],
           losers: [],
-          periodHigh: [],
-          periodLow: [],
+          periodHigh: [{ code: '8035' }, { code: '9984' }],
+          periodLow: [{ code: '7203' }],
         },
         indexPerformance: [],
       },
@@ -168,15 +175,18 @@ describe('RankingPage', () => {
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Value Scores' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
+    expect(screen.getByText('items:1')).toBeInTheDocument();
     expect(screen.getByText('valuation columns enabled')).toBeInTheDocument();
     expect(screen.getByText('trading value change enabled')).toBeInTheDocument();
     expect(screen.getByText('column sort enabled')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
   });
 
   it('switches to fundamental ranking tab', async () => {
@@ -226,7 +236,22 @@ describe('RankingPage', () => {
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: false }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: false, limit: 20 }), true);
+  });
+
+  it('switches daily ranking to technical events view', async () => {
+    const user = userEvent.setup();
+    const view = render(<RankingPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Technical Events' }));
+    view.rerender(<RankingPage />);
+
+    expect(screen.getByText('Technical events')).toBeInTheDocument();
+    expect(screen.getByText('Technical Event Filters')).toBeInTheDocument();
+    expect(screen.getByText('250日高値')).toBeInTheDocument();
+    expect(screen.getByText('items:2')).toBeInTheDocument();
+    expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: true, limit: 50 }), true);
   });
 
   it('navigates to indices when an index row is selected', async () => {

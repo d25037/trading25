@@ -1,6 +1,7 @@
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import type { RankingParams } from '@/types/ranking';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -13,13 +14,6 @@ export const RANKING_LOOKBACK_OPTIONS = [
   { value: 5, label: '5 days' },
   { value: 10, label: '10 days' },
   { value: 20, label: '20 days' },
-];
-
-const LIMIT_OPTIONS = [
-  { value: 10, label: '10' },
-  { value: 20, label: '20' },
-  { value: 50, label: '50' },
-  { value: 100, label: '100' },
 ];
 
 const PERIOD_OPTIONS = [
@@ -43,7 +37,7 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
       <div className="space-y-1 pb-3">
         <SectionEyebrow>Filter Rail</SectionEyebrow>
         <h2 className="text-base font-semibold text-foreground">Ranking Filters</h2>
-        <p className="text-xs text-muted-foreground">Adjust market scope, ranking window, and reference session.</p>
+        <p className="text-xs text-muted-foreground">Adjust market scope, comparison window, and reference session.</p>
       </div>
       <div className="space-y-3">
         <MarketsSelect
@@ -59,21 +53,56 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           id="ranking-lookbackDays"
           label="Lookback Days"
         />
-        <NumberSelect
-          value={params.limit || 20}
-          onChange={(v) => updateParam('limit', v)}
-          options={LIMIT_OPTIONS}
-          id="ranking-limit"
-          label="Results per ranking"
+        <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
+      </div>
+    </Surface>
+  );
+}
+
+export function TechnicalEventFilters({ params, onChange }: RankingFiltersProps) {
+  const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
+    onChange({ ...params, [key]: value });
+  };
+
+  return (
+    <Surface className="p-4">
+      <div className="space-y-1 pb-3">
+        <SectionEyebrow>Filter Rail</SectionEyebrow>
+        <h2 className="text-base font-semibold text-foreground">Technical Events</h2>
+        <p className="text-xs text-muted-foreground">Find stocks making range highs or lows within the selected scope.</p>
+      </div>
+      <div className="space-y-3">
+        <MarketsSelect
+          value={params.markets || 'prime'}
+          onChange={(v) => updateParam('markets', v)}
+          options={RANKING_MARKET_OPTIONS}
+          id="ranking-technical-markets"
         />
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="ranking-technical-event-type">
+            Event Type
+          </label>
+          <Select
+            value={params.technicalEventType || 'periodHigh'}
+            onValueChange={(value) => updateParam('technicalEventType', value as RankingParams['technicalEventType'])}
+          >
+            <SelectTrigger id="ranking-technical-event-type" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="periodHigh">New High</SelectItem>
+              <SelectItem value="periodLow">New Low</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <NumberSelect
           value={params.periodDays || 250}
           onChange={(v) => updateParam('periodDays', v)}
           options={PERIOD_OPTIONS}
-          id="ranking-periodDays"
-          label="Period Days (High/Low)"
+          id="ranking-technical-periodDays"
+          label="Period Days"
         />
-        <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
+        <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-technical-date" />
       </div>
     </Surface>
   );

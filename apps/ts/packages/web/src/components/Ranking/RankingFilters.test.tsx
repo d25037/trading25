@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RankingParams } from '@/types/ranking';
-import { RankingFilters } from './RankingFilters';
+import { RankingFilters, TechnicalEventFilters } from './RankingFilters';
 
 vi.mock('@/components/shared/filters', () => ({
   DateInput: ({
@@ -23,22 +24,31 @@ vi.mock('@/components/shared/filters', () => ({
     </button>
   ),
   NumberSelect: ({ label, onChange, id }: { label: string; onChange: (value: number) => void; id: string }) => (
-    <button
-      type="button"
-      data-testid={id}
-      onClick={() => onChange(label === 'Lookback Days' ? 5 : label === 'Results per ranking' ? 50 : 120)}
-    >
+    <button type="button" data-testid={id} onClick={() => onChange(label === 'Lookback Days' ? 5 : 120)}>
       {label}
     </button>
   ),
+}));
+
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ children, onValueChange }: { children: ReactNode; onValueChange: (value: string) => void }) => (
+    <button type="button" data-testid="technical-event-type" onClick={() => onValueChange('periodLow')}>
+      {children}
+    </button>
+  ),
+  SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  SelectTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  SelectValue: () => <span>Event Type Value</span>,
 }));
 
 describe('RankingFilters', () => {
   const defaultParams: RankingParams = {
     markets: 'prime',
     lookbackDays: 1,
-    limit: 20,
+    limit: 0,
     periodDays: 250,
+    technicalEventType: 'periodHigh',
   };
 
   it('renders filter card with title', () => {
@@ -51,8 +61,8 @@ describe('RankingFilters', () => {
     render(<RankingFilters params={defaultParams} onChange={vi.fn()} />);
 
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
-    expect(screen.getByText('Results per ranking')).toBeInTheDocument();
-    expect(screen.getByText('Period Days (High/Low)')).toBeInTheDocument();
+    expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
+    expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
 
   it('wires filter callbacks into ranking params updates', () => {
@@ -71,18 +81,6 @@ describe('RankingFilters', () => {
       lookbackDays: 5,
     });
 
-    fireEvent.click(screen.getByTestId('ranking-limit'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      limit: 50,
-    });
-
-    fireEvent.click(screen.getByTestId('ranking-periodDays'));
-    expect(onChange).toHaveBeenLastCalledWith({
-      ...defaultParams,
-      periodDays: 120,
-    });
-
     fireEvent.click(screen.getByTestId('ranking-date'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
@@ -95,7 +93,27 @@ describe('RankingFilters', () => {
 
     expect(screen.getByTestId('ranking-markets')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-limit')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-periodDays')).toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
+  });
+
+  it('renders technical event filters and wires event params', () => {
+    const onChange = vi.fn();
+    render(<TechnicalEventFilters params={defaultParams} onChange={onChange} />);
+
+    expect(screen.getByText('Technical Events')).toBeInTheDocument();
+    expect(screen.getByText('Period Days')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('technical-event-type'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      technicalEventType: 'periodLow',
+    });
+
+    fireEvent.click(screen.getByTestId('ranking-technical-periodDays'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      periodDays: 120,
+    });
   });
 });

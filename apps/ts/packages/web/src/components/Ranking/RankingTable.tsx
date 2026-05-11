@@ -1,4 +1,3 @@
-import { ArrowDownCircle, ArrowUpCircle, DollarSign, TrendingDown, TrendingUp } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import {
@@ -8,11 +7,10 @@ import {
   type EquitySortField,
   type EquitySortOrder,
 } from '@/components/Ranking/EquityRankingTable';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Rankings, RankingType } from '@/types/ranking';
+import type { RankingItem } from '@/types/ranking';
 
 interface RankingTableProps {
-  rankings: Rankings | undefined;
+  items: RankingItem[] | undefined;
   isLoading: boolean;
   error: Error | null;
   onStockClick: (code: string) => void;
@@ -33,14 +31,6 @@ interface RankingTableProps {
   style?: CSSProperties;
   testId?: string;
 }
-
-const rankingTabs: { id: RankingType; label: string; icon: typeof DollarSign }[] = [
-  { id: 'tradingValue', label: '売買代金', icon: DollarSign },
-  { id: 'gainers', label: '値上がり', icon: TrendingUp },
-  { id: 'losers', label: '値下がり', icon: TrendingDown },
-  { id: 'periodHigh', label: '期間高値', icon: ArrowUpCircle },
-  { id: 'periodLow', label: '期間安値', icon: ArrowDownCircle },
-];
 
 function getSortValue(item: EquityRankingItem, field: EquitySortField): number | string | null | undefined {
   if (field === 'tradingValue') {
@@ -82,11 +72,10 @@ function sortEquityItems<T extends EquityRankingItem>(items: T[], field: EquityS
 }
 
 export function RankingTable({
-  rankings,
+  items,
   isLoading,
   error,
   onStockClick,
-  periodDays,
   title = 'Market Rankings',
   eyebrow = 'Results',
   showValuation = false,
@@ -103,22 +92,18 @@ export function RankingTable({
   style,
   testId,
 }: RankingTableProps) {
-  const [activeRankingType, setActiveRankingType] = useState<RankingType>('tradingValue');
-  const [sortState, setSortState] = useState<{ field: EquitySortField; order: EquitySortOrder } | null>(null);
-  const currentItems = rankings?.[activeRankingType] ?? [];
+  const [sortState, setSortState] = useState<{ field: EquitySortField; order: EquitySortOrder }>({
+    field: 'tradingValue',
+    order: 'desc',
+  });
+  const currentItems = items ?? [];
   const displayedItems = useMemo(() => {
-    if (!enableColumnSort || sortState === null) {
+    if (!enableColumnSort) {
       return currentItems;
     }
     return sortEquityItems(currentItems, sortState.field, sortState.order);
   }, [currentItems, enableColumnSort, sortState]);
-  const showChange = showChangeForTradingValue || activeRankingType !== 'tradingValue';
-
-  const getTabLabel = (tab: (typeof rankingTabs)[number]) => {
-    if (tab.id === 'periodHigh') return `${periodDays || 250}日高値`;
-    if (tab.id === 'periodLow') return `${periodDays || 250}日安値`;
-    return tab.label;
-  };
+  const showChange = showChangeForTradingValue;
   const handleColumnSort = (field: EquitySortField) => {
     setSortState((current) => {
       if (current?.field === field) {
@@ -143,18 +128,6 @@ export function RankingTable({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {headerActions}
-            <Select value={activeRankingType} onValueChange={(value) => setActiveRankingType(value as RankingType)}>
-              <SelectTrigger className="h-8 w-[12.5rem] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {rankingTabs.map((tab) => (
-                  <SelectItem key={tab.id} value={tab.id} className="text-xs">
-                    {getTabLabel(tab)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
       </div>
@@ -173,8 +146,8 @@ export function RankingTable({
         sortState={
           enableColumnSort
             ? {
-                field: sortState?.field ?? (activeRankingType === 'tradingValue' ? 'tradingValue' : 'changePercentage'),
-                order: sortState?.order ?? 'desc',
+                field: sortState.field,
+                order: sortState.order,
                 onSort: handleColumnSort,
               }
             : undefined

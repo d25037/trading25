@@ -184,21 +184,25 @@ describe('routeSearch', () => {
   it('roundtrips ranking route state and maps screening ranking tabs', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'fundamentalRanking',
-      dailyView: 'indices',
+      dailyView: 'technicalEvents',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
+      rankingPeriodDays: '120',
+      rankingTechnicalEventType: 'periodLow',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
     expect(rankingState.activeSubTab).toBe('fundamentalRanking');
-    expect(rankingState.activeDailyView).toBe('indices');
+    expect(rankingState.activeDailyView).toBe('technicalEvents');
     expect(serializeRankingSearch(rankingState)).toEqual({
       tab: 'fundamentalRanking',
-      dailyView: 'indices',
+      dailyView: 'technicalEvents',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
+      rankingPeriodDays: 120,
+      rankingTechnicalEventType: 'periodLow',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });

@@ -26,9 +26,10 @@ export const DEFAULT_IN_SESSION_SCREENING_PARAMS: ScreeningParams = {
 
 export const DEFAULT_RANKING_PARAMS: RankingParams = {
   markets: 'prime',
-  limit: 20,
+  limit: 0,
   lookbackDays: 1,
   periodDays: 250,
+  technicalEventType: 'periodHigh',
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {

@@ -572,7 +572,7 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
 
   return (
     <RankingTable
-      rankings={data?.rankings}
+      items={data?.rankings.tradingValue}
       isLoading={isLoading}
       error={error}
       onStockClick={onStockClick}

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Rankings } from '@/types/ranking';
+import type { RankingItem } from '@/types/ranking';
 import { RankingTable } from './RankingTable';
 
 const baseItem = {
@@ -18,20 +18,13 @@ function createItem(index: number) {
     rank: index + 1,
     code: String(7000 + index),
     companyName: `Company ${index + 1}`,
-    tradingValue: 1_000_000_000 + index,
+    tradingValue: 1_000_000_000 + (10 - index) * 1_000,
     changePercentage: (index % 5) - 2,
   };
 }
 
-function createRankings(count: number): Rankings {
-  const items = Array.from({ length: count }, (_, index) => createItem(index));
-  return {
-    tradingValue: items,
-    gainers: items,
-    losers: items,
-    periodHigh: items,
-    periodLow: items,
-  };
+function createItems(count: number): RankingItem[] {
+  return Array.from({ length: count }, (_, index) => createItem(index));
 }
 
 function mockRankingMediaQuery(matches: boolean) {
@@ -55,26 +48,31 @@ describe('RankingTable', () => {
     vi.unstubAllGlobals();
   });
   it('renders trading value rows by default', () => {
-    render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={vi.fn()} />);
+    render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} />);
     expect(screen.getByText('Company 1')).toBeInTheDocument();
-    expect(screen.queryByText('騰落率')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('switches to period tab and updates change header', async () => {
+  it('sorts the full provided item set with table headers', async () => {
     const user = userEvent.setup();
     render(
       <RankingTable
-        rankings={createRankings(5)}
+        items={createItems(5)}
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}
-        periodDays={30}
+        showChangeForTradingValue
+        enableColumnSort
       />
     );
 
-    await user.click(screen.getByRole('combobox'));
-    await user.click(screen.getByRole('option', { name: '30日高値' }));
-    expect(screen.getByText('騰落率')).toBeInTheDocument();
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+
+    await user.click(screen.getByRole('button', { name: /騰落率/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7004');
+
+    await user.click(screen.getByRole('button', { name: /売買代金/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
   });
 
   it('renders mobile ranking cards and keeps stock navigation', async () => {
@@ -82,7 +80,7 @@ describe('RankingTable', () => {
     const onStockClick = vi.fn();
     mockRankingMediaQuery(true);
 
-    render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
+    render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
 
     expect(screen.queryByRole('columnheader', { name: 'コード' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /7000/ })).toHaveTextContent('Company 1');
@@ -94,7 +92,7 @@ describe('RankingTable', () => {
   it('keeps mobile virtualized ranking cards scrollable for long lists', () => {
     mockRankingMediaQuery(true);
     const { container } = render(
-      <RankingTable rankings={createRankings(130)} isLoading={false} error={null} onStockClick={vi.fn()} />
+      <RankingTable items={createItems(130)} isLoading={false} error={null} onStockClick={vi.fn()} />
     );
     const scrollArea = container.querySelector('.overflow-auto');
 
@@ -111,14 +109,14 @@ describe('RankingTable', () => {
   it('calls onStockClick when row is clicked', async () => {
     const user = userEvent.setup();
     const onStockClick = vi.fn();
-    render(<RankingTable rankings={createRankings(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
+    render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={onStockClick} />);
 
     await user.click(screen.getByText('7000'));
     expect(onStockClick).toHaveBeenCalledWith('7000');
   });
 
   it('virtualizes rows when item count exceeds threshold', () => {
-    render(<RankingTable rankings={createRankings(130)} isLoading={false} error={null} onStockClick={vi.fn()} />);
+    render(<RankingTable items={createItems(130)} isLoading={false} error={null} onStockClick={vi.fn()} />);
 
     expect(screen.getByText('Company 1')).toBeInTheDocument();
     expect(screen.queryByText('Company 130')).not.toBeInTheDocument();

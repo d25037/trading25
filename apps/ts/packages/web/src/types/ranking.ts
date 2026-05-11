@@ -13,7 +13,8 @@ export type {
 } from '@trading25/contracts/types/api-response-types';
 
 export type RankingPageTab = 'ranking' | 'fundamentalRanking' | 'valueComposite';
-export type RankingDailyView = 'stocks' | 'indices';
+export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
+export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
 
 // Frontend-specific types
 export interface RankingParams {
@@ -22,6 +23,7 @@ export interface RankingParams {
   markets?: string;
   lookbackDays?: number;
   periodDays?: number;
+  technicalEventType?: RankingTechnicalEventType;
   sector33Name?: string;
   sector17Name?: string;
   includeValuation?: boolean;

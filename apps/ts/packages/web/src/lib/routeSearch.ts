@@ -14,7 +14,7 @@ import {
 } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
+import type { RankingDailyView, RankingPageTab, RankingParams, RankingTechnicalEventType } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 import type {
   ValueCompositeForwardEpsMode,
@@ -77,6 +77,7 @@ export interface ScreeningRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTechnicalEventType?: RankingTechnicalEventType;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -91,6 +92,7 @@ export interface RankingRouteSearch {
   rankingMarkets?: string;
   rankingLookbackDays?: number;
   rankingPeriodDays?: number;
+  rankingTechnicalEventType?: RankingTechnicalEventType;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -135,7 +137,8 @@ const VALUE_COMPOSITE_PROFILE_VALUES: ValueCompositeProfileId[] = [
   'prime_size75_forward_per25',
 ];
 const VALUE_COMPOSITE_FORWARD_EPS_MODE_VALUES: ValueCompositeForwardEpsMode[] = ['latest', 'fy'];
-const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'indices'];
+const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'technicalEvents', 'indices'];
+const RANKING_TECHNICAL_EVENT_TYPES: RankingTechnicalEventType[] = ['periodHigh', 'periodLow'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = [
   'runner',
@@ -225,6 +228,10 @@ function normalizeRankingPageTab(value: unknown): RankingPageTab | undefined {
 
 function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined {
   return normalizeEnum(normalizeString(value), RANKING_DAILY_VIEWS);
+}
+
+function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEventType | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_TECHNICAL_EVENT_TYPES);
 }
 
 function normalizeValueCompositeScoreMethod(value: unknown): ValueCompositeScoreMethod | undefined {
@@ -479,6 +486,7 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTechnicalEventType', normalizeRankingTechnicalEventType(search.rankingTechnicalEventType));
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -500,6 +508,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
     ['markets', search.rankingMarkets],
     ['lookbackDays', search.rankingLookbackDays],
     ['periodDays', search.rankingPeriodDays],
+    ['technicalEventType', search.rankingTechnicalEventType],
   ]);
 
   return {
@@ -545,6 +554,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['markets', search.rankingMarkets],
     ['lookbackDays', search.rankingLookbackDays],
     ['periodDays', search.rankingPeriodDays],
+    ['technicalEventType', search.rankingTechnicalEventType],
   ]);
 
   return {
@@ -687,6 +697,12 @@ export function serializeScreeningSearch(state: {
     typeof state.rankingParams.periodDays === 'number' ? state.rankingParams.periodDays : undefined,
     DEFAULT_RANKING_PARAMS.periodDays
   );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTechnicalEventType',
+    state.rankingParams.technicalEventType,
+    DEFAULT_RANKING_PARAMS.technicalEventType
+  );
 
   assignIfDefinedAndNotDefault(
     next,
@@ -727,6 +743,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
   assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
   assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
+  assignIfDefined(next, 'rankingTechnicalEventType', normalizeRankingTechnicalEventType(search.rankingTechnicalEventType));
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -776,6 +793,12 @@ export function serializeRankingSearch(state: {
     'rankingPeriodDays',
     typeof state.rankingParams.periodDays === 'number' ? state.rankingParams.periodDays : undefined,
     DEFAULT_RANKING_PARAMS.periodDays
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingTechnicalEventType',
+    state.rankingParams.technicalEventType,
+    DEFAULT_RANKING_PARAMS.technicalEventType
   );
 
   assignIfDefinedAndNotDefault(

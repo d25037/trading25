@@ -15,7 +15,13 @@ import {
   SplitSidebar,
   Surface,
 } from '@/components/Layout/Workspace';
-import { IndexPerformanceTable, RANKING_LOOKBACK_OPTIONS, RankingFilters, RankingTable } from '@/components/Ranking';
+import {
+  IndexPerformanceTable,
+  RANKING_LOOKBACK_OPTIONS,
+  RankingFilters,
+  RankingTable,
+  TechnicalEventFilters,
+} from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
 import {
   ValueCompositeRankingFilters,
@@ -39,6 +45,7 @@ const subTabs = [
 
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
+  { value: 'technicalEvents' as RankingDailyView, label: 'Technical Events' },
   { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
 
@@ -162,6 +169,8 @@ function RankingSidebar({
       {activeSubTab === 'ranking' ? (
         activeDailyView === 'indices' ? (
           <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
+        ) : activeDailyView === 'technicalEvents' ? (
+          <TechnicalEventFilters params={rankingParams} onChange={setRankingParams} />
         ) : (
           <RankingFilters params={rankingParams} onChange={setRankingParams} />
         )
@@ -197,7 +206,12 @@ function buildIntroMetaItems(
   return [
     {
       label: 'Mode',
-      value: activeDailyView === 'indices' ? 'Index performance' : 'Daily market ranking',
+      value:
+        activeDailyView === 'indices'
+          ? 'Index performance'
+          : activeDailyView === 'technicalEvents'
+            ? 'Technical events'
+            : 'Daily market ranking',
     },
     { label: 'Markets', value: formatMarketsLabel((rankingParams.markets ?? 'prime').split(',')) },
   ];
@@ -253,13 +267,32 @@ function RankingContent({
     );
   }
 
+  if (activeDailyView === 'technicalEvents') {
+    const eventType = rankingParams.technicalEventType ?? 'periodHigh';
+    const isHigh = eventType === 'periodHigh';
+    return (
+      <RankingTable
+        items={isHigh ? rankingQuery.data?.rankings.periodHigh : rankingQuery.data?.rankings.periodLow}
+        isLoading={rankingQuery.isLoading}
+        error={rankingQuery.error}
+        onStockClick={onStockClick}
+        title={`${rankingParams.periodDays ?? 250}日${isHigh ? '高値' : '安値'}`}
+        eyebrow="Technical Events"
+        showValuation
+        showLiquidity
+        showMarket
+        showChangeForTradingValue
+        enableColumnSort
+      />
+    );
+  }
+
   return (
     <RankingTable
-      rankings={rankingQuery.data?.rankings}
+      items={rankingQuery.data?.rankings.tradingValue}
       isLoading={rankingQuery.isLoading}
       error={rankingQuery.error}
       onStockClick={onStockClick}
-      periodDays={rankingParams.periodDays}
       showValuation
       showLiquidity
       showChangeForTradingValue
@@ -285,7 +318,8 @@ export function RankingPage() {
   const rankingQueryParams = useMemo(
     () => ({
       ...rankingParams,
-      includeValuation: activeDailyView === 'stocks',
+      limit: activeDailyView === 'technicalEvents' ? 50 : activeDailyView === 'indices' ? 20 : rankingParams.limit,
+      includeValuation: activeDailyView !== 'indices',
     }),
     [activeDailyView, rankingParams]
   );
