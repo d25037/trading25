@@ -23,6 +23,7 @@ htmlcov/
 **/coverage/
 **/playwright-report/
 **/test-results/
+.playwright-mcp/
 
 # === OS / Editor ===
 **/.DS_Store
