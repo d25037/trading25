@@ -75,6 +75,41 @@ describe('RankingTable', () => {
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
   });
 
+  it('colors liquidity regimes and forward PER comparisons', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            per: 8,
+            forwardPer: 11,
+            liquidityRegime: 'distribution_stress',
+            liquidityResidualZ: 1.2,
+            adv60ToFreeFloatPct: 8,
+          },
+          {
+            ...createItem(1),
+            per: 13,
+            forwardPer: 7,
+            liquidityRegime: 'stale_liquidity',
+            liquidityResidualZ: -1.4,
+            adv60ToFreeFloatPct: 2,
+          },
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showValuation
+        showLiquidity
+      />
+    );
+
+    expect(screen.getByText('Stress')).toHaveClass('text-yellow-800');
+    expect(screen.getByText('Stale')).toHaveClass('text-red-700');
+    expect(screen.getByText('11.00x')).toHaveClass('text-red-600');
+    expect(screen.getByText('7.00x')).toHaveClass('text-green-600');
+  });
+
   it('renders mobile ranking cards and keeps stock navigation', async () => {
     const user = userEvent.setup();
     const onStockClick = vi.fn();

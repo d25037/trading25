@@ -137,9 +137,19 @@ function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): str
 
 function getLiquidityRegimeClass(value: EquityRankingItem['liquidityRegime']): string {
   if (value === 'rerating_participation') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (value === 'distribution_stress') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
-  if (value === 'stale_liquidity') return 'bg-slate-100 text-slate-600 dark:bg-slate-900/60 dark:text-slate-300';
+  if (value === 'distribution_stress') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+  if (value === 'stale_liquidity') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
+function getForwardPerComparisonClass(
+  per: number | null | undefined,
+  forwardPer: number | null | undefined
+): string | undefined {
+  if (per == null || forwardPer == null || !Number.isFinite(per) || !Number.isFinite(forwardPer) || forwardPer === per) {
+    return undefined;
+  }
+  return forwardPer > per ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400';
 }
 
 function SortHeader({
@@ -239,7 +249,11 @@ function EquityCard<T extends EquityRankingItem>({
         {showValuation ? (
           <>
             <Metric label="PER" value={formatRatio(item.per)} />
-            <Metric label="Fwd PER" value={formatRatio(item.forwardPer)} />
+            <Metric
+              label="Fwd PER"
+              value={formatRatio(item.forwardPer)}
+              valueClassName={getForwardPerComparisonClass(item.per, item.forwardPer)}
+            />
           </>
         ) : null}
         {showLiquidity ? (
@@ -253,11 +267,11 @@ function EquityCard<T extends EquityRankingItem>({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
   return (
     <div className="rounded-lg bg-[var(--app-surface-muted)] px-2.5 py-2">
       <p className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</p>
-      <p className="mt-0.5 font-semibold tabular-nums text-foreground">{value}</p>
+      <p className={cn('mt-0.5 font-semibold tabular-nums text-foreground', valueClassName)}>{value}</p>
     </div>
   );
 }
@@ -518,7 +532,14 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       {showValuation ? (
         <>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.per)}</td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPer)}</td>
+          <td
+            className={cn(
+              'px-2 py-1.5 text-right font-medium tabular-nums',
+              getForwardPerComparisonClass(item.per, item.forwardPer)
+            )}
+          >
+            {formatRatio(item.forwardPer)}
+          </td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
         </>
