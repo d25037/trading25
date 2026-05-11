@@ -20,6 +20,7 @@ interface RankingTableProps {
   title?: string;
   eyebrow?: string;
   showValuation?: boolean;
+  showLiquidity?: boolean;
   showMarket?: boolean;
   showChangeForTradingValue?: boolean;
   enableColumnSort?: boolean;
@@ -89,6 +90,7 @@ export function RankingTable({
   title = 'Market Rankings',
   eyebrow = 'Results',
   showValuation = false,
+  showLiquidity = false,
   showMarket = false,
   showChangeForTradingValue = false,
   enableColumnSort = false,
@@ -164,6 +166,7 @@ export function RankingTable({
         onStockClick={onStockClick}
         showChange={showChange}
         showValuation={showValuation}
+        showLiquidity={showLiquidity}
         showMarket={showMarket}
         formatLargeValue={formatLargeValue}
         labels={labels}

@@ -1117,7 +1117,9 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
     expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
     expect(screen.getByText('Prime Liquidity')).toBeInTheDocument();
-    expect(screen.getByText('流動性示唆株価 ADV60')).toBeInTheDocument();
+    expect(screen.getByText('ADV60 / Free Float')).toBeInTheDocument();
+    expect(screen.getByText('3.12%')).toBeInTheDocument();
+    expect(screen.getByText('流動性等価株価 ADV60:')).toBeInTheDocument();
     expect(screen.getByText('1,180円 (+18.0%)')).toBeInTheDocument();
     expect(screen.getByText('Liquidity Residual')).toBeInTheDocument();
     expect(screen.getByText('+1.20 / Re-rating')).toBeInTheDocument();

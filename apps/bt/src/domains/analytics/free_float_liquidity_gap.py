@@ -11,6 +11,10 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.free_float_liquidity_adjustment import (
+    apply_adjusted_free_float_market_cap,
+    load_adjustment_events_by_code,
+)
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
     normalize_code_sql,
@@ -124,6 +128,21 @@ def run_free_float_liquidity_gap_research(
             observation_stride_sessions=observation_stride_sessions,
             market_source=market_source,
         )
+        adjustment_events_by_code = load_adjustment_events_by_code(
+            ctx.connection,
+            codes=sorted(source_df["code"].astype(str).unique().tolist())
+            if not source_df.empty
+            else [],
+            end_date=str(source_df["date"].max()) if not source_df.empty else end_date,
+        )
+        source_df = apply_adjusted_free_float_market_cap(
+            source_df,
+            adjustment_events_by_code=adjustment_events_by_code,
+        )
+        if not source_df.empty:
+            source_df["prior_free_float_market_cap_jpy"] = source_df[
+                "free_float_market_cap_jpy"
+            ]
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
 
@@ -486,8 +505,9 @@ def _query_observation_source(
                 p.*,
                 st.shares_outstanding,
                 st.treasury_shares,
-                p.close * (st.shares_outstanding - COALESCE(st.treasury_shares, 0)) AS free_float_market_cap_jpy,
-                p.close * (st.shares_outstanding - COALESCE(st.treasury_shares, 0)) AS prior_free_float_market_cap_jpy,
+                st.valid_from AS share_disclosed_date,
+                NULL AS free_float_market_cap_jpy,
+                NULL AS prior_free_float_market_cap_jpy,
                 t.topix_close,
                 {", ".join(f"t.forward_topix_close_{horizon}d" for horizon in horizons)},
                 m.company_name,

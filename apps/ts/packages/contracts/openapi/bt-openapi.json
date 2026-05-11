@@ -11029,6 +11029,17 @@
       "RankingItem": {
         "description": "ランキング項目",
         "properties": {
+          "adv60ToFreeFloatPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adv60Tofreefloatpct"
+          },
           "basePrice": {
             "anyOf": [
               {
@@ -11084,6 +11095,34 @@
               }
             ],
             "title": "Forwardper"
+          },
+          "liquidityRegime": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rerating_participation",
+                  "distribution_stress",
+                  "stale_liquidity",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidityregime"
+          },
+          "liquidityResidualZ": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidityresidualz"
           },
           "lookbackDays": {
             "anyOf": [

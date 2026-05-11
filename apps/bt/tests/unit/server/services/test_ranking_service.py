@@ -616,6 +616,133 @@ class TestGetRankings:
         assert len(unlimited.rankings.tradingValue) > len(limited.rankings.tradingValue)
         assert {item.sector33Name for item in unlimited.rankings.tradingValue} == {"情報通信"}
 
+    def test_include_valuation_adds_prime_liquidity_metrics_as_of_target_date(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        dates = [
+            (calendar_date(2024, 1, 1) + timedelta(days=offset)).isoformat()
+            for offset in range(70)
+        ]
+        target_date = dates[-1]
+        future_disclosed_date = (
+            calendar_date.fromisoformat(target_date) + timedelta(days=1)
+        ).isoformat()
+        conn.execute("""
+            CREATE TABLE stock_data_raw (
+                code TEXT NOT NULL,
+                date TEXT NOT NULL,
+                adjustment_factor REAL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO stock_data_raw VALUES (?, ?, ?)",
+            ("1000", "2024-02-20", 0.5),
+        )
+        for idx in range(105):
+            code = f"{1000 + idx}"
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    code,
+                    f"Prime Liquidity {idx}",
+                    f"PL{idx}",
+                    "prime",
+                    "P",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            shares_outstanding = 1_000_000 + idx * 10_000
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    type_of_document, forecast_eps, bps, shares_outstanding,
+                    treasury_shares
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    code,
+                    "2023-12-31",
+                    10.0,
+                    "FY",
+                    "FYFinancialStatements",
+                    12.0,
+                    100.0,
+                    shares_outstanding,
+                    0.0,
+                ),
+            )
+            if idx == 0:
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        type_of_document, forecast_eps, bps, shares_outstanding,
+                        treasury_shares
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        code,
+                        future_disclosed_date,
+                        10.0,
+                        "FY",
+                        "FYFinancialStatements",
+                        12.0,
+                        100.0,
+                        100_000_000.0,
+                        0.0,
+                    ),
+                )
+            base_volume = 100_000 if idx == 0 else 1_000 + idx * 20
+            for day_idx, trade_date in enumerate(dates):
+                price = 100.0 + day_idx + idx * 0.1
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        trade_date,
+                        price,
+                        price + 1.0,
+                        price - 1.0,
+                        price,
+                        base_volume,
+                        1.0,
+                        None,
+                    ),
+                )
+        conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(
+            date=target_date,
+            markets="prime",
+            limit=200,
+            include_valuation=True,
+        )
+        reader.close()
+
+        item = next(row for row in result.rankings.tradingValue if row.code == "1000")
+        assert item.liquidityResidualZ is not None
+        assert item.liquidityRegime in {
+            "rerating_participation",
+            "distribution_stress",
+            "stale_liquidity",
+            "neutral",
+        }
+        assert item.adv60ToFreeFloatPct is not None
+        assert item.adv60ToFreeFloatPct == pytest.approx(
+            (13_950_000.0 / (169.0 * 2_000_000.0)) * 100.0,
+            rel=1e-4,
+        )
+        assert item.adv60ToFreeFloatPct < 5.0
+
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)
 

@@ -234,13 +234,7 @@ function LiquidityProfileStrip({ profile }: { profile: ApiLiquidityProfile | nul
           20d/60d {formatSignedPercent(profile.recentReturn20dPct)} / {formatSignedPercent(profile.recentReturn60dPct)}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <ChartHeaderInfoField
-          label={`流動性示唆株価 ADV${primary.advWindow}`}
-          value={`${formatYenPrice(primary.liquidityImpliedPrice)} (${formatSignedPercent(
-            primary.liquidityImpliedPriceGapPct
-          )})`}
-        />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <ChartHeaderInfoField
           label={`ADV${primary.advWindow} / Free Float`}
           value={formatPercent(primary.freeFloatTradingValueRatioPct, 2)}
@@ -259,6 +253,13 @@ function LiquidityProfileStrip({ profile }: { profile: ApiLiquidityProfile | nul
               : formatMarketCap(primary.averageTradingValue ?? null)
           }
         />
+      </div>
+      <div className="mt-2 text-[11px] text-muted-foreground">
+        流動性等価株価 ADV{primary.advWindow}:{' '}
+        <span className="font-medium text-foreground">
+          {formatYenPrice(primary.liquidityImpliedPrice)} (
+          {formatSignedPercent(primary.liquidityImpliedPriceGapPct)})
+        </span>
       </div>
     </div>
   );

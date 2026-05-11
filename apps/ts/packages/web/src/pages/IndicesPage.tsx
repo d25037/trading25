@@ -580,6 +580,7 @@ function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight
       eyebrow="Daily Ranking"
       periodDays={data?.periodDays}
       showValuation
+      showLiquidity
       showMarket
       showChangeForTradingValue
       enableColumnSort

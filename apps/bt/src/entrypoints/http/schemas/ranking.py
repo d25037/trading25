@@ -28,6 +28,12 @@ ValueCompositeScoreUnavailableReason = Literal[
     "bps_missing",
     "not_rankable",
 ]
+LiquidityRegime = Literal[
+    "rerating_participation",
+    "distribution_stress",
+    "stale_liquidity",
+    "neutral",
+]
 
 
 class RankingItem(BaseModel):
@@ -51,6 +57,9 @@ class RankingItem(BaseModel):
     forwardPer: float | None = None
     pbr: float | None = None
     marketCap: float | None = None
+    liquidityResidualZ: float | None = None
+    liquidityRegime: LiquidityRegime | None = None
+    adv60ToFreeFloatPct: float | None = None
 
 
 class Rankings(BaseModel):

@@ -22,6 +22,7 @@ from src.shared.utils.market_code_alias import (
 )
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
+    adjust_free_float_shares_to_price_basis,
     adjust_share_count_to_price_basis,
     resolve_latest_quarterly_share_snapshot,
 )
@@ -54,6 +55,7 @@ from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
     FundamentalRankingItem,
     FundamentalRankings,
+    LiquidityRegime,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
@@ -358,6 +360,13 @@ def _limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:
     return " LIMIT ?", (limit,)
 
 
+@dataclass(frozen=True)
+class _PrimeLiquidityMetrics:
+    liquidity_residual_z: float
+    liquidity_regime: LiquidityRegime
+    adv60_to_free_float_pct: float
+
+
 class RankingService:
     """マーケットランキングサービス"""
 
@@ -540,6 +549,10 @@ class RankingService:
                 (trading_value, gainers, losers, period_high, period_low),
                 target_date=target_date,
                 query_market_codes=query_market_codes,
+            )
+            self._enrich_ranking_collections_with_prime_liquidity(
+                (trading_value, gainers, losers, period_high, period_low),
+                target_date=target_date,
             )
         index_performance = self._load_index_performance(
             target_date, lookback_days=lookback_days
@@ -1151,6 +1164,281 @@ class RankingService:
                 item.forwardPer = valuation.forwardPer
                 item.pbr = valuation.pbr
                 item.marketCap = valuation.marketCap
+
+    def _enrich_ranking_collections_with_prime_liquidity(
+        self,
+        collections: tuple[list[RankingItem], ...],
+        *,
+        target_date: str,
+    ) -> None:
+        items_by_code: dict[str, list[RankingItem]] = {}
+        for collection in collections:
+            for item in collection:
+                items_by_code.setdefault(_normalize_equity_code(item.code), []).append(item)
+        if not items_by_code:
+            return
+
+        liquidity_by_code = self._load_prime_liquidity_metrics(target_date)
+        for code, items in items_by_code.items():
+            metrics = liquidity_by_code.get(code)
+            if metrics is None:
+                continue
+            for item in items:
+                item.liquidityResidualZ = metrics.liquidity_residual_z
+                item.liquidityRegime = metrics.liquidity_regime
+                item.adv60ToFreeFloatPct = metrics.adv60_to_free_float_pct
+
+    def _load_prime_liquidity_metrics(
+        self,
+        target_date: str,
+    ) -> dict[str, _PrimeLiquidityMetrics]:
+        """Build Prime ADV60-vs-free-float residuals using data as of target_date."""
+        if not target_date:
+            return {}
+
+        _, prime_market_codes = resolve_market_codes("prime")
+        if not prime_market_codes:
+            return {}
+
+        start_date = (
+            pd.Timestamp(target_date) - pd.Timedelta(days=60 * 4 + 30)
+        ).strftime("%Y-%m-%d")
+        market_placeholders = ",".join("?" for _ in prime_market_codes)
+        stock_code = _normalized_code_sql("s.code")
+        price_code = _normalized_code_sql("sd.code")
+        statement_code = _normalized_code_sql("st.code")
+        price_order = _prefer_4digit_order_sql("sd.code")
+        statement_order = _prefer_4digit_order_sql("st.code")
+        adjustment_events_by_code = self._load_adjustment_events_by_code(
+            target_date=target_date,
+            market_codes=prime_market_codes,
+        )
+        rows = self._reader.query(
+            f"""
+            WITH prime_codes AS (
+                SELECT DISTINCT {stock_code} AS code
+                FROM stocks s
+                WHERE lower(trim(s.market_code)) IN ({market_placeholders})
+            ),
+            price_base AS (
+                SELECT code, date, close, volume
+                FROM (
+                    SELECT
+                        {price_code} AS code,
+                        sd.date,
+                        sd.close,
+                        sd.volume,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {price_code}, sd.date
+                            ORDER BY {price_order}
+                        ) AS rn
+                    FROM stock_data sd
+                    WHERE sd.date >= ?
+                      AND sd.date <= ?
+                      AND sd.close > 0
+                      AND sd.volume IS NOT NULL
+                )
+                WHERE rn = 1
+            ),
+            prime_price AS (
+                SELECT price_base.*
+                FROM price_base
+                JOIN prime_codes USING (code)
+            ),
+            price_features AS (
+                SELECT
+                    *,
+                    AVG(close * volume) OVER (
+                        PARTITION BY code ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS adv60_jpy,
+                    COUNT(*) OVER (
+                        PARTITION BY code ORDER BY date
+                        ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                    ) AS adv60_count,
+                    LAG(close, 20) OVER (PARTITION BY code ORDER BY date) AS close_20d_ago,
+                    LAG(close, 60) OVER (PARTITION BY code ORDER BY date) AS close_60d_ago
+                FROM prime_price
+            ),
+            statement_base AS (
+                SELECT code, disclosed_date, shares_outstanding, treasury_shares
+                FROM (
+                    SELECT
+                        {statement_code} AS code,
+                        st.disclosed_date,
+                        st.shares_outstanding,
+                        st.treasury_shares,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {statement_code}, st.disclosed_date
+                            ORDER BY {statement_order}
+                        ) AS rn
+                    FROM statements st
+                    WHERE st.disclosed_date <= ?
+                      AND st.shares_outstanding > 0
+                )
+                WHERE rn = 1
+            ),
+            statement_asof AS (
+                SELECT code, disclosed_date, shares_outstanding, treasury_shares
+                FROM (
+                    SELECT
+                        code,
+                        disclosed_date,
+                        shares_outstanding,
+                        treasury_shares,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY code
+                            ORDER BY disclosed_date DESC
+                        ) AS asof_rn
+                    FROM statement_base
+                )
+                WHERE asof_rn = 1
+            )
+            SELECT
+                pf.code,
+                pf.close,
+                CASE WHEN pf.adv60_count >= 60 THEN pf.adv60_jpy ELSE NULL END AS adv60_jpy,
+                pf.close_20d_ago,
+                pf.close_60d_ago,
+                st.disclosed_date,
+                st.shares_outstanding,
+                st.treasury_shares
+            FROM price_features pf
+            JOIN statement_asof st USING (code)
+            WHERE pf.date = ?
+              AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
+            ORDER BY pf.code
+            """,
+            (*prime_market_codes, start_date, target_date, target_date, target_date),
+        )
+
+        samples: list[dict[str, float | str | None]] = []
+        for row in rows:
+            code = _normalize_equity_code(row["code"])
+            adv60 = _finite_or_none(row["adv60_jpy"])
+            close = _finite_or_none(row["close"])
+            shares_outstanding = _finite_or_none(row["shares_outstanding"])
+            free_float_shares = adjust_free_float_shares_to_price_basis(
+                shares_outstanding,
+                _finite_or_none(row["treasury_shares"]),
+                adjustment_events_by_code.get(code, []),
+                from_date=_str_or_none(row["disclosed_date"]),
+                through_date=target_date,
+            )
+            free_float_market_cap = (
+                close * free_float_shares
+                if close is not None and free_float_shares is not None
+                else None
+            )
+            if (
+                adv60 is None
+                or free_float_market_cap is None
+                or close is None
+                or adv60 <= 0
+                or free_float_market_cap <= 0
+            ):
+                continue
+            close_20d_ago = _finite_or_none(row["close_20d_ago"])
+            close_60d_ago = _finite_or_none(row["close_60d_ago"])
+            recent_return_20d_pct = (
+                (close / close_20d_ago - 1.0) * 100.0
+                if close_20d_ago is not None and close_20d_ago > 0
+                else None
+            )
+            recent_return_60d_pct = (
+                (close / close_60d_ago - 1.0) * 100.0
+                if close_60d_ago is not None and close_60d_ago > 0
+                else None
+            )
+            samples.append(
+                {
+                    "code": code,
+                    "adv60": adv60,
+                    "free_float_market_cap": free_float_market_cap,
+                    "recent_return_20d_pct": recent_return_20d_pct,
+                    "recent_return_60d_pct": recent_return_60d_pct,
+                }
+            )
+
+        if len(samples) < 100:
+            return {}
+
+        regression = self._fit_log_liquidity_regression(samples)
+        if regression is None:
+            return {}
+        alpha, beta, residual_std = regression
+        if beta <= 0 or residual_std <= 0:
+            return {}
+
+        metrics_by_code: dict[str, _PrimeLiquidityMetrics] = {}
+        for sample in samples:
+            adv60 = cast(float, sample["adv60"])
+            free_float_market_cap = cast(float, sample["free_float_market_cap"])
+            expected_log_adv = alpha + beta * math.log(free_float_market_cap)
+            residual = math.log(adv60) - expected_log_adv
+            residual_z = residual / residual_std
+            metrics_by_code[cast(str, sample["code"])] = _PrimeLiquidityMetrics(
+                liquidity_residual_z=round(residual_z, 4),
+                liquidity_regime=self._classify_prime_liquidity_regime(
+                    residual_z,
+                    cast(float | None, sample["recent_return_20d_pct"]),
+                    cast(float | None, sample["recent_return_60d_pct"]),
+                ),
+                adv60_to_free_float_pct=round(
+                    (adv60 / free_float_market_cap) * 100.0,
+                    4,
+                ),
+            )
+        return metrics_by_code
+
+    @staticmethod
+    def _fit_log_liquidity_regression(
+        samples: list[dict[str, float | str | None]],
+    ) -> tuple[float, float, float] | None:
+        x_values = [math.log(cast(float, sample["free_float_market_cap"])) for sample in samples]
+        y_values = [math.log(cast(float, sample["adv60"])) for sample in samples]
+        count = len(x_values)
+        if count < 3:
+            return None
+        x_mean = sum(x_values) / count
+        y_mean = sum(y_values) / count
+        x_var = sum((value - x_mean) ** 2 for value in x_values)
+        if x_var <= 0:
+            return None
+        xy_cov = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, y_values, strict=True))
+        beta = xy_cov / x_var
+        alpha = y_mean - beta * x_mean
+        residual_sum_sq = sum(
+            (y - (alpha + beta * x)) ** 2
+            for x, y in zip(x_values, y_values, strict=True)
+        )
+        dof = count - 2
+        if dof <= 0:
+            return None
+        residual_std = math.sqrt(residual_sum_sq / dof)
+        if not all(math.isfinite(value) for value in (alpha, beta, residual_std)):
+            return None
+        return alpha, beta, residual_std
+
+    @staticmethod
+    def _classify_prime_liquidity_regime(
+        residual_z: float,
+        recent_return_20d_pct: float | None,
+        recent_return_60d_pct: float | None,
+    ) -> LiquidityRegime:
+        valid_returns = [
+            value
+            for value in (recent_return_20d_pct, recent_return_60d_pct)
+            if value is not None
+        ]
+        if residual_z >= 1.0 and len(valid_returns) == 2:
+            if all(value >= 0 for value in valid_returns):
+                return "rerating_participation"
+            if any(value < 0 for value in valid_returns):
+                return "distribution_stress"
+        if residual_z <= -1.0:
+            return "stale_liquidity"
+        return "neutral"
 
     def _append_value_composite_technical_metrics(
         self,

@@ -198,6 +198,18 @@ relatedExperiments = [
   "market-behavior/new-high-momentum-research",
 ]
 
+[experiments."market-behavior/free-float-liquidity-implied-price-convergence"]
+family = "Market Behavior"
+status = "observed"
+decision = "Prime の liquidity_implied_price は price target ではない。正方向の巨大 gap は 500営業日でも固定 target closure が小さく、gap 縮小は株価到達より ADV 剥落による implied price 側の低下が主因。Symbol Workbench では participation/capacity/regime diagnostic として扱う。"
+promotedSurface = "Research"
+riskFlags = ["prime-only", "liquidity-diagnostic", "not-price-target", "pit-daily-cross-section", "implied-price-decay"]
+relatedExperiments = [
+  "market-behavior/free-float-liquidity-prime-momentum-interaction",
+  "market-behavior/free-float-liquidity-regime-decomposition",
+  "market-behavior/free-float-liquidity-gap",
+]
+
 [experiments."market-behavior/margin-balance-supply-demand"]
 family = "Supply Demand"
 status = "candidate"

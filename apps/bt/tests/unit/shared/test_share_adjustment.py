@@ -2,6 +2,7 @@ import pytest
 
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
+    adjust_free_float_shares_to_price_basis,
     adjust_share_count_to_price_basis,
     cumulative_adjustment_factor_after,
 )
@@ -47,3 +48,17 @@ def test_cumulative_adjustment_factor_after_multiplies_events_in_window() -> Non
     )
 
     assert factor == pytest.approx(0.2)
+
+
+def test_adjust_free_float_shares_to_price_basis_adjusts_treasury_together() -> None:
+    events = [ShareAdjustmentEvent(date="2026-03-30", adjustment_factor=1 / 6)]
+
+    adjusted = adjust_free_float_shares_to_price_basis(
+        295_863_421,
+        19_933_231,
+        events,
+        from_date="2026-02-09",
+        through_date="2026-05-08",
+    )
+
+    assert adjusted == pytest.approx((295_863_421 - 19_933_231) * 6)

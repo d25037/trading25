@@ -133,3 +133,31 @@ def adjust_share_count_to_price_basis(
     if not math.isfinite(factor) or factor <= 0:
         return share_value
     return share_value / factor
+
+
+def adjust_free_float_shares_to_price_basis(
+    shares_outstanding: float | int | None,
+    treasury_shares: float | int | None,
+    events: Iterable[ShareAdjustmentEvent],
+    *,
+    from_date: str | None,
+    through_date: str | None,
+) -> float | None:
+    """Adjust disclosed outstanding/treasury shares and return free-float shares."""
+    adjusted_outstanding = adjust_share_count_to_price_basis(
+        shares_outstanding,
+        events,
+        from_date=from_date,
+        through_date=through_date,
+    )
+    if adjusted_outstanding is None:
+        return None
+    adjusted_treasury = adjust_share_count_to_price_basis(
+        treasury_shares or 0.0,
+        events,
+        from_date=from_date,
+        through_date=through_date,
+        allow_zero=True,
+    )
+    free_float_shares = adjusted_outstanding - (adjusted_treasury or 0.0)
+    return free_float_shares if free_float_shares > 0 else None

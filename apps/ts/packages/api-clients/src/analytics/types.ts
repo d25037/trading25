@@ -48,6 +48,9 @@ export interface RankingItem {
   forwardPer?: number | null;
   pbr?: number | null;
   marketCap?: number | null;
+  liquidityResidualZ?: number | null;
+  liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  adv60ToFreeFloatPct?: number | null;
 }
 
 export interface Rankings {

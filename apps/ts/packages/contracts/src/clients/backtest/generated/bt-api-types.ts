@@ -8064,6 +8064,8 @@ export interface components {
          * @description ランキング項目
          */
         RankingItem: {
+            /** Adv60Tofreefloatpct */
+            adv60ToFreeFloatPct?: number | null;
             /** Baseprice */
             basePrice?: number | null;
             /** Changeamount */
@@ -8078,6 +8080,10 @@ export interface components {
             currentPrice: number;
             /** Forwardper */
             forwardPer?: number | null;
+            /** Liquidityregime */
+            liquidityRegime?: ("rerating_participation" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
+            /** Liquidityresidualz */
+            liquidityResidualZ?: number | null;
             /** Lookbackdays */
             lookbackDays?: number | null;
             /** Marketcap */

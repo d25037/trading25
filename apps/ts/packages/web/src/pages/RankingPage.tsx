@@ -261,6 +261,7 @@ function RankingContent({
       onStockClick={onStockClick}
       periodDays={rankingParams.periodDays}
       showValuation
+      showLiquidity
       showChangeForTradingValue
       enableColumnSort
     />

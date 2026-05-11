@@ -6,7 +6,16 @@ import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
 import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 
-export type EquitySortField = 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
+export type EquitySortField =
+  | 'tradingValue'
+  | 'changePercentage'
+  | 'code'
+  | 'per'
+  | 'forwardPer'
+  | 'pbr'
+  | 'marketCap'
+  | 'liquidityResidualZ'
+  | 'adv60ToFreeFloatPct';
 export type EquitySortOrder = 'asc' | 'desc';
 export type EquityRankingLabels = Record<
   'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
@@ -28,6 +37,9 @@ export interface EquityRankingItem {
   forwardPer?: number | null;
   pbr?: number | null;
   marketCap?: number | null;
+  liquidityResidualZ?: number | null;
+  liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  adv60ToFreeFloatPct?: number | null;
 }
 
 interface EquityRankingTableProps<T extends EquityRankingItem> {
@@ -38,6 +50,7 @@ interface EquityRankingTableProps<T extends EquityRankingItem> {
   showChange?: boolean;
   showMarket?: boolean;
   showValuation?: boolean;
+  showLiquidity?: boolean;
   emptyMessage?: string;
   emptySubMessage?: string;
   formatLargeValue?: (value: number | null | undefined) => string;
@@ -102,6 +115,32 @@ function formatChangePercentage(value: number | null | undefined): string {
   return `${sign}${value.toFixed(2)}%`;
 }
 
+function formatSignedNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}`;
+}
+
+function formatPercent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return `${value.toFixed(2)}%`;
+}
+
+function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): string {
+  if (value === 'rerating_participation') return 'Rerating';
+  if (value === 'distribution_stress') return 'Stress';
+  if (value === 'stale_liquidity') return 'Stale';
+  if (value === 'neutral') return 'Neutral';
+  return '-';
+}
+
+function getLiquidityRegimeClass(value: EquityRankingItem['liquidityRegime']): string {
+  if (value === 'rerating_participation') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (value === 'distribution_stress') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+  if (value === 'stale_liquidity') return 'bg-slate-100 text-slate-600 dark:bg-slate-900/60 dark:text-slate-300';
+  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
 function SortHeader({
   field,
   sortState,
@@ -143,6 +182,7 @@ function EquityCard<T extends EquityRankingItem>({
   onStockClick,
   showChange,
   showValuation,
+  showLiquidity,
   formatLargeValue,
   labels,
 }: {
@@ -150,6 +190,7 @@ function EquityCard<T extends EquityRankingItem>({
   onStockClick: (code: string) => void;
   showChange: boolean;
   showValuation: boolean;
+  showLiquidity: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
 }) {
@@ -198,6 +239,12 @@ function EquityCard<T extends EquityRankingItem>({
             <Metric label="Fwd PER" value={formatRatio(item.forwardPer)} />
           </>
         ) : null}
+        {showLiquidity ? (
+          <>
+            <Metric label="流動性Z" value={formatSignedNumber(item.liquidityResidualZ)} />
+            <Metric label="ADV60/FF" value={formatPercent(item.adv60ToFreeFloatPct)} />
+          </>
+        ) : null}
       </div>
     </button>
   );
@@ -217,6 +264,7 @@ function EquityCardList<T extends EquityRankingItem>({
   onStockClick,
   showChange,
   showValuation,
+  showLiquidity,
   formatLargeValue,
   labels,
   paddingTop,
@@ -227,6 +275,7 @@ function EquityCardList<T extends EquityRankingItem>({
   onStockClick: (code: string) => void;
   showChange: boolean;
   showValuation: boolean;
+  showLiquidity: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
   paddingTop: number;
@@ -243,6 +292,7 @@ function EquityCardList<T extends EquityRankingItem>({
           onStockClick={onStockClick}
           showChange={showChange}
           showValuation={showValuation}
+          showLiquidity={showLiquidity}
           formatLargeValue={formatLargeValue}
           labels={labels}
         />
@@ -258,6 +308,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   showChange,
   showMarket,
   showValuation,
+  showLiquidity,
   formatLargeValue,
   labels,
   sortState,
@@ -271,6 +322,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   showChange: boolean;
   showMarket: boolean;
   showValuation: boolean;
+  showLiquidity: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
   sortState?: EquityRankingTableProps<T>['sortState'];
@@ -285,6 +337,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
         showChange={showChange}
         showMarket={showMarket}
         showValuation={showValuation}
+        showLiquidity={showLiquidity}
         labels={labels}
         sortState={sortState}
       />
@@ -302,6 +355,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
             showChange={showChange}
             showMarket={showMarket}
             showValuation={showValuation}
+            showLiquidity={showLiquidity}
             formatLargeValue={formatLargeValue}
           />
         ))}
@@ -319,12 +373,14 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
   showChange,
   showMarket,
   showValuation,
+  showLiquidity,
   labels,
   sortState,
 }: {
   showChange: boolean;
   showMarket: boolean;
   showValuation: boolean;
+  showLiquidity: boolean;
   labels: EquityRankingLabels;
   sortState?: EquityRankingTableProps<T>['sortState'];
 }) {
@@ -342,6 +398,7 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
         <th className="w-24 px-2 py-1.5 text-left">{labels.sector}</th>
         <th className="w-24 px-2 py-1.5 text-right">{labels.price}</th>
         {showValuation ? <ValuationHeaders labels={labels} sortState={sortState} /> : null}
+        {showLiquidity ? <LiquidityHeaders sortState={sortState} /> : null}
         <th className="w-28 px-2 py-1.5 text-right">
           <SortHeader field="tradingValue" sortState={sortState} align="right">
             {labels.tradingValue}
@@ -356,6 +413,28 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
         ) : null}
       </tr>
     </thead>
+  );
+}
+
+function LiquidityHeaders<T extends EquityRankingItem>({
+  sortState,
+}: {
+  sortState?: EquityRankingTableProps<T>['sortState'];
+}) {
+  return (
+    <>
+      <th className="w-20 px-2 py-1.5 text-right">
+        <SortHeader field="liquidityResidualZ" sortState={sortState} align="right">
+          流動性Z
+        </SortHeader>
+      </th>
+      <th className="w-24 px-2 py-1.5 text-center">状態</th>
+      <th className="w-24 px-2 py-1.5 text-right">
+        <SortHeader field="adv60ToFreeFloatPct" sortState={sortState} align="right">
+          ADV60/FF
+        </SortHeader>
+      </th>
+    </>
   );
 }
 
@@ -398,6 +477,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   showChange,
   showMarket,
   showValuation,
+  showLiquidity,
   formatLargeValue,
 }: {
   item: T;
@@ -405,6 +485,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   showChange: boolean;
   showMarket: boolean;
   showValuation: boolean;
+  showLiquidity: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
 }) {
   const isPositive = (item.changePercentage ?? 0) >= 0;
@@ -425,6 +506,22 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPer)}</td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
+        </>
+      ) : null}
+      {showLiquidity ? (
+        <>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatSignedNumber(item.liquidityResidualZ)}</td>
+          <td className="px-2 py-1.5 text-center">
+            <span
+              className={cn(
+                'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                getLiquidityRegimeClass(item.liquidityRegime)
+              )}
+            >
+              {formatLiquidityRegime(item.liquidityRegime)}
+            </span>
+          </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatPercent(item.adv60ToFreeFloatPct)}</td>
         </>
       ) : null}
       <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
@@ -452,6 +549,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
   showChange = false,
   showMarket = false,
   showValuation = false,
+  showLiquidity = false,
   emptyMessage = 'No ranking data available',
   emptySubMessage = 'Try a different date or market',
   formatLargeValue = formatNullableTradingValue,
@@ -466,7 +564,8 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     rowHeight: isMobileLayout ? CARD_ROW_HEIGHT : ROW_HEIGHT,
     viewportHeight: VIEWPORT_HEIGHT,
   });
-  const columnCount = 6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 4 : 0);
+  const columnCount =
+    6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 4 : 0) + (showLiquidity ? 3 : 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
@@ -485,6 +584,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             onStockClick={onStockClick}
             showChange={showChange}
             showValuation={showValuation}
+            showLiquidity={showLiquidity}
             formatLargeValue={formatLargeValue}
             labels={resolvedLabels}
             paddingTop={virtual.paddingTop}
@@ -498,6 +598,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             showChange={showChange}
             showMarket={showMarket}
             showValuation={showValuation}
+            showLiquidity={showLiquidity}
             formatLargeValue={formatLargeValue}
             labels={resolvedLabels}
             sortState={sortState}

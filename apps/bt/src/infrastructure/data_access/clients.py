@@ -31,7 +31,10 @@ from src.shared.utils.snapshot_ids import (
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
 )
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_free_float_shares_to_price_basis,
+)
 
 from .mode import should_use_direct_db
 
@@ -258,6 +261,68 @@ def _row_value(row: Any, key: str) -> Any:
         return row[key]
     except (KeyError, TypeError):
         return getattr(row, key)
+
+
+def _to_float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if pd.notna(number) else None
+
+
+def _market_table_exists(reader: MarketDbReader, table_name: str) -> bool:
+    row = reader.query_one(
+        """
+        SELECT 1 AS exists
+        FROM information_schema.tables
+        WHERE lower(table_name) = lower(?)
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    return row is not None
+
+
+def _load_stock_adjustment_events_by_code(
+    reader: MarketDbReader,
+    *,
+    codes: list[str],
+    target_date: str,
+) -> dict[str, list[ShareAdjustmentEvent]]:
+    if not codes or not _market_table_exists(reader, "stock_data_raw"):
+        return {}
+    placeholders = ",".join("?" for _ in codes)
+    normalize_code_sql = (
+        "CASE WHEN length(code) IN (5, 6) AND right(code, 1) = '0' "
+        "THEN substr(code, 1, length(code) - 1) ELSE code END"
+    )
+    rows = reader.query(
+        f"""
+        SELECT
+            {normalize_code_sql} AS code,
+            date,
+            adjustment_factor
+        FROM stock_data_raw
+        WHERE {normalize_code_sql} IN ({placeholders})
+          AND date <= ?
+          AND adjustment_factor IS NOT NULL
+          AND adjustment_factor != 1.0
+        ORDER BY code, date
+        """,
+        (*codes, target_date),
+    )
+    grouped: dict[str, list[ShareAdjustmentEvent]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["code"]), []).append(
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+        )
+    return grouped
 
 
 def _group_rows_by_requested_code(
@@ -925,7 +990,7 @@ class DirectMarketClient:
         rows = reader.query(
             f"""
             WITH prime_codes AS (
-                SELECT
+                SELECT DISTINCT
                     CASE
                         WHEN length(code) IN (5, 6) AND right(code, 1) = '0'
                             THEN substr(code, 1, length(code) - 1)
@@ -973,17 +1038,20 @@ class DirectMarketClient:
                 WHERE rn = 1
             ),
             statement_asof AS (
-                SELECT code, shares_outstanding, treasury_shares
+                SELECT code, disclosed_date, shares_outstanding, treasury_shares
                 FROM (
                     SELECT
-                        *,
+                        code,
+                        disclosed_date,
+                        shares_outstanding,
+                        treasury_shares,
                         ROW_NUMBER() OVER (
                             PARTITION BY code
                             ORDER BY disclosed_date DESC
-                        ) AS rn
+                        ) AS asof_rn
                     FROM statement_base
                 )
-                WHERE rn = 1
+                WHERE asof_rn = 1
             ),
             prime_price AS (
                 SELECT price_base.*
@@ -1001,9 +1069,9 @@ class DirectMarketClient:
                 date,
                 close,
                 volume,
+                st.disclosed_date,
                 st.shares_outstanding,
                 st.treasury_shares,
-                close * (st.shares_outstanding - coalesce(st.treasury_shares, 0)) AS free_float_market_cap,
                 {select_adv_columns}
             FROM with_adv
             JOIN statement_asof st USING (code)
@@ -1013,7 +1081,37 @@ class DirectMarketClient:
             """,
             (*prime_codes, start_date, target_date, target_date, target_date),
         )
-        return pd.DataFrame([dict(row.items()) for row in rows])
+        records = [dict(row.items()) for row in rows]
+        if not records:
+            return pd.DataFrame()
+
+        adjustment_events_by_code = _load_stock_adjustment_events_by_code(
+            reader,
+            codes=[str(record["code"]) for record in records],
+            target_date=target_date,
+        )
+        adjusted_records: list[dict[str, Any]] = []
+        for record in records:
+            code = str(record["code"])
+            close = _to_float_or_none(record.get("close"))
+            free_float_shares = adjust_free_float_shares_to_price_basis(
+                _to_float_or_none(record.get("shares_outstanding")),
+                _to_float_or_none(record.get("treasury_shares")),
+                adjustment_events_by_code.get(code, []),
+                from_date=str(record.get("disclosed_date") or ""),
+                through_date=target_date,
+            )
+            free_float_market_cap = (
+                close * free_float_shares
+                if close is not None and free_float_shares is not None
+                else None
+            )
+            if free_float_market_cap is None or free_float_market_cap <= 0:
+                continue
+            adjusted = dict(record)
+            adjusted["free_float_market_cap"] = free_float_market_cap
+            adjusted_records.append(adjusted)
+        return pd.DataFrame(adjusted_records)
 
     def get_stock_adjustment_events(
         self,
