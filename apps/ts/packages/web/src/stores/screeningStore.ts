@@ -30,6 +30,8 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   lookbackDays: 1,
   periodDays: 250,
   technicalEventType: 'periodHigh',
+  sortBy: 'tradingValue',
+  order: 'desc',
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {

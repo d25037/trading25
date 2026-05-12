@@ -530,6 +530,97 @@ class TestGetRankings:
         result = service.get_rankings(date="2024-01-17")
         assert result.date == "2024-01-17"
 
+    def test_include_valuation_uses_latest_adjusted_price_basis_for_old_date(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute("""
+                CREATE TABLE stock_data_raw (
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    adjustment_factor REAL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "99990",
+                    "Split Adjusted",
+                    "SPLIT",
+                    "prime",
+                    "P",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            for trade_date, price in [
+                ("2024-01-17", 500.0),
+                ("2024-01-19", 520.0),
+            ]:
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        "99990",
+                        trade_date,
+                        price,
+                        price,
+                        price,
+                        price,
+                        10_000_000,
+                        1.0,
+                        None,
+                    ),
+                )
+            conn.execute(
+                "INSERT INTO stock_data_raw VALUES (?, ?, ?)",
+                ("99990", "2024-01-18", 0.5),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    type_of_document, forecast_eps, bps, shares_outstanding,
+                    treasury_shares
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "99990",
+                    "2024-01-10",
+                    100.0,
+                    "FY",
+                    "FYFinancialStatements",
+                    125.0,
+                    1000.0,
+                    100.0,
+                    0.0,
+                ),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(
+            date="2024-01-17",
+            markets="prime",
+            limit=200,
+            include_valuation=True,
+        )
+        reader.close()
+
+        item = next(row for row in result.rankings.tradingValue if row.code == "99990")
+        assert item.per == pytest.approx(10.0)
+        assert item.forwardPer == pytest.approx(8.0)
+        assert item.pbr == pytest.approx(1.0)
+        assert item.marketCap == pytest.approx(100_000.0)
+
     def test_market_filter(self, service):
         result = service.get_rankings(markets="standard")
         # standard は 99840 のみ

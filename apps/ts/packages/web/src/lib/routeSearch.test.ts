@@ -148,6 +148,8 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
       rankingPeriodDays: '60',
+      rankingSortBy: 'forwardPer',
+      rankingOrder: 'asc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: '7',
@@ -159,6 +161,8 @@ describe('routeSearch', () => {
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
       rankingPeriodDays: 60,
+      rankingSortBy: 'forwardPer',
+      rankingOrder: 'asc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
@@ -189,6 +193,8 @@ describe('routeSearch', () => {
       rankingLookbackDays: '15',
       rankingPeriodDays: '120',
       rankingTechnicalEventType: 'periodLow',
+      rankingSortBy: 'adv60ToFreeFloatPct',
+      rankingOrder: 'asc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
@@ -203,6 +209,8 @@ describe('routeSearch', () => {
       rankingLookbackDays: 15,
       rankingPeriodDays: 120,
       rankingTechnicalEventType: 'periodLow',
+      rankingSortBy: 'adv60ToFreeFloatPct',
+      rankingOrder: 'asc',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });
@@ -383,6 +391,8 @@ describe('routeSearch', () => {
       validateRankingSearch({
         tab: 'ranking',
         dailyView: 'invalid',
+        rankingSortBy: 'invalid',
+        rankingOrder: 'sideways',
       })
     ).toEqual({
       tab: 'ranking',

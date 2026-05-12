@@ -20,6 +20,7 @@ import {
   RANKING_LOOKBACK_OPTIONS,
   RankingFilters,
   RankingTable,
+  type RankingTableSortState,
   TechnicalEventFilters,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
@@ -85,6 +86,8 @@ interface RankingContentProps {
   rankingQuery: ReturnType<typeof useRanking>;
   fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
   valueCompositeRankingQuery: ReturnType<typeof useValueCompositeRanking>;
+  rankingSortState: RankingTableSortState;
+  onRankingSortChange: (state: RankingTableSortState) => void;
   onStockClick: (code: string) => void;
   onIndexClick: (code: string) => void;
 }
@@ -224,6 +227,8 @@ function RankingContent({
   rankingQuery,
   fundamentalRankingQuery,
   valueCompositeRankingQuery,
+  rankingSortState,
+  onRankingSortChange,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
@@ -283,6 +288,8 @@ function RankingContent({
         showMarket
         showChangeForTradingValue
         enableColumnSort
+        sortState={rankingSortState}
+        onSortChange={onRankingSortChange}
       />
     );
   }
@@ -297,6 +304,8 @@ function RankingContent({
       showLiquidity
       showChangeForTradingValue
       enableColumnSort
+      sortState={rankingSortState}
+      onSortChange={onRankingSortChange}
     />
   );
 }
@@ -315,9 +324,32 @@ export function RankingPage() {
     setValueCompositeRankingParams,
   } = useRankingRouteState();
   const navigate = useNavigate();
+  const rankingSortState = useMemo<RankingTableSortState>(
+    () => ({
+      field: rankingParams.sortBy ?? 'tradingValue',
+      order: rankingParams.order ?? 'desc',
+    }),
+    [rankingParams.sortBy, rankingParams.order]
+  );
+  const handleRankingSortChange = useCallback(
+    (sortState: RankingTableSortState) => {
+      setRankingParams({
+        ...rankingParams,
+        sortBy: sortState.field,
+        order: sortState.order,
+      });
+    },
+    [rankingParams, setRankingParams]
+  );
   const rankingQueryParams = useMemo(
     () => ({
-      ...rankingParams,
+      date: rankingParams.date,
+      markets: rankingParams.markets,
+      lookbackDays: rankingParams.lookbackDays,
+      periodDays: rankingParams.periodDays,
+      technicalEventType: rankingParams.technicalEventType,
+      sector33Name: rankingParams.sector33Name,
+      sector17Name: rankingParams.sector17Name,
       limit: activeDailyView === 'technicalEvents' ? 50 : activeDailyView === 'indices' ? 20 : rankingParams.limit,
       includeValuation: activeDailyView !== 'indices',
     }),
@@ -400,6 +432,8 @@ export function RankingPage() {
             rankingQuery={rankingQuery}
             fundamentalRankingQuery={fundamentalRankingQuery}
             valueCompositeRankingQuery={valueCompositeRankingQuery}
+            rankingSortState={rankingSortState}
+            onRankingSortChange={handleRankingSortChange}
             onStockClick={handleStockClick}
             onIndexClick={handleIndexClick}
           />

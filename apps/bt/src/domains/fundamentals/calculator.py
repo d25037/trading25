@@ -265,12 +265,14 @@ class FundamentalsCalculator:
         price_date: str,
         prefer_consolidated: bool,
         share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
+        price_basis_date: str | None = None,
     ) -> DailyValuationDataPoint | None:
         values = self._calculate_daily_valuation(
             statements,
             {price_date: close},
             prefer_consolidated,
             share_adjustment_events=share_adjustment_events,
+            price_basis_date=price_basis_date,
         )
         return values[-1] if values else None
 
@@ -754,6 +756,7 @@ class FundamentalsCalculator:
         daily_prices: dict[str, float],
         prefer_consolidated: bool,
         share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
+        price_basis_date: str | None = None,
     ) -> list[DailyValuationDataPoint]:
         if not daily_prices:
             return []
@@ -764,17 +767,18 @@ class FundamentalsCalculator:
 
         result: list[DailyValuationDataPoint] = []
         sorted_dates = sorted(daily_prices.keys())
+        effective_price_basis_date = price_basis_date or sorted_dates[-1]
         for date_str in sorted_dates:
             close = daily_prices[date_str]
             baseline_shares = self._adjust_snapshot_shares_to_price_basis(
                 baseline_snapshot,
                 adjustment_events,
-                through_date=date_str,
+                through_date=effective_price_basis_date,
             )
             baseline_treasury_shares = self._adjust_snapshot_shares_to_price_basis(
                 treasury_snapshot,
                 adjustment_events,
-                through_date=date_str,
+                through_date=effective_price_basis_date,
                 allow_zero=True,
             )
             fy_data_points = self._get_applicable_fy_data(

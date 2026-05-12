@@ -390,7 +390,7 @@ class RankingService:
     def _load_adjustment_events_by_code(
         self,
         *,
-        target_date: str,
+        through_date: str,
         market_codes: list[str],
     ) -> dict[str, list[ShareAdjustmentEvent]]:
         if not self._table_exists("stock_data_raw"):
@@ -440,14 +440,21 @@ class RankingService:
             ORDER BY code, date
         """
         grouped: dict[str, list[ShareAdjustmentEvent]] = {}
-        for row in self._reader.query(sql, (target_date, *market_params)):
-            grouped.setdefault(str(row["code"]), []).append(
+        for row in self._reader.query(sql, (through_date, *market_params)):
+            code = _normalize_equity_code(row["code"])
+            grouped.setdefault(code, []).append(
                 ShareAdjustmentEvent(
                     date=str(row["date"]),
                     adjustment_factor=float(row["adjustment_factor"]),
                 )
             )
         return grouped
+
+    def _resolve_stock_price_basis_date(self) -> str:
+        row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+        if row is None or row["max_date"] is None:
+            raise ValueError("No trading data available in database")
+        return str(row["max_date"])
 
     def get_rankings(
         self,
@@ -467,10 +474,7 @@ class RankingService:
         if date:
             target_date = date
         else:
-            row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
-            if row is None or row["max_date"] is None:
-                raise ValueError("No trading data available in database")
-            target_date = row["max_date"]
+            target_date = self._resolve_stock_price_basis_date()
 
         # 5種類のランキングを取得
         if lookback_days > 1:
@@ -545,14 +549,17 @@ class RankingService:
             sector17_name=sector17_name,
         )
         if include_valuation:
+            price_basis_date = self._resolve_stock_price_basis_date()
             self._enrich_ranking_collections_with_valuation(
                 (trading_value, gainers, losers, period_high, period_low),
                 target_date=target_date,
                 query_market_codes=query_market_codes,
+                price_basis_date=price_basis_date,
             )
             self._enrich_ranking_collections_with_prime_liquidity(
                 (trading_value, gainers, losers, period_high, period_low),
                 target_date=target_date,
+                price_basis_date=price_basis_date,
             )
         index_performance = self._load_index_performance(
             target_date, lookback_days=lookback_days
@@ -944,6 +951,7 @@ class RankingService:
             target_date=target_date,
             query_market_codes=query_market_codes,
             forward_eps_mode=forward_eps_mode,
+            price_basis_date=self._resolve_stock_price_basis_date(),
         )
         return ValueCompositeScoreResponse(
             date=target_date,
@@ -1013,8 +1021,9 @@ class RankingService:
         statement_rows = self._load_fundamental_statement_rows(
             target_date, query_market_codes
         )
+        price_basis_date = self._resolve_stock_price_basis_date()
         adjustment_events_by_code = self._load_adjustment_events_by_code(
-            target_date=target_date,
+            through_date=price_basis_date,
             market_codes=query_market_codes,
         )
 
@@ -1053,6 +1062,7 @@ class RankingService:
                 price_date=target_date,
                 prefer_consolidated=True,
                 share_adjustment_events=adjustment_events_by_code.get(code, []),
+                price_basis_date=price_basis_date,
             )
             if valuation is None:
                 continue
@@ -1119,6 +1129,7 @@ class RankingService:
         *,
         target_date: str,
         query_market_codes: list[str],
+        price_basis_date: str,
     ) -> None:
         items_by_code: dict[str, list[RankingItem]] = {}
         for collection in collections:
@@ -1137,7 +1148,7 @@ class RankingService:
                 raw_statements_by_code.setdefault(code, []).append(row)
 
         adjustment_events_by_code = self._load_adjustment_events_by_code(
-            target_date=target_date,
+            through_date=price_basis_date,
             market_codes=query_market_codes,
         )
 
@@ -1156,6 +1167,7 @@ class RankingService:
                 price_date=target_date,
                 prefer_consolidated=True,
                 share_adjustment_events=adjustment_events_by_code.get(code, []),
+                price_basis_date=price_basis_date,
             )
             if valuation is None:
                 continue
@@ -1170,6 +1182,7 @@ class RankingService:
         collections: tuple[list[RankingItem], ...],
         *,
         target_date: str,
+        price_basis_date: str,
     ) -> None:
         items_by_code: dict[str, list[RankingItem]] = {}
         for collection in collections:
@@ -1178,7 +1191,10 @@ class RankingService:
         if not items_by_code:
             return
 
-        liquidity_by_code = self._load_prime_liquidity_metrics(target_date)
+        liquidity_by_code = self._load_prime_liquidity_metrics(
+            target_date,
+            price_basis_date,
+        )
         for code, items in items_by_code.items():
             metrics = liquidity_by_code.get(code)
             if metrics is None:
@@ -1191,6 +1207,7 @@ class RankingService:
     def _load_prime_liquidity_metrics(
         self,
         target_date: str,
+        price_basis_date: str,
     ) -> dict[str, _PrimeLiquidityMetrics]:
         """Build Prime ADV60-vs-free-float residuals using data as of target_date."""
         if not target_date:
@@ -1210,7 +1227,7 @@ class RankingService:
         price_order = _prefer_4digit_order_sql("sd.code")
         statement_order = _prefer_4digit_order_sql("st.code")
         adjustment_events_by_code = self._load_adjustment_events_by_code(
-            target_date=target_date,
+            through_date=price_basis_date,
             market_codes=prime_market_codes,
         )
         rows = self._reader.query(
@@ -1323,7 +1340,7 @@ class RankingService:
                 _finite_or_none(row["treasury_shares"]),
                 adjustment_events_by_code.get(code, []),
                 from_date=_str_or_none(row["disclosed_date"]),
-                through_date=target_date,
+                through_date=price_basis_date,
             )
             free_float_market_cap = (
                 close * free_float_shares
@@ -1999,6 +2016,7 @@ class RankingService:
         target_date: str,
         query_market_codes: list[str],
         forward_eps_mode: ValueCompositeForwardEpsMode,
+        price_basis_date: str,
     ) -> ValueCompositeScoreUnavailableReason:
         price = _to_nullable_float(target_stock["current_price"])
         if price is None or price <= 0:
@@ -2033,7 +2051,7 @@ class RankingService:
             return "not_rankable"
 
         adjustment_events_by_code = self._load_adjustment_events_by_code(
-            target_date=target_date,
+            through_date=price_basis_date,
             market_codes=query_market_codes,
         )
         baseline_snapshot = self._resolve_baseline_share_snapshot(
@@ -2049,7 +2067,7 @@ class RankingService:
             ),
             events_by_code=adjustment_events_by_code,
             code=str(target_stock["code"]),
-            target_date=target_date,
+            target_date=price_basis_date,
         )
         forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
             statements,

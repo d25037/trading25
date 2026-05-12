@@ -97,6 +97,8 @@ vi.mock('@/components/Ranking', () => ({
     showValuation,
     showChangeForTradingValue,
     enableColumnSort,
+    sortState,
+    onSortChange,
   }: {
     items?: unknown[];
     onStockClick: (code: string) => void;
@@ -104,6 +106,8 @@ vi.mock('@/components/Ranking', () => ({
     showValuation?: boolean;
     showChangeForTradingValue?: boolean;
     enableColumnSort?: boolean;
+    sortState?: { field: string; order: 'asc' | 'desc' };
+    onSortChange?: (state: { field: 'forwardPer'; order: 'asc' }) => void;
   }) => (
     <div>
       <span>{title ?? 'Market Rankings'}</span>
@@ -111,8 +115,14 @@ vi.mock('@/components/Ranking', () => ({
       <span>{showValuation ? 'valuation columns enabled' : 'valuation columns disabled'}</span>
       <span>{showChangeForTradingValue ? 'trading value change enabled' : 'trading value change disabled'}</span>
       <span>{enableColumnSort ? 'column sort enabled' : 'column sort disabled'}</span>
+      <span>
+        sort:{sortState?.field ?? 'none'}:{sortState?.order ?? 'none'}
+      </span>
       <button type="button" onClick={() => onStockClick('6758')}>
         Ranking Row
+      </button>
+      <button type="button" onClick={() => onSortChange?.({ field: 'forwardPer', order: 'asc' })}>
+        Sort Forward PER
       </button>
     </div>
   ),
@@ -185,8 +195,23 @@ describe('RankingPage', () => {
     expect(screen.getByText('valuation columns enabled')).toBeInTheDocument();
     expect(screen.getByText('trading value change enabled')).toBeInTheDocument();
     expect(screen.getByText('column sort enabled')).toBeInTheDocument();
+    expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
+    expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
+  });
+
+  it('persists daily ranking table sort in route state', async () => {
+    const user = userEvent.setup();
+    render(<RankingPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Sort Forward PER' }));
+
+    expect(mockSetRankingParams).toHaveBeenCalledWith({
+      ...DEFAULT_RANKING_PARAMS,
+      sortBy: 'forwardPer',
+      order: 'asc',
+    });
   });
 
   it('switches to fundamental ranking tab', async () => {

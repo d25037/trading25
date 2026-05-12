@@ -9,6 +9,11 @@ import {
 } from '@/components/Ranking/EquityRankingTable';
 import type { RankingItem } from '@/types/ranking';
 
+export interface RankingTableSortState {
+  field: EquitySortField;
+  order: EquitySortOrder;
+}
+
 interface RankingTableProps {
   items: RankingItem[] | undefined;
   isLoading: boolean;
@@ -30,6 +35,8 @@ interface RankingTableProps {
   className?: string;
   style?: CSSProperties;
   testId?: string;
+  sortState?: RankingTableSortState;
+  onSortChange?: (state: RankingTableSortState) => void;
 }
 
 function getSortValue(item: EquityRankingItem, field: EquitySortField): number | string | null | undefined {
@@ -91,26 +98,32 @@ export function RankingTable({
   className = 'flex min-h-[24rem] flex-1 flex-col overflow-hidden',
   style,
   testId,
+  sortState,
+  onSortChange,
 }: RankingTableProps) {
-  const [sortState, setSortState] = useState<{ field: EquitySortField; order: EquitySortOrder }>({
+  const [localSortState, setLocalSortState] = useState<RankingTableSortState>({
     field: 'tradingValue',
     order: 'desc',
   });
+  const activeSortState = sortState ?? localSortState;
   const currentItems = items ?? [];
   const displayedItems = useMemo(() => {
     if (!enableColumnSort) {
       return currentItems;
     }
-    return sortEquityItems(currentItems, sortState.field, sortState.order);
-  }, [currentItems, enableColumnSort, sortState]);
+    return sortEquityItems(currentItems, activeSortState.field, activeSortState.order);
+  }, [currentItems, enableColumnSort, activeSortState]);
   const showChange = showChangeForTradingValue;
   const handleColumnSort = (field: EquitySortField) => {
-    setSortState((current) => {
-      if (current?.field === field) {
-        return { field, order: current.order === 'desc' ? 'asc' : 'desc' };
-      }
-      return { field, order: 'desc' };
-    });
+    const nextState: RankingTableSortState =
+      activeSortState.field === field
+        ? { field, order: activeSortState.order === 'desc' ? 'asc' : 'desc' }
+        : { field, order: 'desc' as const };
+    if (onSortChange) {
+      onSortChange(nextState);
+      return;
+    }
+    setLocalSortState(nextState);
   };
 
   return (
@@ -146,8 +159,8 @@ export function RankingTable({
         sortState={
           enableColumnSort
             ? {
-                field: sortState.field,
-                order: sortState.order,
+                field: activeSortState.field,
+                order: activeSortState.order,
                 onSort: handleColumnSort,
               }
             : undefined
