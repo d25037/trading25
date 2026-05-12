@@ -271,6 +271,18 @@ class TestMarketDbBasics:
                 "created_at": "third",
             },
         ])
+        market_db._execute(
+            """
+            INSERT INTO stock_master_intervals (
+                code, valid_from, valid_to, fingerprint, company_name, company_name_english,
+                market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
+                sector_33_name, scale_category, listed_date, created_at
+            ) VALUES (
+                '9999', '2000-01-01', '2000-01-01', 'stale', 'stale', NULL,
+                '0111', 'プライム', '1', 'stale', '1', 'stale', NULL, '', 'stale'
+            )
+            """
+        )
 
         assert market_db.rebuild_stock_master_intervals() == 2
         rows = market_db._fetchall(
@@ -285,6 +297,7 @@ class TestMarketDbBasics:
             ("6758", "2024-01-05", "2024-01-05", "1958-12-01"),
             ("7203", "2024-01-04", "2024-01-05", ""),
         ]
+        assert not market_db._table_exists("__stock_master_intervals_rebuild")
 
     def test_stock_master_daily_pit_query_filters(self, market_db: MarketDb) -> None:
         market_db.upsert_topix_data([

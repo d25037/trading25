@@ -1238,69 +1238,96 @@ class MarketDb:
         self._assert_writable()
         if not self._table_exists("stock_master_daily"):
             return 0
-        self._execute("DELETE FROM stock_master_intervals")
-        self._execute(
-            """
-            INSERT INTO stock_master_intervals (
-                code, valid_from, valid_to, fingerprint, company_name, company_name_english,
-                market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
-                sector_33_name, scale_category, listed_date, created_at
+        rebuild_table = "__stock_master_intervals_rebuild"
+        with self._lock:
+            self._conn.execute(f"DROP TABLE IF EXISTS {rebuild_table}")
+            self._conn.execute(
+                f"""
+                CREATE TABLE {rebuild_table} (
+                    code TEXT,
+                    valid_from TEXT,
+                    valid_to TEXT,
+                    fingerprint TEXT,
+                    company_name TEXT NOT NULL,
+                    company_name_english TEXT,
+                    market_code TEXT NOT NULL,
+                    market_name TEXT NOT NULL,
+                    sector_17_code TEXT NOT NULL,
+                    sector_17_name TEXT NOT NULL,
+                    sector_33_code TEXT NOT NULL,
+                    sector_33_name TEXT NOT NULL,
+                    scale_category TEXT,
+                    listed_date TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY (code, valid_from, fingerprint)
+                )
+                """
             )
-            WITH cleaned AS (
+            self._conn.execute(
+                f"""
+                INSERT INTO {rebuild_table} (
+                    code, valid_from, valid_to, fingerprint, company_name, company_name_english,
+                    market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
+                    sector_33_name, scale_category, listed_date, created_at
+                )
+                WITH cleaned AS (
+                    SELECT
+                        *,
+                        CASE
+                            WHEN listed_date IS NULL THEN ''
+                            WHEN listed_date = date THEN ''
+                            ELSE listed_date
+                        END AS stable_listed_date
+                    FROM stock_master_daily
+                ), fingerprinted AS (
+                    SELECT
+                        *,
+                        md5(concat_ws('|',
+                            coalesce(company_name, ''), coalesce(company_name_english, ''),
+                            coalesce(market_code, ''), coalesce(market_name, ''),
+                            coalesce(sector_17_code, ''), coalesce(sector_17_name, ''),
+                            coalesce(sector_33_code, ''), coalesce(sector_33_name, ''),
+                            coalesce(scale_category, ''), stable_listed_date
+                        )) AS fingerprint
+                    FROM cleaned
+                ), marked AS (
+                    SELECT
+                        *,
+                        CASE
+                            WHEN lag(fingerprint) OVER (PARTITION BY code ORDER BY date) = fingerprint
+                            THEN 0 ELSE 1
+                        END AS starts_new_group
+                    FROM fingerprinted
+                ), grouped AS (
+                    SELECT
+                        *,
+                        sum(starts_new_group) OVER (PARTITION BY code ORDER BY date) AS interval_group
+                    FROM marked
+                )
                 SELECT
-                    *,
-                    CASE
-                        WHEN listed_date IS NULL THEN ''
-                        WHEN listed_date = date THEN ''
-                        ELSE listed_date
-                    END AS stable_listed_date
-                FROM stock_master_daily
-            ), fingerprinted AS (
-                SELECT
-                    *,
-                    md5(concat_ws('|',
-                        coalesce(company_name, ''), coalesce(company_name_english, ''),
-                        coalesce(market_code, ''), coalesce(market_name, ''),
-                        coalesce(sector_17_code, ''), coalesce(sector_17_name, ''),
-                        coalesce(sector_33_code, ''), coalesce(sector_33_name, ''),
-                        coalesce(scale_category, ''), stable_listed_date
-                    )) AS fingerprint
-                FROM cleaned
-            ), marked AS (
-                SELECT
-                    *,
-                    CASE
-                        WHEN lag(fingerprint) OVER (PARTITION BY code ORDER BY date) = fingerprint
-                        THEN 0 ELSE 1
-                    END AS starts_new_group
-                FROM fingerprinted
-            ), grouped AS (
-                SELECT
-                    *,
-                    sum(starts_new_group) OVER (PARTITION BY code ORDER BY date) AS interval_group
-                FROM marked
+                    code,
+                    min(date) AS valid_from,
+                    max(date) AS valid_to,
+                    fingerprint,
+                    any_value(company_name),
+                    any_value(company_name_english),
+                    any_value(market_code),
+                    any_value(market_name),
+                    any_value(sector_17_code),
+                    any_value(sector_17_name),
+                    any_value(sector_33_code),
+                    any_value(sector_33_name),
+                    any_value(scale_category),
+                    any_value(stable_listed_date),
+                    max(created_at)
+                FROM grouped
+                GROUP BY code, interval_group, fingerprint
+                """
             )
-            SELECT
-                code,
-                min(date) AS valid_from,
-                max(date) AS valid_to,
-                fingerprint,
-                any_value(company_name),
-                any_value(company_name_english),
-                any_value(market_code),
-                any_value(market_name),
-                any_value(sector_17_code),
-                any_value(sector_17_name),
-                any_value(sector_33_code),
-                any_value(sector_33_name),
-                any_value(scale_category),
-                any_value(stable_listed_date),
-                max(created_at)
-            FROM grouped
-            GROUP BY code, interval_group, fingerprint
-            """
-        )
-        return self._count_rows("stock_master_intervals")
+            self._conn.execute("DROP TABLE stock_master_intervals")
+            self._conn.execute(f"ALTER TABLE {rebuild_table} RENAME TO stock_master_intervals")
+            row = self._conn.execute("SELECT COUNT(*) FROM stock_master_intervals").fetchone()
+        return int(row[0]) if row is not None else 0
 
     def rebuild_stocks_latest(self) -> int:
         """最新 daily master から stocks_latest と legacy stocks を再構築。"""
