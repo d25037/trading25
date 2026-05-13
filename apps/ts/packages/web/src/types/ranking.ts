@@ -41,4 +41,5 @@ export interface RankingParams {
   includeValuation?: boolean;
   sortBy?: RankingSortField;
   order?: RankingSortOrder;
+  forwardEpsDisclosedWithinDays?: number;
 }

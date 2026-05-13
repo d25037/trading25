@@ -11085,6 +11085,32 @@
             "title": "Currentprice",
             "type": "number"
           },
+          "forwardEpsDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardepsdiscloseddate"
+          },
+          "forwardEpsSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "revised",
+                  "fy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardepssource"
+          },
           "forwardPer": {
             "anyOf": [
               {
@@ -19347,6 +19373,20 @@
               "description": "Include PER, forward PER, PBR, and market cap",
               "title": "Includevaluation",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter.",
+            "in": "query",
+            "name": "forwardEpsDisclosedWithinDays",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter.",
+              "maximum": 3650,
+              "minimum": 0,
+              "title": "Forwardepsdisclosedwithindays",
+              "type": "integer"
             }
           }
         ],

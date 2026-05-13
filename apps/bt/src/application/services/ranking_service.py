@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date as calendar_date, datetime, timedelta
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
@@ -466,6 +466,7 @@ class RankingService:
         sector33_name: str | None = None,
         sector17_name: str | None = None,
         include_valuation: bool = False,
+        forward_eps_disclosed_within_days: int = 0,
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
@@ -476,12 +477,15 @@ class RankingService:
         else:
             target_date = self._resolve_stock_price_basis_date()
 
+        apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
+        query_limit = 0 if apply_forward_eps_filter else limit
+
         # 5種類のランキングを取得
         if lookback_days > 1:
             trading_value = self._ranking_by_trading_value_average(
                 target_date,
                 lookback_days,
-                limit,
+                query_limit,
                 query_market_codes,
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
@@ -489,7 +493,7 @@ class RankingService:
         else:
             trading_value = self._ranking_by_trading_value(
                 target_date,
-                limit,
+                query_limit,
                 query_market_codes,
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
@@ -499,7 +503,7 @@ class RankingService:
             gainers = self._ranking_by_price_change_from_days(
                 target_date,
                 lookback_days,
-                limit,
+                query_limit,
                 query_market_codes,
                 "DESC",
                 sector33_name=sector33_name,
@@ -508,7 +512,7 @@ class RankingService:
             losers = self._ranking_by_price_change_from_days(
                 target_date,
                 lookback_days,
-                limit,
+                query_limit,
                 query_market_codes,
                 "ASC",
                 sector33_name=sector33_name,
@@ -517,7 +521,7 @@ class RankingService:
         else:
             gainers = self._ranking_by_price_change(
                 target_date,
-                limit,
+                query_limit,
                 query_market_codes,
                 "DESC",
                 sector33_name=sector33_name,
@@ -525,7 +529,7 @@ class RankingService:
             )
             losers = self._ranking_by_price_change(
                 target_date,
-                limit,
+                query_limit,
                 query_market_codes,
                 "ASC",
                 sector33_name=sector33_name,
@@ -535,7 +539,7 @@ class RankingService:
         period_high = self._ranking_by_period_high(
             target_date,
             period_days,
-            limit,
+            query_limit,
             query_market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
@@ -543,21 +547,28 @@ class RankingService:
         period_low = self._ranking_by_period_low(
             target_date,
             period_days,
-            limit,
+            query_limit,
             query_market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
+        ranking_collections = (trading_value, gainers, losers, period_high, period_low)
         if include_valuation:
             price_basis_date = self._resolve_stock_price_basis_date()
             self._enrich_ranking_collections_with_valuation(
-                (trading_value, gainers, losers, period_high, period_low),
+                ranking_collections,
                 target_date=target_date,
                 query_market_codes=query_market_codes,
                 price_basis_date=price_basis_date,
             )
+            self._filter_ranking_collections_by_forward_eps_source_date(
+                ranking_collections,
+                target_date=target_date,
+                forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
+            )
+            self._limit_and_rerank_ranking_collections(ranking_collections, limit)
             self._enrich_ranking_collections_with_prime_liquidity(
-                (trading_value, gainers, losers, period_high, period_low),
+                ranking_collections,
                 target_date=target_date,
                 price_basis_date=price_basis_date,
             )
@@ -1174,8 +1185,63 @@ class RankingService:
             for item in items:
                 item.per = valuation.per
                 item.forwardPer = valuation.forwardPer
+                item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate
+                item.forwardEpsSource = valuation.forwardEpsSource
                 item.pbr = valuation.pbr
                 item.marketCap = valuation.marketCap
+
+    @staticmethod
+    def _filter_ranking_collections_by_forward_eps_source_date(
+        collections: tuple[list[RankingItem], ...],
+        *,
+        target_date: str,
+        forward_eps_disclosed_within_days: int,
+    ) -> None:
+        if forward_eps_disclosed_within_days <= 0:
+            return
+
+        try:
+            max_date = datetime.fromisoformat(target_date).date()
+        except ValueError:
+            return
+        min_date = max_date - timedelta(days=forward_eps_disclosed_within_days)
+
+        for collection in collections:
+            collection[:] = [
+                item
+                for item in collection
+                if RankingService._is_forward_eps_source_date_in_window(
+                    item.forwardEpsDisclosedDate,
+                    min_date=min_date,
+                    max_date=max_date,
+                )
+            ]
+
+    @staticmethod
+    def _is_forward_eps_source_date_in_window(
+        disclosed_date: str | None,
+        *,
+        min_date: calendar_date,
+        max_date: calendar_date,
+    ) -> bool:
+        if disclosed_date is None:
+            return False
+        try:
+            source_date = datetime.fromisoformat(disclosed_date).date()
+        except ValueError:
+            return False
+        return min_date <= source_date <= max_date
+
+    @staticmethod
+    def _limit_and_rerank_ranking_collections(
+        collections: tuple[list[RankingItem], ...],
+        limit: int,
+    ) -> None:
+        for collection in collections:
+            if limit > 0:
+                del collection[limit:]
+            for rank, item in enumerate(collection, start=1):
+                item.rank = rank
 
     def _enrich_ranking_collections_with_prime_liquidity(
         self,

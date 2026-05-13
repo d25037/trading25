@@ -198,6 +198,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ forwardEpsDisclosedWithinDays: 0 }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
   });
 
@@ -261,7 +262,10 @@ describe('RankingPage', () => {
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: false, limit: 20 }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeValuation: false, limit: 20, forwardEpsDisclosedWithinDays: 0 }),
+      true
+    );
   });
 
   it('switches daily ranking to technical events view', async () => {
@@ -276,7 +280,10 @@ describe('RankingPage', () => {
     expect(screen.getByText('250日高値')).toBeInTheDocument();
     expect(screen.getByText('items:2')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
-    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeValuation: true, limit: 50 }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeValuation: true, limit: 50, forwardEpsDisclosedWithinDays: 0 }),
+      true
+    );
   });
 
   it('navigates to indices when an index row is selected', async () => {

@@ -87,6 +87,7 @@ export interface ScreeningRouteSearch {
   rankingTechnicalEventType?: RankingTechnicalEventType;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
+  rankingForwardEpsDisclosedWithinDays?: number;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -104,6 +105,7 @@ export interface RankingRouteSearch {
   rankingTechnicalEventType?: RankingTechnicalEventType;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
+  rankingForwardEpsDisclosedWithinDays?: number;
   fundamentalLimit?: number;
   fundamentalMarkets?: string;
   forecastAboveRecentFyActuals?: boolean;
@@ -216,6 +218,16 @@ function normalizePositiveInt(value: unknown): number | undefined {
     }
   }
   return undefined;
+}
+
+function normalizeNonNegativeInt(value: unknown): number | undefined {
+  if (value === 0) {
+    return 0;
+  }
+  if (typeof value === 'string' && value.trim() === '0') {
+    return 0;
+  }
+  return normalizePositiveInt(value);
 }
 
 function normalizeFiniteNumber(value: unknown): number | undefined {
@@ -521,6 +533,11 @@ export function validateScreeningSearch(search: Record<string, unknown>): Screen
   assignIfDefined(next, 'rankingTechnicalEventType', normalizeRankingTechnicalEventType(search.rankingTechnicalEventType));
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
+  assignIfDefined(
+    next,
+    'rankingForwardEpsDisclosedWithinDays',
+    normalizeNonNegativeInt(search.rankingForwardEpsDisclosedWithinDays)
+  );
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -545,6 +562,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
     ['technicalEventType', search.rankingTechnicalEventType],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
+    ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
   ]);
 
   return {
@@ -593,6 +611,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['technicalEventType', search.rankingTechnicalEventType],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
+    ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
   ]);
 
   return {
@@ -743,6 +762,14 @@ export function serializeScreeningSearch(state: {
   );
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingForwardEpsDisclosedWithinDays',
+    typeof state.rankingParams.forwardEpsDisclosedWithinDays === 'number'
+      ? state.rankingParams.forwardEpsDisclosedWithinDays
+      : undefined,
+    DEFAULT_RANKING_PARAMS.forwardEpsDisclosedWithinDays
+  );
 
   assignIfDefinedAndNotDefault(
     next,
@@ -786,6 +813,11 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingTechnicalEventType', normalizeRankingTechnicalEventType(search.rankingTechnicalEventType));
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
+  assignIfDefined(
+    next,
+    'rankingForwardEpsDisclosedWithinDays',
+    normalizeNonNegativeInt(search.rankingForwardEpsDisclosedWithinDays)
+  );
   assignIfDefined(next, 'fundamentalLimit', normalizePositiveInt(search.fundamentalLimit));
   assignIfDefined(next, 'fundamentalMarkets', normalizeString(search.fundamentalMarkets));
   assignIfDefined(next, 'forecastAboveRecentFyActuals', normalizeBoolean(search.forecastAboveRecentFyActuals));
@@ -844,6 +876,14 @@ export function serializeRankingSearch(state: {
   );
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingForwardEpsDisclosedWithinDays',
+    typeof state.rankingParams.forwardEpsDisclosedWithinDays === 'number'
+      ? state.rankingParams.forwardEpsDisclosedWithinDays
+      : undefined,
+    DEFAULT_RANKING_PARAMS.forwardEpsDisclosedWithinDays
+  );
 
   assignIfDefinedAndNotDefault(
     next,

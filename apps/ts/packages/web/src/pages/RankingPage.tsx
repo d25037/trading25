@@ -352,6 +352,8 @@ export function RankingPage() {
       sector17Name: rankingParams.sector17Name,
       limit: activeDailyView === 'technicalEvents' ? 50 : activeDailyView === 'indices' ? 20 : rankingParams.limit,
       includeValuation: activeDailyView !== 'indices',
+      forwardEpsDisclosedWithinDays:
+        activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
     }),
     [activeDailyView, rankingParams]
   );

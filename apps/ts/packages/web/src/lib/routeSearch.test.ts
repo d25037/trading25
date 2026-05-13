@@ -150,6 +150,7 @@ describe('routeSearch', () => {
       rankingPeriodDays: '60',
       rankingSortBy: 'forwardPer',
       rankingOrder: 'asc',
+      rankingForwardEpsDisclosedWithinDays: '126',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: '7',
@@ -163,6 +164,7 @@ describe('routeSearch', () => {
       rankingPeriodDays: 60,
       rankingSortBy: 'forwardPer',
       rankingOrder: 'asc',
+      rankingForwardEpsDisclosedWithinDays: 126,
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
       forecastLookbackFyCount: 7,
@@ -195,6 +197,7 @@ describe('routeSearch', () => {
       rankingTechnicalEventType: 'periodLow',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
+      rankingForwardEpsDisclosedWithinDays: '0',
       fundamentalMarkets: '0112',
       forecastAboveRecentFyActuals: true,
     });

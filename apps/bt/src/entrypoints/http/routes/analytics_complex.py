@@ -87,6 +87,15 @@ async def get_ranking(
     sector33Name: str | None = Query(None, description="Optional TOPIX-33/industry sector name filter"),
     sector17Name: str | None = Query(None, description="Optional TOPIX-17 sector name filter"),
     includeValuation: bool = Query(False, description="Include PER, forward PER, PBR, and market cap"),
+    forwardEpsDisclosedWithinDays: int = Query(
+        0,
+        ge=0,
+        le=3650,
+        description=(
+            "Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. "
+            "Use 0 to disable the filter."
+        ),
+    ),
 ) -> MarketRankingResponse:
     """マーケットランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -106,6 +115,7 @@ async def get_ranking(
             sector33_name=sector33Name,
             sector17_name=sector17Name,
             include_valuation=includeValuation,
+            forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

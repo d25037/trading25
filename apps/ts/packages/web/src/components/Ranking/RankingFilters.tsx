@@ -22,6 +22,13 @@ const PERIOD_OPTIONS = [
   { value: 250, label: '250 days (1Y)' },
 ];
 
+const FORWARD_EPS_DISCLOSURE_OPTIONS = [
+  { value: 0, label: 'All' },
+  { value: 126, label: '126 days' },
+  { value: 63, label: '63 days' },
+  { value: 252, label: '252 days' },
+];
+
 interface RankingFiltersProps {
   params: RankingParams;
   onChange: (params: RankingParams) => void;
@@ -52,6 +59,13 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           options={RANKING_LOOKBACK_OPTIONS}
           id="ranking-lookbackDays"
           label="Lookback Days"
+        />
+        <NumberSelect
+          value={params.forwardEpsDisclosedWithinDays ?? 0}
+          onChange={(v) => updateParam('forwardEpsDisclosedWithinDays', v)}
+          options={FORWARD_EPS_DISCLOSURE_OPTIONS}
+          id="ranking-forward-eps-disclosed-within-days"
+          label="Fwd EPS Disclosure"
         />
         <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
       </div>

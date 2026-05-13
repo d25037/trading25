@@ -23,11 +23,14 @@ vi.mock('@/components/shared/filters', () => ({
       Markets Select
     </button>
   ),
-  NumberSelect: ({ label, onChange, id }: { label: string; onChange: (value: number) => void; id: string }) => (
-    <button type="button" data-testid={id} onClick={() => onChange(label === 'Lookback Days' ? 5 : 120)}>
-      {label}
-    </button>
-  ),
+  NumberSelect: ({ label, onChange, id }: { label: string; onChange: (value: number) => void; id: string }) => {
+    const nextValue = label === 'Lookback Days' ? 5 : label === 'Fwd EPS Disclosure' ? 126 : 120;
+    return (
+      <button type="button" data-testid={id} onClick={() => onChange(nextValue)}>
+        {label}
+      </button>
+    );
+  },
 }));
 
 vi.mock('@/components/ui/select', () => ({
@@ -61,6 +64,7 @@ describe('RankingFilters', () => {
     render(<RankingFilters params={defaultParams} onChange={vi.fn()} />);
 
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
+    expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
@@ -81,6 +85,12 @@ describe('RankingFilters', () => {
       lookbackDays: 5,
     });
 
+    fireEvent.click(screen.getByTestId('ranking-forward-eps-disclosed-within-days'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      forwardEpsDisclosedWithinDays: 126,
+    });
+
     fireEvent.click(screen.getByTestId('ranking-date'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
@@ -93,6 +103,7 @@ describe('RankingFilters', () => {
 
     expect(screen.getByTestId('ranking-markets')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
     expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
   });

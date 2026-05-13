@@ -8,6 +8,7 @@ export interface AnalyticsClientConfig {
 }
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type FundamentalRankingSource = 'revised' | 'fy';
 
 export interface ResponseDiagnostics {
   missing_required_data?: string[];
@@ -46,6 +47,8 @@ export interface RankingItem {
   lookbackDays?: number;
   per?: number | null;
   forwardPer?: number | null;
+  forwardEpsDisclosedDate?: string | null;
+  forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
@@ -93,6 +96,7 @@ export interface MarketRankingParams {
   sector33Name?: string;
   sector17Name?: string;
   includeValuation?: boolean;
+  forwardEpsDisclosedWithinDays?: number;
 }
 
 export interface FundamentalsParams {
@@ -170,7 +174,6 @@ export interface SectorStocksParams {
 
 // ===== FUNDAMENTAL RANKING TYPES =====
 
-export type FundamentalRankingSource = 'revised' | 'fy';
 export type FundamentalRankingMetricKey = string;
 
 export interface FundamentalRankingItem {

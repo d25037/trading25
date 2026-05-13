@@ -621,6 +621,139 @@ class TestGetRankings:
         assert item.pbr == pytest.approx(1.0)
         assert item.marketCap == pytest.approx(100_000.0)
 
+    def test_include_valuation_filters_forward_eps_source_disclosure_before_limit(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            for code, name, price, volume, disclosed_date in [
+                ("77770", "Stale Forward EPS", 10_000.0, 10_000_000, "2023-01-01"),
+                ("77780", "Fresh Forward EPS", 9_000.0, 10_000_000, "2024-01-18"),
+            ]:
+                conn.execute(
+                    "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        name,
+                        "FWD",
+                        "prime",
+                        "P",
+                        "S17",
+                        "情報",
+                        "S33",
+                        "情報通信",
+                        None,
+                        "2000-01-01",
+                        None,
+                        None,
+                    ),
+                )
+                for trade_date in ["2024-01-18", "2024-01-19"]:
+                    conn.execute(
+                        "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            code,
+                            trade_date,
+                            price,
+                            price,
+                            price,
+                            price,
+                            volume,
+                            1.0,
+                            None,
+                        ),
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO statements (
+                        code, disclosed_date, earnings_per_share, type_of_current_period,
+                        type_of_document, forecast_eps, bps, shares_outstanding
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        code,
+                        disclosed_date,
+                        100.0,
+                        "FY",
+                        "FYFinancialStatements",
+                        120.0,
+                        1000.0,
+                        1_000_000.0,
+                    ),
+                )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            forward_eps_disclosed_within_days=252,
+        )
+        reader.close()
+
+        items = result.rankings.tradingValue
+        assert [item.code for item in items] == ["77780"]
+        assert items[0].rank == 1
+        assert items[0].forwardEpsDisclosedDate == "2024-01-18"
+        assert items[0].forwardEpsSource == "fy"
+
+    def test_include_valuation_forward_eps_source_disclosure_filter_can_be_disabled(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "77770",
+                    "Stale Forward EPS",
+                    "FWD",
+                    "prime",
+                    "P",
+                    "S17",
+                    "情報",
+                    "S33",
+                    "情報通信",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                ("77770", "2024-01-19", 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000_000, 1.0, None),
+            )
+            conn.execute(
+                """
+                INSERT INTO statements (
+                    code, disclosed_date, earnings_per_share, type_of_current_period,
+                    type_of_document, forecast_eps, bps, shares_outstanding
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("77770", "2023-01-01", 100.0, "FY", "FYFinancialStatements", 120.0, 1000.0, 1_000_000.0),
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            forward_eps_disclosed_within_days=0,
+        )
+        reader.close()
+
+        assert result.rankings.tradingValue[0].code == "77770"
+        assert result.rankings.tradingValue[0].forwardEpsDisclosedDate == "2023-01-01"
+
     def test_market_filter(self, service):
         result = service.get_rankings(markets="standard")
         # standard は 99840 のみ

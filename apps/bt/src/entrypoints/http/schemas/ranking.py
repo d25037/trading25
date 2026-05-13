@@ -55,6 +55,8 @@ class RankingItem(BaseModel):
     lookbackDays: int | None = None
     per: float | None = None
     forwardPer: float | None = None
+    forwardEpsDisclosedDate: str | None = None
+    forwardEpsSource: Literal["revised", "fy"] | None = None
     pbr: float | None = None
     marketCap: float | None = None
     liquidityResidualZ: float | None = None

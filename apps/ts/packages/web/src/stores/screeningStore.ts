@@ -32,6 +32,7 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   technicalEventType: 'periodHigh',
   sortBy: 'tradingValue',
   order: 'desc',
+  forwardEpsDisclosedWithinDays: 0,
 };
 
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {

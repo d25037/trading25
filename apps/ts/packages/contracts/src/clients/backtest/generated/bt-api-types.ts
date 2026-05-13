@@ -8078,6 +8078,10 @@ export interface components {
             companyName: string;
             /** Currentprice */
             currentPrice: number;
+            /** Forwardepsdiscloseddate */
+            forwardEpsDisclosedDate?: string | null;
+            /** Forwardepssource */
+            forwardEpsSource?: ("revised" | "fy") | null;
             /** Forwardper */
             forwardPer?: number | null;
             /** Liquidityregime */
@@ -11664,6 +11668,8 @@ export interface operations {
                 sector17Name?: string | null;
                 /** @description Include PER, forward PER, PBR, and market cap */
                 includeValuation?: boolean;
+                /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
+                forwardEpsDisclosedWithinDays?: number;
             };
             header?: never;
             path?: never;
