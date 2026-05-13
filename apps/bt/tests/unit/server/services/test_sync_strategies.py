@@ -2892,6 +2892,66 @@ async def test_incremental_sync_publishes_options_225_and_synthetic_nikkei() -> 
 
 
 @pytest.mark.asyncio
+async def test_incremental_sync_does_not_fetch_synthetic_underpx_as_jquants_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _seed_rows(*, existing_codes: set[str] | None = None) -> list[dict[str, str | None]]:
+        existing = existing_codes or set()
+        if "0000" in existing:
+            return []
+        return [{
+            "code": "0000",
+            "name": "TOPIX",
+            "name_english": None,
+            "category": "topix",
+            "data_start_date": None,
+            "created_at": "2026-02-10T00:00:00+00:00",
+        }]
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies.get_index_catalog_codes",
+        lambda: {"0000"},
+    )
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies.build_index_master_seed_rows",
+        _seed_rows,
+    )
+
+    market_db = DummyMarketDb(
+        latest_trading_date="20260206",
+        latest_indices_data_dates={
+            "0000": "20260206",
+            "N225_UNDERPX": "20260206",
+        },
+    )
+    market_db.index_master_rows.append({
+        "code": "N225_UNDERPX",
+        "name": "日経平均",
+        "category": "synthetic",
+        "data_start_date": "2026-02-06",
+    })
+
+    client = DummyClient()
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert all(
+        not (
+            path == "/indices/bars/daily"
+            and (params or {}).get("code") == "N225_UNDERPX"
+        )
+        for path, params in client.calls
+    )
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_backfills_options_225_from_full_topix_dates_when_anchor_missing() -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
     market_db.topix_rows = [
@@ -3410,6 +3470,60 @@ async def test_indices_only_sync_collects_errors_and_continues_other_codes(
     assert len(market_db.indices_rows) == 1
     assert any(stage == "indices_master" for stage, *_ in progresses)
     assert any(stage == "indices_data" for stage, *_ in progresses)
+
+
+@pytest.mark.asyncio
+async def test_indices_only_sync_does_not_fetch_synthetic_underpx_as_jquants_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _seed_rows(*, existing_codes: set[str] | None = None) -> list[dict[str, str | None]]:
+        existing = existing_codes or set()
+        if "0000" in existing:
+            return []
+        return [{
+            "code": "0000",
+            "name": "TOPIX",
+            "name_english": None,
+            "category": "topix",
+            "data_start_date": None,
+            "created_at": "2026-02-10T00:00:00+00:00",
+        }]
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies.get_index_catalog_codes",
+        lambda: {"0000"},
+    )
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies.build_index_master_seed_rows",
+        _seed_rows,
+    )
+
+    market_db = DummyMarketDb()
+    market_db.index_master_rows.append({
+        "code": "N225_UNDERPX",
+        "name": "日経平均",
+        "category": "synthetic",
+        "data_start_date": "2026-02-06",
+    })
+    client = IndicesOnlyClient()
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IndicesOnlySyncStrategy().execute(ctx)
+
+    assert result.success
+    assert all(
+        not (
+            path == "/indices/bars/daily"
+            and (params or {}).get("code") == "N225_UNDERPX"
+        )
+        for path, params in client.calls
+    )
 
 
 @pytest.mark.asyncio

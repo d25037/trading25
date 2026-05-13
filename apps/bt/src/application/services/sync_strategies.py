@@ -13,7 +13,7 @@ import math
 import re
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Awaitable, Callable, Literal, NoReturn, Protocol, cast
+from typing import Any, Awaitable, Callable, Iterable, Literal, NoReturn, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -76,6 +76,11 @@ class SyncClientLike(Protocol):  # pragma: no cover
         path: str,
         params: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]: ...
+
+
+_LOCAL_SYNTHETIC_INDEX_CODES = {
+    OPTIONS_225_SYNTHETIC_INDEX_CODE,
+}
 
 
 class SyncMarketDbLike(Protocol):  # pragma: no cover
@@ -1181,8 +1186,8 @@ class IndicesOnlySyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             known_master_codes = await _seed_index_master_from_catalog(ctx)
-            target_codes = sorted(get_index_catalog_codes() | known_master_codes)
-            target_code_set = {_normalize_index_code(code) for code in target_codes}
+            target_codes = _jquants_index_fetch_codes(get_index_catalog_codes() | known_master_codes)
+            target_code_set = set(target_codes)
 
             # 2. 各指数のデータ取得
             ctx.on_progress("indices_data", 1, total_steps, f"Fetching data for {len(target_codes)} indices...")
@@ -1941,11 +1946,13 @@ class IncrementalSyncStrategy:
                 if _normalize_index_code(code)
             }
             target_codes = sorted(
-                get_index_catalog_codes()
-                | set(latest_index_dates.keys())
-                | known_master_codes
+                _jquants_index_fetch_codes(
+                    get_index_catalog_codes()
+                    | set(latest_index_dates.keys())
+                    | known_master_codes
+                )
             )
-            target_code_set = {_normalize_index_code(code) for code in target_codes}
+            target_code_set = set(target_codes)
 
             # code 指定同期の補完として、日付指定で新規コードを探索する。
             latest_index_date = _latest_date(list(latest_index_dates.values()))
@@ -3638,6 +3645,16 @@ async def _seed_index_master_from_catalog(ctx: SyncContext) -> set[str]:
     if seed_rows:
         await asyncio.to_thread(ctx.market_db.upsert_index_master, seed_rows)
     return ctx.market_db.get_index_master_codes()
+
+
+def _jquants_index_fetch_codes(codes: Iterable[str]) -> list[str]:
+    return sorted(
+        {
+            normalized
+            for normalized in (_normalize_index_code(code) for code in codes)
+            if normalized and normalized not in _LOCAL_SYNTHETIC_INDEX_CODES
+        }
+    )
 
 
 async def _upsert_indices_rows_with_master_backfill(
