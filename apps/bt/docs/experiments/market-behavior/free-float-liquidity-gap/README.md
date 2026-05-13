@@ -39,6 +39,18 @@
 | standard | 60 | 133,908 | 1,659 | 0.636 | 0.188 | 1.480 | 10.8 | 5.9 |
 | growth | 60 | 45,222 | 799 | 0.975 | 0.422 | 1.384 | 54.3 | 5.7 |
 
+#### Mean vs Median ADV60 Check
+
+2026-05-13 follow-up で `ADV60` を rolling mean ではなく rolling median でも同条件比較した。mean bundle は `/tmp/trading25-research/market-behavior/free-float-liquidity-gap/phase1_20260513_mean_compare`、median bundle は `/tmp/trading25-research/market-behavior/free-float-liquidity-gap/phase1_20260513_median_compare`。
+
+| market | mean ADV60 R2 | median ADV60 R2 | mean high 60d excess mean % | median high 60d excess mean % | mean high 60d excess median % | median high 60d excess median % | high bucket overlap |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| prime | 0.703 | 0.723 | +1.733 | +1.790 | -0.765 | -0.621 | 93.2% |
+| standard | 0.193 | 0.265 | -0.030 | +0.266 | -5.140 | -4.641 | 85.6% |
+| growth | 0.429 | 0.514 | -0.285 | +0.697 | -8.685 | -7.545 | 81.1% |
+
+median ADV60 は短期 spike の影響を落とすため、各市場で R2 は改善した。特に Standard / Growth では fit の改善が大きい。ただし high residual bucket の解釈は反転しない。Prime は high residual が引き続き participation / re-rating 候補として残り、Standard / Growth は high residual の median excess と win rate がまだ弱い。したがって production implication は変えず、median ADV は robustness check として有用、Symbol Workbench や診断表示では mean と median の乖離を「一時的な売買集中」検出に使う余地がある。
+
 #### Residual Bucket
 
 下表は 60-session forward excess return。high residual は「現在の ADV 水準から見ると free-float cap が足りない」状態、low residual はその逆。

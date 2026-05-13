@@ -32,6 +32,7 @@ def test_free_float_liquidity_gap_builds_regression_and_buckets(tmp_path: Path) 
     )
 
     assert result.market_source == "stock_master_daily_exact_date"
+    assert result.adv_statistic == "mean"
     assert not result.observation_df.empty
     assert {"prime", "standard"}.issubset(set(result.observation_df["market_scope"]))
     assert {"liquidity_residual_z", "liquidity_implied_ffcap_gap_pct"}.issubset(
@@ -50,6 +51,43 @@ def test_free_float_liquidity_gap_builds_regression_and_buckets(tmp_path: Path) 
     assert not change_bucket.empty
     assert {"low", "high"}.issubset(set(residual_bucket["residual_bucket"]))
     assert {"low", "high"}.issubset(set(change_bucket["residual_change_bucket"]))
+
+
+def test_free_float_liquidity_gap_supports_median_adv_statistic(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_liquidity_gap_db(tmp_path / "market.duckdb")
+
+    mean_result = run_free_float_liquidity_gap_research(
+        db_path,
+        adv_windows=(3,),
+        horizons=(2,),
+        adv_statistic="mean",
+        change_window=3,
+        observation_stride_sessions=1,
+        bucket_count=2,
+        min_regression_observations=3,
+    )
+    median_result = run_free_float_liquidity_gap_research(
+        db_path,
+        adv_windows=(3,),
+        horizons=(2,),
+        adv_statistic="median",
+        change_window=3,
+        observation_stride_sessions=1,
+        bucket_count=2,
+        min_regression_observations=3,
+    )
+
+    assert median_result.adv_statistic == "median"
+    assert "rolling median" in median_result.feature_policy
+    merged = mean_result.observation_df.merge(
+        median_result.observation_df,
+        on=["code", "date", "market_scope", "adv_window"],
+        suffixes=("_mean", "_median"),
+    )
+    assert (merged["adv_jpy_mean"] != merged["adv_jpy_median"]).any()
+    assert not median_result.market_regression_df.empty
 
 
 def test_free_float_liquidity_gap_writes_and_loads_bundle(tmp_path: Path) -> None:
@@ -101,6 +139,10 @@ def test_free_float_liquidity_gap_writes_and_loads_bundle(tmp_path: Path) -> Non
     [
         ({"adv_windows": (1,)}, "adv_windows must contain integers greater than 1"),
         ({"horizons": (0,)}, "horizons must be positive"),
+        (
+            {"adv_statistic": "trimmed_mean"},
+            "adv_statistic must be 'mean' or 'median'",
+        ),
         ({"change_window": 0}, "change_window must be positive"),
         (
             {"observation_stride_sessions": 0},

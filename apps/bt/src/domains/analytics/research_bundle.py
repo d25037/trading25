@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from types import UnionType
@@ -423,6 +423,12 @@ def load_dataclass_research_bundle(
             kwargs[field.name] = tables[field.name]
             continue
         if field.name not in metadata:
+            if field.default is not MISSING:
+                kwargs[field.name] = field.default
+                continue
+            if field.default_factory is not MISSING:
+                kwargs[field.name] = field.default_factory()
+                continue
             raise KeyError(
                 f"Research bundle metadata was missing required field '{field.name}'"
             )

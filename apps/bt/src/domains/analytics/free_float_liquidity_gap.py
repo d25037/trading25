@@ -6,7 +6,7 @@ import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -36,6 +36,7 @@ DEFAULT_CHANGE_WINDOW = 20
 DEFAULT_OBSERVATION_STRIDE_SESSIONS = 20
 DEFAULT_BUCKET_COUNT = 5
 DEFAULT_MIN_REGRESSION_OBSERVATIONS = 30
+DEFAULT_ADV_STATISTIC: Literal["mean", "median"] = "mean"
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "observation_df",
     "market_regression_df",
@@ -79,6 +80,7 @@ class FreeFloatLiquidityGapResult:
     residual_bucket_forward_return_df: pd.DataFrame
     residual_change_bucket_forward_return_df: pd.DataFrame
     market_sample_diagnostics_df: pd.DataFrame
+    adv_statistic: Literal["mean", "median"] = DEFAULT_ADV_STATISTIC
 
 
 def run_free_float_liquidity_gap_research(
@@ -88,6 +90,7 @@ def run_free_float_liquidity_gap_research(
     end_date: str | None = None,
     adv_windows: Iterable[int] = DEFAULT_ADV_WINDOWS,
     horizons: Iterable[int] = DEFAULT_HORIZONS,
+    adv_statistic: Literal["mean", "median"] = DEFAULT_ADV_STATISTIC,
     change_window: int = DEFAULT_CHANGE_WINDOW,
     observation_stride_sessions: int = DEFAULT_OBSERVATION_STRIDE_SESSIONS,
     bucket_count: int = DEFAULT_BUCKET_COUNT,
@@ -98,6 +101,7 @@ def run_free_float_liquidity_gap_research(
     _validate_params(
         adv_windows=resolved_adv_windows,
         horizons=resolved_horizons,
+        adv_statistic=adv_statistic,
         change_window=change_window,
         observation_stride_sessions=observation_stride_sessions,
         bucket_count=bucket_count,
@@ -123,6 +127,7 @@ def run_free_float_liquidity_gap_research(
             start_date=start_date,
             end_date=end_date,
             adv_windows=resolved_adv_windows,
+            adv_statistic=adv_statistic,
             horizons=resolved_horizons,
             change_window=change_window,
             observation_stride_sessions=observation_stride_sessions,
@@ -186,12 +191,13 @@ def run_free_float_liquidity_gap_research(
         else None,
         adv_windows=resolved_adv_windows,
         horizons=resolved_horizons,
+        adv_statistic=adv_statistic,
         change_window=int(change_window),
         observation_stride_sessions=int(observation_stride_sessions),
         bucket_count=int(bucket_count),
         min_regression_observations=int(min_regression_observations),
         feature_policy=(
-            "ADV_N uses close*volume rolling mean through the observation close; "
+            f"ADV_N uses close*volume rolling {adv_statistic} through the observation close; "
             "free_float_market_cap uses the latest disclosed shares_outstanding and treasury_shares as of the observation date; "
             "market split uses stock_master_daily exact-date PIT rows when available; "
             "forward returns are close-to-close after the observation date; "
@@ -219,6 +225,7 @@ def write_free_float_liquidity_gap_bundle(
         params={
             "adv_windows": list(result.adv_windows),
             "horizons": list(result.horizons),
+            "adv_statistic": result.adv_statistic,
             "change_window": result.change_window,
             "observation_stride_sessions": result.observation_stride_sessions,
             "bucket_count": result.bucket_count,
@@ -304,6 +311,7 @@ def build_summary_markdown(result: FreeFloatLiquidityGapResult) -> str:
             f"- Market source: `{result.market_source}`",
             f"- Analysis window: `{result.analysis_start_date}` to `{result.analysis_end_date}`",
             f"- ADV windows: `{list(result.adv_windows)}`",
+            f"- ADV statistic: `{result.adv_statistic}`",
             f"- Forward horizons: `{list(result.horizons)}`",
             f"- Change window: `{result.change_window}` sessions",
             f"- Observation stride: `{result.observation_stride_sessions}` sessions",
@@ -332,6 +340,7 @@ def _validate_params(
     *,
     adv_windows: Sequence[int],
     horizons: Sequence[int],
+    adv_statistic: str,
     change_window: int,
     observation_stride_sessions: int,
     bucket_count: int,
@@ -341,6 +350,8 @@ def _validate_params(
         raise ValueError("adv_windows must contain integers greater than 1")
     if not horizons or any(horizon <= 0 for horizon in horizons):
         raise ValueError("horizons must be positive")
+    if adv_statistic not in {"mean", "median"}:
+        raise ValueError("adv_statistic must be 'mean' or 'median'")
     if change_window <= 0:
         raise ValueError("change_window must be positive")
     if observation_stride_sessions <= 0:
@@ -383,6 +394,7 @@ def _query_observation_source(
     start_date: str | None,
     end_date: str | None,
     adv_windows: Sequence[int],
+    adv_statistic: str,
     horizons: Sequence[int],
     change_window: int,
     observation_stride_sessions: int,
@@ -399,9 +411,10 @@ def _query_observation_source(
         date_clauses.append("date <= ?")
         params.append(end_date)
     date_sql = " AND " + " AND ".join(date_clauses) if date_clauses else ""
+    adv_function = "AVG" if adv_statistic == "mean" else "MEDIAN"
     adv_columns = ",\n".join(
         [
-            f"AVG(trading_value_jpy) OVER (PARTITION BY code ORDER BY date ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv_{window}_jpy,\n"
+            f"{adv_function}(trading_value_jpy) OVER (PARTITION BY code ORDER BY date ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv_{window}_jpy,\n"
             f"COUNT(trading_value_jpy) OVER (PARTITION BY code ORDER BY date ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv_{window}_sessions"
             for window in adv_windows
         ]

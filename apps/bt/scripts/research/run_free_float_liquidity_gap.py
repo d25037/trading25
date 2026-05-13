@@ -25,6 +25,7 @@ from scripts.research.common import (  # noqa: E402
 )
 from src.domains.analytics.free_float_liquidity_gap import (  # noqa: E402
     DEFAULT_ADV_WINDOWS,
+    DEFAULT_ADV_STATISTIC,
     DEFAULT_BUCKET_COUNT,
     DEFAULT_CHANGE_WINDOW,
     DEFAULT_HORIZONS,
@@ -59,6 +60,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--horizons",
         default=",".join(str(horizon) for horizon in DEFAULT_HORIZONS),
         help="Comma-separated forward close-to-close horizons in sessions.",
+    )
+    parser.add_argument(
+        "--adv-statistic",
+        choices=("mean", "median"),
+        default=DEFAULT_ADV_STATISTIC,
+        help="Rolling trading-value statistic used for ADV_N.",
     )
     parser.add_argument(
         "--change-window",
@@ -97,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         end_date=args.end_date,
         adv_windows=_parse_positive_ints(args.adv_windows, name="adv-windows"),
         horizons=_parse_positive_ints(args.horizons, name="horizons"),
+        adv_statistic=args.adv_statistic,
         change_window=args.change_window,
         observation_stride_sessions=args.observation_stride_sessions,
         bucket_count=args.bucket_count,
