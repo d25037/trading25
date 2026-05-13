@@ -259,7 +259,7 @@ function EquityCard<T extends EquityRankingItem>({
         {showLiquidity ? (
           <>
             <Metric label="流動性Z" value={formatSignedNumber(item.liquidityResidualZ)} />
-            <Metric label="ADV60/FF" value={formatPercent(item.adv60ToFreeFloatPct)} />
+            <Metric label="Med ADV60/FF" value={formatPercent(item.adv60ToFreeFloatPct)} />
           </>
         ) : null}
       </div>
@@ -458,7 +458,7 @@ function LiquidityHeaders<T extends EquityRankingItem>({
       <th className="w-24 px-2 py-1.5 text-center">状態</th>
       <th className="w-24 px-2 py-1.5 text-right">
         <SortHeader field="adv60ToFreeFloatPct" sortState={sortState} align="right">
-          ADV60/FF
+          Med ADV60/FF
         </SortHeader>
       </th>
     </>

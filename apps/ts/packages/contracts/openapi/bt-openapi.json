@@ -7002,7 +7002,7 @@
         "type": "object"
       },
       "LiquidityProfileWindow": {
-        "description": "Free-float liquidity profile for one ADV window.",
+        "description": "Free-float liquidity profile for one median ADV window.",
         "properties": {
           "advWindow": {
             "description": "ADV window in trading sessions",
@@ -7018,7 +7018,7 @@
                 "type": "null"
               }
             ],
-            "description": "N-day average trading value (JPY)",
+            "description": "N-day median trading value (JPY). Field name is kept for backwards compatibility with existing clients.",
             "title": "Averagetradingvalue"
           },
           "freeFloatTradingValueRatioPct": {
@@ -7030,7 +7030,7 @@
                 "type": "null"
               }
             ],
-            "description": "ADV / free-float market cap (%)",
+            "description": "Median ADV / free-float market cap (%)",
             "title": "Freefloattradingvalueratiopct"
           },
           "liquidityImpliedFreeFloatMarketCap": {
@@ -7042,7 +7042,7 @@
                 "type": "null"
               }
             ],
-            "description": "Free-float market cap implied by current ADV using Prime regression (JPY)",
+            "description": "Free-float market cap implied by current median ADV using Prime regression (JPY)",
             "title": "Liquidityimpliedfreefloatmarketcap"
           },
           "liquidityImpliedPrice": {
@@ -7090,7 +7090,7 @@
                 "type": "null"
               }
             ],
-            "description": "Z-score of log ADV residual against Prime free-float market cap regression",
+            "description": "Z-score of log median ADV residual against Prime free-float market cap regression",
             "title": "Liquidityresidualz"
           },
           "regressionAlpha": {

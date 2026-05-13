@@ -973,7 +973,7 @@ class DirectMarketClient:
         adv_columns = ",\n".join(
             [
                 (
-                    f"AVG(close * volume) OVER (PARTITION BY code ORDER BY date "
+                    f"MEDIAN(close * volume) OVER (PARTITION BY code ORDER BY date "
                     f"ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv{window}_jpy,\n"
                     f"COUNT(*) OVER (PARTITION BY code ORDER BY date "
                     f"ROWS BETWEEN {window - 1} PRECEDING AND CURRENT ROW) AS adv{window}_count"

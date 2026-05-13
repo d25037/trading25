@@ -204,22 +204,26 @@ class DailyValuationDataPoint(BaseModel):
 
 
 class LiquidityProfileWindow(BaseModel):
-    """Free-float liquidity profile for one ADV window."""
+    """Free-float liquidity profile for one median ADV window."""
 
     advWindow: int = Field(..., description="ADV window in trading sessions")
     averageTradingValue: float | None = Field(
-        None, description="N-day average trading value (JPY)"
+        None,
+        description=(
+            "N-day median trading value (JPY). Field name is kept for backwards "
+            "compatibility with existing clients."
+        ),
     )
     freeFloatTradingValueRatioPct: float | None = Field(
-        None, description="ADV / free-float market cap (%)"
+        None, description="Median ADV / free-float market cap (%)"
     )
     liquidityResidualZ: float | None = Field(
         None,
-        description="Z-score of log ADV residual against Prime free-float market cap regression",
+        description="Z-score of log median ADV residual against Prime free-float market cap regression",
     )
     liquidityImpliedFreeFloatMarketCap: float | None = Field(
         None,
-        description="Free-float market cap implied by current ADV using Prime regression (JPY)",
+        description="Free-float market cap implied by current median ADV using Prime regression (JPY)",
     )
     liquidityImpliedPrice: float | None = Field(
         None,

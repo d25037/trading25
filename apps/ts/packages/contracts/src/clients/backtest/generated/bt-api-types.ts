@@ -6465,7 +6465,7 @@ export interface components {
         };
         /**
          * LiquidityProfileWindow
-         * @description Free-float liquidity profile for one ADV window.
+         * @description Free-float liquidity profile for one median ADV window.
          */
         LiquidityProfileWindow: {
             /**
@@ -6475,17 +6475,17 @@ export interface components {
             advWindow: number;
             /**
              * Averagetradingvalue
-             * @description N-day average trading value (JPY)
+             * @description N-day median trading value (JPY). Field name is kept for backwards compatibility with existing clients.
              */
             averageTradingValue?: number | null;
             /**
              * Freefloattradingvalueratiopct
-             * @description ADV / free-float market cap (%)
+             * @description Median ADV / free-float market cap (%)
              */
             freeFloatTradingValueRatioPct?: number | null;
             /**
              * Liquidityimpliedfreefloatmarketcap
-             * @description Free-float market cap implied by current ADV using Prime regression (JPY)
+             * @description Free-float market cap implied by current median ADV using Prime regression (JPY)
              */
             liquidityImpliedFreeFloatMarketCap?: number | null;
             /**
@@ -6505,7 +6505,7 @@ export interface components {
             liquidityRegime?: string | null;
             /**
              * Liquidityresidualz
-             * @description Z-score of log ADV residual against Prime free-float market cap regression
+             * @description Z-score of log median ADV residual against Prime free-float market cap regression
              */
             liquidityResidualZ?: number | null;
             /**

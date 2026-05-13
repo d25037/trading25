@@ -355,22 +355,22 @@ class FundamentalsService:
         recent_return_60d_pct: float | None,
     ) -> LiquidityProfileWindow:
         adv_column = f"adv{adv_window}_jpy"
-        average_trading_value = self._average_trading_value(
+        median_trading_value = self._median_trading_value(
             price_frame,
             date,
             adv_window,
         )
         base_payload: dict[str, Any] = {
             "advWindow": adv_window,
-            "averageTradingValue": self._round_optional_float(average_trading_value, 2),
+            "averageTradingValue": self._round_optional_float(median_trading_value, 2),
             "freeFloatTradingValueRatioPct": self._round_optional_float(
-                (average_trading_value / free_float_market_cap) * 100.0
-                if average_trading_value is not None and free_float_market_cap > 0
+                (median_trading_value / free_float_market_cap) * 100.0
+                if median_trading_value is not None and free_float_market_cap > 0
                 else None,
                 4,
             ),
         }
-        if average_trading_value is None or regression_panel.empty:
+        if median_trading_value is None or regression_panel.empty:
             return LiquidityProfileWindow(**base_payload)
 
         panel = regression_panel[[adv_column, "free_float_market_cap"]].copy()
@@ -394,7 +394,7 @@ class FundamentalsService:
         if beta <= 0 or residual_std <= 0:
             return LiquidityProfileWindow(**base_payload)
 
-        log_adv = float(np.log(average_trading_value))
+        log_adv = float(np.log(median_trading_value))
         log_ffcap = float(np.log(free_float_market_cap))
         expected_log_adv = alpha + beta * log_ffcap
         residual = log_adv - expected_log_adv
@@ -425,7 +425,7 @@ class FundamentalsService:
         )
 
     @staticmethod
-    def _average_trading_value(
+    def _median_trading_value(
         price_frame: pd.DataFrame,
         date: str,
         window: int,
@@ -438,7 +438,7 @@ class FundamentalsService:
         trading_value = (close * volume).dropna()
         if len(trading_value) < window:
             return None
-        value = float(trading_value.mean())
+        value = float(trading_value.median())
         return value if value > 0 else None
 
     @staticmethod

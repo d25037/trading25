@@ -1331,7 +1331,7 @@ class RankingService:
             price_features AS (
                 SELECT
                     *,
-                    AVG(close * volume) OVER (
+                    MEDIAN(close * volume) OVER (
                         PARTITION BY code ORDER BY date
                         ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
                     ) AS adv60_jpy,
