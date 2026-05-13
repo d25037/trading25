@@ -507,6 +507,77 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.queryByText('2022/3期')).not.toBeInTheDocument();
   });
 
+  it('shows EPS year-over-year delta in FY+xQ mode against the same fiscal period', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2025-06-30',
+            disclosedDate: '2025-08-10',
+            periodType: '1Q',
+            eps: 84,
+            bps: 3200,
+            roe: 10,
+            cashFlowOperating: 320,
+            cashFlowInvesting: -140,
+            cashFlowFinancing: -90,
+            netProfit: 600,
+            equity: 6000,
+          },
+          {
+            date: '2024-06-28',
+            disclosedDate: '2024-08-10',
+            periodType: '1Q',
+            eps: 64,
+            bps: 3160,
+            roe: 9.6,
+            cashFlowOperating: 290,
+            cashFlowInvesting: -120,
+            cashFlowFinancing: -82,
+            netProfit: 570,
+            equity: 5800,
+          },
+          {
+            date: '2025-03-31',
+            disclosedDate: '2025-05-10',
+            periodType: 'FY',
+            eps: 140,
+            bps: 3140,
+            roe: 9.4,
+            cashFlowOperating: 280,
+            cashFlowInvesting: -110,
+            cashFlowFinancing: -80,
+            netProfit: 560,
+            equity: 5700,
+          },
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 150,
+            bps: 3040,
+            roe: 8.5,
+            cashFlowOperating: 230,
+            cashFlowInvesting: -85,
+            cashFlowFinancing: -70,
+            netProfit: 510,
+            equity: 5450,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<FundamentalsHistoryPanel symbol="7203" metricOrder={['eps']} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'FY+xQ 10回分' }));
+
+    const rows = screen.getAllByRole('row');
+    expect(rows[1]?.textContent).toContain('84（＋20）');
+    expect(rows[2]?.textContent).toContain('140（-10）');
+  });
+
   it('can show quarterly-only data after switching to FY+xQ mode', () => {
     mockUseFundamentals.mockReturnValue({
       data: {

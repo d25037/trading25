@@ -842,7 +842,7 @@ describe('SymbolWorkbenchPage', () => {
 
     renderSymbolWorkbenchPage();
 
-    const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
+    const fyHeading = screen.getByRole('heading', { name: '業績履歴' });
     const costStructureHeading = screen.getByRole('heading', { name: 'Cost Structure Analysis' });
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
     const factorHeading = screen.getByRole('heading', { name: 'Factor Regression Analysis' });
@@ -900,7 +900,7 @@ describe('SymbolWorkbenchPage', () => {
     renderSymbolWorkbenchPage();
 
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
-    const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
+    const fyHeading = screen.getByRole('heading', { name: '業績履歴' });
     const factorHeading = screen.getByRole('heading', { name: 'Factor Regression Analysis' });
     const costStructureHeading = screen.getByRole('heading', { name: 'Cost Structure Analysis' });
     const fundamentalsHeading = screen.getByRole('heading', { name: 'Fundamental Analysis' });

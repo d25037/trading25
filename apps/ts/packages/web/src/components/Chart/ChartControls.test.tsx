@@ -521,7 +521,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    await user.click(screen.getByRole('button', { name: 'Earnings History Metrics' }));
     await user.click(screen.getByRole('switch', { name: /^EPS$/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
@@ -538,7 +538,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    await user.click(screen.getByRole('button', { name: 'Earnings History Metrics' }));
     const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
     expect(firstDownButton).toBeDefined();
     if (!firstDownButton) return;
@@ -560,7 +560,7 @@ describe('ChartControls', () => {
 
     renderChartControls();
 
-    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    await user.click(screen.getByRole('button', { name: 'Earnings History Metrics' }));
     const [upButton] = screen.getAllByRole('button', { name: /^Up$/ });
     const [downButton] = screen.getAllByRole('button', { name: /^Down$/ });
     expect(upButton).toBeDefined();

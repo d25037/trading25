@@ -95,7 +95,7 @@ const WORKBENCH_PANEL_LABELS: Record<WorkbenchPanelId, string> = {
   obvFlowScore: 'OBV',
   tradingValueMA: 'Trading Value',
   fundamentals: 'Fundamentals',
-  fundamentalsHistory: 'FY History',
+  fundamentalsHistory: 'Earnings',
   costStructure: 'Cost',
   marginPressure: 'Margin',
   factorRegression: 'Factor',
@@ -625,12 +625,12 @@ function renderOrderedPanelSection({
       );
     case 'fundamentalsHistory':
       return (
-        <div key={panelId} ref={fundamentalsHistorySection.sectionRef} className="h-[340px]">
+        <div key={panelId} ref={fundamentalsHistorySection.sectionRef} className="h-[420px]">
           <Surface className="h-full overflow-hidden">
-            <div className="border-b border-border/60 px-4 py-3">
-              <h3 className="text-base font-semibold text-foreground">FY推移</h3>
+            <div className="border-b border-border/60 px-4 py-2.5">
+              <h3 className="text-base font-semibold text-foreground">業績履歴</h3>
             </div>
-            <div className="h-[calc(100%-3.75rem)] p-4">
+            <div className="h-[calc(100%-3.25rem)] p-3">
               <ErrorBoundary>
                 <FundamentalsHistoryPanel
                   symbol={selectedSymbol}

@@ -145,7 +145,7 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
   },
   {
     id: 'show-fundamentals-history-panel',
-    label: 'FY History',
+    label: 'Earnings History',
     settingKey: 'showFundamentalsHistoryPanel',
     panelId: 'fundamentalsHistory',
     kind: 'panel',
@@ -222,8 +222,8 @@ const SETTING_DIALOGS: SettingDialogDefinition[] = [
   },
   {
     id: 'fundamentalsHistoryMetrics',
-    title: 'FY History Metrics',
-    description: 'Toggle and reorder columns shown inside the FY history panel.',
+    title: 'Earnings History Metrics',
+    description: 'Toggle and reorder columns shown inside the earnings history panel.',
     icon: BookOpen,
   },
   {

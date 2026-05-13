@@ -33,6 +33,7 @@ interface ForecastDividendFields {
 }
 
 type HistoryMode = 'fyOnly5' | 'fyAndQuarter10';
+type EpsYoYDeltaByPeriodKey = Map<string, number>;
 
 const HISTORY_MODE_OPTIONS: Array<{ mode: HistoryMode; label: string }> = [
   { mode: 'fyOnly5', label: 'FYのみ5期' },
@@ -66,6 +67,86 @@ function compareByDateAndDisclosedDateDesc(
   const dateComparison = b.date.localeCompare(a.date);
   if (dateComparison !== 0) return dateComparison;
   return b.disclosedDate.localeCompare(a.disclosedDate);
+}
+
+function getPriorYearFiscalMonthKey(period: Pick<ApiFundamentalDataPoint, 'date' | 'periodType'>): string | null {
+  const [yearPart, monthPart] = period.date.split('-');
+  const year = Number.parseInt(yearPart ?? '', 10);
+  if (!Number.isFinite(year) || !monthPart) return null;
+  return `${period.periodType}:${year - 1}-${monthPart}`;
+}
+
+function getFiscalMonthKey(period: Pick<ApiFundamentalDataPoint, 'date' | 'periodType'>): string | null {
+  const [yearPart, monthPart] = period.date.split('-');
+  const year = Number.parseInt(yearPart ?? '', 10);
+  if (!Number.isFinite(year) || !monthPart) return null;
+  return `${period.periodType}:${year}-${monthPart}`;
+}
+
+function getPeriodComparisonKey(period: Pick<ApiFundamentalDataPoint, 'date' | 'periodType'>): string {
+  return `${period.periodType}:${period.date}`;
+}
+
+function getPeriodEps(period: Pick<ApiFundamentalDataPoint, 'adjustedEps' | 'eps'>): number | null {
+  return period.adjustedEps ?? period.eps ?? null;
+}
+
+function formatSignedEpsDelta(delta: number): string {
+  if (delta === 0) return '±0';
+  const sign = delta > 0 ? '＋' : '-';
+  return `${sign}${formatFundamentalValue(Math.abs(delta), 'yen')}`;
+}
+
+function buildEpsYoYDeltaByPeriodKey(periods: ApiFundamentalDataPoint[]): EpsYoYDeltaByPeriodKey {
+  const latestPeriodByFiscalMonthKey = new Map<string, ApiFundamentalDataPoint>();
+  const sortedPeriods = [...periods].sort(compareByDateAndDisclosedDateDesc);
+
+  for (const period of sortedPeriods) {
+    const key = getFiscalMonthKey(period);
+    if (key != null && !latestPeriodByFiscalMonthKey.has(key)) {
+      latestPeriodByFiscalMonthKey.set(key, period);
+    }
+  }
+
+  const deltaByKey: EpsYoYDeltaByPeriodKey = new Map();
+  for (const period of sortedPeriods) {
+    const currentEps = getPeriodEps(period);
+    const priorYearFiscalMonthKey = getPriorYearFiscalMonthKey(period);
+    if (currentEps == null || priorYearFiscalMonthKey == null) continue;
+
+    const priorPeriod = latestPeriodByFiscalMonthKey.get(priorYearFiscalMonthKey);
+    const priorEps = priorPeriod ? getPeriodEps(priorPeriod) : null;
+    if (priorEps == null) continue;
+
+    deltaByKey.set(getPeriodComparisonKey(period), currentEps - priorEps);
+  }
+
+  return deltaByKey;
+}
+
+function renderEps(period: ApiFundamentalDataPoint, epsYoYDelta?: number): React.ReactNode {
+  const eps = getPeriodEps(period);
+  const deltaBadge =
+    epsYoYDelta != null ? (
+      <span
+        className={cn(
+          'text-[11px] font-medium',
+          epsYoYDelta > 0 ? 'text-green-500' : epsYoYDelta < 0 ? 'text-red-500' : 'text-muted-foreground'
+        )}
+        title="前年同期比"
+      >
+        （{formatSignedEpsDelta(epsYoYDelta)}）
+      </span>
+    ) : null;
+
+  if (deltaBadge == null) return formatFundamentalValue(eps, 'yen');
+
+  return (
+    <span className="inline-flex items-baseline justify-end gap-1 whitespace-nowrap">
+      <span>{formatFundamentalValue(eps, 'yen')}</span>
+      {deltaBadge}
+    </span>
+  );
 }
 
 function renderForecastEps(fy: ForecastEpsFields): React.ReactNode {
@@ -115,13 +196,14 @@ const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
 
 function resolveMetricCell(
   period: ApiFundamentalDataPoint,
-  metricId: FundamentalsHistoryMetricId
+  metricId: FundamentalsHistoryMetricId,
+  epsYoYDelta?: number
 ): { className: string; content: React.ReactNode } {
   switch (metricId) {
     case 'eps':
       return {
         className: 'text-foreground',
-        content: formatFundamentalValue(period.adjustedEps ?? period.eps, 'yen'),
+        content: renderEps(period, epsYoYDelta),
       };
     case 'forecastEps':
       return {
@@ -196,6 +278,10 @@ export function FundamentalsHistoryPanel({
     const limit = historyMode === 'fyOnly5' ? 5 : 10;
     return filtered.sort(compareByDateAndDisclosedDateDesc).slice(0, limit);
   }, [data, historyMode]);
+  const epsYoYDeltaByPeriodKey = useMemo(() => {
+    if (historyMode !== 'fyAndQuarter10' || !data?.data) return new Map<string, number>();
+    return buildEpsYoYDeltaByPeriodKey(data.data.filter(hasActualFinancialData));
+  }, [data, historyMode]);
   const visibleMetricOrder = useMemo(
     () => metricOrder.filter((metricId) => metricVisibility[metricId]),
     [metricOrder, metricVisibility]
@@ -219,14 +305,14 @@ export function FundamentalsHistoryPanel({
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="mb-3 flex items-center gap-2 shrink-0">
+      <div className="mb-2 flex items-center gap-2 shrink-0">
         {HISTORY_MODE_OPTIONS.map((option) => (
           <button
             key={option.mode}
             type="button"
             onClick={() => setHistoryMode(option.mode)}
             className={cn(
-              'px-3 py-1.5 text-xs font-medium rounded-md border transition-colors',
+              'px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors',
               historyMode === option.mode
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-background/50 text-muted-foreground border-border/40 hover:bg-background/80 hover:text-foreground'
@@ -251,10 +337,10 @@ export function FundamentalsHistoryPanel({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/30 text-xs text-muted-foreground">
-                  <th className="text-left py-2 px-3 font-medium">期別</th>
-                  <th className="text-left py-2 px-3 font-medium">発表日</th>
+                  <th className="text-left py-1.5 px-2.5 font-medium">期別</th>
+                  <th className="text-left py-1.5 px-2.5 font-medium">発表日</th>
                   {visibleMetricOrder.map((metricId) => (
-                    <th key={metricId} className="text-right py-2 px-3 font-medium">
+                    <th key={metricId} className="text-right py-1.5 px-2.5 font-medium">
                       {FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID[metricId]}
                     </th>
                   ))}
@@ -273,14 +359,18 @@ export function FundamentalsHistoryPanel({
                       key={`${period.date}-${period.disclosedDate}-${period.periodType}`}
                       className="border-b border-border/20 hover:bg-background/40"
                     >
-                      <td className="py-2.5 px-3 font-medium text-foreground">
+                      <td className="py-1.5 px-2.5 font-medium text-foreground">
                         {formatPeriodLabel(period.date, period.periodType)}
                       </td>
-                      <td className="py-2.5 px-3 text-xs text-muted-foreground">{period.disclosedDate}</td>
+                      <td className="py-1.5 px-2.5 text-xs text-muted-foreground">{period.disclosedDate}</td>
                       {visibleMetricOrder.map((metricId) => {
-                        const cell = resolveMetricCell(period, metricId);
+                        const cell = resolveMetricCell(
+                          period,
+                          metricId,
+                          epsYoYDeltaByPeriodKey.get(getPeriodComparisonKey(period))
+                        );
                         return (
-                          <td key={metricId} className={cn('py-2.5 px-3 text-right', cell.className)}>
+                          <td key={metricId} className={cn('py-1.5 px-2.5 text-right', cell.className)}>
                             {cell.content}
                           </td>
                         );
