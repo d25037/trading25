@@ -51,6 +51,20 @@
 
 median ADV60 は短期 spike の影響を落とすため、各市場で R2 は改善した。特に Standard / Growth では fit の改善が大きい。ただし high residual bucket の解釈は反転しない。Prime は high residual が引き続き participation / re-rating 候補として残り、Standard / Growth は high residual の median excess と win rate がまだ弱い。したがって production implication は変えず、median ADV は robustness check として有用、Symbol Workbench や診断表示では mean と median の乖離を「一時的な売買集中」検出に使う余地がある。
 
+同じ follow-up で、Phase 2/3 も mean / median ADV60 入力で再実行した。これは value ranking の liquidity floor ではなく、`recent_return_20d_pct` / `recent_return_60d_pct` と `liquidity_residual_z` を同時に見る Prime momentum interaction 側の確認。入力は Phase 2 bundle `/tmp/trading25-research/market-behavior/free-float-liquidity-regime-decomposition/phase2_20260513_mean_regime_compare` と `/tmp/trading25-research/market-behavior/free-float-liquidity-regime-decomposition/phase2_20260513_median_regime_compare`、Phase 3 bundle `/tmp/trading25-research/market-behavior/free-float-liquidity-prime-momentum-interaction/phase3_20260513_mean_momentum_compare` と `/tmp/trading25-research/market-behavior/free-float-liquidity-prime-momentum-interaction/phase3_20260513_median_momentum_compare`。
+
+| check | mean ADV60 | median ADV60 | 判断 |
+|---|---:|---:|---|
+| `momentum_plus_liquidity` の `liquidity_residual_z` 係数 | +0.976% / 1sd | +1.001% / 1sd | median 非劣性 |
+| 同 t-stat | 28.40 | 29.17 | median がやや強い |
+| `momentum_liquidity_interaction_z` 係数 | +0.307% / 1sd | +0.357% / 1sd | median がやや強い |
+| `positive_20d_60d + high_residual` vs neutral mean spread | +2.901% | +3.025% | median がやや強い |
+| 同 median spread | +1.418% | +1.688% | median がやや強い |
+| 同 win-rate spread | +5.283pt | +5.932pt | median がやや強い |
+| Prime ADV60 residual high bucket overlap | 93.2% | 93.2% | 候補の大枠は維持 |
+
+この確認では、median ADV60 へ変えても `return20/60 + liquidity residual` の主要結論は壊れない。むしろ Prime momentum interaction では係数・bucket spread が小幅に改善したため、free-float liquidity residual / regime 側の production default は median ADV60 へ寄せる方針でよい。ただし value ranking の `ADV60 >= 10mn` hard floor は別物で、median 化すると候補除外が強くなるため、この readout の default 化対象には含めない。
+
 #### Residual Bucket
 
 下表は 60-session forward excess return。high residual は「現在の ADV 水準から見ると free-float cap が足りない」状態、low residual はその逆。
