@@ -4432,6 +4432,67 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
 
 
 @pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_code_backfill_does_not_advance_date_frontier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-02-09"
+    market_db.statements_rows = [{"code": "7203", "disclosed_date": "2026-02-09"}]
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "67580",
+                "CoName": "ソニーグループ",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "電気機器",
+                "S33": "3650",
+                "S33Nm": "電気機器",
+                "Date": "1958-12-01",
+            },
+        ],
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-02-10", "EPS": 80.0}],
+        },
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 1
+    assert "6758" in {row["code"] for row in market_db.statements_rows}
+    assert (
+        market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]]
+        == "2026-02-09"
+    )
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_fundamentals_alias_coverage_skips_preferred_share_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

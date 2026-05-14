@@ -757,6 +757,7 @@ async def _ingest_fins_bulk_batch(
     batch_rows: list[dict[str, Any]],
     allowed_codes: set[str],
     target_dates: set[str] | None = None,
+    published_dates: set[str] | None = None,
 ) -> int:
     rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(batch_rows))
     if allowed_codes:
@@ -775,6 +776,12 @@ async def _ingest_fins_bulk_batch(
     )
     if not rows:
         return 0
+    if published_dates is not None:
+        published_dates.update(
+            normalized
+            for normalized in (_normalize_iso_date_text(row.get("disclosed_date")) for row in rows)
+            if normalized is not None
+        )
     return await _publish_statement_rows(ctx, rows)
 
 
@@ -2766,6 +2773,7 @@ async def _sync_fundamentals_incremental(
     )
     date_targets = _build_incremental_date_targets(anchor, previous_failed_dates)
     dates_phase_completed = 0
+    date_phase_disclosed_dates: set[str] = set()
     bulk_dates_succeeded = False
     date_phase_api_calls = 0
     date_phase_bulk_result: BulkFetchResult | None = None
@@ -2811,6 +2819,7 @@ async def _sync_fundamentals_incremental(
                         batch_rows=batch_rows,
                         allowed_codes=allowed_statement_codes,
                         target_dates=normalized_target_dates,
+                        published_dates=date_phase_disclosed_dates,
                     )
 
                 date_phase_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
@@ -2879,6 +2888,14 @@ async def _sync_fundamentals_incremental(
                         stage="fundamentals",
                     )
                     if rows:
+                        date_phase_disclosed_dates.update(
+                            normalized
+                            for normalized in (
+                                _normalize_iso_date_text(row.get("disclosed_date"))
+                                for row in rows
+                            )
+                            if normalized is not None
+                        )
                         updated += await _publish_statement_rows(ctx, rows)
                 except Exception as e:
                     failed_dates.append(disclosed_date)
@@ -2995,19 +3012,23 @@ async def _sync_fundamentals_incremental(
 
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
+    date_phase_frontier = _latest_date(list(date_phase_disclosed_dates))
     now_iso = datetime.now(UTC).isoformat()
     await asyncio.to_thread(
         ctx.market_db.set_sync_metadata,
         METADATA_KEYS["FUNDAMENTALS_LAST_SYNC_DATE"],
         now_iso,
     )
-    if latest_disclosed:
+    metadata_frontier = date_phase_frontier
+    if metadata_frontier is None and anchor is None:
+        metadata_frontier = normalized_latest_disclosed
+    if metadata_frontier:
         await asyncio.to_thread(
             ctx.market_db.set_sync_metadata,
             METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
-            latest_disclosed,
+            metadata_frontier,
         )
-    empty_cache_frontier = normalized_latest_disclosed or current_frontier
+    empty_cache_frontier = metadata_frontier or normalized_latest_disclosed or current_frontier
     next_empty_codes = set(current_empty_codes) if empty_cache_frontier == current_frontier else set()
     for fetch_code in empty_fetch_codes:
         next_empty_codes.update(target_groups.get(fetch_code, ()))
