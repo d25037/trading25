@@ -15,6 +15,8 @@
 
 ## Index
 
+- [market-behavior/earnings-holdthrough-expectancy/](./market-behavior/earnings-holdthrough-expectancy/README.md)
+  - 決算開示イベントを、発表前までに観測できる FY / pre 20d・60d return / Med ADV60-to-free-float で切り、その後の positive / negative event rate と決算またぎ期待値・左尾を観察する実験。
 - [market-behavior/topix-gap-intraday-distribution/](./market-behavior/topix-gap-intraday-distribution/README.md)
   - TOPIX の寄り付き gap を条件に、個別銘柄群の当日 intraday と簡易 rotation ルールを観察する実験。
 - [market-behavior/topix-close-stock-overnight/](./market-behavior/topix-close-stock-overnight/README.md)
