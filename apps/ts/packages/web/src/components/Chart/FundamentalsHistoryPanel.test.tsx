@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+  type FundamentalsHistoryMetricId,
 } from '@/constants/fundamentalsHistoryMetrics';
 import { FundamentalsHistoryPanel } from './FundamentalsHistoryPanel';
 
@@ -99,6 +100,9 @@ describe('FundamentalsHistoryPanel', () => {
             eps: 250.5,
             bps: 3200,
             roe: 12.5,
+            netSales: 12_000,
+            operatingProfit: 1_500,
+            operatingMargin: 12.5,
             cashFlowOperating: 500,
             cashFlowInvesting: -200,
             cashFlowFinancing: -100,
@@ -117,6 +121,9 @@ describe('FundamentalsHistoryPanel', () => {
             eps: 200,
             bps: 3000,
             roe: 11.0,
+            netSales: 11_000,
+            operatingProfit: 1_300,
+            operatingMargin: 11.8,
             cashFlowOperating: 400,
             cashFlowInvesting: -180,
             cashFlowFinancing: -80,
@@ -137,18 +144,24 @@ describe('FundamentalsHistoryPanel', () => {
     render(<FundamentalsHistoryPanel symbol="7203" />);
 
     expect(screen.getByText('期別')).toBeInTheDocument();
+    expect(screen.queryByText('発表日')).not.toBeInTheDocument();
     expect(screen.getByText('EPS')).toBeInTheDocument();
     expect(screen.getByText('来期予想EPS')).toBeInTheDocument();
-    expect(screen.getByText('BPS')).toBeInTheDocument();
-    expect(screen.getByText('予想1株配当')).toBeInTheDocument();
-    expect(screen.getByText('配当性向')).toBeInTheDocument();
-    expect(screen.getByText('予想配当性向')).toBeInTheDocument();
-    expect(screen.getByText('営業CF')).toBeInTheDocument();
-    expect(screen.getByText('投資CF')).toBeInTheDocument();
-    expect(screen.getByText('財務CF')).toBeInTheDocument();
+    expect(screen.getByText('売上高')).toBeInTheDocument();
+    expect(screen.getByText('営業利益')).toBeInTheDocument();
+    expect(screen.getByText('営業利益率')).toBeInTheDocument();
     expect(screen.getByText('ROE')).toBeInTheDocument();
+    expect(screen.getByText('1株配当')).toBeInTheDocument();
+    expect(screen.queryByText('BPS')).not.toBeInTheDocument();
+    expect(screen.queryByText('予想1株配当')).not.toBeInTheDocument();
+    expect(screen.queryByText('配当性向')).not.toBeInTheDocument();
+    expect(screen.queryByText('予想配当性向')).not.toBeInTheDocument();
+    expect(screen.queryByText('営業CF')).not.toBeInTheDocument();
+    expect(screen.queryByText('投資CF')).not.toBeInTheDocument();
+    expect(screen.queryByText('財務CF')).not.toBeInTheDocument();
     expect(screen.getByText('2024/3期')).toBeInTheDocument();
     expect(screen.getByText('2023/3期')).toBeInTheDocument();
+    expect(screen.getByText('2024-05-10')).toBeInTheDocument();
   });
 
   it('applies FY metric visibility settings to table columns', () => {
@@ -185,6 +198,7 @@ describe('FundamentalsHistoryPanel', () => {
           ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
           roe: false,
           payoutRatio: false,
+          forecastPayoutRatio: true,
         }}
       />
     );
@@ -193,6 +207,149 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.queryByText('配当性向')).not.toBeInTheDocument();
     expect(screen.getByText('EPS')).toBeInTheDocument();
     expect(screen.getByText('予想配当性向')).toBeInTheDocument();
+  });
+
+  it('compacts a wide persisted default visibility at render time', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 250,
+            bps: 3200,
+            roe: 12.5,
+            netSales: 12_000,
+            operatingProfit: 1_500,
+            operatingMargin: 12.5,
+            cashFlowOperating: 500,
+            cashFlowInvesting: -200,
+            cashFlowFinancing: -100,
+            dividendFy: 120,
+            forecastDividendFy: 125,
+            payoutRatio: 35,
+            forecastPayoutRatio: 38,
+            netProfit: 1000,
+            equity: 8000,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <FundamentalsHistoryPanel
+        symbol="7203"
+        metricVisibility={{
+          eps: true,
+          forecastEps: true,
+          netSales: true,
+          operatingProfit: true,
+          operatingMargin: true,
+          roe: true,
+          dividendPerShare: true,
+          bps: true,
+          cashFlowOperating: true,
+          forecastDividendPerShare: true,
+          payoutRatio: true,
+          forecastPayoutRatio: true,
+          cashFlowInvesting: true,
+          cashFlowFinancing: true,
+        }}
+      />
+    );
+
+    expect(screen.getByText('売上高')).toBeInTheDocument();
+    expect(screen.getByText('営業利益')).toBeInTheDocument();
+    expect(screen.getByText('営業利益率')).toBeInTheDocument();
+    expect(screen.queryByText('BPS')).not.toBeInTheDocument();
+    expect(screen.queryByText('営業CF')).not.toBeInTheDocument();
+    expect(screen.queryByText('予想1株配当')).not.toBeInTheDocument();
+    expect(screen.queryByText('配当性向')).not.toBeInTheDocument();
+    expect(screen.queryByText('予想配当性向')).not.toBeInTheDocument();
+  });
+
+  it('expands a persisted combined operating metric order at render time', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 250,
+            bps: 3200,
+            roe: 12.5,
+            netSales: 12_000,
+            operatingProfit: 1_500,
+            operatingMargin: 12.5,
+            dividendFy: 120,
+            netProfit: 1000,
+            equity: 8000,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const legacyMetricOrder = ['eps', 'operatingProfitMargin', 'roe'] as unknown as FundamentalsHistoryMetricId[];
+
+    render(<FundamentalsHistoryPanel symbol="7203" metricOrder={legacyMetricOrder} />);
+
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((header) => header.textContent?.trim())
+      .filter((text): text is string => typeof text === 'string' && text.length > 0);
+    expect(headers.slice(0, 5)).toEqual(['期別', 'EPS', '営業利益', '営業利益率', 'ROE']);
+  });
+
+  it('shows operating profit and margin YoY deltas in separate columns', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 250,
+            bps: 3200,
+            roe: 12.5,
+            netSales: 12_000,
+            operatingProfit: 1_500,
+            operatingMargin: 12.5,
+            dividendFy: 120,
+            netProfit: 1000,
+            equity: 8000,
+          },
+          {
+            date: '2023-03-31',
+            disclosedDate: '2023-05-10',
+            periodType: 'FY',
+            eps: 200,
+            bps: 3000,
+            roe: 11,
+            netSales: 11_000,
+            operatingProfit: 1_200,
+            operatingMargin: 10.0,
+            dividendFy: 100,
+            netProfit: 900,
+            equity: 7500,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<FundamentalsHistoryPanel symbol="7203" />);
+
+    expect(screen.getByText('15億')).toBeInTheDocument();
+    expect(screen.getAllByText('12.5%').length).toBeGreaterThan(0);
+    expect(screen.getByText('（＋25.0%）')).toBeInTheDocument();
+    expect(screen.getByText('（＋2.5pt）')).toBeInTheDocument();
   });
 
   it('applies FY metric order settings to table columns', () => {
@@ -226,6 +383,7 @@ describe('FundamentalsHistoryPanel', () => {
       <FundamentalsHistoryPanel
         symbol="7203"
         metricOrder={['payoutRatio', ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.filter((id) => id !== 'payoutRatio')]}
+        metricVisibility={{ ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY, payoutRatio: true }}
       />
     );
 
@@ -234,9 +392,8 @@ describe('FundamentalsHistoryPanel', () => {
       .map((header) => header.textContent?.trim())
       .filter((text): text is string => typeof text === 'string' && text.length > 0);
     expect(headers[0]).toBe('期別');
-    expect(headers[1]).toBe('発表日');
-    expect(headers[2]).toBe('配当性向');
-    expect(headers[3]).toBe('EPS');
+    expect(headers[1]).toBe('配当性向');
+    expect(headers[2]).toBe('EPS');
   });
 
   it('sorts FY rows by date descending, then disclosedDate descending', () => {

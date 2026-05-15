@@ -6,6 +6,8 @@ import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
   FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS,
   type FundamentalsHistoryMetricId,
+  normalizeFundamentalsHistoryMetricOrder,
+  normalizeFundamentalsHistoryMetricVisibility,
 } from '@/constants/fundamentalsHistoryMetrics';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { cn } from '@/lib/utils';
@@ -91,10 +93,44 @@ function getPeriodEps(period: Pick<ApiFundamentalDataPoint, 'adjustedEps' | 'eps
   return period.adjustedEps ?? period.eps ?? null;
 }
 
+function getPeriodMetric(
+  period: ApiFundamentalDataPoint,
+  metricId: 'operatingProfit' | 'operatingMargin'
+): number | null {
+  return period[metricId] ?? null;
+}
+
 function formatSignedEpsDelta(delta: number): string {
   if (delta === 0) return '±0';
   const sign = delta > 0 ? '＋' : '-';
   return `${sign}${formatFundamentalValue(Math.abs(delta), 'yen')}`;
+}
+
+function formatSignedPercentDelta(delta: number): string {
+  if (Math.abs(delta) < 0.05) return '±0.0%';
+  const sign = delta > 0 ? '＋' : '-';
+  return `${sign}${Math.abs(delta).toFixed(1)}%`;
+}
+
+function formatSignedPointDelta(delta: number): string {
+  if (Math.abs(delta) < 0.05) return '±0.0pt';
+  const sign = delta > 0 ? '＋' : '-';
+  return `${sign}${Math.abs(delta).toFixed(1)}pt`;
+}
+
+function getDeltaColor(delta: number): string {
+  if (Math.abs(delta) < 0.05) return 'text-muted-foreground';
+  if (delta > 0) return 'text-green-500';
+  if (delta < 0) return 'text-red-500';
+  return 'text-muted-foreground';
+}
+
+function getOperatingMarginColor(value: number | null): string {
+  if (value == null) return 'text-muted-foreground';
+  if (value < 0) return 'text-red-500';
+  if (value >= 10) return 'text-green-500';
+  if (value >= 5) return 'text-yellow-500';
+  return 'text-foreground';
 }
 
 function buildEpsYoYDeltaByPeriodKey(periods: ApiFundamentalDataPoint[]): EpsYoYDeltaByPeriodKey {
@@ -119,6 +155,58 @@ function buildEpsYoYDeltaByPeriodKey(periods: ApiFundamentalDataPoint[]): EpsYoY
     if (priorEps == null) continue;
 
     deltaByKey.set(getPeriodComparisonKey(period), currentEps - priorEps);
+  }
+
+  return deltaByKey;
+}
+
+function buildLatestPeriodByFiscalMonthKey(periods: ApiFundamentalDataPoint[]): Map<string, ApiFundamentalDataPoint> {
+  const latestPeriodByFiscalMonthKey = new Map<string, ApiFundamentalDataPoint>();
+  const sortedPeriods = [...periods].sort(compareByDateAndDisclosedDateDesc);
+
+  for (const period of sortedPeriods) {
+    const key = getFiscalMonthKey(period);
+    if (key != null && !latestPeriodByFiscalMonthKey.has(key)) {
+      latestPeriodByFiscalMonthKey.set(key, period);
+    }
+  }
+
+  return latestPeriodByFiscalMonthKey;
+}
+
+function calculateMetricYoYDelta(
+  currentValue: number,
+  priorValue: number,
+  mode: 'percentChange' | 'pointDelta'
+): number | null {
+  if (mode === 'percentChange') {
+    if (priorValue === 0) return null;
+    return ((currentValue - priorValue) / Math.abs(priorValue)) * 100;
+  }
+  return currentValue - priorValue;
+}
+
+function buildMetricYoYDeltaByPeriodKey(
+  periods: ApiFundamentalDataPoint[],
+  metricId: 'operatingProfit' | 'operatingMargin',
+  mode: 'percentChange' | 'pointDelta'
+): EpsYoYDeltaByPeriodKey {
+  const sortedPeriods = [...periods].sort(compareByDateAndDisclosedDateDesc);
+  const latestPeriodByFiscalMonthKey = buildLatestPeriodByFiscalMonthKey(sortedPeriods);
+  const deltaByKey: EpsYoYDeltaByPeriodKey = new Map();
+  for (const period of sortedPeriods) {
+    const currentValue = getPeriodMetric(period, metricId);
+    const priorYearFiscalMonthKey = getPriorYearFiscalMonthKey(period);
+    if (currentValue == null || priorYearFiscalMonthKey == null) continue;
+
+    const priorPeriod = latestPeriodByFiscalMonthKey.get(priorYearFiscalMonthKey);
+    const priorValue = priorPeriod ? getPeriodMetric(priorPeriod, metricId) : null;
+    if (priorValue == null) continue;
+
+    const delta = calculateMetricYoYDelta(currentValue, priorValue, mode);
+    if (delta != null) {
+      deltaByKey.set(getPeriodComparisonKey(period), delta);
+    }
   }
 
   return deltaByKey;
@@ -190,6 +278,23 @@ function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
   return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
+function renderValueWithYoY(
+  value: string,
+  delta: number | undefined,
+  formatDelta: (delta: number) => string
+): React.ReactNode {
+  if (delta == null) return value;
+
+  return (
+    <span className="inline-flex items-baseline justify-end gap-1 whitespace-nowrap">
+      <span>{value}</span>
+      <span className={cn('text-[11px] font-medium', getDeltaColor(delta))} title="前年同期比">
+        （{formatDelta(delta)}）
+      </span>
+    </span>
+  );
+}
+
 const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
   FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
 ) as Record<FundamentalsHistoryMetricId, string>;
@@ -197,7 +302,9 @@ const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
 function resolveMetricCell(
   period: ApiFundamentalDataPoint,
   metricId: FundamentalsHistoryMetricId,
-  epsYoYDelta?: number
+  epsYoYDelta?: number,
+  operatingProfitYoYDelta?: number,
+  operatingMarginYoYDelta?: number
 ): { className: string; content: React.ReactNode } {
   switch (metricId) {
     case 'eps':
@@ -209,6 +316,28 @@ function resolveMetricCell(
       return {
         className: 'text-muted-foreground',
         content: renderForecastEps(period),
+      };
+    case 'netSales':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.netSales, 'millions'),
+      };
+    case 'operatingProfit': {
+      const value = period.operatingProfit;
+      const formattedValue = formatFundamentalValue(value, 'millions');
+      return {
+        className: getFundamentalColor(value, 'cashFlow'),
+        content: renderValueWithYoY(formattedValue, operatingProfitYoYDelta, formatSignedPercentDelta),
+      };
+    }
+    case 'operatingMargin':
+      return {
+        className: getOperatingMarginColor(period.operatingMargin),
+        content: renderValueWithYoY(
+          formatFundamentalValue(period.operatingMargin, 'percent'),
+          operatingMarginYoYDelta,
+          formatSignedPointDelta
+        ),
       };
     case 'bps':
       return {
@@ -282,10 +411,19 @@ export function FundamentalsHistoryPanel({
     if (historyMode !== 'fyAndQuarter10' || !data?.data) return new Map<string, number>();
     return buildEpsYoYDeltaByPeriodKey(data.data.filter(hasActualFinancialData));
   }, [data, historyMode]);
-  const visibleMetricOrder = useMemo(
-    () => metricOrder.filter((metricId) => metricVisibility[metricId]),
-    [metricOrder, metricVisibility]
-  );
+  const operatingProfitYoYDeltaByPeriodKey = useMemo(() => {
+    if (!data?.data) return new Map<string, number>();
+    return buildMetricYoYDeltaByPeriodKey(data.data.filter(hasActualFinancialData), 'operatingProfit', 'percentChange');
+  }, [data]);
+  const operatingMarginYoYDeltaByPeriodKey = useMemo(() => {
+    if (!data?.data) return new Map<string, number>();
+    return buildMetricYoYDeltaByPeriodKey(data.data.filter(hasActualFinancialData), 'operatingMargin', 'pointDelta');
+  }, [data]);
+  const visibleMetricOrder = useMemo(() => {
+    const normalizedOrder = normalizeFundamentalsHistoryMetricOrder(metricOrder);
+    const normalizedVisibility = normalizeFundamentalsHistoryMetricVisibility(metricVisibility);
+    return normalizedOrder.filter((metricId) => normalizedVisibility[metricId]);
+  }, [metricOrder, metricVisibility]);
 
   if (!symbol) {
     return (
@@ -338,7 +476,6 @@ export function FundamentalsHistoryPanel({
               <thead>
                 <tr className="border-b border-border/30 text-xs text-muted-foreground">
                   <th className="text-left py-1.5 px-2.5 font-medium">期別</th>
-                  <th className="text-left py-1.5 px-2.5 font-medium">発表日</th>
                   {visibleMetricOrder.map((metricId) => (
                     <th key={metricId} className="text-right py-1.5 px-2.5 font-medium">
                       {FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID[metricId]}
@@ -349,7 +486,7 @@ export function FundamentalsHistoryPanel({
               <tbody>
                 {visibleMetricOrder.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="py-8 px-3 text-center text-sm text-muted-foreground">
+                    <td colSpan={1} className="py-8 px-3 text-center text-sm text-muted-foreground">
                       表示する指標をサイドバーで選択してください
                     </td>
                   </tr>
@@ -360,14 +497,18 @@ export function FundamentalsHistoryPanel({
                       className="border-b border-border/20 hover:bg-background/40"
                     >
                       <td className="py-1.5 px-2.5 font-medium text-foreground">
-                        {formatPeriodLabel(period.date, period.periodType)}
+                        <span className="block whitespace-nowrap">
+                          {formatPeriodLabel(period.date, period.periodType)}
+                        </span>
+                        <span className="block text-xs font-normal text-muted-foreground">{period.disclosedDate}</span>
                       </td>
-                      <td className="py-1.5 px-2.5 text-xs text-muted-foreground">{period.disclosedDate}</td>
                       {visibleMetricOrder.map((metricId) => {
                         const cell = resolveMetricCell(
                           period,
                           metricId,
-                          epsYoYDeltaByPeriodKey.get(getPeriodComparisonKey(period))
+                          epsYoYDeltaByPeriodKey.get(getPeriodComparisonKey(period)),
+                          operatingProfitYoYDeltaByPeriodKey.get(getPeriodComparisonKey(period)),
+                          operatingMarginYoYDeltaByPeriodKey.get(getPeriodComparisonKey(period))
                         );
                         return (
                           <td key={metricId} className={cn('py-1.5 px-2.5 text-right', cell.className)}>
