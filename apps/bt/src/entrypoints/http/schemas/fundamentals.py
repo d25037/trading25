@@ -191,7 +191,14 @@ class DailyValuationDataPoint(BaseModel):
 
     date: str = Field(..., description="Date (YYYY-MM-DD)")
     close: float = Field(..., description="Closing price")
+    eps: float | None = Field(
+        None, description="Adjusted actual EPS used for valuation"
+    )
+    bps: float | None = Field(
+        None, description="Adjusted BPS used for valuation"
+    )
     per: float | None = Field(None, description="PER at this date")
+    forwardPer: float | None = Field(None, description="Forward PER at this date")
     pbr: float | None = Field(None, description="PBR at this date")
     marketCap: float | None = Field(
         None,
@@ -200,6 +207,19 @@ class DailyValuationDataPoint(BaseModel):
     freeFloatMarketCap: float | None = Field(
         None,
         description="Market cap at this date using free-float shares (JPY)",
+    )
+    forwardEps: float | None = Field(None, description="Forward EPS used for valuation")
+    forwardEpsDisclosedDate: str | None = Field(
+        None, description="Disclosure date of the forward EPS source"
+    )
+    forwardEpsSource: Literal["revised", "fy"] | None = Field(
+        None, description="Forward EPS source"
+    )
+    priceBasisDate: str | None = Field(
+        None, description="Adjusted price basis date for this valuation row"
+    )
+    basisVersion: str | None = Field(
+        None, description="Adjusted valuation materialization basis version"
     )
 
 
@@ -278,6 +298,16 @@ class FundamentalsComputeResponse(BaseModel):
     )
     dailyValuation: list[DailyValuationDataPoint] | None = Field(
         None, description="Daily PER/PBR time-series"
+    )
+    priceBasisDate: str | None = Field(
+        None, description="Adjusted price basis date used by daily valuation"
+    )
+    valuationBasisVersion: str | None = Field(
+        None, description="Adjusted valuation materialization basis version"
+    )
+    adjustedMetricsSource: Literal["daily_valuation", "computed_fallback"] = Field(
+        default="computed_fallback",
+        description="Source used for valuation and adjusted per-share metrics",
     )
     liquidityProfile: LiquidityProfile | None = Field(
         None,

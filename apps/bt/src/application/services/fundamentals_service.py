@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 from collections.abc import Iterable
 
 import numpy as np
@@ -248,6 +248,180 @@ class FundamentalsService:
             logger.warning(f"Failed to get stock adjustment events for {symbol}: {e}")
             return []
         return [event for event in events if isinstance(event, ShareAdjustmentEvent)]
+
+    def _get_adjusted_daily_valuation(
+        self,
+        symbol: str,
+    ) -> list[DomainDailyValuationDataPoint]:
+        getter = getattr(self.market_client, "get_daily_valuation", None)
+        if not callable(getter):
+            return []
+        try:
+            rows = getter(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to get adjusted daily valuation for {symbol}: {e}")
+            return []
+        if isinstance(rows, pd.DataFrame):
+            records = cast(list[dict[str, Any]], rows.to_dict(orient="records"))
+        elif isinstance(rows, list):
+            records = cast(list[dict[str, Any]], rows)
+        else:
+            return []
+
+        valuation: list[DomainDailyValuationDataPoint] = []
+        for row_obj in records:
+            if not isinstance(row_obj, dict):
+                continue
+            date = self._normalize_optional_text(row_obj.get("date"))
+            close = self._normalize_optional_float(row_obj.get("close"))
+            if date is None or close is None:
+                continue
+            valuation.append(
+                DomainDailyValuationDataPoint(
+                    date=date,
+                    close=close,
+                    eps=self._normalize_optional_float(row_obj.get("eps")),
+                    bps=self._normalize_optional_float(row_obj.get("bps")),
+                    per=self._normalize_optional_float(row_obj.get("per")),
+                    forwardPer=self._normalize_optional_float(
+                        row_obj.get("forward_per", row_obj.get("forwardPer"))
+                    ),
+                    pbr=self._normalize_optional_float(row_obj.get("pbr")),
+                    marketCap=self._normalize_optional_float(
+                        row_obj.get("market_cap", row_obj.get("marketCap"))
+                    ),
+                    freeFloatMarketCap=self._normalize_optional_float(
+                        row_obj.get(
+                            "free_float_market_cap",
+                            row_obj.get("freeFloatMarketCap"),
+                        )
+                    ),
+                    forwardEps=self._normalize_optional_float(
+                        row_obj.get("forward_eps", row_obj.get("forwardEps"))
+                    ),
+                    forwardEpsDisclosedDate=self._normalize_optional_text(
+                        row_obj.get(
+                            "forward_eps_disclosed_date",
+                            row_obj.get("forwardEpsDisclosedDate"),
+                        )
+                    ),
+                    forwardEpsSource=self._normalize_forward_eps_source(
+                        row_obj.get("forward_eps_source", row_obj.get("forwardEpsSource"))
+                    ),
+                    priceBasisDate=self._normalize_optional_text(
+                        row_obj.get("price_basis_date", row_obj.get("priceBasisDate"))
+                    ),
+                    basisVersion=self._normalize_optional_text(
+                        row_obj.get("basis_version", row_obj.get("basisVersion"))
+                    ),
+                )
+            )
+        valuation.sort(key=lambda item: item.date)
+        return valuation
+
+    def _get_adjusted_statement_metrics(self, symbol: str) -> dict[str, dict[str, Any]]:
+        getter = getattr(self.market_client, "get_adjusted_statement_metrics", None)
+        if not callable(getter):
+            return {}
+        try:
+            rows = getter(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to get adjusted statement metrics for {symbol}: {e}")
+            return {}
+        if isinstance(rows, pd.DataFrame):
+            records = cast(list[dict[str, Any]], rows.to_dict(orient="records"))
+        elif isinstance(rows, list):
+            records = cast(list[dict[str, Any]], rows)
+        else:
+            return {}
+        metrics: dict[str, dict[str, Any]] = {}
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            disclosed_date = self._normalize_optional_text(
+                row.get("disclosed_date", row.get("disclosedDate"))
+            )
+            if disclosed_date is None:
+                continue
+            metrics[disclosed_date] = row
+        return metrics
+
+    @staticmethod
+    def _normalize_forward_eps_source(value: Any) -> Literal["revised", "fy"] | None:
+        if value in {"revised", "fy"}:
+            return cast(Literal["revised", "fy"], value)
+        return None
+
+    def _apply_adjusted_statement_metrics(
+        self,
+        data: list[DomainFundamentalDataPoint],
+        latest_metrics: DomainFundamentalDataPoint | None,
+        adjusted_metrics_by_disclosed_date: dict[str, dict[str, Any]],
+    ) -> tuple[list[DomainFundamentalDataPoint], DomainFundamentalDataPoint | None]:
+        if not adjusted_metrics_by_disclosed_date:
+            return data, latest_metrics
+        adjusted_data = [
+            self._apply_adjusted_statement_metric(item, adjusted_metrics_by_disclosed_date)
+            for item in data
+        ]
+        adjusted_latest = (
+            self._apply_adjusted_statement_metric(
+                latest_metrics,
+                adjusted_metrics_by_disclosed_date,
+            )
+            if latest_metrics is not None
+            else None
+        )
+        return adjusted_data, adjusted_latest
+
+    def _apply_adjusted_statement_metric(
+        self,
+        item: DomainFundamentalDataPoint,
+        adjusted_metrics_by_disclosed_date: dict[str, dict[str, Any]],
+    ) -> DomainFundamentalDataPoint:
+        metric = adjusted_metrics_by_disclosed_date.get(item.disclosedDate)
+        if metric is None:
+            return item
+        return DomainFundamentalDataPoint(
+            **{
+                **item.model_dump(),
+                "adjustedEps": self._normalize_optional_float(
+                    metric.get("adjusted_eps", metric.get("adjustedEps"))
+                ),
+                "adjustedBps": self._normalize_optional_float(
+                    metric.get("adjusted_bps", metric.get("adjustedBps"))
+                ),
+                "adjustedForecastEps": self._normalize_optional_float(
+                    metric.get("adjusted_forecast_eps", metric.get("adjustedForecastEps"))
+                ),
+                "adjustedDividendFy": self._normalize_optional_float(
+                    metric.get("adjusted_dividend_fy", metric.get("adjustedDividendFy"))
+                ),
+            }
+        )
+
+    @staticmethod
+    def _apply_latest_daily_valuation_fields(
+        latest_metrics: DomainFundamentalDataPoint | None,
+        daily_valuation: list[DomainDailyValuationDataPoint],
+    ) -> DomainFundamentalDataPoint | None:
+        if latest_metrics is None or not daily_valuation:
+            return latest_metrics
+        latest_daily = daily_valuation[-1]
+        return DomainFundamentalDataPoint(
+            **{
+                **latest_metrics.model_dump(),
+                "stockPrice": latest_daily.close,
+                "per": latest_daily.per,
+                "pbr": latest_daily.pbr,
+                "adjustedEps": latest_daily.eps
+                if latest_metrics.adjustedEps is None
+                else latest_metrics.adjustedEps,
+                "adjustedBps": latest_daily.bps
+                if latest_metrics.adjustedBps is None
+                else latest_metrics.adjustedBps,
+            }
+        )
 
     def _build_prime_liquidity_profile(
         self,
@@ -532,13 +706,35 @@ class FundamentalsService:
         daily_prices = self._calculator._to_daily_close_map(daily_ohlcv)
         share_adjustment_events = self._get_stock_adjustment_events(request.symbol)
         latest_price_date = max(daily_prices.keys()) if daily_prices else None
-
-        daily_valuation = self._calculator._calculate_daily_valuation(
-            statements,
-            daily_prices,
-            request.prefer_consolidated,
-            share_adjustment_events=share_adjustment_events,
+        adjusted_statement_metrics = self._get_adjusted_statement_metrics(
+            request.symbol,
         )
+
+        adjusted_daily_valuation = self._get_adjusted_daily_valuation(request.symbol)
+        daily_valuation_source = (
+            "daily_valuation" if adjusted_daily_valuation else "computed_fallback"
+        )
+        daily_valuation = adjusted_daily_valuation or (
+            self._calculator._calculate_daily_valuation(
+                statements,
+                daily_prices,
+                request.prefer_consolidated,
+                share_adjustment_events=share_adjustment_events,
+            )
+        )
+        price_basis_date = (
+            daily_valuation[-1].priceBasisDate
+            if daily_valuation and daily_valuation[-1].priceBasisDate is not None
+            else latest_price_date
+            if daily_valuation_source == "daily_valuation"
+            else None
+        )
+        valuation_basis_version = (
+            daily_valuation[-1].basisVersion
+            if daily_valuation and daily_valuation[-1].basisVersion is not None
+            else None
+        )
+
         liquidity_profile = self._build_prime_liquidity_profile(
             stock_info=stock_info,
             daily_ohlcv=daily_ohlcv,
@@ -563,6 +759,9 @@ class FundamentalsService:
                 companyName=stock_info.companyName if stock_info else None,
                 data=[],
                 dailyValuation=api_daily_valuation,
+                priceBasisDate=price_basis_date,
+                valuationBasisVersion=valuation_basis_version,
+                adjustedMetricsSource=daily_valuation_source,
                 liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -572,7 +771,12 @@ class FundamentalsService:
                 ),
                 diagnostics=ResponseDiagnostics(
                     missing_required_data=["filtered_statements"],
-                    used_fields=["statements", "stock_data.close"],
+                    used_fields=[
+                        "statements",
+                        "daily_valuation"
+                        if daily_valuation_source == "daily_valuation"
+                        else "stock_data.close",
+                    ],
                     effective_period_type=request.period_type,
                 ),
             )
@@ -638,6 +842,16 @@ class FundamentalsService:
             share_adjustment_events=share_adjustment_events,
             through_date=latest_price_date,
         )
+        data, latest_metrics = self._apply_adjusted_statement_metrics(
+            data,
+            latest_metrics,
+            adjusted_statement_metrics,
+        )
+        if daily_valuation_source == "daily_valuation":
+            latest_metrics = self._apply_latest_daily_valuation_fields(
+                latest_metrics,
+                daily_valuation,
+            )
         latest_metrics = self._calculator._apply_forecast_eps_above_recent_fy_actuals(
             latest_metrics,
             data,
@@ -667,6 +881,9 @@ class FundamentalsService:
             data=api_data,
             latestMetrics=api_latest_metrics,
             dailyValuation=api_daily_valuation,
+            priceBasisDate=price_basis_date,
+            valuationBasisVersion=valuation_basis_version,
+            adjustedMetricsSource=daily_valuation_source,
             liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -680,7 +897,9 @@ class FundamentalsService:
                     "statements.earnings_per_share",
                     "statements.forecast_eps",
                     "statements.equity",
-                    "stock_data.close",
+                    "daily_valuation"
+                    if daily_valuation_source == "daily_valuation"
+                    else "stock_data.close",
                 ],
                 effective_period_type=request.period_type,
             ),

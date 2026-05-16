@@ -2868,6 +2868,29 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdjustedMetricsStats */
+        AdjustedMetricsStats: {
+            /** Basisversion */
+            basisVersion?: string | null;
+            /**
+             * Dailyvaluationrows
+             * @default 0
+             */
+            dailyValuationRows: number;
+            /** Pricebasisdate */
+            priceBasisDate?: string | null;
+            /**
+             * Statementrows
+             * @default 0
+             */
+            statementRows: number;
+            /**
+             * Status
+             * @default empty_source
+             * @enum {string}
+             */
+            status: "ready" | "missing" | "stale" | "empty_source";
+        };
         /** AdjustmentEvent */
         AdjustmentEvent: {
             /** Adjustmentfactor */
@@ -3910,6 +3933,16 @@ export interface components {
          */
         DailyValuationDataPoint: {
             /**
+             * Basisversion
+             * @description Adjusted valuation materialization basis version
+             */
+            basisVersion?: string | null;
+            /**
+             * Bps
+             * @description Adjusted BPS used for valuation
+             */
+            bps?: number | null;
+            /**
              * Close
              * @description Closing price
              */
@@ -3919,6 +3952,31 @@ export interface components {
              * @description Date (YYYY-MM-DD)
              */
             date: string;
+            /**
+             * Eps
+             * @description Adjusted actual EPS used for valuation
+             */
+            eps?: number | null;
+            /**
+             * Forwardeps
+             * @description Forward EPS used for valuation
+             */
+            forwardEps?: number | null;
+            /**
+             * Forwardepsdiscloseddate
+             * @description Disclosure date of the forward EPS source
+             */
+            forwardEpsDisclosedDate?: string | null;
+            /**
+             * Forwardepssource
+             * @description Forward EPS source
+             */
+            forwardEpsSource?: ("revised" | "fy") | null;
+            /**
+             * Forwardper
+             * @description Forward PER at this date
+             */
+            forwardPer?: number | null;
             /**
              * Freefloatmarketcap
              * @description Market cap at this date using free-float shares (JPY)
@@ -3939,6 +3997,11 @@ export interface components {
              * @description PER at this date
              */
             per?: number | null;
+            /**
+             * Pricebasisdate
+             * @description Adjusted price basis date for this valuation row
+             */
+            priceBasisDate?: string | null;
         };
         /**
          * DataProvenance
@@ -5057,6 +5120,13 @@ export interface components {
          */
         FundamentalsComputeResponse: {
             /**
+             * Adjustedmetricssource
+             * @description Source used for valuation and adjusted per-share metrics
+             * @default computed_fallback
+             * @enum {string}
+             */
+            adjustedMetricsSource: "daily_valuation" | "computed_fallback";
+            /**
              * Companyname
              * @description Company name
              */
@@ -5087,6 +5157,11 @@ export interface components {
             latestMetrics?: components["schemas"]["FundamentalDataPoint"] | null;
             /** @description Prime-only free-float liquidity diagnostic for Symbol Workbench */
             liquidityProfile?: components["schemas"]["LiquidityProfile"] | null;
+            /**
+             * Pricebasisdate
+             * @description Adjusted price basis date used by daily valuation
+             */
+            priceBasisDate?: string | null;
             provenance: components["schemas"]["DataProvenance"];
             /**
              * Symbol
@@ -5098,6 +5173,11 @@ export interface components {
              * @description Rolling period used for market cap to trading value ratio
              */
             tradingValuePeriod: number;
+            /**
+             * Valuationbasisversion
+             * @description Adjusted valuation materialization basis version
+             */
+            valuationBasisVersion?: string | null;
         };
         /** FundamentalsStats */
         FundamentalsStats: {
@@ -6966,6 +7046,7 @@ export interface components {
         };
         /** MarketStatsResponse */
         MarketStatsResponse: {
+            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Databasesize */
             databaseSize: number;
             fundamentals: components["schemas"]["FundamentalsStats"];
@@ -7017,6 +7098,7 @@ export interface components {
         };
         /** MarketValidationResponse */
         MarketValidationResponse: {
+            adjustedMetrics?: components["schemas"]["AdjustedMetricsStats"];
             /** Adjustmentevents */
             adjustmentEvents?: components["schemas"]["AdjustmentEvent"][];
             /**

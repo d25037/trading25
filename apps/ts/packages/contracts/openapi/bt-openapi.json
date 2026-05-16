@@ -1,6 +1,55 @@
 {
   "components": {
     "schemas": {
+      "AdjustedMetricsStats": {
+        "properties": {
+          "basisVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basisversion"
+          },
+          "dailyValuationRows": {
+            "default": 0,
+            "title": "Dailyvaluationrows",
+            "type": "integer"
+          },
+          "priceBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricebasisdate"
+          },
+          "statementRows": {
+            "default": 0,
+            "title": "Statementrows",
+            "type": "integer"
+          },
+          "status": {
+            "default": "empty_source",
+            "enum": [
+              "ready",
+              "missing",
+              "stale",
+              "empty_source"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "AdjustedMetricsStats",
+        "type": "object"
+      },
       "AdjustmentEvent": {
         "properties": {
           "adjustmentFactor": {
@@ -2093,6 +2142,30 @@
       "DailyValuationDataPoint": {
         "description": "Daily valuation data point.",
         "properties": {
+          "basisVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted valuation materialization basis version",
+            "title": "Basisversion"
+          },
+          "bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted BPS used for valuation",
+            "title": "Bps"
+          },
           "close": {
             "description": "Closing price",
             "title": "Close",
@@ -2102,6 +2175,70 @@
             "description": "Date (YYYY-MM-DD)",
             "title": "Date",
             "type": "string"
+          },
+          "eps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted actual EPS used for valuation",
+            "title": "Eps"
+          },
+          "forwardEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward EPS used for valuation",
+            "title": "Forwardeps"
+          },
+          "forwardEpsDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Disclosure date of the forward EPS source",
+            "title": "Forwardepsdiscloseddate"
+          },
+          "forwardEpsSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "revised",
+                  "fy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward EPS source",
+            "title": "Forwardepssource"
+          },
+          "forwardPer": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward PER at this date",
+            "title": "Forwardper"
           },
           "freeFloatMarketCap": {
             "anyOf": [
@@ -2150,6 +2287,18 @@
             ],
             "description": "PER at this date",
             "title": "Per"
+          },
+          "priceBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted price basis date for this valuation row",
+            "title": "Pricebasisdate"
           }
         },
         "required": [
@@ -4395,6 +4544,16 @@
       "FundamentalsComputeResponse": {
         "description": "Response for fundamentals computation.",
         "properties": {
+          "adjustedMetricsSource": {
+            "default": "computed_fallback",
+            "description": "Source used for valuation and adjusted per-share metrics",
+            "enum": [
+              "daily_valuation",
+              "computed_fallback"
+            ],
+            "title": "Adjustedmetricssource",
+            "type": "string"
+          },
           "companyName": {
             "anyOf": [
               {
@@ -4466,6 +4625,18 @@
             ],
             "description": "Prime-only free-float liquidity diagnostic for Symbol Workbench"
           },
+          "priceBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted price basis date used by daily valuation",
+            "title": "Pricebasisdate"
+          },
           "provenance": {
             "$ref": "#/components/schemas/DataProvenance"
           },
@@ -4478,6 +4649,18 @@
             "description": "Rolling period used for market cap to trading value ratio",
             "title": "Tradingvalueperiod",
             "type": "integer"
+          },
+          "valuationBasisVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Adjusted valuation materialization basis version",
+            "title": "Valuationbasisversion"
           }
         },
         "required": [
@@ -8061,6 +8244,9 @@
       },
       "MarketStatsResponse": {
         "properties": {
+          "adjustedMetrics": {
+            "$ref": "#/components/schemas/AdjustedMetricsStats"
+          },
           "databaseSize": {
             "title": "Databasesize",
             "type": "integer"
@@ -8187,6 +8373,9 @@
       },
       "MarketValidationResponse": {
         "properties": {
+          "adjustedMetrics": {
+            "$ref": "#/components/schemas/AdjustedMetricsStats"
+          },
           "adjustmentEvents": {
             "items": {
               "$ref": "#/components/schemas/AdjustmentEvent"

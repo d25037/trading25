@@ -712,6 +712,153 @@ class DirectMarketClient:
         rows = reader.query(sql, tuple(params))
         return _to_statements_df(rows)
 
+    def get_adjusted_statement_metrics(
+        self,
+        stock_code: str,
+        as_of_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        reader = _resolve_market_reader()
+        if not _market_table_exists(reader, "statement_metrics_adjusted"):
+            return []
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return []
+
+        values_sql = ",".join("(?, ?)" for _ in candidates)
+        params: list[Any] = []
+        for priority, candidate_code in enumerate(candidates):
+            params.extend([candidate_code, priority])
+
+        where_conditions: list[str] = []
+        if as_of_date is not None:
+            where_conditions.append("s.disclosed_date <= ?")
+            params.append(as_of_date)
+        where_sql = ""
+        if where_conditions:
+            where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        rows = reader.query(
+            f"""
+            WITH code_map(candidate_code, candidate_priority) AS (
+                VALUES {values_sql}
+            ),
+            ranked AS (
+                SELECT
+                    s.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.disclosed_date
+                        ORDER BY
+                            code_map.candidate_priority,
+                            CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END,
+                            s.price_basis_date DESC NULLS LAST,
+                            s.basis_version DESC
+                    ) AS rn
+                FROM statement_metrics_adjusted AS s
+                JOIN code_map ON s.code = code_map.candidate_code
+                {where_sql}
+            )
+            SELECT
+                code,
+                disclosed_date,
+                period_end,
+                period_type,
+                price_basis_date,
+                raw_eps,
+                adjusted_eps,
+                raw_bps,
+                adjusted_bps,
+                raw_forecast_eps,
+                adjusted_forecast_eps,
+                raw_dividend_fy,
+                adjusted_dividend_fy,
+                raw_shares_outstanding,
+                adjusted_shares_outstanding,
+                adjustment_factor_cumulative,
+                basis_version,
+                created_at
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY disclosed_date, period_end, period_type
+            """,
+            tuple(params),
+        )
+        return [dict(row.items()) for row in rows]
+
+    def get_daily_valuation(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        reader = _resolve_market_reader()
+        if not _market_table_exists(reader, "daily_valuation"):
+            return []
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return []
+
+        values_sql = ",".join("(?, ?)" for _ in candidates)
+        params: list[Any] = []
+        for priority, candidate_code in enumerate(candidates):
+            params.extend([candidate_code, priority])
+
+        where_conditions: list[str] = []
+        if start_date is not None:
+            where_conditions.append("d.date >= ?")
+            params.append(start_date)
+        if end_date is not None:
+            where_conditions.append("d.date <= ?")
+            params.append(end_date)
+        where_sql = ""
+        if where_conditions:
+            where_sql = "WHERE " + " AND ".join(where_conditions)
+
+        rows = reader.query(
+            f"""
+            WITH code_map(candidate_code, candidate_priority) AS (
+                VALUES {values_sql}
+            ),
+            ranked AS (
+                SELECT
+                    d.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY d.date
+                        ORDER BY
+                            code_map.candidate_priority,
+                            CASE WHEN length(d.code) = 4 THEN 0 ELSE 1 END,
+                            d.price_basis_date DESC NULLS LAST,
+                            d.basis_version DESC
+                    ) AS rn
+                FROM daily_valuation AS d
+                JOIN code_map ON d.code = code_map.candidate_code
+                {where_sql}
+            )
+            SELECT
+                code,
+                date,
+                price_basis_date,
+                close,
+                eps,
+                bps,
+                forward_eps,
+                per,
+                forward_per,
+                pbr,
+                market_cap,
+                free_float_market_cap,
+                statement_disclosed_date,
+                forward_eps_disclosed_date,
+                forward_eps_source,
+                basis_version,
+                created_at
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+            """,
+            tuple(params),
+        )
+        return [dict(row.items()) for row in rows]
+
     def get_statements_batch(
         self,
         stock_codes: list[str],
@@ -1356,6 +1503,21 @@ class DirectMarketDataClient:
         return self._market.get_statements(
             stock_code, start_date, end_date, period_type, actual_only
         )
+
+    def get_adjusted_statement_metrics(
+        self,
+        stock_code: str,
+        as_of_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return self._market.get_adjusted_statement_metrics(stock_code, as_of_date)
+
+    def get_daily_valuation(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return self._market.get_daily_valuation(stock_code, start_date, end_date)
 
     def get_statements_batch(
         self,

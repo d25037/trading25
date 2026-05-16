@@ -83,6 +83,8 @@ class FundamentalDataPoint(BaseModel):
 class DailyValuationDataPoint(BaseModel):
     date: str
     close: float
+    eps: float | None = None
+    bps: float | None = None
     per: float | None = None
     forwardPer: float | None = None
     pbr: float | None = None
@@ -91,6 +93,8 @@ class DailyValuationDataPoint(BaseModel):
     forwardEps: float | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None
+    priceBasisDate: str | None = None
+    basisVersion: str | None = None
 
 
 @dataclass
