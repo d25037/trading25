@@ -16,10 +16,14 @@ from typing import Any, Protocol
 
 from loguru import logger
 
+from src.application.services.adjusted_metrics_materializer import (
+    AdjustedMetricsMaterializer,
+)
 from src.infrastructure.db.market.market_db import (
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
     MARKET_SCHEMA_VERSION,
     METADATA_KEYS,
+    MarketDb,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
@@ -154,6 +158,18 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
     )
 
 
+def _materialize_adjusted_metrics_after_sync(market_db: object) -> None:
+    if not isinstance(market_db, MarketDb):
+        return
+    result = AdjustedMetricsMaterializer(market_db).rebuild_all()
+    logger.info(
+        "Adjusted metrics materialized: statements={}, daily_valuation={}, basis={}",
+        result.statement_rows,
+        result.daily_valuation_rows,
+        result.basis_version,
+    )
+
+
 async def start_sync(
     mode: SyncMode,
     market_db: SyncServiceMarketDbLike,
@@ -236,6 +252,10 @@ async def start_sync(
             if sync_job_manager.is_cancelled(job.job_id):
                 _publish_sync_job_event(job.job_id, close_stream=True)
                 return
+            await asyncio.to_thread(
+                _materialize_adjusted_metrics_after_sync,
+                current_market_db,
+            )
             sync_job_manager.complete_job(job.job_id, result)
             _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.TimeoutError:

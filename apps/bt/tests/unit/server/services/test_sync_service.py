@@ -385,6 +385,40 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 
 
 @pytest.mark.asyncio
+async def test_start_sync_materializes_adjusted_metrics_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(emit_progress=False)
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    materialized: list[object] = []
+
+    def materialize(market_db: object) -> None:
+        materialized.append(market_db)
+
+    monkeypatch.setattr(
+        sync_service,
+        "_materialize_adjusted_metrics_after_sync",
+        materialize,
+    )
+
+    market_db = _market_db(last_sync_date="2026-03-01T00:00:00+00:00")
+    job = await sync_service.start_sync(
+        SyncMode.AUTO,
+        market_db,
+        DummyJQuantsClient(),
+        time_series_store=_time_series_store(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "completed"
+    assert materialized == [market_db]
+
+
+@pytest.mark.asyncio
 async def test_start_sync_resets_market_snapshot_before_initial_sync(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
