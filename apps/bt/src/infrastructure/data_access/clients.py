@@ -773,6 +773,8 @@ class DirectMarketClient:
                 adjusted_dividend_fy,
                 raw_shares_outstanding,
                 adjusted_shares_outstanding,
+                raw_treasury_shares,
+                adjusted_treasury_shares,
                 adjustment_factor_cumulative,
                 basis_version,
                 created_at

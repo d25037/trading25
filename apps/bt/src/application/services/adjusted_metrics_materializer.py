@@ -95,7 +95,8 @@ class AdjustedMetricsMaterializer:
                 bps,
                 COALESCE(forecast_eps, next_year_forecast_earnings_per_share) AS forecast_eps,
                 dividend_fy,
-                shares_outstanding
+                shares_outstanding,
+                treasury_shares
             FROM statements
             {where_clause}
             ORDER BY code, disclosed_date
@@ -172,7 +173,7 @@ class AdjustedMetricsMaterializer:
                     bps=metric.adjusted_bps,
                     forward_eps=metric.adjusted_forecast_eps,
                     shares_outstanding=metric.adjusted_shares_outstanding,
-                    treasury_shares=None,
+                    treasury_shares=metric.adjusted_treasury_shares,
                     statement_disclosed_date=metric.disclosed_date,
                     forward_eps_disclosed_date=(
                         metric.disclosed_date
@@ -213,6 +214,7 @@ def _statement_input_from_row(row: dict[str, Any]) -> AdjustedStatementInput:
         forecast_eps=_optional_float(row.get("forecast_eps")),
         dividend_fy=_optional_float(row.get("dividend_fy")),
         shares_outstanding=_optional_float(row.get("shares_outstanding")),
+        treasury_shares=_optional_float(row.get("treasury_shares")),
     )
 
 
@@ -233,6 +235,8 @@ def _statement_metric_to_row(metric: AdjustedStatementMetric) -> dict[str, Any]:
         "adjusted_dividend_fy": metric.adjusted_dividend_fy,
         "raw_shares_outstanding": metric.raw_shares_outstanding,
         "adjusted_shares_outstanding": metric.adjusted_shares_outstanding,
+        "raw_treasury_shares": metric.raw_treasury_shares,
+        "adjusted_treasury_shares": metric.adjusted_treasury_shares,
         "adjustment_factor_cumulative": metric.adjustment_factor_cumulative,
         "basis_version": metric.basis_version,
     }

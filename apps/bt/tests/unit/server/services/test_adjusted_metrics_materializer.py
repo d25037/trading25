@@ -30,6 +30,7 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
             "forecast_eps": 120.0,
             "dividend_fy": 30.0,
             "shares_outstanding": 10_000_000.0,
+            "treasury_shares": 1_000_000.0,
         }
     ])
     market_db.upsert_stock_data([
@@ -71,9 +72,12 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     assert statements[0]["adjusted_eps"] == pytest.approx(50.0)
     assert statements[0]["adjusted_bps"] == pytest.approx(500.0)
     assert statements[0]["adjusted_forecast_eps"] == pytest.approx(60.0)
+    assert statements[0]["adjusted_treasury_shares"] == pytest.approx(2_000_000.0)
     assert valuation[0]["close"] == pytest.approx(500.0)
     assert valuation[0]["per"] == pytest.approx(10.0)
     assert valuation[0]["forward_per"] == pytest.approx(500.0 / 60.0)
+    assert valuation[0]["market_cap"] == pytest.approx(10_000_000_000.0)
+    assert valuation[0]["free_float_market_cap"] == pytest.approx(9_000_000_000.0)
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
 
 
@@ -120,6 +124,58 @@ def test_rebuild_excludes_future_disclosures_from_daily_valuation(
 
     assert valuation[0]["eps"] == pytest.approx(100.0)
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
+
+
+def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-08-01",
+            "type_of_current_period": "1Q",
+            "earnings_per_share": 20.0,
+            "bps": None,
+            "forecast_eps": 160.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("7203")
+
+    assert valuation[0]["eps"] == pytest.approx(100.0)
+    assert valuation[0]["bps"] == pytest.approx(1000.0)
+    assert valuation[0]["per"] == pytest.approx(5.0)
+    assert valuation[0]["pbr"] == pytest.approx(0.5)
+    assert valuation[0]["forward_eps"] == pytest.approx(160.0)
+    assert valuation[0]["forward_per"] == pytest.approx(500.0 / 160.0)
+    assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
+    assert valuation[0]["forward_eps_disclosed_date"] == "2024-08-01"
+    assert valuation[0]["forward_eps_source"] == "revised"
 
 
 def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> None:

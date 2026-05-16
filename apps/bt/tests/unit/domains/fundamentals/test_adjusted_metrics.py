@@ -21,6 +21,7 @@ def test_split_event_adjusts_per_share_values_to_price_basis() -> None:
             forecast_eps=120.0,
             dividend_fy=30.0,
             shares_outstanding=10_000_000.0,
+            treasury_shares=1_000_000.0,
         ),
         events=[ShareAdjustmentEvent(date="2024-01-01", adjustment_factor=0.5)],
         price_basis_date="2024-12-30",
@@ -32,6 +33,7 @@ def test_split_event_adjusts_per_share_values_to_price_basis() -> None:
     assert metric.adjusted_forecast_eps == pytest.approx(60.0)
     assert metric.adjusted_dividend_fy == pytest.approx(15.0)
     assert metric.adjusted_shares_outstanding == pytest.approx(20_000_000.0)
+    assert metric.adjusted_treasury_shares == pytest.approx(2_000_000.0)
     assert metric.adjustment_factor_cumulative == pytest.approx(0.5)
 
 
@@ -47,6 +49,7 @@ def test_reverse_split_event_adjusts_per_share_values_to_price_basis() -> None:
             forecast_eps=120.0,
             dividend_fy=30.0,
             shares_outstanding=10_000_000.0,
+            treasury_shares=1_000_000.0,
         ),
         events=[ShareAdjustmentEvent(date="2024-01-01", adjustment_factor=2.0)],
         price_basis_date="2024-12-30",
@@ -58,6 +61,7 @@ def test_reverse_split_event_adjusts_per_share_values_to_price_basis() -> None:
     assert metric.adjusted_forecast_eps == pytest.approx(240.0)
     assert metric.adjusted_dividend_fy == pytest.approx(60.0)
     assert metric.adjusted_shares_outstanding == pytest.approx(5_000_000.0)
+    assert metric.adjusted_treasury_shares == pytest.approx(500_000.0)
     assert metric.adjustment_factor_cumulative == pytest.approx(2.0)
 
 

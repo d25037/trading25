@@ -126,9 +126,16 @@ _STATEMENT_METRICS_ADJUSTED_COLUMNS: tuple[str, ...] = (
     "adjusted_dividend_fy",
     "raw_shares_outstanding",
     "adjusted_shares_outstanding",
+    "raw_treasury_shares",
+    "adjusted_treasury_shares",
     "adjustment_factor_cumulative",
     "basis_version",
     "created_at",
+)
+
+_STATEMENT_METRICS_ADJUSTED_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("raw_treasury_shares", "DOUBLE"),
+    ("adjusted_treasury_shares", "DOUBLE"),
 )
 
 _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
@@ -543,6 +550,8 @@ class MarketDb:
                 adjusted_dividend_fy DOUBLE,
                 raw_shares_outstanding DOUBLE,
                 adjusted_shares_outstanding DOUBLE,
+                raw_treasury_shares DOUBLE,
+                adjusted_treasury_shares DOUBLE,
                 adjustment_factor_cumulative DOUBLE,
                 basis_version TEXT,
                 created_at TEXT,
@@ -635,6 +644,7 @@ class MarketDb:
             had_legacy_market_tables=had_legacy_market_tables,
         )
         self._ensure_statements_columns()
+        self._ensure_statement_metrics_adjusted_columns()
         self._ensure_stock_price_adjustment_mode_for_empty_db()
 
     def _ensure_market_schema_version(
@@ -679,6 +689,20 @@ class MarketDb:
                 continue
             self._execute(
                 f"ALTER TABLE statements ADD COLUMN {self._quote_identifier(column_name)} {column_type}"
+            )
+
+    def _ensure_statement_metrics_adjusted_columns(self) -> None:
+        """既存 statement_metrics_adjusted テーブルに不足カラムを追加する。"""
+        existing_columns = {
+            str(row[1])
+            for row in self._fetchall("PRAGMA table_info('statement_metrics_adjusted')")
+            if row and len(row) > 1
+        }
+        for column_name, column_type in _STATEMENT_METRICS_ADJUSTED_ADDITIONAL_COLUMNS:
+            if column_name in existing_columns:
+                continue
+            self._execute(
+                f"ALTER TABLE statement_metrics_adjusted ADD COLUMN {self._quote_identifier(column_name)} {column_type}"
             )
 
     # --- Read ---
@@ -1994,42 +2018,73 @@ class MarketDb:
 
         normalized_codes = sorted({normalize_stock_code(code) for code in codes or [] if code})
         code_filter = ""
-        params: list[Any] = [basis_version]
         if normalized_codes:
             placeholders = ", ".join("?" for _ in normalized_codes)
             code_filter = f"WHERE code IN ({placeholders})"
-            params.extend(normalized_codes)
 
         count_row = self._fetchone(
             f"""
-            SELECT COUNT(*)
-            FROM (
+            WITH
+            stock_prices AS (
+                SELECT code, date, close
+                FROM stock_data
+                {code_filter}
+                ORDER BY code, date
+            ),
+            actual_metrics AS (
+                SELECT code, disclosed_date, adjusted_eps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND adjusted_eps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            bps_metrics AS (
+                SELECT code, disclosed_date, adjusted_bps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND adjusted_bps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            forward_metrics AS (
+                SELECT code, disclosed_date, period_type, adjusted_forecast_eps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND adjusted_forecast_eps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            shares_metrics AS (
                 SELECT
-                    s.code,
-                    s.date
-                FROM (
-                    SELECT code, date, close
-                    FROM stock_data
-                    {code_filter}
-                    ORDER BY code, date
-                ) AS s
-                ASOF JOIN (
-                    SELECT
-                        code,
-                        disclosed_date,
-                        adjusted_eps,
-                        adjusted_bps,
-                        adjusted_forecast_eps,
-                        adjusted_shares_outstanding
-                    FROM statement_metrics_adjusted
-                    WHERE basis_version = ?
-                    ORDER BY code, disclosed_date
-                ) AS m
-                ON s.code = m.code
-               AND s.date >= m.disclosed_date
-            ) AS matched
+                    code,
+                    disclosed_date,
+                    adjusted_shares_outstanding,
+                    adjusted_treasury_shares
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND adjusted_shares_outstanding IS NOT NULL
+                ORDER BY code, disclosed_date
+            )
+            SELECT COUNT(*)
+            FROM stock_prices AS s
+            ASOF LEFT JOIN actual_metrics AS a
+              ON s.code = a.code
+             AND s.date >= a.disclosed_date
+            ASOF LEFT JOIN bps_metrics AS b
+              ON s.code = b.code
+             AND s.date >= b.disclosed_date
+            ASOF LEFT JOIN forward_metrics AS f
+              ON s.code = f.code
+             AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN shares_metrics AS sh
+              ON s.code = sh.code
+             AND s.date >= sh.disclosed_date
+            WHERE a.disclosed_date IS NOT NULL
+               OR b.disclosed_date IS NOT NULL
+               OR f.disclosed_date IS NOT NULL
+               OR sh.disclosed_date IS NOT NULL
             """,
-            [*params[1:], params[0]],
+            [*normalized_codes, basis_version, basis_version, basis_version, basis_version],
         )
         candidate_count = int(count_row[0] or 0) if count_row else 0
         if candidate_count <= 0:
@@ -2047,82 +2102,131 @@ class MarketDb:
         )
         self._execute(
             f"""
+            WITH
+            stock_prices AS (
+                SELECT code, date, close
+                FROM stock_data
+                {code_filter}
+                ORDER BY code, date
+            ),
+            actual_metrics AS (
+                SELECT code, disclosed_date, adjusted_eps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND adjusted_eps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            bps_metrics AS (
+                SELECT code, disclosed_date, adjusted_bps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND adjusted_bps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            forward_metrics AS (
+                SELECT code, disclosed_date, period_type, adjusted_forecast_eps
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND adjusted_forecast_eps IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            shares_metrics AS (
+                SELECT
+                    code,
+                    disclosed_date,
+                    adjusted_shares_outstanding,
+                    adjusted_treasury_shares
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND adjusted_shares_outstanding IS NOT NULL
+                ORDER BY code, disclosed_date
+            )
             INSERT INTO daily_valuation ({", ".join(_DAILY_VALUATION_COLUMNS)})
             SELECT
                 s.code,
                 s.date,
                 ? AS price_basis_date,
                 s.close,
-                m.adjusted_eps AS eps,
-                m.adjusted_bps AS bps,
-                m.adjusted_forecast_eps AS forward_eps,
+                a.adjusted_eps AS eps,
+                b.adjusted_bps AS bps,
+                f.adjusted_forecast_eps AS forward_eps,
                 CASE
-                    WHEN s.close > 0 AND m.adjusted_eps > 0
-                    THEN s.close / m.adjusted_eps
+                    WHEN s.close > 0 AND a.adjusted_eps > 0
+                    THEN s.close / a.adjusted_eps
                     ELSE NULL
                 END AS per,
                 CASE
-                    WHEN s.close > 0 AND m.adjusted_forecast_eps > 0
-                    THEN s.close / m.adjusted_forecast_eps
+                    WHEN s.close > 0 AND f.adjusted_forecast_eps > 0
+                    THEN s.close / f.adjusted_forecast_eps
                     ELSE NULL
                 END AS forward_per,
                 CASE
-                    WHEN s.close > 0 AND m.adjusted_bps > 0
-                    THEN s.close / m.adjusted_bps
+                    WHEN s.close > 0 AND b.adjusted_bps > 0
+                    THEN s.close / b.adjusted_bps
                     ELSE NULL
                 END AS pbr,
                 CASE
-                    WHEN s.close > 0 AND m.adjusted_shares_outstanding > 0
-                    THEN s.close * m.adjusted_shares_outstanding
+                    WHEN s.close > 0 AND sh.adjusted_shares_outstanding > 0
+                    THEN s.close * sh.adjusted_shares_outstanding
                     ELSE NULL
                 END AS market_cap,
                 CASE
-                    WHEN s.close > 0 AND m.adjusted_shares_outstanding > 0
-                    THEN s.close * m.adjusted_shares_outstanding
+                    WHEN s.close > 0
+                     AND sh.adjusted_shares_outstanding > 0
+                     AND sh.adjusted_shares_outstanding - COALESCE(sh.adjusted_treasury_shares, 0) > 0
+                    THEN s.close * (
+                        sh.adjusted_shares_outstanding
+                        - COALESCE(sh.adjusted_treasury_shares, 0)
+                    )
                     ELSE NULL
                 END AS free_float_market_cap,
-                m.disclosed_date AS statement_disclosed_date,
+                COALESCE(a.disclosed_date, b.disclosed_date) AS statement_disclosed_date,
                 CASE
-                    WHEN m.adjusted_forecast_eps IS NOT NULL
-                    THEN m.disclosed_date
+                    WHEN f.adjusted_forecast_eps IS NOT NULL
+                    THEN f.disclosed_date
                     ELSE NULL
                 END AS forward_eps_disclosed_date,
                 CASE
-                    WHEN m.adjusted_forecast_eps IS NOT NULL
+                    WHEN f.adjusted_forecast_eps IS NOT NULL
+                     AND upper(f.period_type) = 'FY'
                     THEN 'fy'
+                    WHEN f.adjusted_forecast_eps IS NOT NULL
+                    THEN 'revised'
                     ELSE NULL
                 END AS forward_eps_source,
                 ? AS basis_version,
                 ? AS created_at
-            FROM (
-                SELECT code, date, close
-                FROM stock_data
-                {code_filter}
-                ORDER BY code, date
-            ) AS s
-            ASOF JOIN (
-                SELECT
-                    code,
-                    disclosed_date,
-                    adjusted_eps,
-                    adjusted_bps,
-                    adjusted_forecast_eps,
-                    adjusted_shares_outstanding
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                ORDER BY code, disclosed_date
-            ) AS m
-            ON s.code = m.code
-           AND s.date >= m.disclosed_date
+            FROM stock_prices AS s
+            ASOF LEFT JOIN actual_metrics AS a
+              ON s.code = a.code
+             AND s.date >= a.disclosed_date
+            ASOF LEFT JOIN bps_metrics AS b
+              ON s.code = b.code
+             AND s.date >= b.disclosed_date
+            ASOF LEFT JOIN forward_metrics AS f
+              ON s.code = f.code
+             AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN shares_metrics AS sh
+              ON s.code = sh.code
+             AND s.date >= sh.disclosed_date
+            WHERE a.disclosed_date IS NOT NULL
+               OR b.disclosed_date IS NOT NULL
+               OR f.disclosed_date IS NOT NULL
+               OR sh.disclosed_date IS NOT NULL
             ON CONFLICT (code, date, basis_version)
             DO UPDATE SET {update_clause}
             """,
             [
+                *normalized_codes,
+                basis_version,
+                basis_version,
+                basis_version,
+                basis_version,
                 price_basis_date,
                 basis_version,
                 now_iso,
-                *normalized_codes,
-                basis_version,
             ],
         )
         return candidate_count

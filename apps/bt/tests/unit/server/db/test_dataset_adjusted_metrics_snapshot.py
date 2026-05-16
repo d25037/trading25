@@ -44,6 +44,8 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 adjusted_dividend_fy DOUBLE,
                 raw_shares_outstanding DOUBLE,
                 adjusted_shares_outstanding DOUBLE,
+                raw_treasury_shares DOUBLE,
+                adjusted_treasury_shares DOUBLE,
                 adjustment_factor_cumulative DOUBLE,
                 basis_version TEXT,
                 created_at TEXT
@@ -71,7 +73,7 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
             )
         """)
         conn.execute(
-            "INSERT INTO statement_metrics_adjusted VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO statement_metrics_adjusted VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "72030",
                 "2024-05-10",
@@ -88,6 +90,8 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 15.0,
                 10_000_000.0,
                 20_000_000.0,
+                1_000_000.0,
+                2_000_000.0,
                 0.5,
                 "adjusted-v1:2024-12-30",
                 None,

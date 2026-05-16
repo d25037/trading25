@@ -30,6 +30,7 @@ class AdjustedStatementInput:
     forecast_eps: float | None = None
     dividend_fy: float | None = None
     shares_outstanding: float | None = None
+    treasury_shares: float | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,8 @@ class AdjustedStatementMetric:
     adjusted_dividend_fy: float | None
     raw_shares_outstanding: float | None
     adjusted_shares_outstanding: float | None
+    raw_treasury_shares: float | None
+    adjusted_treasury_shares: float | None
     adjustment_factor_cumulative: float
 
 
@@ -108,6 +111,13 @@ def build_adjusted_statement_metric(
         from_date=statement.disclosed_date,
         through_date=price_basis_date,
     )
+    adjusted_treasury_shares = adjust_share_count_to_price_basis(
+        statement.treasury_shares or 0.0,
+        events,
+        from_date=statement.disclosed_date,
+        through_date=price_basis_date,
+        allow_zero=True,
+    )
 
     return AdjustedStatementMetric(
         code=statement.code,
@@ -132,6 +142,8 @@ def build_adjusted_statement_metric(
         ),
         raw_shares_outstanding=statement.shares_outstanding,
         adjusted_shares_outstanding=adjusted_shares,
+        raw_treasury_shares=statement.treasury_shares,
+        adjusted_treasury_shares=adjusted_treasury_shares,
         adjustment_factor_cumulative=adjustment_factor,
     )
 
