@@ -16,6 +16,7 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _assert_required_tables,
     _base_event_record,
     _bucket_pre_return,
+    _classify_overheat_state,
     _coverage_rate_pct,
     _event_strength_rate_pct,
     _expand_market_scope,
@@ -455,6 +456,9 @@ def _build_single_event_record(
             record[f"pre_abret_{window}d_pct"] = np.nan
             record[f"pre_return_{window}d_bucket"] = "missing"
 
+    record["overheat_state"] = _classify_overheat_state(
+        record.get("pre_return_20d_pct")
+    )
     _append_liquidity_features(
         record,
         row,
@@ -519,7 +523,13 @@ def _classify_entry_execution(
 def _build_execution_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     if not scoped_df.empty:
-        group_columns = ["market_scope", "is_fy", "event_strength", "execution_label"]
+        group_columns = [
+            "market_scope",
+            "is_fy",
+            "event_strength",
+            "overheat_state",
+            "execution_label",
+        ]
         for keys, frame in scoped_df.groupby(group_columns, sort=False, dropna=False):
             key_values = dict(zip(group_columns, keys, strict=True))
             rows.append(
@@ -540,6 +550,7 @@ def _build_execution_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
         "market_scope",
         "is_fy",
         "event_strength",
+        "overheat_state",
         "execution_label",
         "event_count",
         "code_count",
@@ -601,6 +612,7 @@ def _build_entry_grouped_return_df(
             "is_fy",
             "event_strength",
             *window_columns,
+            "overheat_state",
             "adv60_to_free_float_bucket",
         ]
         for horizon in horizons:
@@ -623,6 +635,7 @@ def _build_entry_grouped_return_df(
         "is_fy",
         "event_strength",
         *[f"pre_return_{window}d_bucket" for window in _infer_pre_windows(scoped_df)],
+        "overheat_state",
         "adv60_to_free_float_bucket",
         "execution_scope",
         "horizon",
@@ -784,6 +797,7 @@ def _event_feature_columns(pre_windows: Sequence[int], horizons: Sequence[int]) 
         "adv60_to_free_float_bucket",
         "liquidity_residual_z",
         "liquidity_regime",
+        "overheat_state",
     ]
     for window in pre_windows:
         columns.extend(

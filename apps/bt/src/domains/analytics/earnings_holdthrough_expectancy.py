@@ -33,6 +33,10 @@ DEFAULT_PRE_WINDOWS: tuple[int, ...] = (20, 60)
 DEFAULT_HORIZONS: tuple[int, ...] = (1, 5, 20)
 DEFAULT_LIQUIDITY_WINDOW = 60
 DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+OVERHEAT_PRE_RETURN_20D_THRESHOLD_PCT = 30.0
+OVERHEAT_STATE = "overheat"
+NOT_OVERHEAT_STATE = "not_overheat"
+MISSING_OVERHEAT_STATE = "missing"
 _MARKET_SCOPE_ORDER: tuple[str, ...] = (
     "all",
     "prime",
@@ -804,6 +808,9 @@ def _build_single_event_record(
             record[f"pre_return_{window}d_bucket"] = "missing"
 
     max_pre_window = max(pre_windows)
+    record["overheat_state"] = _classify_overheat_state(
+        record.get("pre_return_20d_pct")
+    )
     record["signed_pre_move"] = _signed_pre_move(
         record[f"pre_abret_{max_pre_window}d_pct"],
         str(record["event_strength"]),
@@ -911,6 +918,15 @@ def _classify_liquidity_regime(
     if len(valid_returns) == 2 and any(value < 0 for value in valid_returns):
         return "distribution_stress"
     return "neutral"
+
+
+def _classify_overheat_state(recent_return_20d_pct: object) -> str:
+    value = _float_or_nan(recent_return_20d_pct)
+    if not math.isfinite(value):
+        return MISSING_OVERHEAT_STATE
+    if value >= OVERHEAT_PRE_RETURN_20D_THRESHOLD_PCT:
+        return OVERHEAT_STATE
+    return NOT_OVERHEAT_STATE
 
 
 def enrich_event_features_with_prime_liquidity_residuals(
@@ -1194,6 +1210,13 @@ def _attach_prime_liquidity_residual_panel(
         result["liquidity_residual_z"] = np.nan
         result["liquidity_residual_z_bucket"] = "missing"
         result["liquidity_regime"] = "missing"
+        if "overheat_state" not in result.columns:
+            if "pre_return_20d_pct" in result.columns:
+                result["overheat_state"] = result["pre_return_20d_pct"].map(
+                    _classify_overheat_state
+                )
+            else:
+                result["overheat_state"] = MISSING_OVERHEAT_STATE
         return result
 
     merged = result.merge(
@@ -1241,6 +1264,12 @@ def _attach_prime_liquidity_residual_panel(
         )
         for z, row in zip(z_values, result.to_dict(orient="records"), strict=False)
     ]
+    if "pre_return_20d_pct" in result.columns:
+        result["overheat_state"] = result["pre_return_20d_pct"].map(
+            _classify_overheat_state
+        )
+    elif "overheat_state" not in result.columns:
+        result["overheat_state"] = MISSING_OVERHEAT_STATE
     return result
 
 
@@ -1320,6 +1349,7 @@ def _build_precondition_outcome_df(
             "adv60_to_free_float_bucket",
             "liquidity_residual_z_bucket",
             "liquidity_regime",
+            "overheat_state",
         ]
         for horizon in horizons:
             return_col = f"forward_excess_return_{horizon}d_pct"
@@ -1350,6 +1380,7 @@ def _build_precondition_outcome_df(
         "adv60_to_free_float_bucket",
         "liquidity_residual_z_bucket",
         "liquidity_regime",
+        "overheat_state",
         "horizon",
         *_summary_columns(),
         "positive_event_rate_pct",
@@ -1375,6 +1406,7 @@ def _build_bucket_expectancy_df(
             "is_fy",
             "has_next_guidance",
             "event_strength",
+            "overheat_state",
             *window_columns,
         ]
         for horizon in horizons:
@@ -1393,6 +1425,7 @@ def _build_bucket_expectancy_df(
         "is_fy",
         "has_next_guidance",
         "event_strength",
+        "overheat_state",
         *[f"pre_return_{window}d_bucket" for window in _infer_pre_windows(scoped_df)],
         "horizon",
         *_summary_columns(),
@@ -1413,6 +1446,7 @@ def _build_liquidity_interaction_df(
             "liquidity_regime",
             "liquidity_residual_z_bucket",
             "event_strength",
+            "overheat_state",
             "is_fy",
             "has_next_guidance",
         ]
@@ -1439,6 +1473,7 @@ def _build_liquidity_interaction_df(
         "liquidity_regime",
         "liquidity_residual_z_bucket",
         "event_strength",
+        "overheat_state",
         "is_fy",
         "has_next_guidance",
         "horizon",
@@ -1537,6 +1572,9 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                     "code_count": int(frame["code"].nunique()),
                     "fy_event_count": int((frame["is_fy"] == True).sum()),  # noqa: E712
                     "next_guidance_count": int((frame["has_next_guidance"] == True).sum()),  # noqa: E712
+                    "overheat_count": int(
+                        (frame["overheat_state"].astype(str) == OVERHEAT_STATE).sum()
+                    ),
                     "med_adv60_coverage_pct": _coverage_rate_pct(frame["med_adv60_mil_jpy"]),
                     "liquidity_regime_coverage_pct": float(
                         (frame["liquidity_regime"] != "missing").mean() * 100.0
@@ -1553,6 +1591,7 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
         "code_count",
         "fy_event_count",
         "next_guidance_count",
+        "overheat_count",
         "med_adv60_coverage_pct",
         "liquidity_regime_coverage_pct",
         "liquidity_residual_z_coverage_pct",
@@ -1643,6 +1682,7 @@ def _base_event_record(row: Any) -> dict[str, Any]:
         "liquidity_residual_z": np.nan,
         "liquidity_residual_z_bucket": "missing",
         "liquidity_regime": "missing",
+        "overheat_state": MISSING_OVERHEAT_STATE,
     }
 
 
@@ -1712,6 +1752,7 @@ def _event_feature_columns(
         "liquidity_residual_z",
         "liquidity_residual_z_bucket",
         "liquidity_regime",
+        "overheat_state",
     ]
     for window in pre_windows:
         columns.extend(

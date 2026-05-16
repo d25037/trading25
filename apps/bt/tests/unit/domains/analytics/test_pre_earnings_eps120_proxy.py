@@ -34,6 +34,61 @@ def test_pre_earnings_eps120_proxy_uses_only_pre_disclosure_valuation(
     assert event["market_cap_bil_jpy"] == pytest.approx(105.0 * 1_000_000.0 / 1e9)
 
 
+def test_pre_earnings_eps120_proxy_prefers_daily_valuation_sot(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_proxy_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE daily_valuation (
+            code TEXT,
+            date TEXT,
+            price_basis_date TEXT,
+            close DOUBLE,
+            eps DOUBLE,
+            bps DOUBLE,
+            forward_eps DOUBLE,
+            per DOUBLE,
+            forward_per DOUBLE,
+            pbr DOUBLE,
+            market_cap DOUBLE,
+            free_float_market_cap DOUBLE,
+            statement_disclosed_date TEXT,
+            forward_eps_disclosed_date TEXT,
+            forward_eps_source TEXT,
+            basis_version TEXT,
+            created_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO daily_valuation VALUES (
+            '1111', '2024-01-09', '2024-01-11', 105.0,
+            70.0, 350.0, 140.0,
+            1.5, 0.75, 0.3,
+            7000000000.0, 7000000000.0,
+            '2023-09-10', '2023-09-10', 'fy',
+            'adjusted-v1:2024-01-11', '2024-01-11T00:00:00'
+        )
+        """
+    )
+    conn.close()
+
+    result = _run_test_research(db_path)
+
+    event = result.event_feature_df[result.event_feature_df["code"] == "1111"].iloc[0]
+    assert event["valuation_source"] == "daily_valuation"
+    assert event["valuation_actual_eps"] == pytest.approx(70.0)
+    assert event["valuation_forward_eps"] == pytest.approx(140.0)
+    assert event["valuation_bps"] == pytest.approx(350.0)
+    assert event["per"] == pytest.approx(1.5)
+    assert event["forward_per"] == pytest.approx(0.75)
+    assert event["pbr"] == pytest.approx(0.3)
+    assert event["market_cap_bil_jpy"] == pytest.approx(7.0)
+
+
 def test_pre_earnings_eps120_proxy_does_not_carry_stale_forecast_eps(
     tmp_path: Path,
 ) -> None:

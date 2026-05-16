@@ -10,6 +10,7 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     EarningsHoldthroughExpectancyResult,
     _attach_prime_liquidity_residual_panel,
     _build_prime_liquidity_residual_panel,
+    _classify_overheat_state,
     build_summary_markdown,
     run_earnings_holdthrough_expectancy_research,
     write_earnings_holdthrough_expectancy_bundle,
@@ -138,6 +139,12 @@ def test_prime_liquidity_residual_panel_classifies_daily_ranking_states() -> Non
     assert event["liquidity_residual_z"] > 1.0
     assert event["liquidity_residual_z_bucket"] == "high"
     assert event["liquidity_regime"] == "rerating_participation"
+
+
+def test_earnings_holdthrough_classifies_overheat_from_20d_return() -> None:
+    assert _classify_overheat_state(29.99) == "not_overheat"
+    assert _classify_overheat_state(30.0) == "overheat"
+    assert _classify_overheat_state(float("nan")) == "missing"
 
 
 def test_earnings_holdthrough_research_writes_bundle_and_summary(tmp_path: Path) -> None:

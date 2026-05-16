@@ -387,6 +387,9 @@ def _merge_event_panels(
     ]
     eps = eps120_df.loc[:, [*keys, *eps_columns]]
     base = base.merge(eps, on=keys, how="left")
+    if "overheat_state" not in base.columns and "overheat_state" in eps120_df.columns:
+        eps_overheat = eps120_df.loc[:, [*keys, "overheat_state"]]
+        base = base.merge(eps_overheat, on=keys, how="left")
     return base.sort_values(["disclosed_date", "code"], kind="stable").reset_index(drop=True)
 
 
@@ -402,6 +405,14 @@ def _expand_liquidity_scope(scoped_df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([all_scope, actual], ignore_index=True)
 
 
+def _ensure_overheat_state(frame: pd.DataFrame) -> pd.DataFrame:
+    if "overheat_state" in frame.columns:
+        return frame
+    result = frame.copy()
+    result["overheat_state"] = "missing"
+    return result
+
+
 def _build_threshold_response_df(
     scoped_df: pd.DataFrame,
     *,
@@ -411,6 +422,7 @@ def _build_threshold_response_df(
     severe_loss_threshold_pct: float,
     min_events: int,
 ) -> pd.DataFrame:
+    scoped_df = _ensure_overheat_state(scoped_df)
     rows: list[dict[str, Any]] = []
     for window in pre_windows:
         return_col = f"pre_return_{window}d_pct"
@@ -450,6 +462,7 @@ def _build_joint_runup_response_df(
     severe_loss_threshold_pct: float,
     min_events: int,
 ) -> pd.DataFrame:
+    scoped_df = _ensure_overheat_state(scoped_df)
     columns = _joint_response_columns()
     if "pre_return_20d_pct" not in scoped_df.columns or "pre_return_60d_pct" not in scoped_df.columns:
         return pd.DataFrame(columns=columns)
@@ -494,6 +507,7 @@ def _build_percentile_response_df(
     severe_loss_threshold_pct: float,
     min_events: int,
 ) -> pd.DataFrame:
+    scoped_df = _ensure_overheat_state(scoped_df)
     rows: list[dict[str, Any]] = []
     frame = scoped_df.copy()
     frame["event_year"] = frame["pre_event_date"].astype(str).str.slice(0, 4)
@@ -540,7 +554,8 @@ def _summarize_condition_frames(
     condition_fields: dict[str, Any],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    group_columns = ["market_scope", "is_fy", "liquidity_scope"]
+    selected = _ensure_overheat_state(selected)
+    group_columns = ["market_scope", "is_fy", "liquidity_scope", "overheat_state"]
     for keys, group in selected.groupby(group_columns, sort=False, dropna=False):
         if len(group) < min_events:
             continue
@@ -684,19 +699,21 @@ def _percentile_bucket(rank_pct: object) -> str:
 
 
 def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
+    scoped_df = _ensure_overheat_state(scoped_df)
     rows: list[dict[str, Any]] = []
     if not scoped_df.empty:
         for keys, frame in scoped_df.groupby(
-            ["market_scope", "is_fy", "liquidity_scope"],
+            ["market_scope", "is_fy", "liquidity_scope", "overheat_state"],
             sort=False,
             dropna=False,
         ):
-            market_scope, is_fy, liquidity_scope = keys
+            market_scope, is_fy, liquidity_scope, overheat_state = keys
             rows.append(
                 {
                     "market_scope": market_scope,
                     "is_fy": is_fy,
                     "liquidity_scope": liquidity_scope,
+                    "overheat_state": overheat_state,
                     "event_count": int(len(frame)),
                     "code_count": int(frame["code"].nunique()),
                     "pre_return_20d_coverage_pct": _numeric_coverage_pct(
@@ -716,6 +733,7 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "market_scope",
             "is_fy",
             "liquidity_scope",
+            "overheat_state",
             "event_count",
             "code_count",
             "pre_return_20d_coverage_pct",
@@ -738,6 +756,7 @@ def _base_response_columns() -> list[str]:
         "market_scope",
         "is_fy",
         "liquidity_scope",
+        "overheat_state",
         "event_count",
         "code_count",
         "eps120_eligible_count",

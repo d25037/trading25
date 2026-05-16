@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from src.domains.analytics.earnings_holdthrough_expectancy import (
+    OVERHEAT_STATE,
     _float_or_nan,
     _sort_summary_df,
     _str_or_none,
@@ -85,12 +86,19 @@ def run_pre_earnings_eps120_proxy_research(
         snapshot_prefix="pre-earnings-eps120-proxy-",
     ) as ctx:
         statement_df = _query_statement_rows(ctx.connection)
+        adjusted_statement_metric_df = _query_adjusted_statement_metric_rows(ctx.connection)
+        daily_valuation_df = _query_daily_valuation_rows(
+            ctx.connection,
+            base_result.event_feature_df,
+        )
         source_mode = ctx.source_mode
         source_detail = ctx.source_detail
 
     event_feature_df = _enrich_events_with_pre_valuation(
         base_result.event_feature_df,
         statement_df,
+        adjusted_statement_metric_df=adjusted_statement_metric_df,
+        daily_valuation_df=daily_valuation_df,
     )
     scoped_df = _expand_market_scope(event_feature_df)
     coverage_diagnostics_df = _build_coverage_diagnostics_df(scoped_df)
@@ -275,33 +283,221 @@ def _query_statement_rows(conn: Any) -> pd.DataFrame:
     return df
 
 
+def _query_adjusted_statement_metric_rows(conn: Any) -> pd.DataFrame:
+    if not _table_exists(conn, "statement_metrics_adjusted"):
+        return pd.DataFrame(
+            columns=[
+                "code",
+                "disclosed_date",
+                "adjusted_eps",
+                "adjusted_bps",
+                "adjusted_forecast_eps",
+                "basis_version",
+            ]
+        )
+    normalized_code = normalize_code_sql("code")
+    df = conn.execute(
+        f"""
+        SELECT *
+        FROM (
+            SELECT
+                {normalized_code} AS code,
+                disclosed_date,
+                CAST(adjusted_eps AS DOUBLE) AS adjusted_eps,
+                CAST(adjusted_bps AS DOUBLE) AS adjusted_bps,
+                CAST(adjusted_forecast_eps AS DOUBLE) AS adjusted_forecast_eps,
+                basis_version,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {normalized_code}, disclosed_date
+                    ORDER BY price_basis_date DESC NULLS LAST,
+                             basis_version DESC,
+                             CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                ) AS rn
+            FROM statement_metrics_adjusted
+        )
+        WHERE rn = 1
+        ORDER BY code, disclosed_date
+        """
+    ).fetchdf()
+    if df.empty:
+        return df
+    df["code"] = df["code"].astype(str)
+    df["disclosed_date"] = df["disclosed_date"].astype(str)
+    return df
+
+
+def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "code",
+        "pre_event_date",
+        "valuation_actual_eps",
+        "valuation_forward_eps",
+        "valuation_bps",
+        "valuation_shares_outstanding",
+        "valuation_fy_disclosed_date",
+        "valuation_forward_eps_disclosed_date",
+        "valuation_forward_eps_period_type",
+        "valuation_forward_eps_source",
+        "per",
+        "forward_per",
+        "pbr",
+        "market_cap_bil_jpy",
+        "valuation_source",
+    ]
+    if (
+        event_df.empty
+        or not _table_exists(conn, "daily_valuation")
+        or "pre_event_date" not in event_df.columns
+    ):
+        return pd.DataFrame(columns=columns)
+    pairs = (
+        event_df.loc[:, ["code", "pre_event_date"]]
+        .dropna()
+        .astype(str)
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    if pairs.empty:
+        return pd.DataFrame(columns=columns)
+    conn.register("_pre_earnings_event_pairs", pairs)
+    try:
+        valuation_code = normalize_code_sql("dv.code")
+        df = conn.execute(
+            f"""
+            WITH valuation_canonical AS (
+                SELECT *
+                FROM (
+                    SELECT
+                        {valuation_code} AS code,
+                        dv.date,
+                        dv.close,
+                        dv.eps,
+                        dv.bps,
+                        dv.forward_eps,
+                        dv.per,
+                        dv.forward_per,
+                        dv.pbr,
+                        dv.market_cap,
+                        dv.statement_disclosed_date,
+                        dv.forward_eps_disclosed_date,
+                        dv.forward_eps_source,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {valuation_code}, dv.date
+                            ORDER BY dv.price_basis_date DESC NULLS LAST,
+                                     dv.basis_version DESC,
+                                     CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END
+                        ) AS rn
+                    FROM daily_valuation dv
+                    JOIN _pre_earnings_event_pairs p
+                      ON p.code = {valuation_code}
+                     AND p.pre_event_date = dv.date
+                )
+                WHERE rn = 1
+            )
+            SELECT
+                p.code,
+                p.pre_event_date,
+                v.eps AS valuation_actual_eps,
+                v.forward_eps AS valuation_forward_eps,
+                v.bps AS valuation_bps,
+                CASE
+                    WHEN v.market_cap IS NOT NULL AND v.close > 0
+                    THEN v.market_cap / v.close
+                    ELSE NULL
+                END AS valuation_shares_outstanding,
+                v.statement_disclosed_date AS valuation_fy_disclosed_date,
+                v.forward_eps_disclosed_date AS valuation_forward_eps_disclosed_date,
+                'FY' AS valuation_forward_eps_period_type,
+                v.forward_eps_source AS valuation_forward_eps_source,
+                v.per,
+                v.forward_per,
+                v.pbr,
+                v.market_cap / 1e9 AS market_cap_bil_jpy,
+                'daily_valuation' AS valuation_source
+            FROM _pre_earnings_event_pairs p
+            JOIN valuation_canonical v
+              ON v.code = p.code
+             AND v.date = p.pre_event_date
+            ORDER BY p.code, p.pre_event_date
+            """
+        ).fetchdf()
+    finally:
+        conn.unregister("_pre_earnings_event_pairs")
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    df["code"] = df["code"].astype(str)
+    df["pre_event_date"] = df["pre_event_date"].astype(str)
+    return df.loc[:, columns]
+
+
 def _enrich_events_with_pre_valuation(
     event_df: pd.DataFrame,
     statement_df: pd.DataFrame,
+    *,
+    adjusted_statement_metric_df: pd.DataFrame | None = None,
+    daily_valuation_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if event_df.empty:
         return event_df.copy()
-    current_statement = statement_df[
+    adjusted_statement_metric_df = (
+        adjusted_statement_metric_df
+        if adjusted_statement_metric_df is not None
+        else pd.DataFrame()
+    )
+    daily_valuation_df = (
+        daily_valuation_df
+        if daily_valuation_df is not None
+        else pd.DataFrame()
+    )
+    statement_with_adjusted = statement_df.copy()
+    if not adjusted_statement_metric_df.empty:
+        statement_with_adjusted = statement_with_adjusted.merge(
+            adjusted_statement_metric_df,
+            on=["code", "disclosed_date"],
+            how="left",
+        )
+    for column in ("adjusted_eps", "adjusted_bps", "adjusted_forecast_eps"):
+        if column not in statement_with_adjusted.columns:
+            statement_with_adjusted[column] = np.nan
+    statement_with_adjusted["sot_actual_eps"] = statement_with_adjusted[
+        "adjusted_eps"
+    ].combine_first(statement_with_adjusted["earnings_per_share"])
+    statement_with_adjusted["sot_next_forecast_eps"] = statement_with_adjusted[
+        "adjusted_forecast_eps"
+    ].combine_first(
+        statement_with_adjusted["next_year_forecast_earnings_per_share"].combine_first(
+            statement_with_adjusted["forecast_eps"]
+        )
+    )
+    current_statement = statement_with_adjusted[
         [
             "code",
             "disclosed_date",
-            "earnings_per_share",
-            "next_year_forecast_earnings_per_share",
+            "sot_actual_eps",
+            "sot_next_forecast_eps",
         ]
     ].rename(
         columns={
-            "earnings_per_share": "actual_eps",
-            "next_year_forecast_earnings_per_share": "next_forecast_eps",
+            "sot_actual_eps": "actual_eps",
+            "sot_next_forecast_eps": "next_forecast_eps",
         }
     )
     enriched = event_df.merge(current_statement, on=["code", "disclosed_date"], how="left")
 
-    statement_lookup = _build_statement_lookup(statement_df)
+    statement_lookup = _build_statement_lookup(statement_with_adjusted)
+    daily_valuation_lookup = _build_daily_valuation_lookup(daily_valuation_df)
 
     valuation_records: list[dict[str, float | str | None]] = []
     for row in enriched.itertuples(index=False):
         code = str(row.code)
         pre_event_date = str(row.pre_event_date)
+        daily_valuation = daily_valuation_lookup.get((code, pre_event_date))
+        if daily_valuation is not None:
+            valuation_record = dict(daily_valuation)
+            valuation_record.pop("code", None)
+            valuation_record.pop("pre_event_date", None)
+            valuation_records.append(cast(dict[str, float | str | None], valuation_record))
+            continue
         statements_as_of = _lookup_statements_as_of(statement_lookup, code, pre_event_date)
         latest_fy = _lookup_latest_actual_fy_statement(statements_as_of)
         baseline_shares = _resolve_baseline_shares(statements_as_of)
@@ -342,6 +538,7 @@ def _enrich_events_with_pre_valuation(
                     if math.isfinite(close) and math.isfinite(valuation_shares) and valuation_shares > 0
                     else np.nan
                 ),
+                "valuation_source": "statement_fallback",
             }
         )
     valuation_df = pd.DataFrame.from_records(valuation_records)
@@ -374,6 +571,7 @@ def _enrich_events_with_pre_valuation(
         "liquidity_residual_z",
     ):
         enriched[f"{feature}_bucket"] = enriched[feature].map(_bucket_for_feature(feature))
+    enriched["overheat_state_bucket"] = enriched["overheat_state"].fillna("missing").astype(str)
     return enriched
 
 
@@ -390,6 +588,17 @@ def _build_statement_lookup(
         dates = frame["disclosed_date"].astype(str).to_numpy()
         lookup[str(code)] = (dates, rows)
     return lookup
+
+
+def _build_daily_valuation_lookup(
+    daily_valuation_df: pd.DataFrame,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    if daily_valuation_df.empty:
+        return {}
+    return {
+        (str(row["code"]), str(row["pre_event_date"])): cast(dict[str, Any], row)
+        for row in daily_valuation_df.to_dict("records")
+    }
 
 
 def _lookup_statements_as_of(
@@ -438,6 +647,16 @@ def _adjust_statement_per_share_metric(
 ) -> float | None:
     if row is None:
         return None
+    adjusted_column = {
+        "earnings_per_share": "adjusted_eps",
+        "bps": "adjusted_bps",
+        "forecast_eps": "adjusted_forecast_eps",
+        "next_year_forecast_earnings_per_share": "adjusted_forecast_eps",
+    }.get(metric_column)
+    if adjusted_column:
+        adjusted = _nullable_float(row.get(adjusted_column))
+        if adjusted is not None:
+            return adjusted
     return adjust_per_share_value(
         _nullable_float(row.get(metric_column)),
         _nullable_float(row.get("shares_outstanding")),
@@ -464,6 +683,9 @@ def _resolve_forward_eps_for_valuation(
             row.get("type_of_document")
         ):
             continue
+        adjusted_forward_eps = _nullable_float(row.get("adjusted_forecast_eps"))
+        if adjusted_forward_eps is not None:
+            return adjusted_forward_eps, disclosed_date, period_type, "revised"
         raw_forward_eps = _first_positive_float(
             row.get("forecast_eps"),
             row.get("next_year_forecast_earnings_per_share"),
@@ -476,6 +698,9 @@ def _resolve_forward_eps_for_valuation(
         if adjusted is not None:
             return adjusted, disclosed_date, period_type, "revised"
 
+    adjusted_fy = _nullable_float(latest_fy.get("adjusted_forecast_eps"))
+    if adjusted_fy is not None:
+        return adjusted_fy, fy_disclosed_date, "FY", "fy"
     raw_fy_forward_eps = _first_positive_float(
         latest_fy.get("next_year_forecast_earnings_per_share"),
         latest_fy.get("forecast_eps"),
@@ -533,6 +758,13 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                 "forward_per_coverage_pct": _nonnull_pct(frame["forward_per"]),
                 "pbr_coverage_pct": _nonnull_pct(frame["pbr"]),
                 "market_cap_coverage_pct": _nonnull_pct(frame["market_cap_bil_jpy"]),
+                "daily_valuation_source_pct": float(
+                    (frame["valuation_source"].astype(str) == "daily_valuation").mean()
+                    * 100.0
+                ),
+                "overheat_count": int(
+                    (frame["overheat_state"].astype(str) == OVERHEAT_STATE).sum()
+                ),
                 "liquidity_residual_z_coverage_pct": _nonnull_pct(
                     frame["liquidity_residual_z"]
                 ),
@@ -552,6 +784,8 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "forward_per_coverage_pct",
             "pbr_coverage_pct",
             "market_cap_coverage_pct",
+            "daily_valuation_source_pct",
+            "overheat_count",
             "liquidity_residual_z_coverage_pct",
         ],
     )
@@ -565,6 +799,7 @@ def _build_feature_bucket_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.
         "pbr",
         "market_cap_bil_jpy",
         "liquidity_residual_z",
+        "overheat_state",
     )
     for (market_scope, is_fy), group in scoped_df.groupby(["market_scope", "is_fy"], sort=False):
         base_rate = _rate_pct(group["eps120_positive_target"])
@@ -618,6 +853,7 @@ def _build_threshold_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.
         ("market_cap_bil_ge1000", lambda df: df["market_cap_bil_jpy"] >= 1000),
         ("liquidity_residual_z_ge1", lambda df: df["liquidity_residual_z"] >= 1.0),
         ("liquidity_residual_z_le_minus1", lambda df: df["liquidity_residual_z"] <= -1.0),
+        ("overheat_20d_ge30", lambda df: df["overheat_state"].astype(str).eq(OVERHEAT_STATE)),
     ]
     return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="threshold")
 
@@ -652,6 +888,12 @@ def _build_combo_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.Data
             & (df["forward_per"] <= 15)
             & (df["liquidity_residual_z"] <= -1.0),
         ),
+        (
+            "low_forward_per15_and_not_overheat",
+            lambda df: (df["forward_per"] > 0)
+            & (df["forward_per"] <= 15)
+            & df["overheat_state"].astype(str).ne(OVERHEAT_STATE),
+        ),
     ]
     return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="combo")
 
@@ -663,6 +905,7 @@ def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
         "event_year",
         "condition_scope",
         "liquidity_regime",
+        "overheat_state",
         "forward_per_bucket",
         "bucket_order",
         *_target_summary_columns(),
@@ -697,6 +940,7 @@ def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
                 "event_year",
                 "condition_scope",
                 "liquidity_regime",
+                "overheat_state",
             ],
             dropna=False,
         )
@@ -712,6 +956,7 @@ def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
         "event_year",
         "condition_scope",
         "liquidity_regime",
+        "overheat_state",
         "forward_per_bucket",
     ]
     for keys, group in scoped.groupby(group_columns, sort=False, dropna=False):
@@ -738,6 +983,7 @@ def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
             "event_year",
             "condition_scope",
             "liquidity_regime",
+            "overheat_state",
         ],
         how="left",
     )
@@ -763,6 +1009,7 @@ def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
         "diagnostic_status",
         "diagnostic_message",
         "liquidity_regime",
+        "overheat_state",
         "forward_per_bucket",
         "bucket_order",
         "stock_count",
@@ -802,6 +1049,7 @@ def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
                     "diagnostic_status": "error",
                     "diagnostic_message": str(exc),
                     "liquidity_regime": "missing",
+                    "overheat_state": "missing",
                     "forward_per_bucket": "missing",
                     "bucket_order": _bucket_order("forward_per", "missing"),
                     "stock_count": 0,
@@ -866,6 +1114,11 @@ def _current_cross_section_item_record(
         "diagnostic_message": None,
         "code": str(getattr(item, "code", "")),
         "liquidity_regime": getattr(item, "liquidityRegime", None) or "missing",
+        "overheat_state": (
+            OVERHEAT_STATE
+            if OVERHEAT_STATE in (getattr(item, "riskFlags", None) or [])
+            else "not_overheat"
+        ),
         "forward_per": _float_or_nan(getattr(item, "forwardPer", None)),
         "forward_per_bucket": _bucket_forward_per(getattr(item, "forwardPer", None)),
         "per": _float_or_nan(getattr(item, "per", None)),
@@ -892,6 +1145,7 @@ def _summarize_current_cross_section_df(
                 "diagnostic_status",
                 "diagnostic_message",
                 "liquidity_regime",
+                "overheat_state",
             ],
             dropna=False,
         )
@@ -907,6 +1161,7 @@ def _summarize_current_cross_section_df(
         "diagnostic_status",
         "diagnostic_message",
         "liquidity_regime",
+        "overheat_state",
         "forward_per_bucket",
     ]
     for keys, group in detail_df.groupby(group_columns, sort=False, dropna=False):
@@ -941,6 +1196,7 @@ def _summarize_current_cross_section_df(
             "diagnostic_status",
             "diagnostic_message",
             "liquidity_regime",
+            "overheat_state",
         ],
         how="left",
     )
@@ -1073,6 +1329,8 @@ def _bucket_for_feature(feature: str) -> Callable[[object], str]:
         return _bucket_market_cap
     if feature == "liquidity_residual_z":
         return _bucket_liquidity_residual_z
+    if feature == "overheat_state":
+        return lambda value: str(value) if value is not None else "missing"
     raise ValueError(f"Unsupported feature: {feature}")
 
 
@@ -1147,5 +1405,6 @@ def _bucket_order(feature: str, bucket: str) -> int:
         "pbr": ["non_positive", "le0.8", "0.8-1.0", "1.0-1.5", "1.5-2.0", "gt2.0", "missing"],
         "market_cap_bil_jpy": ["le50", "50-100", "100-300", "300-1000", "gt1000", "missing"],
         "liquidity_residual_z": ["low", "neutral", "high", "missing"],
+        "overheat_state": ["not_overheat", "overheat", "missing"],
     }
     return orders.get(feature, []).index(bucket) if bucket in orders.get(feature, []) else 999
