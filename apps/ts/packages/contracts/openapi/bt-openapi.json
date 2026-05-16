@@ -11213,6 +11213,14 @@
             "title": "Rank",
             "type": "integer"
           },
+          "riskFlags": {
+            "items": {
+              "const": "overheat",
+              "type": "string"
+            },
+            "title": "Riskflags",
+            "type": "array"
+          },
           "sector33Name": {
             "title": "Sector33Name",
             "type": "string"

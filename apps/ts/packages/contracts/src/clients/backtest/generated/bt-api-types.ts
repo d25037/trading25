@@ -8102,6 +8102,8 @@ export interface components {
             previousPrice?: number | null;
             /** Rank */
             rank: number;
+            /** Riskflags */
+            riskFlags?: "overheat"[];
             /** Sector33Name */
             sector33Name: string;
             /** Tradingvalue */

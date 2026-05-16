@@ -966,6 +966,11 @@ class TestGetRankings:
             rel=1e-4,
         )
         assert item.adv60ToFreeFloatPct < 5.0
+        assert item.riskFlags == []
+
+    def test_classifies_short_term_overheat_risk_flag(self):
+        assert RankingService._classify_risk_flags(29.99) == ()
+        assert RankingService._classify_risk_flags(30.0) == ("overheat",)
 
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)

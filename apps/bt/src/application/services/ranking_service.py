@@ -59,6 +59,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
+    RankingRiskFlag,
     Rankings,
     ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
@@ -338,6 +339,8 @@ _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str
     "latest": "latest revised forecast EPS when available, otherwise FY forecast EPS",
     "fy": "latest FY forecast EPS only",
 }
+SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
+OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
 
 
 def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
@@ -365,6 +368,7 @@ class _PrimeLiquidityMetrics:
     liquidity_residual_z: float
     liquidity_regime: LiquidityRegime
     adv60_to_free_float_pct: float
+    risk_flags: tuple[RankingRiskFlag, ...]
 
 
 class RankingService:
@@ -1269,6 +1273,7 @@ class RankingService:
                 item.liquidityResidualZ = metrics.liquidity_residual_z
                 item.liquidityRegime = metrics.liquidity_regime
                 item.adv60ToFreeFloatPct = metrics.adv60_to_free_float_pct
+                item.riskFlags = list(dict.fromkeys([*item.riskFlags, *metrics.risk_flags]))
 
     def _load_prime_liquidity_metrics(
         self,
@@ -1457,6 +1462,8 @@ class RankingService:
         for sample in samples:
             adv60 = cast(float, sample["adv60"])
             free_float_market_cap = cast(float, sample["free_float_market_cap"])
+            recent_return_20d_pct = cast(float | None, sample["recent_return_20d_pct"])
+            recent_return_60d_pct = cast(float | None, sample["recent_return_60d_pct"])
             expected_log_adv = alpha + beta * math.log(free_float_market_cap)
             residual = math.log(adv60) - expected_log_adv
             residual_z = residual / residual_std
@@ -1464,13 +1471,14 @@ class RankingService:
                 liquidity_residual_z=round(residual_z, 4),
                 liquidity_regime=self._classify_prime_liquidity_regime(
                     residual_z,
-                    cast(float | None, sample["recent_return_20d_pct"]),
-                    cast(float | None, sample["recent_return_60d_pct"]),
+                    recent_return_20d_pct,
+                    recent_return_60d_pct,
                 ),
                 adv60_to_free_float_pct=round(
                     (adv60 / free_float_market_cap) * 100.0,
                     4,
                 ),
+                risk_flags=self._classify_risk_flags(recent_return_20d_pct),
             )
         return metrics_by_code
 
@@ -1522,6 +1530,15 @@ class RankingService:
         if residual_z <= -1.0:
             return "stale_liquidity"
         return "neutral"
+
+    @staticmethod
+    def _classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRiskFlag, ...]:
+        if (
+            recent_return_20d_pct is not None
+            and recent_return_20d_pct >= SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT
+        ):
+            return (OVERHEAT_RISK_FLAG,)
+        return ()
 
     def _append_value_composite_technical_metrics(
         self,

@@ -18,6 +18,7 @@ export type EquitySortField =
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
 export type EquitySortOrder = 'asc' | 'desc';
+export type EquityRiskFlag = 'overheat';
 export type EquityRankingLabels = Record<
   'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
   string
@@ -41,6 +42,7 @@ export interface EquityRankingItem {
   liquidityResidualZ?: number | null;
   liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
+  riskFlags?: EquityRiskFlag[];
 }
 
 interface EquityRankingTableProps<T extends EquityRankingItem> {
@@ -140,6 +142,42 @@ function getLiquidityRegimeClass(value: EquityRankingItem['liquidityRegime']): s
   if (value === 'distribution_stress') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (value === 'stale_liquidity') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
+function formatRiskFlag(value: EquityRiskFlag): string {
+  if (value === 'overheat') return 'Overheat';
+  return value;
+}
+
+function getRiskFlagClass(value: EquityRiskFlag): string {
+  if (value === 'overheat') return 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300';
+  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
+function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
+  return (
+    <div className="flex flex-wrap justify-center gap-1">
+      <span
+        className={cn(
+          'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
+          getLiquidityRegimeClass(item.liquidityRegime)
+        )}
+      >
+        {formatLiquidityRegime(item.liquidityRegime)}
+      </span>
+      {item.riskFlags?.map((flag) => (
+        <span
+          key={flag}
+          className={cn(
+            'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
+            getRiskFlagClass(flag)
+          )}
+        >
+          {formatRiskFlag(flag)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function getForwardPerComparisonClass(
@@ -306,7 +344,7 @@ function EquityCardList<T extends EquityRankingItem>({
       {shouldVirtualize ? <VirtualSpacer height={paddingTop} /> : null}
       {items.map((item, index) => (
         <EquityCard
-          key={`${item.code}-${startIndex + index}`}
+          key={`${item.code}-${item.rank}`}
           item={item}
           rowNumber={startIndex + index + 1}
           onStockClick={onStockClick}
@@ -371,7 +409,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
         ) : null}
         {items.map((item, index) => (
           <DesktopEquityRow
-            key={`${item.code}-${startIndex + index}`}
+            key={`${item.code}-${item.rank}`}
             item={item}
             rowNumber={startIndex + index + 1}
             onStockClick={onStockClick}
@@ -548,14 +586,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
         <>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatSignedNumber(item.liquidityResidualZ)}</td>
           <td className="px-2 py-1.5 text-center">
-            <span
-              className={cn(
-                'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                getLiquidityRegimeClass(item.liquidityRegime)
-              )}
-            >
-              {formatLiquidityRegime(item.liquidityRegime)}
-            </span>
+            <LiquidityStateChips item={item} />
           </td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatPercent(item.adv60ToFreeFloatPct)}</td>
         </>

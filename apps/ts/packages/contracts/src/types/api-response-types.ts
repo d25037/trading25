@@ -8,6 +8,8 @@ import type { DataProvenance, ResponseDiagnostics } from './api-types';
 
 // ===== RANKING TYPES =====
 
+export type RankingRiskFlag = 'overheat';
+
 export interface RankingItem {
   rank: number;
   code: string;
@@ -32,6 +34,7 @@ export interface RankingItem {
   liquidityResidualZ?: number | null;
   liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
+  riskFlags?: RankingRiskFlag[];
 }
 
 export interface Rankings {

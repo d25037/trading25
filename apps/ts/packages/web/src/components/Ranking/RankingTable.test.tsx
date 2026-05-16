@@ -86,6 +86,7 @@ describe('RankingTable', () => {
             liquidityRegime: 'distribution_stress',
             liquidityResidualZ: 1.2,
             adv60ToFreeFloatPct: 8,
+            riskFlags: ['overheat'],
           },
           {
             ...createItem(1),
@@ -105,6 +106,7 @@ describe('RankingTable', () => {
     );
 
     expect(screen.getByText('Stress')).toHaveClass('text-yellow-800');
+    expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
     expect(screen.getByText('Stale')).toHaveClass('text-red-700');
     expect(screen.getByText('11.00x')).toHaveClass('text-red-600');
     expect(screen.getByText('7.00x')).toHaveClass('text-green-600');

@@ -9,6 +9,7 @@ export interface AnalyticsClientConfig {
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type FundamentalRankingSource = 'revised' | 'fy';
+export type RankingRiskFlag = 'overheat';
 
 export interface ResponseDiagnostics {
   missing_required_data?: string[];
@@ -54,6 +55,7 @@ export interface RankingItem {
   liquidityResidualZ?: number | null;
   liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
+  riskFlags?: RankingRiskFlag[];
 }
 
 export interface Rankings {

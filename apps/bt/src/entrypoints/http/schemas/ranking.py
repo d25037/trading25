@@ -34,6 +34,7 @@ LiquidityRegime = Literal[
     "stale_liquidity",
     "neutral",
 ]
+RankingRiskFlag = Literal["overheat"]
 
 
 class RankingItem(BaseModel):
@@ -62,6 +63,7 @@ class RankingItem(BaseModel):
     liquidityResidualZ: float | None = None
     liquidityRegime: LiquidityRegime | None = None
     adv60ToFreeFloatPct: float | None = None
+    riskFlags: list[RankingRiskFlag] = Field(default_factory=list)
 
 
 class Rankings(BaseModel):
