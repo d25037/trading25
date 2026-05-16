@@ -66,6 +66,7 @@ def run_pre_earnings_eps120_proxy_research(
     start_date: str | None = None,
     end_date: str | None = None,
     min_events: int = DEFAULT_MIN_EVENTS,
+    current_cross_section_builder: Callable[[str], pd.DataFrame] | None = None,
 ) -> PreEarningsEps120ProxyResult:
     if min_events <= 0:
         raise ValueError("min_events must be positive")
@@ -106,7 +107,9 @@ def run_pre_earnings_eps120_proxy_research(
     threshold_grid_df = _build_threshold_grid_df(scoped_df, min_events=min_events)
     combo_grid_df = _build_combo_grid_df(scoped_df, min_events=min_events)
     annual_valuation_regime_df = _build_annual_valuation_regime_df(event_feature_df)
-    current_cross_section_df = _build_current_cross_section_df(str(db_path_obj))
+    current_cross_section_df = (current_cross_section_builder or _build_current_cross_section_df)(
+        str(db_path_obj)
+    )
 
     return PreEarningsEps120ProxyResult(
         db_path=str(db_path_obj),
@@ -1001,8 +1004,8 @@ def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
-    columns = [
+def _current_cross_section_columns() -> list[str]:
+    return [
         "snapshot_date",
         "market_scope",
         "collection_scope",
@@ -1022,23 +1025,48 @@ def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
         "median_liquidity_residual_z",
         "median_adv60_to_free_float_pct",
     ]
-    try:
-        from src.application.services.ranking_service import RankingService
-        from src.infrastructure.db.market.market_reader import MarketDbReader
 
-        reader = MarketDbReader(db_path, read_only=True)
-        try:
-            service = RankingService(reader)
-            response = service.get_rankings(
-                date=None,
-                limit=0,
-                markets="prime",
-                lookback_days=1,
-                include_valuation=True,
-                forward_eps_disclosed_within_days=0,
-            )
-        finally:
-            reader.close()
+
+def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
+    del db_path
+    columns = _current_cross_section_columns()
+    return pd.DataFrame.from_records(
+        [
+            {
+                "snapshot_date": None,
+                "market_scope": "prime",
+                "collection_scope": "all_daily_ranking_collections",
+                "diagnostic_status": "not_collected",
+                "diagnostic_message": "Daily Ranking current cross-section builder was not provided.",
+                "liquidity_regime": "missing",
+                "overheat_state": "missing",
+                "forward_per_bucket": "missing",
+                "bucket_order": _bucket_order("forward_per", "missing"),
+                "stock_count": 0,
+                "regime_stock_count": 0,
+                "bucket_share_within_regime_pct": np.nan,
+                "median_forward_per": np.nan,
+                "median_per": np.nan,
+                "median_pbr": np.nan,
+                "median_market_cap_bil_jpy": np.nan,
+                "median_liquidity_residual_z": np.nan,
+                "median_adv60_to_free_float_pct": np.nan,
+            }
+        ],
+        columns=columns,
+    )
+
+
+def build_current_cross_section_df_from_ranking_response(response: Any) -> pd.DataFrame:
+    columns = _current_cross_section_columns()
+    try:
+        collection_items = {
+            "trading_value": response.rankings.tradingValue,
+            "gainers": response.rankings.gainers,
+            "losers": response.rankings.losers,
+            "period_high": response.rankings.periodHigh,
+            "period_low": response.rankings.periodLow,
+        }
     except Exception as exc:  # pragma: no cover - exercised by small fixture DBs.
         return pd.DataFrame.from_records(
             [
@@ -1066,13 +1094,6 @@ def _build_current_cross_section_df(db_path: str) -> pd.DataFrame:
             columns=columns,
         )
 
-    collection_items = {
-        "trading_value": response.rankings.tradingValue,
-        "gainers": response.rankings.gainers,
-        "losers": response.rankings.losers,
-        "period_high": response.rankings.periodHigh,
-        "period_low": response.rankings.periodLow,
-    }
     detail_rows: list[dict[str, Any]] = []
     unique_items: dict[str, Any] = {}
     for collection_scope, items in collection_items.items():

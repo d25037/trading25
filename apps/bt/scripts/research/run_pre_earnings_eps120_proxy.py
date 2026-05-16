@@ -25,10 +25,31 @@ from scripts.research.common import (  # noqa: E402
 )
 from src.domains.analytics.pre_earnings_eps120_proxy import (  # noqa: E402
     DEFAULT_MIN_EVENTS,
+    build_current_cross_section_df_from_ranking_response,
     run_pre_earnings_eps120_proxy_research,
     write_pre_earnings_eps120_proxy_bundle,
 )
 from src.shared.config.settings import get_settings  # noqa: E402
+
+
+def _build_daily_ranking_current_cross_section(db_path: str):
+    from src.application.services.ranking_service import RankingService
+    from src.infrastructure.db.market.market_reader import MarketDbReader
+
+    reader = MarketDbReader(db_path, read_only=True)
+    try:
+        service = RankingService(reader)
+        response = service.get_rankings(
+            date=None,
+            limit=0,
+            markets="prime",
+            lookback_days=1,
+            include_valuation=True,
+            forward_eps_disclosed_within_days=0,
+        )
+    finally:
+        reader.close()
+    return build_current_cross_section_df_from_ranking_response(response)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -63,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         start_date=args.start_date,
         end_date=args.end_date,
         min_events=args.min_events,
+        current_cross_section_builder=_build_daily_ranking_current_cross_section,
     )
     bundle = write_pre_earnings_eps120_proxy_bundle(
         result,
