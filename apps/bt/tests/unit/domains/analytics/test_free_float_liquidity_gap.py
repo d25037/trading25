@@ -15,6 +15,7 @@ from src.domains.analytics.free_float_liquidity_gap import (
     load_free_float_liquidity_gap_bundle,
     run_free_float_liquidity_gap_research,
     write_free_float_liquidity_gap_bundle,
+    write_free_float_liquidity_gap_market_regression_plots,
 )
 
 
@@ -134,6 +135,36 @@ def test_free_float_liquidity_gap_writes_and_loads_bundle(tmp_path: Path) -> Non
     )
 
 
+def test_free_float_liquidity_gap_writes_market_regression_plots(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_liquidity_gap_db(tmp_path / "market.duckdb")
+    result = run_free_float_liquidity_gap_research(
+        db_path,
+        adv_windows=(3,),
+        horizons=(2,),
+        adv_statistic="median",
+        change_window=3,
+        observation_stride_sessions=1,
+        bucket_count=2,
+        min_regression_observations=3,
+    )
+
+    figure_paths = write_free_float_liquidity_gap_market_regression_plots(
+        result,
+        output_dir=tmp_path / "figures",
+        adv_window=3,
+        max_points_per_market=10,
+    )
+
+    assert [path.name for path in figure_paths] == [
+        "median_adv3_regression_prime.png",
+        "median_adv3_regression_standard.png",
+        "median_adv3_regression_growth.png",
+    ]
+    assert all(path.stat().st_size > 0 for path in figure_paths)
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
@@ -197,6 +228,27 @@ def _build_liquidity_gap_db(db_path: Path) -> Path:
             300_000.0,
             180.0,
             12_000.0,
+        ),
+        ("3331", "Growth A", "0113", "Growth", 500_000.0, 50_000.0, 70.0, 7_000.0),
+        (
+            "3332",
+            "Growth B",
+            "0113",
+            "Growth",
+            900_000.0,
+            90_000.0,
+            95.0,
+            10_500.0,
+        ),
+        (
+            "3333",
+            "Growth C",
+            "0113",
+            "Growth",
+            1_300_000.0,
+            130_000.0,
+            140.0,
+            13_500.0,
         ),
     ]
 

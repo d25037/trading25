@@ -43,6 +43,8 @@
 
 2026-05-13 follow-up で `ADV60` を rolling mean ではなく rolling median でも同条件比較した。mean bundle は `/tmp/trading25-research/market-behavior/free-float-liquidity-gap/phase1_20260513_mean_compare`、median bundle は `/tmp/trading25-research/market-behavior/free-float-liquidity-gap/phase1_20260513_median_compare`。
 
+2026-05-17 follow-up で、median ADV60 の market split regression を Prime / Standard / Growth 別の scatter + regression line として bundle 出力に追加した。確認 bundle は `/tmp/trading25-research/market-behavior/free-float-liquidity-gap/phase1_20260517_median_regression_figures`、figure は `figures/median_adv60_regression_prime.png` / `figures/median_adv60_regression_standard.png` / `figures/median_adv60_regression_growth.png`。
+
 | market | mean ADV60 R2 | median ADV60 R2 | mean high 60d excess mean % | median high 60d excess mean % | mean high 60d excess median % | median high 60d excess median % | high bucket overlap |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | prime | 0.703 | 0.723 | +1.733 | +1.790 | -0.765 | -0.621 | 93.2% |

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -37,6 +40,8 @@ DEFAULT_OBSERVATION_STRIDE_SESSIONS = 20
 DEFAULT_BUCKET_COUNT = 5
 DEFAULT_MIN_REGRESSION_OBSERVATIONS = 30
 DEFAULT_ADV_STATISTIC: Literal["mean", "median"] = "mean"
+DEFAULT_REGRESSION_PLOT_MARKETS: tuple[str, ...] = ("prime", "standard", "growth")
+DEFAULT_REGRESSION_PLOT_MAX_POINTS = 5_000
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "observation_df",
     "market_regression_df",
@@ -218,7 +223,7 @@ def write_free_float_liquidity_gap_bundle(
     run_id: str | None = None,
     notes: str | None = None,
 ) -> ResearchBundleInfo:
-    return write_dataclass_research_bundle(
+    bundle = write_dataclass_research_bundle(
         experiment_id=FREE_FLOAT_LIQUIDITY_GAP_EXPERIMENT_ID,
         module=__name__,
         function="run_free_float_liquidity_gap_research",
@@ -238,6 +243,50 @@ def write_free_float_liquidity_gap_bundle(
         run_id=run_id,
         notes=notes,
     )
+    figure_paths = write_free_float_liquidity_gap_market_regression_plots(
+        result,
+        output_dir=bundle.bundle_dir / "figures",
+        adv_window=60 if 60 in result.adv_windows else max(result.adv_windows),
+    )
+    if figure_paths:
+        _append_figure_links_to_summary(bundle.summary_path, figure_paths, bundle.bundle_dir)
+    return bundle
+
+
+def write_free_float_liquidity_gap_market_regression_plots(
+    result: FreeFloatLiquidityGapResult,
+    *,
+    output_dir: str | Path,
+    adv_window: int,
+    markets: Sequence[str] = DEFAULT_REGRESSION_PLOT_MARKETS,
+    max_points_per_market: int = DEFAULT_REGRESSION_PLOT_MAX_POINTS,
+) -> tuple[Path, ...]:
+    """Write market-split liquidity regression scatter plots."""
+    if result.observation_df.empty or result.market_regression_df.empty:
+        return ()
+    if adv_window not in result.adv_windows:
+        raise ValueError(f"adv_window must be one of {result.adv_windows}")
+    if max_points_per_market <= 0:
+        raise ValueError("max_points_per_market must be positive")
+
+    output_path = Path(output_dir).expanduser()
+    output_path.mkdir(parents=True, exist_ok=True)
+    plt = _import_matplotlib_pyplot()
+    written: list[Path] = []
+    for market_scope in markets:
+        plot_path = output_path / (
+            f"{result.adv_statistic}_adv{adv_window}_regression_{market_scope}.png"
+        )
+        if _write_market_regression_plot(
+            result,
+            output_path=plot_path,
+            market_scope=market_scope,
+            adv_window=adv_window,
+            max_points=max_points_per_market,
+            plt=plt,
+        ):
+            written.append(plot_path)
+    return tuple(written)
 
 
 def load_free_float_liquidity_gap_bundle(
@@ -1064,6 +1113,197 @@ def _sort_market_frame(df: pd.DataFrame, extra_columns: Sequence[str]) -> pd.Dat
         .drop(columns=["_market_order"])
         .reset_index(drop=True)
     )
+
+
+def _write_market_regression_plot(
+    result: FreeFloatLiquidityGapResult,
+    *,
+    output_path: Path,
+    market_scope: str,
+    adv_window: int,
+    max_points: int,
+    plt: Any,
+) -> bool:
+    regression_row = _market_regression_row(
+        result.market_regression_df,
+        market_scope=market_scope,
+        adv_window=adv_window,
+    )
+    if regression_row is None:
+        return False
+    panel = _market_regression_plot_frame(
+        result.observation_df,
+        market_scope=market_scope,
+        adv_window=adv_window,
+        max_points=max_points,
+    )
+    if panel.empty:
+        return False
+
+    intercept = _to_float(regression_row.intercept)
+    beta = _to_float(regression_row.beta_log_free_float_market_cap)
+    if intercept is None or beta is None:
+        return False
+
+    x_values = panel["free_float_market_cap_bil_jpy"].astype(float)
+    y_values = panel["adv_mil_jpy"].astype(float)
+    cap_min = float(x_values.min())
+    cap_max = float(x_values.max())
+    if cap_min <= 0 or cap_max <= 0 or math.isclose(cap_min, cap_max):
+        return False
+
+    cap_grid_bil = np.geomspace(cap_min, cap_max, 160)
+    cap_grid_jpy = cap_grid_bil * 1_000_000_000.0
+    fitted_adv_mil = np.exp(intercept + beta * np.log(cap_grid_jpy)) / 1_000_000.0
+    color = _market_plot_color(market_scope)
+
+    fig, axis = plt.subplots(figsize=(8.8, 5.4), constrained_layout=True)
+    axis.scatter(
+        x_values,
+        y_values,
+        s=8,
+        alpha=0.18,
+        color=color,
+        edgecolors="none",
+        label="observations",
+    )
+    axis.plot(
+        cap_grid_bil,
+        fitted_adv_mil,
+        color="#111827",
+        linewidth=2.0,
+        label="market regression",
+    )
+    axis.set_xscale("log")
+    axis.set_yscale("log")
+    axis.grid(alpha=0.18, linewidth=0.6)
+    axis.set_xlabel("Free-float market cap (bn JPY, log scale)")
+    axis.set_ylabel(f"{result.adv_statistic.title()} ADV{adv_window} (mn JPY, log scale)")
+    axis.set_title(
+        f"{market_scope.title()} Free-Float Liquidity Gap: "
+        f"{result.adv_statistic.title()} ADV{adv_window}"
+    )
+    axis.text(
+        0.02,
+        0.98,
+        _market_regression_plot_annotation(regression_row),
+        transform=axis.transAxes,
+        va="top",
+        ha="left",
+        fontsize=9,
+        color="#111827",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "alpha": 0.82, "edgecolor": "#d1d5db"},
+    )
+    axis.legend(loc="lower right", frameon=False)
+    fig.savefig(output_path, dpi=160)
+    plt.close(fig)
+    return True
+
+
+def _market_regression_row(
+    market_regression_df: pd.DataFrame,
+    *,
+    market_scope: str,
+    adv_window: int,
+) -> Any | None:
+    rows = market_regression_df.loc[
+        (market_regression_df["market_scope"] == market_scope)
+        & (market_regression_df["adv_window"] == adv_window)
+    ]
+    if rows.empty:
+        return None
+    return next(rows.itertuples(index=False))
+
+
+def _market_regression_plot_frame(
+    observation_df: pd.DataFrame,
+    *,
+    market_scope: str,
+    adv_window: int,
+    max_points: int,
+) -> pd.DataFrame:
+    columns = [
+        "code",
+        "date",
+        "adv_mil_jpy",
+        "free_float_market_cap_bil_jpy",
+        "liquidity_residual_z",
+    ]
+    frame = observation_df.loc[
+        (observation_df["market_scope"] == market_scope)
+        & (observation_df["adv_window"] == adv_window),
+        columns,
+    ].copy()
+    if frame.empty:
+        return frame
+    frame = frame.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=["adv_mil_jpy", "free_float_market_cap_bil_jpy"]
+    )
+    frame = frame.loc[
+        (frame["adv_mil_jpy"] > 0) & (frame["free_float_market_cap_bil_jpy"] > 0)
+    ].sort_values(["date", "code"], kind="stable")
+    if len(frame) <= max_points:
+        return frame
+    sampled_indexes = np.linspace(0, len(frame) - 1, max_points, dtype=int)
+    return frame.iloc[sampled_indexes].reset_index(drop=True)
+
+
+def _market_regression_plot_annotation(row: Any) -> str:
+    observation_count = _to_int(row.observation_count) or 0
+    code_count = _to_int(row.code_count) or 0
+    return "\n".join(
+        [
+            f"R2: {_format_plot_float(row.r_squared)}",
+            f"beta: {_format_plot_float(row.beta_log_free_float_market_cap)}",
+            f"residual std: {_format_plot_float(row.residual_std)}",
+            f"n: {observation_count:,} obs / {code_count:,} codes",
+        ]
+    )
+
+
+def _format_plot_float(value: Any) -> str:
+    numeric = _to_float(value)
+    return "n/a" if numeric is None else f"{numeric:.3f}"
+
+
+def _market_plot_color(market_scope: str) -> str:
+    return {
+        "prime": "#2563eb",
+        "standard": "#059669",
+        "growth": "#dc2626",
+    }.get(market_scope, "#4b5563")
+
+
+def _append_figure_links_to_summary(
+    summary_path: Path,
+    figure_paths: Sequence[Path],
+    bundle_dir: Path,
+) -> None:
+    if not figure_paths:
+        return
+    figure_lines = [
+        "",
+        "## Regression Figures",
+        "",
+        *[
+            f"![{path.stem}]({path.relative_to(bundle_dir).as_posix()})"
+            for path in figure_paths
+        ],
+        "",
+    ]
+    with summary_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(figure_lines))
+
+
+def _import_matplotlib_pyplot() -> Any:
+    mpl_config_dir = Path(tempfile.gettempdir()) / "trading25-matplotlib"
+    mpl_config_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_config_dir))
+    matplotlib = importlib.import_module("matplotlib")
+    use_backend = getattr(matplotlib, "use", None)
+    if callable(use_backend):
+        use_backend("Agg", force=True)
+    return importlib.import_module("matplotlib.pyplot")
 
 
 def _top_rows_for_markdown(
