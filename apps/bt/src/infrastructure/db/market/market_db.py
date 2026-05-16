@@ -55,6 +55,8 @@ _STATS_TABLES: tuple[str, ...] = (
     "options_225_data",
     "margin_data",
     "statements",
+    "statement_metrics_adjusted",
+    "daily_valuation",
     "sync_metadata",
     "index_master",
     "index_membership_daily",
@@ -106,6 +108,47 @@ _STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("payout_ratio", "DOUBLE"),
     ("forecast_payout_ratio", "DOUBLE"),
     ("next_year_forecast_payout_ratio", "DOUBLE"),
+)
+
+_STATEMENT_METRICS_ADJUSTED_COLUMNS: tuple[str, ...] = (
+    "code",
+    "disclosed_date",
+    "period_end",
+    "period_type",
+    "price_basis_date",
+    "raw_eps",
+    "adjusted_eps",
+    "raw_bps",
+    "adjusted_bps",
+    "raw_forecast_eps",
+    "adjusted_forecast_eps",
+    "raw_dividend_fy",
+    "adjusted_dividend_fy",
+    "raw_shares_outstanding",
+    "adjusted_shares_outstanding",
+    "adjustment_factor_cumulative",
+    "basis_version",
+    "created_at",
+)
+
+_DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
+    "code",
+    "date",
+    "price_basis_date",
+    "close",
+    "eps",
+    "bps",
+    "forward_eps",
+    "per",
+    "forward_per",
+    "pbr",
+    "market_cap",
+    "free_float_market_cap",
+    "statement_disclosed_date",
+    "forward_eps_disclosed_date",
+    "forward_eps_source",
+    "basis_version",
+    "created_at",
 )
 
 _PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
@@ -183,6 +226,16 @@ class MarketDb:
             if params is None:
                 return self._conn.execute(sql).fetchall()
             return self._conn.execute(sql, params).fetchall()
+
+    def _fetchall_dicts(
+        self,
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            result = self._conn.execute(sql) if params is None else self._conn.execute(sql, params)
+            columns = [str(desc[0]) for desc in result.description]
+            return [dict(zip(columns, row, strict=False)) for row in result.fetchall()]
 
     def _executemany(self, sql: str, params_seq: list[tuple[Any, ...]]) -> None:
         with self._lock:
@@ -474,6 +527,69 @@ class MarketDb:
         )
         self._execute(
             """
+            CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
+                code TEXT,
+                disclosed_date TEXT,
+                period_end TEXT,
+                period_type TEXT,
+                price_basis_date TEXT,
+                raw_eps DOUBLE,
+                adjusted_eps DOUBLE,
+                raw_bps DOUBLE,
+                adjusted_bps DOUBLE,
+                raw_forecast_eps DOUBLE,
+                adjusted_forecast_eps DOUBLE,
+                raw_dividend_fy DOUBLE,
+                adjusted_dividend_fy DOUBLE,
+                raw_shares_outstanding DOUBLE,
+                adjusted_shares_outstanding DOUBLE,
+                adjustment_factor_cumulative DOUBLE,
+                basis_version TEXT,
+                created_at TEXT,
+                PRIMARY KEY (
+                    code, disclosed_date, period_end, period_type, basis_version
+                )
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_statement_metrics_adjusted_code_disclosed
+            ON statement_metrics_adjusted(code, disclosed_date)
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_valuation (
+                code TEXT,
+                date TEXT,
+                price_basis_date TEXT,
+                close DOUBLE,
+                eps DOUBLE,
+                bps DOUBLE,
+                forward_eps DOUBLE,
+                per DOUBLE,
+                forward_per DOUBLE,
+                pbr DOUBLE,
+                market_cap DOUBLE,
+                free_float_market_cap DOUBLE,
+                statement_disclosed_date TEXT,
+                forward_eps_disclosed_date TEXT,
+                forward_eps_source TEXT,
+                basis_version TEXT,
+                created_at TEXT,
+                PRIMARY KEY (code, date, basis_version)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_daily_valuation_date_code
+            ON daily_valuation(date, code)
+            """
+        )
+        self._execute(
+            """
             CREATE TABLE IF NOT EXISTS sync_metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -664,6 +780,105 @@ class MarketDb:
             return None
         row = self._fetchone("SELECT MAX(date) FROM stock_data")
         return str(row[0]) if row and row[0] is not None else None
+
+    def get_adjusted_statement_metrics(
+        self,
+        code: str,
+        *,
+        as_of_date: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Canonical adjusted statement metrics を code/as-of で取得。"""
+        if not self._table_exists("statement_metrics_adjusted"):
+            return []
+        normalized_code = normalize_stock_code(code)
+        conditions = ["code = ?"]
+        params: list[Any] = [normalized_code]
+        if as_of_date is not None:
+            conditions.append("disclosed_date <= ?")
+            params.append(as_of_date)
+        return self._fetchall_dicts(
+            f"""
+            SELECT {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
+            FROM statement_metrics_adjusted
+            WHERE {' AND '.join(conditions)}
+            ORDER BY disclosed_date, period_end, period_type, basis_version
+            """,
+            params,
+        )
+
+    def get_daily_valuation(
+        self,
+        code: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Canonical daily valuation metrics を code/date range で取得。"""
+        if not self._table_exists("daily_valuation"):
+            return []
+        normalized_code = normalize_stock_code(code)
+        conditions = ["code = ?"]
+        params: list[Any] = [normalized_code]
+        if start is not None:
+            conditions.append("date >= ?")
+            params.append(start)
+        if end is not None:
+            conditions.append("date <= ?")
+            params.append(end)
+        return self._fetchall_dicts(
+            f"""
+            SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
+            FROM daily_valuation
+            WHERE {' AND '.join(conditions)}
+            ORDER BY date, basis_version
+            """,
+            params,
+        )
+
+    def get_daily_valuation_for_codes(
+        self,
+        codes: list[str],
+        date: str,
+    ) -> list[dict[str, Any]]:
+        """Canonical daily valuation metrics を同一日付の複数codeで取得。"""
+        if not codes or not self._table_exists("daily_valuation"):
+            return []
+        normalized_codes = sorted({normalize_stock_code(code) for code in codes if code})
+        if not normalized_codes:
+            return []
+        placeholders = ", ".join("?" for _ in normalized_codes)
+        return self._fetchall_dicts(
+            f"""
+            SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
+            FROM daily_valuation
+            WHERE date = ?
+              AND code IN ({placeholders})
+            ORDER BY code, basis_version
+            """,
+            [date, *normalized_codes],
+        )
+
+    def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+        """Adjusted metrics materialization freshness snapshot."""
+        statement_rows = self._count_rows("statement_metrics_adjusted")
+        daily_rows = self._count_rows("daily_valuation")
+        row = None
+        if self._table_exists("daily_valuation"):
+            row = self._fetchone(
+                """
+                SELECT price_basis_date, basis_version
+                FROM daily_valuation
+                WHERE price_basis_date IS NOT NULL
+                ORDER BY price_basis_date DESC, basis_version DESC
+                LIMIT 1
+                """
+            )
+        return {
+            "statementRows": statement_rows,
+            "dailyValuationRows": daily_rows,
+            "priceBasisDate": str(row[0]) if row and row[0] is not None else None,
+            "basisVersion": str(row[1]) if row and row[1] is not None else None,
+        }
 
     def get_topix_dates(
         self,
@@ -1684,6 +1899,79 @@ class MarketDb:
         )
         params = [
             tuple(row.get(column) for column in insert_columns)
+            for row in rows
+        ]
+        self._executemany(sql, params)
+        return len(rows)
+
+    def upsert_statement_metrics_adjusted(self, rows: list[dict[str, Any]]) -> int:
+        """Canonical split-adjusted statement metrics に upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        columns = _STATEMENT_METRICS_ADJUSTED_COLUMNS
+        placeholders = ", ".join("?" for _ in columns)
+        update_columns = [
+            column
+            for column in columns
+            if column
+            not in {"code", "disclosed_date", "period_end", "period_type", "basis_version"}
+        ]
+        update_clause = ", ".join(
+            f"{column} = excluded.{column}"
+            for column in update_columns
+        )
+        sql = (
+            f"INSERT INTO statement_metrics_adjusted ({', '.join(columns)}) "
+            f"VALUES ({placeholders}) "
+            "ON CONFLICT (code, disclosed_date, period_end, period_type, basis_version) "
+            f"DO UPDATE SET {update_clause}"
+        )
+        params = [
+            tuple(
+                row.get(column)
+                if column != "created_at"
+                else row.get("created_at", now_iso)
+                for column in columns
+            )
+            for row in rows
+        ]
+        self._executemany(sql, params)
+        return len(rows)
+
+    def upsert_daily_valuation(self, rows: list[dict[str, Any]]) -> int:
+        """Canonical daily valuation metrics に upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        columns = _DAILY_VALUATION_COLUMNS
+        placeholders = ", ".join("?" for _ in columns)
+        update_columns = [
+            column
+            for column in columns
+            if column not in {"code", "date", "basis_version"}
+        ]
+        update_clause = ", ".join(
+            f"{column} = excluded.{column}"
+            for column in update_columns
+        )
+        sql = (
+            f"INSERT INTO daily_valuation ({', '.join(columns)}) "
+            f"VALUES ({placeholders}) "
+            "ON CONFLICT (code, date, basis_version) "
+            f"DO UPDATE SET {update_clause}"
+        )
+        params = [
+            tuple(
+                row.get(column)
+                if column != "created_at"
+                else row.get("created_at", now_iso)
+                for column in columns
+            )
             for row in rows
         ]
         self._executemany(sql, params)
