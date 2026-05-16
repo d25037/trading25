@@ -74,10 +74,27 @@ def test_pre_earnings_eps120_proxy_emits_summary_tables(tmp_path: Path) -> None:
     assert not result.feature_bucket_df.empty
     assert not result.threshold_grid_df.empty
     assert not result.combo_grid_df.empty
+    assert not result.annual_valuation_regime_df.empty
+    assert not result.current_cross_section_df.empty
     assert {"target_rate_pct", "lift_vs_base"}.issubset(result.feature_bucket_df.columns)
     assert {"condition", "target_rate_pct", "lift_vs_base"}.issubset(
         result.threshold_grid_df.columns
     )
+    assert {
+        "event_year",
+        "condition_scope",
+        "liquidity_regime",
+        "forward_per_bucket",
+        "bucket_share_within_regime_year_pct",
+    }.issubset(result.annual_valuation_regime_df.columns)
+    assert {
+        "snapshot_date",
+        "collection_scope",
+        "diagnostic_status",
+        "liquidity_regime",
+        "forward_per_bucket",
+        "bucket_share_within_regime_pct",
+    }.issubset(result.current_cross_section_df.columns)
 
     bundle = write_pre_earnings_eps120_proxy_bundle(
         result,
