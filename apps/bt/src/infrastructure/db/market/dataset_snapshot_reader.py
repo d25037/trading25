@@ -93,6 +93,8 @@ class DatasetSnapshotCounts(BaseModel):
     indices_data: int = Field(ge=0)
     margin_data: int = Field(ge=0)
     statements: int = Field(ge=0)
+    statement_metrics_adjusted: int = Field(default=0, ge=0)
+    daily_valuation: int = Field(default=0, ge=0)
     dataset_info: int = Field(ge=0)
 
 
@@ -179,17 +181,29 @@ def _query_scalar_int(conn: Any, sql: str) -> int:
     return int(row[0])
 
 
+def _table_count(conn: Any, table_name: str) -> int:
+    try:
+        return _query_scalar_int(conn, f"SELECT COUNT(*) FROM {table_name}")
+    except Exception:
+        return 0
+
+
 def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotInspection:
     conn = _connect_duckdb(Path(duckdb_path), read_only=True)
     try:
         counts = DatasetSnapshotCounts(
-            stocks=_query_scalar_int(conn, "SELECT COUNT(*) FROM stocks"),
-            stock_data=_query_scalar_int(conn, "SELECT COUNT(*) FROM stock_data"),
-            topix_data=_query_scalar_int(conn, "SELECT COUNT(*) FROM topix_data"),
-            indices_data=_query_scalar_int(conn, "SELECT COUNT(*) FROM indices_data"),
-            margin_data=_query_scalar_int(conn, "SELECT COUNT(*) FROM margin_data"),
-            statements=_query_scalar_int(conn, "SELECT COUNT(*) FROM statements"),
-            dataset_info=_query_scalar_int(conn, "SELECT COUNT(*) FROM dataset_info"),
+            stocks=_table_count(conn, "stocks"),
+            stock_data=_table_count(conn, "stock_data"),
+            topix_data=_table_count(conn, "topix_data"),
+            indices_data=_table_count(conn, "indices_data"),
+            margin_data=_table_count(conn, "margin_data"),
+            statements=_table_count(conn, "statements"),
+            statement_metrics_adjusted=_table_count(
+                conn,
+                "statement_metrics_adjusted",
+            ),
+            daily_valuation=_table_count(conn, "daily_valuation"),
+            dataset_info=_table_count(conn, "dataset_info"),
         )
         coverage = DatasetSnapshotCoverage(
             totalStocks=counts.stocks,
@@ -537,6 +551,58 @@ class DatasetSnapshotReader:
             f"SELECT * FROM statements WHERE {' AND '.join(clauses)} ORDER BY disclosed_date",
             tuple(params),
         )
+
+    def get_adjusted_statement_metrics(
+        self,
+        code: str,
+        as_of_date: str | None = None,
+    ) -> list[_DuckDbRow]:
+        normalized = normalize_stock_code(code)
+        clauses = ["code = ?"]
+        params: list[Any] = [normalized]
+        if as_of_date:
+            clauses.append("disclosed_date <= ?")
+            params.append(as_of_date)
+        try:
+            return self.query(
+                f"""
+                SELECT *
+                FROM statement_metrics_adjusted
+                WHERE {' AND '.join(clauses)}
+                ORDER BY disclosed_date, period_end, period_type, basis_version
+                """,
+                tuple(params),
+            )
+        except Exception:
+            return []
+
+    def get_daily_valuation(
+        self,
+        code: str,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[_DuckDbRow]:
+        normalized = normalize_stock_code(code)
+        clauses = ["code = ?"]
+        params: list[Any] = [normalized]
+        if start:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end:
+            clauses.append("date <= ?")
+            params.append(end)
+        try:
+            return self.query(
+                f"""
+                SELECT *
+                FROM daily_valuation
+                WHERE {' AND '.join(clauses)}
+                ORDER BY date, basis_version
+                """,
+                tuple(params),
+            )
+        except Exception:
+            return []
 
     def get_statements_batch(
         self,

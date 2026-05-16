@@ -18,6 +18,8 @@ _PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
     ("indices_data", "indices_data.parquet", None),
     ("margin_data", "margin_data.parquet", "code, date"),
     ("statements", "statements.parquet", "disclosed_date, code"),
+    ("statement_metrics_adjusted", "statement_metrics_adjusted.parquet", "disclosed_date, code"),
+    ("daily_valuation", "daily_valuation.parquet", "date, code"),
 )
 
 _SOURCE_ALIAS = "market_source"
@@ -87,6 +89,45 @@ class _DatasetDuckDbStore:
         "total_assets",
         "shares_outstanding",
         "treasury_shares",
+    )
+    _ADJUSTED_STATEMENT_COLUMNS: tuple[str, ...] = (
+        "code",
+        "disclosed_date",
+        "period_end",
+        "period_type",
+        "price_basis_date",
+        "raw_eps",
+        "adjusted_eps",
+        "raw_bps",
+        "adjusted_bps",
+        "raw_forecast_eps",
+        "adjusted_forecast_eps",
+        "raw_dividend_fy",
+        "adjusted_dividend_fy",
+        "raw_shares_outstanding",
+        "adjusted_shares_outstanding",
+        "adjustment_factor_cumulative",
+        "basis_version",
+        "created_at",
+    )
+    _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
+        "code",
+        "date",
+        "price_basis_date",
+        "close",
+        "eps",
+        "bps",
+        "forward_eps",
+        "per",
+        "forward_per",
+        "pbr",
+        "market_cap",
+        "free_float_market_cap",
+        "statement_disclosed_date",
+        "forward_eps_disclosed_date",
+        "forward_eps_source",
+        "basis_version",
+        "created_at",
     )
 
     def __init__(self, *, duckdb_path: str, parquet_dir: str) -> None:
@@ -285,6 +326,55 @@ class _DatasetDuckDbStore:
                     shares_outstanding DOUBLE,
                     treasury_shares DOUBLE,
                     PRIMARY KEY (code, disclosed_date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
+                    code TEXT,
+                    disclosed_date TEXT,
+                    period_end TEXT,
+                    period_type TEXT,
+                    price_basis_date TEXT,
+                    raw_eps DOUBLE,
+                    adjusted_eps DOUBLE,
+                    raw_bps DOUBLE,
+                    adjusted_bps DOUBLE,
+                    raw_forecast_eps DOUBLE,
+                    adjusted_forecast_eps DOUBLE,
+                    raw_dividend_fy DOUBLE,
+                    adjusted_dividend_fy DOUBLE,
+                    raw_shares_outstanding DOUBLE,
+                    adjusted_shares_outstanding DOUBLE,
+                    adjustment_factor_cumulative DOUBLE,
+                    basis_version TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_valuation (
+                    code TEXT,
+                    date TEXT,
+                    price_basis_date TEXT,
+                    close DOUBLE,
+                    eps DOUBLE,
+                    bps DOUBLE,
+                    forward_eps DOUBLE,
+                    per DOUBLE,
+                    forward_per DOUBLE,
+                    pbr DOUBLE,
+                    market_cap DOUBLE,
+                    free_float_market_cap DOUBLE,
+                    statement_disclosed_date TEXT,
+                    forward_eps_disclosed_date TEXT,
+                    forward_eps_source TEXT,
+                    basis_version TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date, basis_version)
                 )
                 """
             )
@@ -872,6 +962,96 @@ class _DatasetDuckDbStore:
                 self._dirty_tables.add("statements")
             return inserted_rows
 
+    def copy_adjusted_metrics_from_source(
+        self,
+        *,
+        source_duckdb_path: str,
+        normalized_codes: list[str],
+    ) -> dict[str, int]:
+        if not normalized_codes:
+            return {"statement_metrics_adjusted": 0, "daily_valuation": 0}
+
+        with self._lock:
+            source_alias = self._attach_source_database(source_duckdb_path)
+            self._reset_temp_table(_TEMP_STOCK_CODE_TABLE, "code TEXT PRIMARY KEY")
+            self._load_temp_codes(_TEMP_STOCK_CODE_TABLE, normalized_codes)
+            statement_rows = self._copy_adjusted_source_table(
+                source_alias=source_alias,
+                table_name="statement_metrics_adjusted",
+                columns=self._ADJUSTED_STATEMENT_COLUMNS,
+                key_columns=(
+                    "code",
+                    "disclosed_date",
+                    "period_end",
+                    "period_type",
+                    "basis_version",
+                ),
+                required_date_column="disclosed_date",
+            )
+            daily_rows = self._copy_adjusted_source_table(
+                source_alias=source_alias,
+                table_name="daily_valuation",
+                columns=self._DAILY_VALUATION_COLUMNS,
+                key_columns=("code", "date", "basis_version"),
+                required_date_column="date",
+            )
+            return {
+                "statement_metrics_adjusted": statement_rows,
+                "daily_valuation": daily_rows,
+            }
+
+    def _copy_adjusted_source_table(
+        self,
+        *,
+        source_alias: str,
+        table_name: str,
+        columns: tuple[str, ...],
+        key_columns: tuple[str, ...],
+        required_date_column: str,
+    ) -> int:
+        if not self._source_table_exists(source_alias, table_name):
+            return 0
+        normalized_code_sql = self._normalize_stock_code_expr("code")
+        columns_sql = ", ".join(columns)
+        update_columns = ", ".join(
+            f"{column} = excluded.{column}"
+            for column in columns
+            if column not in key_columns
+        )
+        inserted_rows = self._query_scalar_int(
+            f"""
+            SELECT COUNT(*)
+            FROM {source_alias}.{table_name}
+            WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {required_date_column} IS NOT NULL
+              AND {required_date_column} <> ''
+            """
+        )
+        self._conn.execute(
+            f"""
+            INSERT INTO {table_name} ({columns_sql})
+            SELECT
+                {normalized_code_sql} AS code,
+                {", ".join(columns[1:])}
+            FROM {source_alias}.{table_name}
+            WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
+              AND {required_date_column} IS NOT NULL
+              AND {required_date_column} <> ''
+            ON CONFLICT ({", ".join(key_columns)}) DO UPDATE
+            SET {update_columns}
+            """
+        )
+        if inserted_rows > 0:
+            self._dirty_tables.add(table_name)
+        return inserted_rows
+
+    def _source_table_exists(self, source_alias: str, table_name: str) -> bool:
+        try:
+            self._conn.execute(f"SELECT 1 FROM {source_alias}.{table_name} LIMIT 0")
+        except Exception:
+            return False
+        return True
+
     def set_dataset_info(self, key: str, value: str) -> None:
         with self._lock:
             self._conn.execute(
@@ -1011,6 +1191,17 @@ class DatasetWriter:
         normalized_codes: list[str],
     ) -> int:
         return self._duckdb_store.copy_statements_from_source(
+            source_duckdb_path=source_duckdb_path,
+            normalized_codes=normalized_codes,
+        )
+
+    def copy_adjusted_metrics_from_source(
+        self,
+        *,
+        source_duckdb_path: str,
+        normalized_codes: list[str],
+    ) -> dict[str, int]:
+        return self._duckdb_store.copy_adjusted_metrics_from_source(
             source_duckdb_path=source_duckdb_path,
             normalized_codes=normalized_codes,
         )

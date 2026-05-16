@@ -548,6 +548,11 @@ async def _build_dataset(
                         source_duckdb_path=source_duckdb_path,
                         normalized_codes=batch_codes,
                     )
+                    await writer_worker.call(
+                        "copy_adjusted_metrics_from_source",
+                        source_duckdb_path=source_duckdb_path,
+                        normalized_codes=batch_codes,
+                    )
                 else:
                     statement_rows = await _load_market_statements_batch(market_reader, batch_codes)
                     if job.cancelled.is_set():

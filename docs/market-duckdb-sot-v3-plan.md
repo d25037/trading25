@@ -43,7 +43,9 @@ universe は実行日ごとに point-in-time 解決する。
 | `indices_data` | `(code, date)` | sector / index OHLC |
 | `index_master` | `code` | index catalog |
 | `index_membership_daily` | `(date, index_code, code)` | TOPIX500 など scale category だけで表せない membership |
-| `statements` | current key | fundamentals SoT |
+| `statements` | current key | raw fundamentals provenance SoT |
+| `statement_metrics_adjusted` | `(code, disclosed_date, period_end, period_type, basis_version)` | adjusted per-share fundamentals consumer SoT |
+| `daily_valuation` | `(code, date, basis_version)` | PER/PBR/forward PER and valuation consumer SoT |
 | `margin_data` | current key | margin SoT |
 | `options_225_data` | current key | N225 options SoT |
 | `stock_data_minute_raw` | current key | intraday minute raw SoT |
@@ -84,7 +86,8 @@ Initial sync becomes destructive for market time-series storage:
 7. Build `stock_master_intervals`.
 8. Build `stocks_latest` from the latest complete master date.
 9. Sync price / fundamentals / margin / options / indices using existing stage logic, but all universe targeting must use `stock_master_daily` or `stock_master_intervals`.
-10. Record master coverage diagnostics in sync metadata.
+10. Rebuild `statement_metrics_adjusted` and `daily_valuation` from raw `statements`, adjusted `stock_data`, and `stock_data_raw.adjustment_factor`.
+11. Record master and adjusted-metrics coverage diagnostics in sync metadata.
 
 ### Incremental sync
 
@@ -93,6 +96,15 @@ Initial sync becomes destructive for market time-series storage:
 3. Fetch `/equities/master?date=...` for new trading dates only.
 4. Rebuild affected intervals and `stocks_latest`.
 5. Continue price / fundamentals / margin / options / indices sync.
+6. Rebuild adjusted metrics after source publish completes. `basis_version` is `adjusted-v1:{latest_stock_data_date}`.
+
+### Adjusted fundamentals policy
+
+- Raw `statements` remains the vendor provenance table and can be displayed as official EPS/BPS history when labeled as raw.
+- Consumer valuation fields use `statement_metrics_adjusted` and `daily_valuation`.
+- Split / reverse-split adjustment uses `stock_data_raw.adjustment_factor`; plain `shares_outstanding` changes are not treated as split events.
+- `/api/db/stats` and `/api/db/validate` expose adjusted table row counts, `priceBasisDate`, `basisVersion`, and stale/missing warnings.
+- Dataset snapshots copy `statement_metrics_adjusted` and `daily_valuation` for archived reproducibility, but normal runs still read `market.duckdb` directly.
 
 ### Repair sync
 
