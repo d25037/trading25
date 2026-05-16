@@ -155,3 +155,59 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
     assert first == second
     assert market_db.get_adjusted_metrics_snapshot()["statementRows"] == 1
     assert market_db.get_adjusted_metrics_snapshot()["dailyValuationRows"] == 1
+
+
+def test_rebuild_codes_materializes_only_requested_codes(market_db: MarketDb) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "6758",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 200.0,
+            "bps": 2000.0,
+            "forecast_eps": 240.0,
+            "shares_outstanding": 20_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        },
+        {
+            "code": "6758",
+            "date": "2024-12-30",
+            "open": 1000.0,
+            "high": 1000.0,
+            "low": 1000.0,
+            "close": 1000.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        },
+    ])
+
+    result = AdjustedMetricsMaterializer(market_db).rebuild_codes(["7203"])
+
+    assert result.statement_rows == 1
+    assert result.daily_valuation_rows == 1
+    assert market_db.get_adjusted_statement_metrics("7203")
+    assert market_db.get_daily_valuation("7203")
+    assert market_db.get_adjusted_statement_metrics("6758") == []
+    assert market_db.get_daily_valuation("6758") == []

@@ -1977,6 +1977,156 @@ class MarketDb:
         self._executemany(sql, params)
         return len(rows)
 
+    def upsert_daily_valuation_from_adjusted_metrics(
+        self,
+        *,
+        basis_version: str,
+        price_basis_date: str,
+        codes: list[str] | None = None,
+    ) -> int:
+        """Canonical daily valuation metrics を DuckDB relation で一括生成する。"""
+        self._assert_writable()
+        if (
+            not self._table_exists("stock_data")
+            or not self._table_exists("statement_metrics_adjusted")
+        ):
+            return 0
+
+        normalized_codes = sorted({normalize_stock_code(code) for code in codes or [] if code})
+        code_filter = ""
+        params: list[Any] = [basis_version]
+        if normalized_codes:
+            placeholders = ", ".join("?" for _ in normalized_codes)
+            code_filter = f"WHERE code IN ({placeholders})"
+            params.extend(normalized_codes)
+
+        count_row = self._fetchone(
+            f"""
+            SELECT COUNT(*)
+            FROM (
+                SELECT
+                    s.code,
+                    s.date
+                FROM (
+                    SELECT code, date, close
+                    FROM stock_data
+                    {code_filter}
+                    ORDER BY code, date
+                ) AS s
+                ASOF JOIN (
+                    SELECT
+                        code,
+                        disclosed_date,
+                        adjusted_eps,
+                        adjusted_bps,
+                        adjusted_forecast_eps,
+                        adjusted_shares_outstanding
+                    FROM statement_metrics_adjusted
+                    WHERE basis_version = ?
+                    ORDER BY code, disclosed_date
+                ) AS m
+                ON s.code = m.code
+               AND s.date >= m.disclosed_date
+            ) AS matched
+            """,
+            [*params[1:], params[0]],
+        )
+        candidate_count = int(count_row[0] or 0) if count_row else 0
+        if candidate_count <= 0:
+            return 0
+
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        update_columns = [
+            column
+            for column in _DAILY_VALUATION_COLUMNS
+            if column not in {"code", "date", "basis_version"}
+        ]
+        update_clause = ", ".join(
+            f"{column} = excluded.{column}"
+            for column in update_columns
+        )
+        self._execute(
+            f"""
+            INSERT INTO daily_valuation ({", ".join(_DAILY_VALUATION_COLUMNS)})
+            SELECT
+                s.code,
+                s.date,
+                ? AS price_basis_date,
+                s.close,
+                m.adjusted_eps AS eps,
+                m.adjusted_bps AS bps,
+                m.adjusted_forecast_eps AS forward_eps,
+                CASE
+                    WHEN s.close > 0 AND m.adjusted_eps > 0
+                    THEN s.close / m.adjusted_eps
+                    ELSE NULL
+                END AS per,
+                CASE
+                    WHEN s.close > 0 AND m.adjusted_forecast_eps > 0
+                    THEN s.close / m.adjusted_forecast_eps
+                    ELSE NULL
+                END AS forward_per,
+                CASE
+                    WHEN s.close > 0 AND m.adjusted_bps > 0
+                    THEN s.close / m.adjusted_bps
+                    ELSE NULL
+                END AS pbr,
+                CASE
+                    WHEN s.close > 0 AND m.adjusted_shares_outstanding > 0
+                    THEN s.close * m.adjusted_shares_outstanding
+                    ELSE NULL
+                END AS market_cap,
+                CASE
+                    WHEN s.close > 0 AND m.adjusted_shares_outstanding > 0
+                    THEN s.close * m.adjusted_shares_outstanding
+                    ELSE NULL
+                END AS free_float_market_cap,
+                m.disclosed_date AS statement_disclosed_date,
+                CASE
+                    WHEN m.adjusted_forecast_eps IS NOT NULL
+                    THEN m.disclosed_date
+                    ELSE NULL
+                END AS forward_eps_disclosed_date,
+                CASE
+                    WHEN m.adjusted_forecast_eps IS NOT NULL
+                    THEN 'fy'
+                    ELSE NULL
+                END AS forward_eps_source,
+                ? AS basis_version,
+                ? AS created_at
+            FROM (
+                SELECT code, date, close
+                FROM stock_data
+                {code_filter}
+                ORDER BY code, date
+            ) AS s
+            ASOF JOIN (
+                SELECT
+                    code,
+                    disclosed_date,
+                    adjusted_eps,
+                    adjusted_bps,
+                    adjusted_forecast_eps,
+                    adjusted_shares_outstanding
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                ORDER BY code, disclosed_date
+            ) AS m
+            ON s.code = m.code
+           AND s.date >= m.disclosed_date
+            ON CONFLICT (code, date, basis_version)
+            DO UPDATE SET {update_clause}
+            """,
+            [
+                price_basis_date,
+                basis_version,
+                now_iso,
+                *normalized_codes,
+                basis_version,
+            ],
+        )
+        return candidate_count
+
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""
         self._assert_writable()

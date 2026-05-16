@@ -66,13 +66,13 @@ class AdjustedMetricsMaterializer:
             adjusted_payload
         )
 
-        daily_payload = self._build_daily_valuation_rows(
-            codes=codes,
-            adjusted_metrics=adjusted_metrics,
-            price_basis_date=price_basis_date,
-            basis_version=basis_version,
-        )
-        stored_daily_rows = self._market_db.upsert_daily_valuation(daily_payload)
+        stored_daily_rows = 0
+        if adjusted_metrics and self._market_db._table_exists("stock_data"):
+            stored_daily_rows = self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                basis_version=basis_version,
+                price_basis_date=price_basis_date,
+                codes=codes,
+            )
         return AdjustedMetricsBuildResult(
             statement_rows=stored_statement_rows,
             daily_valuation_rows=stored_daily_rows,
