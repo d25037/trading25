@@ -51,6 +51,7 @@ class DummyMarketDb:
         options_225_conflicting_underlying_dates: list[str] | None = None,
         legacy_stock_snapshot: bool = False,
         stock_price_adjustment_mode: str | None = "local_projection_v1",
+        adjusted_metrics_snapshot: dict[str, Any] | None = None,
     ) -> None:
         self._initialized = initialized
         self._adjustment_events = adjustment_events or []
@@ -60,6 +61,12 @@ class DummyMarketDb:
         self._options_225_conflicting_underlying_dates = options_225_conflicting_underlying_dates or []
         self._legacy_stock_snapshot = legacy_stock_snapshot
         self._stock_price_adjustment_mode = stock_price_adjustment_mode
+        self._adjusted_metrics_snapshot = adjusted_metrics_snapshot or {
+            "statementRows": 4,
+            "dailyValuationRows": 10,
+            "priceBasisDate": "9999-12-31",
+            "basisVersion": "adjusted-v1:9999-12-31",
+        }
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
@@ -144,6 +151,9 @@ class DummyMarketDb:
     def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int:
         return len(self._resolve_options_225_issue_dates(issue_type))
 
+    def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+        return dict(self._adjusted_metrics_snapshot)
+
     def _resolve_options_225_issue_dates(self, issue_type: str) -> list[str]:
         if issue_type == "missing":
             return list(self._options_225_missing_underlying_dates)
@@ -189,6 +199,67 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
     assert issue is not None
     assert issue.count == 2438
     assert any("fill 2438 missing dates" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sources() -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_snapshot={
+            "statementRows": 0,
+            "dailyValuationRows": 0,
+            "priceBasisDate": None,
+            "basisVersion": None,
+        }
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_min="2026-02-20",
+            topix_max="2026-02-27",
+            stock_count=10,
+            stock_min="2026-02-20",
+            stock_max="2026-02-27",
+            stock_date_count=5,
+            indices_count=1,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-02-27",
+            statement_codes={"1301", "7203"},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.healthDomains.coreDailyStatus == "warning"
+    assert result.adjustedMetrics.status == "missing"
+    assert any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_sources() -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_snapshot={
+            "statementRows": 0,
+            "dailyValuationRows": 0,
+            "priceBasisDate": None,
+            "basisVersion": None,
+        }
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=0,
+            stock_count=0,
+            stock_date_count=0,
+            indices_count=0,
+            statements_count=0,
+            statement_codes=set(),
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.adjustedMetrics.status == "empty_source"
+    assert not any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_store() -> None:

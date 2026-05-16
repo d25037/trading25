@@ -64,6 +64,14 @@ class DummyMarketDb:
     def get_index_master_category_counts(self) -> dict[str, int]:
         return {"sector33": 1}
 
+    def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+        return {
+            "statementRows": 4,
+            "dailyValuationRows": 10,
+            "priceBasisDate": "2026-02-27",
+            "basisVersion": "adjusted-v1:2026-02-27",
+        }
+
 
 class DummyStore:
     def __init__(
@@ -187,6 +195,11 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
+    assert result.adjustedMetrics.statementRows == 4
+    assert result.adjustedMetrics.dailyValuationRows == 10
+    assert result.adjustedMetrics.priceBasisDate == "2026-02-27"
+    assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
+    assert result.adjustedMetrics.status == "ready"
     assert result.intradayFreshness.status == "idle"
 
 

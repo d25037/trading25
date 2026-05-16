@@ -20,6 +20,7 @@ from src.application.services.intraday_schedule import build_intraday_freshness
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.entrypoints.http.schemas.db import (
+    AdjustedMetricsStats,
     DateRange,
     FundamentalsStats,
     IndicesStats,
@@ -48,6 +49,7 @@ class MarketDbStatsLike(Protocol):
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_index_master_category_counts(self) -> dict[str, int]: ...
+    def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
 
 
 class TimeSeriesStoreStatsLike(Protocol):
@@ -141,6 +143,12 @@ def get_market_stats(
         limit_empty=0,
     )
     storage = _resolve_storage_stats(time_series_store)
+    adjusted_metrics = _build_adjusted_metrics_stats(
+        market_db.get_adjusted_metrics_snapshot(),
+        source_stock_count=inspection.stock_count,
+        source_statement_count=inspection.statements_count,
+        latest_stock_date=inspection.stock_max,
+    )
 
     # Topix
     topix = TopixStats(
@@ -273,6 +281,7 @@ def get_market_stats(
         options225=options_225,
         margin=margin,
         fundamentals=fundamentals,
+        adjustedMetrics=adjusted_metrics,
         intradayFreshness=IntradayFreshness(
             status=intraday_freshness_snapshot.status,
             expectedDate=intraday_freshness_snapshot.expected_date,
@@ -284,4 +293,37 @@ def get_market_stats(
             calendarBasis=intraday_freshness_snapshot.calendar_basis,
         ),
         lastUpdated=datetime.now(UTC).isoformat(),
+    )
+
+
+def _build_adjusted_metrics_stats(
+    snapshot: dict[str, Any],
+    *,
+    source_stock_count: int,
+    source_statement_count: int,
+    latest_stock_date: str | None,
+) -> AdjustedMetricsStats:
+    statement_rows = int(snapshot.get("statementRows", 0) or 0)
+    daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
+    price_basis_date = snapshot.get("priceBasisDate")
+    basis_version = snapshot.get("basisVersion")
+    has_raw_source = source_stock_count > 0 or source_statement_count > 0
+    if statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
+        status = "empty_source"
+    elif statement_rows <= 0 or daily_rows <= 0:
+        status = "missing"
+    elif (
+        isinstance(price_basis_date, str)
+        and latest_stock_date is not None
+        and price_basis_date < latest_stock_date
+    ):
+        status = "stale"
+    else:
+        status = "ready"
+    return AdjustedMetricsStats(
+        statementRows=statement_rows,
+        dailyValuationRows=daily_rows,
+        priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
+        basisVersion=str(basis_version) if basis_version is not None else None,
+        status=status,
     )

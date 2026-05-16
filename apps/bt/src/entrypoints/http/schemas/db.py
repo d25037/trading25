@@ -34,6 +34,7 @@ Options225CoverageStatusLiteral = Literal[
     "stale",
     "partial",
 ]
+AdjustedMetricsStatusLiteral = Literal["ready", "missing", "stale", "empty_source"]
 
 
 class IntradayFreshness(BaseModel):
@@ -131,6 +132,14 @@ class FundamentalsStats(BaseModel):
     listedMarketCoverage: ListedMarketCoverage
 
 
+class AdjustedMetricsStats(BaseModel):
+    statementRows: int = 0
+    dailyValuationRows: int = 0
+    priceBasisDate: str | None = None
+    basisVersion: str | None = None
+    status: AdjustedMetricsStatusLiteral = "empty_source"
+
+
 class MarketStatsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -150,6 +159,7 @@ class MarketStatsResponse(BaseModel):
     options225: Options225Stats
     margin: MarginStats
     fundamentals: FundamentalsStats
+    adjustedMetrics: AdjustedMetricsStats = Field(default_factory=AdjustedMetricsStats)
     intradayFreshness: IntradayFreshness
     lastUpdated: str
 
@@ -269,6 +279,7 @@ class MarketValidationResponse(BaseModel):
     options225: Options225Validation
     margin: MarginValidation
     fundamentals: FundamentalsValidation
+    adjustedMetrics: AdjustedMetricsStats = Field(default_factory=AdjustedMetricsStats)
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0
     adjustmentEvents: list[AdjustmentEvent] = Field(default_factory=list)

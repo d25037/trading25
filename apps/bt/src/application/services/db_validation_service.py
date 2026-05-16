@@ -17,6 +17,7 @@ from src.application.services.listed_market_targets import (
     resolve_frontier_cache_codes,
 )
 from src.application.services.intraday_schedule import build_intraday_freshness
+from src.application.services.db_stats_service import _build_adjusted_metrics_stats
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import (
@@ -122,6 +123,7 @@ class ValidationMarketDbLike(Protocol):
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_options_225_underlying_price_issue_dates(self, *, issue_type: str, limit: int = 20) -> list[str]: ...
     def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int: ...
+    def get_adjusted_metrics_snapshot(self) -> dict[str, Any]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -237,6 +239,13 @@ def validate_market_db(
         last_intraday_sync=last_intraday_sync,
     )
     intraday_is_stale = intraday_freshness_snapshot.status == "stale"
+    adjusted_metrics = _build_adjusted_metrics_stats(
+        market_db.get_adjusted_metrics_snapshot(),
+        source_stock_count=inspection.stock_count,
+        source_statement_count=inspection.statements_count,
+        latest_stock_date=inspection.stock_max,
+    )
+    adjusted_metrics_needs_rebuild = adjusted_metrics.status in {"missing", "stale"}
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
@@ -335,6 +344,14 @@ def validate_market_db(
             f"{intraday_freshness_snapshot.expected_date} "
             f"(latest local minute date: {intraday_freshness_snapshot.latest_date or 'n/a'})"
         )
+    if adjusted_metrics.status == "missing":
+        recommendations.append(
+            "Rebuild adjusted fundamentals and daily valuation from local raw market data"
+        )
+    elif adjusted_metrics.status == "stale":
+        recommendations.append(
+            "Rebuild adjusted fundamentals and daily valuation to match latest stock_data"
+        )
     recommendations.extend(readiness_recommendations)
 
     core_daily_status = _resolve_core_daily_status(
@@ -348,6 +365,7 @@ def validate_market_db(
         fundamentals_failed_dates_count=len(fundamentals_failed_dates),
         fundamentals_failed_codes_count=len(fundamentals_failed_codes),
         integrity_issues_count=len(integrity_issues),
+        adjusted_metrics_needs_rebuild=adjusted_metrics_needs_rebuild,
     )
     derivatives_status = _resolve_derivatives_status(
         missing_local_data=options_225_missing_local_data,
@@ -496,6 +514,7 @@ def validate_market_db(
         options225=options_225_val,
         margin=margin_val,
         fundamentals=fundamentals_val,
+        adjustedMetrics=adjusted_metrics,
         failedDates=failed_dates[:_FAILED_DATES_SAMPLE_LIMIT],
         failedDatesCount=len(failed_dates),
         adjustmentEvents=[
@@ -703,6 +722,7 @@ def _resolve_core_daily_status(
     fundamentals_failed_dates_count: int,
     fundamentals_failed_codes_count: int,
     integrity_issues_count: int,
+    adjusted_metrics_needs_rebuild: bool,
 ) -> Literal["healthy", "warning", "error"]:
     if not schema_current or legacy_stock_snapshot or not initialized:
         return "error"
@@ -714,6 +734,7 @@ def _resolve_core_daily_status(
         or fundamentals_failed_dates_count > 0
         or fundamentals_failed_codes_count > 0
         or integrity_issues_count > 0
+        or adjusted_metrics_needs_rebuild
     ):
         return "warning"
     return "healthy"
