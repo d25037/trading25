@@ -10,7 +10,7 @@
 
 これは「割安だから EPS 1.2x positive が出やすい」ではなく、「発表前から高い forward PER / PER を許容されている銘柄ほど、FY で強い次期EPS予想が出やすい」という結果。Daily Ranking の value 系条件をそのまま proxy にするより、期待成長・高評価を許容されている状態を別 regime として扱う方が自然。
 
-この readout は bundle `/private/tmp/trading25-research/market-behavior/pre-earnings-eps120-proxy/20260516_pre_earnings_eps120_proxy_temporal_cross_section_v1` に基づく。入力 DB は `/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb`、対象 event は `2016-04-01` から `2026-05-14`。current cross-section は Daily Ranking 相当の latest trading date `2026-05-15`。
+この readout は bundle `/private/tmp/trading25-research/market-behavior/pre-earnings-eps120-proxy/20260516_pre_earnings_eps120_proxy_temporal_cross_section_v1` に基づく。入力 DB は `~/.local/share/trading25/market-timeseries/market.duckdb`、対象 event は `2016-04-01` から `2026-05-14`。current cross-section は Daily Ranking 相当の latest trading date `2026-05-15`。
 
 ### Main Findings
 
@@ -165,7 +165,7 @@ pooled historical result は、時代ごとの valuation 水準や流動性 regi
 - module: `apps/bt/src/domains/analytics/pre_earnings_eps120_proxy.py`
 - runner: `apps/bt/scripts/research/run_pre_earnings_eps120_proxy.py`
 - bundle experiment id: `market-behavior/pre-earnings-eps120-proxy`
-- latest result bundle: `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/pre-earnings-eps120-proxy/20260516_overheat_adjusted_sot`
+- latest result bundle: `~/.local/share/trading25/research/market-behavior/pre-earnings-eps120-proxy/20260516_overheat_adjusted_sot`
 - result tables: `event_feature_df`, `coverage_diagnostics_df`, `feature_bucket_df`, `threshold_grid_df`, `combo_grid_df`, `annual_valuation_regime_df`, `current_cross_section_df`
 
 ## Runner

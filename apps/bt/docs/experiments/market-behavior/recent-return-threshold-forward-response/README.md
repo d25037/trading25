@@ -6,7 +6,7 @@
 
 決算eventに限らない一般日次panelでも、`20d/60d runup` は「medianを素直に改善するsignal」ではない。Primeでは、runup閾値を上げるほど forward 5d/20d の **mean は改善しやすい** が、**median は概ねマイナスのまま** で、同時に severe loss rate が上がる。したがって `20d >= +20%` や `60d >= +30%` は、一般にも「期待値が弱い」というより「右裾依存でtail riskが重い状態」として扱うのが正しい。
 
-この readout は bundle `/private/tmp/trading25-research/market-behavior/recent-return-threshold-forward-response/20260516_recent_return_threshold_forward_response_prime_v1` に基づく。入力 DB は `/Users/shinjiroaso/.local/share/trading25/market-timeseries/market.duckdb`、対象 anchor は `2016-04-01` から `2026-05-14`。初回runは実用上の主対象である Prime に限定した。
+この readout は bundle `/private/tmp/trading25-research/market-behavior/recent-return-threshold-forward-response/20260516_recent_return_threshold_forward_response_prime_v1` に基づく。入力 DB は `~/.local/share/trading25/market-timeseries/market.duckdb`、対象 anchor は `2016-04-01` から `2026-05-14`。初回runは実用上の主対象である Prime に限定した。
 
 ### Main Findings
 
