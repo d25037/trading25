@@ -17,6 +17,7 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _table_exists,
     _top_rows_for_markdown,
 )
+from src.domains.analytics.fundamental_ranking import adjust_per_share_value
 from src.domains.analytics.post_earnings_next_day_entry import (
     DEFAULT_LIQUIDITY_WINDOW,
     DEFAULT_PRE_WINDOWS,
@@ -29,6 +30,12 @@ from src.domains.analytics.readonly_duckdb_support import (
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.shared.models.types import normalize_period_type
+from src.shared.utils.share_adjustment import resolve_latest_quarterly_baseline_shares
+from src.shared.utils.statement_document import (
+    is_actual_fy_financial_statement,
+    is_earn_forecast_revision_document,
+)
 
 PRE_EARNINGS_EPS120_PROXY_EXPERIMENT_ID = "market-behavior/pre-earnings-eps120-proxy"
 DEFAULT_MIN_EVENTS = 100
@@ -251,46 +258,47 @@ def _enrich_events_with_pre_valuation(
     )
     enriched = event_df.merge(current_statement, on=["code", "disclosed_date"], how="left")
 
-    fy_rows = statement_df[
-        statement_df["type_of_current_period"].astype(str).str.upper().eq("FY")
-    ].copy()
-    fy_lookup = _build_statement_lookup(fy_rows)
-    forward_rows = statement_df.copy()
-    forward_rows["forward_eps_candidate"] = forward_rows[
-        "next_year_forecast_earnings_per_share"
-    ].combine_first(forward_rows["forecast_eps"])
-    forward_lookup = _build_statement_lookup(
-        forward_rows[pd.to_numeric(forward_rows["forward_eps_candidate"], errors="coerce") > 0]
-    )
+    statement_lookup = _build_statement_lookup(statement_df)
 
     valuation_records: list[dict[str, float | str | None]] = []
     for row in enriched.itertuples(index=False):
         code = str(row.code)
         pre_event_date = str(row.pre_event_date)
-        latest_fy = _lookup_latest_statement(fy_lookup, code, pre_event_date)
-        latest_forward = _lookup_latest_statement(forward_lookup, code, pre_event_date)
+        statements_as_of = _lookup_statements_as_of(statement_lookup, code, pre_event_date)
+        latest_fy = _lookup_latest_actual_fy_statement(statements_as_of)
+        baseline_shares = _resolve_baseline_shares(statements_as_of)
         close = _float_or_nan(row.pre_event_close)
-        valuation_actual_eps = _float_or_nan(latest_fy.get("earnings_per_share")) if latest_fy else np.nan
-        valuation_bps = _float_or_nan(latest_fy.get("bps")) if latest_fy else np.nan
-        valuation_shares = _float_or_nan(latest_fy.get("shares_outstanding")) if latest_fy else np.nan
-        valuation_forward_eps = (
-            _float_or_nan(latest_forward.get("forward_eps_candidate"))
-            if latest_forward
-            else np.nan
+        valuation_actual_eps = _adjust_statement_per_share_metric(
+            latest_fy,
+            "earnings_per_share",
+            baseline_shares,
         )
+        valuation_bps = _adjust_statement_per_share_metric(
+            latest_fy,
+            "bps",
+            baseline_shares,
+        )
+        valuation_forward_eps, forward_eps_date, forward_eps_period, forward_eps_source = (
+            _resolve_forward_eps_for_valuation(
+                statements_as_of,
+                latest_fy=latest_fy,
+                baseline_shares=baseline_shares,
+            )
+        )
+        valuation_shares = baseline_shares if baseline_shares is not None else np.nan
         valuation_records.append(
             {
-                "valuation_actual_eps": valuation_actual_eps,
-                "valuation_forward_eps": valuation_forward_eps,
-                "valuation_bps": valuation_bps,
+                "valuation_actual_eps": _nan_if_none(valuation_actual_eps),
+                "valuation_forward_eps": _nan_if_none(valuation_forward_eps),
+                "valuation_bps": _nan_if_none(valuation_bps),
                 "valuation_shares_outstanding": valuation_shares,
                 "valuation_fy_disclosed_date": latest_fy.get("disclosed_date") if latest_fy else None,
-                "valuation_forward_eps_disclosed_date": (
-                    latest_forward.get("disclosed_date") if latest_forward else None
-                ),
-                "per": _ratio(close, valuation_actual_eps),
-                "forward_per": _ratio(close, valuation_forward_eps),
-                "pbr": _ratio(close, valuation_bps),
+                "valuation_forward_eps_disclosed_date": forward_eps_date,
+                "valuation_forward_eps_period_type": forward_eps_period,
+                "valuation_forward_eps_source": forward_eps_source,
+                "per": _ratio(close, _nan_if_none(valuation_actual_eps)),
+                "forward_per": _ratio(close, _nan_if_none(valuation_forward_eps)),
+                "pbr": _ratio(close, _nan_if_none(valuation_bps)),
                 "market_cap_bil_jpy": (
                     close * valuation_shares / 1e9
                     if math.isfinite(close) and math.isfinite(valuation_shares) and valuation_shares > 0
@@ -320,7 +328,13 @@ def _enrich_events_with_pre_valuation(
             np.nan,
         )
     )
-    for feature in ("per", "forward_per", "pbr", "market_cap_bil_jpy"):
+    for feature in (
+        "per",
+        "forward_per",
+        "pbr",
+        "market_cap_bil_jpy",
+        "liquidity_residual_z",
+    ):
         enriched[f"{feature}_bucket"] = enriched[feature].map(_bucket_for_feature(feature))
     return enriched
 
@@ -340,19 +354,127 @@ def _build_statement_lookup(
     return lookup
 
 
-def _lookup_latest_statement(
+def _lookup_statements_as_of(
     lookup: dict[str, tuple[np.ndarray, list[dict[str, Any]]]],
     code: str,
     as_of_date: str,
-) -> dict[str, Any] | None:
+) -> list[dict[str, Any]]:
     payload = lookup.get(code)
     if payload is None:
-        return None
+        return []
     dates, rows = payload
-    idx = int(np.searchsorted(dates, as_of_date, side="right")) - 1
-    if idx < 0:
+    idx = int(np.searchsorted(dates, as_of_date, side="right"))
+    if idx <= 0:
+        return []
+    return rows[:idx]
+
+
+def _lookup_latest_actual_fy_statement(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for row in reversed(rows):
+        if is_actual_fy_financial_statement(
+            row.get("type_of_current_period"),
+            row.get("type_of_document"),
+            allow_unknown_document=True,
+        ):
+            return row
+    return None
+
+
+def _resolve_baseline_shares(rows: list[dict[str, Any]]) -> float | None:
+    return resolve_latest_quarterly_baseline_shares(
+        (
+            row.get("type_of_current_period"),
+            row.get("disclosed_date"),
+            _nullable_float(row.get("shares_outstanding")),
+        )
+        for row in rows
+    )
+
+
+def _adjust_statement_per_share_metric(
+    row: dict[str, Any] | None,
+    metric_column: str,
+    baseline_shares: float | None,
+) -> float | None:
+    if row is None:
         return None
-    return rows[idx]
+    return adjust_per_share_value(
+        _nullable_float(row.get(metric_column)),
+        _nullable_float(row.get("shares_outstanding")),
+        baseline_shares,
+    )
+
+
+def _resolve_forward_eps_for_valuation(
+    rows: list[dict[str, Any]],
+    *,
+    latest_fy: dict[str, Any] | None,
+    baseline_shares: float | None,
+) -> tuple[float | None, str | None, str | None, str | None]:
+    if latest_fy is None:
+        return None, None, None, None
+
+    fy_disclosed_date = str(latest_fy.get("disclosed_date") or "")
+    for row in reversed(rows):
+        disclosed_date = str(row.get("disclosed_date") or "")
+        if disclosed_date <= fy_disclosed_date:
+            break
+        period_type = normalize_period_type(row.get("type_of_current_period"))
+        if period_type not in {"1Q", "2Q", "3Q"} and not is_earn_forecast_revision_document(
+            row.get("type_of_document")
+        ):
+            continue
+        raw_forward_eps = _first_positive_float(
+            row.get("forecast_eps"),
+            row.get("next_year_forecast_earnings_per_share"),
+        )
+        adjusted = adjust_per_share_value(
+            raw_forward_eps,
+            _nullable_float(row.get("shares_outstanding")),
+            baseline_shares,
+        )
+        if adjusted is not None:
+            return adjusted, disclosed_date, period_type, "revised"
+
+    raw_fy_forward_eps = _first_positive_float(
+        latest_fy.get("next_year_forecast_earnings_per_share"),
+        latest_fy.get("forecast_eps"),
+    )
+    adjusted_fy = adjust_per_share_value(
+        raw_fy_forward_eps,
+        _nullable_float(latest_fy.get("shares_outstanding")),
+        baseline_shares,
+    )
+    return (
+        adjusted_fy,
+        fy_disclosed_date if adjusted_fy is not None else None,
+        "FY" if adjusted_fy is not None else None,
+        "fy" if adjusted_fy is not None else None,
+    )
+
+
+def _first_positive_float(*values: object) -> float | None:
+    for value in values:
+        numeric = _nullable_float(value)
+        if numeric is not None and numeric > 0:
+            return numeric
+    return None
+
+
+def _nullable_float(value: object) -> float | None:
+    try:
+        number = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _nan_if_none(value: float | None) -> float:
+    return value if value is not None else np.nan
 
 
 def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
@@ -373,6 +495,9 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                 "forward_per_coverage_pct": _nonnull_pct(frame["forward_per"]),
                 "pbr_coverage_pct": _nonnull_pct(frame["pbr"]),
                 "market_cap_coverage_pct": _nonnull_pct(frame["market_cap_bil_jpy"]),
+                "liquidity_residual_z_coverage_pct": _nonnull_pct(
+                    frame["liquidity_residual_z"]
+                ),
             }
         )
     return _sort_summary_df(
@@ -389,13 +514,20 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "forward_per_coverage_pct",
             "pbr_coverage_pct",
             "market_cap_coverage_pct",
+            "liquidity_residual_z_coverage_pct",
         ],
     )
 
 
 def _build_feature_bucket_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    features = ("per", "forward_per", "pbr", "market_cap_bil_jpy")
+    features = (
+        "per",
+        "forward_per",
+        "pbr",
+        "market_cap_bil_jpy",
+        "liquidity_residual_z",
+    )
     for (market_scope, is_fy), group in scoped_df.groupby(["market_scope", "is_fy"], sort=False):
         base_rate = _rate_pct(group["eps120_positive_target"])
         for feature in features:
@@ -446,6 +578,8 @@ def _build_threshold_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.
         ("market_cap_bil_le100", lambda df: (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 100)),
         ("market_cap_bil_le300", lambda df: (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300)),
         ("market_cap_bil_ge1000", lambda df: df["market_cap_bil_jpy"] >= 1000),
+        ("liquidity_residual_z_ge1", lambda df: df["liquidity_residual_z"] >= 1.0),
+        ("liquidity_residual_z_le_minus1", lambda df: df["liquidity_residual_z"] <= -1.0),
     ]
     return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="threshold")
 
@@ -467,6 +601,18 @@ def _build_combo_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.Data
         (
             "low_forward_per15_low_pbr1.5_mcap_le300",
             lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15) & (df["pbr"] > 0) & (df["pbr"] <= 1.5) & (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300),
+        ),
+        (
+            "low_forward_per15_and_high_liquidity_z",
+            lambda df: (df["forward_per"] > 0)
+            & (df["forward_per"] <= 15)
+            & (df["liquidity_residual_z"] >= 1.0),
+        ),
+        (
+            "low_forward_per15_and_stale_liquidity",
+            lambda df: (df["forward_per"] > 0)
+            & (df["forward_per"] <= 15)
+            & (df["liquidity_residual_z"] <= -1.0),
         ),
     ]
     return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="combo")
@@ -524,6 +670,7 @@ def _target_summary(frame: pd.DataFrame, base_rate_pct: float) -> dict[str, Any]
         "median_forward_per": _median(frame["forward_per"]),
         "median_pbr": _median(frame["pbr"]),
         "median_market_cap_bil_jpy": _median(frame["market_cap_bil_jpy"]),
+        "median_liquidity_residual_z": _median(frame["liquidity_residual_z"]),
     }
 
 
@@ -540,6 +687,7 @@ def _target_summary_columns() -> list[str]:
         "median_forward_per",
         "median_pbr",
         "median_market_cap_bil_jpy",
+        "median_liquidity_residual_z",
     ]
 
 
@@ -589,6 +737,8 @@ def _bucket_for_feature(feature: str) -> Callable[[object], str]:
         return _bucket_pbr
     if feature == "market_cap_bil_jpy":
         return _bucket_market_cap
+    if feature == "liquidity_residual_z":
+        return _bucket_liquidity_residual_z
     raise ValueError(f"Unsupported feature: {feature}")
 
 
@@ -645,11 +795,23 @@ def _bucket_market_cap(value: object) -> str:
     return "gt1000"
 
 
+def _bucket_liquidity_residual_z(value: object) -> str:
+    numeric = _float_or_nan(value)
+    if not math.isfinite(numeric):
+        return "missing"
+    if numeric <= -1.0:
+        return "low"
+    if numeric >= 1.0:
+        return "high"
+    return "neutral"
+
+
 def _bucket_order(feature: str, bucket: str) -> int:
     orders = {
         "per": ["non_positive", "le10", "10-15", "15-20", "20-30", "gt30", "missing"],
         "forward_per": ["non_positive", "le10", "10-15", "15-20", "20-30", "gt30", "missing"],
         "pbr": ["non_positive", "le0.8", "0.8-1.0", "1.0-1.5", "1.5-2.0", "gt2.0", "missing"],
         "market_cap_bil_jpy": ["le50", "50-100", "100-300", "300-1000", "gt1000", "missing"],
+        "liquidity_residual_z": ["low", "neutral", "high", "missing"],
     }
     return orders.get(feature, []).index(bucket) if bucket in orders.get(feature, []) else 999

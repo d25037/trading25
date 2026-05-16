@@ -34,6 +34,7 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _summary_columns,
     _table_exists,
     _top_rows_for_markdown,
+    enrich_event_features_with_prime_liquidity_residuals,
 )
 from src.domains.analytics.jpx_daily_price_limits import (
     JPX_DAILY_PRICE_LIMITS_DEFINITION_NOTE,
@@ -151,6 +152,11 @@ def run_post_earnings_next_day_entry_research(
         end_date=end_date,
         pre_windows=resolved_pre_windows,
         horizons=resolved_horizons,
+        liquidity_window=liquidity_window,
+    )
+    event_feature_df = enrich_event_features_with_prime_liquidity_residuals(
+        db_path_obj,
+        event_feature_df,
         liquidity_window=liquidity_window,
     )
     scoped_event_df = _expand_market_scope(event_feature_df)

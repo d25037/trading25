@@ -15,8 +15,12 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
+from src.domains.analytics.free_float_liquidity_adjustment import (
+    apply_adjusted_free_float_market_cap,
+    load_adjustment_events_by_code as load_liquidity_adjustment_events_by_code,
+)
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
-from src.shared.utils.market_code_alias import normalize_market_scope
+from src.shared.utils.market_code_alias import normalize_market_scope, resolve_market_codes
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     adjust_free_float_shares_to_price_basis,
@@ -44,6 +48,13 @@ _LIQUIDITY_REGIME_ORDER: tuple[str, ...] = (
     "neutral",
     "missing",
 )
+_LIQUIDITY_RESIDUAL_BUCKET_ORDER: tuple[str, ...] = (
+    "low",
+    "neutral",
+    "high",
+    "missing",
+)
+DEFAULT_LIQUIDITY_REGRESSION_MIN_OBSERVATIONS = 100
 
 
 @dataclass(frozen=True)
@@ -138,6 +149,11 @@ def run_earnings_holdthrough_expectancy_research(
         end_date=end_date,
         pre_windows=resolved_pre_windows,
         horizons=resolved_horizons,
+        liquidity_window=liquidity_window,
+    )
+    event_feature_df = enrich_event_features_with_prime_liquidity_residuals(
+        db_path_obj,
+        event_feature_df,
         liquidity_window=liquidity_window,
     )
     scoped_event_df = _expand_market_scope(event_feature_df)
@@ -897,6 +913,372 @@ def _classify_liquidity_regime(
     return "neutral"
 
 
+def enrich_event_features_with_prime_liquidity_residuals(
+    db_path: str | Path,
+    event_df: pd.DataFrame,
+    *,
+    liquidity_window: int,
+    min_regression_observations: int = DEFAULT_LIQUIDITY_REGRESSION_MIN_OBSERVATIONS,
+) -> pd.DataFrame:
+    """Attach Daily Ranking style Prime liquidity residual z as of pre-event date."""
+    if event_df.empty or "pre_event_date" not in event_df.columns:
+        result = event_df.copy()
+        if "liquidity_residual_z_bucket" not in result.columns:
+            result["liquidity_residual_z_bucket"] = "missing"
+        return result
+
+    target_dates = sorted(
+        {
+            str(value)
+            for value in event_df.loc[
+                (event_df["market"].astype(str) == "prime")
+                & event_df["pre_event_date"].notna(),
+                "pre_event_date",
+            ]
+            if str(value)
+        }
+    )
+    if not target_dates:
+        return _attach_prime_liquidity_residual_panel(
+            event_df,
+            pd.DataFrame(),
+        )
+
+    db_path_obj = Path(db_path).expanduser().resolve()
+    with open_readonly_analysis_connection(
+        str(db_path_obj),
+        snapshot_prefix="earnings-prime-liquidity-residual-",
+    ) as ctx:
+        source_df = _query_prime_liquidity_residual_source(
+            ctx.connection,
+            target_dates=target_dates,
+            liquidity_window=liquidity_window,
+        )
+        if not source_df.empty:
+            adjustment_events_by_code = load_liquidity_adjustment_events_by_code(
+                ctx.connection,
+                codes=sorted(source_df["code"].astype(str).unique().tolist()),
+                end_date=max(target_dates),
+            )
+            source_df = apply_adjusted_free_float_market_cap(
+                source_df,
+                adjustment_events_by_code=adjustment_events_by_code,
+            )
+
+    panel_df = _build_prime_liquidity_residual_panel(
+        source_df,
+        liquidity_window=liquidity_window,
+        min_regression_observations=min_regression_observations,
+    )
+    return _attach_prime_liquidity_residual_panel(
+        event_df,
+        panel_df,
+    )
+
+
+def _query_prime_liquidity_residual_source(
+    conn: Any,
+    *,
+    target_dates: Sequence[str],
+    liquidity_window: int,
+) -> pd.DataFrame:
+    if not target_dates:
+        return pd.DataFrame()
+    _, prime_market_codes = resolve_market_codes("prime")
+    if not prime_market_codes:
+        return pd.DataFrame()
+
+    start_date = _offset_calendar_date(
+        min(target_dates),
+        days=-(liquidity_window * 4 + 30),
+    )
+    end_date = max(target_dates)
+    market_placeholders = _placeholder_sql(len(prime_market_codes))
+    target_placeholders = _placeholder_sql(len(target_dates))
+    stock_code = normalize_code_sql("s.code")
+    price_code = normalize_code_sql("sd.code")
+    statement_code = normalize_code_sql("st.code")
+    prefer_price = "CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END"
+    prefer_statement = "CASE WHEN length(st.code) = 4 THEN 0 ELSE 1 END"
+    df = conn.execute(
+        f"""
+        WITH prime_codes AS (
+            SELECT DISTINCT {stock_code} AS code
+            FROM stocks s
+            WHERE lower(trim(s.market_code)) IN ({market_placeholders})
+        ),
+        price_base AS (
+            SELECT code, date, close, volume
+            FROM (
+                SELECT
+                    {price_code} AS code,
+                    sd.date,
+                    sd.close,
+                    sd.volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {price_code}, sd.date
+                        ORDER BY {prefer_price}
+                    ) AS rn
+                FROM stock_data sd
+                WHERE sd.date >= ?
+                  AND sd.date <= ?
+                  AND sd.close > 0
+                  AND sd.volume IS NOT NULL
+            )
+            WHERE rn = 1
+        ),
+        prime_price AS (
+            SELECT price_base.*
+            FROM price_base
+            JOIN prime_codes USING (code)
+        ),
+        price_feature AS (
+            SELECT
+                *,
+                MEDIAN(close * volume) OVER (
+                    PARTITION BY code ORDER BY date
+                    ROWS BETWEEN {liquidity_window - 1} PRECEDING AND CURRENT ROW
+                ) AS adv_jpy,
+                COUNT(*) OVER (
+                    PARTITION BY code ORDER BY date
+                    ROWS BETWEEN {liquidity_window - 1} PRECEDING AND CURRENT ROW
+                ) AS adv_sessions
+            FROM prime_price
+        ),
+        statement_base AS (
+            SELECT *
+            FROM (
+                SELECT
+                    {statement_code} AS code,
+                    st.disclosed_date,
+                    st.shares_outstanding,
+                    st.treasury_shares,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {statement_code}, st.disclosed_date
+                        ORDER BY {prefer_statement}
+                    ) AS rn
+                FROM statements st
+                WHERE st.shares_outstanding > 0
+            )
+            WHERE rn = 1
+        ),
+        statement_interval AS (
+            SELECT
+                code,
+                disclosed_date AS share_disclosed_date,
+                LEAD(disclosed_date) OVER (
+                    PARTITION BY code ORDER BY disclosed_date
+                ) AS valid_to,
+                shares_outstanding,
+                treasury_shares
+            FROM statement_base
+        )
+        SELECT
+            pf.code,
+            pf.date,
+            pf.close,
+            pf.adv_jpy,
+            pf.adv_sessions,
+            st.share_disclosed_date,
+            st.shares_outstanding,
+            st.treasury_shares
+        FROM price_feature pf
+        JOIN statement_interval st
+          ON st.code = pf.code
+         AND st.share_disclosed_date <= pf.date
+         AND (st.valid_to IS NULL OR pf.date < st.valid_to)
+        WHERE pf.date IN ({target_placeholders})
+          AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
+        ORDER BY pf.date, pf.code
+        """,
+        [*prime_market_codes, start_date, end_date, *target_dates],
+    ).fetchdf()
+    if df.empty:
+        return pd.DataFrame()
+    df["code"] = df["code"].astype(str)
+    df["date"] = df["date"].astype(str)
+    return df
+
+
+def _build_prime_liquidity_residual_panel(
+    source_df: pd.DataFrame,
+    *,
+    liquidity_window: int,
+    min_regression_observations: int,
+) -> pd.DataFrame:
+    columns = [
+        "code",
+        "date",
+        "liquidity_residual_z",
+        "adv60_to_free_float_pct",
+    ]
+    if source_df.empty:
+        return pd.DataFrame(columns=columns)
+    frame = source_df.copy()
+    frame["adv_jpy"] = pd.to_numeric(frame["adv_jpy"], errors="coerce")
+    frame["adv_sessions"] = pd.to_numeric(frame["adv_sessions"], errors="coerce")
+    frame["free_float_market_cap_jpy"] = pd.to_numeric(
+        frame["free_float_market_cap_jpy"],
+        errors="coerce",
+    )
+    frame = frame[
+        (frame["adv_jpy"] > 0)
+        & (frame["adv_sessions"] >= liquidity_window)
+        & (frame["free_float_market_cap_jpy"] > 0)
+    ].copy()
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+    frame["log_adv"] = np.log(frame["adv_jpy"].astype(float))
+    frame["log_free_float_market_cap"] = np.log(
+        frame["free_float_market_cap_jpy"].astype(float)
+    )
+    rows: list[dict[str, Any]] = []
+    for date, group in frame.groupby("date", sort=True):
+        valid = (
+            group[
+                [
+                    "code",
+                    "log_adv",
+                    "log_free_float_market_cap",
+                    "adv_jpy",
+                    "free_float_market_cap_jpy",
+                ]
+            ]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        if (
+            len(valid) < min_regression_observations
+            or valid["log_free_float_market_cap"].nunique() < 2
+        ):
+            continue
+        x = valid["log_free_float_market_cap"].to_numpy(dtype=float)
+        y = valid["log_adv"].to_numpy(dtype=float)
+        design = np.column_stack([np.ones(len(x)), x])
+        intercept, beta = np.linalg.lstsq(design, y, rcond=None)[0]
+        fitted = float(intercept) + float(beta) * x
+        residuals = y - fitted
+        residual_std = float(np.std(residuals, ddof=1))
+        if not math.isfinite(residual_std) or residual_std <= 0:
+            continue
+        for row, residual in zip(valid.to_dict(orient="records"), residuals, strict=True):
+            adv = _float_or_nan(row["adv_jpy"])
+            free_float_cap = _float_or_nan(row["free_float_market_cap_jpy"])
+            rows.append(
+                {
+                    "code": str(row["code"]),
+                    "date": str(date),
+                    "liquidity_residual_z": float(residual / residual_std),
+                    "adv60_to_free_float_pct": (
+                        adv / free_float_cap * 100.0
+                        if math.isfinite(adv)
+                        and math.isfinite(free_float_cap)
+                        and free_float_cap > 0
+                        else np.nan
+                    ),
+                }
+            )
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame.from_records(rows, columns=columns)
+
+
+def _attach_prime_liquidity_residual_panel(
+    event_df: pd.DataFrame,
+    panel_df: pd.DataFrame,
+) -> pd.DataFrame:
+    result = event_df.copy()
+    if "liquidity_residual_z_bucket" not in result.columns:
+        result["liquidity_residual_z_bucket"] = "missing"
+    if result.empty or panel_df.empty:
+        result["liquidity_residual_z"] = np.nan
+        result["liquidity_residual_z_bucket"] = "missing"
+        result["liquidity_regime"] = "missing"
+        return result
+
+    merged = result.merge(
+        panel_df.rename(
+            columns={
+                "date": "pre_event_date",
+                "liquidity_residual_z": "_prime_liquidity_residual_z",
+                "adv60_to_free_float_pct": "_prime_adv60_to_free_float_pct",
+            }
+        ),
+        on=["code", "pre_event_date"],
+        how="left",
+    )
+    z_values = pd.to_numeric(merged["_prime_liquidity_residual_z"], errors="coerce")
+    prime_event_mask = (
+        result["market"].astype(str).eq("prime")
+        if "market" in result.columns
+        else pd.Series(True, index=result.index)
+    )
+    z_values = z_values.where(prime_event_mask, np.nan)
+    result["liquidity_residual_z"] = z_values.to_numpy()
+    result["liquidity_residual_z_bucket"] = [
+        _bucket_liquidity_residual_z(value) for value in z_values
+    ]
+    panel_adv_to_free_float = pd.to_numeric(
+        merged["_prime_adv60_to_free_float_pct"],
+        errors="coerce",
+    ).where(prime_event_mask, np.nan)
+    current_adv_to_free_float = pd.to_numeric(
+        result["adv60_to_free_float_pct"],
+        errors="coerce",
+    )
+    result["adv60_to_free_float_pct"] = current_adv_to_free_float.where(
+        panel_adv_to_free_float.isna(),
+        panel_adv_to_free_float,
+    )
+    result["adv60_to_free_float_bucket"] = result["adv60_to_free_float_pct"].map(
+        _bucket_adv60_to_free_float
+    )
+    result["liquidity_regime"] = [
+        _classify_liquidity_residual_regime(
+            residual_z=z,
+            recent_return_20d_pct=row.get("pre_return_20d_pct"),
+            recent_return_60d_pct=row.get("pre_return_60d_pct"),
+        )
+        for z, row in zip(z_values, result.to_dict(orient="records"), strict=False)
+    ]
+    return result
+
+
+def _bucket_liquidity_residual_z(value: object) -> str:
+    numeric = _float_or_nan(value)
+    if not math.isfinite(numeric):
+        return "missing"
+    if numeric <= -1.0:
+        return "low"
+    if numeric >= 1.0:
+        return "high"
+    return "neutral"
+
+
+def _classify_liquidity_residual_regime(
+    *,
+    residual_z: object,
+    recent_return_20d_pct: object,
+    recent_return_60d_pct: object,
+) -> str:
+    z_value = _float_or_nan(residual_z)
+    if not math.isfinite(z_value):
+        return "missing"
+    valid_returns = [
+        value
+        for value in (_float_or_none(recent_return_20d_pct), _float_or_none(recent_return_60d_pct))
+        if value is not None
+    ]
+    if z_value >= 1.0 and len(valid_returns) == 2:
+        if all(value >= 0 for value in valid_returns):
+            return "rerating_participation"
+        if any(value < 0 for value in valid_returns):
+            return "distribution_stress"
+    if z_value <= -1.0:
+        return "stale_liquidity"
+    return "neutral"
+
+
 def _expand_market_scope(event_df: pd.DataFrame) -> pd.DataFrame:
     if event_df.empty:
         expanded = event_df.copy()
@@ -936,6 +1318,8 @@ def _build_precondition_outcome_df(
             "is_fy",
             *window_columns,
             "adv60_to_free_float_bucket",
+            "liquidity_residual_z_bucket",
+            "liquidity_regime",
         ]
         for horizon in horizons:
             return_col = f"forward_excess_return_{horizon}d_pct"
@@ -964,6 +1348,8 @@ def _build_precondition_outcome_df(
         "is_fy",
         *[f"pre_return_{window}d_bucket" for window in _infer_pre_windows(scoped_df)],
         "adv60_to_free_float_bucket",
+        "liquidity_residual_z_bucket",
+        "liquidity_regime",
         "horizon",
         *_summary_columns(),
         "positive_event_rate_pct",
@@ -1025,6 +1411,7 @@ def _build_liquidity_interaction_df(
         group_columns = [
             "market_scope",
             "liquidity_regime",
+            "liquidity_residual_z_bucket",
             "event_strength",
             "is_fy",
             "has_next_guidance",
@@ -1042,11 +1429,15 @@ def _build_liquidity_interaction_df(
                         "median_adv60_to_free_float_pct": _median_or_nan(
                             frame["adv60_to_free_float_pct"]
                         ),
+                        "median_liquidity_residual_z": _median_or_nan(
+                            frame["liquidity_residual_z"]
+                        ),
                     }
                 )
     columns = [
         "market_scope",
         "liquidity_regime",
+        "liquidity_residual_z_bucket",
         "event_strength",
         "is_fy",
         "has_next_guidance",
@@ -1054,6 +1445,7 @@ def _build_liquidity_interaction_df(
         *_summary_columns(),
         "median_adv60_mil_jpy",
         "median_adv60_to_free_float_pct",
+        "median_liquidity_residual_z",
     ]
     return _sort_summary_df(pd.DataFrame(rows), columns=columns)
 
@@ -1149,6 +1541,9 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                     "liquidity_regime_coverage_pct": float(
                         (frame["liquidity_regime"] != "missing").mean() * 100.0
                     ),
+                    "liquidity_residual_z_coverage_pct": _coverage_rate_pct(
+                        frame["liquidity_residual_z"]
+                    ),
                 }
             )
     columns = [
@@ -1160,6 +1555,7 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
         "next_guidance_count",
         "med_adv60_coverage_pct",
         "liquidity_regime_coverage_pct",
+        "liquidity_residual_z_coverage_pct",
     ]
     return _sort_summary_df(pd.DataFrame(rows), columns=columns)
 
@@ -1245,6 +1641,7 @@ def _base_event_record(row: Any) -> dict[str, Any]:
         "adv60_to_free_float_pct": np.nan,
         "adv60_to_free_float_bucket": "missing",
         "liquidity_residual_z": np.nan,
+        "liquidity_residual_z_bucket": "missing",
         "liquidity_regime": "missing",
     }
 
@@ -1313,6 +1710,7 @@ def _event_feature_columns(
         "adv60_to_free_float_pct",
         "adv60_to_free_float_bucket",
         "liquidity_residual_z",
+        "liquidity_residual_z_bucket",
         "liquidity_regime",
     ]
     for window in pre_windows:

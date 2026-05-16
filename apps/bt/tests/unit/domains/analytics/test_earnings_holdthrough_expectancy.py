@@ -3,10 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 import pytest
 
 from src.domains.analytics.earnings_holdthrough_expectancy import (
     EarningsHoldthroughExpectancyResult,
+    _attach_prime_liquidity_residual_panel,
+    _build_prime_liquidity_residual_panel,
     build_summary_markdown,
     run_earnings_holdthrough_expectancy_research,
     write_earnings_holdthrough_expectancy_bundle,
@@ -70,6 +73,71 @@ def test_earnings_holdthrough_research_emits_interaction_tables(
     assert not result.signed_premove_df.empty
     assert "aligned" in set(result.signed_premove_df["signed_pre_move"])
     assert not result.holdthrough_return_df.empty
+
+
+def test_prime_liquidity_residual_panel_classifies_daily_ranking_states() -> None:
+    source_df = pd.DataFrame(
+        [
+            {
+                "code": "1001",
+                "date": "2024-01-09",
+                "adv_jpy": 100.0,
+                "adv_sessions": 3,
+                "free_float_market_cap_jpy": 1000.0,
+            },
+            {
+                "code": "1002",
+                "date": "2024-01-09",
+                "adv_jpy": 200.0,
+                "adv_sessions": 3,
+                "free_float_market_cap_jpy": 2000.0,
+            },
+            {
+                "code": "1003",
+                "date": "2024-01-09",
+                "adv_jpy": 400.0,
+                "adv_sessions": 3,
+                "free_float_market_cap_jpy": 4000.0,
+            },
+            {
+                "code": "1004",
+                "date": "2024-01-09",
+                "adv_jpy": 800.0,
+                "adv_sessions": 3,
+                "free_float_market_cap_jpy": 8000.0,
+            },
+            {
+                "code": "9999",
+                "date": "2024-01-09",
+                "adv_jpy": 12000.0,
+                "adv_sessions": 3,
+                "free_float_market_cap_jpy": 16000.0,
+            },
+        ]
+    )
+    panel_df = _build_prime_liquidity_residual_panel(
+        source_df,
+        liquidity_window=3,
+        min_regression_observations=3,
+    )
+    event_df = pd.DataFrame(
+        [
+            {
+                "code": "9999",
+                "pre_event_date": "2024-01-09",
+                "pre_return_20d_pct": 8.0,
+                "pre_return_60d_pct": 12.0,
+                "adv60_to_free_float_pct": 0.0,
+            }
+        ]
+    )
+
+    enriched = _attach_prime_liquidity_residual_panel(event_df, panel_df)
+
+    event = enriched.iloc[0]
+    assert event["liquidity_residual_z"] > 1.0
+    assert event["liquidity_residual_z_bucket"] == "high"
+    assert event["liquidity_regime"] == "rerating_participation"
 
 
 def test_earnings_holdthrough_research_writes_bundle_and_summary(tmp_path: Path) -> None:

@@ -34,6 +34,38 @@ def test_pre_earnings_eps120_proxy_uses_only_pre_disclosure_valuation(
     assert event["market_cap_bil_jpy"] == pytest.approx(105.0 * 1_000_000.0 / 1e9)
 
 
+def test_pre_earnings_eps120_proxy_does_not_carry_stale_forecast_eps(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_proxy_db(tmp_path / "market.duckdb")
+
+    result = _run_test_research(db_path)
+
+    event = result.event_feature_df[result.event_feature_df["code"] == "3333"].iloc[0]
+    assert event["valuation_actual_eps"] == pytest.approx(80.0)
+    assert event["valuation_forward_eps"] != event["valuation_forward_eps"]
+    assert event["forward_per"] != event["forward_per"]
+    assert event["forward_per_bucket"] == "missing"
+
+
+def test_pre_earnings_eps120_proxy_adjusts_per_share_values_to_share_basis(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_proxy_db(tmp_path / "market.duckdb")
+
+    result = _run_test_research(db_path)
+
+    event = result.event_feature_df[result.event_feature_df["code"] == "4444"].iloc[0]
+    assert event["valuation_actual_eps"] == pytest.approx(50.0)
+    assert event["valuation_forward_eps"] == pytest.approx(60.0)
+    assert event["valuation_bps"] == pytest.approx(250.0)
+    assert event["valuation_shares_outstanding"] == pytest.approx(2_000_000.0)
+    assert event["per"] == pytest.approx(120.0 / 50.0)
+    assert event["forward_per"] == pytest.approx(120.0 / 60.0)
+    assert event["pbr"] == pytest.approx(120.0 / 250.0)
+    assert event["market_cap_bil_jpy"] == pytest.approx(120.0 * 2_000_000.0 / 1e9)
+
+
 def test_pre_earnings_eps120_proxy_emits_summary_tables(tmp_path: Path) -> None:
     db_path = _build_proxy_db(tmp_path / "market.duckdb")
 
@@ -136,10 +168,17 @@ def _build_proxy_db(db_path: Path) -> Path:
         [
             ("1111", "Alpha", "0111", "Prime", "TOPIX Core30"),
             ("2222", "Beta", "0111", "Prime", None),
+            ("3333", "Gamma", "0111", "Prime", None),
+            ("4444", "Delta", "0111", "Prime", None),
         ],
     )
     stock_rows = []
-    for code, close in [("1111", 105.0), ("2222", 200.0)]:
+    for code, close in [
+        ("1111", 105.0),
+        ("2222", 200.0),
+        ("3333", 90.0),
+        ("4444", 120.0),
+    ]:
         stock_rows.extend(
             [
                 (code, "2024-01-05", close - 2.0, close - 1.0, close - 3.0, close - 2.0, 100.0),
@@ -165,6 +204,12 @@ def _build_proxy_db(db_path: Path) -> Path:
             ("1111", "2024-01-10", "FinancialStatement", "FY", 130.0, 150.0, 1_200.0, 120.0, 560.0, 1_100_000.0, 0.0),
             ("2222", "2023-09-10", "FinancialStatement", "FY", 80.0, None, 900.0, 90.0, 400.0, 2_000_000.0, 0.0),
             ("2222", "2024-01-10", "FinancialStatement", "FY", 90.0, 95.0, 950.0, 92.0, 420.0, 2_000_000.0, 0.0),
+            ("3333", "2021-09-10", "FinancialStatement", "FY", 500.0, None, 600.0, 50.0, 300.0, 1_000_000.0, 0.0),
+            ("3333", "2023-09-10", "FinancialStatement", "FY", None, None, 800.0, 80.0, 320.0, 1_000_000.0, 0.0),
+            ("3333", "2024-01-10", "FinancialStatement", "FY", 120.0, None, 900.0, 90.0, 330.0, 1_000_000.0, 0.0),
+            ("4444", "2023-09-10", "FinancialStatement", "FY", None, None, 1_000.0, 100.0, 500.0, 1_000_000.0, 0.0),
+            ("4444", "2023-12-01", "FinancialStatement", "2Q", 60.0, None, 500.0, 30.0, 250.0, 2_000_000.0, 0.0),
+            ("4444", "2024-01-10", "FinancialStatement", "FY", 180.0, None, 1_200.0, 120.0, 520.0, 2_000_000.0, 0.0),
         ],
     )
     conn.close()
