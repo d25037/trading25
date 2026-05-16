@@ -75,6 +75,7 @@ export class AnalyticsClient {
       sector17Name: params.sector17Name,
       includeValuation: params.includeValuation,
       forwardEpsDisclosedWithinDays: params.forwardEpsDisclosedWithinDays,
+      liquidityState: params.liquidityState,
     });
   }
 

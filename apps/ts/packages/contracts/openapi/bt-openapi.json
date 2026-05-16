@@ -19585,6 +19585,34 @@
               "title": "Forwardepsdisclosedwithindays",
               "type": "integer"
             }
+          },
+          {
+            "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime.",
+            "in": "query",
+            "name": "liquidityState",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "rerating_participation",
+                    "distribution_stress",
+                    "stale_liquidity",
+                    "neutral"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "overheat",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime.",
+              "title": "Liquiditystate"
+            }
           }
         ],
         "responses": {

@@ -8,13 +8,19 @@ export type {
   MarketRankingResponse,
   RankingItem,
   Rankings,
-  SortOrder,
   RankingType,
+  SortOrder,
 } from '@trading25/contracts/types/api-response-types';
 
 export type RankingPageTab = 'ranking' | 'fundamentalRanking' | 'valueComposite';
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
+export type RankingLiquidityState =
+  | 'rerating_participation'
+  | 'distribution_stress'
+  | 'stale_liquidity'
+  | 'neutral'
+  | 'overheat';
 export type RankingSortField =
   | 'tradingValue'
   | 'changePercentage'
@@ -42,4 +48,5 @@ export interface RankingParams {
   sortBy?: RankingSortField;
   order?: RankingSortOrder;
   forwardEpsDisclosedWithinDays?: number;
+  liquidityState?: RankingLiquidityState;
 }

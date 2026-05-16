@@ -1,7 +1,7 @@
-import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
-import type { RankingParams } from '@/types/ranking';
+import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { RankingParams } from '@/types/ranking';
 
 const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -28,6 +28,15 @@ const FORWARD_EPS_DISCLOSURE_OPTIONS = [
   { value: 63, label: '63 days' },
   { value: 252, label: '252 days' },
 ];
+
+const LIQUIDITY_STATE_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'rerating_participation', label: 'Rerating' },
+  { value: 'distribution_stress', label: 'Stress' },
+  { value: 'stale_liquidity', label: 'Stale' },
+  { value: 'neutral', label: 'Neutral' },
+  { value: 'overheat', label: 'Overheat' },
+] as const;
 
 interface RankingFiltersProps {
   params: RankingParams;
@@ -67,6 +76,28 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           id="ranking-forward-eps-disclosed-within-days"
           label="Fwd EPS Disclosure"
         />
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="ranking-liquidity-state">
+            状態
+          </label>
+          <Select
+            value={params.liquidityState ?? 'all'}
+            onValueChange={(value) =>
+              updateParam('liquidityState', value === 'all' ? undefined : (value as RankingParams['liquidityState']))
+            }
+          >
+            <SelectTrigger id="ranking-liquidity-state" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LIQUIDITY_STATE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <DateInput value={params.date} onChange={(v) => updateParam('date', v)} id="ranking-date" />
       </div>
     </Surface>
@@ -83,7 +114,9 @@ export function TechnicalEventFilters({ params, onChange }: RankingFiltersProps)
       <div className="space-y-1 pb-3">
         <SectionEyebrow>Filter Rail</SectionEyebrow>
         <h2 className="text-base font-semibold text-foreground">Technical Events</h2>
-        <p className="text-xs text-muted-foreground">Find stocks making range highs or lows within the selected scope.</p>
+        <p className="text-xs text-muted-foreground">
+          Find stocks making range highs or lows within the selected scope.
+        </p>
       </div>
       <div className="space-y-3">
         <MarketsSelect

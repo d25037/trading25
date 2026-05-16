@@ -60,6 +60,7 @@ from src.entrypoints.http.schemas.ranking import (
     MarketRankingResponse,
     RankingItem,
     RankingRiskFlag,
+    RankingStateFilter,
     Rankings,
     ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
@@ -471,6 +472,7 @@ class RankingService:
         sector17_name: str | None = None,
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
+        liquidity_state: RankingStateFilter | None = None,
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
@@ -482,7 +484,8 @@ class RankingService:
             target_date = self._resolve_stock_price_basis_date()
 
         apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
-        query_limit = 0 if apply_forward_eps_filter else limit
+        apply_liquidity_state_filter = include_valuation and liquidity_state is not None
+        query_limit = 0 if apply_forward_eps_filter or apply_liquidity_state_filter else limit
 
         # 5種類のランキングを取得
         if lookback_days > 1:
@@ -570,12 +573,24 @@ class RankingService:
                 target_date=target_date,
                 forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
             )
-            self._limit_and_rerank_ranking_collections(ranking_collections, limit)
-            self._enrich_ranking_collections_with_prime_liquidity(
-                ranking_collections,
-                target_date=target_date,
-                price_basis_date=price_basis_date,
-            )
+            if apply_liquidity_state_filter:
+                self._enrich_ranking_collections_with_prime_liquidity(
+                    ranking_collections,
+                    target_date=target_date,
+                    price_basis_date=price_basis_date,
+                )
+                self._filter_ranking_collections_by_liquidity_state(
+                    ranking_collections,
+                    liquidity_state=liquidity_state,
+                )
+                self._limit_and_rerank_ranking_collections(ranking_collections, limit)
+            else:
+                self._limit_and_rerank_ranking_collections(ranking_collections, limit)
+                self._enrich_ranking_collections_with_prime_liquidity(
+                    ranking_collections,
+                    target_date=target_date,
+                    price_basis_date=price_basis_date,
+                )
         index_performance = self._load_index_performance(
             target_date, lookback_days=lookback_days
         )
@@ -1353,6 +1368,27 @@ class RankingService:
                 del collection[limit:]
             for rank, item in enumerate(collection, start=1):
                 item.rank = rank
+
+    @staticmethod
+    def _filter_ranking_collections_by_liquidity_state(
+        collections: tuple[list[RankingItem], ...],
+        *,
+        liquidity_state: RankingStateFilter | None,
+    ) -> None:
+        if liquidity_state is None:
+            return
+
+        for collection in collections:
+            if liquidity_state == "overheat":
+                collection[:] = [
+                    item for item in collection if liquidity_state in item.riskFlags
+                ]
+            else:
+                collection[:] = [
+                    item
+                    for item in collection
+                    if item.liquidityRegime == liquidity_state
+                ]
 
     def _enrich_ranking_collections_with_prime_liquidity(
         self,

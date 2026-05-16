@@ -11754,6 +11754,8 @@ export interface operations {
                 includeValuation?: boolean;
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
+                /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime. */
+                liquidityState?: ("rerating_participation" | "distribution_stress" | "stale_liquidity" | "neutral") | "overheat" | null;
             };
             header?: never;
             path?: never;

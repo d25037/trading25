@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { createContext, type ReactNode, useContext } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { RankingParams } from '@/types/ranking';
 import { RankingFilters, TechnicalEventFilters } from './RankingFilters';
@@ -33,15 +33,23 @@ vi.mock('@/components/shared/filters', () => ({
   },
 }));
 
+const SelectContext = createContext<{ onValueChange: (value: string) => void } | null>(null);
+
 vi.mock('@/components/ui/select', () => ({
   Select: ({ children, onValueChange }: { children: ReactNode; onValueChange: (value: string) => void }) => (
-    <button type="button" data-testid="technical-event-type" onClick={() => onValueChange('periodLow')}>
-      {children}
-    </button>
+    <SelectContext.Provider value={{ onValueChange }}>{children}</SelectContext.Provider>
   ),
   SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  SelectTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  SelectTrigger: ({ children, id }: { children: ReactNode; id?: string }) => {
+    const context = useContext(SelectContext);
+    const nextValue = id === 'ranking-liquidity-state' ? 'overheat' : 'periodLow';
+    return (
+      <button type="button" data-testid={id} onClick={() => context?.onValueChange(nextValue)}>
+        {children}
+      </button>
+    );
+  },
   SelectValue: () => <span>Event Type Value</span>,
 }));
 
@@ -65,6 +73,7 @@ describe('RankingFilters', () => {
 
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
     expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
+    expect(screen.getByText('状態')).toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
@@ -91,6 +100,12 @@ describe('RankingFilters', () => {
       forwardEpsDisclosedWithinDays: 126,
     });
 
+    fireEvent.click(screen.getByTestId('ranking-liquidity-state'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      liquidityState: 'overheat',
+    });
+
     fireEvent.click(screen.getByTestId('ranking-date'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
@@ -104,6 +119,7 @@ describe('RankingFilters', () => {
     expect(screen.getByTestId('ranking-markets')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-liquidity-state')).toBeInTheDocument();
     expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
   });
@@ -115,7 +131,7 @@ describe('RankingFilters', () => {
     expect(screen.getByText('Technical Events')).toBeInTheDocument();
     expect(screen.getByText('Period Days')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('technical-event-type'));
+    fireEvent.click(screen.getByTestId('ranking-technical-event-type'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       technicalEventType: 'periodLow',

@@ -839,6 +839,73 @@ class TestGetRankings:
         assert result.rankings.tradingValue[0].code == "77770"
         assert result.rankings.tradingValue[0].forwardEpsDisclosedDate == "2023-01-01"
 
+    def test_liquidity_state_filter_applies_before_limit(self, service, monkeypatch):
+        def fake_enrich_prime_liquidity(
+            self,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del self, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    if item.code == "72030":
+                        item.liquidityRegime = "rerating_participation"
+                    elif item.code == "67580":
+                        item.liquidityRegime = "distribution_stress"
+
+        monkeypatch.setattr(
+            RankingService,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            liquidity_state="rerating_participation",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["72030"]
+        assert result.rankings.tradingValue[0].rank == 1
+
+    def test_liquidity_state_filter_can_match_overheat_risk_flag(
+        self, service, monkeypatch
+    ):
+        def fake_enrich_prime_liquidity(
+            self,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del self, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    item.liquidityRegime = "neutral"
+                    if item.code == "67580":
+                        item.riskFlags = ["overheat"]
+
+        monkeypatch.setattr(
+            RankingService,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            liquidity_state="overheat",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["67580"]
+        assert result.rankings.tradingValue[0].riskFlags == ["overheat"]
+
     def test_market_filter(self, service):
         result = service.get_rankings(markets="standard")
         # standard は 99840 のみ

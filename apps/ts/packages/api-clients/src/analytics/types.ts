@@ -10,6 +10,12 @@ export interface AnalyticsClientConfig {
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type RankingRiskFlag = 'overheat';
+export type RankingLiquidityState =
+  | 'rerating_participation'
+  | 'distribution_stress'
+  | 'stale_liquidity'
+  | 'neutral'
+  | 'overheat';
 
 export interface ResponseDiagnostics {
   missing_required_data?: string[];
@@ -99,6 +105,7 @@ export interface MarketRankingParams {
   sector17Name?: string;
   includeValuation?: boolean;
   forwardEpsDisclosedWithinDays?: number;
+  liquidityState?: RankingLiquidityState;
 }
 
 export interface FundamentalsParams {

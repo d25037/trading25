@@ -354,6 +354,7 @@ export function RankingPage() {
       includeValuation: activeDailyView !== 'indices',
       forwardEpsDisclosedWithinDays:
         activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
+      liquidityState: activeDailyView === 'stocks' ? rankingParams.liquidityState : undefined,
     }),
     [activeDailyView, rankingParams]
   );

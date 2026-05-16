@@ -26,6 +26,7 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import (
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    RankingStateFilter,
     ValueCompositeRankingResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeProfileId,
@@ -96,6 +97,13 @@ async def get_ranking(
             "Use 0 to disable the filter."
         ),
     ),
+    liquidityState: RankingStateFilter | None = Query(
+        None,
+        description=(
+            "Keep valuation-enriched stocks matching the Daily Ranking state. "
+            "Use overheat to filter the risk flag instead of liquidityRegime."
+        ),
+    ),
 ) -> MarketRankingResponse:
     """マーケットランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -116,6 +124,7 @@ async def get_ranking(
             sector17_name=sector17Name,
             include_valuation=includeValuation,
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
+            liquidity_state=liquidityState,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

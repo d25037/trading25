@@ -35,6 +35,7 @@ LiquidityRegime = Literal[
     "neutral",
 ]
 RankingRiskFlag = Literal["overheat"]
+RankingStateFilter = LiquidityRegime | RankingRiskFlag
 
 
 class RankingItem(BaseModel):

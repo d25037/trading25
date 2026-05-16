@@ -14,6 +14,7 @@ function fetchRanking(params: RankingParams): Promise<MarketRankingResponse> {
     sector17Name: params.sector17Name,
     includeValuation: params.includeValuation,
     forwardEpsDisclosedWithinDays: params.forwardEpsDisclosedWithinDays,
+    liquidityState: params.liquidityState,
   });
 }
 
