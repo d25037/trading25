@@ -1649,6 +1649,11 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
             self.calls.append(("copy_statements_from_source", tuple(normalized_codes)))
             return len(normalized_codes)
 
+        def copy_adjusted_metrics_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+            del source_duckdb_path
+            self.calls.append(("copy_adjusted_metrics_from_source", tuple(normalized_codes)))
+            return len(normalized_codes)
+
         def copy_margin_data_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
             del source_duckdb_path
             self.calls.append(("copy_margin_data_from_source", tuple(normalized_codes)))
@@ -1696,6 +1701,7 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
         "copy_topix_data_from_source",
         "copy_indices_data_from_source",
         "copy_statements_from_source",
+        "copy_adjusted_metrics_from_source",
         "copy_margin_data_from_source",
         "set_dataset_info",
         "set_dataset_info",
