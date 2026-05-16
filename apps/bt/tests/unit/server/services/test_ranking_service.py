@@ -502,6 +502,91 @@ def service(ranking_db):
     reader.close()
 
 
+def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS daily_valuation (
+            code TEXT,
+            date TEXT,
+            price_basis_date TEXT,
+            close DOUBLE,
+            eps DOUBLE,
+            bps DOUBLE,
+            forward_eps DOUBLE,
+            per DOUBLE,
+            forward_per DOUBLE,
+            pbr DOUBLE,
+            market_cap DOUBLE,
+            free_float_market_cap DOUBLE,
+            statement_disclosed_date TEXT,
+            forward_eps_disclosed_date TEXT,
+            forward_eps_source TEXT,
+            basis_version TEXT,
+            created_at TEXT,
+            PRIMARY KEY (code, date, basis_version)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS statement_metrics_adjusted (
+            code TEXT,
+            disclosed_date TEXT,
+            period_end TEXT,
+            period_type TEXT,
+            price_basis_date TEXT,
+            raw_eps DOUBLE,
+            adjusted_eps DOUBLE,
+            raw_bps DOUBLE,
+            adjusted_bps DOUBLE,
+            raw_forecast_eps DOUBLE,
+            adjusted_forecast_eps DOUBLE,
+            raw_dividend_fy DOUBLE,
+            adjusted_dividend_fy DOUBLE,
+            raw_shares_outstanding DOUBLE,
+            adjusted_shares_outstanding DOUBLE,
+            adjustment_factor_cumulative DOUBLE,
+            basis_version TEXT,
+            created_at TEXT,
+            PRIMARY KEY (code, disclosed_date, period_end, period_type, basis_version)
+        )
+    """)
+
+
+def _insert_daily_valuation(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    code: str,
+    eps: float,
+    bps: float,
+    forward_eps: float,
+    per: float,
+    forward_per: float,
+    pbr: float,
+    market_cap: float,
+    source: str = "fy",
+    forward_date: str = "2024-01-19",
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO daily_valuation VALUES (
+            ?, '2024-01-19', '2024-01-19', 520.0,
+            ?, ?, ?, ?, ?, ?, ?, NULL,
+            '2024-01-10', ?, ?, 'adjusted-v1:2024-01-19', NULL
+        )
+        """,
+        (
+            code,
+            eps,
+            bps,
+            forward_eps,
+            per,
+            forward_per,
+            pbr,
+            market_cap,
+            forward_date,
+            source,
+        ),
+    )
+
+
 class TestGetRankings:
     def test_default(self, service):
         result = service.get_rankings()
@@ -1035,6 +1120,51 @@ class TestGetFundamentalRankings:
         assert toyota.periodType == "1Q"
         assert toyota.disclosedDate == "2024-01-18"
 
+    def test_fundamental_rankings_prefer_adjusted_daily_valuation_sot(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            _create_adjusted_metric_tables(conn)
+            _insert_daily_valuation(
+                conn,
+                code="72030",
+                eps=100.0,
+                bps=1000.0,
+                forward_eps=120.0,
+                per=5.2,
+                forward_per=4.3333,
+                pbr=0.52,
+                market_cap=52_000_000_000.0,
+                source="fy",
+                forward_date="2024-01-10",
+            )
+            _insert_daily_valuation(
+                conn,
+                code="67580",
+                eps=10.0,
+                bps=800.0,
+                forward_eps=90.0,
+                per=52.0,
+                forward_per=5.7778,
+                pbr=0.65,
+                market_cap=26_000_000_000.0,
+                source="revised",
+                forward_date="2024-01-18",
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_fundamental_rankings(markets="prime", limit=20)
+        reader.close()
+
+        assert result.rankings.ratioHigh[0].code == "67580"
+        assert result.rankings.ratioHigh[0].epsValue == pytest.approx(9.0)
+        assert result.rankings.ratioHigh[0].source == "revised"
+        assert result.rankings.ratioHigh[0].disclosedDate == "2024-01-18"
+
     def test_fy_forecast_fallback_when_revision_missing(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
         sony = next(
@@ -1300,6 +1430,88 @@ class TestGetValueCompositeRanking:
         assert result.items[0].pbr == pytest.approx(0.52)
         assert result.items[0].forwardPer == pytest.approx(5.0)
         assert result.items[0].marketCapBilJpy == pytest.approx(5.2)
+
+    def test_value_composite_ranking_prefers_adjusted_daily_valuation_sot(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            _create_adjusted_metric_tables(conn)
+            for code, name, price, volume in [
+                ("77770", "Large Standard", 1000.0, 10_000_000),
+                ("88880", "Mid Standard", 800.0, 20_000_000),
+            ]:
+                conn.execute(
+                    "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        name,
+                        name,
+                        "standard",
+                        "S",
+                        "S17",
+                        "情報",
+                        "S33",
+                        "情報通信",
+                        None,
+                        "2000-01-01",
+                        None,
+                        None,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (code, "2024-01-19", price, price, price, price, volume, 1.0, None),
+                )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=50.0,
+                bps=2000.0,
+                forward_eps=260.0,
+                per=10.4,
+                forward_per=2.0,
+                pbr=0.26,
+                market_cap=1_000_000_000.0,
+                source="revised",
+                forward_date="2024-01-18",
+            )
+            _insert_daily_valuation(
+                conn,
+                code="77770",
+                eps=80.0,
+                bps=800.0,
+                forward_eps=100.0,
+                per=6.5,
+                forward_per=5.2,
+                pbr=0.65,
+                market_cap=52_000_000_000.0,
+            )
+            _insert_daily_valuation(
+                conn,
+                code="88880",
+                eps=70.0,
+                bps=1000.0,
+                forward_eps=130.0,
+                per=7.4286,
+                forward_per=4.0,
+                pbr=0.52,
+                market_cap=10_400_000_000.0,
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_value_composite_ranking(limit=10)
+        reader.close()
+
+        item = next(row for row in result.items if row.code == "99840")
+        assert item.pbr == pytest.approx(0.26)
+        assert item.forwardPer == pytest.approx(2.0)
+        assert item.forwardEps == pytest.approx(260.0)
+        assert item.forwardEpsSource == "revised"
+        assert item.marketCapBilJpy == pytest.approx(1.0)
 
     def test_value_composite_ranking_can_use_latest_revised_forward_eps(
         self, ranking_db

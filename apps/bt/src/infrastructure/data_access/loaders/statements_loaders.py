@@ -373,6 +373,7 @@ def merge_forward_forecast_revision(
 def transform_statements_df(
     df: pd.DataFrame,
     baseline_shares: float | None = None,
+    adjusted_metrics_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
@@ -397,6 +398,7 @@ def transform_statements_df(
                 else df[raw_col]
             )
 
+    _apply_adjusted_metrics_override(df, adjusted_metrics_df)
     _build_forward_eps_columns(df)
     # 開示イベント判定用に開示日を明示列として保持する
     df["DisclosedDate"] = pd.to_datetime(df.index)
@@ -417,6 +419,46 @@ def transform_statements_df(
     df["ROA"] = _calc_roa(df)
     df["OperatingMargin"] = _calc_operating_margin(df)
     return df
+
+
+def _apply_adjusted_metrics_override(
+    df: pd.DataFrame,
+    adjusted_metrics_df: pd.DataFrame | None,
+) -> None:
+    if adjusted_metrics_df is None or adjusted_metrics_df.empty or df.empty:
+        return
+    metrics = adjusted_metrics_df.copy()
+    if "disclosedDate" in metrics.columns:
+        metrics.index = pd.to_datetime(metrics["disclosedDate"])
+    else:
+        metrics.index = pd.to_datetime(metrics.index)
+    metrics = metrics.sort_index()
+
+    column_map = {
+        "adjustedEps": ("AdjustedEPS",),
+        "adjustedBps": ("AdjustedBPS",),
+        "adjustedForecastEps": (
+            "AdjustedForecastEPS",
+            "AdjustedNextYearForecastEPS",
+        ),
+        "adjustedDividendFy": ("AdjustedDividendFY",),
+    }
+    metric_by_date = {
+        pd.Timestamp(str(index_value)).strftime("%Y-%m-%d"): row
+        for index_value, row in metrics.iterrows()
+    }
+    for disclosed_at, _row in df.iterrows():
+        disclosed_date = pd.Timestamp(str(disclosed_at)).strftime("%Y-%m-%d")
+        metric = metric_by_date.get(disclosed_date)
+        if metric is None:
+            continue
+        for source_col, target_cols in column_map.items():
+            value = metric.get(source_col)
+            if pd.isna(value):
+                continue
+            for target_col in target_cols:
+                if target_col in df.columns:
+                    df.at[cast(Any, disclosed_at), target_col] = value
 
 
 def load_statements_data(

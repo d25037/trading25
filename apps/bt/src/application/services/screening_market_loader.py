@@ -371,6 +371,14 @@ def _attach_statements(
 
     base_map = _group_statement_rows(base_rows)
     revision_map = _group_statement_rows(revision_rows) if revision_rows else {}
+    adjusted_metrics_map = _group_adjusted_statement_metric_rows(
+        _query_adjusted_statement_metric_rows(
+            reader,
+            codes,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    )
     adjustment_events_by_code = _load_adjustment_events_by_code(
         reader,
         codes,
@@ -393,12 +401,14 @@ def _attach_statements(
             base_daily = transform_statements_df(
                 base_df,
                 baseline_shares=shared_baseline_shares,
+                adjusted_metrics_df=adjusted_metrics_map.get(code),
             ).reindex(daily_index).ffill()
             if should_merge_forecast_revision:
                 if revision_df is not None and not revision_df.empty:
                     revision_daily = transform_statements_df(
                         revision_df,
                         baseline_shares=shared_baseline_shares,
+                        adjusted_metrics_df=adjusted_metrics_map.get(code),
                     ).reindex(daily_index).ffill()
                     base_daily = merge_forward_forecast_revision(base_daily, revision_daily)
             result.setdefault(code, {})["statements_daily"] = base_daily
@@ -527,6 +537,44 @@ def _query_statements_rows(
     return reader.query(sql, tuple(params))
 
 
+def _query_adjusted_statement_metric_rows(
+    reader: MarketDbQueryable,
+    stock_codes: list[str],
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> list[Any]:
+    query_codes = stock_code_query_candidates(stock_codes)
+    if not query_codes:
+        return []
+    placeholders = ",".join("?" for _ in query_codes)
+    sql = f"""
+        SELECT
+            code,
+            disclosed_date,
+            adjusted_eps,
+            adjusted_bps,
+            adjusted_forecast_eps,
+            adjusted_dividend_fy
+        FROM statement_metrics_adjusted
+        WHERE code IN ({placeholders})
+    """
+    params: list[Any] = list(query_codes)
+    if start_date:
+        sql += " AND disclosed_date >= ?"
+        params.append(start_date)
+    if end_date:
+        sql += " AND disclosed_date <= ?"
+        params.append(end_date)
+    sql += " ORDER BY code, disclosed_date"
+    try:
+        return reader.query(sql, tuple(params))
+    except Exception as e:  # noqa: BLE001 - older DBs do not have adjusted metrics
+        if _is_missing_table_error(e):
+            return []
+        raise
+
+
 def _query_margin_rows(
     reader: MarketDbQueryable,
     stock_codes: list[str],
@@ -581,6 +629,31 @@ def _group_statement_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
                 if db_col != "disclosed_date"
             },
         })
+
+    result: dict[str, pd.DataFrame] = {}
+    for code, records in grouped.items():
+        if not records:
+            continue
+        df = pd.DataFrame(records)
+        df["disclosedDate"] = pd.to_datetime(df["disclosedDate"])
+        df = df.set_index("disclosedDate").sort_index()
+        result[code] = df
+    return result
+
+
+def _group_adjusted_statement_metric_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        code = normalize_stock_code(str(row["code"]))
+        grouped.setdefault(code, []).append(
+            {
+                "disclosedDate": row["disclosed_date"],
+                "adjustedEps": row["adjusted_eps"],
+                "adjustedBps": row["adjusted_bps"],
+                "adjustedForecastEps": row["adjusted_forecast_eps"],
+                "adjustedDividendFy": row["adjusted_dividend_fy"],
+            }
+        )
 
     result: dict[str, pd.DataFrame] = {}
     for code, records in grouped.items():

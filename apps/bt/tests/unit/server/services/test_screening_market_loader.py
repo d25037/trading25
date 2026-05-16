@@ -664,6 +664,80 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
     assert "statements_daily" in result["7203"]
 
 
+def test_attach_statements_overlays_adjusted_metric_sot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0, 1.1]}, index=index)}}
+    daily_index = {"7203": index}
+    rows = [
+        {
+            "code": "7203",
+            "disclosed_date": "2026-01-01",
+            "earnings_per_share": 100.0,
+            "profit": 1.0,
+            "equity": 1.0,
+            "type_of_current_period": "FY",
+            "type_of_document": "Annual",
+            "next_year_forecast_earnings_per_share": 120.0,
+            "bps": 1000.0,
+            "sales": 4.0,
+            "operating_profit": 5.0,
+            "ordinary_profit": 6.0,
+            "operating_cash_flow": 7.0,
+            "dividend_fy": 30.0,
+            "forecast_dividend_fy": 8.5,
+            "next_year_forecast_dividend_fy": 9.0,
+            "payout_ratio": 30.0,
+            "forecast_payout_ratio": 32.0,
+            "next_year_forecast_payout_ratio": 34.0,
+            "forecast_eps": None,
+            "investing_cash_flow": 10.0,
+            "financing_cash_flow": 11.0,
+            "cash_and_equivalents": 12.0,
+            "total_assets": 13.0,
+            "shares_outstanding": 100.0,
+            "treasury_shares": 15.0,
+        }
+    ]
+    adjusted_rows = [
+        {
+            "code": "7203",
+            "disclosed_date": "2026-01-01",
+            "adjusted_eps": 50.0,
+            "adjusted_bps": 500.0,
+            "adjusted_forecast_eps": 60.0,
+            "adjusted_dividend_fy": 15.0,
+        }
+    ]
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_statements_rows",
+        lambda *_args, **_kwargs: rows,
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_adjusted_statement_metric_rows",
+        lambda *_args, **_kwargs: adjusted_rows,
+    )
+
+    warnings = _attach_statements(
+        DummyReader(),
+        result,
+        daily_index,
+        start_date=None,
+        end_date=None,
+        period_type="FY",
+        include_forecast_revision=False,
+    )
+
+    statements = result["7203"]["statements_daily"]
+    assert warnings == []
+    assert statements["EPS"].iloc[-1] == pytest.approx(100.0)
+    assert statements["AdjustedEPS"].iloc[-1] == pytest.approx(50.0)
+    assert statements["AdjustedBPS"].iloc[-1] == pytest.approx(500.0)
+    assert statements["AdjustedForwardForecastEPS"].iloc[-1] == pytest.approx(60.0)
+
+
 def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPatch) -> None:
     index = pd.to_datetime(["2026-01-01"])
     result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
