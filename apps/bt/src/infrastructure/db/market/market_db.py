@@ -2079,44 +2079,102 @@ class MarketDb:
                   AND adjusted_bps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
-            forward_metrics AS (
-                SELECT code, disclosed_date, period_type, adjusted_forecast_eps
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND adjusted_forecast_eps IS NOT NULL
-                ORDER BY code, disclosed_date
-            ),
             fy_cycle_anchors AS (
-                SELECT code, disclosed_date
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND upper(period_type) = 'FY'
+                SELECT m.code, m.disclosed_date
+                FROM statement_metrics_adjusted AS m
+                LEFT JOIN statements AS s
+                  ON s.code = m.code
+                 AND s.disclosed_date = m.disclosed_date
+                WHERE m.basis_version = ?
+                  AND upper(m.period_type) = 'FY'
                   AND (
-                      adjusted_eps > 0
-                      OR adjusted_bps > 0
+                      m.adjusted_eps > 0
+                      OR m.adjusted_bps > 0
                   )
-                ORDER BY code, disclosed_date
+                  AND (
+                      s.type_of_document IS NULL
+                      OR s.type_of_document NOT LIKE '%EarnForecastRevision%'
+                  )
+                ORDER BY m.code, m.disclosed_date
+            ),
+            forward_metrics AS (
+                SELECT
+                    m.code,
+                    m.disclosed_date,
+                    m.period_type,
+                    m.adjusted_forecast_eps,
+                    CASE
+                        WHEN s.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN 'revised'
+                        WHEN upper(m.period_type) = 'FY'
+                        THEN 'fy'
+                        ELSE 'revised'
+                    END AS forward_source
+                FROM statement_metrics_adjusted AS m
+                LEFT JOIN fy_cycle_anchors AS fy
+                  ON fy.code = m.code
+                 AND fy.disclosed_date = m.disclosed_date
+                LEFT JOIN statements AS s
+                  ON s.code = m.code
+                 AND s.disclosed_date = m.disclosed_date
+                WHERE m.basis_version = ?
+                  AND m.adjusted_forecast_eps IS NOT NULL
+                  AND (
+                      upper(m.period_type) != 'FY'
+                      OR fy.disclosed_date IS NOT NULL
+                      OR s.type_of_document LIKE '%EarnForecastRevision%'
+                  )
+                ORDER BY m.code, m.disclosed_date
             ),
             actual_operating_profit_metrics AS (
-                SELECT code, disclosed_date, operating_profit
-                FROM statements
-                WHERE upper(type_of_current_period) = 'FY'
-                  AND operating_profit IS NOT NULL
-                ORDER BY code, disclosed_date
+                SELECT st.code, st.disclosed_date, st.operating_profit
+                FROM statements AS st
+                JOIN fy_cycle_anchors AS fy
+                  ON fy.code = st.code
+                 AND fy.disclosed_date = st.disclosed_date
+                WHERE upper(st.type_of_current_period) = 'FY'
+                  AND st.operating_profit IS NOT NULL
+                ORDER BY st.code, st.disclosed_date
             ),
             forward_operating_profit_metrics AS (
                 SELECT
-                    code,
-                    disclosed_date,
+                    st.code,
+                    st.disclosed_date,
+                    st.type_of_current_period AS period_type,
                     CASE
-                        WHEN upper(type_of_current_period) = 'FY'
-                        THEN COALESCE(next_year_forecast_operating_profit, forecast_operating_profit)
-                        ELSE COALESCE(forecast_operating_profit, next_year_forecast_operating_profit)
+                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN 'revised'
+                        WHEN upper(st.type_of_current_period) = 'FY'
+                        THEN 'fy'
+                        ELSE 'revised'
+                    END AS forward_source,
+                    CASE
+                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN COALESCE(st.forecast_operating_profit, st.next_year_forecast_operating_profit)
+                        WHEN upper(st.type_of_current_period) = 'FY'
+                        THEN COALESCE(st.next_year_forecast_operating_profit, st.forecast_operating_profit)
+                        ELSE st.forecast_operating_profit
                     END AS forecast_operating_profit
-                FROM statements
-                WHERE forecast_operating_profit IS NOT NULL
-                   OR next_year_forecast_operating_profit IS NOT NULL
-                ORDER BY code, disclosed_date
+                FROM statements AS st
+                LEFT JOIN fy_cycle_anchors AS fy
+                  ON fy.code = st.code
+                 AND fy.disclosed_date = st.disclosed_date
+                WHERE (
+                    upper(st.type_of_current_period) = 'FY'
+                    AND (
+                        fy.disclosed_date IS NOT NULL
+                        OR st.type_of_document LIKE '%EarnForecastRevision%'
+                    )
+                    AND (
+                        st.forecast_operating_profit IS NOT NULL
+                        OR st.next_year_forecast_operating_profit IS NOT NULL
+                    )
+                )
+                   OR (
+                       upper(st.type_of_current_period) != 'FY'
+                       AND st.forecast_operating_profit IS NOT NULL
+                   )
+                ORDER BY st.code, st.disclosed_date
             ),
             shares_metrics AS (
                 SELECT
@@ -2156,12 +2214,32 @@ class MarketDb:
                OR b.disclosed_date IS NOT NULL
                OR (
                    f.disclosed_date IS NOT NULL
-                   AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                   AND fy.disclosed_date IS NOT NULL
+                   AND (
+                       (
+                           f.forward_source = 'fy'
+                           AND f.disclosed_date = fy.disclosed_date
+                       )
+                       OR (
+                           f.forward_source = 'revised'
+                           AND f.disclosed_date > fy.disclosed_date
+                       )
+                   )
                )
                OR op.disclosed_date IS NOT NULL
                OR (
                    fop.disclosed_date IS NOT NULL
-                   AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
+                   AND fy.disclosed_date IS NOT NULL
+                   AND (
+                       (
+                           fop.forward_source = 'fy'
+                           AND fop.disclosed_date = fy.disclosed_date
+                       )
+                       OR (
+                           fop.forward_source = 'revised'
+                           AND fop.disclosed_date > fy.disclosed_date
+                       )
+                   )
                )
                OR sh.disclosed_date IS NOT NULL
             """,
@@ -2213,44 +2291,102 @@ class MarketDb:
                   AND adjusted_bps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
-            forward_metrics AS (
-                SELECT code, disclosed_date, period_type, adjusted_forecast_eps
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND adjusted_forecast_eps IS NOT NULL
-                ORDER BY code, disclosed_date
-            ),
             fy_cycle_anchors AS (
-                SELECT code, disclosed_date
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND upper(period_type) = 'FY'
+                SELECT m.code, m.disclosed_date
+                FROM statement_metrics_adjusted AS m
+                LEFT JOIN statements AS s
+                  ON s.code = m.code
+                 AND s.disclosed_date = m.disclosed_date
+                WHERE m.basis_version = ?
+                  AND upper(m.period_type) = 'FY'
                   AND (
-                      adjusted_eps > 0
-                      OR adjusted_bps > 0
+                      m.adjusted_eps > 0
+                      OR m.adjusted_bps > 0
                   )
-                ORDER BY code, disclosed_date
+                  AND (
+                      s.type_of_document IS NULL
+                      OR s.type_of_document NOT LIKE '%EarnForecastRevision%'
+                  )
+                ORDER BY m.code, m.disclosed_date
+            ),
+            forward_metrics AS (
+                SELECT
+                    m.code,
+                    m.disclosed_date,
+                    m.period_type,
+                    m.adjusted_forecast_eps,
+                    CASE
+                        WHEN s.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN 'revised'
+                        WHEN upper(m.period_type) = 'FY'
+                        THEN 'fy'
+                        ELSE 'revised'
+                    END AS forward_source
+                FROM statement_metrics_adjusted AS m
+                LEFT JOIN fy_cycle_anchors AS fy
+                  ON fy.code = m.code
+                 AND fy.disclosed_date = m.disclosed_date
+                LEFT JOIN statements AS s
+                  ON s.code = m.code
+                 AND s.disclosed_date = m.disclosed_date
+                WHERE m.basis_version = ?
+                  AND m.adjusted_forecast_eps IS NOT NULL
+                  AND (
+                      upper(m.period_type) != 'FY'
+                      OR fy.disclosed_date IS NOT NULL
+                      OR s.type_of_document LIKE '%EarnForecastRevision%'
+                  )
+                ORDER BY m.code, m.disclosed_date
             ),
             actual_operating_profit_metrics AS (
-                SELECT code, disclosed_date, operating_profit
-                FROM statements
-                WHERE upper(type_of_current_period) = 'FY'
-                  AND operating_profit IS NOT NULL
-                ORDER BY code, disclosed_date
+                SELECT st.code, st.disclosed_date, st.operating_profit
+                FROM statements AS st
+                JOIN fy_cycle_anchors AS fy
+                  ON fy.code = st.code
+                 AND fy.disclosed_date = st.disclosed_date
+                WHERE upper(st.type_of_current_period) = 'FY'
+                  AND st.operating_profit IS NOT NULL
+                ORDER BY st.code, st.disclosed_date
             ),
             forward_operating_profit_metrics AS (
                 SELECT
-                    code,
-                    disclosed_date,
+                    st.code,
+                    st.disclosed_date,
+                    st.type_of_current_period AS period_type,
                     CASE
-                        WHEN upper(type_of_current_period) = 'FY'
-                        THEN COALESCE(next_year_forecast_operating_profit, forecast_operating_profit)
-                        ELSE COALESCE(forecast_operating_profit, next_year_forecast_operating_profit)
+                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN 'revised'
+                        WHEN upper(st.type_of_current_period) = 'FY'
+                        THEN 'fy'
+                        ELSE 'revised'
+                    END AS forward_source,
+                    CASE
+                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
+                        THEN COALESCE(st.forecast_operating_profit, st.next_year_forecast_operating_profit)
+                        WHEN upper(st.type_of_current_period) = 'FY'
+                        THEN COALESCE(st.next_year_forecast_operating_profit, st.forecast_operating_profit)
+                        ELSE st.forecast_operating_profit
                     END AS forecast_operating_profit
-                FROM statements
-                WHERE forecast_operating_profit IS NOT NULL
-                   OR next_year_forecast_operating_profit IS NOT NULL
-                ORDER BY code, disclosed_date
+                FROM statements AS st
+                LEFT JOIN fy_cycle_anchors AS fy
+                  ON fy.code = st.code
+                 AND fy.disclosed_date = st.disclosed_date
+                WHERE (
+                    upper(st.type_of_current_period) = 'FY'
+                    AND (
+                        fy.disclosed_date IS NOT NULL
+                        OR st.type_of_document LIKE '%EarnForecastRevision%'
+                    )
+                    AND (
+                        st.forecast_operating_profit IS NOT NULL
+                        OR st.next_year_forecast_operating_profit IS NOT NULL
+                    )
+                )
+                   OR (
+                       upper(st.type_of_current_period) != 'FY'
+                       AND st.forecast_operating_profit IS NOT NULL
+                   )
+                ORDER BY st.code, st.disclosed_date
             ),
             shares_metrics AS (
                 SELECT
@@ -2273,7 +2409,17 @@ class MarketDb:
                 b.adjusted_bps AS bps,
                 CASE
                     WHEN f.disclosed_date IS NOT NULL
-                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                     AND fy.disclosed_date IS NOT NULL
+                     AND (
+                         (
+                             f.forward_source = 'fy'
+                             AND f.disclosed_date = fy.disclosed_date
+                         )
+                         OR (
+                             f.forward_source = 'revised'
+                             AND f.disclosed_date > fy.disclosed_date
+                         )
+                     )
                     THEN f.adjusted_forecast_eps
                     ELSE NULL
                 END AS forward_eps,
@@ -2285,7 +2431,17 @@ class MarketDb:
                 CASE
                     WHEN s.close > 0
                      AND f.adjusted_forecast_eps > 0
-                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                     AND fy.disclosed_date IS NOT NULL
+                     AND (
+                         (
+                             f.forward_source = 'fy'
+                             AND f.disclosed_date = fy.disclosed_date
+                         )
+                         OR (
+                             f.forward_source = 'revised'
+                             AND f.disclosed_date > fy.disclosed_date
+                         )
+                     )
                     THEN s.close / f.adjusted_forecast_eps
                     ELSE NULL
                 END AS forward_per,
@@ -2293,6 +2449,7 @@ class MarketDb:
                     WHEN s.close > 0
                      AND sh.adjusted_shares_outstanding > 0
                      AND op.operating_profit > 0
+                     AND op.disclosed_date = fy.disclosed_date
                     THEN s.close * sh.adjusted_shares_outstanding / op.operating_profit
                     ELSE NULL
                 END AS p_op,
@@ -2300,7 +2457,17 @@ class MarketDb:
                     WHEN s.close > 0
                      AND sh.adjusted_shares_outstanding > 0
                      AND fop.forecast_operating_profit > 0
-                     AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
+                     AND fy.disclosed_date IS NOT NULL
+                     AND (
+                         (
+                             fop.forward_source = 'fy'
+                             AND fop.disclosed_date = fy.disclosed_date
+                         )
+                         OR (
+                             fop.forward_source = 'revised'
+                             AND fop.disclosed_date > fy.disclosed_date
+                         )
+                     )
                     THEN s.close * sh.adjusted_shares_outstanding / fop.forecast_operating_profit
                     ELSE NULL
                 END AS forward_p_op,
@@ -2327,17 +2494,30 @@ class MarketDb:
                 COALESCE(a.disclosed_date, b.disclosed_date) AS statement_disclosed_date,
                 CASE
                     WHEN f.adjusted_forecast_eps IS NOT NULL
-                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                     AND fy.disclosed_date IS NOT NULL
+                     AND (
+                         (
+                             f.forward_source = 'fy'
+                             AND f.disclosed_date = fy.disclosed_date
+                         )
+                         OR (
+                             f.forward_source = 'revised'
+                             AND f.disclosed_date > fy.disclosed_date
+                         )
+                     )
                     THEN f.disclosed_date
                     ELSE NULL
                 END AS forward_eps_disclosed_date,
                 CASE
-                    WHEN f.adjusted_forecast_eps IS NOT NULL
-                     AND upper(f.period_type) = 'FY'
-                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                     WHEN f.adjusted_forecast_eps IS NOT NULL
+                     AND f.forward_source = 'fy'
+                     AND fy.disclosed_date IS NOT NULL
+                     AND f.disclosed_date = fy.disclosed_date
                     THEN 'fy'
                     WHEN f.adjusted_forecast_eps IS NOT NULL
-                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                     AND fy.disclosed_date IS NOT NULL
+                     AND f.forward_source = 'revised'
+                     AND f.disclosed_date > fy.disclosed_date
                     THEN 'revised'
                     ELSE NULL
                 END AS forward_eps_source,
@@ -2369,12 +2549,32 @@ class MarketDb:
                OR b.disclosed_date IS NOT NULL
                OR (
                    f.disclosed_date IS NOT NULL
-                   AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                   AND fy.disclosed_date IS NOT NULL
+                   AND (
+                       (
+                           f.forward_source = 'fy'
+                           AND f.disclosed_date = fy.disclosed_date
+                       )
+                       OR (
+                           f.forward_source = 'revised'
+                           AND f.disclosed_date > fy.disclosed_date
+                       )
+                   )
                )
                OR op.disclosed_date IS NOT NULL
                OR (
                    fop.disclosed_date IS NOT NULL
-                   AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
+                   AND fy.disclosed_date IS NOT NULL
+                   AND (
+                       (
+                           fop.forward_source = 'fy'
+                           AND fop.disclosed_date = fy.disclosed_date
+                       )
+                       OR (
+                           fop.forward_source = 'revised'
+                           AND fop.disclosed_date > fy.disclosed_date
+                       )
+                   )
                )
                OR sh.disclosed_date IS NOT NULL
             ON CONFLICT (code, date, basis_version)

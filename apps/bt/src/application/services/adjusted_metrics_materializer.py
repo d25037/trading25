@@ -93,7 +93,13 @@ class AdjustedMetricsMaterializer:
                 type_of_current_period,
                 earnings_per_share,
                 bps,
-                COALESCE(forecast_eps, next_year_forecast_earnings_per_share) AS forecast_eps,
+                CASE
+                    WHEN type_of_document LIKE '%EarnForecastRevision%'
+                    THEN COALESCE(forecast_eps, next_year_forecast_earnings_per_share)
+                    WHEN upper(type_of_current_period) = 'FY'
+                    THEN COALESCE(next_year_forecast_earnings_per_share, forecast_eps)
+                    ELSE forecast_eps
+                END AS forecast_eps,
                 dividend_fy,
                 shares_outstanding,
                 treasury_shares

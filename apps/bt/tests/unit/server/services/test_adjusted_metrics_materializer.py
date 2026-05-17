@@ -196,6 +196,14 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
         },
         {
             "code": "3853",
+            "disclosed_date": "2024-01-10",
+            "type_of_current_period": "FY",
+            "type_of_document": "EarnForecastRevision",
+            "forecast_eps": 240.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "3853",
             "disclosed_date": "2025-05-14",
             "type_of_current_period": "FY",
             "earnings_per_share": 35.0,
@@ -227,6 +235,161 @@ def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
     assert valuation[0]["forward_per"] is None
     assert valuation[0]["forward_eps_disclosed_date"] is None
     assert valuation[0]["forward_eps_source"] is None
+
+
+def test_rebuild_daily_valuation_ignores_quarterly_next_year_forecast_fallback(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-15",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "next_year_forecast_earnings_per_share": 150.0,
+            "operating_profit": 200_000_000.0,
+            "next_year_forecast_operating_profit": 300_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-08-15",
+            "type_of_current_period": "1Q",
+            "earnings_per_share": 20.0,
+            "forecast_eps": None,
+            "next_year_forecast_earnings_per_share": 400.0,
+            "forecast_operating_profit": None,
+            "next_year_forecast_operating_profit": 900_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-09-01",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("7203")
+
+    assert valuation[0]["forward_eps"] == pytest.approx(150.0)
+    assert valuation[0]["forward_per"] == pytest.approx(600.0 / 150.0)
+    assert valuation[0]["forward_p_op"] == pytest.approx(
+        (600.0 * 1_000_000.0) / 300_000_000.0
+    )
+    assert valuation[0]["forward_eps_disclosed_date"] == "2024-05-15"
+    assert valuation[0]["forward_eps_source"] == "fy"
+
+
+def test_rebuild_daily_valuation_does_not_carry_actual_operating_profit_past_latest_fy(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-15",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "operating_profit": 200_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2025-05-15",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 120.0,
+            "bps": 1200.0,
+            "operating_profit": None,
+            "shares_outstanding": 1_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2025-09-01",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("7203")
+
+    assert valuation[0]["eps"] == pytest.approx(120.0)
+    assert valuation[0]["p_op"] is None
+
+
+def test_rebuild_daily_valuation_uses_fy_forecast_revision_after_valid_anchor(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-15",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "next_year_forecast_earnings_per_share": 150.0,
+            "operating_profit": 200_000_000.0,
+            "next_year_forecast_operating_profit": 300_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2025-05-15",
+            "type_of_current_period": "FY",
+            "type_of_document": "EarnForecastRevision",
+            "earnings_per_share": None,
+            "bps": None,
+            "forecast_eps": 500.0,
+            "next_year_forecast_earnings_per_share": 500.0,
+            "forecast_operating_profit": 900_000_000.0,
+            "next_year_forecast_operating_profit": 900_000_000.0,
+            "shares_outstanding": 1_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2025-09-01",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("7203")
+
+    assert valuation[0]["forward_eps"] == pytest.approx(500.0)
+    assert valuation[0]["forward_per"] == pytest.approx(600.0 / 500.0)
+    assert valuation[0]["forward_p_op"] == pytest.approx(
+        (600.0 * 1_000_000.0) / 900_000_000.0
+    )
+    assert valuation[0]["forward_eps_disclosed_date"] == "2025-05-15"
+    assert valuation[0]["forward_eps_source"] == "revised"
 
 
 def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> None:
