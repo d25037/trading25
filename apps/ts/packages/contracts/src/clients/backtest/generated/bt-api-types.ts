@@ -3978,6 +3978,11 @@ export interface components {
              */
             forwardPer?: number | null;
             /**
+             * Forwardpop
+             * @description Forward P/OP at this date
+             */
+            forwardPOp?: number | null;
+            /**
              * Freefloatmarketcap
              * @description Market cap at this date using free-float shares (JPY)
              */
@@ -3997,6 +4002,11 @@ export interface components {
              * @description PER at this date
              */
             per?: number | null;
+            /**
+             * Pop
+             * @description P/OP at this date
+             */
+            pOp?: number | null;
             /**
              * Pricebasisdate
              * @description Adjusted price basis date for this valuation row
@@ -8176,6 +8186,8 @@ export interface components {
             forwardEpsSource?: ("revised" | "fy") | null;
             /** Forwardper */
             forwardPer?: number | null;
+            /** Forwardpop */
+            forwardPOp?: number | null;
             /** Liquidityregime */
             liquidityRegime?: ("rerating_participation" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
             /** Liquidityresidualz */
@@ -8190,6 +8202,8 @@ export interface components {
             pbr?: number | null;
             /** Per */
             per?: number | null;
+            /** Pop */
+            pOp?: number | null;
             /** Previousprice */
             previousPrice?: number | null;
             /** Rank */

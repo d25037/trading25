@@ -165,6 +165,12 @@ export interface ApiDailyValuationDataPoint {
   close: number;
   /** Price to Earnings Ratio using FY EPS (倍) */
   per: number | null;
+  /** Forward Price to Earnings Ratio (倍) */
+  forwardPer?: number | null;
+  /** Price to Operating Profit Ratio (倍) */
+  pOp?: number | null;
+  /** Forward Price to Operating Profit Ratio (倍) */
+  forwardPOp?: number | null;
   /** Price to Book Ratio using FY BPS (倍) */
   pbr: number | null;
   /** Market capitalization using shares outstanding (円) */

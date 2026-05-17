@@ -828,6 +828,20 @@ class FundamentalsCalculator:
             market_cap = self._round_or_none(
                 market_cap_from_price_and_shares(close, baseline_shares)
             )
+            forward_operating_profit = (
+                self._resolve_forward_operating_profit_for_daily_valuation(
+                    statements,
+                    applicable_fy,
+                    prefer_consolidated,
+                    date_str,
+                )
+            )
+            p_op = self._round_or_none(
+                valuation_ratio(market_cap, applicable_fy.operating_profit)
+            )
+            forward_p_op = self._round_or_none(
+                valuation_ratio(market_cap, forward_operating_profit)
+            )
             free_float_market_cap = None
             if baseline_shares is not None:
                 free_float_market_cap = self._round_or_none(
@@ -840,6 +854,8 @@ class FundamentalsCalculator:
                     close=close,
                     per=per,
                     forwardPer=forward_per,
+                    pOp=p_op,
+                    forwardPOp=forward_p_op,
                     pbr=pbr,
                     marketCap=market_cap,
                     freeFloatMarketCap=free_float_market_cap,
@@ -862,7 +878,13 @@ class FundamentalsCalculator:
                 continue
             eps = self._calculate_eps(stmt, prefer_consolidated)
             bps = self._calculate_bps(stmt, prefer_consolidated)
+            operating_profit = self._get_operating_profit(stmt, prefer_consolidated)
             forecast_eps, _ = self._get_forecast_eps(stmt, eps, prefer_consolidated)
+            forecast_operating_profit, _ = self._get_forecast_operating_profit(
+                stmt,
+                operating_profit,
+                prefer_consolidated,
+            )
             adjusted_eps = self._compute_adjusted_value(eps, stmt.ShOutFY, baseline_shares)
             adjusted_bps = self._compute_adjusted_value(bps, stmt.ShOutFY, baseline_shares)
             adjusted_forecast_eps = self._compute_adjusted_value(
@@ -884,7 +906,9 @@ class FundamentalsCalculator:
                     disclosed_date=stmt.DiscDate,
                     eps=display_eps,
                     bps=display_bps,
+                    operating_profit=operating_profit,
                     forward_eps=display_forecast_eps,
+                    forward_operating_profit=forecast_operating_profit,
                     forward_eps_disclosed_date=(
                         stmt.DiscDate if display_forecast_eps is not None else None
                     ),
@@ -937,6 +961,27 @@ class FundamentalsCalculator:
             applicable_fy.forward_eps_disclosed_date,
             applicable_fy.forward_eps_source,
         )
+
+    def _resolve_forward_operating_profit_for_daily_valuation(
+        self,
+        statements: list[JQuantsStatement],
+        applicable_fy: FYDataPoint,
+        prefer_consolidated: bool,
+        date_str: str,
+    ) -> float | None:
+        if not prefer_consolidated:
+            return None
+        quarterly_statements = [
+            stmt
+            for stmt in statements
+            if normalize_period_type(stmt.CurPerType) in {"1Q", "2Q", "3Q"}
+            and applicable_fy.disclosed_date < stmt.DiscDate <= date_str
+        ]
+        quarterly_statements.sort(key=lambda stmt: stmt.DiscDate, reverse=True)
+        for stmt in quarterly_statements:
+            if stmt.FOP is not None:
+                return stmt.FOP
+        return applicable_fy.forward_operating_profit
 
     def _find_applicable_fy(self, fy_data_points: list[FYDataPoint], date_str: str) -> FYDataPoint | None:
         applicable_fy: FYDataPoint | None = None

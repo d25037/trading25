@@ -205,6 +205,8 @@ class DailyValuationDataPoint(BaseModel):
     )
     per: float | None = Field(None, description="PER at this date")
     forwardPer: float | None = Field(None, description="Forward PER at this date")
+    pOp: float | None = Field(None, description="P/OP at this date")
+    forwardPOp: float | None = Field(None, description="Forward P/OP at this date")
     pbr: float | None = Field(None, description="PBR at this date")
     marketCap: float | None = Field(
         None,

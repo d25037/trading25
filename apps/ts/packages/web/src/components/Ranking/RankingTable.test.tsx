@@ -83,6 +83,7 @@ describe('RankingTable', () => {
             ...createItem(0),
             per: 8,
             forwardPer: 11,
+            forwardPOp: 9,
             liquidityRegime: 'distribution_stress',
             liquidityResidualZ: 1.2,
             adv60ToFreeFloatPct: 8,
@@ -106,9 +107,11 @@ describe('RankingTable', () => {
     );
 
     expect(screen.getByText('Stress')).toHaveClass('text-yellow-800');
+    expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
     expect(screen.getByText('Stale')).toHaveClass('text-red-700');
     expect(screen.getByText('11.00x')).toHaveClass('text-red-600');
+    expect(screen.getByText('9.00x')).toBeInTheDocument();
     expect(screen.getByText('7.00x')).toHaveClass('text-green-600');
   });
 
@@ -138,7 +141,7 @@ describe('RankingTable', () => {
     expect(screen.queryByText('Company 130')).not.toBeInTheDocument();
     expect(container.querySelector('[aria-hidden="true"][style*="height"]')).not.toBeNull();
 
-    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 128 * 125 } });
+    fireEvent.scroll(scrollArea as Element, { target: { scrollTop: 160 * 125 } });
 
     expect(screen.getByText('Company 130')).toBeInTheDocument();
   });

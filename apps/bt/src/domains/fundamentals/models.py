@@ -89,6 +89,8 @@ class DailyValuationDataPoint(BaseModel):
     bps: float | None = None
     per: float | None = None
     forwardPer: float | None = None
+    pOp: float | None = None
+    forwardPOp: float | None = None
     pbr: float | None = None
     marketCap: float | None = None
     freeFloatMarketCap: float | None = None
@@ -104,7 +106,9 @@ class FYDataPoint:
     disclosed_date: str
     eps: float | None
     bps: float | None
+    operating_profit: float | None = None
     forward_eps: float | None = None
+    forward_operating_profit: float | None = None
     forward_eps_disclosed_date: str | None = None
     forward_eps_source: Literal["revised", "fy"] | None = None
 

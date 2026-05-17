@@ -290,6 +290,12 @@ class FundamentalsService:
                     forwardPer=self._normalize_optional_float(
                         row_obj.get("forward_per", row_obj.get("forwardPer"))
                     ),
+                    pOp=self._normalize_optional_float(
+                        row_obj.get("p_op", row_obj.get("pOp"))
+                    ),
+                    forwardPOp=self._normalize_optional_float(
+                        row_obj.get("forward_p_op", row_obj.get("forwardPOp"))
+                    ),
                     pbr=self._normalize_optional_float(row_obj.get("pbr")),
                     marketCap=self._normalize_optional_float(
                         row_obj.get("market_cap", row_obj.get("marketCap"))

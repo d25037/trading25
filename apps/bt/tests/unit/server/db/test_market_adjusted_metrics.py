@@ -62,6 +62,8 @@ def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
         "forward_eps",
         "per",
         "forward_per",
+        "p_op",
+        "forward_p_op",
         "pbr",
         "market_cap",
         "free_float_market_cap",
@@ -146,6 +148,8 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
             "forward_eps": 60.0,
             "per": 10.0,
             "forward_per": 8.3333333333,
+            "p_op": 12.5,
+            "forward_p_op": 7.5,
             "pbr": 1.0,
             "market_cap": 10_000_000_000.0,
             "free_float_market_cap": 9_000_000_000.0,
@@ -169,6 +173,7 @@ def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
     assert by_code == batched
     assert by_code[0]["forward_eps_source"] == "revised"
     assert by_code[0]["forward_per"] == pytest.approx(8.3333333333)
+    assert by_code[0]["forward_p_op"] == pytest.approx(7.5)
 
 
 def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> None:

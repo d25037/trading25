@@ -2753,7 +2753,9 @@ class TestCalculateDailyValuation:
                     "CurPerEn": "2024-03-31",
                     "EPS": 100.0,
                     "BPS": 1000.0,
+                    "OP": 200_000.0,
                     "NxFEPS": 350.0,
+                    "NxFOP": 350_000.0,
                     "ShOutFY": 1000,
                 }
             ),
@@ -2764,6 +2766,7 @@ class TestCalculateDailyValuation:
                     "CurPerType": "1Q",
                     "CurPerEn": "2024-06-30",
                     "FEPS": 400.0,
+                    "FOP": 400_000.0,
                     "ShOutFY": 1000,
                 }
             ),
@@ -2779,10 +2782,14 @@ class TestCalculateDailyValuation:
         )
 
         assert result[0].forwardPer == 2.0
+        assert result[0].pOp == 3.5
+        assert result[0].forwardPOp == 2.0
         assert result[0].forwardEps == 350.0
         assert result[0].forwardEpsDisclosedDate == "2024-05-15"
         assert result[0].forwardEpsSource == "fy"
         assert result[1].forwardPer == 1.75
+        assert result[1].pOp == 3.5
+        assert result[1].forwardPOp == 1.75
         assert result[1].forwardEps == 400.0
         assert result[1].forwardEpsDisclosedDate == "2024-08-15"
         assert result[1].forwardEpsSource == "revised"

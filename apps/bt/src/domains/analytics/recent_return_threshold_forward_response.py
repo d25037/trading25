@@ -505,22 +505,28 @@ def _create_daily_valuation_view(conn: Any) -> None:
                 NULL::VARCHAR AS date,
                 NULL::DOUBLE AS per,
                 NULL::DOUBLE AS forward_per,
+                NULL::DOUBLE AS p_op,
+                NULL::DOUBLE AS forward_p_op,
                 NULL::DOUBLE AS market_cap
             WHERE FALSE
             """
         )
         return
     valuation_code = normalize_code_sql("dv.code")
+    daily_p_op_expr = _optional_daily_valuation_double_expr(conn, "p_op")
+    daily_forward_p_op_expr = _optional_daily_valuation_double_expr(conn, "forward_p_op")
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW recent_return_daily_valuation AS
-        SELECT code, date, per, forward_per, market_cap
+        SELECT code, date, per, forward_per, p_op, forward_p_op, market_cap
         FROM (
             SELECT
                 {valuation_code} AS code,
                 dv.date,
                 CAST(dv.per AS DOUBLE) AS per,
                 CAST(dv.forward_per AS DOUBLE) AS forward_per,
+                {daily_p_op_expr} AS p_op,
+                {daily_forward_p_op_expr} AS forward_p_op,
                 CAST(dv.market_cap AS DOUBLE) AS market_cap,
                 row_number() OVER (
                     PARTITION BY {valuation_code}, dv.date
@@ -548,10 +554,25 @@ def _optional_statement_text_expr(conn: Any, column: str) -> str:
     return "CAST(NULL AS VARCHAR)"
 
 
+def _optional_daily_valuation_double_expr(conn: Any, column: str) -> str:
+    if _daily_valuation_column_exists(conn, column):
+        return f"CAST(dv.{column} AS DOUBLE)"
+    return "CAST(NULL AS DOUBLE)"
+
+
 def _statement_column_exists(conn: Any, column: str) -> bool:
     return bool(
         conn.execute(
             "SELECT count(*) FROM pragma_table_info('statements') WHERE name = ?",
+            [column],
+        ).fetchone()[0]
+    )
+
+
+def _daily_valuation_column_exists(conn: Any, column: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
             [column],
         ).fetchone()[0]
     )
@@ -797,12 +818,14 @@ def _create_observation_panel(
                         THEN p.close * share.shares_outstanding / 1000000000.0
                 END AS market_cap_bil_jpy,
                 CASE
+                    WHEN dv.p_op > 0 THEN dv.p_op
                     WHEN coalesce(dv.market_cap, p.close * share.shares_outstanding) > 0
                      AND op.operating_profit > 0
                         THEN coalesce(dv.market_cap, p.close * share.shares_outstanding)
                              / op.operating_profit
                 END AS p_op,
                 CASE
+                    WHEN dv.forward_p_op > 0 THEN dv.forward_p_op
                     WHEN coalesce(dv.market_cap, p.close * share.shares_outstanding) > 0
                      AND fop.forecast_operating_profit > 0
                         THEN coalesce(dv.market_cap, p.close * share.shares_outstanding)

@@ -62,6 +62,8 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 forward_eps DOUBLE,
                 per DOUBLE,
                 forward_per DOUBLE,
+                p_op DOUBLE,
+                forward_p_op DOUBLE,
                 pbr DOUBLE,
                 market_cap DOUBLE,
                 free_float_market_cap DOUBLE,
@@ -98,7 +100,7 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
             ),
         )
         conn.execute(
-            "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "72030",
                 "2024-12-30",
@@ -109,6 +111,8 @@ def test_dataset_snapshot_copies_adjusted_metrics_and_reader_exposes_them(
                 60.0,
                 10.0,
                 8.3333,
+                5.0,
+                4.0,
                 1.0,
                 10_000_000_000.0,
                 None,

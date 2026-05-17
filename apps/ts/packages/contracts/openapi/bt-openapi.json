@@ -2240,6 +2240,18 @@
             "description": "Forward PER at this date",
             "title": "Forwardper"
           },
+          "forwardPOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward P/OP at this date",
+            "title": "Forwardpop"
+          },
           "freeFloatMarketCap": {
             "anyOf": [
               {
@@ -2287,6 +2299,18 @@
             ],
             "description": "PER at this date",
             "title": "Per"
+          },
+          "pOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "P/OP at this date",
+            "title": "Pop"
           },
           "priceBasisDate": {
             "anyOf": [
@@ -11335,6 +11359,17 @@
             ],
             "title": "Forwardper"
           },
+          "forwardPOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardpop"
+          },
           "liquidityRegime": {
             "anyOf": [
               {
@@ -11410,6 +11445,17 @@
               }
             ],
             "title": "Per"
+          },
+          "pOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pop"
           },
           "previousPrice": {
             "anyOf": [

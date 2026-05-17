@@ -13,6 +13,7 @@ export type EquitySortField =
   | 'currentPrice'
   | 'per'
   | 'forwardPer'
+  | 'forwardPOp'
   | 'pbr'
   | 'marketCap'
   | 'liquidityResidualZ'
@@ -37,6 +38,8 @@ export interface EquityRankingItem {
   changePercentage?: number | null;
   per?: number | null;
   forwardPer?: number | null;
+  pOp?: number | null;
+  forwardPOp?: number | null;
   pbr?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
@@ -67,7 +70,7 @@ interface EquityRankingTableProps<T extends EquityRankingItem> {
 
 const VIRTUALIZATION_THRESHOLD = 120;
 const ROW_HEIGHT = 36;
-const CARD_ROW_HEIGHT = 128;
+const CARD_ROW_HEIGHT = 160;
 const VIEWPORT_HEIGHT = 520;
 const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   code: 'コード',
@@ -292,6 +295,7 @@ function EquityCard<T extends EquityRankingItem>({
               value={formatRatio(item.forwardPer)}
               valueClassName={getForwardPerComparisonClass(item.per, item.forwardPer)}
             />
+            <Metric label="Fwd P/OP" value={formatRatio(item.forwardPOp)} />
           </>
         ) : null}
         {showLiquidity ? (
@@ -522,6 +526,11 @@ function ValuationHeaders<T extends EquityRankingItem>({
           Fwd PER
         </SortHeader>
       </th>
+      <th className="w-24 px-2 py-1.5 text-right">
+        <SortHeader field="forwardPOp" sortState={sortState} align="right">
+          Fwd P/OP
+        </SortHeader>
+      </th>
       <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="pbr" sortState={sortState} align="right">
           PBR
@@ -578,6 +587,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           >
             {formatRatio(item.forwardPer)}
           </td>
+          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPOp)}</td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
         </>
@@ -632,7 +642,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     viewportHeight: VIEWPORT_HEIGHT,
   });
   const columnCount =
-    6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 4 : 0) + (showLiquidity ? 3 : 0);
+    6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 5 : 0) + (showLiquidity ? 3 : 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>

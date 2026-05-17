@@ -1038,6 +1038,9 @@ export interface DailyValuationDataPoint {
   date: string;
   close: number;
   per: number | null;
+  forwardPer?: number | null;
+  pOp?: number | null;
+  forwardPOp?: number | null;
   pbr: number | null;
   marketCap: number | null;
   freeFloatMarketCap?: number | null;

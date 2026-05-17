@@ -65,6 +65,8 @@ class DailyValuationInput:
     eps: float | None
     bps: float | None
     forward_eps: float | None
+    operating_profit: float | None
+    forward_operating_profit: float | None
     shares_outstanding: float | None
     treasury_shares: float | None
     statement_disclosed_date: str | None
@@ -84,6 +86,8 @@ class DailyValuationMetric:
     forward_eps: float | None
     per: float | None
     forward_per: float | None
+    p_op: float | None
+    forward_p_op: float | None
     pbr: float | None
     market_cap: float | None
     free_float_market_cap: float | None
@@ -165,6 +169,20 @@ def build_daily_valuation_metric(
         forward_eps=valuation.forward_eps,
         per=valuation_ratio(valuation.close, valuation.eps),
         forward_per=valuation_ratio(valuation.close, valuation.forward_eps),
+        p_op=valuation_ratio(
+            market_cap_from_price_and_shares(
+                valuation.close,
+                valuation.shares_outstanding,
+            ),
+            valuation.operating_profit,
+        ),
+        forward_p_op=valuation_ratio(
+            market_cap_from_price_and_shares(
+                valuation.close,
+                valuation.shares_outstanding,
+            ),
+            valuation.forward_operating_profit,
+        ),
         pbr=valuation_ratio(valuation.close, valuation.bps),
         market_cap=market_cap_from_price_and_shares(
             valuation.close,

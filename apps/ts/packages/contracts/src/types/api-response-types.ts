@@ -27,6 +27,8 @@ export interface RankingItem {
   lookbackDays?: number;
   per?: number | null;
   forwardPer?: number | null;
+  pOp?: number | null;
+  forwardPOp?: number | null;
   forwardEpsDisclosedDate?: string | null;
   forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;

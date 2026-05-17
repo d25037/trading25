@@ -402,6 +402,11 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
     conn.register("_pre_earnings_event_pairs", pairs)
     try:
         valuation_code = normalize_code_sql("dv.code")
+        daily_p_op_expr = _optional_daily_valuation_double_expr(conn, "p_op")
+        daily_forward_p_op_expr = _optional_daily_valuation_double_expr(
+            conn,
+            "forward_p_op",
+        )
         df = conn.execute(
             f"""
             WITH valuation_canonical AS (
@@ -416,6 +421,8 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
                         dv.forward_eps,
                         dv.per,
                         dv.forward_per,
+                        {daily_p_op_expr} AS p_op,
+                        {daily_forward_p_op_expr} AS forward_p_op,
                         dv.pbr,
                         dv.market_cap,
                         dv.statement_disclosed_date,
@@ -458,8 +465,8 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
                 NULL::DOUBLE AS forecast_operating_profit_per_share,
                 v.per,
                 v.forward_per,
-                NULL::DOUBLE AS p_op,
-                NULL::DOUBLE AS forward_p_op,
+                v.p_op,
+                v.forward_p_op,
                 v.pbr,
                 v.market_cap / 1e9 AS market_cap_bil_jpy,
                 'daily_valuation' AS valuation_source
@@ -477,6 +484,16 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
     df["code"] = df["code"].astype(str)
     df["pre_event_date"] = df["pre_event_date"].astype(str)
     return df.loc[:, columns]
+
+
+def _optional_daily_valuation_double_expr(conn: Any, column: str) -> str:
+    exists = conn.execute(
+        "SELECT count(*) FROM pragma_table_info('daily_valuation') WHERE name = ?",
+        [column],
+    ).fetchone()[0]
+    if exists:
+        return f"CAST(dv.{column} AS DOUBLE)"
+    return "CAST(NULL AS DOUBLE)"
 
 
 def _enrich_events_with_pre_valuation(

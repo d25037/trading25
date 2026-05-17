@@ -152,6 +152,8 @@ _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "forward_eps",
     "per",
     "forward_per",
+    "p_op",
+    "forward_p_op",
     "pbr",
     "market_cap",
     "free_float_market_cap",
@@ -160,6 +162,11 @@ _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "forward_eps_source",
     "basis_version",
     "created_at",
+)
+
+_DAILY_VALUATION_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("p_op", "DOUBLE"),
+    ("forward_p_op", "DOUBLE"),
 )
 
 _PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
@@ -585,6 +592,8 @@ class MarketDb:
                 forward_eps DOUBLE,
                 per DOUBLE,
                 forward_per DOUBLE,
+                p_op DOUBLE,
+                forward_p_op DOUBLE,
                 pbr DOUBLE,
                 market_cap DOUBLE,
                 free_float_market_cap DOUBLE,
@@ -651,6 +660,7 @@ class MarketDb:
         )
         self._ensure_statements_columns()
         self._ensure_statement_metrics_adjusted_columns()
+        self._ensure_daily_valuation_columns()
         self._ensure_stock_price_adjustment_mode_for_empty_db()
 
     def _ensure_market_schema_version(
@@ -709,6 +719,22 @@ class MarketDb:
                 continue
             self._execute(
                 f"ALTER TABLE statement_metrics_adjusted ADD COLUMN {self._quote_identifier(column_name)} {column_type}"
+            )
+
+    def _ensure_daily_valuation_columns(self) -> None:
+        """既存 daily_valuation テーブルに不足カラムを追加する。"""
+        if not self._table_exists("daily_valuation"):
+            return
+        existing_columns = {
+            str(row[1])
+            for row in self._fetchall("PRAGMA table_info('daily_valuation')")
+            if row and len(row) > 1
+        }
+        for column_name, column_type in _DAILY_VALUATION_ADDITIONAL_COLUMNS:
+            if column_name in existing_columns:
+                continue
+            self._execute(
+                f"ALTER TABLE daily_valuation ADD COLUMN {self._quote_identifier(column_name)} {column_type}"
             )
 
     # --- Read ---
@@ -2060,6 +2086,27 @@ class MarketDb:
                   AND adjusted_forecast_eps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
+            actual_operating_profit_metrics AS (
+                SELECT code, disclosed_date, operating_profit
+                FROM statements
+                WHERE upper(type_of_current_period) = 'FY'
+                  AND operating_profit IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            forward_operating_profit_metrics AS (
+                SELECT
+                    code,
+                    disclosed_date,
+                    CASE
+                        WHEN upper(type_of_current_period) = 'FY'
+                        THEN COALESCE(next_year_forecast_operating_profit, forecast_operating_profit)
+                        ELSE COALESCE(forecast_operating_profit, next_year_forecast_operating_profit)
+                    END AS forecast_operating_profit
+                FROM statements
+                WHERE forecast_operating_profit IS NOT NULL
+                   OR next_year_forecast_operating_profit IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
             shares_metrics AS (
                 SELECT
                     code,
@@ -2082,12 +2129,20 @@ class MarketDb:
             ASOF LEFT JOIN forward_metrics AS f
               ON s.code = f.code
              AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN actual_operating_profit_metrics AS op
+              ON s.code = op.code
+             AND s.date >= op.disclosed_date
+            ASOF LEFT JOIN forward_operating_profit_metrics AS fop
+              ON s.code = fop.code
+             AND s.date >= fop.disclosed_date
             ASOF LEFT JOIN shares_metrics AS sh
               ON s.code = sh.code
              AND s.date >= sh.disclosed_date
             WHERE a.disclosed_date IS NOT NULL
                OR b.disclosed_date IS NOT NULL
                OR f.disclosed_date IS NOT NULL
+               OR op.disclosed_date IS NOT NULL
+               OR fop.disclosed_date IS NOT NULL
                OR sh.disclosed_date IS NOT NULL
             """,
             [*normalized_codes, basis_version, basis_version, basis_version, basis_version],
@@ -2138,6 +2193,27 @@ class MarketDb:
                   AND adjusted_forecast_eps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
+            actual_operating_profit_metrics AS (
+                SELECT code, disclosed_date, operating_profit
+                FROM statements
+                WHERE upper(type_of_current_period) = 'FY'
+                  AND operating_profit IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
+            forward_operating_profit_metrics AS (
+                SELECT
+                    code,
+                    disclosed_date,
+                    CASE
+                        WHEN upper(type_of_current_period) = 'FY'
+                        THEN COALESCE(next_year_forecast_operating_profit, forecast_operating_profit)
+                        ELSE COALESCE(forecast_operating_profit, next_year_forecast_operating_profit)
+                    END AS forecast_operating_profit
+                FROM statements
+                WHERE forecast_operating_profit IS NOT NULL
+                   OR next_year_forecast_operating_profit IS NOT NULL
+                ORDER BY code, disclosed_date
+            ),
             shares_metrics AS (
                 SELECT
                     code,
@@ -2168,6 +2244,20 @@ class MarketDb:
                     THEN s.close / f.adjusted_forecast_eps
                     ELSE NULL
                 END AS forward_per,
+                CASE
+                    WHEN s.close > 0
+                     AND sh.adjusted_shares_outstanding > 0
+                     AND op.operating_profit > 0
+                    THEN s.close * sh.adjusted_shares_outstanding / op.operating_profit
+                    ELSE NULL
+                END AS p_op,
+                CASE
+                    WHEN s.close > 0
+                     AND sh.adjusted_shares_outstanding > 0
+                     AND fop.forecast_operating_profit > 0
+                    THEN s.close * sh.adjusted_shares_outstanding / fop.forecast_operating_profit
+                    ELSE NULL
+                END AS forward_p_op,
                 CASE
                     WHEN s.close > 0 AND b.adjusted_bps > 0
                     THEN s.close / b.adjusted_bps
@@ -2214,12 +2304,20 @@ class MarketDb:
             ASOF LEFT JOIN forward_metrics AS f
               ON s.code = f.code
              AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN actual_operating_profit_metrics AS op
+              ON s.code = op.code
+             AND s.date >= op.disclosed_date
+            ASOF LEFT JOIN forward_operating_profit_metrics AS fop
+              ON s.code = fop.code
+             AND s.date >= fop.disclosed_date
             ASOF LEFT JOIN shares_metrics AS sh
               ON s.code = sh.code
              AND s.date >= sh.disclosed_date
             WHERE a.disclosed_date IS NOT NULL
                OR b.disclosed_date IS NOT NULL
                OR f.disclosed_date IS NOT NULL
+               OR op.disclosed_date IS NOT NULL
+               OR fop.disclosed_date IS NOT NULL
                OR sh.disclosed_date IS NOT NULL
             ON CONFLICT (code, date, basis_version)
             DO UPDATE SET {update_clause}

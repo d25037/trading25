@@ -28,6 +28,8 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
             "earnings_per_share": 100.0,
             "bps": 1000.0,
             "forecast_eps": 120.0,
+            "operating_profit": 1_000_000_000.0,
+            "forecast_operating_profit": 2_000_000_000.0,
             "dividend_fy": 30.0,
             "shares_outstanding": 10_000_000.0,
             "treasury_shares": 1_000_000.0,
@@ -76,6 +78,8 @@ def test_rebuild_all_materializes_adjusted_metrics_from_raw_sources(
     assert valuation[0]["close"] == pytest.approx(500.0)
     assert valuation[0]["per"] == pytest.approx(10.0)
     assert valuation[0]["forward_per"] == pytest.approx(500.0 / 60.0)
+    assert valuation[0]["p_op"] == pytest.approx(10.0)
+    assert valuation[0]["forward_p_op"] == pytest.approx(5.0)
     assert valuation[0]["market_cap"] == pytest.approx(10_000_000_000.0)
     assert valuation[0]["free_float_market_cap"] == pytest.approx(9_000_000_000.0)
     assert valuation[0]["statement_disclosed_date"] == "2024-05-10"

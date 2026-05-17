@@ -1311,6 +1311,8 @@ class RankingService:
             for item in items:
                 item.per = valuation.per
                 item.forwardPer = valuation.forwardPer
+                item.pOp = valuation.pOp
+                item.forwardPOp = valuation.forwardPOp
                 item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate
                 item.forwardEpsSource = valuation.forwardEpsSource
                 item.pbr = valuation.pbr
@@ -2369,6 +2371,8 @@ class RankingService:
                     forward_eps,
                     per,
                     forward_per,
+                    p_op,
+                    forward_p_op,
                     pbr,
                     market_cap,
                     free_float_market_cap,
@@ -2387,6 +2391,8 @@ class RankingService:
                         forward_eps,
                         per,
                         forward_per,
+                        p_op,
+                        forward_p_op,
                         pbr,
                         market_cap,
                         free_float_market_cap,
@@ -2418,6 +2424,8 @@ class RankingService:
                 v.forward_eps,
                 v.per,
                 v.forward_per,
+                v.p_op,
+                v.forward_p_op,
                 v.pbr,
                 v.market_cap,
                 v.free_float_market_cap,

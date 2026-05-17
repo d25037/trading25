@@ -514,6 +514,8 @@ def _create_adjusted_metric_tables(conn: duckdb.DuckDBPyConnection) -> None:
             forward_eps DOUBLE,
             per DOUBLE,
             forward_per DOUBLE,
+            p_op DOUBLE,
+            forward_p_op DOUBLE,
             pbr DOUBLE,
             market_cap DOUBLE,
             free_float_market_cap DOUBLE,
@@ -561,6 +563,8 @@ def _insert_daily_valuation(
     forward_per: float,
     pbr: float,
     market_cap: float,
+    p_op: float = 2.8,
+    forward_p_op: float = 2.0,
     source: str = "fy",
     forward_date: str = "2024-01-19",
 ) -> None:
@@ -568,7 +572,7 @@ def _insert_daily_valuation(
         """
         INSERT INTO daily_valuation VALUES (
             ?, '2024-01-19', '2024-01-19', 520.0,
-            ?, ?, ?, ?, ?, ?, ?, NULL,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
             '2024-01-10', ?, ?, 'adjusted-v1:2024-01-19', NULL
         )
         """,
@@ -579,6 +583,8 @@ def _insert_daily_valuation(
             forward_eps,
             per,
             forward_per,
+            p_op,
+            forward_p_op,
             pbr,
             market_cap,
             forward_date,

@@ -54,6 +54,8 @@ export interface RankingItem {
   lookbackDays?: number;
   per?: number | null;
   forwardPer?: number | null;
+  pOp?: number | null;
+  forwardPOp?: number | null;
   forwardEpsDisclosedDate?: string | null;
   forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;
@@ -176,7 +178,7 @@ export interface SectorStocksParams {
   sector17Name?: string;
   markets?: string;
   lookbackDays?: number;
-  sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
+  sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'forwardPOp' | 'pbr' | 'marketCap';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
 }
