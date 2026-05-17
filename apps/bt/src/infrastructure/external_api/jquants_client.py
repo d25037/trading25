@@ -64,6 +64,9 @@ class JQuantsStatement(BaseModel):
     # Forecast EPS
     FEPS: NullableFloat
     NxFEPS: NullableFloat
+    # Forecast Operating Profit
+    FOP: NullableFloat = None
+    NxFOP: NullableFloat = None
     # Dividend
     DivFY: NullableFloat = None
     DivAnn: NullableFloat = None

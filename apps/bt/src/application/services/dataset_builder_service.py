@@ -82,6 +82,8 @@ _STATEMENT_COLUMNS: tuple[str, ...] = (
     "bps",
     "sales",
     "operating_profit",
+    "forecast_operating_profit",
+    "next_year_forecast_operating_profit",
     "ordinary_profit",
     "operating_cash_flow",
     "dividend_fy",

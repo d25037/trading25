@@ -269,6 +269,8 @@ export interface ApiFundamentalDataPoint {
   netSales: number | null;
   /** Operating profit (百万円) */
   operatingProfit: number | null;
+  /** Forecast operating profit (百万円) */
+  forecastOperatingProfit?: number | null;
   // Cash flow data
   /** Cash flows from operating activities (百万円) */
   cashFlowOperating: number | null;
@@ -298,6 +300,8 @@ export interface ApiFundamentalDataPoint {
   forecastEps?: number | null;
   /** Change rate from actual EPS to forecast EPS (%) */
   forecastEpsChangeRate?: number | null;
+  /** Change rate from actual operating profit to forecast operating profit (%) */
+  forecastOperatingProfitChangeRate?: number | null;
   /** Whether latest forecast EPS exceeds recent FY actual EPS values (lookback window) */
   forecastEpsAboveRecentFyActuals?: boolean | null;
   /** Lookback FY count used for forecast-vs-actual EPS comparison */

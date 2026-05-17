@@ -378,6 +378,9 @@ class FundamentalsCalculator:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             stmt, eps, prefer_consolidated
         )
+        forecast_operating_profit, forecast_operating_profit_change_rate = (
+            self._get_forecast_operating_profit(stmt, operating_profit, prefer_consolidated)
+        )
         raw_dividend_fy = self._get_dividend_fy(stmt)
         dividend_fy = self._round_or_none(raw_dividend_fy)
         forecast_dividend_fy, forecast_dividend_fy_change_rate = self._get_forecast_dividend_fy(
@@ -433,6 +436,10 @@ class FundamentalsCalculator:
             tradingValueToMarketCapRatio=None,
             forecastEps=self._round_or_none(forecast_eps),
             forecastEpsChangeRate=self._round_or_none(forecast_eps_change_rate),
+            forecastOperatingProfit=self._to_millions(forecast_operating_profit),
+            forecastOperatingProfitChangeRate=self._round_or_none(
+                forecast_operating_profit_change_rate
+            ),
             revisedForecastEps=None,
             revisedForecastSource=None,
             prevCashFlowOperating=None,
@@ -676,6 +683,22 @@ class FundamentalsCalculator:
             primary, fallback = (stmt.NxFNCEPS, stmt.FNCEPS) if is_fy else (stmt.FNCEPS, stmt.NxFNCEPS)
         forecast_eps = primary if primary is not None else fallback
         return forecast_eps, self._calculate_change_rate(actual_eps, forecast_eps)
+
+    def _get_forecast_operating_profit(
+        self,
+        stmt: JQuantsStatement,
+        actual_operating_profit: float | None,
+        prefer_consolidated: bool,
+    ) -> tuple[float | None, float | None]:
+        if not prefer_consolidated:
+            return None, None
+        is_fy = normalize_period_type(stmt.CurPerType) == "FY"
+        primary, fallback = (stmt.NxFOP, stmt.FOP) if is_fy else (stmt.FOP, stmt.NxFOP)
+        forecast_operating_profit = primary if primary is not None else fallback
+        return forecast_operating_profit, self._calculate_change_rate(
+            actual_operating_profit,
+            forecast_operating_profit,
+        )
 
     def _get_dividend_fy(self, stmt: JQuantsStatement) -> float | None:
         return stmt.DivAnn if stmt.DivAnn is not None else stmt.DivFY

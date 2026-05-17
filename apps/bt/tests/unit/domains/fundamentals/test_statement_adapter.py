@@ -21,6 +21,8 @@ def test_market_statement_adapter_reads_mapping_rows() -> None:
             "type_of_current_period": "3Q",
             "earnings_per_share": 33.81,
             "forecast_eps": 54.25,
+            "forecast_operating_profit": 6_500_000.0,
+            "next_year_forecast_operating_profit": 7_200_000.0,
             "bps": 1164.1,
             "shares_outstanding": 1014381817.0,
         }
@@ -31,6 +33,8 @@ def test_market_statement_adapter_reads_mapping_rows() -> None:
     assert stmt.CurPerType == "3Q"
     assert stmt.EPS == 33.81
     assert stmt.FEPS == 54.25
+    assert stmt.FOP == 6_500_000.0
+    assert stmt.NxFOP == 7_200_000.0
     assert stmt.BPS == 1164.1
     assert stmt.ShOutFY == 1014381817.0
 

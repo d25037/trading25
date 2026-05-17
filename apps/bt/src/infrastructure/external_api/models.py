@@ -140,6 +140,12 @@ class StatementsRecord(BaseModel):
     bps: Optional[float] = Field(default=None, alias="bps")
     sales: Optional[float] = Field(default=None, alias="sales")
     operating_profit: Optional[float] = Field(default=None, alias="operatingProfit")
+    forecast_operating_profit: Optional[float] = Field(
+        default=None, alias="forecastOperatingProfit"
+    )
+    next_year_forecast_operating_profit: Optional[float] = Field(
+        default=None, alias="nextYearForecastOperatingProfit"
+    )
     ordinary_profit: Optional[float] = Field(default=None, alias="ordinaryProfit")
     operating_cash_flow: Optional[float] = Field(default=None, alias="operatingCashFlow")
     investing_cash_flow: Optional[float] = Field(default=None, alias="investingCashFlow")

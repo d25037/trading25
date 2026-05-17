@@ -16,6 +16,8 @@ def test_convert_fins_summary_rows_normalizes_empty_numeric_values() -> None:
                 "BPS": "1000",
                 "Sales": "2000",
                 "OP": "",
+                "FOP": "3500",
+                "NxFOP": "4200",
                 "OdP": "",
                 "CFO": "",
                 "DivAnn": "",
@@ -40,6 +42,8 @@ def test_convert_fins_summary_rows_normalizes_empty_numeric_values() -> None:
     assert row["next_year_forecast_earnings_per_share"] is None
     assert row["bps"] == 1000.0
     assert row["sales"] == 2000.0
+    assert row["forecast_operating_profit"] == 3500.0
+    assert row["next_year_forecast_operating_profit"] == 4200.0
     assert row["forecast_eps"] is None
 
 
@@ -52,4 +56,3 @@ def test_convert_fins_summary_rows_skips_rows_missing_required_fields() -> None:
     )
 
     assert rows == []
-

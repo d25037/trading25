@@ -330,6 +330,11 @@ function resolveMetricCell(
         content: renderValueWithYoY(formattedValue, operatingProfitYoYDelta, formatSignedPercentDelta),
       };
     }
+    case 'forecastOperatingProfit':
+      return {
+        className: 'text-muted-foreground',
+        content: formatFundamentalValue(period.forecastOperatingProfit ?? null, 'millions'),
+      };
     case 'operatingMargin':
       return {
         className: getOperatingMarginColor(period.operatingMargin),

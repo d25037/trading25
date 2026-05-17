@@ -84,6 +84,8 @@ class StatementRecord(BaseModel):
     bps: float | None = None
     sales: float | None = None
     operatingProfit: float | None = None
+    forecastOperatingProfit: float | None = None
+    nextYearForecastOperatingProfit: float | None = None
     ordinaryProfit: float | None = None
     operatingCashFlow: float | None = None
     dividendFy: float | None = None

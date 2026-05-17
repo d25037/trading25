@@ -53,7 +53,7 @@ interface ForecastMetricCardProps {
   actualValue: number | null;
   forecastValue?: number | null;
   changeRate?: number | null;
-  format: 'percent' | 'yen';
+  format: 'percent' | 'yen' | 'millions';
 }
 
 function ForecastMetricCard({ label, actualValue, forecastValue, changeRate, format }: ForecastMetricCardProps) {
@@ -176,6 +176,15 @@ function buildMetricCards({
         forecastValue={displayForecastEps}
         changeRate={metrics.forecastEpsChangeRate}
         format="yen"
+      />
+    ),
+    operatingProfit: (
+      <ForecastMetricCard
+        label="営業利益"
+        actualValue={metrics.operatingProfit ?? null}
+        forecastValue={metrics.forecastOperatingProfit ?? null}
+        changeRate={metrics.forecastOperatingProfitChangeRate}
+        format="millions"
       />
     ),
     bps: <MetricCard label="BPS" value={displayBps} format="yen" />,

@@ -12,12 +12,15 @@ import {
 describe('fundamentalsHistoryMetrics', () => {
   it('includes compact operating and optional payout metrics in ids/defaults', () => {
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('operatingProfit');
+    expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('forecastOperatingProfit');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('operatingMargin');
     expect(FUNDAMENTALS_HISTORY_METRIC_IDS).toContain('payoutRatio');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('operatingProfit');
+    expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('forecastOperatingProfit');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('operatingMargin');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER).toContain('payoutRatio');
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.operatingProfit).toBe(true);
+    expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.forecastOperatingProfit).toBe(true);
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.operatingMargin).toBe(true);
     expect(DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY.payoutRatio).toBe(false);
   });

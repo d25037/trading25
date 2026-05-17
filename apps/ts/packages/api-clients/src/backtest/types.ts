@@ -1010,6 +1010,7 @@ export interface FundamentalDataPoint {
   totalAssets: number | null;
   netSales: number | null;
   operatingProfit: number | null;
+  forecastOperatingProfit?: number | null;
   // Cash flow data (millions of JPY)
   cashFlowOperating: number | null;
   cashFlowInvesting: number | null;
@@ -1022,6 +1023,7 @@ export interface FundamentalDataPoint {
   // Forecast EPS
   forecastEps: number | null;
   forecastEpsChangeRate: number | null;
+  forecastOperatingProfitChangeRate?: number | null;
   // Revised forecast (from latest Q)
   revisedForecastEps?: number | null;
   revisedForecastSource?: string | null;

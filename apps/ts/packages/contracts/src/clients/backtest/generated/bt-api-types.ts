@@ -4909,6 +4909,16 @@ export interface components {
              */
             forecastEpsChangeRate?: number | null;
             /**
+             * Forecastoperatingprofit
+             * @description Forecast operating profit (millions JPY)
+             */
+            forecastOperatingProfit?: number | null;
+            /**
+             * Forecastoperatingprofitchangerate
+             * @description Forecast operating profit change rate (%)
+             */
+            forecastOperatingProfitChangeRate?: number | null;
+            /**
              * Forecastpayoutratio
              * @description Forecast payout ratio (%)
              */
@@ -8264,6 +8274,8 @@ export interface components {
             FEPS?: number | null;
             /** Fnceps */
             FNCEPS?: number | null;
+            /** Fop */
+            FOP?: number | null;
             /** Fpayoutratioann */
             FPayoutRatioAnn?: number | null;
             /** Ncbps */
@@ -8294,6 +8306,8 @@ export interface components {
             NxFEPS?: number | null;
             /** Nxfnceps */
             NxFNCEPS?: number | null;
+            /** Nxfop */
+            NxFOP?: number | null;
             /** Nxfpayoutratioann */
             NxFPayoutRatioAnn?: number | null;
             /** Nxtfyen */
@@ -9757,12 +9771,16 @@ export interface components {
             FEPS?: number | null;
             /** Fnceps */
             FNCEPS?: number | null;
+            /** Fop */
+            FOP?: number | null;
             /** Nceps */
             NCEPS?: number | null;
             /** Nxfeps */
             NxFEPS?: number | null;
             /** Nxfnceps */
             NxFNCEPS?: number | null;
+            /** Nxfop */
+            NxFOP?: number | null;
         };
         /** StatementRecord */
         StatementRecord: {
@@ -9786,6 +9804,8 @@ export interface components {
             forecastDividendFy?: number | null;
             /** Forecasteps */
             forecastEps?: number | null;
+            /** Forecastoperatingprofit */
+            forecastOperatingProfit?: number | null;
             /** Forecastpayoutratio */
             forecastPayoutRatio?: number | null;
             /** Investingcashflow */
@@ -9794,6 +9814,8 @@ export interface components {
             nextYearForecastDividendFy?: number | null;
             /** Nextyearforecastearningspershare */
             nextYearForecastEarningsPerShare?: number | null;
+            /** Nextyearforecastoperatingprofit */
+            nextYearForecastOperatingProfit?: number | null;
             /** Nextyearforecastpayoutratio */
             nextYearForecastPayoutRatio?: number | null;
             /** Operatingcashflow */

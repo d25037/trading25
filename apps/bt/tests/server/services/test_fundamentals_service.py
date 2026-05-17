@@ -40,6 +40,8 @@ def _market_statements_df(statements: list[JQuantsStatement]) -> pd.DataFrame:
                 "bps": stmt.BPS,
                 "sales": stmt.Sales,
                 "operatingProfit": stmt.OP,
+                "forecastOperatingProfit": stmt.FOP,
+                "nextYearForecastOperatingProfit": stmt.NxFOP,
                 "ordinaryProfit": stmt.OdP,
                 "operatingCashFlow": stmt.CFO,
                 "dividendFY": stmt.DivAnn if stmt.DivAnn is not None else stmt.DivFY,
@@ -146,6 +148,8 @@ class TestMetricCalculations:
             AvgSh=13333333333,
             FEPS=320.0,
             NxFEPS=350.0,
+            FOP=5_500_000_000_000,
+            NxFOP=6_200_000_000_000,
             NCSales=None,
             NCOP=None,
             NCOdP=None,
@@ -173,6 +177,18 @@ class TestMetricCalculations:
         eps = service._calculate_eps(sample_statement, prefer_consolidated=False)
         # NCEPSがNoneなのでEPSにフォールバック
         assert eps == 300.0
+
+    def test_calculate_all_metrics_uses_next_year_forecast_operating_profit_for_fy(
+        self, service: FundamentalsService, sample_statement: JQuantsStatement
+    ):
+        point = service._calculate_all_metrics(
+            sample_statement,
+            {"2024-05-15": 3000.0},
+            prefer_consolidated=True,
+        )
+
+        assert point.forecastOperatingProfit == 6_200_000.0
+        assert point.forecastOperatingProfitChangeRate == 24.0
 
     def test_calculate_bps(
         self, service: FundamentalsService, sample_statement: JQuantsStatement

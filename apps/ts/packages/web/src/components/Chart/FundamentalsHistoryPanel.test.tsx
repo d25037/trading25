@@ -102,6 +102,7 @@ describe('FundamentalsHistoryPanel', () => {
             roe: 12.5,
             netSales: 12_000,
             operatingProfit: 1_500,
+            forecastOperatingProfit: 1_800,
             operatingMargin: 12.5,
             cashFlowOperating: 500,
             cashFlowInvesting: -200,
@@ -123,6 +124,7 @@ describe('FundamentalsHistoryPanel', () => {
             roe: 11.0,
             netSales: 11_000,
             operatingProfit: 1_300,
+            forecastOperatingProfit: 1_500,
             operatingMargin: 11.8,
             cashFlowOperating: 400,
             cashFlowInvesting: -180,
@@ -149,6 +151,7 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('来期予想EPS')).toBeInTheDocument();
     expect(screen.getByText('売上高')).toBeInTheDocument();
     expect(screen.getByText('営業利益')).toBeInTheDocument();
+    expect(screen.getByText('予想営業利益')).toBeInTheDocument();
     expect(screen.getByText('営業利益率')).toBeInTheDocument();
     expect(screen.getByText('ROE')).toBeInTheDocument();
     expect(screen.getByText('1株配当')).toBeInTheDocument();
@@ -247,6 +250,7 @@ describe('FundamentalsHistoryPanel', () => {
           forecastEps: true,
           netSales: true,
           operatingProfit: true,
+          forecastOperatingProfit: true,
           operatingMargin: true,
           roe: true,
           dividendPerShare: true,

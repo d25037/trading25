@@ -157,6 +157,10 @@ class FundamentalsService:
             NxFEPS=cls._normalize_optional_float(
                 row.get("nextYearForecastEarningsPerShare")
             ),
+            FOP=cls._normalize_optional_float(row.get("forecastOperatingProfit")),
+            NxFOP=cls._normalize_optional_float(
+                row.get("nextYearForecastOperatingProfit")
+            ),
             DivFY=dividend_fy,
             DivAnn=dividend_fy,
             PayoutRatioAnn=cls._normalize_optional_float(row.get("payoutRatio")),

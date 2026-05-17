@@ -216,6 +216,8 @@ def _to_statements_df(rows: list[Any]) -> pd.DataFrame:
             "bps": "bps",
             "sales": "sales",
             "operatingProfit": "operating_profit",
+            "forecastOperatingProfit": "forecast_operating_profit",
+            "nextYearForecastOperatingProfit": "next_year_forecast_operating_profit",
             "ordinaryProfit": "ordinary_profit",
             "operatingCashFlow": "operating_cash_flow",
             "dividendFY": "dividend_fy",

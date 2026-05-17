@@ -85,6 +85,8 @@ _STATEMENTS_UPDATABLE_COLUMNS: tuple[str, ...] = (
     "bps",
     "sales",
     "operating_profit",
+    "forecast_operating_profit",
+    "next_year_forecast_operating_profit",
     "ordinary_profit",
     "operating_cash_flow",
     "dividend_fy",
@@ -108,6 +110,8 @@ _STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("payout_ratio", "DOUBLE"),
     ("forecast_payout_ratio", "DOUBLE"),
     ("next_year_forecast_payout_ratio", "DOUBLE"),
+    ("forecast_operating_profit", "DOUBLE"),
+    ("next_year_forecast_operating_profit", "DOUBLE"),
 )
 
 _STATEMENT_METRICS_ADJUSTED_COLUMNS: tuple[str, ...] = (
@@ -513,6 +517,8 @@ class MarketDb:
                 bps DOUBLE,
                 sales DOUBLE,
                 operating_profit DOUBLE,
+                forecast_operating_profit DOUBLE,
+                next_year_forecast_operating_profit DOUBLE,
                 ordinary_profit DOUBLE,
                 operating_cash_flow DOUBLE,
                 dividend_fy DOUBLE,

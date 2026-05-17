@@ -271,6 +271,8 @@ class DuckDbParquetTimeSeriesStore:
         "bps",
         "sales",
         "operating_profit",
+        "forecast_operating_profit",
+        "next_year_forecast_operating_profit",
         "ordinary_profit",
         "operating_cash_flow",
         "dividend_fy",
@@ -504,6 +506,8 @@ class DuckDbParquetTimeSeriesStore:
                     bps DOUBLE,
                     sales DOUBLE,
                     operating_profit DOUBLE,
+                    forecast_operating_profit DOUBLE,
+                    next_year_forecast_operating_profit DOUBLE,
                     ordinary_profit DOUBLE,
                     operating_cash_flow DOUBLE,
                     dividend_fy DOUBLE,
@@ -522,6 +526,23 @@ class DuckDbParquetTimeSeriesStore:
                     PRIMARY KEY (code, disclosed_date)
                 )
                 """
+            )
+            self._ensure_statements_columns()
+
+    def _ensure_statements_columns(self) -> None:
+        existing_columns = {
+            str(row[1])
+            for row in self._conn.execute("PRAGMA table_info('statements')").fetchall()
+            if row and len(row) > 1
+        }
+        for column in (
+            "forecast_operating_profit",
+            "next_year_forecast_operating_profit",
+        ):
+            if column in existing_columns:
+                continue
+            self._conn.execute(
+                f"ALTER TABLE statements ADD COLUMN {self._quote_identifier(column)} DOUBLE"
             )
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:

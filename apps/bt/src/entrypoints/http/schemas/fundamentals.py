@@ -154,6 +154,12 @@ class FundamentalDataPoint(BaseModel):
     forecastEpsChangeRate: float | None = Field(
         None, description="Forecast EPS change rate (%)"
     )
+    forecastOperatingProfit: float | None = Field(
+        None, description="Forecast operating profit (millions JPY)"
+    )
+    forecastOperatingProfitChangeRate: float | None = Field(
+        None, description="Forecast operating profit change rate (%)"
+    )
     forecastEpsAboveRecentFyActuals: bool | None = Field(
         None,
         description="Whether latest forecast EPS is greater than recent FY actual EPS values (lookback window)",

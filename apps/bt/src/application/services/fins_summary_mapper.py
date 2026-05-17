@@ -77,6 +77,10 @@ def convert_fins_summary_rows(
             "bps": _to_nullable_float(item.get("BPS")),
             "sales": _to_nullable_float(item.get("Sales")),
             "operating_profit": _to_nullable_float(item.get("OP")),
+            "forecast_operating_profit": _to_nullable_float(item.get("FOP")),
+            "next_year_forecast_operating_profit": _to_nullable_float(
+                item.get("NxFOP")
+            ),
             "ordinary_profit": _to_nullable_float(item.get("OdP")),
             "operating_cash_flow": _to_nullable_float(item.get("CFO")),
             "dividend_fy": _first_numeric(item, "DivAnn", "DivFY"),

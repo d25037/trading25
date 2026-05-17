@@ -4103,6 +4103,30 @@
             "description": "Forecast EPS change rate (%)",
             "title": "Forecastepschangerate"
           },
+          "forecastOperatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forecast operating profit (millions JPY)",
+            "title": "Forecastoperatingprofit"
+          },
+          "forecastOperatingProfitChangeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forecast operating profit change rate (%)",
+            "title": "Forecastoperatingprofitchangerate"
+          },
           "forecastPayoutRatio": {
             "anyOf": [
               {
@@ -11727,6 +11751,17 @@
             ],
             "title": "Fnceps"
           },
+          "FOP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fop"
+          },
           "FPayoutRatioAnn": {
             "anyOf": [
               {
@@ -11891,6 +11926,17 @@
               }
             ],
             "title": "Nxfnceps"
+          },
+          "NxFOP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfop"
           },
           "NxFPayoutRatioAnn": {
             "anyOf": [
@@ -15124,6 +15170,17 @@
             ],
             "title": "Fnceps"
           },
+          "FOP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fop"
+          },
           "NCEPS": {
             "anyOf": [
               {
@@ -15156,6 +15213,17 @@
               }
             ],
             "title": "Nxfnceps"
+          },
+          "NxFOP": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfop"
           }
         },
         "required": [
@@ -15266,6 +15334,17 @@
             ],
             "title": "Forecasteps"
           },
+          "forecastOperatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastoperatingprofit"
+          },
           "forecastPayoutRatio": {
             "anyOf": [
               {
@@ -15309,6 +15388,17 @@
               }
             ],
             "title": "Nextyearforecastearningspershare"
+          },
+          "nextYearForecastOperatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextyearforecastoperatingprofit"
           },
           "nextYearForecastPayoutRatio": {
             "anyOf": [

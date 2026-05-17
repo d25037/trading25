@@ -133,6 +133,9 @@ function mergeLatestMetrics(
     forecastEps: forecastEpsFields.forecastEps,
     adjustedForecastEps: forecastEpsFields.adjustedForecastEps,
     forecastEpsChangeRate: latestMetrics?.forecastEpsChangeRate ?? null,
+    forecastOperatingProfit: latestMetrics?.forecastOperatingProfit ?? fyData.forecastOperatingProfit ?? null,
+    forecastOperatingProfitChangeRate:
+      latestMetrics?.forecastOperatingProfitChangeRate ?? fyData.forecastOperatingProfitChangeRate ?? null,
     revisedForecastEps: forecastEpsFields.revisedForecastEps,
     revisedForecastSource: forecastEpsFields.revisedForecastSource,
     forecastDividendFy: latestMetrics?.forecastDividendFy ?? null,
@@ -161,6 +164,14 @@ function applyForecastChangeRates(metrics: ApiFundamentalDataPoint): ApiFundamen
   const epsChangeRate = resolveChangeRate(displayActualEps, displayForecastEps);
   if (epsChangeRate != null) {
     nextMetrics = { ...nextMetrics, forecastEpsChangeRate: epsChangeRate };
+  }
+
+  const operatingProfitChangeRate = resolveChangeRate(
+    metrics.operatingProfit ?? null,
+    metrics.forecastOperatingProfit ?? null
+  );
+  if (operatingProfitChangeRate != null) {
+    nextMetrics = { ...nextMetrics, forecastOperatingProfitChangeRate: operatingProfitChangeRate };
   }
 
   const displayActualDividend = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;

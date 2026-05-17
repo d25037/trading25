@@ -3,6 +3,7 @@ import {
   countVisibleFundamentalMetrics,
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  FUNDAMENTAL_METRIC_DEFINITIONS,
   FUNDAMENTAL_METRIC_IDS,
   isFundamentalMetricId,
   normalizeFundamentalMetricOrder,
@@ -15,6 +16,16 @@ describe('fundamentalMetrics', () => {
     expect(FUNDAMENTAL_METRIC_IDS).toContain('payoutRatio');
     expect(DEFAULT_FUNDAMENTAL_METRIC_ORDER).toContain('payoutRatio');
     expect(DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY.payoutRatio).toBe(true);
+  });
+
+  it('includes operating profit as a default visible metric', () => {
+    expect(FUNDAMENTAL_METRIC_IDS).toContain('operatingProfit');
+    expect(FUNDAMENTAL_METRIC_DEFINITIONS).toContainEqual({
+      id: 'operatingProfit',
+      label: '営業利益',
+    });
+    expect(DEFAULT_FUNDAMENTAL_METRIC_ORDER).toContain('operatingProfit');
+    expect(DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY.operatingProfit).toBe(true);
   });
 
   it('validates metric id', () => {

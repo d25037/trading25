@@ -31,6 +31,8 @@ const baseMetrics: ApiFundamentalDataPoint = {
   totalAssets: 90_000_000,
   netSales: 45_000_000,
   operatingProfit: 5_000_000,
+  forecastOperatingProfit: 6_200_000,
+  forecastOperatingProfitChangeRate: 24,
   cashFlowOperating: 6_000_000,
   cashFlowInvesting: -2_000_000,
   cashFlowFinancing: -1_000_000,
@@ -123,6 +125,8 @@ describe('FundamentalsSummaryCard', () => {
       forecastEps: null,
       adjustedForecastEps: null,
       forecastEpsChangeRate: 0,
+      forecastOperatingProfit: null,
+      forecastOperatingProfitChangeRate: null,
       forecastDividendFy: null,
       adjustedForecastDividendFy: null,
       forecastPayoutRatio: null,
@@ -143,6 +147,14 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('予: 45.0%')).toBeInTheDocument();
     expect(screen.getByText('(+8.3%)')).toBeInTheDocument();
     expect(screen.getByText('(+12.5%)')).toBeInTheDocument();
+  });
+
+  it('renders operating profit forecast like EPS', () => {
+    render(<FundamentalsSummaryCard metrics={baseMetrics} />);
+
+    expect(screen.getByText('営業利益')).toBeInTheDocument();
+    expect(screen.getByText('予: 6.2兆')).toBeInTheDocument();
+    expect(screen.getByText('(+24.0%)')).toBeInTheDocument();
   });
 
   it('supports metric visibility and ordering', () => {

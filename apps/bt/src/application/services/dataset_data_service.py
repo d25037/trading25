@@ -121,6 +121,10 @@ def rows_to_statements(rows: Sequence[Any]) -> list[StatementRecord]:
             bps=r.bps,
             sales=r.sales,
             operatingProfit=r.operating_profit,
+            forecastOperatingProfit=getattr(r, "forecast_operating_profit", None),
+            nextYearForecastOperatingProfit=getattr(
+                r, "next_year_forecast_operating_profit", None
+            ),
             ordinaryProfit=r.ordinary_profit,
             operatingCashFlow=r.operating_cash_flow,
             dividendFy=r.dividend_fy,
