@@ -29,12 +29,23 @@ from src.domains.analytics.pre_earnings_eps120_proxy import (
     run_pre_earnings_eps120_proxy_research,
 )
 from src.domains.analytics.readonly_duckdb_support import SourceMode
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 PRE_EARNINGS_RUNUP_THRESHOLD_RESPONSE_EXPERIMENT_ID = (
     "market-behavior/pre-earnings-runup-threshold-response"
 )
-DEFAULT_20D_RUNUP_THRESHOLDS: tuple[float, ...] = (0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0)
+DEFAULT_20D_RUNUP_THRESHOLDS: tuple[float, ...] = (
+    0.0,
+    5.0,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+)
 DEFAULT_60D_RUNUP_THRESHOLDS: tuple[float, ...] = (
     0.0,
     5.0,
@@ -101,8 +112,12 @@ def run_pre_earnings_runup_threshold_response_research(
 ) -> PreEarningsRunupThresholdResponseResult:
     resolved_pre_windows = tuple(sorted({int(window) for window in pre_windows}))
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_thresholds_20d = _normalize_thresholds(thresholds_20d, name="thresholds_20d")
-    resolved_thresholds_60d = _normalize_thresholds(thresholds_60d, name="thresholds_60d")
+    resolved_thresholds_20d = _normalize_thresholds(
+        thresholds_20d, name="thresholds_20d"
+    )
+    resolved_thresholds_60d = _normalize_thresholds(
+        thresholds_60d, name="thresholds_60d"
+    )
     _validate_params(
         pre_windows=resolved_pre_windows,
         horizons=resolved_horizons,
@@ -339,7 +354,9 @@ def _validate_params(
 
 def _normalize_thresholds(values: Sequence[float], *, name: str) -> tuple[float, ...]:
     normalized = tuple(sorted({float(value) for value in values}))
-    if not normalized or any(not math.isfinite(value) or value < 0.0 for value in normalized):
+    if not normalized or any(
+        not math.isfinite(value) or value < 0.0 for value in normalized
+    ):
         raise ValueError(f"{name} must contain finite non-negative values")
     return normalized
 
@@ -382,6 +399,10 @@ def _merge_event_panels(
             "next_forecast_to_actual_eps_ratio",
             "forward_per",
             "forward_per_bucket",
+            "p_op",
+            "p_op_bucket",
+            "forward_p_op",
+            "forward_p_op_bucket",
         )
         if column in eps120_df.columns
     ]
@@ -390,7 +411,9 @@ def _merge_event_panels(
     if "overheat_state" not in base.columns and "overheat_state" in eps120_df.columns:
         eps_overheat = eps120_df.loc[:, [*keys, "overheat_state"]]
         base = base.merge(eps_overheat, on=keys, how="left")
-    return base.sort_values(["disclosed_date", "code"], kind="stable").reset_index(drop=True)
+    return base.sort_values(["disclosed_date", "code"], kind="stable").reset_index(
+        drop=True
+    )
 
 
 def _expand_liquidity_scope(scoped_df: pd.DataFrame) -> pd.DataFrame:
@@ -431,7 +454,9 @@ def _build_threshold_response_df(
         thresholds = thresholds_by_window.get(window, thresholds_by_window.get(20, ()))
         for direction in ("ge", "le"):
             for threshold in thresholds:
-                mask = _threshold_mask(scoped_df[return_col], direction=direction, threshold=threshold)
+                mask = _threshold_mask(
+                    scoped_df[return_col], direction=direction, threshold=threshold
+                )
                 selected = scoped_df[mask].copy()
                 if selected.empty:
                     continue
@@ -446,7 +471,9 @@ def _build_threshold_response_df(
                             "pre_window": window,
                             "direction": direction,
                             "threshold_pct": float(threshold),
-                            "condition_label": _condition_label(window, direction, threshold),
+                            "condition_label": _condition_label(
+                                window, direction, threshold
+                            ),
                         },
                     )
                 )
@@ -464,13 +491,20 @@ def _build_joint_runup_response_df(
 ) -> pd.DataFrame:
     scoped_df = _ensure_overheat_state(scoped_df)
     columns = _joint_response_columns()
-    if "pre_return_20d_pct" not in scoped_df.columns or "pre_return_60d_pct" not in scoped_df.columns:
+    if (
+        "pre_return_20d_pct" not in scoped_df.columns
+        or "pre_return_60d_pct" not in scoped_df.columns
+    ):
         return pd.DataFrame(columns=columns)
     rows: list[dict[str, Any]] = []
     for threshold_20d in thresholds_20d:
         for threshold_60d in thresholds_60d:
             selected = scoped_df[
-                _threshold_mask(scoped_df["pre_return_20d_pct"], direction="ge", threshold=threshold_20d)
+                _threshold_mask(
+                    scoped_df["pre_return_20d_pct"],
+                    direction="ge",
+                    threshold=threshold_20d,
+                )
                 & _threshold_mask(
                     scoped_df["pre_return_60d_pct"],
                     direction="ge",
@@ -523,7 +557,9 @@ def _build_percentile_response_df(
             ["market_scope", "is_fy", "event_year"],
             dropna=False,
         )[return_col].rank(pct=True)
-        ranked["percentile_bucket"] = ranked["_pre_return_rank_pct"].map(_percentile_bucket)
+        ranked["percentile_bucket"] = ranked["_pre_return_rank_pct"].map(
+            _percentile_bucket
+        )
         for bucket in _PERCENTILE_BUCKET_ORDER:
             selected = ranked[ranked["percentile_bucket"].astype(str).eq(bucket)].copy()
             if selected.empty:
@@ -538,7 +574,9 @@ def _build_percentile_response_df(
                         "condition_family": "annual_percentile_bucket",
                         "pre_window": window,
                         "percentile_bucket": bucket,
-                        "percentile_bucket_order": _PERCENTILE_BUCKET_ORDER.index(bucket),
+                        "percentile_bucket_order": _PERCENTILE_BUCKET_ORDER.index(
+                            bucket
+                        ),
                     },
                 )
             )
@@ -566,6 +604,7 @@ def _summarize_condition_frames(
             "event_count": int(len(group)),
             "code_count": int(group["code"].nunique()),
             **_eps120_summary(group),
+            **_valuation_summary(group),
             **_execution_summary(group),
         }
         for horizon in horizons:
@@ -592,7 +631,9 @@ def _summarize_condition_frames(
     return rows
 
 
-def _threshold_mask(values: pd.Series, *, direction: str, threshold: float) -> pd.Series:
+def _threshold_mask(
+    values: pd.Series, *, direction: str, threshold: float
+) -> pd.Series:
     numeric = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
     if direction == "ge":
         return numeric >= threshold
@@ -624,24 +665,50 @@ def _eps120_summary(frame: pd.DataFrame) -> dict[str, float | int]:
         "eps120_eligible_count": int(eligible.sum()),
         "eps120_target_count": int(target.sum()),
         "eps120_target_rate_pct": _bool_rate_pct(frame["eps120_positive_target"]),
-        "eps120_eligible_target_rate_pct": _bool_rate_pct(frame.loc[eligible, "eps120_positive_target"]),
+        "eps120_eligible_target_rate_pct": _bool_rate_pct(
+            frame.loc[eligible, "eps120_positive_target"]
+        ),
+    }
+
+
+def _valuation_summary(frame: pd.DataFrame) -> dict[str, float]:
+    return {
+        "median_forward_per": _numeric_median(
+            frame.get("forward_per", pd.Series(dtype=float))
+        ),
+        "median_forward_p_op": _numeric_median(
+            frame.get("forward_p_op", pd.Series(dtype=float))
+        ),
+        "median_p_op": _numeric_median(frame.get("p_op", pd.Series(dtype=float))),
     }
 
 
 def _execution_summary(frame: pd.DataFrame) -> dict[str, float | int]:
-    labels = frame["execution_label"].astype(str) if "execution_label" in frame.columns else pd.Series(dtype=str)
-    executable = frame["entry_executable"] == True if "entry_executable" in frame.columns else pd.Series(dtype=bool)  # noqa: E712
+    labels = (
+        frame["execution_label"].astype(str)
+        if "execution_label" in frame.columns
+        else pd.Series(dtype=str)
+    )
+    executable = (
+        frame["entry_executable"].eq(True)
+        if "entry_executable" in frame.columns
+        else pd.Series(dtype=bool)
+    )
     return {
         "entry_executable_count": int(executable.sum()),
         "entry_executable_rate_pct": _bool_rate_pct(frame["entry_executable"])
         if "entry_executable" in frame.columns
         else np.nan,
         "limit_up_no_fill_count": int((labels == "limit_up_no_fill").sum()),
-        "limit_up_no_fill_rate_pct": float((labels == "limit_up_no_fill").mean() * 100.0)
+        "limit_up_no_fill_rate_pct": float(
+            (labels == "limit_up_no_fill").mean() * 100.0
+        )
         if len(labels)
         else np.nan,
         "limit_down_no_fill_count": int((labels == "limit_down_no_fill").sum()),
-        "limit_down_no_fill_rate_pct": float((labels == "limit_down_no_fill").mean() * 100.0)
+        "limit_down_no_fill_rate_pct": float(
+            (labels == "limit_down_no_fill").mean() * 100.0
+        )
         if len(labels)
         else np.nan,
     }
@@ -664,8 +731,12 @@ def _prefixed_return_summary(
         )
     return {
         f"{prefix}_valid_return_count": int(len(valid)),
-        f"{prefix}_mean_excess_return_pct": float(valid.mean()) if not valid.empty else np.nan,
-        f"{prefix}_median_excess_return_pct": float(valid.median()) if not valid.empty else np.nan,
+        f"{prefix}_mean_excess_return_pct": float(valid.mean())
+        if not valid.empty
+        else np.nan,
+        f"{prefix}_median_excess_return_pct": float(valid.median())
+        if not valid.empty
+        else np.nan,
         f"{prefix}_win_rate_pct": float((valid > 0).mean() * 100.0)
         if not valid.empty
         else np.nan,
@@ -722,8 +793,16 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                     "pre_return_60d_coverage_pct": _numeric_coverage_pct(
                         frame.get("pre_return_60d_pct", pd.Series(dtype=float))
                     ),
+                    "forward_per_coverage_pct": _numeric_coverage_pct(
+                        frame.get("forward_per", pd.Series(dtype=float))
+                    ),
+                    "forward_p_op_coverage_pct": _numeric_coverage_pct(
+                        frame.get("forward_p_op", pd.Series(dtype=float))
+                    ),
                     "eps120_eligible_count": int(
-                        (frame.get("eps120_target_eligible", pd.Series(dtype=bool)) == True).sum()  # noqa: E712
+                        frame.get("eps120_target_eligible", pd.Series(dtype=bool))
+                        .eq(True)
+                        .sum()
                     ),
                 }
             )
@@ -738,6 +817,8 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "code_count",
             "pre_return_20d_coverage_pct",
             "pre_return_60d_coverage_pct",
+            "forward_per_coverage_pct",
+            "forward_p_op_coverage_pct",
             "eps120_eligible_count",
         ],
     )
@@ -748,6 +829,17 @@ def _numeric_coverage_pct(values: pd.Series) -> float:
         return np.nan
     numeric = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
     return float(numeric.notna().mean() * 100.0)
+
+
+def _numeric_median(values: pd.Series) -> float:
+    if values.empty:
+        return np.nan
+    numeric = (
+        pd.to_numeric(values, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+    return float(numeric.median()) if not numeric.empty else np.nan
 
 
 def _base_response_columns() -> list[str]:
@@ -763,6 +855,9 @@ def _base_response_columns() -> list[str]:
         "eps120_target_count",
         "eps120_target_rate_pct",
         "eps120_eligible_target_rate_pct",
+        "median_forward_per",
+        "median_forward_p_op",
+        "median_p_op",
         "entry_executable_count",
         "entry_executable_rate_pct",
         "limit_up_no_fill_count",

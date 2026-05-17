@@ -61,11 +61,30 @@ liquidity regimeを重ねると、同じrunupでも性格が変わる。`reratin
 | `60d strong_runup` | `rerating_participation` | `21,156` | `+0.052%` | `+0.786%` | `+0.255%` | `+2.438%` | `17.62%` |
 | `60d strong_runup` | `stale_liquidity` | `3,105` | `-0.412%` | `-0.333%` | `-1.157%` | `-1.064%` | `16.26%` |
 
+#### Forward P/OP Follow-Up
+
+2026-05-17 follow-up で、`P/OP = market cap / operating_profit` と `forward P/OP = market cap / forecast_operating_profit` を研究内で派生し、`valuation_response_df` として `forward PER` / `P/OP` / `forward P/OP` の単独分位を追加した。
+
+全Prime日次では、単独の `forward P/OP` は `forward PER` の完全な上位互換ではない。cheapest 10% の20d meanは `forward P/OP` が `+0.50%`、`forward PER` が `+0.38%` とP/OPが上回るが、20d medianは `-0.29%` vs `-0.10%`、win rateは `48.01%` vs `49.31%` でforward PERの方が安定する。
+
+rerating participationでは、`forward P/OP` cheapest 10% の20d meanは `+5.72%` と強いが、median / win rateでは `forward PER` cheapest 10% が上回る。したがって `forward P/OP` は単独主役というより、右尾候補の補助指標と、低forward PERの品質フィルタとして扱うのが自然。
+
+rerating participationかつoverheat除外で `forward_per <= 20` に広げると、母数は十分に増える。`forward_per <= 20` は `13,871` observations / `280` codes、20d mean `+2.66%`、median `+1.22%`、win rate `56.22%`。ここに `forward_p_op >= 20` を重ねると `374` observations / `18` codes、20d mean `+0.71%`、median `-0.87%`、win rate `44.39%` まで悪化する。つまり一般日次でも、`low forward PER` なのに `high forward P/OP` は割安の質が悪い警戒signalとして機能する。
+
+| scope | condition | observations | codes | 20d mean | 20d median | win rate | severe loss |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Prime daily | `forward_p_op cheapest 10%` | `44,804` | `369` | `+0.50%` | `-0.29%` | `48.01%` | `7.24%` |
+| Prime daily | `forward_per cheapest 10%` | `46,376` | `467` | `+0.38%` | `-0.10%` | `49.31%` | `6.13%` |
+| Rerate no overheat | `forward_per <= 20` | `13,871` | `280` | `+2.66%` | `+1.22%` | `56.22%` | `8.68%` |
+| Rerate no overheat | `forward_per <= 20 AND forward_p_op >= 20` | `374` | `18` | `+0.71%` | `-0.87%` | `44.39%` | `12.83%` |
+
 ### Interpretation
 
 一般日次でも、runupは「強いほど買えばよい」ではない。高runupでは、右裾が太くなるためmeanは上がるが、typical tradeを表すmedianは改善しにくい。これは決算eventで見た構図と整合する。
 
 一方で、`rerating_participation` を重ねると高runupでもmedianが改善する。つまり `runup` 単体は雑だが、流動性が時価総額対比で明確に増えている状態と組み合わせると、単純な過熱とは別の「参加型rerating」として読める。ただし severe loss は消えないので、position sizing / exit / event proximity の制御が必要。
+
+`forward P/OP` は `forward PER` を置き換える単独rankerではなく、`forward PER` の営業利益品質を確認する補助指標として有効。特に `forward_per <= 20` なのに `forward_p_op >= 20` のような歪みは、rerating候補でもmedian / win rateを壊しやすい。
 
 ### Production Implication
 
@@ -74,6 +93,7 @@ liquidity regimeを重ねると、同じrunupでも性格が変わる。`reratin
 | Daily Rankingの解釈 | `20d/60d runup` はmean改善ではなく分布拡大signalとして扱う |
 | strong runup guard | 一般日次でも `20d >= +20%`, `60d >= +30%` はtail risk警戒 |
 | rerating候補 | `runup + liquidity_residual_z >= 1` は別bucketとして扱う価値あり |
+| valuation quality | `forward_p_op` はRankingに表示し、低forward PERの品質確認・警戒flagに使う |
 | stale除外 | `runup + stale_liquidity` は避けたい |
 | reversal候補 | `20d <= -20%` は候補だが、severe lossが重く別researchが必要 |
 
@@ -112,6 +132,7 @@ uv run --project apps/bt python apps/bt/scripts/research/run_recent_return_thres
 - `threshold_response_df`: daily dense absolute threshold response.
 - `joint_threshold_response_df`: daily dense joint `20d >= x` and `60d >= y` response.
 - `percentile_response_df`: annual percentile bucket response.
+- `valuation_response_df`: annual valuation percentile response for PER / forward PER / P/OP / forward P/OP.
 - `nonoverlap_response_df`: weekly/monthly anchor threshold response.
 - `annual_threshold_response_df`: year-by-year threshold response.
 - `liquidity_interaction_df`: momentum state x liquidity regime response.

@@ -21,7 +21,10 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 
 RECENT_RETURN_THRESHOLD_FORWARD_RESPONSE_EXPERIMENT_ID = (
     "market-behavior/recent-return-threshold-forward-response"
@@ -60,6 +63,13 @@ _PERCENTILE_BUCKET_ORDER: tuple[str, ...] = (
     "bottom_10pct",
     "missing",
 )
+_VALUATION_BUCKET_ORDER: tuple[str, ...] = (
+    "cheapest_10pct",
+    "cheapest_20pct",
+    "middle_60pct",
+    "expensive_20pct",
+    "expensive_10pct",
+)
 _ENTRY_MODES: tuple[str, ...] = ("close_to_close", "next_open_to_close")
 _SAMPLE_SCOPES: tuple[str, ...] = ("daily", "weekly", "monthly")
 
@@ -85,6 +95,7 @@ class RecentReturnThresholdForwardResponseResult:
     threshold_response_df: pd.DataFrame
     joint_threshold_response_df: pd.DataFrame
     percentile_response_df: pd.DataFrame
+    valuation_response_df: pd.DataFrame
     nonoverlap_response_df: pd.DataFrame
     annual_threshold_response_df: pd.DataFrame
     liquidity_interaction_df: pd.DataFrame
@@ -106,8 +117,12 @@ def run_recent_return_threshold_forward_response_research(
 ) -> RecentReturnThresholdForwardResponseResult:
     resolved_pre_windows = tuple(sorted({int(window) for window in pre_windows}))
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
-    resolved_thresholds_20d = _normalize_thresholds(thresholds_20d, name="thresholds_20d")
-    resolved_thresholds_60d = _normalize_thresholds(thresholds_60d, name="thresholds_60d")
+    resolved_thresholds_20d = _normalize_thresholds(
+        thresholds_20d, name="thresholds_20d"
+    )
+    resolved_thresholds_60d = _normalize_thresholds(
+        thresholds_60d, name="thresholds_60d"
+    )
     resolved_market_scopes = _normalize_market_scopes(market_scopes)
     _validate_params(
         pre_windows=resolved_pre_windows,
@@ -120,7 +135,9 @@ def run_recent_return_threshold_forward_response_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-(max(resolved_pre_windows) * 4 + 30))
+    query_start = _offset_calendar_date(
+        start_date, days=-(max(resolved_pre_windows) * 4 + 30)
+    )
     query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
 
     with open_readonly_analysis_connection(
@@ -145,7 +162,9 @@ def run_recent_return_threshold_forward_response_research(
             market_scopes=resolved_market_scopes,
         )
         observation_count = int(
-            ctx.connection.execute("SELECT count(*) FROM recent_return_threshold_panel").fetchone()[0]
+            ctx.connection.execute(
+                "SELECT count(*) FROM recent_return_threshold_panel"
+            ).fetchone()[0]
         )
         coverage_diagnostics_df = _build_coverage_diagnostics_df(ctx.connection)
         threshold_response_df = _build_threshold_response_df(
@@ -172,6 +191,13 @@ def run_recent_return_threshold_forward_response_research(
         percentile_response_df = _build_percentile_response_df(
             ctx.connection,
             pre_windows=resolved_pre_windows,
+            horizons=resolved_horizons,
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            sample_scope="daily",
+        )
+        valuation_response_df = _build_valuation_response_df(
+            ctx.connection,
             horizons=resolved_horizons,
             min_observations=min_observations,
             severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -234,6 +260,7 @@ def run_recent_return_threshold_forward_response_research(
         threshold_response_df=threshold_response_df,
         joint_threshold_response_df=joint_threshold_response_df,
         percentile_response_df=percentile_response_df,
+        valuation_response_df=valuation_response_df,
         nonoverlap_response_df=nonoverlap_response_df,
         annual_threshold_response_df=annual_threshold_response_df,
         liquidity_interaction_df=liquidity_interaction_df,
@@ -275,6 +302,7 @@ def write_recent_return_threshold_forward_response_bundle(
             "threshold_response_df": result.threshold_response_df,
             "joint_threshold_response_df": result.joint_threshold_response_df,
             "percentile_response_df": result.percentile_response_df,
+            "valuation_response_df": result.valuation_response_df,
             "nonoverlap_response_df": result.nonoverlap_response_df,
             "annual_threshold_response_df": result.annual_threshold_response_df,
             "liquidity_interaction_df": result.liquidity_interaction_df,
@@ -326,6 +354,18 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
         ],
         limit=60,
     )
+    valuation = _top_rows_for_markdown(
+        result.valuation_response_df,
+        sort_columns=[
+            "market_scope",
+            "liquidity_scope",
+            "valuation_feature",
+            "valuation_bucket_order",
+            "entry_mode",
+            "horizon",
+        ],
+        limit=80,
+    )
     nonoverlap = _top_rows_for_markdown(
         result.nonoverlap_response_df,
         sort_columns=[
@@ -341,7 +381,13 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
     )
     liquidity = _top_rows_for_markdown(
         result.liquidity_interaction_df,
-        sort_columns=["market_scope", "liquidity_scope", "momentum_state", "entry_mode", "horizon"],
+        sort_columns=[
+            "market_scope",
+            "liquidity_scope",
+            "momentum_state",
+            "entry_mode",
+            "horizon",
+        ],
         limit=60,
     )
     return "\n".join(
@@ -375,6 +421,10 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
             "## Percentile Response",
             "",
             percentile,
+            "",
+            "## Valuation Response",
+            "",
+            valuation,
             "",
             "## Non-Overlap Response",
             "",
@@ -410,14 +460,20 @@ def _validate_params(
 
 def _normalize_thresholds(values: Sequence[float], *, name: str) -> tuple[float, ...]:
     normalized = tuple(sorted({float(value) for value in values}))
-    if not normalized or any(not math.isfinite(value) or value < 0.0 for value in normalized):
+    if not normalized or any(
+        not math.isfinite(value) or value < 0.0 for value in normalized
+    ):
         raise ValueError(f"{name} must contain finite non-negative values")
     return normalized
 
 
 def _normalize_market_scopes(values: Sequence[str]) -> tuple[str, ...]:
     allowed = set(_MARKET_SCOPE_ORDER)
-    normalized = tuple(dict.fromkeys(str(value).strip().lower() for value in values if str(value).strip()))
+    normalized = tuple(
+        dict.fromkeys(
+            str(value).strip().lower() for value in values if str(value).strip()
+        )
+    )
     if not normalized:
         raise ValueError("market_scopes must not be empty")
     invalid = [value for value in normalized if value not in allowed]
@@ -430,9 +486,75 @@ def _assert_required_tables(conn: Any) -> None:
     required = ("stock_data", "topix_data", "statements")
     missing = [table for table in required if not _table_exists(conn, table)]
     if missing:
-        raise RuntimeError(f"market.duckdb missing required tables: {', '.join(missing)}")
-    if not _table_exists(conn, "stock_master_daily") and not _table_exists(conn, "stocks"):
+        raise RuntimeError(
+            f"market.duckdb missing required tables: {', '.join(missing)}"
+        )
+    if not _table_exists(conn, "stock_master_daily") and not _table_exists(
+        conn, "stocks"
+    ):
         raise RuntimeError("market.duckdb requires stock_master_daily or stocks")
+
+
+def _create_daily_valuation_view(conn: Any) -> None:
+    if not _table_exists(conn, "daily_valuation"):
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP VIEW recent_return_daily_valuation AS
+            SELECT
+                NULL::VARCHAR AS code,
+                NULL::VARCHAR AS date,
+                NULL::DOUBLE AS per,
+                NULL::DOUBLE AS forward_per,
+                NULL::DOUBLE AS market_cap
+            WHERE FALSE
+            """
+        )
+        return
+    valuation_code = normalize_code_sql("dv.code")
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP VIEW recent_return_daily_valuation AS
+        SELECT code, date, per, forward_per, market_cap
+        FROM (
+            SELECT
+                {valuation_code} AS code,
+                dv.date,
+                CAST(dv.per AS DOUBLE) AS per,
+                CAST(dv.forward_per AS DOUBLE) AS forward_per,
+                CAST(dv.market_cap AS DOUBLE) AS market_cap,
+                row_number() OVER (
+                    PARTITION BY {valuation_code}, dv.date
+                    ORDER BY dv.price_basis_date DESC NULLS LAST,
+                             dv.basis_version DESC NULLS LAST,
+                             CASE WHEN length(dv.code) = 4 THEN 0 ELSE 1 END,
+                             dv.code
+                ) AS row_rank
+            FROM daily_valuation dv
+        )
+        WHERE row_rank = 1
+        """
+    )
+
+
+def _optional_statement_double_expr(conn: Any, column: str) -> str:
+    if _statement_column_exists(conn, column):
+        return f"CAST(st.{column} AS DOUBLE)"
+    return "CAST(NULL AS DOUBLE)"
+
+
+def _optional_statement_text_expr(conn: Any, column: str) -> str:
+    if _statement_column_exists(conn, column):
+        return f"CAST(st.{column} AS VARCHAR)"
+    return "CAST(NULL AS VARCHAR)"
+
+
+def _statement_column_exists(conn: Any, column: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT count(*) FROM pragma_table_info('statements') WHERE name = ?",
+            [column],
+        ).fetchone()[0]
+    )
 
 
 def _create_observation_panel(
@@ -447,9 +569,27 @@ def _create_observation_panel(
     market_source: str,
     market_scopes: Sequence[str],
 ) -> None:
+    _create_daily_valuation_view(conn)
     price_code = normalize_code_sql("sd.code")
-    master_code = normalize_code_sql("smd.code") if market_source == "stock_master_daily_exact_date" else normalize_code_sql("s.code")
+    master_code = (
+        normalize_code_sql("smd.code")
+        if market_source == "stock_master_daily_exact_date"
+        else normalize_code_sql("s.code")
+    )
     statement_code = normalize_code_sql("st.code")
+    statement_period_expr = _optional_statement_text_expr(
+        conn, "type_of_current_period"
+    )
+    statement_document_expr = _optional_statement_text_expr(conn, "type_of_document")
+    operating_profit_expr = _optional_statement_double_expr(conn, "operating_profit")
+    forecast_operating_profit_expr = _optional_statement_double_expr(
+        conn,
+        "forecast_operating_profit",
+    )
+    next_year_forecast_operating_profit_expr = _optional_statement_double_expr(
+        conn,
+        "next_year_forecast_operating_profit",
+    )
     lag_exprs = ",\n                ".join(
         f"lag(close, {window}) over (partition by code order by date) as close_lag_{window}d"
         for window in pre_windows
@@ -544,13 +684,17 @@ def _create_observation_panel(
     if analysis_end_date is not None:
         final_conditions.append("date <= ?")
         final_params.append(analysis_end_date)
-    final_where = "" if not final_conditions else "WHERE " + " AND ".join(final_conditions)
+    final_where = (
+        "" if not final_conditions else "WHERE " + " AND ".join(final_conditions)
+    )
     market_filter = (
         "TRUE"
         if "all" in market_scopes
         else f"m.market IN ({_sql_string_list(market_scopes)})"
     )
-    master_cte = _market_master_cte(market_source=market_source, master_code=master_code)
+    master_cte = _market_master_cte(
+        market_source=market_source, master_code=master_code
+    )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE recent_return_threshold_panel AS
@@ -582,18 +726,23 @@ def _create_observation_panel(
                 SELECT
                     {statement_code} AS code,
                     st.disclosed_date,
+                    {statement_period_expr} AS type_of_current_period,
+                    {statement_document_expr} AS type_of_document,
                     st.shares_outstanding,
                     st.treasury_shares,
+                    {operating_profit_expr} AS operating_profit,
+                    {forecast_operating_profit_expr} AS forecast_operating_profit,
+                    {next_year_forecast_operating_profit_expr}
+                        AS next_year_forecast_operating_profit,
                     row_number() OVER (
                         PARTITION BY {statement_code}, st.disclosed_date
                         ORDER BY CASE WHEN length(st.code) = 4 THEN 0 ELSE 1 END, st.code
                     ) AS row_rank
                 FROM statements st
-                WHERE st.shares_outstanding > 0
             )
             WHERE row_rank = 1
         ),
-        statement_interval AS (
+        share_interval AS (
             SELECT
                 code,
                 disclosed_date AS share_disclosed_date,
@@ -601,6 +750,30 @@ def _create_observation_panel(
                 shares_outstanding,
                 treasury_shares
             FROM statement_base
+            WHERE shares_outstanding > 0
+        ),
+        operating_profit_interval AS (
+            SELECT
+                code,
+                disclosed_date AS operating_profit_disclosed_date,
+                lead(disclosed_date) OVER (PARTITION BY code ORDER BY disclosed_date) AS valid_to,
+                operating_profit
+            FROM statement_base
+            WHERE upper(coalesce(type_of_current_period, '')) = 'FY'
+              AND operating_profit > 0
+        ),
+        forecast_operating_profit_interval AS (
+            SELECT
+                code,
+                disclosed_date AS forecast_operating_profit_disclosed_date,
+                lead(disclosed_date) OVER (PARTITION BY code ORDER BY disclosed_date) AS valid_to,
+                CASE
+                    WHEN next_year_forecast_operating_profit > 0
+                        THEN next_year_forecast_operating_profit
+                    WHEN forecast_operating_profit > 0 THEN forecast_operating_profit
+                END AS forecast_operating_profit
+            FROM statement_base
+            WHERE coalesce(next_year_forecast_operating_profit, forecast_operating_profit) > 0
         ),
         scoped AS (
             SELECT
@@ -609,15 +782,49 @@ def _create_observation_panel(
                 m.market,
                 m.market_code,
                 m.scale_category,
-                st.share_disclosed_date,
-                st.shares_outstanding,
-                st.treasury_shares
+                share.share_disclosed_date,
+                share.shares_outstanding,
+                share.treasury_shares,
+                op.operating_profit,
+                fop.forecast_operating_profit,
+                op.operating_profit_disclosed_date,
+                fop.forecast_operating_profit_disclosed_date,
+                dv.per,
+                dv.forward_per,
+                CASE
+                    WHEN dv.market_cap > 0 THEN dv.market_cap / 1000000000.0
+                    WHEN p.close > 0 AND share.shares_outstanding > 0
+                        THEN p.close * share.shares_outstanding / 1000000000.0
+                END AS market_cap_bil_jpy,
+                CASE
+                    WHEN coalesce(dv.market_cap, p.close * share.shares_outstanding) > 0
+                     AND op.operating_profit > 0
+                        THEN coalesce(dv.market_cap, p.close * share.shares_outstanding)
+                             / op.operating_profit
+                END AS p_op,
+                CASE
+                    WHEN coalesce(dv.market_cap, p.close * share.shares_outstanding) > 0
+                     AND fop.forecast_operating_profit > 0
+                        THEN coalesce(dv.market_cap, p.close * share.shares_outstanding)
+                             / fop.forecast_operating_profit
+                END AS forward_p_op
             FROM prices p
             JOIN market_master m ON m.code = p.code AND m.date = p.date
-            LEFT JOIN statement_interval st
-              ON st.code = p.code
-             AND st.share_disclosed_date <= p.date
-             AND (st.valid_to IS NULL OR p.date < st.valid_to)
+            LEFT JOIN share_interval share
+              ON share.code = p.code
+             AND share.share_disclosed_date <= p.date
+             AND (share.valid_to IS NULL OR p.date < share.valid_to)
+            LEFT JOIN operating_profit_interval op
+              ON op.code = p.code
+             AND op.operating_profit_disclosed_date <= p.date
+             AND (op.valid_to IS NULL OR p.date < op.valid_to)
+            LEFT JOIN forecast_operating_profit_interval fop
+              ON fop.code = p.code
+             AND fop.forecast_operating_profit_disclosed_date <= p.date
+             AND (fop.valid_to IS NULL OR p.date < fop.valid_to)
+            LEFT JOIN recent_return_daily_valuation dv
+              ON dv.code = p.code
+             AND dv.date = p.date
             WHERE {market_filter}
         ),
         featured AS (
@@ -836,7 +1043,15 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             avg(CASE WHEN med_adv60_sessions >= 60 THEN 1.0 ELSE 0.0 END) * 100.0
                 AS med_adv60_coverage_pct,
             avg(CASE WHEN liquidity_residual_z IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
-                AS liquidity_residual_z_coverage_pct
+                AS liquidity_residual_z_coverage_pct,
+            avg(CASE WHEN per IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
+                AS per_coverage_pct,
+            avg(CASE WHEN forward_per IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
+                AS forward_per_coverage_pct,
+            avg(CASE WHEN p_op IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
+                AS p_op_coverage_pct,
+            avg(CASE WHEN forward_p_op IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
+                AS forward_p_op_coverage_pct
         FROM recent_return_threshold_scoped
         GROUP BY market_scope, liquidity_scope
         """
@@ -853,6 +1068,10 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             "recent_return_60d_coverage_pct",
             "med_adv60_coverage_pct",
             "liquidity_residual_z_coverage_pct",
+            "per_coverage_pct",
+            "forward_per_coverage_pct",
+            "p_op_coverage_pct",
+            "forward_p_op_coverage_pct",
         ],
     )
 
@@ -885,7 +1104,9 @@ def _build_threshold_response_df(
                                     "pre_window": int(window),
                                     "direction": direction,
                                     "threshold_pct": float(threshold),
-                                    "condition_label": _condition_label(window, direction, threshold),
+                                    "condition_label": _condition_label(
+                                        window, direction, threshold
+                                    ),
                                     "entry_mode": entry_mode,
                                     "horizon": int(horizon),
                                 },
@@ -984,7 +1205,9 @@ def _build_percentile_response_df(
                                 "sample_scope": sample_scope,
                                 "pre_window": int(window),
                                 "percentile_bucket": bucket,
-                                "percentile_bucket_order": _PERCENTILE_BUCKET_ORDER.index(bucket),
+                                "percentile_bucket_order": _PERCENTILE_BUCKET_ORDER.index(
+                                    bucket
+                                ),
                                 "entry_mode": entry_mode,
                                 "horizon": int(horizon),
                             },
@@ -997,6 +1220,63 @@ def _build_percentile_response_df(
                         )
                     )
     return _concat_sorted(frames, columns=_percentile_response_columns())
+
+
+def _build_valuation_response_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+    sample_scope: str,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    sample_filter = _sample_scope_filter(sample_scope)
+    for feature in ("per", "forward_per", "p_op", "forward_p_op"):
+        conn.execute(
+            f"""
+            CREATE OR REPLACE TEMP VIEW recent_return_valuation_work AS
+            SELECT
+                *,
+                percent_rank() OVER (
+                    PARTITION BY market_scope, anchor_year
+                    ORDER BY {feature}
+                ) AS valuation_rank_pct
+            FROM recent_return_threshold_scoped
+            WHERE {sample_filter}
+              AND {feature} IS NOT NULL
+              AND {feature} > 0
+            """
+        )
+        for bucket in _VALUATION_BUCKET_ORDER:
+            condition = _valuation_bucket_condition(bucket)
+            for entry_mode in _ENTRY_MODES:
+                for horizon in horizons:
+                    frames.append(
+                        _aggregate_condition(
+                            conn,
+                            source_name="recent_return_valuation_work",
+                            condition=condition,
+                            condition_fields={
+                                "condition_family": "valuation_percentile_bucket",
+                                "sample_scope": sample_scope,
+                                "valuation_feature": feature,
+                                "valuation_bucket": bucket,
+                                "valuation_bucket_order": _VALUATION_BUCKET_ORDER.index(
+                                    bucket
+                                ),
+                                "entry_mode": entry_mode,
+                                "horizon": int(horizon),
+                            },
+                            return_column=_return_column(entry_mode, horizon),
+                            sample_scope=sample_scope,
+                            group_by_year=False,
+                            min_observations=min_observations,
+                            severe_loss_threshold_pct=severe_loss_threshold_pct,
+                            sample_filter_override="TRUE",
+                        )
+                    )
+    return _concat_sorted(frames, columns=_valuation_response_columns())
 
 
 def _build_nonoverlap_response_df(
@@ -1049,7 +1329,9 @@ def _build_annual_threshold_response_df(
                                 "pre_window": int(window),
                                 "direction": "ge",
                                 "threshold_pct": float(threshold),
-                                "condition_label": _condition_label(window, "ge", threshold),
+                                "condition_label": _condition_label(
+                                    window, "ge", threshold
+                                ),
                                 "entry_mode": entry_mode,
                                 "horizon": int(horizon),
                             },
@@ -1060,7 +1342,14 @@ def _build_annual_threshold_response_df(
                             severe_loss_threshold_pct=severe_loss_threshold_pct,
                         )
                     )
-    return _concat_sorted(frames, columns=[*_threshold_response_columns()[:7], "anchor_year", *_threshold_response_columns()[7:]])
+    return _concat_sorted(
+        frames,
+        columns=[
+            *_threshold_response_columns()[:7],
+            "anchor_year",
+            *_threshold_response_columns()[7:],
+        ],
+    )
 
 
 def _build_liquidity_interaction_df(
@@ -1138,7 +1427,11 @@ def _aggregate_condition(
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
             median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy,
-            median(liquidity_residual_z) AS median_liquidity_residual_z
+            median(liquidity_residual_z) AS median_liquidity_residual_z,
+            median(per) AS median_per,
+            median(forward_per) AS median_forward_per,
+            median(p_op) AS median_p_op,
+            median(forward_p_op) AS median_forward_p_op
         FROM {source_name}
         WHERE {sample_filter}
           AND {condition}
@@ -1172,6 +1465,10 @@ def _aggregate_condition(
             "median_recent_return_60d_pct",
             "median_med_adv60_mil_jpy",
             "median_liquidity_residual_z",
+            "median_per",
+            "median_forward_per",
+            "median_p_op",
+            "median_forward_p_op",
         ]
     )
     return frame.reindex(columns=ordered)
@@ -1194,6 +1491,11 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             free_float_market_cap_jpy / 1000000000.0 AS free_float_market_cap_bil_jpy,
             liquidity_residual_z,
             liquidity_regime,
+            per,
+            forward_per,
+            p_op,
+            forward_p_op,
+            market_cap_bil_jpy,
             forward_close_excess_return_5d_pct,
             forward_close_excess_return_20d_pct,
             forward_next_open_excess_return_5d_pct,
@@ -1245,6 +1547,20 @@ def _percentile_condition(bucket: str) -> str:
     raise ValueError(f"unsupported percentile bucket: {bucket}")
 
 
+def _valuation_bucket_condition(bucket: str) -> str:
+    if bucket == "cheapest_10pct":
+        return "valuation_rank_pct <= 0.1"
+    if bucket == "cheapest_20pct":
+        return "valuation_rank_pct > 0.1 AND valuation_rank_pct <= 0.2"
+    if bucket == "middle_60pct":
+        return "valuation_rank_pct > 0.2 AND valuation_rank_pct < 0.8"
+    if bucket == "expensive_20pct":
+        return "valuation_rank_pct >= 0.8 AND valuation_rank_pct < 0.9"
+    if bucket == "expensive_10pct":
+        return "valuation_rank_pct >= 0.9"
+    raise ValueError(f"unsupported valuation bucket: {bucket}")
+
+
 def _return_column(entry_mode: str, horizon: int) -> str:
     if entry_mode == "close_to_close":
         return f"forward_close_excess_return_{horizon}d_pct"
@@ -1267,7 +1583,9 @@ def _offset_calendar_date(date: str | None, *, days: int) -> str | None:
     return (pd.Timestamp(date) + pd.Timedelta(days=days)).strftime("%Y-%m-%d")
 
 
-def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:
+def _concat_sorted(
+    frames: Sequence[pd.DataFrame], *, columns: Sequence[str]
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if frame is not None and not frame.empty]
     if not non_empty:
         return pd.DataFrame(columns=list(columns))
@@ -1301,6 +1619,10 @@ def _base_response_columns() -> list[str]:
         "median_recent_return_60d_pct",
         "median_med_adv60_mil_jpy",
         "median_liquidity_residual_z",
+        "median_per",
+        "median_forward_per",
+        "median_p_op",
+        "median_forward_p_op",
     ]
 
 
@@ -1342,6 +1664,21 @@ def _percentile_response_columns() -> list[str]:
         "pre_window",
         "percentile_bucket",
         "percentile_bucket_order",
+        "market_scope",
+        "liquidity_scope",
+        "entry_mode",
+        "horizon",
+        *_base_response_columns()[6:],
+    ]
+
+
+def _valuation_response_columns() -> list[str]:
+    return [
+        "condition_family",
+        "sample_scope",
+        "valuation_feature",
+        "valuation_bucket",
+        "valuation_bucket_order",
         "market_scope",
         "liquidity_scope",
         "entry_mode",

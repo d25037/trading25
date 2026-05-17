@@ -30,7 +30,10 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
-from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.domains.analytics.research_bundle import (
+    ResearchBundleInfo,
+    write_research_bundle,
+)
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.share_adjustment import resolve_latest_quarterly_baseline_shares
 from src.shared.utils.statement_document import (
@@ -87,7 +90,9 @@ def run_pre_earnings_eps120_proxy_research(
         snapshot_prefix="pre-earnings-eps120-proxy-",
     ) as ctx:
         statement_df = _query_statement_rows(ctx.connection)
-        adjusted_statement_metric_df = _query_adjusted_statement_metric_rows(ctx.connection)
+        adjusted_statement_metric_df = _query_adjusted_statement_metric_rows(
+            ctx.connection
+        )
         daily_valuation_df = _query_daily_valuation_rows(
             ctx.connection,
             base_result.event_feature_df,
@@ -107,9 +112,9 @@ def run_pre_earnings_eps120_proxy_research(
     threshold_grid_df = _build_threshold_grid_df(scoped_df, min_events=min_events)
     combo_grid_df = _build_combo_grid_df(scoped_df, min_events=min_events)
     annual_valuation_regime_df = _build_annual_valuation_regime_df(event_feature_df)
-    current_cross_section_df = (current_cross_section_builder or _build_current_cross_section_df)(
-        str(db_path_obj)
-    )
+    current_cross_section_df = (
+        current_cross_section_builder or _build_current_cross_section_df
+    )(str(db_path_obj))
 
     return PreEarningsEps120ProxyResult(
         db_path=str(db_path_obj),
@@ -252,6 +257,15 @@ def _query_statement_rows(conn: Any) -> pd.DataFrame:
     if not _table_exists(conn, "statements"):
         raise RuntimeError("market.duckdb is missing required table: statements")
     normalized_code = normalize_code_sql("code")
+    operating_profit_expr = _optional_statement_double_expr(conn, "operating_profit")
+    forecast_operating_profit_expr = _optional_statement_double_expr(
+        conn,
+        "forecast_operating_profit",
+    )
+    next_year_forecast_operating_profit_expr = _optional_statement_double_expr(
+        conn,
+        "next_year_forecast_operating_profit",
+    )
     df = conn.execute(
         f"""
         SELECT *
@@ -265,6 +279,10 @@ def _query_statement_rows(conn: Any) -> pd.DataFrame:
                 CAST(next_year_forecast_earnings_per_share AS DOUBLE)
                     AS next_year_forecast_earnings_per_share,
                 CAST(forecast_eps AS DOUBLE) AS forecast_eps,
+                {operating_profit_expr} AS operating_profit,
+                {forecast_operating_profit_expr} AS forecast_operating_profit,
+                {next_year_forecast_operating_profit_expr}
+                    AS next_year_forecast_operating_profit,
                 CAST(bps AS DOUBLE) AS bps,
                 CAST(shares_outstanding AS DOUBLE) AS shares_outstanding,
                 CAST(treasury_shares AS DOUBLE) AS treasury_shares,
@@ -284,6 +302,16 @@ def _query_statement_rows(conn: Any) -> pd.DataFrame:
     df["code"] = df["code"].astype(str)
     df["disclosed_date"] = df["disclosed_date"].astype(str)
     return df
+
+
+def _optional_statement_double_expr(conn: Any, column: str) -> str:
+    exists = conn.execute(
+        "SELECT count(*) FROM pragma_table_info('statements') WHERE name = ?",
+        [column],
+    ).fetchone()[0]
+    if exists:
+        return f"CAST({column} AS DOUBLE)"
+    return "CAST(NULL AS DOUBLE)"
 
 
 def _query_adjusted_statement_metric_rows(conn: Any) -> pd.DataFrame:
@@ -335,14 +363,23 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
         "pre_event_date",
         "valuation_actual_eps",
         "valuation_forward_eps",
+        "valuation_operating_profit",
+        "valuation_forward_operating_profit",
         "valuation_bps",
         "valuation_shares_outstanding",
         "valuation_fy_disclosed_date",
         "valuation_forward_eps_disclosed_date",
         "valuation_forward_eps_period_type",
         "valuation_forward_eps_source",
+        "valuation_forward_operating_profit_disclosed_date",
+        "valuation_forward_operating_profit_period_type",
+        "valuation_forward_operating_profit_source",
+        "operating_profit_per_share",
+        "forecast_operating_profit_per_share",
         "per",
         "forward_per",
+        "p_op",
+        "forward_p_op",
         "pbr",
         "market_cap_bil_jpy",
         "valuation_source",
@@ -402,6 +439,8 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
                 p.pre_event_date,
                 v.eps AS valuation_actual_eps,
                 v.forward_eps AS valuation_forward_eps,
+                NULL::DOUBLE AS valuation_operating_profit,
+                NULL::DOUBLE AS valuation_forward_operating_profit,
                 v.bps AS valuation_bps,
                 CASE
                     WHEN v.market_cap IS NOT NULL AND v.close > 0
@@ -412,8 +451,15 @@ def _query_daily_valuation_rows(conn: Any, event_df: pd.DataFrame) -> pd.DataFra
                 v.forward_eps_disclosed_date AS valuation_forward_eps_disclosed_date,
                 'FY' AS valuation_forward_eps_period_type,
                 v.forward_eps_source AS valuation_forward_eps_source,
+                NULL::VARCHAR AS valuation_forward_operating_profit_disclosed_date,
+                NULL::VARCHAR AS valuation_forward_operating_profit_period_type,
+                NULL::VARCHAR AS valuation_forward_operating_profit_source,
+                NULL::DOUBLE AS operating_profit_per_share,
+                NULL::DOUBLE AS forecast_operating_profit_per_share,
                 v.per,
                 v.forward_per,
+                NULL::DOUBLE AS p_op,
+                NULL::DOUBLE AS forward_p_op,
                 v.pbr,
                 v.market_cap / 1e9 AS market_cap_bil_jpy,
                 'daily_valuation' AS valuation_source
@@ -448,9 +494,7 @@ def _enrich_events_with_pre_valuation(
         else pd.DataFrame()
     )
     daily_valuation_df = (
-        daily_valuation_df
-        if daily_valuation_df is not None
-        else pd.DataFrame()
+        daily_valuation_df if daily_valuation_df is not None else pd.DataFrame()
     )
     statement_with_adjusted = statement_df.copy()
     if not adjusted_statement_metric_df.empty:
@@ -485,7 +529,9 @@ def _enrich_events_with_pre_valuation(
             "sot_next_forecast_eps": "next_forecast_eps",
         }
     )
-    enriched = event_df.merge(current_statement, on=["code", "disclosed_date"], how="left")
+    enriched = event_df.merge(
+        current_statement, on=["code", "disclosed_date"], how="left"
+    )
 
     statement_lookup = _build_statement_lookup(statement_with_adjusted)
     daily_valuation_lookup = _build_daily_valuation_lookup(daily_valuation_df)
@@ -495,16 +541,33 @@ def _enrich_events_with_pre_valuation(
         code = str(row.code)
         pre_event_date = str(row.pre_event_date)
         daily_valuation = daily_valuation_lookup.get((code, pre_event_date))
+        statements_as_of = _lookup_statements_as_of(
+            statement_lookup, code, pre_event_date
+        )
+        latest_fy = _lookup_latest_actual_fy_statement(statements_as_of)
+        baseline_shares = _resolve_baseline_shares(statements_as_of)
+        close = _float_or_nan(row.pre_event_close)
         if daily_valuation is not None:
             valuation_record = dict(daily_valuation)
             valuation_record.pop("code", None)
             valuation_record.pop("pre_event_date", None)
-            valuation_records.append(cast(dict[str, float | str | None], valuation_record))
+            op_record = _derive_operating_profit_valuation_record(
+                statements_as_of,
+                latest_fy=latest_fy,
+                valuation_shares=_nullable_float(
+                    valuation_record.get("valuation_shares_outstanding")
+                )
+                or baseline_shares,
+                close=close,
+                market_cap_bil_jpy=_nullable_float(
+                    valuation_record.get("market_cap_bil_jpy")
+                ),
+            )
+            valuation_record.update(op_record)
+            valuation_records.append(
+                cast(dict[str, float | str | None], valuation_record)
+            )
             continue
-        statements_as_of = _lookup_statements_as_of(statement_lookup, code, pre_event_date)
-        latest_fy = _lookup_latest_actual_fy_statement(statements_as_of)
-        baseline_shares = _resolve_baseline_shares(statements_as_of)
-        close = _float_or_nan(row.pre_event_close)
         valuation_actual_eps = _adjust_statement_per_share_metric(
             latest_fy,
             "earnings_per_share",
@@ -515,21 +578,33 @@ def _enrich_events_with_pre_valuation(
             "bps",
             baseline_shares,
         )
-        valuation_forward_eps, forward_eps_date, forward_eps_period, forward_eps_source = (
-            _resolve_forward_eps_for_valuation(
-                statements_as_of,
-                latest_fy=latest_fy,
-                baseline_shares=baseline_shares,
-            )
+        (
+            valuation_forward_eps,
+            forward_eps_date,
+            forward_eps_period,
+            forward_eps_source,
+        ) = _resolve_forward_eps_for_valuation(
+            statements_as_of,
+            latest_fy=latest_fy,
+            baseline_shares=baseline_shares,
         )
         valuation_shares = baseline_shares if baseline_shares is not None else np.nan
+        op_record = _derive_operating_profit_valuation_record(
+            statements_as_of,
+            latest_fy=latest_fy,
+            valuation_shares=baseline_shares,
+            close=close,
+            market_cap_bil_jpy=None,
+        )
         valuation_records.append(
             {
                 "valuation_actual_eps": _nan_if_none(valuation_actual_eps),
                 "valuation_forward_eps": _nan_if_none(valuation_forward_eps),
                 "valuation_bps": _nan_if_none(valuation_bps),
                 "valuation_shares_outstanding": valuation_shares,
-                "valuation_fy_disclosed_date": latest_fy.get("disclosed_date") if latest_fy else None,
+                "valuation_fy_disclosed_date": latest_fy.get("disclosed_date")
+                if latest_fy
+                else None,
                 "valuation_forward_eps_disclosed_date": forward_eps_date,
                 "valuation_forward_eps_period_type": forward_eps_period,
                 "valuation_forward_eps_source": forward_eps_source,
@@ -538,10 +613,13 @@ def _enrich_events_with_pre_valuation(
                 "pbr": _ratio(close, _nan_if_none(valuation_bps)),
                 "market_cap_bil_jpy": (
                     close * valuation_shares / 1e9
-                    if math.isfinite(close) and math.isfinite(valuation_shares) and valuation_shares > 0
+                    if math.isfinite(close)
+                    and math.isfinite(valuation_shares)
+                    and valuation_shares > 0
                     else np.nan
                 ),
                 "valuation_source": "statement_fallback",
+                **op_record,
             }
         )
     valuation_df = pd.DataFrame.from_records(valuation_records)
@@ -559,22 +637,27 @@ def _enrich_events_with_pre_valuation(
             >= pd.to_numeric(enriched["actual_eps"], errors="coerce") * 1.2
         )
     )
-    enriched["next_forecast_to_actual_eps_ratio"] = (
-        pd.to_numeric(enriched["next_forecast_eps"], errors="coerce")
-        / pd.to_numeric(enriched["actual_eps"], errors="coerce").where(
-            pd.to_numeric(enriched["actual_eps"], errors="coerce") > 0,
-            np.nan,
-        )
+    enriched["next_forecast_to_actual_eps_ratio"] = pd.to_numeric(
+        enriched["next_forecast_eps"], errors="coerce"
+    ) / pd.to_numeric(enriched["actual_eps"], errors="coerce").where(
+        pd.to_numeric(enriched["actual_eps"], errors="coerce") > 0,
+        np.nan,
     )
     for feature in (
         "per",
         "forward_per",
+        "p_op",
+        "forward_p_op",
         "pbr",
         "market_cap_bil_jpy",
         "liquidity_residual_z",
     ):
-        enriched[f"{feature}_bucket"] = enriched[feature].map(_bucket_for_feature(feature))
-    enriched["overheat_state_bucket"] = enriched["overheat_state"].fillna("missing").astype(str)
+        enriched[f"{feature}_bucket"] = enriched[feature].map(
+            _bucket_for_feature(feature)
+        )
+    enriched["overheat_state_bucket"] = (
+        enriched["overheat_state"].fillna("missing").astype(str)
+    )
     return enriched
 
 
@@ -584,9 +667,9 @@ def _build_statement_lookup(
     lookup: dict[str, tuple[np.ndarray, list[dict[str, Any]]]] = {}
     if statement_df.empty:
         return lookup
-    for code, frame in statement_df.sort_values(["code", "disclosed_date"], kind="stable").groupby(
-        "code", sort=False
-    ):
+    for code, frame in statement_df.sort_values(
+        ["code", "disclosed_date"], kind="stable"
+    ).groupby("code", sort=False):
         rows = cast(list[dict[str, Any]], frame.to_dict("records"))
         dates = frame["disclosed_date"].astype(str).to_numpy()
         lookup[str(code)] = (dates, rows)
@@ -682,9 +765,11 @@ def _resolve_forward_eps_for_valuation(
         if disclosed_date <= fy_disclosed_date:
             break
         period_type = normalize_period_type(row.get("type_of_current_period"))
-        if period_type not in {"1Q", "2Q", "3Q"} and not is_earn_forecast_revision_document(
-            row.get("type_of_document")
-        ):
+        if period_type not in {
+            "1Q",
+            "2Q",
+            "3Q",
+        } and not is_earn_forecast_revision_document(row.get("type_of_document")):
             continue
         adjusted_forward_eps = _nullable_float(row.get("adjusted_forecast_eps"))
         if adjusted_forward_eps is not None:
@@ -721,6 +806,105 @@ def _resolve_forward_eps_for_valuation(
     )
 
 
+def _derive_operating_profit_valuation_record(
+    rows: list[dict[str, Any]],
+    *,
+    latest_fy: dict[str, Any] | None,
+    valuation_shares: float | None,
+    close: float,
+    market_cap_bil_jpy: float | None,
+) -> dict[str, float | str | None]:
+    actual_operating_profit = _nullable_float(
+        latest_fy.get("operating_profit") if latest_fy else None
+    )
+    (
+        forecast_operating_profit,
+        forward_op_date,
+        forward_op_period,
+        forward_op_source,
+    ) = _resolve_forward_operating_profit_for_valuation(rows, latest_fy=latest_fy)
+    shares = valuation_shares if valuation_shares is not None else np.nan
+    market_cap_jpy = (
+        market_cap_bil_jpy * 1e9
+        if market_cap_bil_jpy is not None
+        and math.isfinite(market_cap_bil_jpy)
+        and market_cap_bil_jpy > 0
+        else (
+            close * shares
+            if math.isfinite(close) and math.isfinite(shares) and shares > 0
+            else np.nan
+        )
+    )
+    return {
+        "valuation_operating_profit": _nan_if_none(actual_operating_profit),
+        "valuation_forward_operating_profit": _nan_if_none(forecast_operating_profit),
+        "valuation_forward_operating_profit_disclosed_date": forward_op_date,
+        "valuation_forward_operating_profit_period_type": forward_op_period,
+        "valuation_forward_operating_profit_source": forward_op_source,
+        "operating_profit_per_share": _per_share_value(actual_operating_profit, shares),
+        "forecast_operating_profit_per_share": _per_share_value(
+            forecast_operating_profit, shares
+        ),
+        "p_op": _capitalization_ratio(market_cap_jpy, actual_operating_profit),
+        "forward_p_op": _capitalization_ratio(
+            market_cap_jpy, forecast_operating_profit
+        ),
+    }
+
+
+def _resolve_forward_operating_profit_for_valuation(
+    rows: list[dict[str, Any]],
+    *,
+    latest_fy: dict[str, Any] | None,
+) -> tuple[float | None, str | None, str | None, str | None]:
+    if latest_fy is None:
+        return None, None, None, None
+
+    fy_disclosed_date = str(latest_fy.get("disclosed_date") or "")
+    for row in reversed(rows):
+        disclosed_date = str(row.get("disclosed_date") or "")
+        if disclosed_date <= fy_disclosed_date:
+            break
+        period_type = normalize_period_type(row.get("type_of_current_period"))
+        if period_type not in {
+            "1Q",
+            "2Q",
+            "3Q",
+        } and not is_earn_forecast_revision_document(row.get("type_of_document")):
+            continue
+        forecast_operating_profit = _first_positive_float(
+            row.get("forecast_operating_profit"),
+            row.get("next_year_forecast_operating_profit"),
+        )
+        if forecast_operating_profit is not None:
+            return forecast_operating_profit, disclosed_date, period_type, "revised"
+
+    fy_forward_operating_profit = _first_positive_float(
+        latest_fy.get("next_year_forecast_operating_profit"),
+        latest_fy.get("forecast_operating_profit"),
+    )
+    return (
+        fy_forward_operating_profit,
+        fy_disclosed_date if fy_forward_operating_profit is not None else None,
+        "FY" if fy_forward_operating_profit is not None else None,
+        "fy" if fy_forward_operating_profit is not None else None,
+    )
+
+
+def _per_share_value(value: float | None, shares: float) -> float:
+    if value is None or not math.isfinite(shares) or shares <= 0:
+        return np.nan
+    result = value / shares
+    return result if math.isfinite(result) else np.nan
+
+
+def _capitalization_ratio(market_cap_jpy: float, profit_jpy: float | None) -> float:
+    if profit_jpy is None or not math.isfinite(market_cap_jpy) or profit_jpy <= 0:
+        return np.nan
+    result = market_cap_jpy / profit_jpy
+    return result if math.isfinite(result) and result > 0 else np.nan
+
+
 def _first_positive_float(*values: object) -> float | None:
     for value in values:
         numeric = _nullable_float(value)
@@ -745,7 +929,9 @@ def _nan_if_none(value: float | None) -> float:
 
 def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for (market_scope, is_fy), frame in scoped_df.groupby(["market_scope", "is_fy"], sort=False):
+    for (market_scope, is_fy), frame in scoped_df.groupby(
+        ["market_scope", "is_fy"], sort=False
+    ):
         rows.append(
             {
                 "market_scope": market_scope,
@@ -755,10 +941,15 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
                 "target_count": int((frame["eps120_positive_target"] == True).sum()),  # noqa: E712
                 "target_rate_pct": _rate_pct(frame["eps120_positive_target"]),
                 "eligible_target_rate_pct": _rate_pct(
-                    frame.loc[frame["eps120_target_eligible"] == True, "eps120_positive_target"]  # noqa: E712
+                    frame.loc[
+                        frame["eps120_target_eligible"].eq(True),
+                        "eps120_positive_target",
+                    ]
                 ),
                 "per_coverage_pct": _nonnull_pct(frame["per"]),
                 "forward_per_coverage_pct": _nonnull_pct(frame["forward_per"]),
+                "p_op_coverage_pct": _nonnull_pct(frame["p_op"]),
+                "forward_p_op_coverage_pct": _nonnull_pct(frame["forward_p_op"]),
                 "pbr_coverage_pct": _nonnull_pct(frame["pbr"]),
                 "market_cap_coverage_pct": _nonnull_pct(frame["market_cap_bil_jpy"]),
                 "daily_valuation_source_pct": float(
@@ -785,6 +976,8 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
             "eligible_target_rate_pct",
             "per_coverage_pct",
             "forward_per_coverage_pct",
+            "p_op_coverage_pct",
+            "forward_p_op_coverage_pct",
             "pbr_coverage_pct",
             "market_cap_coverage_pct",
             "daily_valuation_source_pct",
@@ -794,17 +987,23 @@ def _build_coverage_diagnostics_df(scoped_df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def _build_feature_bucket_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.DataFrame:
+def _build_feature_bucket_df(
+    scoped_df: pd.DataFrame, *, min_events: int
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     features = (
         "per",
         "forward_per",
+        "p_op",
+        "forward_p_op",
         "pbr",
         "market_cap_bil_jpy",
         "liquidity_residual_z",
         "overheat_state",
     )
-    for (market_scope, is_fy), group in scoped_df.groupby(["market_scope", "is_fy"], sort=False):
+    for (market_scope, is_fy), group in scoped_df.groupby(
+        ["market_scope", "is_fy"], sort=False
+    ):
         base_rate = _rate_pct(group["eps120_positive_target"])
         for feature in features:
             bucket_column = f"{feature}_bucket"
@@ -834,71 +1033,189 @@ def _build_feature_bucket_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.
     )
 
 
-def _build_threshold_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.DataFrame:
+def _build_threshold_grid_df(
+    scoped_df: pd.DataFrame, *, min_events: int
+) -> pd.DataFrame:
     specs: list[tuple[str, Callable[[pd.DataFrame], pd.Series]]] = [
         ("per_gt0_le10", lambda df: (df["per"] > 0) & (df["per"] <= 10)),
         ("per_gt0_le15", lambda df: (df["per"] > 0) & (df["per"] <= 15)),
         ("per_gt0_le20", lambda df: (df["per"] > 0) & (df["per"] <= 20)),
         ("per_ge20", lambda df: df["per"] >= 20),
         ("per_ge30", lambda df: df["per"] >= 30),
-        ("forward_per_gt0_le10", lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 10)),
-        ("forward_per_gt0_le15", lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15)),
-        ("forward_per_gt0_le20", lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 20)),
+        (
+            "forward_per_gt0_le10",
+            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 10),
+        ),
+        (
+            "forward_per_gt0_le15",
+            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15),
+        ),
+        (
+            "forward_per_gt0_le20",
+            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 20),
+        ),
         ("forward_per_ge20", lambda df: df["forward_per"] >= 20),
         ("forward_per_ge30", lambda df: df["forward_per"] >= 30),
+        ("p_op_gt0_le10", lambda df: (df["p_op"] > 0) & (df["p_op"] <= 10)),
+        ("p_op_gt0_le15", lambda df: (df["p_op"] > 0) & (df["p_op"] <= 15)),
+        ("p_op_gt0_le20", lambda df: (df["p_op"] > 0) & (df["p_op"] <= 20)),
+        ("p_op_ge20", lambda df: df["p_op"] >= 20),
+        ("p_op_ge30", lambda df: df["p_op"] >= 30),
+        (
+            "forward_p_op_gt0_le10",
+            lambda df: (df["forward_p_op"] > 0) & (df["forward_p_op"] <= 10),
+        ),
+        (
+            "forward_p_op_gt0_le15",
+            lambda df: (df["forward_p_op"] > 0) & (df["forward_p_op"] <= 15),
+        ),
+        (
+            "forward_p_op_gt0_le20",
+            lambda df: (df["forward_p_op"] > 0) & (df["forward_p_op"] <= 20),
+        ),
+        ("forward_p_op_ge20", lambda df: df["forward_p_op"] >= 20),
+        ("forward_p_op_ge30", lambda df: df["forward_p_op"] >= 30),
         ("pbr_gt0_le0.8", lambda df: (df["pbr"] > 0) & (df["pbr"] <= 0.8)),
         ("pbr_gt0_le1.0", lambda df: (df["pbr"] > 0) & (df["pbr"] <= 1.0)),
         ("pbr_gt0_le1.5", lambda df: (df["pbr"] > 0) & (df["pbr"] <= 1.5)),
         ("pbr_ge2.0", lambda df: df["pbr"] >= 2.0),
-        ("market_cap_bil_le50", lambda df: (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 50)),
-        ("market_cap_bil_le100", lambda df: (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 100)),
-        ("market_cap_bil_le300", lambda df: (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300)),
+        (
+            "market_cap_bil_le50",
+            lambda df: (
+                (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 50)
+            ),
+        ),
+        (
+            "market_cap_bil_le100",
+            lambda df: (
+                (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 100)
+            ),
+        ),
+        (
+            "market_cap_bil_le300",
+            lambda df: (
+                (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300)
+            ),
+        ),
         ("market_cap_bil_ge1000", lambda df: df["market_cap_bil_jpy"] >= 1000),
         ("liquidity_residual_z_ge1", lambda df: df["liquidity_residual_z"] >= 1.0),
-        ("liquidity_residual_z_le_minus1", lambda df: df["liquidity_residual_z"] <= -1.0),
-        ("overheat_20d_ge30", lambda df: df["overheat_state"].astype(str).eq(OVERHEAT_STATE)),
+        (
+            "liquidity_residual_z_le_minus1",
+            lambda df: df["liquidity_residual_z"] <= -1.0,
+        ),
+        (
+            "overheat_20d_ge30",
+            lambda df: df["overheat_state"].astype(str).eq(OVERHEAT_STATE),
+        ),
     ]
-    return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="threshold")
+    return _build_condition_grid(
+        scoped_df, specs, min_events=min_events, grid_name="threshold"
+    )
 
 
 def _build_combo_grid_df(scoped_df: pd.DataFrame, *, min_events: int) -> pd.DataFrame:
     specs: list[tuple[str, Callable[[pd.DataFrame], pd.Series]]] = [
         (
             "low_forward_per15_and_low_pbr1.5",
-            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15) & (df["pbr"] > 0) & (df["pbr"] <= 1.5),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & (df["pbr"] > 0)
+                & (df["pbr"] <= 1.5)
+            ),
+        ),
+        (
+            "low_forward_p_op15_and_low_pbr1.5",
+            lambda df: (
+                (df["forward_p_op"] > 0)
+                & (df["forward_p_op"] <= 15)
+                & (df["pbr"] > 0)
+                & (df["pbr"] <= 1.5)
+            ),
+        ),
+        (
+            "low_forward_p_op15_and_low_forward_per15",
+            lambda df: (
+                (df["forward_p_op"] > 0)
+                & (df["forward_p_op"] <= 15)
+                & (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+            ),
         ),
         (
             "low_forward_per15_and_mcap_le300",
-            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15) & (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & (df["market_cap_bil_jpy"] > 0)
+                & (df["market_cap_bil_jpy"] <= 300)
+            ),
+        ),
+        (
+            "low_forward_p_op15_and_mcap_le300",
+            lambda df: (
+                (df["forward_p_op"] > 0)
+                & (df["forward_p_op"] <= 15)
+                & (df["market_cap_bil_jpy"] > 0)
+                & (df["market_cap_bil_jpy"] <= 300)
+            ),
         ),
         (
             "low_pbr1.0_and_mcap_le300",
-            lambda df: (df["pbr"] > 0) & (df["pbr"] <= 1.0) & (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300),
+            lambda df: (
+                (df["pbr"] > 0)
+                & (df["pbr"] <= 1.0)
+                & (df["market_cap_bil_jpy"] > 0)
+                & (df["market_cap_bil_jpy"] <= 300)
+            ),
         ),
         (
             "low_forward_per15_low_pbr1.5_mcap_le300",
-            lambda df: (df["forward_per"] > 0) & (df["forward_per"] <= 15) & (df["pbr"] > 0) & (df["pbr"] <= 1.5) & (df["market_cap_bil_jpy"] > 0) & (df["market_cap_bil_jpy"] <= 300),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & (df["pbr"] > 0)
+                & (df["pbr"] <= 1.5)
+                & (df["market_cap_bil_jpy"] > 0)
+                & (df["market_cap_bil_jpy"] <= 300)
+            ),
         ),
         (
             "low_forward_per15_and_high_liquidity_z",
-            lambda df: (df["forward_per"] > 0)
-            & (df["forward_per"] <= 15)
-            & (df["liquidity_residual_z"] >= 1.0),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & (df["liquidity_residual_z"] >= 1.0)
+            ),
         ),
         (
             "low_forward_per15_and_stale_liquidity",
-            lambda df: (df["forward_per"] > 0)
-            & (df["forward_per"] <= 15)
-            & (df["liquidity_residual_z"] <= -1.0),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & (df["liquidity_residual_z"] <= -1.0)
+            ),
         ),
         (
             "low_forward_per15_and_not_overheat",
-            lambda df: (df["forward_per"] > 0)
-            & (df["forward_per"] <= 15)
-            & df["overheat_state"].astype(str).ne(OVERHEAT_STATE),
+            lambda df: (
+                (df["forward_per"] > 0)
+                & (df["forward_per"] <= 15)
+                & df["overheat_state"].astype(str).ne(OVERHEAT_STATE)
+            ),
+        ),
+        (
+            "low_forward_p_op15_and_not_overheat",
+            lambda df: (
+                (df["forward_p_op"] > 0)
+                & (df["forward_p_op"] <= 15)
+                & df["overheat_state"].astype(str).ne(OVERHEAT_STATE)
+            ),
         ),
     ]
-    return _build_condition_grid(scoped_df, specs, min_events=min_events, grid_name="combo")
+    return _build_condition_grid(
+        scoped_df, specs, min_events=min_events, grid_name="combo"
+    )
 
 
 def _build_annual_valuation_regime_df(event_df: pd.DataFrame) -> pd.DataFrame:
@@ -1145,7 +1462,9 @@ def _current_cross_section_item_record(
         "per": _float_or_nan(getattr(item, "per", None)),
         "pbr": _float_or_nan(getattr(item, "pbr", None)),
         "market_cap_bil_jpy": market_cap / 1e9 if math.isfinite(market_cap) else np.nan,
-        "liquidity_residual_z": _float_or_nan(getattr(item, "liquidityResidualZ", None)),
+        "liquidity_residual_z": _float_or_nan(
+            getattr(item, "liquidityResidualZ", None)
+        ),
         "adv60_to_free_float_pct": _float_or_nan(
             getattr(item, "adv60ToFreeFloatPct", None)
         ),
@@ -1237,7 +1556,9 @@ def _build_condition_grid(
     grid_name: str,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for (market_scope, is_fy), group in scoped_df.groupby(["market_scope", "is_fy"], sort=False):
+    for (market_scope, is_fy), group in scoped_df.groupby(
+        ["market_scope", "is_fy"], sort=False
+    ):
         base_rate = _rate_pct(group["eps120_positive_target"])
         for condition, predicate in specs:
             mask = predicate(group).fillna(False)
@@ -1279,6 +1600,8 @@ def _target_summary(frame: pd.DataFrame, base_rate_pct: float) -> dict[str, Any]
         "lift_vs_base": target_rate / base_rate_pct if base_rate_pct > 0 else np.nan,
         "median_per": _median(frame["per"]),
         "median_forward_per": _median(frame["forward_per"]),
+        "median_p_op": _median(frame["p_op"]),
+        "median_forward_p_op": _median(frame["forward_p_op"]),
         "median_pbr": _median(frame["pbr"]),
         "median_market_cap_bil_jpy": _median(frame["market_cap_bil_jpy"]),
         "median_liquidity_residual_z": _median(frame["liquidity_residual_z"]),
@@ -1296,6 +1619,8 @@ def _target_summary_columns() -> list[str]:
         "lift_vs_base",
         "median_per",
         "median_forward_per",
+        "median_p_op",
+        "median_forward_p_op",
         "median_pbr",
         "median_market_cap_bil_jpy",
         "median_liquidity_residual_z",
@@ -1335,7 +1660,11 @@ def _nonnull_pct(values: pd.Series) -> float:
 
 
 def _median(values: pd.Series) -> float:
-    numeric = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    numeric = (
+        pd.to_numeric(values, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
     return float(numeric.median()) if not numeric.empty else np.nan
 
 
@@ -1344,6 +1673,10 @@ def _bucket_for_feature(feature: str) -> Callable[[object], str]:
         return _bucket_per
     if feature == "forward_per":
         return _bucket_forward_per
+    if feature == "p_op":
+        return _bucket_p_op
+    if feature == "forward_p_op":
+        return _bucket_forward_p_op
     if feature == "pbr":
         return _bucket_pbr
     if feature == "market_cap_bil_jpy":
@@ -1373,6 +1706,14 @@ def _bucket_per(value: object) -> str:
 
 
 def _bucket_forward_per(value: object) -> str:
+    return _bucket_per(value)
+
+
+def _bucket_p_op(value: object) -> str:
+    return _bucket_per(value)
+
+
+def _bucket_forward_p_op(value: object) -> str:
     return _bucket_per(value)
 
 
@@ -1422,10 +1763,47 @@ def _bucket_liquidity_residual_z(value: object) -> str:
 def _bucket_order(feature: str, bucket: str) -> int:
     orders = {
         "per": ["non_positive", "le10", "10-15", "15-20", "20-30", "gt30", "missing"],
-        "forward_per": ["non_positive", "le10", "10-15", "15-20", "20-30", "gt30", "missing"],
-        "pbr": ["non_positive", "le0.8", "0.8-1.0", "1.0-1.5", "1.5-2.0", "gt2.0", "missing"],
-        "market_cap_bil_jpy": ["le50", "50-100", "100-300", "300-1000", "gt1000", "missing"],
+        "forward_per": [
+            "non_positive",
+            "le10",
+            "10-15",
+            "15-20",
+            "20-30",
+            "gt30",
+            "missing",
+        ],
+        "p_op": ["non_positive", "le10", "10-15", "15-20", "20-30", "gt30", "missing"],
+        "forward_p_op": [
+            "non_positive",
+            "le10",
+            "10-15",
+            "15-20",
+            "20-30",
+            "gt30",
+            "missing",
+        ],
+        "pbr": [
+            "non_positive",
+            "le0.8",
+            "0.8-1.0",
+            "1.0-1.5",
+            "1.5-2.0",
+            "gt2.0",
+            "missing",
+        ],
+        "market_cap_bil_jpy": [
+            "le50",
+            "50-100",
+            "100-300",
+            "300-1000",
+            "gt1000",
+            "missing",
+        ],
         "liquidity_residual_z": ["low", "neutral", "high", "missing"],
         "overheat_state": ["not_overheat", "overheat", "missing"],
     }
-    return orders.get(feature, []).index(bucket) if bucket in orders.get(feature, []) else 999
+    return (
+        orders.get(feature, []).index(bucket)
+        if bucket in orders.get(feature, [])
+        else 999
+    )

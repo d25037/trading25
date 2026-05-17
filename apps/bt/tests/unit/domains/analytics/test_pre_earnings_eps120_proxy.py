@@ -30,6 +30,8 @@ def test_pre_earnings_eps120_proxy_uses_only_pre_disclosure_valuation(
     assert event["valuation_forward_eps"] == pytest.approx(110.0)
     assert event["per"] == pytest.approx(105.0 / 100.0)
     assert event["forward_per"] == pytest.approx(105.0 / 110.0)
+    assert event["p_op"] == pytest.approx((105.0 * 1_000_000.0) / 100_000_000.0)
+    assert event["forward_p_op"] == pytest.approx((105.0 * 1_000_000.0) / 110_000_000.0)
     assert event["pbr"] == pytest.approx(105.0 / 500.0)
     assert event["market_cap_bil_jpy"] == pytest.approx(105.0 * 1_000_000.0 / 1e9)
 
@@ -85,6 +87,8 @@ def test_pre_earnings_eps120_proxy_prefers_daily_valuation_sot(
     assert event["valuation_bps"] == pytest.approx(350.0)
     assert event["per"] == pytest.approx(1.5)
     assert event["forward_per"] == pytest.approx(0.75)
+    assert event["p_op"] == pytest.approx(7_000_000_000.0 / 100_000_000.0)
+    assert event["forward_p_op"] == pytest.approx(7_000_000_000.0 / 110_000_000.0)
     assert event["pbr"] == pytest.approx(0.3)
     assert event["market_cap_bil_jpy"] == pytest.approx(7.0)
 
@@ -113,10 +117,14 @@ def test_pre_earnings_eps120_proxy_adjusts_per_share_values_to_share_basis(
     event = result.event_feature_df[result.event_feature_df["code"] == "4444"].iloc[0]
     assert event["valuation_actual_eps"] == pytest.approx(50.0)
     assert event["valuation_forward_eps"] == pytest.approx(60.0)
+    assert event["valuation_operating_profit"] == pytest.approx(100_000_000.0)
+    assert event["valuation_forward_operating_profit"] == pytest.approx(120_000_000.0)
     assert event["valuation_bps"] == pytest.approx(250.0)
     assert event["valuation_shares_outstanding"] == pytest.approx(2_000_000.0)
     assert event["per"] == pytest.approx(120.0 / 50.0)
     assert event["forward_per"] == pytest.approx(120.0 / 60.0)
+    assert event["p_op"] == pytest.approx((120.0 * 2_000_000.0) / 100_000_000.0)
+    assert event["forward_p_op"] == pytest.approx((120.0 * 2_000_000.0) / 120_000_000.0)
     assert event["pbr"] == pytest.approx(120.0 / 250.0)
     assert event["market_cap_bil_jpy"] == pytest.approx(120.0 * 2_000_000.0 / 1e9)
 
@@ -131,7 +139,9 @@ def test_pre_earnings_eps120_proxy_emits_summary_tables(tmp_path: Path) -> None:
     assert not result.combo_grid_df.empty
     assert not result.annual_valuation_regime_df.empty
     assert not result.current_cross_section_df.empty
-    assert {"target_rate_pct", "lift_vs_base"}.issubset(result.feature_bucket_df.columns)
+    assert {"target_rate_pct", "lift_vs_base"}.issubset(
+        result.feature_bucket_df.columns
+    )
     assert {"condition", "target_rate_pct", "lift_vs_base"}.issubset(
         result.threshold_grid_df.columns
     )
@@ -140,6 +150,7 @@ def test_pre_earnings_eps120_proxy_emits_summary_tables(tmp_path: Path) -> None:
         "condition_scope",
         "liquidity_regime",
         "forward_per_bucket",
+        "median_forward_p_op",
         "bucket_share_within_regime_year_pct",
     }.issubset(result.annual_valuation_regime_df.columns)
     assert {
@@ -228,6 +239,9 @@ def _build_proxy_db(db_path: Path) -> Path:
             forecast_eps DOUBLE,
             next_year_forecast_earnings_per_share DOUBLE,
             profit DOUBLE,
+            operating_profit DOUBLE,
+            forecast_operating_profit DOUBLE,
+            next_year_forecast_operating_profit DOUBLE,
             earnings_per_share DOUBLE,
             bps DOUBLE,
             shares_outstanding DOUBLE,
@@ -253,10 +267,42 @@ def _build_proxy_db(db_path: Path) -> Path:
     ]:
         stock_rows.extend(
             [
-                (code, "2024-01-05", close - 2.0, close - 1.0, close - 3.0, close - 2.0, 100.0),
-                (code, "2024-01-09", close - 1.0, close + 1.0, close - 2.0, close, 100.0),
-                (code, "2024-01-10", close, close + 2.0, close - 1.0, close + 1.0, 100.0),
-                (code, "2024-01-11", close + 1.0, close + 3.0, close, close + 2.0, 100.0),
+                (
+                    code,
+                    "2024-01-05",
+                    close - 2.0,
+                    close - 1.0,
+                    close - 3.0,
+                    close - 2.0,
+                    100.0,
+                ),
+                (
+                    code,
+                    "2024-01-09",
+                    close - 1.0,
+                    close + 1.0,
+                    close - 2.0,
+                    close,
+                    100.0,
+                ),
+                (
+                    code,
+                    "2024-01-10",
+                    close,
+                    close + 2.0,
+                    close - 1.0,
+                    close + 1.0,
+                    100.0,
+                ),
+                (
+                    code,
+                    "2024-01-11",
+                    close + 1.0,
+                    close + 3.0,
+                    close,
+                    close + 2.0,
+                    100.0,
+                ),
             ]
         )
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
@@ -270,18 +316,168 @@ def _build_proxy_db(db_path: Path) -> Path:
         ],
     )
     conn.executemany(
-        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            ("1111", "2023-09-10", "FinancialStatement", "FY", 110.0, None, 1_000.0, 100.0, 500.0, 1_000_000.0, 0.0),
-            ("1111", "2024-01-10", "FinancialStatement", "FY", 130.0, 150.0, 1_200.0, 120.0, 560.0, 1_100_000.0, 0.0),
-            ("2222", "2023-09-10", "FinancialStatement", "FY", 80.0, None, 900.0, 90.0, 400.0, 2_000_000.0, 0.0),
-            ("2222", "2024-01-10", "FinancialStatement", "FY", 90.0, 95.0, 950.0, 92.0, 420.0, 2_000_000.0, 0.0),
-            ("3333", "2021-09-10", "FinancialStatement", "FY", 500.0, None, 600.0, 50.0, 300.0, 1_000_000.0, 0.0),
-            ("3333", "2023-09-10", "FinancialStatement", "FY", None, None, 800.0, 80.0, 320.0, 1_000_000.0, 0.0),
-            ("3333", "2024-01-10", "FinancialStatement", "FY", 120.0, None, 900.0, 90.0, 330.0, 1_000_000.0, 0.0),
-            ("4444", "2023-09-10", "FinancialStatement", "FY", None, None, 1_000.0, 100.0, 500.0, 1_000_000.0, 0.0),
-            ("4444", "2023-12-01", "FinancialStatement", "2Q", 60.0, None, 500.0, 30.0, 250.0, 2_000_000.0, 0.0),
-            ("4444", "2024-01-10", "FinancialStatement", "FY", 180.0, None, 1_200.0, 120.0, 520.0, 2_000_000.0, 0.0),
+            (
+                "1111",
+                "2023-09-10",
+                "FinancialStatement",
+                "FY",
+                110.0,
+                None,
+                1_000.0,
+                100_000_000.0,
+                110_000_000.0,
+                None,
+                100.0,
+                500.0,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "1111",
+                "2024-01-10",
+                "FinancialStatement",
+                "FY",
+                130.0,
+                150.0,
+                1_200.0,
+                120_000_000.0,
+                130_000_000.0,
+                150_000_000.0,
+                120.0,
+                560.0,
+                1_100_000.0,
+                0.0,
+            ),
+            (
+                "2222",
+                "2023-09-10",
+                "FinancialStatement",
+                "FY",
+                80.0,
+                None,
+                900.0,
+                90_000_000.0,
+                80_000_000.0,
+                None,
+                90.0,
+                400.0,
+                2_000_000.0,
+                0.0,
+            ),
+            (
+                "2222",
+                "2024-01-10",
+                "FinancialStatement",
+                "FY",
+                90.0,
+                95.0,
+                950.0,
+                95_000_000.0,
+                90_000_000.0,
+                95_000_000.0,
+                92.0,
+                420.0,
+                2_000_000.0,
+                0.0,
+            ),
+            (
+                "3333",
+                "2021-09-10",
+                "FinancialStatement",
+                "FY",
+                500.0,
+                None,
+                600.0,
+                60_000_000.0,
+                500_000_000.0,
+                None,
+                50.0,
+                300.0,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "3333",
+                "2023-09-10",
+                "FinancialStatement",
+                "FY",
+                None,
+                None,
+                800.0,
+                80_000_000.0,
+                None,
+                None,
+                80.0,
+                320.0,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "3333",
+                "2024-01-10",
+                "FinancialStatement",
+                "FY",
+                120.0,
+                None,
+                900.0,
+                90_000_000.0,
+                120_000_000.0,
+                None,
+                90.0,
+                330.0,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "4444",
+                "2023-09-10",
+                "FinancialStatement",
+                "FY",
+                None,
+                None,
+                1_000.0,
+                100_000_000.0,
+                None,
+                None,
+                100.0,
+                500.0,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "4444",
+                "2023-12-01",
+                "FinancialStatement",
+                "2Q",
+                60.0,
+                None,
+                500.0,
+                50_000_000.0,
+                120_000_000.0,
+                None,
+                30.0,
+                250.0,
+                2_000_000.0,
+                0.0,
+            ),
+            (
+                "4444",
+                "2024-01-10",
+                "FinancialStatement",
+                "FY",
+                180.0,
+                None,
+                1_200.0,
+                120_000_000.0,
+                180_000_000.0,
+                None,
+                120.0,
+                520.0,
+                2_000_000.0,
+                0.0,
+            ),
         ],
     )
     conn.close()

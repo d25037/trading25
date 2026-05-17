@@ -23,6 +23,7 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
     assert not result.threshold_response_df.empty
     assert not result.joint_threshold_response_df.empty
     assert not result.percentile_response_df.empty
+    assert not result.valuation_response_df.empty
     assert not result.nonoverlap_response_df.empty
     assert not result.annual_threshold_response_df.empty
     assert not result.liquidity_interaction_df.empty
@@ -34,7 +35,15 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
         "median_forward_excess_return_pct",
         "severe_loss_rate_pct",
     }.issubset(result.threshold_response_df.columns)
-    assert {"market", "recent_return_20d_pct", "forward_close_excess_return_5d_pct"}.issubset(
+    assert {
+        "market",
+        "recent_return_20d_pct",
+        "forward_close_excess_return_5d_pct",
+    }.issubset(result.observation_sample_df.columns)
+    assert {"valuation_feature", "valuation_bucket", "median_forward_p_op"}.issubset(
+        result.valuation_response_df.columns
+    )
+    assert {"forward_per", "forward_p_op", "p_op"}.issubset(
         result.observation_sample_df.columns
     )
 
@@ -45,6 +54,7 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
 
     summary = build_summary_markdown(result)
     assert "Threshold Response" in summary
+    assert "Valuation Response" in summary
     assert "Non-Overlap Response" in summary
 
     bundle = write_recent_return_threshold_forward_response_bundle(
@@ -62,7 +72,10 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
         ({"pre_windows": (0,)}, "pre_windows must be positive"),
         ({"horizons": (0,)}, "horizons must be positive"),
         ({"min_observations": 0}, "min_observations must be positive"),
-        ({"severe_loss_threshold_pct": 0.0}, "severe_loss_threshold_pct must be negative"),
+        (
+            {"severe_loss_threshold_pct": 0.0},
+            "severe_loss_threshold_pct must be negative",
+        ),
     ],
 )
 def test_recent_return_threshold_forward_response_rejects_invalid_params(
@@ -76,9 +89,13 @@ def test_recent_return_threshold_forward_response_rejects_invalid_params(
         run_recent_return_threshold_forward_response_research(db_path, **kwargs)
 
 
-def test_recent_return_threshold_forward_response_requires_existing_db(tmp_path: Path) -> None:
+def test_recent_return_threshold_forward_response_requires_existing_db(
+    tmp_path: Path,
+) -> None:
     with pytest.raises(FileNotFoundError):
-        run_recent_return_threshold_forward_response_research(tmp_path / "missing.duckdb")
+        run_recent_return_threshold_forward_response_research(
+            tmp_path / "missing.duckdb"
+        )
 
 
 def _run_test_research(db_path: Path) -> RecentReturnThresholdForwardResponseResult:
@@ -139,8 +156,26 @@ def _build_recent_return_db(db_path: Path) -> Path:
         CREATE TABLE statements (
             code TEXT,
             disclosed_date TEXT,
+            type_of_document TEXT,
+            type_of_current_period TEXT,
+            operating_profit DOUBLE,
+            forecast_operating_profit DOUBLE,
+            next_year_forecast_operating_profit DOUBLE,
             shares_outstanding DOUBLE,
             treasury_shares DOUBLE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE daily_valuation (
+            code TEXT,
+            date TEXT,
+            price_basis_date TEXT,
+            per DOUBLE,
+            forward_per DOUBLE,
+            market_cap DOUBLE,
+            basis_version TEXT
         )
         """
     )
@@ -156,10 +191,14 @@ def _build_recent_return_db(db_path: Path) -> Path:
         for code, name, market_code, base, slope in codes:
             close = base + index * slope
             open_price = close * 0.995
-            stock_rows.append((code, date, open_price, close * 1.01, close * 0.99, close, 10_000))
+            stock_rows.append(
+                (code, date, open_price, close * 1.01, close * 0.99, close, 10_000)
+            )
             master_rows.append((date, code, name, market_code, "Market", None))
     conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
-    conn.executemany("INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows)
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
+    )
     conn.executemany(
         "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)",
         [
@@ -174,12 +213,54 @@ def _build_recent_return_db(db_path: Path) -> Path:
         ],
     )
     conn.executemany(
-        "INSERT INTO statements VALUES (?, ?, ?, ?)",
+        "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
-            ("1111", "2023-10-01", 1_000_000.0, 0.0),
-            ("2222", "2023-10-01", 1_200_000.0, 100_000.0),
-            ("3333", "2023-10-01", 900_000.0, 0.0),
+            (
+                "1111",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                100_000_000.0,
+                120_000_000.0,
+                None,
+                1_000_000.0,
+                0.0,
+            ),
+            (
+                "2222",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                80_000_000.0,
+                90_000_000.0,
+                None,
+                1_200_000.0,
+                100_000.0,
+            ),
+            (
+                "3333",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                60_000_000.0,
+                70_000_000.0,
+                None,
+                900_000.0,
+                0.0,
+            ),
         ],
+    )
+    valuation_rows: list[tuple[str, str, str, float, float, float, str]] = []
+    for date in dates:
+        valuation_rows.extend(
+            [
+                ("1111", date, date, 12.0, 10.0, 110_000_000.0, "unit"),
+                ("2222", date, date, 18.0, 16.0, 220_000_000.0, "unit"),
+                ("3333", date, date, 14.0, 12.0, 90_000_000.0, "unit"),
+            ]
+        )
+    conn.executemany(
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?)", valuation_rows
     )
     conn.close()
     return db_path

@@ -151,11 +151,22 @@ pooled historical result は、時代ごとの valuation 水準や流動性 regi
 | Ranking integration | value ranking とは別に growth-expectation regime として扱う |
 | Next validation | `forward_per >= 20/30` を hold-through / post-entry return と no-fill rate に接続し、年度 split / current cross-section / runup / ADV/FF を重ねる |
 
+#### P/OP Follow-Up
+
+2026-05-17 follow-up で、DB SoT化前の研究内派生指標として `P/OP = market cap / operating_profit` と `forward P/OP = market cap / forecast_operating_profit` を追加した。これは `PER = market cap / profit`、`forward PER = market cap / forecast profit` と同じ構造で、EPSやforward EPSのper-share表現を時価総額/利益の形へ戻したもの。
+
+単独の低 `forward P/OP` は、低 `forward PER` の完全な上位互換ではない。FY eventのEPS 1.2x proxyでは、むしろ高 `forward PER` の方が強いtarget proxyとして残る。一方で、`forward PER` が低いのに `forward P/OP` が相対的に高い銘柄は、「EPSは安く見えるが営業利益ベースでは安くない」状態を拾いやすく、特益・営業外・税要因を含む見かけの低PERを疑う品質フィルタとして価値がある。
+
+FY event全体では、`forward_per <= 15` かつ `forward_p_op >= 20` は `141` events / `103` codesで、EPS120 eligible target rate `3.57%`。`forward_per <= 15` 全体の `8.32%` より大きく悪化した。post-entry / hold-throughでも同条件は20d平均・中央値が悪化し、低forward PERの質を落とす警戒bucketとして読める。
+
+rerating participationかつoverheat除外に絞ると母数はさらに小さいが、方向は維持された。`forward_per <= 20` では `171` events、`forward_p_op >= 20` まで重ねると `6` eventsに留まる。したがって決算系では、現時点では強いhard excludeではなく、`low forward PER` を読む際の注意・減点signalとして扱う。
+
 ### Caveats
 
 - target は発表後 outcome: `is_fy=true`, `event_strength=positive`, `actual_eps > 0`, `next_year_forecast_eps >= actual_eps * 1.2`。
 - proxy は発表前営業日の close と、発表前までに開示済みの latest FY / latest forecast EPS だけで計算する。発表当日の FY row は valuation proxy に使わない。
 - valuation proxy は Daily Ranking の daily valuation semantics に寄せ、発表前 as-of の latest quarterly share baseline へ EPS / BPS / forecast EPS を調整したうえで、`PER = close / adjusted latest FY EPS`, `forward PER = close / adjusted latest forecast EPS`, `PBR = close / adjusted latest FY BPS`, `market cap = close * baseline shares_outstanding` とした。
+- `P/OP` / `forward P/OP` はこのfollow-up時点ではDB SoTではなく、研究内でstatementsの営業利益・予想営業利益とpre-event時価総額から派生した。
 - `stock_data.close` は local projection の adjusted close を使う。今回の修正は price adjustment そのものではなく、価格と分母EPS・BPS・株数の基準不整合を潰すもの。Daily Ranking calculator が持つ share adjustment events ベースの厳密な price-basis projection とは、古い split event でまだ残差がありうる。
 - PER / PBR / market cap coverage は statements の EPS/BPS/share coverage に依存する。missing bucket は単純に投資可能 signal として読まない。
 - `annual_valuation_regime_df` は historical event panel、`current_cross_section_df` は latest Daily Ranking cross-section で、母集団が異なる。pooled historical result をそのまま今日の銘柄断面の説明に使わない。
@@ -183,7 +194,7 @@ uv run --project apps/bt python apps/bt/scripts/research/run_pre_earnings_eps120
 
 - `event_feature_df`: event-level post-disclosure target plus pre-disclosure valuation proxies.
 - `coverage_diagnostics_df`: event count, eligible target count, target rate, and proxy coverage.
-- `feature_bucket_df`: PER / forward PER / PBR / market cap / liquidity residual Z bucket target rates.
+- `feature_bucket_df`: PER / forward PER / P/OP / forward P/OP / PBR / market cap / liquidity residual Z bucket target rates.
 - `threshold_grid_df`: single-condition target-rate grid.
 - `combo_grid_df`: value-style combo target-rate grid.
 - `annual_valuation_regime_df`: event-year x liquidity regime x forward PER bucket trend table, with `all_events` and `ex_20d_strong_runup` scopes.
