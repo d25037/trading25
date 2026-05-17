@@ -164,6 +164,7 @@ _JST = ZoneInfo("Asia/Tokyo")
 _MAX_FINS_SUMMARY_PAGES = 2000
 _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE = 4
 _STOCK_MASTER_REST_FALLBACK_MAX_ESTIMATED_CALLS = 12
+_MARGIN_REST_FALLBACK_MAX_ESTIMATED_CALLS = 250
 
 _FetchMethod = Literal["rest", "bulk"]
 
@@ -3200,6 +3201,30 @@ async def _sync_margin_data(
                     bulk_fallback_reason,
                 )
 
+    if decision.method == "rest" or used_rest_fallback:
+        rest_estimated_calls = max(len(rest_codes) + len(backfill_codes), 1)
+        if rest_estimated_calls > _MARGIN_REST_FALLBACK_MAX_ESTIMATED_CALLS:
+            reason = bulk_fallback_reason or decision.reason
+            message = (
+                "Refusing margin_data REST fallback for "
+                f"{len(rest_codes)} refresh codes and {len(backfill_codes)} backfill codes "
+                f"(estimated REST calls={rest_estimated_calls}, reason={reason}). "
+                "Run with /markets/margin-interest bulk available or narrow the margin target universe."
+            )
+            ctx.on_progress(
+                "margin",
+                progress_current,
+                progress_total,
+                message,
+            )
+            errors.append(message)
+            return {
+                "api_calls": api_calls,
+                "updated": updated,
+                "errors": errors,
+                "cancelled": False,
+            }
+
     if (decision.method == "rest" or used_rest_fallback) and rest_codes:
         _emit_fetch_execution_progress(
             ctx,
@@ -3261,6 +3286,25 @@ async def _sync_margin_data(
             fallback=used_rest_fallback,
             bulk_result=bulk_result,
         )
+
+    if (
+        backfill_codes
+        and len(backfill_codes) > _MARGIN_REST_FALLBACK_MAX_ESTIMATED_CALLS
+    ):
+        message = (
+            "Skipping margin_data REST backfill for "
+            f"{len(backfill_codes)} missing codes after bulk phase "
+            f"(limit={_MARGIN_REST_FALLBACK_MAX_ESTIMATED_CALLS}). "
+            "Run with complete /markets/margin-interest bulk coverage or narrow the margin target universe."
+        )
+        ctx.on_progress(
+            "margin",
+            progress_current,
+            progress_total,
+            message,
+        )
+        errors.append(message)
+        backfill_codes = []
 
     if backfill_codes:
         _emit_fetch_execution_progress(

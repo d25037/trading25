@@ -2385,6 +2385,125 @@ async def test_sync_margin_data_returns_cancelled_when_rest_loop_is_cancelled(
 
 
 @pytest.mark.asyncio
+async def test_sync_margin_data_refuses_large_rest_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient()
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_args: progress_messages.append(str(_args[-1])),
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="rest",
+            planner_api_calls=0,
+            estimated_rest_calls=300,
+            estimated_bulk_calls=None,
+            reason="bulk_probe_disabled",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        [f"{index:04d}" for index in range(300)],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+    )
+
+    margin_calls = [call for call in client.calls if call[0] == "/markets/margin-interest"]
+    assert result["cancelled"] is False
+    assert result["updated"] == 0
+    assert len(result["errors"]) == 1
+    assert "Refusing margin_data REST fallback" in result["errors"][0]
+    assert any("Refusing margin_data REST fallback" in message for message in progress_messages)
+    assert margin_calls == []
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_skips_large_rest_backfill_after_bulk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient()
+    progress_messages: list[str] = []
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[
+            BulkFileInfo(
+                key="margin_202602.csv.gz",
+                last_modified="2026-02-10T00:00:00Z",
+                size=1,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=1,
+        estimated_cache_misses=0,
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=_FakeBulkService(
+            results_by_endpoint={
+                "/markets/margin-interest": BulkFetchResult(
+                    rows=[],
+                    api_calls=0,
+                    cache_hits=1,
+                    cache_misses=0,
+                    selected_files=1,
+                )
+            }
+        ),
+        bulk_probe_disabled=False,
+        on_progress=lambda *_args: progress_messages.append(str(_args[-1])),
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=300,
+            estimated_bulk_calls=1,
+            plan=bulk_plan,
+            reason="bulk_estimate_lower",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        [f"{index:04d}" for index in range(300)],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-06",
+        existing_margin_codes=set(),
+    )
+
+    margin_calls = [call for call in client.calls if call[0] == "/markets/margin-interest"]
+    assert result["cancelled"] is False
+    assert result["updated"] == 0
+    assert len(result["errors"]) == 1
+    assert "Skipping margin_data REST backfill" in result["errors"][0]
+    assert any("Skipping margin_data REST backfill" in message for message in progress_messages)
+    assert margin_calls == []
+
+
+@pytest.mark.asyncio
 async def test_fetch_margin_by_code_falls_back_to_4digit_after_empty_5digit() -> None:
     class StrictMarginClient(DummyClient):
         async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
