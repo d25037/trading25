@@ -72,6 +72,8 @@ def ranking_db(tmp_path):
             bps REAL,
             sales REAL,
             operating_profit REAL,
+            forecast_operating_profit REAL,
+            next_year_forecast_operating_profit REAL,
             ordinary_profit REAL,
             operating_cash_flow REAL,
             dividend_fy REAL,
@@ -711,6 +713,50 @@ class TestGetRankings:
         assert item.forwardPer == pytest.approx(8.0)
         assert item.pbr == pytest.approx(1.0)
         assert item.marketCap == pytest.approx(100_000.0)
+
+    def test_include_valuation_prefers_daily_valuation_sot_for_forward_pop(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            _create_adjusted_metric_tables(conn)
+            _insert_daily_valuation(
+                conn,
+                code="72030",
+                eps=101.0,
+                bps=2020.0,
+                forward_eps=155.0,
+                per=24.5,
+                forward_per=15.9,
+                p_op=18.4,
+                forward_p_op=9.7,
+                pbr=1.21,
+                market_cap=2_460_000.0,
+                source="revised",
+                forward_date="2024-01-18",
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=20,
+            include_valuation=True,
+        )
+        reader.close()
+
+        item = next(row for row in result.rankings.tradingValue if row.code == "72030")
+        assert item.per == pytest.approx(24.5)
+        assert item.forwardPer == pytest.approx(15.9)
+        assert item.pOp == pytest.approx(18.4)
+        assert item.forwardPOp == pytest.approx(9.7)
+        assert item.pbr == pytest.approx(1.21)
+        assert item.marketCap == pytest.approx(2_460_000.0)
+        assert item.forwardEpsDisclosedDate == "2024-01-18"
+        assert item.forwardEpsSource == "revised"
 
     def test_include_valuation_filters_forward_eps_source_disclosure_before_limit(
         self, ranking_db

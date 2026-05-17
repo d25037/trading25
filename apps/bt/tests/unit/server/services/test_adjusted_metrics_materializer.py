@@ -182,6 +182,53 @@ def test_rebuild_daily_valuation_uses_fy_bps_when_latest_revision_has_no_bps(
     assert valuation[0]["forward_eps_source"] == "revised"
 
 
+def test_rebuild_daily_valuation_does_not_carry_forward_eps_before_latest_fy(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "3853",
+            "disclosed_date": "2022-02-14",
+            "type_of_current_period": "3Q",
+            "earnings_per_share": 40.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "3853",
+            "disclosed_date": "2025-05-14",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 35.0,
+            "bps": 500.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "3853",
+            "date": "2026-05-15",
+            "open": 1500.0,
+            "high": 1500.0,
+            "low": 1500.0,
+            "close": 1500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+
+    AdjustedMetricsMaterializer(market_db).rebuild_all()
+
+    valuation = market_db.get_daily_valuation("3853")
+
+    assert valuation[0]["eps"] == pytest.approx(35.0)
+    assert valuation[0]["per"] == pytest.approx(1500.0 / 35.0)
+    assert valuation[0]["forward_eps"] is None
+    assert valuation[0]["forward_per"] is None
+    assert valuation[0]["forward_eps_disclosed_date"] is None
+    assert valuation[0]["forward_eps_source"] is None
+
+
 def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> None:
     market_db.upsert_statements([
         {

@@ -2086,6 +2086,17 @@ class MarketDb:
                   AND adjusted_forecast_eps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
+            fy_cycle_anchors AS (
+                SELECT code, disclosed_date
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND (
+                      adjusted_eps > 0
+                      OR adjusted_bps > 0
+                  )
+                ORDER BY code, disclosed_date
+            ),
             actual_operating_profit_metrics AS (
                 SELECT code, disclosed_date, operating_profit
                 FROM statements
@@ -2129,6 +2140,9 @@ class MarketDb:
             ASOF LEFT JOIN forward_metrics AS f
               ON s.code = f.code
              AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN fy_cycle_anchors AS fy
+              ON s.code = fy.code
+             AND s.date >= fy.disclosed_date
             ASOF LEFT JOIN actual_operating_profit_metrics AS op
               ON s.code = op.code
              AND s.date >= op.disclosed_date
@@ -2140,12 +2154,25 @@ class MarketDb:
              AND s.date >= sh.disclosed_date
             WHERE a.disclosed_date IS NOT NULL
                OR b.disclosed_date IS NOT NULL
-               OR f.disclosed_date IS NOT NULL
+               OR (
+                   f.disclosed_date IS NOT NULL
+                   AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+               )
                OR op.disclosed_date IS NOT NULL
-               OR fop.disclosed_date IS NOT NULL
+               OR (
+                   fop.disclosed_date IS NOT NULL
+                   AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
+               )
                OR sh.disclosed_date IS NOT NULL
             """,
-            [*normalized_codes, basis_version, basis_version, basis_version, basis_version],
+            [
+                *normalized_codes,
+                basis_version,
+                basis_version,
+                basis_version,
+                basis_version,
+                basis_version,
+            ],
         )
         candidate_count = int(count_row[0] or 0) if count_row else 0
         if candidate_count <= 0:
@@ -2193,6 +2220,17 @@ class MarketDb:
                   AND adjusted_forecast_eps IS NOT NULL
                 ORDER BY code, disclosed_date
             ),
+            fy_cycle_anchors AS (
+                SELECT code, disclosed_date
+                FROM statement_metrics_adjusted
+                WHERE basis_version = ?
+                  AND upper(period_type) = 'FY'
+                  AND (
+                      adjusted_eps > 0
+                      OR adjusted_bps > 0
+                  )
+                ORDER BY code, disclosed_date
+            ),
             actual_operating_profit_metrics AS (
                 SELECT code, disclosed_date, operating_profit
                 FROM statements
@@ -2233,14 +2271,21 @@ class MarketDb:
                 s.close,
                 a.adjusted_eps AS eps,
                 b.adjusted_bps AS bps,
-                f.adjusted_forecast_eps AS forward_eps,
+                CASE
+                    WHEN f.disclosed_date IS NOT NULL
+                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+                    THEN f.adjusted_forecast_eps
+                    ELSE NULL
+                END AS forward_eps,
                 CASE
                     WHEN s.close > 0 AND a.adjusted_eps > 0
                     THEN s.close / a.adjusted_eps
                     ELSE NULL
                 END AS per,
                 CASE
-                    WHEN s.close > 0 AND f.adjusted_forecast_eps > 0
+                    WHEN s.close > 0
+                     AND f.adjusted_forecast_eps > 0
+                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
                     THEN s.close / f.adjusted_forecast_eps
                     ELSE NULL
                 END AS forward_per,
@@ -2255,6 +2300,7 @@ class MarketDb:
                     WHEN s.close > 0
                      AND sh.adjusted_shares_outstanding > 0
                      AND fop.forecast_operating_profit > 0
+                     AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
                     THEN s.close * sh.adjusted_shares_outstanding / fop.forecast_operating_profit
                     ELSE NULL
                 END AS forward_p_op,
@@ -2281,14 +2327,17 @@ class MarketDb:
                 COALESCE(a.disclosed_date, b.disclosed_date) AS statement_disclosed_date,
                 CASE
                     WHEN f.adjusted_forecast_eps IS NOT NULL
+                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
                     THEN f.disclosed_date
                     ELSE NULL
                 END AS forward_eps_disclosed_date,
                 CASE
                     WHEN f.adjusted_forecast_eps IS NOT NULL
                      AND upper(f.period_type) = 'FY'
+                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
                     THEN 'fy'
                     WHEN f.adjusted_forecast_eps IS NOT NULL
+                     AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
                     THEN 'revised'
                     ELSE NULL
                 END AS forward_eps_source,
@@ -2304,6 +2353,9 @@ class MarketDb:
             ASOF LEFT JOIN forward_metrics AS f
               ON s.code = f.code
              AND s.date >= f.disclosed_date
+            ASOF LEFT JOIN fy_cycle_anchors AS fy
+              ON s.code = fy.code
+             AND s.date >= fy.disclosed_date
             ASOF LEFT JOIN actual_operating_profit_metrics AS op
               ON s.code = op.code
              AND s.date >= op.disclosed_date
@@ -2315,15 +2367,22 @@ class MarketDb:
              AND s.date >= sh.disclosed_date
             WHERE a.disclosed_date IS NOT NULL
                OR b.disclosed_date IS NOT NULL
-               OR f.disclosed_date IS NOT NULL
+               OR (
+                   f.disclosed_date IS NOT NULL
+                   AND (fy.disclosed_date IS NULL OR f.disclosed_date >= fy.disclosed_date)
+               )
                OR op.disclosed_date IS NOT NULL
-               OR fop.disclosed_date IS NOT NULL
+               OR (
+                   fop.disclosed_date IS NOT NULL
+                   AND (fy.disclosed_date IS NULL OR fop.disclosed_date >= fy.disclosed_date)
+               )
                OR sh.disclosed_date IS NOT NULL
             ON CONFLICT (code, date, basis_version)
             DO UPDATE SET {update_clause}
             """,
             [
                 *normalized_codes,
+                basis_version,
                 basis_version,
                 basis_version,
                 basis_version,

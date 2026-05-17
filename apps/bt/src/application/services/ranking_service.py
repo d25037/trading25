@@ -1275,13 +1275,21 @@ class RankingService:
         if not items_by_code:
             return
 
+        enriched_codes = self._enrich_items_from_adjusted_daily_valuation(
+            items_by_code,
+            target_date=target_date,
+            query_market_codes=query_market_codes,
+        )
+        if len(enriched_codes) == len(items_by_code):
+            return
+
         statement_rows = self._load_fundamental_statement_rows(
             target_date, query_market_codes
         )
         raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
         for row in statement_rows:
             code = _normalize_equity_code(row["code"])
-            if code in items_by_code:
+            if code in items_by_code and code not in enriched_codes:
                 raw_statements_by_code.setdefault(code, []).append(row)
 
         adjustment_events_by_code = self._load_adjustment_events_by_code(
@@ -1317,6 +1325,42 @@ class RankingService:
                 item.forwardEpsSource = valuation.forwardEpsSource
                 item.pbr = valuation.pbr
                 item.marketCap = valuation.marketCap
+
+    def _enrich_items_from_adjusted_daily_valuation(
+        self,
+        items_by_code: Mapping[str, list[RankingItem]],
+        *,
+        target_date: str,
+        query_market_codes: list[str],
+    ) -> set[str]:
+        valuation_frame = self._load_adjusted_daily_valuation_frame(
+            target_date,
+            query_market_codes,
+        )
+        if valuation_frame.empty:
+            return set()
+
+        enriched_codes: set[str] = set()
+        for row in valuation_frame.to_dict("records"):
+            code = _normalize_equity_code(row.get("code"))
+            items = items_by_code.get(code)
+            if not items:
+                continue
+            raw_source = _str_or_none(row.get("forward_eps_source"))
+            source = raw_source if raw_source in ("revised", "fy") else None
+            for item in items:
+                item.per = _finite_or_none(row.get("per"))
+                item.forwardPer = _finite_or_none(row.get("forward_per"))
+                item.pOp = _finite_or_none(row.get("p_op"))
+                item.forwardPOp = _finite_or_none(row.get("forward_p_op"))
+                item.forwardEpsDisclosedDate = _str_or_none(
+                    row.get("forward_eps_disclosed_date")
+                )
+                item.forwardEpsSource = cast(Literal["revised", "fy"] | None, source)
+                item.pbr = _finite_or_none(row.get("pbr"))
+                item.marketCap = _finite_or_none(row.get("market_cap"))
+            enriched_codes.add(code)
+        return enriched_codes
 
     @staticmethod
     def _filter_ranking_collections_by_forward_eps_source_date(
@@ -2614,7 +2658,11 @@ class RankingService:
                     bps,
                     forecast_eps,
                     next_year_forecast_earnings_per_share,
-                    shares_outstanding
+                    operating_profit,
+                    forecast_operating_profit,
+                    next_year_forecast_operating_profit,
+                    shares_outstanding,
+                    treasury_shares
                 FROM (
                     SELECT
                         {statements_norm} AS normalized_code,
@@ -2625,7 +2673,11 @@ class RankingService:
                         bps,
                         forecast_eps,
                         next_year_forecast_earnings_per_share,
+                        operating_profit,
+                        forecast_operating_profit,
+                        next_year_forecast_operating_profit,
                         shares_outstanding,
+                        treasury_shares,
                         ROW_NUMBER() OVER (
                             PARTITION BY {statements_norm}, disclosed_date
                             ORDER BY {statements_order}
@@ -2643,7 +2695,11 @@ class RankingService:
                 st.bps,
                 st.forecast_eps,
                 st.next_year_forecast_earnings_per_share,
-                st.shares_outstanding
+                st.operating_profit,
+                st.forecast_operating_profit,
+                st.next_year_forecast_operating_profit,
+                st.shares_outstanding,
+                st.treasury_shares
             FROM statements_canonical st
             JOIN stocks_canonical s
                 ON s.normalized_code = st.normalized_code
