@@ -2054,219 +2054,17 @@ class MarketDb:
             placeholders = ", ".join("?" for _ in normalized_codes)
             code_filter = f"WHERE code IN ({placeholders})"
 
-        count_row = self._fetchone(
-            f"""
-            WITH
-            stock_prices AS (
-                SELECT code, date, close
-                FROM stock_data
-                {code_filter}
-                ORDER BY code, date
-            ),
-            actual_metrics AS (
-                SELECT code, disclosed_date, adjusted_eps
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND upper(period_type) = 'FY'
-                  AND adjusted_eps IS NOT NULL
-                ORDER BY code, disclosed_date
-            ),
-            bps_metrics AS (
-                SELECT code, disclosed_date, adjusted_bps
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND upper(period_type) = 'FY'
-                  AND adjusted_bps IS NOT NULL
-                ORDER BY code, disclosed_date
-            ),
-            fy_cycle_anchors AS (
-                SELECT m.code, m.disclosed_date
-                FROM statement_metrics_adjusted AS m
-                LEFT JOIN statements AS s
-                  ON s.code = m.code
-                 AND s.disclosed_date = m.disclosed_date
-                WHERE m.basis_version = ?
-                  AND upper(m.period_type) = 'FY'
-                  AND (
-                      m.adjusted_eps > 0
-                      OR m.adjusted_bps > 0
-                  )
-                  AND (
-                      s.type_of_document IS NULL
-                      OR s.type_of_document NOT LIKE '%EarnForecastRevision%'
-                  )
-                ORDER BY m.code, m.disclosed_date
-            ),
-            forward_metrics AS (
-                SELECT
-                    m.code,
-                    m.disclosed_date,
-                    m.period_type,
-                    m.adjusted_forecast_eps,
-                    CASE
-                        WHEN s.type_of_document LIKE '%EarnForecastRevision%'
-                        THEN 'revised'
-                        WHEN upper(m.period_type) = 'FY'
-                        THEN 'fy'
-                        ELSE 'revised'
-                    END AS forward_source
-                FROM statement_metrics_adjusted AS m
-                LEFT JOIN fy_cycle_anchors AS fy
-                  ON fy.code = m.code
-                 AND fy.disclosed_date = m.disclosed_date
-                LEFT JOIN statements AS s
-                  ON s.code = m.code
-                 AND s.disclosed_date = m.disclosed_date
-                WHERE m.basis_version = ?
-                  AND m.adjusted_forecast_eps IS NOT NULL
-                  AND (
-                      upper(m.period_type) != 'FY'
-                      OR fy.disclosed_date IS NOT NULL
-                      OR s.type_of_document LIKE '%EarnForecastRevision%'
-                  )
-                ORDER BY m.code, m.disclosed_date
-            ),
-            actual_operating_profit_metrics AS (
-                SELECT st.code, st.disclosed_date, st.operating_profit
-                FROM statements AS st
-                JOIN fy_cycle_anchors AS fy
-                  ON fy.code = st.code
-                 AND fy.disclosed_date = st.disclosed_date
-                WHERE upper(st.type_of_current_period) = 'FY'
-                  AND st.operating_profit IS NOT NULL
-                ORDER BY st.code, st.disclosed_date
-            ),
-            forward_operating_profit_metrics AS (
-                SELECT
-                    st.code,
-                    st.disclosed_date,
-                    st.type_of_current_period AS period_type,
-                    CASE
-                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
-                        THEN 'revised'
-                        WHEN upper(st.type_of_current_period) = 'FY'
-                        THEN 'fy'
-                        ELSE 'revised'
-                    END AS forward_source,
-                    CASE
-                        WHEN st.type_of_document LIKE '%EarnForecastRevision%'
-                        THEN COALESCE(st.forecast_operating_profit, st.next_year_forecast_operating_profit)
-                        WHEN upper(st.type_of_current_period) = 'FY'
-                        THEN COALESCE(st.next_year_forecast_operating_profit, st.forecast_operating_profit)
-                        ELSE st.forecast_operating_profit
-                    END AS forecast_operating_profit
-                FROM statements AS st
-                LEFT JOIN fy_cycle_anchors AS fy
-                  ON fy.code = st.code
-                 AND fy.disclosed_date = st.disclosed_date
-                WHERE (
-                    upper(st.type_of_current_period) = 'FY'
-                    AND (
-                        fy.disclosed_date IS NOT NULL
-                        OR st.type_of_document LIKE '%EarnForecastRevision%'
-                    )
-                    AND (
-                        st.forecast_operating_profit IS NOT NULL
-                        OR st.next_year_forecast_operating_profit IS NOT NULL
-                    )
-                )
-                   OR (
-                       upper(st.type_of_current_period) != 'FY'
-                       AND st.forecast_operating_profit IS NOT NULL
-                   )
-                ORDER BY st.code, st.disclosed_date
-            ),
-            shares_metrics AS (
-                SELECT
-                    code,
-                    disclosed_date,
-                    adjusted_shares_outstanding,
-                    adjusted_treasury_shares
-                FROM statement_metrics_adjusted
-                WHERE basis_version = ?
-                  AND adjusted_shares_outstanding IS NOT NULL
-                ORDER BY code, disclosed_date
-            )
-            SELECT COUNT(*)
-            FROM stock_prices AS s
-            ASOF LEFT JOIN actual_metrics AS a
-              ON s.code = a.code
-             AND s.date >= a.disclosed_date
-            ASOF LEFT JOIN bps_metrics AS b
-              ON s.code = b.code
-             AND s.date >= b.disclosed_date
-            ASOF LEFT JOIN forward_metrics AS f
-              ON s.code = f.code
-             AND s.date >= f.disclosed_date
-            ASOF LEFT JOIN fy_cycle_anchors AS fy
-              ON s.code = fy.code
-             AND s.date >= fy.disclosed_date
-            ASOF LEFT JOIN actual_operating_profit_metrics AS op
-              ON s.code = op.code
-             AND s.date >= op.disclosed_date
-            ASOF LEFT JOIN forward_operating_profit_metrics AS fop
-              ON s.code = fop.code
-             AND s.date >= fop.disclosed_date
-            ASOF LEFT JOIN shares_metrics AS sh
-              ON s.code = sh.code
-             AND s.date >= sh.disclosed_date
-            WHERE a.disclosed_date IS NOT NULL
-               OR b.disclosed_date IS NOT NULL
-               OR (
-                   f.disclosed_date IS NOT NULL
-                   AND fy.disclosed_date IS NOT NULL
-                   AND (
-                       (
-                           f.forward_source = 'fy'
-                           AND f.disclosed_date = fy.disclosed_date
-                       )
-                       OR (
-                           f.forward_source = 'revised'
-                           AND f.disclosed_date > fy.disclosed_date
-                       )
-                   )
-               )
-               OR op.disclosed_date IS NOT NULL
-               OR (
-                   fop.disclosed_date IS NOT NULL
-                   AND fy.disclosed_date IS NOT NULL
-                   AND (
-                       (
-                           fop.forward_source = 'fy'
-                           AND fop.disclosed_date = fy.disclosed_date
-                       )
-                       OR (
-                           fop.forward_source = 'revised'
-                           AND fop.disclosed_date > fy.disclosed_date
-                       )
-                   )
-               )
-               OR sh.disclosed_date IS NOT NULL
-            """,
-            [
-                *normalized_codes,
-                basis_version,
-                basis_version,
-                basis_version,
-                basis_version,
-                basis_version,
-            ],
-        )
-        candidate_count = int(count_row[0] or 0) if count_row else 0
-        if candidate_count <= 0:
-            return 0
-
         now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        update_columns = [
-            column
-            for column in _DAILY_VALUATION_COLUMNS
-            if column not in {"code", "date", "basis_version"}
-        ]
-        update_clause = ", ".join(
-            f"{column} = excluded.{column}"
-            for column in update_columns
-        )
-        self._execute(
+        target_code_filter = ""
+        if normalized_codes:
+            placeholders = ", ".join("?" for _ in normalized_codes)
+            target_code_filter = f" AND code IN ({placeholders})"
+        delete_sql = f"""
+            DELETE FROM daily_valuation
+            WHERE basis_version = ?{target_code_filter}
+            """
+        target_params = [basis_version, *normalized_codes]
+        insert_sql = (
             f"""
             WITH
             stock_prices AS (
@@ -2577,22 +2375,35 @@ class MarketDb:
                    )
                )
                OR sh.disclosed_date IS NOT NULL
-            ON CONFLICT (code, date, basis_version)
-            DO UPDATE SET {update_clause}
-            """,
-            [
-                *normalized_codes,
-                basis_version,
-                basis_version,
-                basis_version,
-                basis_version,
-                basis_version,
-                price_basis_date,
-                basis_version,
-                now_iso,
-            ],
+            """
         )
-        return candidate_count
+        insert_params = [
+            *normalized_codes,
+            basis_version,
+            basis_version,
+            basis_version,
+            basis_version,
+            basis_version,
+            price_basis_date,
+            basis_version,
+            now_iso,
+        ]
+        count_sql = f"""
+            SELECT COUNT(*)
+            FROM daily_valuation
+            WHERE basis_version = ?{target_code_filter}
+            """
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN TRANSACTION")
+                self._conn.execute(delete_sql, target_params)
+                self._conn.execute(insert_sql, insert_params)
+                count_row = self._conn.execute(count_sql, target_params).fetchone()
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+        return int(count_row[0] or 0) if count_row else 0
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""
