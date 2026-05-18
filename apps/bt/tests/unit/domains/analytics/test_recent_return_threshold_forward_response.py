@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -24,6 +25,7 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
     assert not result.joint_threshold_response_df.empty
     assert not result.percentile_response_df.empty
     assert not result.valuation_response_df.empty
+    assert not result.valuation_interaction_df.empty
     assert not result.nonoverlap_response_df.empty
     assert not result.annual_threshold_response_df.empty
     assert not result.liquidity_interaction_df.empty
@@ -43,8 +45,15 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
     assert {"valuation_feature", "valuation_bucket", "median_forward_p_op"}.issubset(
         result.valuation_response_df.columns
     )
-    assert {"forward_per", "forward_p_op", "p_op"}.issubset(
+    assert {"forward_per", "forward_p_op", "p_op", "pbr"}.issubset(
         result.observation_sample_df.columns
+    )
+    assert "pbr" in set(result.valuation_response_df["valuation_feature"].astype(str))
+    assert {"interaction_bucket", "median_pbr", "median_forward_per"}.issubset(
+        result.valuation_interaction_df.columns
+    )
+    assert {"both_low", "low_pbr_only", "low_forward_per_only", "neither_low"}.issubset(
+        set(result.valuation_interaction_df["interaction_bucket"].astype(str))
     )
 
 
@@ -55,6 +64,7 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
     summary = build_summary_markdown(result)
     assert "Threshold Response" in summary
     assert "Valuation Response" in summary
+    assert "Valuation Interaction" in summary
     assert "Non-Overlap Response" in summary
 
     bundle = write_recent_return_threshold_forward_response_bundle(
@@ -80,7 +90,7 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
 )
 def test_recent_return_threshold_forward_response_rejects_invalid_params(
     tmp_path: Path,
-    kwargs: dict[str, object],
+    kwargs: dict[str, Any],
     message: str,
 ) -> None:
     db_path = _build_recent_return_db(tmp_path / "market.duckdb")
@@ -174,6 +184,7 @@ def _build_recent_return_db(db_path: Path) -> Path:
             price_basis_date TEXT,
             per DOUBLE,
             forward_per DOUBLE,
+            pbr DOUBLE,
             market_cap DOUBLE,
             basis_version TEXT
         )
@@ -185,7 +196,10 @@ def _build_recent_return_db(db_path: Path) -> Path:
     codes = [
         ("1111", "Alpha", "0111", 100.0, 0.35),
         ("2222", "Beta", "0111", 180.0, -0.15),
-        ("3333", "Gamma", "0112", 90.0, 0.05),
+        ("3333", "Gamma", "0111", 90.0, 0.05),
+        ("4444", "Delta", "0111", 120.0, 0.12),
+        ("5555", "Epsilon", "0111", 150.0, -0.03),
+        ("6666", "Zeta", "0111", 75.0, 0.18),
     ]
     for index, date in enumerate(dates):
         for code, name, market_code, base, slope in codes:
@@ -248,19 +262,55 @@ def _build_recent_return_db(db_path: Path) -> Path:
                 900_000.0,
                 0.0,
             ),
+            (
+                "4444",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                70_000_000.0,
+                75_000_000.0,
+                None,
+                800_000.0,
+                0.0,
+            ),
+            (
+                "5555",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                90_000_000.0,
+                100_000_000.0,
+                None,
+                1_100_000.0,
+                0.0,
+            ),
+            (
+                "6666",
+                "2023-10-01",
+                "FinancialStatement",
+                "FY",
+                50_000_000.0,
+                55_000_000.0,
+                None,
+                700_000.0,
+                0.0,
+            ),
         ],
     )
-    valuation_rows: list[tuple[str, str, str, float, float, float, str]] = []
+    valuation_rows: list[tuple[str, str, str, float, float, float, float, str]] = []
     for date in dates:
         valuation_rows.extend(
             [
-                ("1111", date, date, 12.0, 10.0, 110_000_000.0, "unit"),
-                ("2222", date, date, 18.0, 16.0, 220_000_000.0, "unit"),
-                ("3333", date, date, 14.0, 12.0, 90_000_000.0, "unit"),
+                ("1111", date, date, 12.0, 8.0, 0.5, 110_000_000.0, "unit"),
+                ("2222", date, date, 18.0, 30.0, 0.7, 220_000_000.0, "unit"),
+                ("3333", date, date, 14.0, 10.0, 2.0, 90_000_000.0, "unit"),
+                ("4444", date, date, 16.0, 14.0, 1.1, 120_000_000.0, "unit"),
+                ("5555", date, date, 20.0, 18.0, 1.6, 150_000_000.0, "unit"),
+                ("6666", date, date, 22.0, 22.0, 2.5, 75_000_000.0, "unit"),
             ]
         )
     conn.executemany(
-        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?)", valuation_rows
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?)", valuation_rows
     )
     conn.close()
     return db_path

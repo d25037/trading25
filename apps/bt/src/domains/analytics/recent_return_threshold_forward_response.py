@@ -70,6 +70,12 @@ _VALUATION_BUCKET_ORDER: tuple[str, ...] = (
     "expensive_20pct",
     "expensive_10pct",
 )
+_VALUATION_INTERACTION_BUCKET_ORDER: tuple[str, ...] = (
+    "both_low",
+    "low_pbr_only",
+    "low_forward_per_only",
+    "neither_low",
+)
 _ENTRY_MODES: tuple[str, ...] = ("close_to_close", "next_open_to_close")
 _SAMPLE_SCOPES: tuple[str, ...] = ("daily", "weekly", "monthly")
 
@@ -96,6 +102,7 @@ class RecentReturnThresholdForwardResponseResult:
     joint_threshold_response_df: pd.DataFrame
     percentile_response_df: pd.DataFrame
     valuation_response_df: pd.DataFrame
+    valuation_interaction_df: pd.DataFrame
     nonoverlap_response_df: pd.DataFrame
     annual_threshold_response_df: pd.DataFrame
     liquidity_interaction_df: pd.DataFrame
@@ -203,6 +210,13 @@ def run_recent_return_threshold_forward_response_research(
             severe_loss_threshold_pct=severe_loss_threshold_pct,
             sample_scope="daily",
         )
+        valuation_interaction_df = _build_valuation_interaction_df(
+            ctx.connection,
+            horizons=resolved_horizons,
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            sample_scope="daily",
+        )
         nonoverlap_response_df = _build_nonoverlap_response_df(
             ctx.connection,
             pre_windows=resolved_pre_windows,
@@ -261,6 +275,7 @@ def run_recent_return_threshold_forward_response_research(
         joint_threshold_response_df=joint_threshold_response_df,
         percentile_response_df=percentile_response_df,
         valuation_response_df=valuation_response_df,
+        valuation_interaction_df=valuation_interaction_df,
         nonoverlap_response_df=nonoverlap_response_df,
         annual_threshold_response_df=annual_threshold_response_df,
         liquidity_interaction_df=liquidity_interaction_df,
@@ -303,6 +318,7 @@ def write_recent_return_threshold_forward_response_bundle(
             "joint_threshold_response_df": result.joint_threshold_response_df,
             "percentile_response_df": result.percentile_response_df,
             "valuation_response_df": result.valuation_response_df,
+            "valuation_interaction_df": result.valuation_interaction_df,
             "nonoverlap_response_df": result.nonoverlap_response_df,
             "annual_threshold_response_df": result.annual_threshold_response_df,
             "liquidity_interaction_df": result.liquidity_interaction_df,
@@ -366,6 +382,17 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
         ],
         limit=80,
     )
+    valuation_interaction = _top_rows_for_markdown(
+        result.valuation_interaction_df,
+        sort_columns=[
+            "market_scope",
+            "liquidity_scope",
+            "interaction_bucket_order",
+            "entry_mode",
+            "horizon",
+        ],
+        limit=60,
+    )
     nonoverlap = _top_rows_for_markdown(
         result.nonoverlap_response_df,
         sort_columns=[
@@ -425,6 +452,10 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
             "## Valuation Response",
             "",
             valuation,
+            "",
+            "## Valuation Interaction",
+            "",
+            valuation_interaction,
             "",
             "## Non-Overlap Response",
             "",
@@ -507,6 +538,7 @@ def _create_daily_valuation_view(conn: Any) -> None:
                 NULL::DOUBLE AS forward_per,
                 NULL::DOUBLE AS p_op,
                 NULL::DOUBLE AS forward_p_op,
+                NULL::DOUBLE AS pbr,
                 NULL::DOUBLE AS market_cap
             WHERE FALSE
             """
@@ -515,10 +547,11 @@ def _create_daily_valuation_view(conn: Any) -> None:
     valuation_code = normalize_code_sql("dv.code")
     daily_p_op_expr = _optional_daily_valuation_double_expr(conn, "p_op")
     daily_forward_p_op_expr = _optional_daily_valuation_double_expr(conn, "forward_p_op")
+    daily_pbr_expr = _optional_daily_valuation_double_expr(conn, "pbr")
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP VIEW recent_return_daily_valuation AS
-        SELECT code, date, per, forward_per, p_op, forward_p_op, market_cap
+        SELECT code, date, per, forward_per, p_op, forward_p_op, pbr, market_cap
         FROM (
             SELECT
                 {valuation_code} AS code,
@@ -527,6 +560,7 @@ def _create_daily_valuation_view(conn: Any) -> None:
                 CAST(dv.forward_per AS DOUBLE) AS forward_per,
                 {daily_p_op_expr} AS p_op,
                 {daily_forward_p_op_expr} AS forward_p_op,
+                {daily_pbr_expr} AS pbr,
                 CAST(dv.market_cap AS DOUBLE) AS market_cap,
                 row_number() OVER (
                     PARTITION BY {valuation_code}, dv.date
@@ -812,6 +846,7 @@ def _create_observation_panel(
                 fop.forecast_operating_profit_disclosed_date,
                 dv.per,
                 dv.forward_per,
+                dv.pbr,
                 CASE
                     WHEN dv.market_cap > 0 THEN dv.market_cap / 1000000000.0
                     WHEN p.close > 0 AND share.shares_outstanding > 0
@@ -1071,6 +1106,8 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
                 AS per_coverage_pct,
             avg(CASE WHEN forward_per IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
                 AS forward_per_coverage_pct,
+            avg(CASE WHEN pbr IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
+                AS pbr_coverage_pct,
             avg(CASE WHEN p_op IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
                 AS p_op_coverage_pct,
             avg(CASE WHEN forward_p_op IS NOT NULL THEN 1.0 ELSE 0.0 END) * 100.0
@@ -1093,6 +1130,7 @@ def _build_coverage_diagnostics_df(conn: Any) -> pd.DataFrame:
             "liquidity_residual_z_coverage_pct",
             "per_coverage_pct",
             "forward_per_coverage_pct",
+            "pbr_coverage_pct",
             "p_op_coverage_pct",
             "forward_p_op_coverage_pct",
         ],
@@ -1255,7 +1293,7 @@ def _build_valuation_response_df(
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     sample_filter = _sample_scope_filter(sample_scope)
-    for feature in ("per", "forward_per", "p_op", "forward_p_op"):
+    for feature in ("per", "forward_per", "pbr", "p_op", "forward_p_op"):
         conn.execute(
             f"""
             CREATE OR REPLACE TEMP VIEW recent_return_valuation_work AS
@@ -1300,6 +1338,68 @@ def _build_valuation_response_df(
                         )
                     )
     return _concat_sorted(frames, columns=_valuation_response_columns())
+
+
+def _build_valuation_interaction_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+    sample_scope: str,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    sample_filter = _sample_scope_filter(sample_scope)
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TEMP VIEW recent_return_valuation_interaction_work AS
+        SELECT
+            *,
+            percent_rank() OVER (
+                PARTITION BY market_scope, anchor_year
+                ORDER BY pbr
+            ) AS pbr_rank_pct,
+            percent_rank() OVER (
+                PARTITION BY market_scope, anchor_year
+                ORDER BY forward_per
+            ) AS forward_per_rank_pct
+        FROM recent_return_threshold_scoped
+        WHERE {sample_filter}
+          AND pbr IS NOT NULL
+          AND pbr > 0
+          AND forward_per IS NOT NULL
+          AND forward_per > 0
+        """
+    )
+    for bucket in _VALUATION_INTERACTION_BUCKET_ORDER:
+        condition = _valuation_interaction_condition(bucket)
+        for entry_mode in _ENTRY_MODES:
+            for horizon in horizons:
+                frames.append(
+                    _aggregate_condition(
+                        conn,
+                        source_name="recent_return_valuation_interaction_work",
+                        condition=condition,
+                        condition_fields={
+                            "condition_family": "pbr_forward_per_interaction",
+                            "sample_scope": sample_scope,
+                            "low_cutoff_pct": 20.0,
+                            "interaction_bucket": bucket,
+                            "interaction_bucket_order": _VALUATION_INTERACTION_BUCKET_ORDER.index(
+                                bucket
+                            ),
+                            "entry_mode": entry_mode,
+                            "horizon": int(horizon),
+                        },
+                        return_column=_return_column(entry_mode, horizon),
+                        sample_scope=sample_scope,
+                        group_by_year=False,
+                        min_observations=min_observations,
+                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                        sample_filter_override="TRUE",
+                    )
+                )
+    return _concat_sorted(frames, columns=_valuation_interaction_columns())
 
 
 def _build_nonoverlap_response_df(
@@ -1453,6 +1553,7 @@ def _aggregate_condition(
             median(liquidity_residual_z) AS median_liquidity_residual_z,
             median(per) AS median_per,
             median(forward_per) AS median_forward_per,
+            median(pbr) AS median_pbr,
             median(p_op) AS median_p_op,
             median(forward_p_op) AS median_forward_p_op
         FROM {source_name}
@@ -1490,6 +1591,7 @@ def _aggregate_condition(
             "median_liquidity_residual_z",
             "median_per",
             "median_forward_per",
+            "median_pbr",
             "median_p_op",
             "median_forward_p_op",
         ]
@@ -1516,6 +1618,7 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             liquidity_regime,
             per,
             forward_per,
+            pbr,
             p_op,
             forward_p_op,
             market_cap_bil_jpy,
@@ -1584,6 +1687,20 @@ def _valuation_bucket_condition(bucket: str) -> str:
     raise ValueError(f"unsupported valuation bucket: {bucket}")
 
 
+def _valuation_interaction_condition(bucket: str) -> str:
+    pbr_low = "pbr_rank_pct <= 0.2"
+    fper_low = "forward_per_rank_pct <= 0.2"
+    if bucket == "both_low":
+        return f"{pbr_low} AND {fper_low}"
+    if bucket == "low_pbr_only":
+        return f"{pbr_low} AND NOT ({fper_low})"
+    if bucket == "low_forward_per_only":
+        return f"NOT ({pbr_low}) AND {fper_low}"
+    if bucket == "neither_low":
+        return f"NOT ({pbr_low}) AND NOT ({fper_low})"
+    raise ValueError(f"unsupported valuation interaction bucket: {bucket}")
+
+
 def _return_column(entry_mode: str, horizon: int) -> str:
     if entry_mode == "close_to_close":
         return f"forward_close_excess_return_{horizon}d_pct"
@@ -1644,6 +1761,7 @@ def _base_response_columns() -> list[str]:
         "median_liquidity_residual_z",
         "median_per",
         "median_forward_per",
+        "median_pbr",
         "median_p_op",
         "median_forward_p_op",
     ]
@@ -1702,6 +1820,21 @@ def _valuation_response_columns() -> list[str]:
         "valuation_feature",
         "valuation_bucket",
         "valuation_bucket_order",
+        "market_scope",
+        "liquidity_scope",
+        "entry_mode",
+        "horizon",
+        *_base_response_columns()[6:],
+    ]
+
+
+def _valuation_interaction_columns() -> list[str]:
+    return [
+        "condition_family",
+        "sample_scope",
+        "low_cutoff_pct",
+        "interaction_bucket",
+        "interaction_bucket_order",
         "market_scope",
         "liquidity_scope",
         "entry_mode",
