@@ -557,6 +557,8 @@ class DummyTimeSeriesStore:
     ) -> None:
         self._market_db = market_db
         self._inspection = inspection
+        self.index_margin_data_calls = 0
+        self.inspect_calls = 0
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
         return self._market_db.upsert_topix_data(rows)
@@ -589,6 +591,7 @@ class DummyTimeSeriesStore:
         return None
 
     def index_margin_data(self) -> None:
+        self.index_margin_data_calls += 1
         return None
 
     def index_statements(self) -> None:
@@ -602,6 +605,7 @@ class DummyTimeSeriesStore:
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection:
         del statement_non_null_columns
+        self.inspect_calls += 1
         if self._inspection is not None:
             return self._inspection
         return _inspection_from_market_db(
@@ -2159,9 +2163,11 @@ async def test_sync_margin_data_skips_bulk_fetch_when_selected_files_do_not_adva
             )
         }
     )
+    store = DummyTimeSeriesStore(market_db)
     ctx = _build_ctx(
         client=client,
         market_db=market_db,
+        time_series_store=store,
         bulk_service=bulk_service,
         bulk_probe_disabled=False,
         on_progress=lambda *_args: progress_messages.append(str(_args[-1])),
@@ -2198,6 +2204,8 @@ async def test_sync_margin_data_skips_bulk_fetch_when_selected_files_do_not_adva
     assert result["updated"] == 0
     assert bulk_service.fetch_calls == []
     assert margin_calls == []
+    assert store.index_margin_data_calls == 0
+    assert store.inspect_calls == 0
     assert any("No new /markets/margin-interest bulk files" in message for message in progress_messages)
 
 

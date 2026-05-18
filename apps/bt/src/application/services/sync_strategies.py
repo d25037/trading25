@@ -3435,6 +3435,31 @@ async def _sync_margin_data(
             bulk_result=None,
         )
 
+    if updated == 0:
+        if empty_fetch_codes:
+            next_empty_codes = set(current_empty_codes)
+            next_empty_codes.update(empty_fetch_codes)
+            if has_existing_margin_snapshot:
+                next_empty_codes -= existing_margin_code_set
+            await _save_frontier_code_cache(
+                ctx,
+                METADATA_KEYS["MARGIN_EMPTY_CODES"],
+                current_frontier,
+                next_empty_codes,
+            )
+        ctx.on_progress(
+            "margin",
+            progress_current,
+            progress_total,
+            "No margin_data rows changed; skipping margin index/export.",
+        )
+        return {
+            "api_calls": api_calls,
+            "updated": updated,
+            "errors": errors,
+            "cancelled": False,
+        }
+
     await _index_margin_rows(ctx)
     next_empty_codes = set(current_empty_codes)
     next_empty_codes.update(empty_fetch_codes)
