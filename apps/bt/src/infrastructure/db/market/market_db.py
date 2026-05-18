@@ -141,6 +141,7 @@ _STATEMENT_METRICS_ADJUSTED_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("raw_treasury_shares", "DOUBLE"),
     ("adjusted_treasury_shares", "DOUBLE"),
 )
+_STATEMENT_METRICS_ADJUSTED_RELATION = "__tmp_statement_metrics_adjusted_upsert"
 
 _DAILY_VALUATION_COLUMNS: tuple[str, ...] = (
     "code",
@@ -1961,14 +1962,13 @@ class MarketDb:
         return len(rows)
 
     def upsert_statement_metrics_adjusted(self, rows: list[dict[str, Any]]) -> int:
-        """Canonical split-adjusted statement metrics に upsert。"""
+        """Canonical split-adjusted statement metrics を relation-based upsert。"""
         if not rows:
             return 0
         self._assert_writable()
 
         now_iso = datetime.now().isoformat()  # noqa: DTZ005
         columns = _STATEMENT_METRICS_ADJUSTED_COLUMNS
-        placeholders = ", ".join("?" for _ in columns)
         update_columns = [
             column
             for column in columns
@@ -1979,22 +1979,39 @@ class MarketDb:
             f"{column} = excluded.{column}"
             for column in update_columns
         )
-        sql = (
-            f"INSERT INTO statement_metrics_adjusted ({', '.join(columns)}) "
-            f"VALUES ({placeholders}) "
-            "ON CONFLICT (code, disclosed_date, period_end, period_type, basis_version) "
-            f"DO UPDATE SET {update_clause}"
+        conflict_columns = (
+            "code",
+            "disclosed_date",
+            "period_end",
+            "period_type",
+            "basis_version",
         )
-        params = [
-            tuple(
-                row.get(column)
-                if column != "created_at"
-                else row.get("created_at", now_iso)
+        deduped: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for row in rows:
+            payload = {
+                column: row.get(column)
+                if column != "created_at" or column in row
+                else now_iso
                 for column in columns
-            )
-            for row in rows
-        ]
-        self._executemany(sql, params)
+            }
+            deduped[tuple(payload[column] for column in conflict_columns)] = payload
+        dataframe = pd.DataFrame.from_records(
+            list(deduped.values()),
+            columns=columns,
+        )
+        columns_sql = ", ".join(columns)
+        conflict_sql = ", ".join(conflict_columns)
+        sql = f"""
+            INSERT INTO statement_metrics_adjusted ({columns_sql})
+            SELECT {columns_sql} FROM {_STATEMENT_METRICS_ADJUSTED_RELATION}
+            ON CONFLICT ({conflict_sql}) DO UPDATE SET {update_clause}
+            """
+        with self._lock:
+            self._conn.register(_STATEMENT_METRICS_ADJUSTED_RELATION, dataframe)
+            try:
+                self._conn.execute(sql)
+            finally:
+                self._conn.unregister(_STATEMENT_METRICS_ADJUSTED_RELATION)
         return len(rows)
 
     def upsert_daily_valuation(self, rows: list[dict[str, Any]]) -> int:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,7 @@ from src.infrastructure.db.market.market_db import MarketDb
 
 
 @pytest.fixture()
-def market_db(tmp_path: Path) -> MarketDb:
+def market_db(tmp_path: Path) -> Iterator[MarketDb]:
     db = MarketDb(str(tmp_path / "market.duckdb"))
     yield db
     db.close()
@@ -134,6 +135,41 @@ def test_upsert_and_read_adjusted_statement_metrics(market_db: MarketDb) -> None
     assert as_of_rows[0]["code"] == "7203"
     assert as_of_rows[0]["adjusted_eps"] == pytest.approx(50.0)
     assert as_of_rows[0]["basis_version"] == "adjusted-v1:2024-12-30"
+
+
+def test_upsert_adjusted_statement_metrics_uses_last_duplicate_key(
+    market_db: MarketDb,
+) -> None:
+    rows: list[dict[str, Any]] = [
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "period_end": "2024-03-31",
+            "period_type": "FY",
+            "price_basis_date": "2024-12-30",
+            "adjusted_eps": 50.0,
+            "basis_version": "adjusted-v1:2024-12-30",
+            "created_at": "2026-05-16T00:00:00",
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "period_end": "2024-03-31",
+            "period_type": "FY",
+            "price_basis_date": "2024-12-30",
+            "adjusted_eps": 55.0,
+            "basis_version": "adjusted-v1:2024-12-30",
+            "created_at": "2026-05-16T00:01:00",
+        },
+    ]
+
+    assert market_db.upsert_statement_metrics_adjusted(rows) == 2
+
+    stored_rows = market_db.get_adjusted_statement_metrics("7203")
+
+    assert len(stored_rows) == 1
+    assert stored_rows[0]["adjusted_eps"] == pytest.approx(55.0)
+    assert stored_rows[0]["created_at"] == "2026-05-16T00:01:00"
 
 
 def test_upsert_and_read_daily_valuation(market_db: MarketDb) -> None:
