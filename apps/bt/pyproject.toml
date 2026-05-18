@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "vectorbt>=1.0.0",
     "pandas>=2.0.0",
-    "numpy>=1.20.0",
+    "numpy>=2.4.5",
     "lightgbm>=4.0.0",
     "typer>=0.25.1",
     "rich>=15.0.0",
