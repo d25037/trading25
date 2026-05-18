@@ -45,15 +45,15 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/js-yaml": "^4.0.9",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.1.7",
-    "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/coverage-v8": "^4.1.5",
-    "@vitest/ui": "^4.1.5",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.6",
+    "@vitest/ui": "^4.1.6",
     "happy-dom": "^20.9.0",
     "tailwindcss": "^4.2.2",
-    "vite": "^8.0.11",
-    "vitest": "^4.1.5"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.6"
   }
 }
