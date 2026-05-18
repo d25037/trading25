@@ -253,7 +253,13 @@ class TestSyncRoutes:
         default_store = MagicMock()
         client.app.state.market_time_series_store = default_store
 
-        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
+                return_value=None,
+            ),
+        ):
             mock_job = MagicMock()
             mock_job.job_id = "test-job-123"
             mock_job.data.resolved_mode = "incremental"
@@ -271,6 +277,65 @@ class TestSyncRoutes:
             assert mock_start.await_args.kwargs["close_time_series_store"] is True
             assert mock_start.await_args.kwargs["close_market_db"] is True
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is False
+
+    def test_sync_start_rejects_while_adjusted_metrics_materialize_is_running(
+        self,
+        client: TestClient,
+    ) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
+                return_value=object(),
+            ),
+        ):
+            resp = client.post("/api/db/sync", json={"mode": "incremental"})
+
+        assert resp.status_code == 409
+        assert mock_start.await_count == 0
+
+    def test_adjusted_metrics_materialize_start(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_active_job", return_value=None),
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
+                return_value=None,
+            ),
+            patch("src.entrypoints.http.routes.db._clear_market_resources") as clear_resources,
+            patch("src.entrypoints.http.routes.db._restore_read_only_market_resources") as restore_resources,
+            patch("src.entrypoints.http.routes.db.MarketDb") as market_db_cls,
+            patch(
+                "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
+                new_callable=AsyncMock,
+            ) as mock_start,
+        ):
+            mock_market_db = MagicMock()
+            market_db_cls.return_value = mock_market_db
+            mock_job = MagicMock()
+            mock_job.job_id = "materialize-job-1"
+            mock_job.data.mode = "full"
+            mock_start.return_value = mock_job
+
+            resp = client.post("/api/db/adjusted-metrics/materialize")
+
+        assert resp.status_code == 202
+        data = resp.json()
+        assert data["jobId"] == "materialize-job-1"
+        assert data["mode"] == "full"
+        clear_resources.assert_called_once()
+        restore_resources.assert_not_called()
+        mock_start.assert_awaited_once()
+        assert mock_start.await_args.args[0] is mock_market_db
+        assert mock_start.await_args.kwargs["close_market_db"] is True
+
+    def test_adjusted_metrics_materialize_rejects_while_sync_is_running(
+        self,
+        client: TestClient,
+    ) -> None:
+        with patch("src.entrypoints.http.routes.db.sync_job_manager.get_active_job", return_value=object()):
+            resp = client.post("/api/db/adjusted-metrics/materialize")
+
+        assert resp.status_code == 409
 
     def test_sync_start_with_bulk_enforcement(self, client: TestClient) -> None:
         default_store = MagicMock()

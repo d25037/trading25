@@ -1268,6 +1268,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/db/adjusted-metrics/materialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start adjusted metrics materialization job */
+        post: operations["start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get adjusted metrics materialization job status */
+        get: operations["get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/adjusted-metrics/materialize/jobs/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get active adjusted metrics materialization job status */
+        get: operations["get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db/intraday/sync": {
         parameters: {
             query?: never;
@@ -2868,6 +2919,47 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdjustedMetricsMaterializeJobResponse */
+        AdjustedMetricsMaterializeJobResponse: {
+            /** Completedat */
+            completedAt?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Jobid */
+            jobId: string;
+            /**
+             * Mode
+             * @default full
+             */
+            mode: string;
+            progress?: components["schemas"]["SyncProgress"] | null;
+            result?: components["schemas"]["AdjustedMetricsMaterializeResult"] | null;
+            /** Startedat */
+            startedAt: string;
+            /** Status */
+            status: string;
+        };
+        /** AdjustedMetricsMaterializeResult */
+        AdjustedMetricsMaterializeResult: {
+            /** Basisversion */
+            basisVersion?: string | null;
+            /**
+             * Dailyvaluationrows
+             * @default 0
+             */
+            dailyValuationRows: number;
+            /** Errors */
+            errors?: string[];
+            /** Pricebasisdate */
+            priceBasisDate?: string | null;
+            /**
+             * Statementrows
+             * @default 0
+             */
+            statementRows: number;
+            /** Success */
+            success: boolean;
+        };
         /** AdjustedMetricsStats */
         AdjustedMetricsStats: {
             /** Basisversion */
@@ -3859,6 +3951,26 @@ export interface components {
              * @description Stock code
              */
             symbol: string;
+        };
+        /** CreateAdjustedMetricsMaterializeJobResponse */
+        CreateAdjustedMetricsMaterializeJobResponse: {
+            /** Jobid */
+            jobId: string;
+            /**
+             * Message
+             * @default Adjusted metrics materialization job started
+             */
+            message: string;
+            /**
+             * Mode
+             * @default full
+             */
+            mode: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -15616,6 +15728,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateAdjustedMetricsMaterializeJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdjustedMetricsMaterializeJobResponse"] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */

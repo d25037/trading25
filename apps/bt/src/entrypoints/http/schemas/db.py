@@ -358,6 +358,33 @@ class SyncJobResponse(BaseModel):
     error: str | None = None
 
 
+class AdjustedMetricsMaterializeResult(BaseModel):
+    success: bool
+    statementRows: int = 0
+    dailyValuationRows: int = 0
+    priceBasisDate: str | None = None
+    basisVersion: str | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class CreateAdjustedMetricsMaterializeJobResponse(BaseModel):
+    jobId: str
+    status: str = "pending"
+    mode: str = "full"
+    message: str = "Adjusted metrics materialization job started"
+
+
+class AdjustedMetricsMaterializeJobResponse(BaseModel):
+    jobId: str
+    status: str
+    mode: str = "full"
+    progress: SyncProgress | None = None
+    result: AdjustedMetricsMaterializeResult | None = None
+    startedAt: str
+    completedAt: str | None = None
+    error: str | None = None
+
+
 class SyncFetchDetail(BaseModel):
     eventType: Literal["strategy", "execution"]
     stage: str

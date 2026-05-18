@@ -4,7 +4,10 @@
  */
 
 export type {
+  AdjustedMetricsMaterializeJobResponse,
+  AdjustedMetricsMaterializeResult,
   CancelJobResponse,
+  CreateAdjustedMetricsMaterializeJobResponse,
   CreateSyncJobResponse,
   JobProgress,
   JobStatus,

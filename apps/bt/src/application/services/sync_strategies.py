@@ -3194,6 +3194,23 @@ async def _sync_margin_data(
                     f"{anchor}; skipping margin bulk fetch."
                 ),
             )
+            _emit_fetch_detail(
+                ctx,
+                {
+                    "eventType": "execution",
+                    "stage": "margin",
+                    "endpoint": "/markets/margin-interest",
+                    "method": "bulk",
+                    "targetLabel": target_label,
+                    "reason": None,
+                    "reasonDetail": "no_new_bulk_files_after_anchor",
+                    "estimatedRestCalls": None,
+                    "estimatedBulkCalls": None,
+                    "plannerApiCalls": None,
+                    "fallback": False,
+                    "fallbackReason": None,
+                },
+            )
             _log_sync_fetch_execution(
                 stage=stage_name,
                 endpoint="/markets/margin-interest",

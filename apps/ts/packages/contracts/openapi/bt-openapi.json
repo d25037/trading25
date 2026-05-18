@@ -1,6 +1,128 @@
 {
   "components": {
     "schemas": {
+      "AdjustedMetricsMaterializeJobResponse": {
+        "properties": {
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "mode": {
+            "default": "full",
+            "title": "Mode",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdjustedMetricsMaterializeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "title": "Startedat",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "status",
+          "startedAt"
+        ],
+        "title": "AdjustedMetricsMaterializeJobResponse",
+        "type": "object"
+      },
+      "AdjustedMetricsMaterializeResult": {
+        "properties": {
+          "basisVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basisversion"
+          },
+          "dailyValuationRows": {
+            "default": 0,
+            "title": "Dailyvaluationrows",
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "priceBasisDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricebasisdate"
+          },
+          "statementRows": {
+            "default": 0,
+            "title": "Statementrows",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "AdjustedMetricsMaterializeResult",
+        "type": "object"
+      },
       "AdjustedMetricsStats": {
         "properties": {
           "basisVersion": {
@@ -1909,6 +2031,34 @@
           "provenance"
         ],
         "title": "CostStructureResponse",
+        "type": "object"
+      },
+      "CreateAdjustedMetricsMaterializeJobResponse": {
+        "properties": {
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "message": {
+            "default": "Adjusted metrics materialization job started",
+            "title": "Message",
+            "type": "string"
+          },
+          "mode": {
+            "default": "full",
+            "title": "Mode",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "title": "CreateAdjustedMetricsMaterializeJobResponse",
         "type": "object"
       },
       "CreateSyncJobResponse": {
@@ -25367,6 +25517,188 @@
         "summary": "Get dataset build job status",
         "tags": [
           "Dataset"
+        ]
+      }
+    },
+    "/api/db/adjusted-metrics/materialize": {
+      "post": {
+        "operationId": "start_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAdjustedMetricsMaterializeJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Start adjusted metrics materialization job",
+        "tags": [
+          "Database"
+        ]
+      }
+    },
+    "/api/db/adjusted-metrics/materialize/jobs/{jobId}": {
+      "get": {
+        "operationId": "get_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs__jobId__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "title": "Jobid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustedMetricsMaterializeJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get adjusted metrics materialization job status",
+        "tags": [
+          "Database"
+        ]
+      }
+    },
+    "/api/db/adjusted-metrics/materialize/jobs/active": {
+      "get": {
+        "operationId": "get_active_adjusted_metrics_materialize_job_api_db_adjusted_metrics_materialize_jobs_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdjustedMetricsMaterializeJobResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Active Adjusted Metrics Materialize Job Api Db Adjusted Metrics Materialize Jobs Active Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get active adjusted metrics materialization job status",
+        "tags": [
+          "Database"
         ]
       }
     },

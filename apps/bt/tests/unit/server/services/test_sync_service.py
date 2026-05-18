@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -184,6 +185,13 @@ class FetchBurstStrategy:
 def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
     manager: GenericJobManager = GenericJobManager()
     monkeypatch.setattr(sync_service, "sync_job_manager", manager)
+    return manager
+
+
+@pytest.fixture
+def isolated_materialize_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
+    manager: GenericJobManager = GenericJobManager()
+    monkeypatch.setattr(sync_service, "adjusted_metrics_materialize_job_manager", manager)
     return manager
 
 
@@ -385,22 +393,12 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 
 
 @pytest.mark.asyncio
-async def test_start_sync_materializes_adjusted_metrics_after_success(
+async def test_start_sync_does_not_materialize_adjusted_metrics_after_success(
     monkeypatch: pytest.MonkeyPatch,
     isolated_manager: GenericJobManager,
 ) -> None:
     strategy = StrategyProbe(emit_progress=False)
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
-    materialized: list[object] = []
-
-    def materialize(market_db: object) -> None:
-        materialized.append(market_db)
-
-    monkeypatch.setattr(
-        sync_service,
-        "_materialize_adjusted_metrics_after_sync",
-        materialize,
-    )
 
     market_db = _market_db(last_sync_date="2026-03-01T00:00:00+00:00")
     job = await sync_service.start_sync(
@@ -415,7 +413,40 @@ async def test_start_sync_materializes_adjusted_metrics_after_success(
     stored = isolated_manager.get_job(job.job_id)
     assert stored is not None
     assert stored.status.value == "completed"
-    assert materialized == [market_db]
+
+
+@pytest.mark.asyncio
+async def test_start_adjusted_metrics_materialization_runs_as_separate_job(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_materialize_manager: GenericJobManager,
+) -> None:
+    class FakeMaterializer:
+        def __init__(self, market_db: object) -> None:
+            self.market_db = market_db
+
+        def rebuild_all(self) -> object:
+            return SimpleNamespace(
+                statement_rows=3,
+                daily_valuation_rows=5,
+                price_basis_date="2026-05-15",
+                basis_version="adjusted-v1:2026-05-15",
+            )
+
+    monkeypatch.setattr(sync_service, "AdjustedMetricsMaterializer", FakeMaterializer)
+    market_db = cast(sync_service.MarketDb, object())
+
+    job = await sync_service.start_adjusted_metrics_materialization(market_db)
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_materialize_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "completed"
+    assert stored.progress is not None
+    assert stored.progress.stage == "complete"
+    assert stored.result is not None
+    assert stored.result.statementRows == 3
+    assert stored.result.dailyValuationRows == 5
 
 
 @pytest.mark.asyncio

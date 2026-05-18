@@ -24,6 +24,12 @@ const mockStartSyncState = {
   error: null as Error | null,
 };
 
+const mockStartMaterializeState = {
+  mutate: vi.fn(),
+  isPending: false,
+  error: null as Error | null,
+};
+
 const mockCancelSyncState = {
   mutate: vi.fn(),
   isPending: false,
@@ -33,14 +39,20 @@ const mockUseSyncJobStatus = vi.fn();
 const mockUseSyncFetchDetails = vi.fn();
 const mockUseSyncSSE = vi.fn();
 const mockUseActiveSyncJob = vi.fn();
+const mockUseActiveAdjustedMetricsMaterializeJob = vi.fn();
+const mockUseAdjustedMetricsMaterializeJobStatus = vi.fn();
 const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
 const mockUseRefreshStocks = vi.fn();
 
 vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
+  useStartAdjustedMetricsMaterialize: () => mockStartMaterializeState,
   useCancelSync: () => mockCancelSyncState,
   useActiveSyncJob: () => mockUseActiveSyncJob(),
+  useActiveAdjustedMetricsMaterializeJob: () => mockUseActiveAdjustedMetricsMaterializeJob(),
+  useAdjustedMetricsMaterializeJobStatus: (jobId: string | null) =>
+    mockUseAdjustedMetricsMaterializeJobStatus(jobId),
   useSyncSSE: (jobId: string | null) => mockUseSyncSSE(jobId),
   useSyncJobStatus: (jobId: string | null, sseConnected?: boolean) => mockUseSyncJobStatus(jobId, sseConnected),
   useSyncFetchDetails: (jobId: string | null, sseConnected?: boolean) => mockUseSyncFetchDetails(jobId, sseConnected),
@@ -54,8 +66,20 @@ beforeEach(() => {
   localStorage.clear();
   mockStartSyncState.isPending = false;
   mockStartSyncState.error = null;
+  mockStartMaterializeState.isPending = false;
+  mockStartMaterializeState.error = null;
   mockCancelSyncState.isPending = false;
   mockUseActiveSyncJob.mockReturnValue({
+    data: null,
+    isLoading: false,
+    error: null,
+  });
+  mockUseActiveAdjustedMetricsMaterializeJob.mockReturnValue({
+    data: null,
+    isLoading: false,
+    error: null,
+  });
+  mockUseAdjustedMetricsMaterializeJobStatus.mockReturnValue({
     data: null,
     isLoading: false,
     error: null,

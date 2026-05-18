@@ -27,6 +27,7 @@ from src.infrastructure.db.market.market_db import (
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
+from src.entrypoints.http.schemas.db import AdjustedMetricsMaterializeResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
 from src.application.services.sync_strategies import (
@@ -75,8 +76,18 @@ class SyncJobData:
     fetch_details: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class AdjustedMetricsMaterializeJobData:
+    mode: str = "full"
+
+
 # Module-level manager instance
 sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = GenericJobManager()
+adjusted_metrics_materialize_job_manager: GenericJobManager[
+    AdjustedMetricsMaterializeJobData,
+    SyncProgress,
+    AdjustedMetricsMaterializeResult,
+] = GenericJobManager()
 _MAX_FETCH_DETAILS = 200
 
 
@@ -158,16 +169,81 @@ def _prepare_market_db_for_sync(market_db: SyncServiceMarketDbLike) -> None:
     )
 
 
-def _materialize_adjusted_metrics_after_sync(market_db: object) -> None:
-    if not isinstance(market_db, MarketDb):
-        return
-    result = AdjustedMetricsMaterializer(market_db).rebuild_all()
-    logger.info(
-        "Adjusted metrics materialized: statements={}, daily_valuation={}, basis={}",
-        result.statement_rows,
-        result.daily_valuation_rows,
-        result.basis_version,
+async def start_adjusted_metrics_materialization(
+    market_db: MarketDb,
+    *,
+    close_market_db: bool = False,
+    on_finish: Callable[[], None] | None = None,
+) -> JobInfo[
+    AdjustedMetricsMaterializeJobData,
+    SyncProgress,
+    AdjustedMetricsMaterializeResult,
+] | None:
+    """Start a standalone full adjusted metrics materialization job."""
+    job = await adjusted_metrics_materialize_job_manager.create_job(
+        AdjustedMetricsMaterializeJobData()
     )
+    if job is None:
+        return None
+
+    def on_progress(stage: str, current: int, total: int, message: str) -> None:
+        pct = (current / total * 100) if total > 0 else 0
+        adjusted_metrics_materialize_job_manager.update_progress(
+            job.job_id,
+            SyncProgress(
+                stage=stage,
+                current=current,
+                total=total,
+                percentage=pct,
+                message=message,
+            ),
+        )
+
+    async def _run() -> None:
+        try:
+            on_progress(
+                "materialize",
+                0,
+                1,
+                "Materializing adjusted statement metrics and daily valuation...",
+            )
+            result = await asyncio.to_thread(
+                AdjustedMetricsMaterializer(market_db).rebuild_all
+            )
+            response = AdjustedMetricsMaterializeResult(
+                success=True,
+                statementRows=result.statement_rows,
+                dailyValuationRows=result.daily_valuation_rows,
+                priceBasisDate=result.price_basis_date,
+                basisVersion=result.basis_version,
+            )
+            on_progress(
+                "complete",
+                1,
+                1,
+                "Adjusted metrics materialization complete.",
+            )
+            adjusted_metrics_materialize_job_manager.complete_job(job.job_id, response)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception(f"Adjusted metrics materialization job {job.job_id} failed: {e}")
+            adjusted_metrics_materialize_job_manager.fail_job(job.job_id, str(e))
+        finally:
+            if close_market_db:
+                try:
+                    await asyncio.to_thread(market_db.close)
+                except Exception as e:  # pragma: no cover - close失敗はログのみ
+                    logger.warning(f"Failed to close market DB for adjusted metrics job {job.job_id}: {e}")
+            if on_finish is not None:
+                try:
+                    await asyncio.to_thread(on_finish)
+                except Exception as e:  # pragma: no cover - restore失敗はログのみ
+                    logger.warning(f"Failed to run adjusted metrics finish callback for job {job.job_id}: {e}")
+
+    task = asyncio.create_task(_run())
+    job.task = task
+    return job
 
 
 async def start_sync(
@@ -252,10 +328,6 @@ async def start_sync(
             if sync_job_manager.is_cancelled(job.job_id):
                 _publish_sync_job_event(job.job_id, close_stream=True)
                 return
-            await asyncio.to_thread(
-                _materialize_adjusted_metrics_after_sync,
-                current_market_db,
-            )
             sync_job_manager.complete_job(job.job_id, result)
             _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.TimeoutError:

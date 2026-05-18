@@ -23,11 +23,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
+  useActiveAdjustedMetricsMaterializeJob,
   useActiveSyncJob,
+  useAdjustedMetricsMaterializeJobStatus,
   useCancelSync,
   useDbStats,
   useDbValidation,
   useRefreshStocks,
+  useStartAdjustedMetricsMaterialize,
   useStartSync,
   useSyncFetchDetails,
   useSyncJobStatus,
@@ -37,6 +40,7 @@ import { ApiError } from '@/lib/api-client';
 import { ACTIVE_SYNC_JOB_STORAGE_KEY, readStoredString, writeStoredString } from '@/lib/persistedState';
 import { cn } from '@/lib/utils';
 import type {
+  AdjustedMetricsMaterializeJobResponse,
   MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
@@ -84,8 +88,36 @@ function persistActiveSyncJobId(jobId: string | null): void {
   writeStoredString(window.localStorage, ACTIVE_SYNC_JOB_STORAGE_KEY, jobId);
 }
 
+function buildStartSyncRequest(
+  syncMode: SyncMode,
+  enforceBulkForStockData: boolean,
+  resetBeforeSync: boolean
+): StartSyncRequest {
+  const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };
+  if (syncMode === 'initial' && resetBeforeSync) {
+    request.resetBeforeSync = true;
+  }
+  return request;
+}
+
+function useResetBeforeSyncGuard(
+  syncMode: SyncMode,
+  setResetBeforeSync: (value: boolean) => void,
+  setResetConfirmOpen: (value: boolean) => void,
+  setResetConfirmationText: (value: string) => void
+): void {
+  useEffect(() => {
+    if (syncMode === 'initial') {
+      return;
+    }
+    setResetBeforeSync(false);
+    setResetConfirmOpen(false);
+    setResetConfirmationText('');
+  }, [syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText]);
+}
+
 type StatusTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
-type SyncJobStatusShape = Pick<SyncJobResponse, 'status'> | null | undefined;
+type SyncJobStatusShape = Pick<SyncJobResponse | AdjustedMetricsMaterializeJobResponse, 'status'> | null | undefined;
 type ValidationHealthStatus = 'healthy' | 'info' | 'warning' | 'error';
 
 function getToneClasses(tone: StatusTone): string {
@@ -131,7 +163,9 @@ function getHealthStatusTone(status: ValidationHealthStatus | undefined): Status
   }
 }
 
-function getJobTone(status: SyncJobResponse['status'] | null | undefined): StatusTone {
+function getJobTone(
+  status: SyncJobResponse['status'] | AdjustedMetricsMaterializeJobResponse['status'] | null | undefined
+): StatusTone {
   switch (status) {
     case 'pending':
     case 'running':
@@ -1239,12 +1273,99 @@ function WarningRecoverySection({
   );
 }
 
+interface AdjustedMetricsMaterializeSectionProps {
+  dbStats: MarketStatsResponse | undefined;
+  currentJob: AdjustedMetricsMaterializeJobResponse | null;
+  isSyncRunning: boolean;
+  isMaterializing: boolean;
+  isStarting: boolean;
+  onStartMaterialize: () => void;
+  errorMessage: string | null;
+}
+
+function AdjustedMetricsMaterializeSection({
+  dbStats,
+  currentJob,
+  isSyncRunning,
+  isMaterializing,
+  isStarting,
+  onStartMaterialize,
+  errorMessage,
+}: AdjustedMetricsMaterializeSectionProps) {
+  const adjustedMetrics = dbStats?.adjustedMetrics;
+  const disabled = isSyncRunning || isMaterializing || isStarting;
+  const result = currentJob?.result;
+
+  return (
+    <Card className="border-border/70 bg-[var(--app-surface)] shadow-none">
+      <CardHeader className="pb-4">
+        <SectionEyebrow>Derived SoT</SectionEyebrow>
+        <div className="mt-1 flex items-start gap-3">
+          <div className="app-panel-muted flex h-10 w-10 items-center justify-center rounded-xl text-primary">
+            <Activity className="h-5 w-5" />
+          </div>
+          <div className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">Adjusted Metrics</CardTitle>
+            <CardDescription>
+              Rebuild `statement_metrics_adjusted` and `daily_valuation` as a separate full materialization job.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Status</p>
+            <p className="mt-2 text-lg font-semibold">{adjustedMetrics?.status?.toUpperCase() ?? 'UNKNOWN'}</p>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Basis</p>
+            <p className="mt-2 text-sm font-semibold">{adjustedMetrics?.priceBasisDate ?? 'n/a'}</p>
+          </div>
+        </div>
+        {currentJob ? (
+          <div className={cn('rounded-xl border p-3 text-sm', getToneClasses(getJobTone(currentJob.status)))}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium">{currentJob.status.toUpperCase()}</span>
+              <span>{currentJob.progress?.message ?? 'Materialization job tracked separately from sync.'}</span>
+            </div>
+            {result ? (
+              <p className="mt-2 text-xs">
+                Statements {result.statementRows.toLocaleString()} / Daily valuation{' '}
+                {result.dailyValuationRows.toLocaleString()}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Run this after sync when adjusted fundamentals or valuation semantics changed. It does not fetch J-Quants.
+          </p>
+        )}
+        <Button onClick={onStartMaterialize} disabled={disabled} className="w-full">
+          {isStarting || isMaterializing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Materializing...
+            </>
+          ) : isSyncRunning ? (
+            'Sync in Progress'
+          ) : (
+            'Materialize Adjusted Metrics'
+          )}
+        </Button>
+        {errorMessage && <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">{errorMessage}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
 interface ManualStockRefreshSectionProps {
   refreshCodesInput: string;
   refreshInputError: string | null;
   refreshErrorMessage: string | null;
   refreshResult: MarketRefreshResponse | null;
   isRefreshing: boolean;
+  isDisabled?: boolean;
   onRefreshCodesInputChange: (value: string) => void;
   onRefreshStocks: () => void;
   className?: string;
@@ -1256,6 +1377,7 @@ function ManualStockRefreshSection({
   refreshErrorMessage,
   refreshResult,
   isRefreshing,
+  isDisabled = false,
   onRefreshCodesInputChange,
   onRefreshStocks,
   className,
@@ -1285,13 +1407,13 @@ function ManualStockRefreshSection({
               placeholder="e.g. 7203, 6758, 9984"
               value={refreshCodesInput}
               onChange={(e) => onRefreshCodesInputChange(e.target.value)}
-              disabled={isRefreshing}
+              disabled={isRefreshing || isDisabled}
             />
             <p className="text-xs text-muted-foreground">
               Accepts comma, space, or newline separated 4-digit codes, up to 50 at once.
             </p>
           </div>
-          <Button onClick={onRefreshStocks} disabled={isRefreshing} className="w-full lg:w-auto">
+          <Button onClick={onRefreshStocks} disabled={isRefreshing || isDisabled} className="w-full lg:w-auto">
             {isRefreshing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1312,6 +1434,70 @@ function ManualStockRefreshSection({
         {refreshResult && <RefreshResultTable result={refreshResult} />}
       </CardContent>
     </Card>
+  );
+}
+
+interface ResetConfirmDialogProps {
+  open: boolean;
+  confirmationText: string;
+  isStarting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirmationTextChange: (value: string) => void;
+  onSubmit: () => void;
+}
+
+function ResetConfirmDialog({
+  open,
+  confirmationText,
+  isStarting,
+  onOpenChange,
+  onConfirmationTextChange,
+  onSubmit,
+}: ResetConfirmDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Reset market DB before initial sync?</DialogTitle>
+          <DialogDescription>
+            This deletes the current `market.duckdb` and `parquet/` snapshot before rebuilding a fresh local 10-year
+            window from J-Quants.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+          <p>Local history older than the rolling 10-year J-Quants window is lost.</p>
+          <p>`datasets/*` built from the current market DB must be recreated.</p>
+          <p>`portfolio.db`, watchlists, and jobs metadata are not deleted.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="reset-confirmation-input">Type {RESET_CONFIRMATION_TOKEN} to continue</Label>
+          <Input
+            id="reset-confirmation-input"
+            value={confirmationText}
+            onChange={(event) => onConfirmationTextChange(event.target.value)}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isStarting}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={onSubmit}
+            disabled={isStarting || confirmationText.trim().toUpperCase() !== RESET_CONFIRMATION_TOKEN}
+          >
+            {isStarting ? 'Starting...' : 'Reset and Start Sync'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1487,12 +1673,14 @@ export function SettingsPage() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetConfirmationText, setResetConfirmationText] = useState('');
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
+  const [activeMaterializeJobId, setActiveMaterializeJobId] = useState<string | null>(null);
   const [refreshCodesInput, setRefreshCodesInput] = useState('');
   const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
   const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
   const { data: activeSyncJob } = useActiveSyncJob(activeJobId === null);
+  const { data: activeMaterializeJob } = useActiveAdjustedMetricsMaterializeJob(activeMaterializeJobId === null);
   const syncSse = useSyncSSE(activeJobId);
   const {
     data: jobStatus,
@@ -1500,14 +1688,13 @@ export function SettingsPage() {
     error: syncJobError,
   } = useSyncJobStatus(activeJobId, syncSse.isConnected);
   const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId, syncSse.isConnected);
+  const { data: materializeJobStatus } = useAdjustedMetricsMaterializeJobStatus(activeMaterializeJobId);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
+  const startMaterialize = useStartAdjustedMetricsMaterialize();
 
   useEffect(() => {
-    if (!activeSyncJob?.jobId) {
-      return;
-    }
-    setActiveJobId(activeSyncJob.jobId);
+    activeSyncJob?.jobId && setActiveJobId(activeSyncJob.jobId);
   }, [activeSyncJob?.jobId]);
 
   useEffect(() => {
@@ -1515,60 +1702,48 @@ export function SettingsPage() {
   }, [activeJobId]);
 
   useEffect(() => {
-    if (!(syncJobError instanceof ApiError) || syncJobError.status !== 404) {
-      return;
-    }
-    setActiveJobId(null);
+    syncJobError instanceof ApiError && syncJobError.status === 404 && setActiveJobId(null);
   }, [syncJobError]);
 
-  useEffect(() => {
-    if (syncMode === 'initial') {
-      return;
-    }
-    setResetBeforeSync(false);
-    setResetConfirmOpen(false);
-    setResetConfirmationText('');
-  }, [syncMode]);
+  useResetBeforeSyncGuard(syncMode, setResetBeforeSync, setResetConfirmOpen, setResetConfirmationText);
 
   const isJobStatusRunning = isSyncJobRunning(jobStatus);
   const isActiveJobRunning = isSyncJobRunning(activeSyncJob);
+  const isMaterializeJobRunning = isSyncJobRunning(materializeJobStatus);
+  const isActiveMaterializeJobRunning = isSyncJobRunning(activeMaterializeJob);
   const isRunning = startSync.isPending || isJobStatusRunning || (!jobStatus && isActiveJobRunning);
+  const isMaterializing =
+    startMaterialize.isPending || isMaterializeJobRunning || (!materializeJobStatus && isActiveMaterializeJobRunning);
   const {
     data: dbStats,
     isLoading: isStatsLoading,
     error: statsError,
     refetch: refetchDbStats,
-  } = useDbStats({ isSyncRunning: isRunning });
+  } = useDbStats({ isSyncRunning: isRunning || isMaterializing });
   const {
     data: dbValidation,
     isLoading: isValidationLoading,
     error: validationError,
     refetch: refetchDbValidation,
-  } = useDbValidation({ isSyncRunning: isRunning });
+  } = useDbValidation({ isSyncRunning: isRunning || isMaterializing });
   const repairTargets = resolveRepairTargets(dbValidation);
   const startSyncErrorMessage = startSync.error?.message ?? null;
+  const startMaterializeErrorMessage = startMaterialize.error?.message ?? null;
   const refreshErrorMessage = refreshStocks.error?.message ?? null;
   const currentJob = jobStatus ?? activeSyncJob ?? null;
+  const currentMaterializeJob = materializeJobStatus ?? activeMaterializeJob ?? null;
   const repairSignalCount = sumRepairTargets(repairTargets);
 
   useEffect(() => {
-    if (!isRunning) {
+    if (!isRunning && !isMaterializing) {
       return;
     }
     void refetchDbStats();
     void refetchDbValidation();
-  }, [isRunning, refetchDbStats, refetchDbValidation]);
-
-  const buildStartSyncRequest = (): StartSyncRequest => {
-    const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };
-    if (syncMode === 'initial' && resetBeforeSync) {
-      request.resetBeforeSync = true;
-    }
-    return request;
-  };
+  }, [isRunning, isMaterializing, refetchDbStats, refetchDbValidation]);
 
   const submitStartSync = () => {
-    const request = buildStartSyncRequest();
+    const request = buildStartSyncRequest(syncMode, enforceBulkForStockData, resetBeforeSync);
     startSync.mutate(request, {
       onSuccess: (data) => {
         setActiveJobId(data.jobId);
@@ -1595,6 +1770,14 @@ export function SettingsPage() {
         onSuccess: (data) => setActiveJobId(data.jobId),
       }
     );
+  };
+
+  const handleStartMaterialize = () => {
+    startMaterialize.mutate(undefined, {
+      onSuccess: (data) => {
+        setActiveMaterializeJobId(data.jobId);
+      },
+    });
   };
 
   const handleCancel = () => {
@@ -1642,7 +1825,7 @@ export function SettingsPage() {
             description="The left side is for actions that change the local market DB: full syncs, warning repair, and targeted stock refresh."
           />
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 lg:grid-cols-3">
             <DatabaseSyncSection
               className="h-full"
               syncMode={syncMode}
@@ -1651,7 +1834,7 @@ export function SettingsPage() {
               onEnforceBulkChange={setEnforceBulkForStockData}
               resetBeforeSync={resetBeforeSync}
               onResetBeforeSyncChange={setResetBeforeSync}
-              isRunning={isRunning}
+              isRunning={isRunning || isMaterializing}
               isStarting={startSync.isPending}
               onStartSync={handleStartSync}
               errorMessage={startSyncErrorMessage}
@@ -1661,9 +1844,19 @@ export function SettingsPage() {
               className="h-full"
               repairTargets={repairTargets}
               isValidationLoading={isValidationLoading}
-              isRunning={isRunning}
+              isRunning={isRunning || isMaterializing}
               isStarting={startSync.isPending}
               onRepairWarnings={handleRepairWarnings}
+            />
+
+            <AdjustedMetricsMaterializeSection
+              dbStats={dbStats}
+              currentJob={currentMaterializeJob}
+              isSyncRunning={isRunning}
+              isMaterializing={isMaterializing}
+              isStarting={startMaterialize.isPending}
+              onStartMaterialize={handleStartMaterialize}
+              errorMessage={startMaterializeErrorMessage}
             />
           </div>
 
@@ -1673,6 +1866,7 @@ export function SettingsPage() {
             refreshErrorMessage={refreshErrorMessage}
             refreshResult={refreshResult}
             isRefreshing={refreshStocks.isPending}
+            isDisabled={isRunning || isMaterializing}
             onRefreshCodesInputChange={(value) => {
               setRefreshCodesInput(value);
               setRefreshInputError(null);
@@ -1696,7 +1890,7 @@ export function SettingsPage() {
         />
       </div>
 
-      <Dialog
+      <ResetConfirmDialog
         open={resetConfirmOpen}
         onOpenChange={(open) => {
           setResetConfirmOpen(open);
@@ -1704,54 +1898,11 @@ export function SettingsPage() {
             setResetConfirmationText('');
           }
         }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Reset market DB before initial sync?</DialogTitle>
-            <DialogDescription>
-              This deletes the current `market.duckdb` and `parquet/` snapshot before rebuilding a fresh local 10-year
-              window from J-Quants.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-            <p>Local history older than the rolling 10-year J-Quants window is lost.</p>
-            <p>`datasets/*` built from the current market DB must be recreated.</p>
-            <p>`portfolio.db`, watchlists, and jobs metadata are not deleted.</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="reset-confirmation-input">Type {RESET_CONFIRMATION_TOKEN} to continue</Label>
-            <Input
-              id="reset-confirmation-input"
-              value={resetConfirmationText}
-              onChange={(event) => setResetConfirmationText(event.target.value)}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setResetConfirmOpen(false)}
-              disabled={startSync.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={submitStartSync}
-              disabled={startSync.isPending || resetConfirmationText.trim().toUpperCase() !== RESET_CONFIRMATION_TOKEN}
-            >
-              {startSync.isPending ? 'Starting...' : 'Reset and Start Sync'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        confirmationText={resetConfirmationText}
+        isStarting={startSync.isPending}
+        onConfirmationTextChange={setResetConfirmationText}
+        onSubmit={submitStartSync}
+      />
     </div>
   );
 }

@@ -220,13 +220,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await cleanup_task
 
     # Phase 3D: Job manager shutdown（DB close 前に durable write を済ませる）
-    from src.application.services.sync_service import sync_job_manager
+    from src.application.services.sync_service import (
+        adjusted_metrics_materialize_job_manager,
+        sync_job_manager,
+    )
     from src.application.services.dataset_builder_service import dataset_job_manager
 
     await job_manager.shutdown(job_types=_PRIMARY_ASYNC_JOB_TYPES)
     await screening_job_manager.shutdown(job_types=_SCREENING_JOB_TYPES)
     await screening_job_service.shutdown()
     await sync_job_manager.shutdown()
+    await adjusted_metrics_materialize_job_manager.shutdown()
     await dataset_job_manager.shutdown()
 
     # JQuants client shutdown

@@ -446,6 +446,33 @@ export interface SyncJobResponse {
   error?: string;
 }
 
+export interface AdjustedMetricsMaterializeResult {
+  success: boolean;
+  statementRows: number;
+  dailyValuationRows: number;
+  priceBasisDate?: string;
+  basisVersion?: string;
+  errors?: string[];
+}
+
+export interface CreateAdjustedMetricsMaterializeJobResponse {
+  jobId: string;
+  status: JobStatus;
+  mode: 'full';
+  message: string;
+}
+
+export interface AdjustedMetricsMaterializeJobResponse {
+  jobId: string;
+  status: JobStatus;
+  mode: 'full';
+  progress?: JobProgress;
+  result?: AdjustedMetricsMaterializeResult;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+}
+
 export interface CancelJobResponse {
   success: boolean;
   jobId: string;
@@ -796,6 +823,13 @@ export interface MarketStatsResponse {
       issuerAliasCoveredCount: number;
       emptySkippedCount: number;
     };
+  };
+  adjustedMetrics?: {
+    statementRows: number;
+    dailyValuationRows: number;
+    priceBasisDate: string | null;
+    basisVersion: string | null;
+    status: 'ready' | 'missing' | 'stale' | 'empty_source';
   };
   lastUpdated: string;
 }
