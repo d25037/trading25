@@ -423,7 +423,12 @@ class FundamentalsService:
                 **latest_metrics.model_dump(),
                 "stockPrice": latest_daily.close,
                 "per": latest_daily.per,
+                "forwardPer": latest_daily.forwardPer,
+                "pOp": latest_daily.pOp,
+                "forwardPOp": latest_daily.forwardPOp,
                 "pbr": latest_daily.pbr,
+                "marketCap": latest_daily.marketCap,
+                "freeFloatMarketCap": latest_daily.freeFloatMarketCap,
                 "adjustedEps": latest_daily.eps
                 if latest_metrics.adjustedEps is None
                 else latest_metrics.adjustedEps,

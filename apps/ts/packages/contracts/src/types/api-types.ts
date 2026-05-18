@@ -253,6 +253,12 @@ export interface ApiFundamentalDataPoint {
   forecastPayoutRatioChangeRate?: number | null;
   /** Price to Earnings Ratio (倍) - calculated with disclosure date price */
   per: number | null;
+  /** Forward Price to Earnings Ratio (倍) */
+  forwardPer?: number | null;
+  /** Price to Operating Profit Ratio (倍) */
+  pOp?: number | null;
+  /** Forward Price to Operating Profit Ratio (倍) */
+  forwardPOp?: number | null;
   /** Price to Book Ratio (倍) - calculated with disclosure date price */
   pbr: number | null;
   // Profitability metrics
@@ -301,6 +307,10 @@ export interface ApiFundamentalDataPoint {
   cfoToNetProfitRatio: number | null;
   /** Market cap / N-day average trading value (x) */
   tradingValueToMarketCapRatio: number | null;
+  /** Market capitalization using shares outstanding (円) */
+  marketCap?: number | null;
+  /** Market capitalization using free-float shares (円) */
+  freeFloatMarketCap?: number | null;
   // Forecast EPS
   /** Forecast EPS for current/next fiscal year (円) */
   forecastEps?: number | null;
@@ -344,6 +354,12 @@ export interface ApiFundamentalsResponse {
   latestMetrics?: ApiFundamentalDataPoint;
   /** Daily PER/PBR time series (calculated with daily close prices and FY EPS/BPS) */
   dailyValuation?: ApiDailyValuationDataPoint[];
+  /** Adjusted price basis date used by daily valuation */
+  priceBasisDate?: string | null;
+  /** Adjusted valuation materialization basis version */
+  valuationBasisVersion?: string | null;
+  /** Source used for valuation and adjusted per-share metrics */
+  adjustedMetricsSource?: 'daily_valuation' | 'computed_fallback';
   /** Prime-only free-float liquidity diagnostic for Symbol Workbench */
   liquidityProfile?: ApiLiquidityProfile | null;
   /** Rolling average period used for trading value to market cap ratio (days) */

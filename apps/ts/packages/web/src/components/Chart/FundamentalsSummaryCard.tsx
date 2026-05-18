@@ -99,12 +99,6 @@ interface FundamentalsSummaryCardProps {
   metricVisibility?: Record<FundamentalMetricId, boolean>;
 }
 
-function resolveForecastPer(stockPrice: number | null, forecastEps: number | null): number | null {
-  if (stockPrice == null || forecastEps == null || forecastEps === 0) return null;
-  const forecastPer = stockPrice / forecastEps;
-  return Number.isFinite(forecastPer) ? forecastPer : null;
-}
-
 interface MetricRenderContext {
   metrics: ApiFundamentalDataPoint;
   displayEps: number | null;
@@ -135,7 +129,7 @@ function toBooleanLabel(value: boolean | null | undefined): string {
 function resolveSummaryDisplayValues(metrics: ApiFundamentalDataPoint): SummaryDisplayValues {
   const displayEps = metrics.adjustedEps ?? metrics.eps ?? null;
   const displayForecastEps = metrics.revisedForecastEps ?? metrics.adjustedForecastEps ?? metrics.forecastEps ?? null;
-  const displayForecastPer = resolveForecastPer(metrics.stockPrice, displayForecastEps);
+  const displayForecastPer = metrics.forwardPer ?? null;
   const displayBps = metrics.adjustedBps ?? metrics.bps ?? null;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
   const displayForecastDividendFy = metrics.adjustedForecastDividendFy ?? metrics.forecastDividendFy ?? null;

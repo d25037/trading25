@@ -141,6 +141,9 @@ def test_compute_prefers_adjusted_tables_for_valuation_and_keeps_raw_history() -
 
     assert result.latestMetrics is not None
     assert result.latestMetrics.per == 10.0
+    assert result.latestMetrics.forwardPer == 8.3333333333
     assert result.latestMetrics.pbr == 1.0
+    assert result.latestMetrics.marketCap == 10_000_000_000.0
+    assert result.latestMetrics.freeFloatMarketCap == 9_000_000_000.0
     assert result.latestMetrics.adjustedEps == 50.0
     assert result.latestMetrics.adjustedBps == 500.0

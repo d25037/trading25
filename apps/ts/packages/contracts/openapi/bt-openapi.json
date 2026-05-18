@@ -4325,10 +4325,58 @@
             "description": "Forecast payout ratio change rate from actual payout ratio (%)",
             "title": "Forecastpayoutratiochangerate"
           },
+          "forwardPer": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price to earnings ratio",
+            "title": "Forwardper"
+          },
+          "forwardPOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price to operating profit ratio",
+            "title": "Forwardpop"
+          },
+          "freeFloatMarketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-float market cap (JPY)",
+            "title": "Freefloatmarketcap"
+          },
           "isConsolidated": {
             "description": "Whether data is consolidated",
             "title": "Isconsolidated",
             "type": "boolean"
+          },
+          "marketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Market cap (JPY)",
+            "title": "Marketcap"
           },
           "netMargin": {
             "anyOf": [
@@ -4430,6 +4478,18 @@
             "description": "Period type (FY, 1Q, 2Q, 3Q)",
             "title": "Periodtype",
             "type": "string"
+          },
+          "pOp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Price to operating profit ratio",
+            "title": "Pop"
           },
           "prevCashAndEquivalents": {
             "anyOf": [

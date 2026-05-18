@@ -62,6 +62,9 @@ def parquet_dir_for_path(path: str) -> Path:
 
 
 class _DatasetDuckDbStore:
+    _STATEMENT_TEXT_COLUMNS: frozenset[str] = frozenset(
+        {"type_of_current_period", "type_of_document"}
+    )
     _STATEMENT_COLUMNS: tuple[str, ...] = (
         "code",
         "disclosed_date",
@@ -201,6 +204,22 @@ class _DatasetDuckDbStore:
             self._conn.execute(f"ATTACH '{escaped_fallback_path}' AS {_SOURCE_ALIAS}")
         self._attached_source_path = source_path
         return _SOURCE_ALIAS
+
+    def _get_source_table_columns(self, source_alias: str, table: str) -> set[str]:
+        rows = self._conn.execute(
+            f"SELECT name FROM pragma_table_info('{source_alias}.{table}')"
+        ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def _statement_source_select_expr(
+        self,
+        column: str,
+        source_columns: set[str],
+    ) -> str:
+        if column in source_columns:
+            return column
+        sql_type = "VARCHAR" if column in self._STATEMENT_TEXT_COLUMNS else "DOUBLE"
+        return f"CAST(NULL AS {sql_type}) AS {column}"
 
     def _create_temp_source_copy(self, source_path: str) -> str:
         if self._source_copy_dir is None:
@@ -928,6 +947,11 @@ class _DatasetDuckDbStore:
 
             normalized_code_sql = self._normalize_stock_code_expr("code")
             priority_sql = self._stock_code_priority_expr("code")
+            source_columns = self._get_source_table_columns(source_alias, "statements")
+            statement_select_columns = [
+                self._statement_source_select_expr(column, source_columns)
+                for column in self._STATEMENT_COLUMNS[2:]
+            ]
             merged_columns = [
                 "COALESCE(MAX(CASE WHEN source_priority = 0 THEN {column} END), "
                 "MAX(CASE WHEN source_priority = 1 THEN {column} END)) AS {column}".format(column=column)
@@ -941,7 +965,7 @@ class _DatasetDuckDbStore:
                         {normalized_code_sql} AS code,
                         disclosed_date,
                         {priority_sql} AS source_priority,
-                        {", ".join(self._STATEMENT_COLUMNS[2:])}
+                        {", ".join(statement_select_columns)}
                     FROM {source_alias}.statements
                     WHERE {normalized_code_sql} IN (SELECT code FROM {_TEMP_STOCK_CODE_TABLE})
                       AND disclosed_date IS NOT NULL

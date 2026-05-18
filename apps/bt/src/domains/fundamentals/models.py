@@ -33,6 +33,9 @@ class FundamentalDataPoint(BaseModel):
     forecastPayoutRatio: float | None = None
     forecastPayoutRatioChangeRate: float | None = None
     per: float | None = None
+    forwardPer: float | None = None
+    pOp: float | None = None
+    forwardPOp: float | None = None
     pbr: float | None = None
 
     # Profitability metrics
@@ -62,6 +65,8 @@ class FundamentalDataPoint(BaseModel):
     cfoMargin: float | None = None
     cfoToNetProfitRatio: float | None = None
     tradingValueToMarketCapRatio: float | None = None
+    marketCap: float | None = None
+    freeFloatMarketCap: float | None = None
 
     # Forecast EPS
     forecastEps: float | None = None

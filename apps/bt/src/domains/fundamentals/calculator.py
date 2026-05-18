@@ -1017,8 +1017,13 @@ class FundamentalsCalculator:
             **{
                 **metrics.model_dump(),
                 "per": latest_daily.per,
+                "forwardPer": latest_daily.forwardPer,
+                "pOp": latest_daily.pOp,
+                "forwardPOp": latest_daily.forwardPOp,
                 "pbr": latest_daily.pbr,
                 "stockPrice": latest_daily.close,
+                "marketCap": latest_daily.marketCap,
+                "freeFloatMarketCap": latest_daily.freeFloatMarketCap,
                 "eps": latest_fy.eps if latest_fy else metrics.eps,
                 "bps": latest_fy.bps if latest_fy else metrics.bps,
             }

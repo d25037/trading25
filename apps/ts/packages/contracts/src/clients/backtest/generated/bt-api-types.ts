@@ -5051,10 +5051,30 @@ export interface components {
              */
             forecastPayoutRatioChangeRate?: number | null;
             /**
+             * Forwardper
+             * @description Forward price to earnings ratio
+             */
+            forwardPer?: number | null;
+            /**
+             * Forwardpop
+             * @description Forward price to operating profit ratio
+             */
+            forwardPOp?: number | null;
+            /**
+             * Freefloatmarketcap
+             * @description Free-float market cap (JPY)
+             */
+            freeFloatMarketCap?: number | null;
+            /**
              * Isconsolidated
              * @description Whether data is consolidated
              */
             isConsolidated: boolean;
+            /**
+             * Marketcap
+             * @description Market cap (JPY)
+             */
+            marketCap?: number | null;
             /**
              * Netmargin
              * @description Net profit margin (%)
@@ -5100,6 +5120,11 @@ export interface components {
              * @description Period type (FY, 1Q, 2Q, 3Q)
              */
             periodType: string;
+            /**
+             * Pop
+             * @description Price to operating profit ratio
+             */
+            pOp?: number | null;
             /**
              * Prevcashandequivalents
              * @description Previous period cash (millions JPY)

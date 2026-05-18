@@ -2644,6 +2644,15 @@ class RankingService:
         stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
         statements_norm = _normalized_code_sql("code")
         statements_order = _prefer_4digit_order_sql("code")
+        statement_columns = self._statement_table_columns()
+        forecast_operating_profit_expr = self._optional_statement_double_expr(
+            "forecast_operating_profit",
+            statement_columns,
+        )
+        next_year_forecast_operating_profit_expr = self._optional_statement_double_expr(
+            "next_year_forecast_operating_profit",
+            statement_columns,
+        )
         sql = f"""
             WITH
             {stocks_cte},
@@ -2674,8 +2683,8 @@ class RankingService:
                         forecast_eps,
                         next_year_forecast_earnings_per_share,
                         operating_profit,
-                        forecast_operating_profit,
-                        next_year_forecast_operating_profit,
+                        {forecast_operating_profit_expr},
+                        {next_year_forecast_operating_profit_expr},
                         shares_outstanding,
                         treasury_shares,
                         ROW_NUMBER() OVER (
@@ -2709,6 +2718,19 @@ class RankingService:
             ORDER BY s.code, st.disclosed_date DESC
         """
         return self._reader.query(sql, (date, date, *market_params))
+
+    def _statement_table_columns(self) -> set[str]:
+        try:
+            rows = self._reader.query("SELECT name FROM pragma_table_info('statements')")
+        except Exception:  # noqa: BLE001 - main statement query will surface the real failure
+            return set()
+        return {str(row["name"]) for row in rows}
+
+    @staticmethod
+    def _optional_statement_double_expr(column: str, columns: set[str]) -> str:
+        if column in columns:
+            return column
+        return f"CAST(NULL AS DOUBLE) AS {column}"
 
     def _resolve_baseline_shares(
         self,

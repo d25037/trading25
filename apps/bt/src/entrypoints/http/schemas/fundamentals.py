@@ -105,6 +105,11 @@ class FundamentalDataPoint(BaseModel):
         description="Forecast payout ratio change rate from actual payout ratio (%)",
     )
     per: float | None = Field(None, description="Price to earnings ratio")
+    forwardPer: float | None = Field(None, description="Forward price to earnings ratio")
+    pOp: float | None = Field(None, description="Price to operating profit ratio")
+    forwardPOp: float | None = Field(
+        None, description="Forward price to operating profit ratio"
+    )
     pbr: float | None = Field(None, description="Price to book ratio")
 
     # Profitability metrics
@@ -147,6 +152,10 @@ class FundamentalDataPoint(BaseModel):
     )
     tradingValueToMarketCapRatio: float | None = Field(
         None, description="Market cap / N-day average trading value ratio (x)"
+    )
+    marketCap: float | None = Field(None, description="Market cap (JPY)")
+    freeFloatMarketCap: float | None = Field(
+        None, description="Free-float market cap (JPY)"
     )
 
     # Forecast EPS

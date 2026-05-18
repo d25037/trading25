@@ -6,6 +6,7 @@ screening の market データソース向けローダー。
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -22,6 +23,11 @@ from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code, stock_code_query_candidates
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+
+_OPTIONAL_STATEMENT_COLUMNS = {
+    "forecast_operating_profit",
+    "next_year_forecast_operating_profit",
+}
 
 _LEGACY_PERIOD_TYPE_MAP = {
     "1Q": "Q1",
@@ -480,6 +486,51 @@ def _query_statements_rows(
 ) -> list[Any]:
     query_codes = stock_code_query_candidates(stock_codes)
     placeholders = ",".join("?" for _ in query_codes)
+    missing_optional_columns: set[str] = set()
+
+    for _attempt in range(len(_OPTIONAL_STATEMENT_COLUMNS) + 1):
+        sql = _build_statements_rows_sql(
+            placeholders=placeholders,
+            start_date=start_date,
+            end_date=end_date,
+            period_type=str(period_type),
+            actual_only=actual_only,
+            missing_optional_columns=missing_optional_columns,
+        )
+        params = _build_statements_rows_params(
+            query_codes=query_codes,
+            start_date=start_date,
+            end_date=end_date,
+            period_type=str(period_type),
+        )
+        try:
+            return reader.query(sql, tuple(params))
+        except Exception as e:  # noqa: BLE001 - retry old schemas without optional columns
+            missing_column = _missing_optional_statement_column_from_error(e)
+            if missing_column is None or missing_column in missing_optional_columns:
+                raise
+            missing_optional_columns.add(missing_column)
+
+    raise RuntimeError("failed to query statements rows")
+
+
+def _build_statements_rows_sql(
+    *,
+    placeholders: str,
+    start_date: str | None,
+    end_date: str | None,
+    period_type: str,
+    actual_only: bool,
+    missing_optional_columns: set[str],
+) -> str:
+    forecast_operating_profit_expr = _optional_statement_select_expr(
+        "forecast_operating_profit",
+        missing_optional_columns,
+    )
+    next_year_forecast_operating_profit_expr = _optional_statement_select_expr(
+        "next_year_forecast_operating_profit",
+        missing_optional_columns,
+    )
     sql = f"""
         SELECT
             code,
@@ -493,8 +544,8 @@ def _query_statements_rows(
             bps,
             sales,
             operating_profit,
-            forecast_operating_profit,
-            next_year_forecast_operating_profit,
+            {forecast_operating_profit_expr},
+            {next_year_forecast_operating_profit_expr},
             ordinary_profit,
             operating_cash_flow,
             dividend_fy,
@@ -513,20 +564,16 @@ def _query_statements_rows(
         FROM statements
         WHERE code IN ({placeholders})
     """
-    params: list[Any] = list(query_codes)
 
     if start_date:
         sql += " AND disclosed_date >= ?"
-        params.append(start_date)
     if end_date:
         sql += " AND disclosed_date <= ?"
-        params.append(end_date)
 
-    period_values = _resolve_period_filter_values(str(period_type))
+    period_values = _resolve_period_filter_values(period_type)
     if period_values:
         placeholders_period = ",".join("?" for _ in period_values)
         sql += f" AND type_of_current_period IN ({placeholders_period})"
-        params.extend(period_values)
 
     if actual_only:
         sql += """
@@ -538,7 +585,39 @@ def _query_statements_rows(
         """
 
     sql += " ORDER BY code, disclosed_date"
-    return reader.query(sql, tuple(params))
+    return sql
+
+
+def _build_statements_rows_params(
+    *,
+    query_codes: Sequence[str],
+    start_date: str | None,
+    end_date: str | None,
+    period_type: str,
+) -> list[Any]:
+    params: list[Any] = list(query_codes)
+    if start_date:
+        params.append(start_date)
+    if end_date:
+        params.append(end_date)
+    period_values = _resolve_period_filter_values(period_type)
+    if period_values:
+        params.extend(period_values)
+    return params
+
+
+def _optional_statement_select_expr(column: str, missing_optional_columns: set[str]) -> str:
+    if column in missing_optional_columns:
+        return f"CAST(NULL AS DOUBLE) AS {column}"
+    return column
+
+
+def _missing_optional_statement_column_from_error(exc: Exception) -> str | None:
+    message = str(exc).lower()
+    for column in _OPTIONAL_STATEMENT_COLUMNS:
+        if column in message:
+            return column
+    return None
 
 
 def _query_adjusted_statement_metric_rows(
@@ -628,7 +707,7 @@ def _group_statement_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
         grouped.setdefault(code, []).append({
             "disclosedDate": row["disclosed_date"],
             **{
-                api_col: row[db_col]
+                api_col: row.get(db_col) if hasattr(row, "get") else row[db_col]
                 for db_col, api_col in _STATEMENT_DB_TO_API_COLUMNS.items()
                 if db_col != "disclosed_date"
             },

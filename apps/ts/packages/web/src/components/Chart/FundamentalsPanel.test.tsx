@@ -111,7 +111,7 @@ describe('FundamentalsPanel', () => {
     expect(screen.getByText('No fundamentals data available')).toBeInTheDocument();
   });
 
-  it('builds latest FY metrics from latestMetrics and daily valuation', () => {
+  it('passes backend latestMetrics through without frontend financial recalculation', () => {
     mockUseFundamentals.mockReturnValue({
       data: {
         data: [
@@ -156,6 +156,10 @@ describe('FundamentalsPanel', () => {
           cfoToNetProfitRatio: 0.45,
           tradingValueToMarketCapRatio: 33.333333,
           forecastEpsAboveRecentFyActuals: true,
+          per: 21,
+          pbr: 1.9,
+          stockPrice: 3100,
+          forwardPer: 17,
         },
         dailyValuation: [{ per: 18, pbr: 1.4, close: 2500, marketCap: 1000000000 }],
         tradingValuePeriod: 20,
@@ -173,18 +177,19 @@ describe('FundamentalsPanel', () => {
     expect(metrics).toBeDefined();
     expect(metrics?.forecastEps).toBe(130);
     expect(metrics?.adjustedForecastEps).toBe(150);
-    expect(metrics?.forecastEpsChangeRate).toBe(50);
+    expect(metrics?.forecastEpsChangeRate).toBe(999);
     expect(metrics?.forecastOperatingProfit).toBe(6_200_000);
-    expect(metrics?.forecastOperatingProfitChangeRate).toBe(24);
+    expect(metrics?.forecastOperatingProfitChangeRate).toBe(999);
     expect(metrics?.forecastDividendFy).toBe(110);
     expect(metrics?.adjustedForecastDividendFy).toBe(120);
-    expect(metrics?.forecastDividendFyChangeRate).toBe(20);
-    expect(metrics?.payoutRatio).toBe(50);
+    expect(metrics?.forecastDividendFyChangeRate).toBe(999);
+    expect(metrics?.payoutRatio).toBeUndefined();
     expect(metrics?.forecastPayoutRatio).toBe(75);
-    expect(metrics?.forecastPayoutRatioChangeRate).toBe(50);
-    expect(metrics?.per).toBe(18);
-    expect(metrics?.pbr).toBe(1.4);
-    expect(metrics?.stockPrice).toBe(2500);
+    expect(metrics?.forecastPayoutRatioChangeRate).toBe(999);
+    expect(metrics?.per).toBe(21);
+    expect(metrics?.pbr).toBe(1.9);
+    expect(metrics?.stockPrice).toBe(3100);
+    expect(metrics?.forwardPer).toBe(17);
     expect(metrics?.cfoToNetProfitRatio).toBe(0.45);
     expect(metrics?.tradingValueToMarketCapRatio).toBeCloseTo(33.333333, 5);
     expect(metrics?.forecastEpsAboveRecentFyActuals).toBe(true);
@@ -227,12 +232,12 @@ describe('FundamentalsPanel', () => {
 
     const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
     expect(metrics).toBeDefined();
-    expect(metrics?.forecastEps).toBe(604);
-    expect(metrics?.adjustedForecastEps).toBeNull();
+    expect(metrics?.forecastEps).toBe(580);
+    expect(metrics?.adjustedForecastEps).toBe(560);
     expect(metrics?.revisedForecastEps).toBe(604);
     expect(metrics?.revisedForecastSource).toBe('1Q');
-    expect(metrics?.forecastEpsChangeRate).toBe(504);
-    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeNull();
+    expect(metrics?.forecastEpsChangeRate).toBe(999);
+    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeUndefined();
   });
 
   it('falls back when latestMetrics is missing and adjusted EPS cannot compute change rate', () => {
@@ -265,12 +270,12 @@ describe('FundamentalsPanel', () => {
 
     const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
     expect(metrics).toBeDefined();
-    expect(metrics?.forecastEpsChangeRate).toBeNull();
-    expect(metrics?.forecastEps).toBeNull();
+    expect(metrics?.forecastEpsChangeRate).toBe(10);
+    expect(metrics?.forecastEps).toBe(120);
     expect(metrics?.adjustedForecastEps).toBeNull();
     expect(metrics?.per).toBeUndefined();
     expect(metrics?.pbr).toBeUndefined();
     expect(metrics?.stockPrice).toBeUndefined();
-    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeNull();
+    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeUndefined();
   });
 });
