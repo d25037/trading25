@@ -1079,6 +1079,29 @@ def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
     return "bulk_plan_unavailable"
 
 
+def _filter_bulk_plan_after_exclusive_anchor(
+    plan: BulkFetchPlan,
+    *,
+    anchor: str | None,
+) -> tuple[BulkFetchPlan, int]:
+    """Drop bulk files whose inferred range cannot contain rows after anchor."""
+    anchor_date = _parse_date(anchor or "")
+    if anchor_date is None or not plan.files:
+        return plan, 0
+
+    files: list[BulkFileInfo] = []
+    skipped = 0
+    for file_info in plan.files:
+        if file_info.range_end is not None and file_info.range_end <= anchor_date:
+            skipped += 1
+            continue
+        files.append(file_info)
+
+    if skipped == 0:
+        return plan, 0
+    return replace(plan, files=files), skipped
+
+
 def _emit_fetch_strategy_progress(
     ctx: SyncContext,
     *,
@@ -3144,9 +3167,51 @@ async def _sync_margin_data(
     empty_fetch_codes: set[str] = set()
 
     if decision.method == "bulk":
-        if decision.plan is None or len(decision.plan.files) == 0:
+        effective_plan = decision.plan
+        skipped_anchor_files = 0
+        if effective_plan is not None:
+            effective_plan, skipped_anchor_files = _filter_bulk_plan_after_exclusive_anchor(
+                effective_plan,
+                anchor=anchor,
+            )
+            if skipped_anchor_files > 0:
+                logger.info(
+                    "margin bulk files at or before anchor skipped",
+                    event="sync_fetch_strategy",
+                    stage=stage_name,
+                    endpoint="/markets/margin-interest",
+                    skippedFiles=skipped_anchor_files,
+                    remainingFiles=len(effective_plan.files),
+                    anchor=anchor,
+                )
+        if effective_plan is not None and skipped_anchor_files > 0 and len(effective_plan.files) == 0:
+            ctx.on_progress(
+                "margin",
+                progress_current,
+                progress_total,
+                (
+                    "No new /markets/margin-interest bulk files after "
+                    f"{anchor}; skipping margin bulk fetch."
+                ),
+            )
+            _log_sync_fetch_execution(
+                stage=stage_name,
+                endpoint="/markets/margin-interest",
+                decision=decision,
+                executed="bulk",
+                actual_api_calls=0,
+                fallback=False,
+                bulk_result=BulkFetchResult(
+                    rows=[],
+                    api_calls=0,
+                    cache_hits=0,
+                    cache_misses=0,
+                    selected_files=0,
+                ),
+            )
+        elif effective_plan is None or len(effective_plan.files) == 0:
             used_rest_fallback = True
-            bulk_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+            bulk_fallback_reason = _resolve_bulk_fallback_reason(effective_plan)
             logger.warning(
                 "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
                 stage_name,
@@ -3177,7 +3242,7 @@ async def _sync_margin_data(
                     )
 
                 bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                    decision.plan,
+                    effective_plan,
                     on_rows_batch=_consume_margin_bulk_rows,
                     accumulate_rows=False,
                 )

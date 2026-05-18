@@ -2119,6 +2119,89 @@ async def test_sync_margin_data_bulk_success_backfills_missing_codes(
 
 
 @pytest.mark.asyncio
+async def test_sync_margin_data_skips_bulk_fetch_when_selected_files_do_not_advance_anchor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient()
+    progress_messages: list[str] = []
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[
+            BulkFileInfo(
+                key="markets/margin-interest/live/markets_margin-interest_20260501.csv.gz",
+                last_modified="2026-05-08T07:32:06+00:00",
+                size=1,
+                range_start=date(2026, 5, 1),
+                range_end=date(2026, 5, 1),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=1,
+        estimated_cache_misses=0,
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/markets/margin-interest": BulkFetchResult(
+                rows=[
+                    {
+                        "Code": "72030",
+                        "Date": "2026-05-01",
+                        "LongVol": 1000,
+                        "ShrtVol": 200,
+                    }
+                ],
+                api_calls=0,
+                cache_hits=1,
+                cache_misses=0,
+                selected_files=1,
+            )
+        }
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+        on_progress=lambda *_args: progress_messages.append(str(_args[-1])),
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=1,
+            plan=bulk_plan,
+            reason="bulk_estimate_lower",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-05-01",
+        existing_margin_codes={"7203"},
+    )
+
+    margin_calls = [call for call in client.calls if call[0] == "/markets/margin-interest"]
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert result["updated"] == 0
+    assert bulk_service.fetch_calls == []
+    assert margin_calls == []
+    assert any("No new /markets/margin-interest bulk files" in message for message in progress_messages)
+
+
+@pytest.mark.asyncio
 async def test_sync_margin_data_bulk_fallback_to_rest_collects_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
