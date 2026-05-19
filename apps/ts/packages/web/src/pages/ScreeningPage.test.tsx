@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
   createInitialScreeningState,
-  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
@@ -27,9 +26,6 @@ const mockSetInSessionScreeningParams = vi.fn((params: typeof DEFAULT_IN_SESSION
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
 });
-const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTAL_RANKING_PARAMS) => {
-  mockRouteState.fundamentalRankingParams = params;
-});
 const mockRouteState = {
   activeSubTab: 'preOpenScreening' as string,
   setActiveSubTab: mockSetActiveSubTab,
@@ -39,8 +35,6 @@ const mockRouteState = {
   setInSessionScreeningParams: mockSetInSessionScreeningParams,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
-  fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
-  setFundamentalRankingParams: mockSetFundamentalRankingParams,
 };
 
 const mockScreeningFilters = vi.fn((_props: unknown) => <div>Screening Filters</div>);
@@ -169,14 +163,6 @@ vi.mock('@/hooks/useRanking', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useFundamentalRanking', () => ({
-  useFundamentalRanking: () => ({
-    data: { metricKey: 'eps_forecast_to_actual', rankings: { ratioHigh: [], ratioLow: [] } },
-    isLoading: false,
-    error: null,
-  }),
-}));
-
 vi.mock('@/hooks/useBacktest', () => ({
   useStrategies: () => mockStrategiesQueryResult,
 }));
@@ -204,16 +190,6 @@ vi.mock('@/components/Ranking', () => ({
   RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
     <button type="button" onClick={() => onStockClick('6758')}>
       Ranking Row
-    </button>
-  ),
-}));
-
-vi.mock('@/components/FundamentalRanking', () => ({
-  FundamentalRankingFilters: () => <div>Fundamental Ranking Filters</div>,
-  FundamentalRankingSummary: () => <div>Fundamental Ranking Summary</div>,
-  FundamentalRankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('9432')}>
-      Fundamental Ranking Row
     </button>
   ),
 }));
@@ -258,13 +234,11 @@ describe('ScreeningPage', () => {
     mockRouteState.preOpenScreeningParams = { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS };
     mockRouteState.inSessionScreeningParams = { ...DEFAULT_IN_SESSION_SCREENING_PARAMS };
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
-    mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
     mockNavigate.mockReset();
     mockSetActiveSubTab.mockClear();
     mockSetPreOpenScreeningParams.mockClear();
     mockSetInSessionScreeningParams.mockClear();
     mockSetRankingParams.mockClear();
-    mockSetFundamentalRankingParams.mockClear();
     mockScreeningFilters.mockClear();
     mockScreeningTable.mockClear();
     mockUseScreeningJobSSE.mockReset();

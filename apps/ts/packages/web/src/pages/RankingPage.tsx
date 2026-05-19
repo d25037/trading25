@@ -1,11 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { BarChart3, TrendingUp } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
-import {
-  FundamentalRankingFilters,
-  FundamentalRankingSummary,
-  FundamentalRankingTable,
-} from '@/components/FundamentalRanking';
 import {
   PageIntroMetaList,
   SectionEyebrow,
@@ -24,25 +18,10 @@ import {
   TechnicalEventFilters,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
-import {
-  ValueCompositeRankingFilters,
-  ValueCompositeRankingSummary,
-  ValueCompositeRankingTable,
-} from '@/components/ValueCompositeRanking';
-import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
-import { useValueCompositeRanking } from '@/hooks/useValueCompositeRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
-import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
-import type { ValueCompositeProfileId, ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
-
-const subTabs = [
-  { value: 'ranking' as RankingPageTab, label: 'Daily Ranking', icon: BarChart3 },
-  { value: 'fundamentalRanking' as RankingPageTab, label: 'Fundamental Ranking', icon: TrendingUp },
-  { value: 'valueComposite' as RankingPageTab, label: 'Value Scores', icon: TrendingUp },
-];
+import type { RankingDailyView, RankingParams } from '@/types/ranking';
 
 const dailyViewTabs = [
   { value: 'stocks' as RankingDailyView, label: 'Individual Stocks' },
@@ -50,42 +29,22 @@ const dailyViewTabs = [
   { value: 'indices' as RankingDailyView, label: 'Indices' },
 ];
 
-function getValueCompositeProfileLabel(profileId: ValueCompositeProfileId | undefined): string {
-  if (profileId === 'prime_size75_forward_per25') {
-    return 'Prime size75 / forward PER25';
-  }
-  return 'Standard value + 120d breakout boost';
-}
-
-function getValueCompositeForwardEpsModeLabel(mode: ValueCompositeRankingParams['forwardEpsMode']): string {
-  return mode === 'fy' ? 'FY-only forecast EPS' : 'Latest revised EPS (previous default)';
-}
-
-interface RankingSidebarProps {
-  activeSubTab: RankingPageTab;
-  activeDailyView: RankingDailyView;
-  rankingParams: RankingParams;
-  fundamentalRankingParams: FundamentalRankingParams;
-  valueCompositeRankingParams: ValueCompositeRankingParams;
-  setActiveSubTab: (tab: RankingPageTab) => void;
-  setActiveDailyView: (view: RankingDailyView) => void;
-  setRankingParams: (params: RankingParams) => void;
-  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
-  setValueCompositeRankingParams: (params: ValueCompositeRankingParams) => void;
-}
-
 interface IndexPerformanceSidebarProps {
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
 }
 
+interface RankingSidebarProps {
+  activeDailyView: RankingDailyView;
+  rankingParams: RankingParams;
+  setActiveDailyView: (view: RankingDailyView) => void;
+  setRankingParams: (params: RankingParams) => void;
+}
+
 interface RankingContentProps {
-  activeSubTab: RankingPageTab;
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
   rankingQuery: ReturnType<typeof useRanking>;
-  fundamentalRankingQuery: ReturnType<typeof useFundamentalRanking>;
-  valueCompositeRankingQuery: ReturnType<typeof useValueCompositeRanking>;
   rankingSortState: RankingTableSortState;
   onRankingSortChange: (state: RankingTableSortState) => void;
   onStockClick: (code: string) => void;
@@ -127,85 +86,37 @@ function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerfo
   );
 }
 
-function RankingSidebar({
-  activeSubTab,
-  activeDailyView,
-  rankingParams,
-  fundamentalRankingParams,
-  valueCompositeRankingParams,
-  setActiveSubTab,
-  setActiveDailyView,
-  setRankingParams,
-  setFundamentalRankingParams,
-  setValueCompositeRankingParams,
-}: RankingSidebarProps) {
+function RankingSidebar({ activeDailyView, rankingParams, setActiveDailyView, setRankingParams }: RankingSidebarProps) {
   return (
     <div className="space-y-3">
       <Surface className="p-3">
         <div className="space-y-3">
           <div className="space-y-1">
             <SectionEyebrow>Workspace</SectionEyebrow>
-            <h2 className="text-sm font-semibold text-foreground">Result Scope</h2>
+            <h2 className="text-sm font-semibold text-foreground">Daily View</h2>
           </div>
           <SegmentedTabs
-            items={subTabs}
-            value={activeSubTab}
-            onChange={setActiveSubTab}
+            items={dailyViewTabs}
+            value={activeDailyView}
+            onChange={setActiveDailyView}
             className="overflow-x-auto lg:flex-col"
             itemClassName="h-8 shrink-0 justify-start rounded-lg px-3 py-1.5 text-xs"
           />
-          {activeSubTab === 'ranking' ? (
-            <div className="space-y-2 border-t border-border/60 pt-3">
-              <SectionEyebrow className="mb-0">Daily View</SectionEyebrow>
-              <SegmentedTabs
-                items={dailyViewTabs}
-                value={activeDailyView}
-                onChange={setActiveDailyView}
-                className="overflow-x-auto lg:flex-col"
-                itemClassName="h-8 shrink-0 justify-start rounded-lg px-3 py-1.5 text-xs"
-              />
-            </div>
-          ) : null}
         </div>
       </Surface>
 
-      {activeSubTab === 'ranking' ? (
-        activeDailyView === 'indices' ? (
-          <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
-        ) : activeDailyView === 'technicalEvents' ? (
-          <TechnicalEventFilters params={rankingParams} onChange={setRankingParams} />
-        ) : (
-          <RankingFilters params={rankingParams} onChange={setRankingParams} />
-        )
-      ) : activeSubTab === 'valueComposite' ? (
-        <ValueCompositeRankingFilters params={valueCompositeRankingParams} onChange={setValueCompositeRankingParams} />
+      {activeDailyView === 'indices' ? (
+        <IndexPerformanceSidebar rankingParams={rankingParams} setRankingParams={setRankingParams} />
+      ) : activeDailyView === 'technicalEvents' ? (
+        <TechnicalEventFilters params={rankingParams} onChange={setRankingParams} />
       ) : (
-        <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />
+        <RankingFilters params={rankingParams} onChange={setRankingParams} />
       )}
     </div>
   );
 }
 
-function buildIntroMetaItems(
-  activeSubTab: RankingPageTab,
-  activeDailyView: RankingDailyView,
-  rankingParams: RankingParams,
-  fundamentalRankingParams: FundamentalRankingParams,
-  valueCompositeRankingParams: ValueCompositeRankingParams
-) {
-  if (activeSubTab === 'fundamentalRanking') {
-    return [
-      { label: 'Mode', value: 'Forecast / actual EPS' },
-      { label: 'Markets', value: formatMarketsLabel((fundamentalRankingParams.markets ?? 'prime').split(',')) },
-    ];
-  }
-  if (activeSubTab === 'valueComposite') {
-    return [
-      { label: 'Profile', value: getValueCompositeProfileLabel(valueCompositeRankingParams.profileId) },
-      { label: 'EPS Basis', value: getValueCompositeForwardEpsModeLabel(valueCompositeRankingParams.forwardEpsMode) },
-      { label: 'Markets', value: formatMarketsLabel((valueCompositeRankingParams.markets ?? 'standard').split(',')) },
-    ];
-  }
+function buildIntroMetaItems(activeDailyView: RankingDailyView, rankingParams: RankingParams) {
   return [
     {
       label: 'Mode',
@@ -221,45 +132,14 @@ function buildIntroMetaItems(
 }
 
 function RankingContent({
-  activeSubTab,
   activeDailyView,
   rankingParams,
   rankingQuery,
-  fundamentalRankingQuery,
-  valueCompositeRankingQuery,
   rankingSortState,
   onRankingSortChange,
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
-  if (activeSubTab === 'fundamentalRanking') {
-    return (
-      <>
-        <FundamentalRankingTable
-          rankings={fundamentalRankingQuery.data?.rankings}
-          isLoading={fundamentalRankingQuery.isLoading}
-          error={fundamentalRankingQuery.error}
-          onStockClick={onStockClick}
-        />
-        <FundamentalRankingSummary data={fundamentalRankingQuery.data} />
-      </>
-    );
-  }
-
-  if (activeSubTab === 'valueComposite') {
-    return (
-      <>
-        <ValueCompositeRankingTable
-          data={valueCompositeRankingQuery.data}
-          isLoading={valueCompositeRankingQuery.isLoading}
-          error={valueCompositeRankingQuery.error}
-          onStockClick={onStockClick}
-        />
-        <ValueCompositeRankingSummary data={valueCompositeRankingQuery.data} />
-      </>
-    );
-  }
-
   if (activeDailyView === 'indices') {
     return (
       <IndexPerformanceTable
@@ -311,18 +191,7 @@ function RankingContent({
 }
 
 export function RankingPage() {
-  const {
-    activeSubTab,
-    activeDailyView,
-    rankingParams,
-    fundamentalRankingParams,
-    valueCompositeRankingParams,
-    setActiveSubTab,
-    setActiveDailyView,
-    setRankingParams,
-    setFundamentalRankingParams,
-    setValueCompositeRankingParams,
-  } = useRankingRouteState();
+  const { activeDailyView, rankingParams, setActiveDailyView, setRankingParams } = useRankingRouteState();
   const navigate = useNavigate();
   const rankingSortState = useMemo<RankingTableSortState>(
     () => ({
@@ -358,22 +227,8 @@ export function RankingPage() {
     }),
     [activeDailyView, rankingParams]
   );
-  const rankingQuery = useRanking(rankingQueryParams, activeSubTab === 'ranking');
-  const fundamentalRankingQuery = useFundamentalRanking(
-    fundamentalRankingParams,
-    activeSubTab === 'fundamentalRanking'
-  );
-  const valueCompositeRankingQuery = useValueCompositeRanking(
-    valueCompositeRankingParams,
-    activeSubTab === 'valueComposite'
-  );
-  const introMetaItems = buildIntroMetaItems(
-    activeSubTab,
-    activeDailyView,
-    rankingParams,
-    fundamentalRankingParams,
-    valueCompositeRankingParams
-  );
+  const rankingQuery = useRanking(rankingQueryParams, true);
+  const introMetaItems = buildIntroMetaItems(activeDailyView, rankingParams);
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -403,7 +258,7 @@ export function RankingPage() {
             <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
               <p className="max-w-2xl text-xs text-muted-foreground sm:text-sm">
-                Daily ranking, index performance, forecast/actual EPS ratios, and value scores.
+                Daily ranking, technical events, and index performance.
               </p>
             </div>
           </div>
@@ -414,27 +269,18 @@ export function RankingPage() {
       <SplitLayout className="min-h-0 flex-1 flex-col gap-3 lg:flex-row lg:items-stretch lg:overflow-hidden">
         <SplitSidebar className="w-full lg:h-full lg:w-40 lg:overflow-auto xl:w-44 2xl:w-48">
           <RankingSidebar
-            activeSubTab={activeSubTab}
             activeDailyView={activeDailyView}
             rankingParams={rankingParams}
-            fundamentalRankingParams={fundamentalRankingParams}
-            valueCompositeRankingParams={valueCompositeRankingParams}
-            setActiveSubTab={setActiveSubTab}
             setActiveDailyView={setActiveDailyView}
             setRankingParams={setRankingParams}
-            setFundamentalRankingParams={setFundamentalRankingParams}
-            setValueCompositeRankingParams={setValueCompositeRankingParams}
           />
         </SplitSidebar>
 
         <SplitMain className="gap-3 lg:overflow-hidden">
           <RankingContent
-            activeSubTab={activeSubTab}
             activeDailyView={activeDailyView}
             rankingParams={rankingParams}
             rankingQuery={rankingQuery}
-            fundamentalRankingQuery={fundamentalRankingQuery}
-            valueCompositeRankingQuery={valueCompositeRankingQuery}
             rankingSortState={rankingSortState}
             onRankingSortChange={handleRankingSortChange}
             onStockClick={handleStockClick}

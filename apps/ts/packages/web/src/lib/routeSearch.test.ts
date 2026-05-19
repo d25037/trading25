@@ -5,7 +5,6 @@ import {
   extractLegacyPortfolioSearch,
   extractLegacyScreeningSearch,
   extractLegacySymbolWorkbenchSearch,
-  getRankingStateFromScreeningSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   prunePersistedStoreFields,
@@ -93,8 +92,6 @@ describe('routeSearch', () => {
       sameDayOrder: 'asc',
       sameDayLimit: '60',
       rankingLimit: '25',
-      fundamentalLimit: '30',
-      forecastAboveRecentFyActuals: 'true',
     });
 
     const state = getScreeningStateFromSearch(search);
@@ -114,8 +111,6 @@ describe('routeSearch', () => {
       inSessionOrder: 'asc',
       inSessionLimit: 60,
       rankingLimit: 25,
-      fundamentalLimit: 30,
-      forecastAboveRecentFyActuals: true,
     });
 
     expect(
@@ -124,14 +119,11 @@ describe('routeSearch', () => {
         screeningParams: { strategies: 'production/a' },
         sameDayScreeningParams: { strategies: 'production/b' },
         rankingParams: { lookbackDays: 5 },
-        fundamentalRankingParams: { forecastLookbackFyCount: 5 },
       })
     ).toEqual({
-      tab: 'fundamentalRanking',
       preOpenStrategies: 'production/a',
       inSessionStrategies: 'production/b',
       rankingLookbackDays: 5,
-      forecastLookbackFyCount: 5,
     });
   });
 
@@ -143,7 +135,7 @@ describe('routeSearch', () => {
     expect(serializeScreeningSearch(state)).toEqual({});
   });
 
-  it('serializes non-default ranking and fundamental filters', () => {
+  it('serializes non-default ranking filters', () => {
     const search = validateScreeningSearch({
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
@@ -152,9 +144,6 @@ describe('routeSearch', () => {
       rankingSortBy: 'forwardPer',
       rankingOrder: 'asc',
       rankingForwardEpsDisclosedWithinDays: '126',
-      fundamentalMarkets: '0112',
-      forecastAboveRecentFyActuals: true,
-      forecastLookbackFyCount: '7',
     });
 
     const state = getScreeningStateFromSearch(search);
@@ -167,9 +156,6 @@ describe('routeSearch', () => {
       rankingSortBy: 'forwardPer',
       rankingOrder: 'asc',
       rankingForwardEpsDisclosedWithinDays: 126,
-      fundamentalMarkets: '0112',
-      forecastAboveRecentFyActuals: true,
-      forecastLookbackFyCount: 7,
     });
   });
 
@@ -189,9 +175,8 @@ describe('routeSearch', () => {
     expect(serializeRankingSearch(rankingState)).toEqual({});
   });
 
-  it('roundtrips ranking route state and maps screening ranking tabs', () => {
+  it('roundtrips ranking route state', () => {
     const rankingSearch = validateRankingSearch({
-      tab: 'fundamentalRanking',
       dailyView: 'technicalEvents',
       rankingMarkets: '0111',
       rankingLookbackDays: '15',
@@ -201,15 +186,11 @@ describe('routeSearch', () => {
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
       rankingForwardEpsDisclosedWithinDays: '0',
-      fundamentalMarkets: '0112',
-      forecastAboveRecentFyActuals: true,
     });
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
-    expect(rankingState.activeSubTab).toBe('fundamentalRanking');
     expect(rankingState.activeDailyView).toBe('technicalEvents');
     expect(serializeRankingSearch(rankingState)).toEqual({
-      tab: 'fundamentalRanking',
       dailyView: 'technicalEvents',
       rankingMarkets: '0111',
       rankingLookbackDays: 15,
@@ -218,29 +199,10 @@ describe('routeSearch', () => {
       rankingLiquidityState: 'distribution_stress',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
-      fundamentalMarkets: '0112',
-      forecastAboveRecentFyActuals: true,
-    });
-
-    const screeningSearch = validateScreeningSearch({
-      tab: 'fundamentalRanking',
-      rankingMarkets: 'growth',
-      fundamentalLimit: '30',
-    });
-
-    expect(getRankingStateFromScreeningSearch(screeningSearch)).toEqual({
-      activeSubTab: 'fundamentalRanking',
-      activeDailyView: 'stocks',
-      rankingParams: expect.objectContaining({
-        markets: 'growth',
-      }),
-      fundamentalRankingParams: expect.objectContaining({
-        limit: 30,
-      }),
     });
   });
 
-  it('roundtrips value composite ranking route state', () => {
+  it('drops removed ranking tabs and value-composite url state', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'valueComposite',
       valueDate: '2026-04-24',
@@ -253,23 +215,8 @@ describe('routeSearch', () => {
 
     const rankingState = getRankingStateFromSearch(rankingSearch);
 
-    expect(rankingState.activeSubTab).toBe('valueComposite');
-    expect(rankingState.valueCompositeRankingParams).toEqual({
-      date: '2026-04-24',
-      markets: 'standard',
-      limit: 100,
-      profileId: 'prime_size75_forward_per25',
-      applyLiquidityFilter: false,
-      forwardEpsMode: 'fy',
-    });
-    expect(serializeRankingSearch(rankingState)).toEqual({
-      tab: 'valueComposite',
-      valueDate: '2026-04-24',
-      valueLimit: 100,
-      valueProfileId: 'prime_size75_forward_per25',
-      valueApplyLiquidityFilter: false,
-      valueForwardEpsMode: 'fy',
-    });
+    expect(rankingState.activeDailyView).toBe('stocks');
+    expect(serializeRankingSearch(rankingState)).toEqual({});
   });
 
   it('validates and serializes backtest route state', () => {
@@ -389,8 +336,6 @@ describe('routeSearch', () => {
         tab: 'unknown',
         screeningRecentDays: '0',
         screeningOrder: 'invalid',
-        forecastAboveRecentFyActuals: 'not-bool',
-        forecastLookbackFyCount: '-1',
       })
     ).toEqual({});
 
@@ -401,9 +346,7 @@ describe('routeSearch', () => {
         rankingSortBy: 'invalid',
         rankingOrder: 'sideways',
       })
-    ).toEqual({
-      tab: 'ranking',
-    });
+    ).toEqual({});
 
     expect(
       validateBacktestSearch({
@@ -425,7 +368,6 @@ describe('routeSearch', () => {
         screeningParams: 'bad',
         sameDayScreeningParams: null,
         rankingParams: 1,
-        fundamentalRankingParams: false,
       })
     ).toEqual({});
 

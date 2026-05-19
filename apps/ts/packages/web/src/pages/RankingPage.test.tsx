@@ -1,42 +1,23 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_RANKING_PARAMS,
-  DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS,
-} from '@/stores/screeningStore';
-import type { RankingDailyView, RankingPageTab } from '@/types/ranking';
+import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
+import type { RankingDailyView } from '@/types/ranking';
 import { RankingPage } from './RankingPage';
 
 const mockNavigate = vi.fn();
-const mockSetActiveSubTab = vi.fn((tab: RankingPageTab) => {
-  mockRouteState.activeSubTab = tab;
-});
 const mockSetActiveDailyView = vi.fn((view: RankingDailyView) => {
   mockRouteState.activeDailyView = view;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
 });
-const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTAL_RANKING_PARAMS) => {
-  mockRouteState.fundamentalRankingParams = params;
-});
-const mockSetValueCompositeRankingParams = vi.fn((params: typeof DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS) => {
-  mockRouteState.valueCompositeRankingParams = params;
-});
 const mockUseRanking = vi.fn();
 const mockRouteState = {
-  activeSubTab: 'ranking' as RankingPageTab,
   activeDailyView: 'stocks' as RankingDailyView,
-  setActiveSubTab: mockSetActiveSubTab,
   setActiveDailyView: mockSetActiveDailyView,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
-  fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
-  setFundamentalRankingParams: mockSetFundamentalRankingParams,
-  valueCompositeRankingParams: { ...DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS },
-  setValueCompositeRankingParams: mockSetValueCompositeRankingParams,
 };
 
 vi.mock('@tanstack/react-router', () => ({
@@ -49,32 +30,6 @@ vi.mock('@/hooks/usePageRouteState', () => ({
 
 vi.mock('@/hooks/useRanking', () => ({
   useRanking: (...args: unknown[]) => mockUseRanking(...args),
-}));
-
-vi.mock('@/hooks/useFundamentalRanking', () => ({
-  useFundamentalRanking: () => ({
-    data: { metricKey: 'eps_forecast_to_actual', rankings: { ratioHigh: [], ratioLow: [] } },
-    isLoading: false,
-    error: null,
-  }),
-}));
-
-vi.mock('@/hooks/useValueCompositeRanking', () => ({
-  useValueCompositeRanking: () => ({
-    data: {
-      date: '2026-04-24',
-      markets: ['standard'],
-      metricKey: 'standard_value_composite',
-      scoreMethod: 'standard_pbr_tilt',
-      scorePolicy: '35% small market cap + 40% low PBR + 25% low forward PER; no ADV60 floor',
-      weights: { smallMarketCap: 0.35, lowPbr: 0.4, lowForwardPer: 0.25 },
-      itemCount: 0,
-      items: [],
-      lastUpdated: '2026-04-24T00:00:00Z',
-    },
-    isLoading: false,
-    error: null,
-  }),
 }));
 
 vi.mock('@/components/Ranking', () => ({
@@ -128,39 +83,13 @@ vi.mock('@/components/Ranking', () => ({
   ),
 }));
 
-vi.mock('@/components/FundamentalRanking', () => ({
-  FundamentalRankingFilters: () => <div>Fundamental Ranking Filters</div>,
-  FundamentalRankingSummary: () => <div>Fundamental Ranking Summary</div>,
-  FundamentalRankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('9432')}>
-      Fundamental Ranking Row
-    </button>
-  ),
-}));
-
-vi.mock('@/components/ValueCompositeRanking', () => ({
-  ValueCompositeRankingFilters: () => <div>Value Score Filters</div>,
-  ValueCompositeRankingSummary: () => <div>Value Score Summary</div>,
-  ValueCompositeRankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('9984')}>
-      Value Score Row
-    </button>
-  ),
-}));
-
 describe('RankingPage', () => {
   beforeEach(() => {
-    mockRouteState.activeSubTab = 'ranking';
     mockRouteState.activeDailyView = 'stocks';
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
-    mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
-    mockRouteState.valueCompositeRankingParams = { ...DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS };
     mockNavigate.mockReset();
-    mockSetActiveSubTab.mockClear();
     mockSetActiveDailyView.mockClear();
     mockSetRankingParams.mockClear();
-    mockSetFundamentalRankingParams.mockClear();
-    mockSetValueCompositeRankingParams.mockClear();
     mockUseRanking.mockReset();
     mockUseRanking.mockReturnValue({
       data: {
@@ -187,8 +116,9 @@ describe('RankingPage', () => {
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fundamental Ranking' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Value Scores' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'TOPIX100 Study' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Value Scores' })).toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(screen.queryByText('Index Performance')).not.toBeInTheDocument();
     expect(screen.getByText('items:1')).toBeInTheDocument();
@@ -230,30 +160,6 @@ describe('RankingPage', () => {
       sortBy: 'forwardPer',
       order: 'asc',
     });
-  });
-
-  it('switches to fundamental ranking tab', async () => {
-    const user = userEvent.setup();
-    const view = render(<RankingPage />);
-
-    await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
-    view.rerender(<RankingPage />);
-
-    expect(screen.getByText('Forecast / actual EPS')).toBeInTheDocument();
-    expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
-    expect(screen.getByText('Fundamental Ranking Summary')).toBeInTheDocument();
-  });
-
-  it('switches to value scores tab', async () => {
-    const user = userEvent.setup();
-    const view = render(<RankingPage />);
-
-    await user.click(screen.getByRole('button', { name: 'Value Scores' }));
-    view.rerender(<RankingPage />);
-
-    expect(screen.getByText('Standard value + 120d breakout boost')).toBeInTheDocument();
-    expect(screen.getByText('Value Score Filters')).toBeInTheDocument();
-    expect(screen.getByText('Value Score Summary')).toBeInTheDocument();
   });
 
   it('navigates to the symbol workbench when a ranking row is selected', async () => {
@@ -312,12 +218,4 @@ describe('RankingPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: 'TOPIX' } });
   });
 
-  it('navigates to the symbol workbench when a value score row is selected', async () => {
-    const user = userEvent.setup();
-    mockRouteState.activeSubTab = 'valueComposite';
-    render(<RankingPage />);
-
-    await user.click(screen.getByText('Value Score Row'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/symbol-workbench', search: { symbol: '9984' } });
-  });
 });

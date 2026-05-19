@@ -198,13 +198,11 @@ describe('usePageRouteState', () => {
   it('preserves ranking params across sequential updates', () => {
     const { result } = renderHook(() => useRankingRouteState());
 
-    expect(result.current.activeSubTab).toBe('ranking');
     expect(result.current.activeDailyView).toBe('stocks');
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
 
     act(() => {
       result.current.setActiveDailyView('indices');
-      result.current.setActiveSubTab('fundamentalRanking');
       result.current.setRankingParams({
         ...DEFAULT_RANKING_PARAMS,
         limit: 25,
@@ -213,7 +211,6 @@ describe('usePageRouteState', () => {
     });
 
     expect(routeSearchState.ranking).toEqual({
-      tab: 'fundamentalRanking',
       dailyView: 'indices',
       rankingLimit: 25,
       rankingMarkets: 'growth',
@@ -284,10 +281,9 @@ describe('usePageRouteState', () => {
       'trading25-screening-store',
       JSON.stringify({
         state: {
-          activeSubTab: 'fundamentalRanking',
+          activeSubTab: 'preOpenScreening',
           screeningParams: { strategies: 'production/a' },
           rankingParams: { limit: 15 },
-          fundamentalRankingParams: { forecastLookbackFyCount: 5 },
         },
         version: 0,
       })
@@ -311,10 +307,8 @@ describe('usePageRouteState', () => {
 
     await waitFor(() => {
       expect(routeSearchState.screening).toEqual({
-        tab: 'fundamentalRanking',
         preOpenStrategies: 'production/a',
         rankingLimit: 15,
-        forecastLookbackFyCount: 5,
       });
       expect(routeSearchState.backtest).toEqual({
         tab: 'lab',

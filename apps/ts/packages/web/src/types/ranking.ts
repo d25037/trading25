@@ -12,7 +12,6 @@ export type {
   SortOrder,
 } from '@trading25/contracts/types/api-response-types';
 
-export type RankingPageTab = 'ranking' | 'fundamentalRanking' | 'valueComposite';
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
 export type RankingLiquidityState =

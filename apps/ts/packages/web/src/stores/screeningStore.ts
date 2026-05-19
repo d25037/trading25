@@ -1,12 +1,10 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
-import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
-import type { ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
 
-export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
+export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening';
 
 export const DEFAULT_PRE_OPEN_SCREENING_PARAMS: ScreeningParams = {
   entry_decidability: 'pre_open_decidable',
@@ -33,21 +31,6 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   sortBy: 'tradingValue',
   order: 'desc',
   forwardEpsDisclosedWithinDays: 0,
-};
-
-export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
-  markets: 'prime',
-  limit: 20,
-  forecastAboveRecentFyActuals: false,
-  forecastLookbackFyCount: 3,
-};
-
-export const DEFAULT_VALUE_COMPOSITE_RANKING_PARAMS: ValueCompositeRankingParams = {
-  markets: 'standard',
-  limit: 50,
-  profileId: 'standard_breakout_120d20',
-  applyLiquidityFilter: true,
-  forwardEpsMode: 'latest',
 };
 
 interface ScreeningState {

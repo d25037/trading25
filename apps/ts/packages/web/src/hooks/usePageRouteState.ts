@@ -33,10 +33,8 @@ import {
 import { backtestRoute, symbolWorkbenchRoute, indicesRoute, portfolioRoute, rankingRoute, screeningRoute } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
-import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
-import type { RankingDailyView, RankingPageTab, RankingParams } from '@/types/ranking';
+import type { RankingDailyView, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
-import type { ValueCompositeRankingParams } from '@/types/valueCompositeRanking';
 
 const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
 
@@ -245,8 +243,6 @@ export function useScreeningRouteState(): {
   setInSessionScreeningParams: (params: ScreeningParams) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
-  fundamentalRankingParams: FundamentalRankingParams;
-  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
 } {
   const navigate = useNavigate();
   const search = screeningRoute.useSearch();
@@ -259,13 +255,11 @@ export function useScreeningRouteState(): {
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
-        fundamentalRankingParams: FundamentalRankingParams;
       }) => {
         activeSubTab: ScreeningSubTab;
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
-        fundamentalRankingParams: FundamentalRankingParams;
       }
     ) => {
       void navigate({
@@ -287,22 +281,14 @@ export function useScreeningRouteState(): {
     setInSessionScreeningParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, inSessionScreeningParams: params })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
-    setFundamentalRankingParams: (params) =>
-      updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
   };
 }
 
 export function useRankingRouteState(): {
-  activeSubTab: RankingPageTab;
-  setActiveSubTab: (tab: RankingPageTab) => void;
   activeDailyView: RankingDailyView;
   setActiveDailyView: (view: RankingDailyView) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
-  fundamentalRankingParams: FundamentalRankingParams;
-  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
-  valueCompositeRankingParams: ValueCompositeRankingParams;
-  setValueCompositeRankingParams: (params: ValueCompositeRankingParams) => void;
 } {
   const navigate = useNavigate();
   const search = rankingRoute.useSearch();
@@ -311,17 +297,11 @@ export function useRankingRouteState(): {
   const updateSearch = useCallback(
     (
       updater: (currentState: {
-        activeSubTab: RankingPageTab;
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
-        fundamentalRankingParams: FundamentalRankingParams;
-        valueCompositeRankingParams: ValueCompositeRankingParams;
       }) => {
-        activeSubTab: RankingPageTab;
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
-        fundamentalRankingParams: FundamentalRankingParams;
-        valueCompositeRankingParams: ValueCompositeRankingParams;
       }
     ) => {
       void navigate({
@@ -337,13 +317,8 @@ export function useRankingRouteState(): {
 
   return {
     ...state,
-    setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
     setActiveDailyView: (view) => updateSearch((currentState) => ({ ...currentState, activeDailyView: view })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
-    setFundamentalRankingParams: (params) =>
-      updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
-    setValueCompositeRankingParams: (params) =>
-      updateSearch((currentState) => ({ ...currentState, valueCompositeRankingParams: params })),
   };
 }
 
