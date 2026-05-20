@@ -189,7 +189,7 @@ relatedExperiments = [
 [experiments."market-behavior/short-term-shock-forward-response"]
 family = "Market Behavior"
 status = "observed"
-decision = "Prime の短期ショック研究では、20d<0かつ60d>=0の素朴な押し目は20d TOPIX excess median が弱い一方、20d<=-10%かつ60d>=+20% 以上の深い押し目 x 中期上昇では median がプラス化する。valuation では both_low / low_pbr_only が neither_low より左尾を抑える。low valuation 前提では 20d>0・60d>0・-1<liq_z<1 の neutral_rerating が core 候補で、既存 rerating_participation は右尾も左尾も大きい crowded_rerating 相当として扱う。2024/8/5・2025/4/7 型の raw rebound は市場反発寄与が大きいため production signal ではなく diagnostic として扱う。"
+decision = "Prime の短期ショック研究では、20d<0かつ60d>=0の素朴な押し目は20d TOPIX excess median が弱い一方、20d<=-10%かつ60d>=+20% 以上の深い押し目 x 中期上昇では median がプラス化する。low PBR + low forward PER 前提では 20d>0・60d>0・-1<liq_z<1 の neutral_rerating が core 候補で、crowded_rerating は右尾も左尾も大きい satellite / sizing diagnostic として扱う。high PBR + high forward PER では同じ rerating 状態の edge が消えるため、valuation guard と TOPIX 大崩れ回避を必須条件にする。2024/8/5・2025/4/7 型の raw rebound は市場反発寄与が大きいため production signal ではなく diagnostic として扱う。"
 promotedSurface = "Research"
 riskFlags = ["short-term-shock", "topix-excess", "pullback", "market-beta-rebound", "not-standalone-alpha"]
 relatedExperiments = [
