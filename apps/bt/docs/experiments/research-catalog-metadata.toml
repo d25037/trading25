@@ -174,6 +174,18 @@ relatedExperiments = [
   "market-behavior/value-breakout-overheat-filter",
 ]
 
+[experiments."market-behavior/daily-move-asymmetry"]
+family = "Market Behavior"
+status = "observed"
+decision = "TOPIX は日足下落後に反発側の非対称性が見えるが、Prime 個別株の raw rebound は TOPIX excess / beta-adjusted residual では中央値が弱く、市場反発・beta exposure の寄与が大きい。急騰後は excess 左尾が悪く、初回結果は production signal ではなく risk / sizing diagnostic として扱う。"
+promotedSurface = "Research"
+riskFlags = ["daily-asymmetry", "topix-excess", "beta-adjusted", "tail-risk", "not-standalone-alpha"]
+relatedExperiments = [
+  "market-behavior/recent-return-threshold-forward-response",
+  "market-behavior/index-market-strength-research",
+  "market-behavior/falling-knife-reversal-study",
+]
+
 [experiments."market-behavior/free-float-liquidity-regime-decomposition"]
 family = "Market Behavior"
 status = "observed"

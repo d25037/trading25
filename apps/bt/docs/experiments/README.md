@@ -25,6 +25,8 @@
   - TOPIX の寄り付き gap を条件に、個別銘柄群の当日 intraday と簡易 rotation ルールを観察する実験。
 - [market-behavior/topix-close-stock-overnight/](./market-behavior/topix-close-stock-overnight/README.md)
   - TOPIX の当日引け変動を条件に、個別銘柄群の `close -> next open` を観察する実験。
+- [market-behavior/daily-move-asymmetry/](./market-behavior/daily-move-asymmetry/README.md)
+  - TOPIX と Prime 全銘柄の日足 close-to-close move を、上昇・下落の符号と volatility-normalized magnitude で揃えて比較し、粘着性・反発力・左尾を観察する実験。
 - [market-behavior/nt-ratio-change-stock-overnight/](./market-behavior/nt-ratio-change-stock-overnight/README.md)
   - NT 倍率の前日比を条件に、個別銘柄群の `close -> next open` を観察する実験。
 - [market-behavior/nt-ratio-change-topix-close-stock-overnight/](./market-behavior/nt-ratio-change-topix-close-stock-overnight/README.md)
