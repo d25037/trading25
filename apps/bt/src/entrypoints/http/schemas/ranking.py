@@ -29,13 +29,15 @@ ValueCompositeScoreUnavailableReason = Literal[
     "not_rankable",
 ]
 LiquidityRegime = Literal[
-    "rerating_participation",
+    "neutral_rerating",
+    "crowded_rerating",
     "distribution_stress",
     "stale_liquidity",
     "neutral",
 ]
+LegacyLiquidityRegime = Literal["rerating_participation"]
 RankingRiskFlag = Literal["overheat"]
-RankingStateFilter = LiquidityRegime | RankingRiskFlag
+RankingStateFilter = LiquidityRegime | LegacyLiquidityRegime | RankingRiskFlag
 
 
 class RankingItem(BaseModel):

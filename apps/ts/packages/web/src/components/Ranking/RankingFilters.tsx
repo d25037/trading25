@@ -31,7 +31,8 @@ const FORWARD_EPS_DISCLOSURE_OPTIONS = [
 
 const LIQUIDITY_STATE_OPTIONS = [
   { value: 'all', label: 'All' },
-  { value: 'rerating_participation', label: 'Rerating' },
+  { value: 'neutral_rerating', label: 'Neutral Rerating' },
+  { value: 'crowded_rerating', label: 'Crowded Rerating' },
   { value: 'distribution_stress', label: 'Stress' },
   { value: 'stale_liquidity', label: 'Stale' },
   { value: 'neutral', label: 'Neutral' },

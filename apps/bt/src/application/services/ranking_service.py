@@ -1430,10 +1430,15 @@ class RankingService:
                     item for item in collection if liquidity_state in item.riskFlags
                 ]
             else:
+                effective_liquidity_state = (
+                    "crowded_rerating"
+                    if liquidity_state == "rerating_participation"
+                    else liquidity_state
+                )
                 collection[:] = [
                     item
                     for item in collection
-                    if item.liquidityRegime == liquidity_state
+                    if item.liquidityRegime == effective_liquidity_state
                 ]
 
     def _enrich_ranking_collections_with_prime_liquidity(
@@ -1711,13 +1716,18 @@ class RankingService:
             for value in (recent_return_20d_pct, recent_return_60d_pct)
             if value is not None
         ]
+        has_persistent_runup = len(valid_returns) == 2 and all(
+            value > 0 for value in valid_returns
+        )
         if residual_z >= 1.0 and len(valid_returns) == 2:
-            if all(value >= 0 for value in valid_returns):
-                return "rerating_participation"
-            if any(value < 0 for value in valid_returns):
+            if has_persistent_runup:
+                return "crowded_rerating"
+            if any(value <= 0 for value in valid_returns):
                 return "distribution_stress"
         if residual_z <= -1.0:
             return "stale_liquidity"
+        if -1.0 < residual_z < 1.0 and has_persistent_runup:
+            return "neutral_rerating"
         return "neutral"
 
     @staticmethod

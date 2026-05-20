@@ -1082,7 +1082,7 @@ describe('SymbolWorkbenchPage', () => {
                     liquidityResidualZ: 1.4,
                     liquidityImpliedPrice: 1234,
                     liquidityImpliedPriceGapPct: 23.4,
-                    liquidityRegime: 'rerating_participation',
+                    liquidityRegime: 'crowded_rerating',
                   },
                   {
                     advWindow: 60,
@@ -1091,7 +1091,7 @@ describe('SymbolWorkbenchPage', () => {
                     liquidityResidualZ: 1.2,
                     liquidityImpliedPrice: 1180,
                     liquidityImpliedPriceGapPct: 18.0,
-                    liquidityRegime: 'rerating_participation',
+                    liquidityRegime: 'crowded_rerating',
                   },
                 ],
               },
@@ -1122,7 +1122,7 @@ describe('SymbolWorkbenchPage', () => {
     expect(screen.getByText('流動性等価株価 Med ADV60:')).toBeInTheDocument();
     expect(screen.getByText('1,180円 (+18.0%)')).toBeInTheDocument();
     expect(screen.getByText('Liquidity Residual')).toBeInTheDocument();
-    expect(screen.getByText('+1.20 / Re-rating')).toBeInTheDocument();
+    expect(screen.getByText('+1.20 / Crowded Re-rating')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
     fireEvent.click(screen.getByRole('button', { name: /B\.C\./i }));

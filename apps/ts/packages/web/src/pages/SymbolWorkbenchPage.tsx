@@ -197,8 +197,11 @@ function formatSignedNumber(value: number | null | undefined, digits = 2): strin
 
 function formatLiquidityRegime(value: string | null | undefined): string {
   switch (value) {
+    case 'neutral_rerating':
+      return 'Neutral Re-rating';
+    case 'crowded_rerating':
     case 'rerating_participation':
-      return 'Re-rating';
+      return 'Crowded Re-rating';
     case 'distribution_stress':
       return 'Stress';
     case 'stale_liquidity':

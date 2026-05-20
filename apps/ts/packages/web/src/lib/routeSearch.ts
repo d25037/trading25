@@ -114,7 +114,8 @@ const LEGACY_SCREENING_RANKING_TABS = ['ranking', 'fundamentalRanking'] as const
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'technicalEvents', 'indices'];
 const RANKING_TECHNICAL_EVENT_TYPES: RankingTechnicalEventType[] = ['periodHigh', 'periodLow'];
 const RANKING_LIQUIDITY_STATE_VALUES: RankingLiquidityState[] = [
-  'rerating_participation',
+  'neutral_rerating',
+  'crowded_rerating',
   'distribution_stress',
   'stale_liquidity',
   'neutral',
@@ -233,7 +234,9 @@ function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEve
 }
 
 function normalizeRankingLiquidityState(value: unknown): RankingLiquidityState | undefined {
-  return normalizeEnum(normalizeString(value), RANKING_LIQUIDITY_STATE_VALUES);
+  const normalized = normalizeString(value);
+  if (normalized === 'rerating_participation') return 'crowded_rerating';
+  return normalizeEnum(normalized, RANKING_LIQUIDITY_STATE_VALUES);
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {

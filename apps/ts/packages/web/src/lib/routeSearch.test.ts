@@ -202,6 +202,14 @@ describe('routeSearch', () => {
     });
   });
 
+  it('normalizes legacy rerating liquidity state to crowded rerating', () => {
+    const rankingSearch = validateRankingSearch({
+      rankingLiquidityState: 'rerating_participation',
+    });
+
+    expect(rankingSearch.rankingLiquidityState).toBe('crowded_rerating');
+  });
+
   it('drops removed ranking tabs and value-composite url state', () => {
     const rankingSearch = validateRankingSearch({
       tab: 'valueComposite',

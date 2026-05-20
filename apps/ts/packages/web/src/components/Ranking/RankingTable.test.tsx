@@ -93,9 +93,15 @@ describe('RankingTable', () => {
             ...createItem(1),
             per: 13,
             forwardPer: 7,
-            liquidityRegime: 'stale_liquidity',
+            liquidityRegime: 'neutral_rerating',
             liquidityResidualZ: -1.4,
             adv60ToFreeFloatPct: 2,
+          },
+          {
+            ...createItem(2),
+            liquidityRegime: 'crowded_rerating',
+            liquidityResidualZ: 1.4,
+            adv60ToFreeFloatPct: 10,
           },
         ]}
         isLoading={false}
@@ -107,9 +113,10 @@ describe('RankingTable', () => {
     );
 
     expect(screen.getByText('Stress')).toHaveClass('text-yellow-800');
+    expect(screen.getByText('Neutral Rerating')).toHaveClass('text-green-700');
+    expect(screen.getByText('Crowded Rerating')).toHaveClass('text-amber-800');
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
-    expect(screen.getByText('Stale')).toHaveClass('text-red-700');
     expect(screen.getByText('11.00x')).toHaveClass('text-red-600');
     expect(screen.getByText('9.00x')).toBeInTheDocument();
     expect(screen.getByText('7.00x')).toHaveClass('text-green-600');

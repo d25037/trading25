@@ -43,7 +43,7 @@ export interface EquityRankingItem {
   pbr?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: EquityRiskFlag[];
 }
@@ -133,7 +133,8 @@ function formatPercent(value: number | null | undefined): string {
 }
 
 function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): string {
-  if (value === 'rerating_participation') return 'Rerating';
+  if (value === 'neutral_rerating') return 'Neutral Rerating';
+  if (value === 'crowded_rerating') return 'Crowded Rerating';
   if (value === 'distribution_stress') return 'Stress';
   if (value === 'stale_liquidity') return 'Stale';
   if (value === 'neutral') return 'Neutral';
@@ -141,7 +142,8 @@ function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): str
 }
 
 function getLiquidityRegimeClass(value: EquityRankingItem['liquidityRegime']): string {
-  if (value === 'rerating_participation') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (value === 'neutral_rerating') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (value === 'crowded_rerating') return 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300';
   if (value === 'distribution_stress') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (value === 'stale_liquidity') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';

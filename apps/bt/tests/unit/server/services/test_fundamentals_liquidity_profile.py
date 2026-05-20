@@ -53,7 +53,8 @@ def test_prime_liquidity_profile_builds_implied_price_and_regime() -> None:
     assert adv60.liquidityImpliedPriceGapPct is not None
     assert adv60.regressionObservationCount == 120
     assert adv60.liquidityRegime in {
-        "rerating_participation",
+        "neutral_rerating",
+        "crowded_rerating",
         "distribution_stress",
         "neutral",
         "stale_liquidity",

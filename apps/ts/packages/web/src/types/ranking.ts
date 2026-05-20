@@ -15,7 +15,8 @@ export type {
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
 export type RankingLiquidityState =
-  | 'rerating_participation'
+  | 'neutral_rerating'
+  | 'crowded_rerating'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral'

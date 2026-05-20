@@ -11584,7 +11584,8 @@
             "anyOf": [
               {
                 "enum": [
-                  "rerating_participation",
+                  "neutral_rerating",
+                  "crowded_rerating",
                   "distribution_stress",
                   "stale_liquidity",
                   "neutral"
@@ -19941,11 +19942,16 @@
               "anyOf": [
                 {
                   "enum": [
-                    "rerating_participation",
+                    "neutral_rerating",
+                    "crowded_rerating",
                     "distribution_stress",
                     "stale_liquidity",
                     "neutral"
                   ],
+                  "type": "string"
+                },
+                {
+                  "const": "rerating_participation",
                   "type": "string"
                 },
                 {

@@ -903,9 +903,43 @@ class TestGetRankings:
             for collection in collections:
                 for item in collection:
                     if item.code == "72030":
-                        item.liquidityRegime = "rerating_participation"
+                        item.liquidityRegime = "crowded_rerating"
                     elif item.code == "67580":
                         item.liquidityRegime = "distribution_stress"
+
+        monkeypatch.setattr(
+            RankingService,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            liquidity_state="crowded_rerating",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["72030"]
+        assert result.rankings.tradingValue[0].rank == 1
+
+    def test_legacy_rerating_filter_alias_matches_crowded_rerating(
+        self, service, monkeypatch
+    ):
+        def fake_enrich_prime_liquidity(
+            self,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del self, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    item.liquidityRegime = (
+                        "crowded_rerating" if item.code == "72030" else "neutral"
+                    )
 
         monkeypatch.setattr(
             RankingService,
@@ -922,7 +956,6 @@ class TestGetRankings:
         )
 
         assert [item.code for item in result.rankings.tradingValue] == ["72030"]
-        assert result.rankings.tradingValue[0].rank == 1
 
     def test_liquidity_state_filter_can_match_overheat_risk_flag(
         self, service, monkeypatch
@@ -1159,7 +1192,8 @@ class TestGetRankings:
         item = next(row for row in result.rankings.tradingValue if row.code == "1000")
         assert item.liquidityResidualZ is not None
         assert item.liquidityRegime in {
-            "rerating_participation",
+            "neutral_rerating",
+            "crowded_rerating",
             "distribution_stress",
             "stale_liquidity",
             "neutral",
@@ -1175,6 +1209,20 @@ class TestGetRankings:
     def test_classifies_short_term_overheat_risk_flag(self):
         assert RankingService._classify_risk_flags(29.99) == ()
         assert RankingService._classify_risk_flags(30.0) == ("overheat",)
+
+    def test_classifies_neutral_and_crowded_rerating_states(self):
+        assert (
+            RankingService._classify_prime_liquidity_regime(0.5, 1.0, 2.0)
+            == "neutral_rerating"
+        )
+        assert (
+            RankingService._classify_prime_liquidity_regime(1.2, 1.0, 2.0)
+            == "crowded_rerating"
+        )
+        assert (
+            RankingService._classify_prime_liquidity_regime(1.2, 0.0, 2.0)
+            == "distribution_stress"
+        )
 
     def test_includes_variable_lookback_index_performance(self, service):
         result = service.get_rankings(date="2024-01-19", lookback_days=3)

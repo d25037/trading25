@@ -34,7 +34,7 @@ export interface RankingItem {
   pbr?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: RankingRiskFlag[];
 }

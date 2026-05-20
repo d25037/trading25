@@ -8326,7 +8326,7 @@ export interface components {
             /** Forwardpop */
             forwardPOp?: number | null;
             /** Liquidityregime */
-            liquidityRegime?: ("rerating_participation" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
+            liquidityRegime?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
             /** Liquidityresidualz */
             liquidityResidualZ?: number | null;
             /** Lookbackdays */
@@ -11928,7 +11928,7 @@ export interface operations {
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
                 /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime. */
-                liquidityState?: ("rerating_participation" | "distribution_stress" | "stale_liquidity" | "neutral") | "overheat" | null;
+                liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | "rerating_participation" | "overheat" | null;
             };
             header?: never;
             path?: never;

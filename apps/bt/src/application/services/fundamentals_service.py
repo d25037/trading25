@@ -681,13 +681,18 @@ class FundamentalsService:
     ) -> str:
         returns = [recent_return_20d_pct, recent_return_60d_pct]
         valid_returns = [value for value in returns if value is not None]
+        has_persistent_runup = len(valid_returns) == 2 and all(
+            value > 0 for value in valid_returns
+        )
         if residual_z >= 1.0 and len(valid_returns) == 2:
-            if all(value >= 0 for value in valid_returns):
-                return "rerating_participation"
-            if any(value < 0 for value in valid_returns):
+            if has_persistent_runup:
+                return "crowded_rerating"
+            if any(value <= 0 for value in valid_returns):
                 return "distribution_stress"
         if residual_z <= -1.0:
             return "stale_liquidity"
+        if -1.0 < residual_z < 1.0 and has_persistent_runup:
+            return "neutral_rerating"
         return "neutral"
 
     def compute_fundamentals(

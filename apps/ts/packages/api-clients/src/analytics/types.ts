@@ -11,6 +11,8 @@ export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type RankingRiskFlag = 'overheat';
 export type RankingLiquidityState =
+  | 'neutral_rerating'
+  | 'crowded_rerating'
   | 'rerating_participation'
   | 'distribution_stress'
   | 'stale_liquidity'
@@ -61,7 +63,7 @@ export interface RankingItem {
   pbr?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'rerating_participation' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: RankingRiskFlag[];
 }
