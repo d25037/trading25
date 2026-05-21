@@ -1498,17 +1498,6 @@ def _response_metric_columns() -> list[str]:
     ]
 
 
-def _base_response_columns() -> list[str]:
-    return [
-        "condition_family",
-        "sample_scope",
-        "return_metric",
-        "entry_mode",
-        "horizon",
-        *_response_metric_columns(),
-    ]
-
-
 def _general_response_columns() -> list[str]:
     return [
         "condition_family",

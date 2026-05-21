@@ -605,11 +605,19 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
             detail="Adjusted metrics materialization is already running",
         )
 
-    duckdb_path, _parquet_dir = _remember_market_paths(request)
+    duckdb_path, parquet_dir = _remember_market_paths(request)
     _clear_market_resources(request)
-    market_db = MarketDb(str(duckdb_path), read_only=False)
+    try:
+        market_db, time_series_store = _create_market_resources(
+            read_only=False,
+            duckdb_path=duckdb_path,
+            parquet_dir=parquet_dir,
+        )
+    except RuntimeError as exc:
+        _restore_read_only_market_resources(request)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     request.app.state.market_db = market_db
-    request.app.state.market_time_series_store = None
+    request.app.state.market_time_series_store = time_series_store
 
     try:
         job = await start_adjusted_metrics_materialization(

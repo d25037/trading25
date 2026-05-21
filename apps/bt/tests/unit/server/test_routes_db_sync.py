@@ -303,14 +303,15 @@ class TestSyncRoutes:
             ),
             patch("src.entrypoints.http.routes.db._clear_market_resources") as clear_resources,
             patch("src.entrypoints.http.routes.db._restore_read_only_market_resources") as restore_resources,
-            patch("src.entrypoints.http.routes.db.MarketDb") as market_db_cls,
+            patch("src.entrypoints.http.routes.db._create_market_resources") as create_resources,
             patch(
                 "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
                 new_callable=AsyncMock,
             ) as mock_start,
         ):
             mock_market_db = MagicMock()
-            market_db_cls.return_value = mock_market_db
+            mock_time_series_store = MagicMock()
+            create_resources.return_value = (mock_market_db, mock_time_series_store)
             mock_job = MagicMock()
             mock_job.job_id = "materialize-job-1"
             mock_job.data.mode = "full"
@@ -324,9 +325,40 @@ class TestSyncRoutes:
         assert data["mode"] == "full"
         clear_resources.assert_called_once()
         restore_resources.assert_not_called()
+        create_resources.assert_called_once()
+        assert client.app.state.market_time_series_store is mock_time_series_store
         mock_start.assert_awaited_once()
         assert mock_start.await_args.args[0] is mock_market_db
         assert mock_start.await_args.kwargs["close_market_db"] is True
+
+    def test_adjusted_metrics_materialize_restores_on_resource_creation_failure(
+        self,
+        client: TestClient,
+    ) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_active_job", return_value=None),
+            patch(
+                "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
+                return_value=None,
+            ),
+            patch("src.entrypoints.http.routes.db._clear_market_resources") as clear_resources,
+            patch("src.entrypoints.http.routes.db._restore_read_only_market_resources") as restore_resources,
+            patch(
+                "src.entrypoints.http.routes.db._create_market_resources",
+                side_effect=RuntimeError("DuckDB market time-series store is unavailable"),
+            ),
+            patch(
+                "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
+                new_callable=AsyncMock,
+            ) as mock_start,
+        ):
+            resp = client.post("/api/db/adjusted-metrics/materialize")
+
+        assert resp.status_code == 422
+        assert "DuckDB market time-series store is unavailable" in resp.json()["message"]
+        clear_resources.assert_called_once()
+        restore_resources.assert_called_once()
+        mock_start.assert_not_awaited()
 
     def test_adjusted_metrics_materialize_rejects_while_sync_is_running(
         self,
