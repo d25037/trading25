@@ -21,13 +21,21 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
+from src.domains.analytics.research_core import (
+    UNIVERSE_LABELS,
+    build_market_universe_case_sql,
+    normalize_positive_int_sequence,
+    research_universe_market_codes,
+    sort_research_table,
+    sql_string_list,
+    warmup_start_date,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
-from src.shared.utils.market_code_alias import expand_market_codes
 
 NEW_HIGH_MOMENTUM_EXPERIMENT_ID = "market-behavior/new-high-momentum-research"
 
@@ -38,27 +46,6 @@ DEFAULT_SAMPLE_EVENT_SIZE = 40
 TECHNICAL_BASELINE_WINDOW = 20
 RANGE_WINDOW = 252
 MEMBERSHIP_MODE = "stock_master_daily_as_of_price_date"
-
-PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
-STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
-GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
-TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
-    "TOPIX Core30",
-    "TOPIX Large70",
-    "TOPIX Mid400",
-)
-UNIVERSE_ORDER: tuple[str, ...] = (
-    "topix500",
-    "prime_ex_topix500",
-    "standard",
-    "growth",
-)
-UNIVERSE_LABELS: dict[str, str] = {
-    "topix500": "TOPIX500",
-    "prime_ex_topix500": "Prime ex TOPIX500",
-    "standard": "Standard",
-    "growth": "Growth",
-}
 
 TABLE_FIELD_NAMES: tuple[str, ...] = (
     "universe_summary_df",
@@ -252,39 +239,18 @@ class NewHighMomentumResearchResult:
     sampled_events_df: pd.DataFrame
 
 
-def _normalize_positive_int_sequence(
-    values: tuple[int, ...] | list[int] | None,
-    *,
-    fallback: tuple[int, ...],
-    name: str,
-) -> tuple[int, ...]:
-    if values is None:
-        return fallback
-    normalized = tuple(sorted(dict.fromkeys(int(value) for value in values if int(value) > 0)))
-    if not normalized:
-        raise ValueError(f"{name} must contain at least one positive integer")
-    return normalized
-
-
 def _warmup_start_date(
     analysis_start_date: str | None,
     available_start_date: str | None,
     *,
     high_windows: tuple[int, ...],
 ) -> str | None:
-    if analysis_start_date is None:
-        return available_start_date
-    warmup_days = int(max(high_windows) * 2.1) + 30
-    candidate = (pd.Timestamp(analysis_start_date) - pd.Timedelta(days=warmup_days)).strftime(
-        "%Y-%m-%d"
+    return warmup_start_date(
+        analysis_start_date,
+        available_start_date,
+        warmup_sessions=max(high_windows),
+        session_to_calendar_multiplier=2.1,
     )
-    if available_start_date is None:
-        return candidate
-    return max(available_start_date, candidate)
-
-
-def _sql_string_list(values: tuple[str, ...]) -> str:
-    return ", ".join(f"'{value}'" for value in values)
 
 
 def _table_exists(conn: Any, table_name: str) -> bool:
@@ -300,43 +266,26 @@ def _table_exists(conn: Any, table_name: str) -> bool:
 
 
 def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    result = df.copy()
-    if "universe_key" in result.columns:
-        result["_universe_order"] = result["universe_key"].map(
-            {key: index for index, key in enumerate(UNIVERSE_ORDER)}
-        )
-    if "condition_family" in result.columns:
-        family_order = {
-            "baseline": 0,
-            "technical": 1,
-            "fundamental": 2,
-            "annual_value": 3,
-            "interaction": 4,
-        }
-        result["_condition_family_order"] = result["condition_family"].map(family_order)
-    if "condition_key" in result.columns:
-        result["_condition_order"] = result["condition_key"].map(
-            {item.key: index for index, item in enumerate(CONDITION_DEFINITIONS)}
-        )
-    sort_columns = [
-        column
-        for column in (
-            "_universe_order",
+    return sort_research_table(
+        df,
+        sort_columns=(
             "new_high_window",
-            "_condition_family_order",
-            "_condition_order",
             "horizon_days",
             "selection_rank",
             "date",
             "code",
-        )
-        if column in result.columns
-    ]
-    if sort_columns:
-        result = result.sort_values(sort_columns, kind="stable").reset_index(drop=True)
-    return result.drop(columns=[column for column in result.columns if column.startswith("_")])
+        ),
+        extra_order_columns={
+            "condition_family": {
+                "baseline": 0,
+                "technical": 1,
+                "fundamental": 2,
+                "annual_value": 3,
+                "interaction": 4,
+            },
+            "condition_key": {item.key: index for index, item in enumerate(CONDITION_DEFINITIONS)},
+        },
+    )
 
 
 def _create_panel_tables(
@@ -351,9 +300,7 @@ def _create_panel_tables(
     price_code = normalize_code_sql("sd.code")
     master_code = normalize_code_sql("smd.code")
     statement_code = normalize_code_sql("s.code")
-    all_market_codes = tuple(
-        dict.fromkeys([*PRIME_MARKET_CODES, *STANDARD_MARKET_CODES, *GROWTH_MARKET_CODES])
-    )
+    all_market_codes = research_universe_market_codes()
     raw_date_filter = ""
     raw_params: list[str] = []
     if raw_start_date is not None:
@@ -438,22 +385,14 @@ def _create_panel_tables(
                 smd.company_name,
                 smd.market_code,
                 smd.scale_category,
-                CASE
-                    WHEN smd.scale_category IN ({_sql_string_list(TOPIX500_SCALE_CATEGORIES)})
-                        THEN 'topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(PRIME_MARKET_CODES)})
-                        THEN 'prime_ex_topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(STANDARD_MARKET_CODES)})
-                        THEN 'standard'
-                    WHEN smd.market_code IN ({_sql_string_list(GROWTH_MARKET_CODES)})
-                        THEN 'growth'
-                END AS universe_key,
+                {build_market_universe_case_sql(market_code_column="smd.market_code", scale_category_column="smd.scale_category")}
+                    AS universe_key,
                 row_number() OVER (
                     PARTITION BY {master_code}, smd.date
                     ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
                 ) AS row_rank
             FROM stock_master_daily smd
-            WHERE smd.market_code IN ({_sql_string_list(all_market_codes)})
+            WHERE smd.market_code IN ({sql_string_list(all_market_codes)})
         ),
         scoped AS (
             SELECT p.*, m.company_name, m.market_code, m.scale_category, m.universe_key
@@ -1285,15 +1224,17 @@ def run_new_high_momentum_research(
     horizons: tuple[int, ...] | list[int] | None = None,
     sample_event_size: int = DEFAULT_SAMPLE_EVENT_SIZE,
 ) -> NewHighMomentumResearchResult:
-    normalized_windows = _normalize_positive_int_sequence(
+    normalized_windows = normalize_positive_int_sequence(
         high_windows,
         fallback=DEFAULT_HIGH_WINDOWS,
         name="high_windows",
+        non_positive="filter",
     )
-    normalized_horizons = _normalize_positive_int_sequence(
+    normalized_horizons = normalize_positive_int_sequence(
         horizons,
         fallback=DEFAULT_HORIZONS,
         name="horizons",
+        non_positive="filter",
     )
     if sample_event_size < 1:
         raise ValueError("sample_event_size must be positive")
