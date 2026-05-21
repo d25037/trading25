@@ -13,13 +13,13 @@ import numpy as np
 import pandas as pd
 
 from src.domains.analytics.annual_value_composite_selection import _daily_stats, _series_mean
-from src.domains.analytics.classical_momentum_research import (
-    GROWTH_MARKET_CODES,
-    PRIME_MARKET_CODES,
-    STANDARD_MARKET_CODES,
-    TOPIX500_SCALE_CATEGORIES,
+from src.domains.analytics.research_core import (
     UNIVERSE_LABELS,
-    UNIVERSE_ORDER,
+    build_market_universe_case_sql,
+    research_universe_market_codes,
+    sort_research_table,
+    sql_string_list,
+    warmup_start_date,
 )
 from src.domains.analytics.readonly_duckdb_support import (
     SourceMode,
@@ -86,22 +86,10 @@ class TurtleLikeMomentumResearchResult:
     portfolio_summary_df: pd.DataFrame
 
 
-def _sql_string_list(values: tuple[str, ...]) -> str:
-    return ", ".join(f"'{value}'" for value in values)
-
-
 def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    result = df.copy()
-    if "universe_key" in result.columns:
-        result["_universe_order"] = result["universe_key"].map(
-            {key: index for index, key in enumerate(UNIVERSE_ORDER)}
-        )
-    sort_columns = [
-        column
-        for column in (
-            "_universe_order",
+    return sort_research_table(
+        df,
+        sort_columns=(
             "entry_window_sessions",
             "exit_window_sessions",
             "entry_mode",
@@ -109,12 +97,8 @@ def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
             "entry_signal_date",
             "date",
             "code",
-        )
-        if column in result.columns
-    ]
-    if sort_columns:
-        result = result.sort_values(sort_columns, kind="stable").reset_index(drop=True)
-    return result.drop(columns=[column for column in result.columns if column.startswith("_")])
+        ),
+    )
 
 
 def _normalize_channel_specs(
@@ -176,16 +160,13 @@ def _warmup_start_date(
     channel_specs: tuple[tuple[int, int], ...],
     atr_sessions: int,
 ) -> str | None:
-    if analysis_start_date is None:
-        return available_start_date
     max_window = max(max(entry, exit) for entry, exit in channel_specs)
-    warmup_days = int(max(max_window, atr_sessions, 60) * _WARMUP_MULTIPLIER) + 30
-    candidate = (pd.Timestamp(analysis_start_date) - pd.Timedelta(days=warmup_days)).strftime(
-        "%Y-%m-%d"
+    return warmup_start_date(
+        analysis_start_date,
+        available_start_date,
+        warmup_sessions=max(max_window, atr_sessions, 60),
+        session_to_calendar_multiplier=_WARMUP_MULTIPLIER,
     )
-    if available_start_date is None:
-        return candidate
-    return max(available_start_date, candidate)
 
 
 def _query_analysis_panel(
@@ -198,9 +179,7 @@ def _query_analysis_panel(
 ) -> pd.DataFrame:
     price_code = normalize_code_sql("sd.code")
     master_code = normalize_code_sql("smd.code")
-    all_market_codes = tuple(
-        dict.fromkeys([*PRIME_MARKET_CODES, *STANDARD_MARKET_CODES, *GROWTH_MARKET_CODES])
-    )
+    all_market_codes = research_universe_market_codes()
     raw_conditions: list[str] = []
     raw_params: list[str] = []
     if raw_start_date is not None:
@@ -251,22 +230,14 @@ def _query_analysis_panel(
                 smd.company_name,
                 smd.market_code,
                 smd.scale_category,
-                CASE
-                    WHEN smd.scale_category IN ({_sql_string_list(TOPIX500_SCALE_CATEGORIES)})
-                        THEN 'topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(PRIME_MARKET_CODES)})
-                        THEN 'prime_ex_topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(STANDARD_MARKET_CODES)})
-                        THEN 'standard'
-                    WHEN smd.market_code IN ({_sql_string_list(GROWTH_MARKET_CODES)})
-                        THEN 'growth'
-                END AS universe_key,
+                {build_market_universe_case_sql(market_code_column="smd.market_code", scale_category_column="smd.scale_category")}
+                    AS universe_key,
                 row_number() OVER (
                     PARTITION BY {master_code}, smd.date
                     ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
                 ) AS row_rank
             FROM stock_master_daily smd
-            WHERE smd.market_code IN ({_sql_string_list(all_market_codes)})
+            WHERE smd.market_code IN ({sql_string_list(all_market_codes)})
         ),
         scoped AS (
             SELECT p.*, m.company_name, m.market_code, m.scale_category, m.universe_key

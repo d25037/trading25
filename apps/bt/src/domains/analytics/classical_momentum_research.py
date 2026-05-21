@@ -16,13 +16,21 @@ from src.domains.analytics.readonly_duckdb_support import (
     normalize_code_sql,
     open_readonly_analysis_connection,
 )
+from src.domains.analytics.research_core import (
+    UNIVERSE_LABELS,
+    build_market_universe_case_sql,
+    normalize_positive_int_sequence,
+    research_universe_market_codes,
+    sort_research_table,
+    sql_string_list,
+    warmup_start_date,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
-from src.shared.utils.market_code_alias import expand_market_codes
 
 CLASSICAL_MOMENTUM_RESEARCH_EXPERIMENT_ID = "market-behavior/classical-momentum-research"
 
@@ -37,26 +45,6 @@ DEFAULT_SELECTION_FRACTIONS: tuple[float, ...] = (0.05, 0.10)
 DEFAULT_REBALANCE_INTERVAL_SESSIONS = 20
 DEFAULT_MIN_AVG_TRADING_VALUE_MIL_JPY = 10.0
 
-PRIME_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["prime"]))
-STANDARD_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["standard"]))
-GROWTH_MARKET_CODES: tuple[str, ...] = tuple(expand_market_codes(["growth"]))
-TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
-    "TOPIX Core30",
-    "TOPIX Large70",
-    "TOPIX Mid400",
-)
-UNIVERSE_ORDER: tuple[str, ...] = (
-    "topix500",
-    "prime_ex_topix500",
-    "standard",
-    "growth",
-)
-UNIVERSE_LABELS: dict[str, str] = {
-    "topix500": "TOPIX500",
-    "prime_ex_topix500": "Prime ex TOPIX500",
-    "standard": "Standard",
-    "growth": "Growth",
-}
 TABLE_FIELD_NAMES: tuple[str, ...] = (
     "universe_summary_df",
     "selected_event_df",
@@ -87,22 +75,10 @@ class ClassicalMomentumResearchResult:
     portfolio_summary_df: pd.DataFrame
 
 
-def _sql_string_list(values: tuple[str, ...]) -> str:
-    return ", ".join(f"'{value}'" for value in values)
-
-
 def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    result = df.copy()
-    if "universe_key" in result.columns:
-        result["_universe_order"] = result["universe_key"].map(
-            {key: index for index, key in enumerate(UNIVERSE_ORDER)}
-        )
-    sort_columns = [
-        column
-        for column in (
-            "_universe_order",
+    return sort_research_table(
+        df,
+        sort_columns=(
             "lookback_sessions",
             "skip_sessions",
             "hold_sessions",
@@ -111,12 +87,8 @@ def _sort_table(df: pd.DataFrame) -> pd.DataFrame:
             "date",
             "selection_rank",
             "code",
-        )
-        if column in result.columns
-    ]
-    if sort_columns:
-        result = result.sort_values(sort_columns, kind="stable").reset_index(drop=True)
-    return result.drop(columns=[column for column in result.columns if column.startswith("_")])
+        ),
+    )
 
 
 def _normalize_lookback_specs(
@@ -138,25 +110,6 @@ def _normalize_lookback_specs(
             normalized.append(spec)
     if not normalized:
         raise ValueError("at least one lookback spec is required")
-    return tuple(sorted(normalized))
-
-
-def _normalize_positive_int_sequence(
-    values: tuple[int, ...] | list[int] | None,
-    *,
-    fallback: tuple[int, ...],
-    name: str,
-) -> tuple[int, ...]:
-    raw_values = fallback if values is None else tuple(values)
-    normalized: list[int] = []
-    for raw_value in raw_values:
-        value = int(raw_value)
-        if value <= 0:
-            raise ValueError(f"{name} values must be positive")
-        if value not in normalized:
-            normalized.append(value)
-    if not normalized:
-        raise ValueError(f"at least one {name} value is required")
     return tuple(sorted(normalized))
 
 
@@ -182,16 +135,12 @@ def _warmup_start_date(
     *,
     lookback_specs: tuple[tuple[int, int], ...],
 ) -> str | None:
-    if analysis_start_date is None:
-        return available_start_date
-    max_lookback = max(lookback for lookback, _ in lookback_specs)
-    warmup_days = int(max_lookback * 2.1) + 30
-    candidate = (pd.Timestamp(analysis_start_date) - pd.Timedelta(days=warmup_days)).strftime(
-        "%Y-%m-%d"
+    return warmup_start_date(
+        analysis_start_date,
+        available_start_date,
+        warmup_sessions=max(lookback for lookback, _ in lookback_specs),
+        session_to_calendar_multiplier=2.1,
     )
-    if available_start_date is None:
-        return candidate
-    return max(available_start_date, candidate)
 
 
 def _create_panel_table(
@@ -205,9 +154,7 @@ def _create_panel_table(
 ) -> None:
     price_code = normalize_code_sql("sd.code")
     master_code = normalize_code_sql("smd.code")
-    all_market_codes = tuple(
-        dict.fromkeys([*PRIME_MARKET_CODES, *STANDARD_MARKET_CODES, *GROWTH_MARKET_CODES])
-    )
+    all_market_codes = research_universe_market_codes()
     raw_date_filter = ""
     raw_params: list[str] = []
     if raw_start_date is not None:
@@ -287,22 +234,14 @@ def _create_panel_table(
                 smd.company_name,
                 smd.market_code,
                 smd.scale_category,
-                CASE
-                    WHEN smd.scale_category IN ({_sql_string_list(TOPIX500_SCALE_CATEGORIES)})
-                        THEN 'topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(PRIME_MARKET_CODES)})
-                        THEN 'prime_ex_topix500'
-                    WHEN smd.market_code IN ({_sql_string_list(STANDARD_MARKET_CODES)})
-                        THEN 'standard'
-                    WHEN smd.market_code IN ({_sql_string_list(GROWTH_MARKET_CODES)})
-                        THEN 'growth'
-                END AS universe_key,
+                {build_market_universe_case_sql(market_code_column="smd.market_code", scale_category_column="smd.scale_category")}
+                    AS universe_key,
                 row_number() OVER (
                     PARTITION BY {master_code}, smd.date
                     ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
                 ) AS row_rank
             FROM stock_master_daily smd
-            WHERE smd.market_code IN ({_sql_string_list(all_market_codes)})
+            WHERE smd.market_code IN ({sql_string_list(all_market_codes)})
         ),
         scoped AS (
             SELECT p.*, m.company_name, m.market_code, m.scale_category, m.universe_key
@@ -745,7 +684,7 @@ def run_classical_momentum_research(
     min_avg_trading_value_mil_jpy: float = DEFAULT_MIN_AVG_TRADING_VALUE_MIL_JPY,
 ) -> ClassicalMomentumResearchResult:
     normalized_specs = _normalize_lookback_specs(lookback_specs)
-    normalized_holds = _normalize_positive_int_sequence(
+    normalized_holds = normalize_positive_int_sequence(
         hold_sessions,
         fallback=DEFAULT_HOLD_SESSIONS,
         name="hold_sessions",
