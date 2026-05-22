@@ -54,12 +54,16 @@ export interface RankingItem {
   changePercentage?: number;
   lookbackDays?: number;
   per?: number | null;
+  perPercentile?: number | null;
   forwardPer?: number | null;
+  forwardPerPercentile?: number | null;
   pOp?: number | null;
   forwardPOp?: number | null;
+  forwardPOpPercentile?: number | null;
   forwardEpsDisclosedDate?: string | null;
   forwardEpsSource?: FundamentalRankingSource | null;
   pbr?: number | null;
+  pbrPercentile?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
   liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;

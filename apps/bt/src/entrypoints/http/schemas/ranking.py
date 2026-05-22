@@ -57,12 +57,16 @@ class RankingItem(BaseModel):
     changePercentage: float | None = None
     lookbackDays: int | None = None
     per: float | None = None
+    perPercentile: float | None = None
     forwardPer: float | None = None
+    forwardPerPercentile: float | None = None
     pOp: float | None = None
     forwardPOp: float | None = None
+    forwardPOpPercentile: float | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None
     pbr: float | None = None
+    pbrPercentile: float | None = None
     marketCap: float | None = None
     liquidityResidualZ: float | None = None
     liquidityRegime: LiquidityRegime | None = None

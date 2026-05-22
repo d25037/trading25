@@ -342,6 +342,12 @@ _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str
 }
 SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
 OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
+_PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("per", "per_percentile"),
+    ("forward_per", "forward_per_percentile"),
+    ("forward_p_op", "forward_p_op_percentile"),
+    ("pbr", "pbr_percentile"),
+)
 
 
 def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
@@ -356,6 +362,43 @@ def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem
         volume=row["volume"],
         **{k: v for k, v in extra.items() if v is not None},
     )
+
+
+def _with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    result = frame.copy()
+    for _, percentile_column in _PRIME_VALUATION_PERCENTILE_COLUMNS:
+        result[percentile_column] = None
+    if "market_code" not in result.columns:
+        return result
+
+    prime_mask = result["market_code"].map(
+        lambda value: _canonical_market_label(str(value)) == "prime"
+    )
+    if not bool(prime_mask.any()):
+        return result
+
+    for value_column, percentile_column in _PRIME_VALUATION_PERCENTILE_COLUMNS:
+        if value_column not in result.columns:
+            continue
+        values = pd.to_numeric(result.loc[prime_mask, value_column], errors="coerce")
+        valid_mask = values.map(
+            lambda value: pd.notna(value)
+            and math.isfinite(float(value))
+            and float(value) > 0
+        )
+        valid_values = values[valid_mask]
+        if valid_values.empty:
+            continue
+        if len(valid_values) == 1:
+            percentiles = pd.Series(0.0, index=valid_values.index)
+        else:
+            percentiles = (valid_values.rank(method="min") - 1.0) / (
+                len(valid_values) - 1.0
+            )
+        result.loc[percentiles.index, percentile_column] = percentiles.astype(float)
+    return result
 
 
 def _limit_clause(limit: int) -> tuple[str, tuple[int, ...]]:
@@ -1339,6 +1382,7 @@ class RankingService:
         )
         if valuation_frame.empty:
             return set()
+        valuation_frame = _with_prime_valuation_percentiles(valuation_frame)
 
         enriched_codes: set[str] = set()
         for row in valuation_frame.to_dict("records"):
@@ -1350,14 +1394,22 @@ class RankingService:
             source = raw_source if raw_source in ("revised", "fy") else None
             for item in items:
                 item.per = _finite_or_none(row.get("per"))
+                item.perPercentile = _finite_or_none(row.get("per_percentile"))
                 item.forwardPer = _finite_or_none(row.get("forward_per"))
+                item.forwardPerPercentile = _finite_or_none(
+                    row.get("forward_per_percentile")
+                )
                 item.pOp = _finite_or_none(row.get("p_op"))
                 item.forwardPOp = _finite_or_none(row.get("forward_p_op"))
+                item.forwardPOpPercentile = _finite_or_none(
+                    row.get("forward_p_op_percentile")
+                )
                 item.forwardEpsDisclosedDate = _str_or_none(
                     row.get("forward_eps_disclosed_date")
                 )
                 item.forwardEpsSource = cast(Literal["revised", "fy"] | None, source)
                 item.pbr = _finite_or_none(row.get("pbr"))
+                item.pbrPercentile = _finite_or_none(row.get("pbr_percentile"))
                 item.marketCap = _finite_or_none(row.get("market_cap"))
             enriched_codes.add(code)
         return enriched_codes

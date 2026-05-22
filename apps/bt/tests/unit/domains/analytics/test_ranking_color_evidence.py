@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+
+from src.domains.analytics.ranking_color_evidence import (
+    RankingColorEvidenceResult,
+    _LIQUIDITY_REGIMES,
+    _TOPIX_REGIMES,
+    build_summary_markdown,
+    run_ranking_color_evidence_research,
+    write_ranking_color_evidence_bundle,
+)
+
+
+def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+
+    result = _run_test_research(db_path)
+
+    assert result.observation_count > 0
+    assert not result.ranking_color_evidence_df.empty
+    assert not result.per_relation_evidence_df.empty
+    assert not result.low_per_relation_evidence_df.empty
+    assert not result.low_per_relation_level_evidence_df.empty
+    assert not result.forward_per_pop_interaction_df.empty
+    assert not result.topix_regime_liquidity_value_evidence_df.empty
+    assert {
+        "valuation_feature",
+        "ranking_color_bucket",
+        "evidence_tier",
+        "median_forward_excess_return_pct",
+    }.issubset(result.ranking_color_evidence_df.columns)
+    assert {
+        "low_forward_per_low_forward_p_op",
+        "low_forward_per_high_forward_p_op",
+    }.issubset(set(result.forward_per_pop_interaction_df["interaction_bucket"].astype(str)))
+    assert {
+        "per_percentile",
+        "forward_per_percentile",
+        "forward_p_op_percentile",
+        "forward_per_to_per_ratio",
+        "forward_per_to_per_ratio_percentile",
+        "forward_p_op_to_per_ratio",
+        "forward_p_op_to_per_ratio_percentile",
+        "pbr_percentile",
+        "topix_recent_return_20d_pct",
+        "topix_recent_return_60d_pct",
+        "liquidity_residual_z",
+        "liquidity_regime",
+    }.issubset(result.observation_sample_df.columns)
+    assert {
+        "topix_20d_lt_0_60d_gt_0",
+        "topix_60d_lt_0",
+    }.issubset(set(result.topix_regime_liquidity_value_evidence_df["topix_regime"].astype(str)))
+    assert {
+        "all_value",
+        "strong_value_confirmation",
+    }.issubset(
+        set(result.topix_regime_liquidity_value_evidence_df["value_condition"].astype(str))
+    )
+    assert {
+        "forward_per_to_per_ratio",
+        "forward_p_op_to_per_ratio",
+    }.issubset(set(result.per_relation_evidence_df["relation_feature"].astype(str)))
+    assert {
+        "low_per_10pct",
+        "low_per_20pct",
+    }.issubset(set(result.low_per_relation_evidence_df["per_scope"].astype(str)))
+    assert "ratio_lte_0_8" in set(
+        result.low_per_relation_level_evidence_df["relation_level_bucket"].astype(str)
+    )
+    assert "crowded_rerating" in _LIQUIDITY_REGIMES
+    assert "neutral_rerating" in _LIQUIDITY_REGIMES
+    assert "topix_20d_lt_0_60d_gt_0" in {regime for regime, _ in _TOPIX_REGIMES}
+    assert "rerating_participation" not in _LIQUIDITY_REGIMES
+    assert "statements" not in set(result.required_tables)
+    sample = result.observation_sample_df
+    high_forward_p_op = sample.loc[sample["code"] == "3333"].iloc[0]
+    invalid_forward_p_op = sample.loc[sample["code"] == "6666"].iloc[0]
+    assert high_forward_p_op["forward_p_op_percentile"] == 1.0
+    assert high_forward_p_op["forward_p_op_to_per_ratio_percentile"] == 1.0
+    assert pd.isna(invalid_forward_p_op["forward_p_op_percentile"])
+    assert pd.isna(invalid_forward_p_op["forward_p_op_to_per_ratio_percentile"])
+
+
+def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    result = _run_test_research(db_path)
+
+    summary = build_summary_markdown(result)
+    assert "Ranking Color Evidence" in summary
+    assert "Forward Valuation vs PER Relation Evidence" in summary
+    assert "Low PER x Forward Valuation Relation Evidence" in summary
+    assert "Low PER x Forward Valuation Relation Level Evidence" in summary
+    assert "Forward PER x Forward P/OP Interaction" in summary
+    assert "TOPIX Regime x Liquidity x Value Evidence" in summary
+
+    bundle = write_ranking_color_evidence_bundle(
+        result,
+        output_root=tmp_path / "research",
+        run_id="unit-test",
+    )
+    assert bundle.manifest_path.exists()
+    assert bundle.results_db_path.exists()
+
+
+def _run_test_research(db_path: Path) -> RankingColorEvidenceResult:
+    return run_ranking_color_evidence_research(
+        db_path,
+        start_date="2024-03-01",
+        end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        min_observations=1,
+        observation_sample_limit=100,
+    )
+
+
+def _build_ranking_color_db(db_path: Path) -> Path:
+    dates = pd.bdate_range("2023-11-01", "2024-06-28").strftime("%Y-%m-%d").tolist()
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE stock_data (
+            code TEXT,
+            date TEXT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            volume BIGINT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE topix_data (
+            date TEXT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT,
+            code TEXT,
+            company_name TEXT,
+            market_code TEXT,
+            market_name TEXT,
+            scale_category TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE daily_valuation (
+            code TEXT,
+            date TEXT,
+            price_basis_date TEXT,
+            per DOUBLE,
+            forward_per DOUBLE,
+            pbr DOUBLE,
+            p_op DOUBLE,
+            forward_p_op DOUBLE,
+            market_cap DOUBLE,
+            free_float_market_cap DOUBLE,
+            basis_version TEXT
+        )
+        """
+    )
+
+    stock_rows: list[tuple[str, str, float, float, float, float, int]] = []
+    master_rows: list[tuple[str, str, str, str, str, str | None]] = []
+    codes = [
+        ("1111", "Alpha", "0111", 100.0, 0.35),
+        ("2222", "Beta", "0111", 180.0, -0.15),
+        ("3333", "Gamma", "0111", 90.0, 0.05),
+        ("4444", "Delta", "0111", 120.0, 0.12),
+        ("5555", "Epsilon", "0111", 150.0, -0.03),
+        ("6666", "Zeta", "0111", 75.0, 0.18),
+    ]
+    codes.extend(
+        (
+            str(7000 + extra_index),
+            f"Filler {extra_index}",
+            "0111",
+            80.0 + extra_index,
+            -0.08 + extra_index * 0.003,
+        )
+        for extra_index in range(60)
+    )
+    for index, date in enumerate(dates):
+        for code, name, market_code, base, slope in codes:
+            close = base + index * slope
+            open_price = close * 0.995
+            volume = 5_000 + index * 10 + int(code)
+            stock_rows.append(
+                (code, date, open_price, close * 1.01, close * 0.99, close, volume)
+            )
+            master_rows.append((date, code, name, market_code, "Market", None))
+    conn.executemany("INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?)", stock_rows)
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)", master_rows
+    )
+    topix_rows: list[tuple[str, float, float, float, float]] = []
+    for index, date in enumerate(dates):
+        if index < 80:
+            topix_close = 1000.0 + index
+        elif index < 120:
+            topix_close = 1080.0 - (index - 80) * 1.2
+        else:
+            topix_close = 1032.0 + (index - 120) * 0.5
+        topix_rows.append(
+            (
+                date,
+                topix_close * 0.998,
+                topix_close * 1.002,
+                topix_close * 0.996,
+                topix_close,
+            )
+        )
+    conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)", topix_rows)
+    valuation_rows: list[
+        tuple[
+            str,
+            str,
+            str,
+            float,
+            float,
+            float,
+            float,
+            float,
+            float,
+            float,
+            str,
+        ]
+    ] = []
+    for date in dates:
+        valuation_rows.extend(
+            [
+                ("1111", date, date, 12.0, 8.0, 0.5, 7.0, 6.0, 110_000_000.0, 90_000_000.0, "unit"),
+                ("2222", date, date, 18.0, 30.0, 0.7, 8.0, 9.0, 220_000_000.0, 180_000_000.0, "unit"),
+                ("3333", date, date, 14.0, 10.0, 2.0, 11.0, 80.0, 90_000_000.0, 70_000_000.0, "unit"),
+                ("4444", date, date, 16.0, 14.0, 1.1, 9.0, 10.0, 120_000_000.0, 110_000_000.0, "unit"),
+                ("5555", date, date, 20.0, 18.0, 1.6, 14.0, 15.0, 150_000_000.0, 140_000_000.0, "unit"),
+                ("6666", date, date, 22.0, 22.0, 2.5, 20.0, 0.0, 75_000_000.0, 60_000_000.0, "unit"),
+            ]
+        )
+        valuation_rows.extend(
+            (
+                str(7000 + extra_index),
+                date,
+                date,
+                13.0 + extra_index * 0.1,
+                11.0 + extra_index * 0.1,
+                0.9 + extra_index * 0.01,
+                8.0 + extra_index * 0.1,
+                12.0 + extra_index * 0.1,
+                100_000_000.0 + extra_index * 1_000_000.0,
+                80_000_000.0 + extra_index * 1_000_000.0,
+                "unit",
+            )
+            for extra_index in range(60)
+        )
+    conn.executemany(
+        "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        valuation_rows,
+    )
+    conn.close()
+    return db_path

@@ -8296,8 +8296,12 @@ export interface components {
             forwardEpsSource?: ("revised" | "fy") | null;
             /** Forwardper */
             forwardPer?: number | null;
+            /** Forwardperpercentile */
+            forwardPerPercentile?: number | null;
             /** Forwardpop */
             forwardPOp?: number | null;
+            /** Forwardpoppercentile */
+            forwardPOpPercentile?: number | null;
             /** Liquidityregime */
             liquidityRegime?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | null;
             /** Liquidityresidualz */
@@ -8310,8 +8314,12 @@ export interface components {
             marketCode: string;
             /** Pbr */
             pbr?: number | null;
+            /** Pbrpercentile */
+            pbrPercentile?: number | null;
             /** Per */
             per?: number | null;
+            /** Perpercentile */
+            perPercentile?: number | null;
             /** Pop */
             pOp?: number | null;
             /** Previousprice */

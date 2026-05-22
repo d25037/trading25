@@ -758,6 +758,84 @@ class TestGetRankings:
         assert item.forwardEpsDisclosedDate == "2024-01-18"
         assert item.forwardEpsSource == "revised"
 
+    def test_include_valuation_adds_prime_relative_percentiles(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        try:
+            _create_adjusted_metric_tables(conn)
+            valuation_inputs = [
+                ("72030", 10.0, 8.0, 0.5, 5.0),
+                ("67580", 20.0, 20.0, 1.0, 15.0),
+                ("83060", 30.0, 36.0, 1.5, 30.0),
+                ("46890", 40.0, 56.0, 2.0, 60.0),
+            ]
+            for code, per, forward_per, pbr, forward_p_op in valuation_inputs:
+                _insert_daily_valuation(
+                    conn,
+                    code=code,
+                    eps=100.0,
+                    bps=1000.0,
+                    forward_eps=120.0,
+                    per=per,
+                    forward_per=forward_per,
+                    pbr=pbr,
+                    p_op=7.0,
+                    forward_p_op=forward_p_op,
+                    market_cap=1_000_000.0,
+                )
+            _insert_daily_valuation(
+                conn,
+                code="99840",
+                eps=100.0,
+                bps=1000.0,
+                forward_eps=120.0,
+                per=1.0,
+                forward_per=1.0,
+                pbr=0.1,
+                p_op=1.0,
+                forward_p_op=1.0,
+                market_cap=1_000_000.0,
+            )
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        prime_result = svc.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=20,
+            include_valuation=True,
+        )
+        standard_result = svc.get_rankings(
+            date="2024-01-19",
+            markets="standard",
+            limit=20,
+            include_valuation=True,
+        )
+        reader.close()
+
+        cheapest = next(
+            row for row in prime_result.rankings.tradingValue if row.code == "72030"
+        )
+        expensive = next(
+            row for row in prime_result.rankings.tradingValue if row.code == "46890"
+        )
+        standard = next(
+            row for row in standard_result.rankings.tradingValue if row.code == "99840"
+        )
+        assert cheapest.perPercentile == pytest.approx(0.0)
+        assert cheapest.forwardPerPercentile == pytest.approx(0.0)
+        assert cheapest.forwardPOpPercentile == pytest.approx(0.0)
+        assert cheapest.pbrPercentile == pytest.approx(0.0)
+        assert expensive.perPercentile == pytest.approx(1.0)
+        assert expensive.forwardPerPercentile == pytest.approx(1.0)
+        assert expensive.forwardPOpPercentile == pytest.approx(1.0)
+        assert expensive.pbrPercentile == pytest.approx(1.0)
+        assert standard.perPercentile is None
+        assert standard.forwardPerPercentile is None
+        assert standard.forwardPOpPercentile is None
+        assert standard.pbrPercentile is None
+
     def test_include_valuation_filters_forward_eps_source_disclosure_before_limit(
         self, ranking_db
     ):

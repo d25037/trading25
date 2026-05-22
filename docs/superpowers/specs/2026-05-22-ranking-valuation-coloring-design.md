@@ -16,7 +16,9 @@ Ranking page の `Individual Stocks` table で、`PER` / `Fwd PER` / `Fwd P/OP` 
 
 ## Approved Direction
 
-採用するのは frontend-only の direct evidence rules。FastAPI / OpenAPI 契約は変更しない。Ranking API がすでに返す `per`, `forwardPer`, `forwardPOp`, `pbr`, `liquidityResidualZ`, `liquidityRegime` を使い、`EquityRankingTable` の表示 helper でセルごとに class を決める。
+採用するのは Prime-only の percentile-based evidence rules。PER / Fwd PER / Fwd P/OP / PBR の絶対値は年ごとの valuation regime に強く依存するため、色分けには使わない。Ranking API が target date の Prime cross-section で計算した percentile を返し、frontend はその percentile と `liquidityRegime` を使ってセルごとに class を決める。
+
+Standard / Growth への外挿はこの初期実装の根拠にしない。
 
 ## Evidence Base
 
@@ -24,82 +26,97 @@ Primary evidence は既存 Published Readout を使う。
 
 | Source | Relevant read |
 | --- | --- |
-| `apps/bt/docs/experiments/market-behavior/recent-return-threshold-forward-response/README.md` | General daily forward-return response. `PBR cheapest_10pct` and `Fwd PER cheapest_10pct` are positive; expensive PBR is clearly bad; `Fwd PER <= 20 AND Fwd P/OP >= 20` worsens median/win rate; rerating + liquidity state changes return distribution. |
+| `apps/bt/docs/experiments/market-behavior/ranking-color-evidence/README.md` | Prime-only UI coloring evidence. PBR/Fwd PER high percentile is clearly bad; low percentile is relatively better; `Fwd PER / PER` and `Fwd P/OP / PER` relation percentiles were checked but did not beat standalone percentile evidence; `crowded_rerating` is caution rather than green. |
+| `apps/bt/docs/experiments/market-behavior/recent-return-threshold-forward-response/README.md` | General daily forward-return response. `PBR cheapest_10pct` and `Fwd PER cheapest_10pct` are positive; expensive PBR is clearly bad; rerating + liquidity state changes return distribution. The follow-up for this feature must add relative `Fwd PER x Fwd P/OP` evidence instead of absolute `Fwd PER <= 20 AND Fwd P/OP >= 20`. |
 | `apps/bt/docs/experiments/market-behavior/annual-fundamental-confounder-analysis/README.md` | Low PBR, small cap, and low forward PER keep independent positive effects; ADV60 is capacity/execution diagnostic, not alpha. |
 | `apps/bt/docs/experiments/market-behavior/annual-market-specific-value-score-profile/README.md` | Ranking surface should treat Standard as PBR-heavy and Prime as size/Fwd-PER-heavy; PBR and Fwd PER are real ranking axes, not decorative fields. |
-| `apps/bt/docs/experiments/market-behavior/free-float-liquidity-regime-decomposition/README.md` | `rerating_participation` / `neutral_rerating` is favorable; `distribution_stress` and `stale_liquidity` are unfavorable states. |
-| `apps/bt/docs/experiments/market-behavior/pre-earnings-eps120-proxy/README.md` | Absolute valuation buckets already use practical bands: PER/Fwd PER/P/OP/Fwd P/OP `<=10`, `10-15`, `15-20`, `20-30`, `>30`; PBR `<=0.8`, `0.8-1.0`, `1.0-1.5`, `1.5-2.0`, `>2.0`. This is EPS-target evidence, so it is secondary for forward-return coloring. |
+| `apps/bt/docs/experiments/market-behavior/free-float-liquidity-regime-decomposition/README.md` | Background for liquidity residual semantics. For this UI coloring task, the Prime-only `ranking-color-evidence` readout overrides the older green interpretation of crowded rerating. |
+| `apps/bt/docs/experiments/market-behavior/pre-earnings-eps120-proxy/README.md` | Older absolute valuation buckets exist, but they are EPS-target evidence and are not suitable as UI coloring thresholds. Keep this source as background only. |
 
 ## Rule Matrix
 
-The implementation should classify each cell independently, with row context only where the research explicitly requires it.
+The implementation should classify valuation cells by percentile, with row context only where the research explicitly requires it. Percentiles are raw rank percentiles in `[0, 1]`, where lower means cheaper valuation. They must be computed against the full target-date Prime universe on the backend, not against the limited rows currently visible in the frontend table.
 
 ### PER
 
-PER has weaker forward-return evidence than `Fwd PER` and `PBR`, but low PER is still a value proxy in the annual large-universe and bucket-family reads. Treat low positive PER as good, very high or non-positive PER as bad.
+PER has weaker Prime forward-return evidence than `Fwd PER` and `PBR`, but high PER is still a bad bucket and low PER is a weak value proxy. Use the target-date Prime-relative `perPercentile`.
 
 | Condition | Tier |
 | --- | --- |
-| `0 < per <= 10` | `excellent` |
-| `10 < per <= 15` | `good` |
-| `15 < per <= 25` or missing | `neutral` |
-| `25 < per <= 40` | `bad` |
-| `per <= 0` or `per > 40` | `very_bad` |
+| `perPercentile <= 0.10` | `good` |
+| `0.10 < perPercentile <= 0.20` | `good` |
+| `0.20 < perPercentile < 0.80` or missing | `neutral` |
+| `0.80 <= perPercentile < 0.90` | `bad` |
+| `perPercentile >= 0.90` | `very_bad` |
 
 ### Fwd PER
 
-Replace the current `forwardPer > per` red / `forwardPer < per` green comparison. The evidence says low forward PER is positive, but low forward PER alone is weaker than low PBR in rerating slices.
+Replace the current `forwardPer > per` red / `forwardPer < per` green comparison. Prime evidence says low forward PER is relatively favorable and expensive forward PER is clearly poor. Use `forwardPerPercentile`.
+
+The follow-up `Fwd PER / PER` percentile check did not support reviving the old comparison rule by itself. However, the exact-ratio check under low PER did support a narrow positive condition: `perPercentile <= 0.20 AND forwardPer / per <= 0.8` was materially better than standalone low PER. Use that as a green override, with `<= 1.0` as blue, then fall back to standalone Prime-relative `forwardPerPercentile`.
 
 | Condition | Tier |
 | --- | --- |
-| `0 < forwardPer <= 10` | `excellent` |
-| `10 < forwardPer <= 20` | `good` |
-| `20 < forwardPer <= 30` or missing | `neutral` |
-| `30 < forwardPer <= 40` | `bad` |
-| `forwardPer <= 0` or `forwardPer > 40` | `very_bad` |
+| `perPercentile <= 0.20` and `forwardPer / per <= 0.80` | `excellent` |
+| `perPercentile <= 0.20` and `0.80 < forwardPer / per <= 1.00` | `good` |
+| `forwardPerPercentile <= 0.10` | `excellent` |
+| `0.10 < forwardPerPercentile <= 0.20` | `good` |
+| `0.20 < forwardPerPercentile < 0.80` or missing | `neutral` |
+| `0.80 <= forwardPerPercentile < 0.90` | `bad` |
+| `forwardPerPercentile >= 0.90` | `very_bad` |
 
 ### Fwd P/OP
 
-`Fwd P/OP` is not a standalone replacement for `Fwd PER`; it is a quality check for low-forward-PER candidates. Therefore use `forwardPer` as context.
+`Fwd P/OP` is not a standalone replacement for `Fwd PER`; Prime evidence is weaker standalone. It is mainly a quality check for low-forward-PER candidates. Therefore use `forwardPerPercentile` as context and `forwardPOpPercentile` for the operating-profit side.
+
+The follow-up `Fwd P/OP / PER` exact-ratio check does not create a good condition: `<= 0.8` was only roughly neutral. It does add a weak caution condition under low PER when `forwardPOp / per > 1.25`.
 
 | Condition | Tier |
 | --- | --- |
-| `forwardPer <= 20` and `0 < forwardPOp <= 15` | `excellent` |
-| `forwardPer <= 20` and `15 < forwardPOp < 20` | `good` |
-| missing, `forwardPer > 20`, or `20 <= forwardPOp <= 30` without a low-forward-PER context | `neutral` |
-| `30 < forwardPOp <= 40` | `bad` |
-| `forwardPer <= 20` and `forwardPOp >= 20`, or `forwardPOp <= 0`, or `forwardPOp > 40` | `very_bad` |
+| `forwardPerPercentile <= 0.20` and `forwardPOpPercentile <= 0.10` | `good` |
+| `forwardPerPercentile <= 0.20` and `0.10 < forwardPOpPercentile <= 0.20` | `good` |
+| missing, or no low-forward-PER context and `0.20 < forwardPOpPercentile < 0.80` | `neutral` |
+| `perPercentile <= 0.20` and `forwardPOp / per > 1.25` | `bad` |
+| `0.80 <= forwardPOpPercentile < 0.90` | `bad` |
+| `forwardPOpPercentile >= 0.90` | `very_bad` |
 
-If both `bad` and contextual `very_bad` match, contextual `very_bad` wins.
+If both neutral/good and contextual `bad` match, contextual `bad` wins.
 
 ### PBR
 
-PBR has the strongest direct evidence among the requested valuation columns in rerating participation. Cheap PBR gets stronger color than cheap Fwd PER; expensive PBR is a clear red risk.
+PBR has the strongest direct Prime evidence among the requested valuation columns. Cheap PBR gets the strongest green; expensive PBR is the clearest red risk. Use `pbrPercentile`.
 
 | Condition | Tier |
 | --- | --- |
-| `0 < pbr <= 0.8` | `excellent` |
-| `0.8 < pbr <= 1.0` | `good` |
-| `1.0 < pbr <= 2.0` or missing | `neutral` |
-| `2.0 < pbr < 3.0` | `bad` |
-| `pbr <= 0` or `pbr >= 3.0` | `very_bad` |
+| `pbrPercentile <= 0.10` | `excellent` |
+| `0.10 < pbrPercentile <= 0.20` | `good` |
+| `0.20 < pbrPercentile < 0.80` or missing | `neutral` |
+| `0.80 <= pbrPercentile < 0.90` | `bad` |
+| `pbrPercentile >= 0.90` | `very_bad` |
 
 ### 流動性Z
 
-Raw `liquidityResidualZ` alone is ambiguous; the research interpretation is state-based. Color the numeric `流動性Z` cell using `liquidityRegime` when present, with raw-Z fallback only for stale-style low residual.
+Raw `liquidityResidualZ` alone is ambiguous; Prime evidence says liquidity state is a rerating/crowding/investability diagnostic rather than "higher is better". Color the numeric `流動性Z` cell using `liquidityRegime x value confirmation` when present, with raw-Z fallback only for stale-style low residual.
+
+Green is intentionally narrow. For `neutral_rerating`, green requires `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. For `crowded_rerating`, green requires either `pbrPercentile <= 0.20 AND forwardPerPercentile <= 0.20`, or `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. Medium value confirmation for `crowded_rerating` remains blue and includes `pbrPercentile <= 0.20` or `perPercentile <= 0.20 AND forwardPer / per <= 1.00`.
 
 | Condition | Tier |
 | --- | --- |
-| `liquidityRegime === "neutral_rerating"` | `excellent` |
-| `liquidityRegime === "crowded_rerating"` | `good` |
+| `liquidityRegime === "neutral_rerating"` and `perPercentile <= 0.20 AND forwardPer / per <= 0.80` | `excellent` |
+| `liquidityRegime === "neutral_rerating"` otherwise | `good` |
+| `liquidityRegime === "crowded_rerating"` and green confirmation | `excellent` |
+| `liquidityRegime === "crowded_rerating"` and medium value confirmation | `good` |
+| `liquidityRegime === "crowded_rerating"` without value confirmation | `bad` |
 | `liquidityRegime === "neutral"` or missing regime with `-1 < liquidityResidualZ < 1` | `neutral` |
 | `liquidityRegime === "distribution_stress"` | `bad` |
-| `liquidityRegime === "stale_liquidity"` or `liquidityResidualZ <= -1` | `very_bad` |
+| `liquidityRegime === "stale_liquidity"` or `liquidityResidualZ <= -1` | `bad` |
 
 ## UI Scope
 
-Change only the `Individual Stocks` / equity ranking rendering path:
+Change the Ranking API contract and the `Individual Stocks` / equity ranking rendering path:
 
+- `apps/bt/src/entrypoints/http/schemas/ranking.py`
+- `apps/bt/src/application/services/ranking_service.py`
 - `apps/ts/packages/web/src/components/Ranking/EquityRankingTable.tsx`
 - nearby ranking table tests
 
@@ -109,14 +126,21 @@ Do not recolor `Market Cap`, `Med ADV60/FF`, liquidity state chips, row backgrou
 
 ## Implementation Shape
 
-Introduce a small local helper near `EquityRankingTable`:
+Backend must add these optional `RankingItem` fields:
+
+- `perPercentile`
+- `forwardPerPercentile`
+- `forwardPOpPercentile`
+- `pbrPercentile`
+
+For the first production pass these percentile fields should be Prime-relative. If the row is not Prime, either return `null` percentiles or treat the color tier as neutral until non-Prime evidence is separately accepted.
+
+Frontend should introduce a small local helper near `EquityRankingTable`:
 
 - `type EvidenceColorTier = "excellent" | "good" | "neutral" | "bad" | "very_bad"`
 - `getEvidenceTierClass(tier)` maps to Tailwind classes.
-- `getPerEvidenceTier(per)`
-- `getForwardPerEvidenceTier(forwardPer)`
-- `getForwardPOpEvidenceTier(forwardPOp, forwardPer)`
-- `getPbrEvidenceTier(pbr)`
+- `getCheapValuationPercentileTier(percentile)`
+- `getForwardPOpEvidenceTier(forwardPOpPercentile, forwardPerPercentile)`
 - `getLiquidityEvidenceTier(liquidityResidualZ, liquidityRegime)`
 
 Use classes:
@@ -135,27 +159,31 @@ Use classes:
 
 Add or update focused frontend tests:
 
-1. PER/PBR/Fwd PER/Fwd P/OP/流動性Z cells receive the expected classes for all five tiers where applicable.
-2. Current `Fwd PER` comparison behavior is removed: `forwardPer < per` should not be the reason for green if the absolute `forwardPer` tier is neutral/bad.
-3. `Fwd P/OP` contextual bad case is red when `forwardPer <= 20 AND forwardPOp >= 20`.
-4. Mobile cards show PBR and use the same evidence color helpers.
-5. Existing liquidity regime chip colors remain unchanged.
+1. Research output includes percentile-based `ranking_color_evidence_df` and relative `forward_per_pop_interaction_df`.
+2. Backend Ranking items receive target-date Prime-relative percentile fields.
+3. PER/PBR/Fwd PER/Fwd P/OP/流動性Z cells receive the expected classes from percentiles/regimes.
+4. Current `Fwd PER` comparison behavior is removed: `forwardPer < per` should not be a coloring input.
+5. `Fwd P/OP` high-percentile cases are yellow at `>= 0.80` and red at `>= 0.90`, regardless of low-forward-PER context.
+6. Mobile cards show PBR and use the same evidence color helpers.
+7. The liquidity state chip uses the same evidence tier as the `流動性Z` numeric cell.
 
 Run:
 
 ```bash
-bun run --filter @trading25/web test -- RankingTable.test.tsx
+uv run --project apps/bt pytest apps/bt/tests/unit/domains/analytics/test_recent_return_threshold_forward_response.py apps/bt/tests/unit/server/services/test_ranking_service.py -q
+bun run --filter @trading25/contracts bt:sync
+bun run --filter @trading25/web test -- apps/ts/packages/web/src/components/Ranking/RankingTable.test.tsx
+bun run --filter @trading25/web typecheck
 ```
 
 If the package script does not support the file argument, use the repo's closest existing web test command and report the exact command.
 
 ## Non-Goals
 
-- No backend API or OpenAPI schema change.
-- No new research runner in this implementation slice.
+- No absolute PER/PBR/Fwd PER/Fwd P/OP thresholds for coloring.
 - No attempt to make color tiers sector-relative or market-specific yet.
 - No score-method change for value composite Ranking.
 
 ## Caveats
 
-These rules are an evidence-backed interpretation layer, not a trading rule. The evidence is strongest for Prime/rerating daily response and annual value studies. Standard/Growth and sector-relative calibration may deserve a later research pass, but this change should avoid overfitting by using stable, readable thresholds already present in existing research.
+These rules are an evidence-backed interpretation layer, not a trading rule. The first production mapping should use broad Prime percentile buckets to avoid overfitting. Standard/Growth and sector-relative calibration may deserve a later research pass, but absolute valuation thresholds should not be reintroduced for this UI coloring.

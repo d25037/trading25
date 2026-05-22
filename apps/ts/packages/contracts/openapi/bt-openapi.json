@@ -11557,6 +11557,17 @@
             ],
             "title": "Forwardper"
           },
+          "forwardPerPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardperpercentile"
+          },
           "forwardPOp": {
             "anyOf": [
               {
@@ -11567,6 +11578,17 @@
               }
             ],
             "title": "Forwardpop"
+          },
+          "forwardPOpPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwardpoppercentile"
           },
           "liquidityRegime": {
             "anyOf": [
@@ -11634,6 +11656,17 @@
             ],
             "title": "Pbr"
           },
+          "pbrPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbrpercentile"
+          },
           "per": {
             "anyOf": [
               {
@@ -11644,6 +11677,17 @@
               }
             ],
             "title": "Per"
+          },
+          "perPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perpercentile"
           },
           "pOp": {
             "anyOf": [

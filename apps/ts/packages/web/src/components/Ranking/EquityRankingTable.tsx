@@ -37,13 +37,23 @@ export interface EquityRankingItem {
   tradingValueAverage?: number | null;
   changePercentage?: number | null;
   per?: number | null;
+  perPercentile?: number | null;
   forwardPer?: number | null;
+  forwardPerPercentile?: number | null;
   pOp?: number | null;
   forwardPOp?: number | null;
+  forwardPOpPercentile?: number | null;
   pbr?: number | null;
+  pbrPercentile?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?:
+    | 'neutral_rerating'
+    | 'crowded_rerating'
+    | 'distribution_stress'
+    | 'stale_liquidity'
+    | 'neutral'
+    | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: EquityRiskFlag[];
 }
@@ -141,11 +151,11 @@ function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): str
   return '-';
 }
 
-function getLiquidityRegimeClass(value: EquityRankingItem['liquidityRegime']): string {
-  if (value === 'neutral_rerating') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (value === 'crowded_rerating') return 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300';
-  if (value === 'distribution_stress') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
-  if (value === 'stale_liquidity') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+function getEvidenceTierChipClass(tier: EvidenceColorTier): string {
+  if (tier === 'excellent') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (tier === 'good') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
+  if (tier === 'bad') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+  if (tier === 'very_bad') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
@@ -165,7 +175,7 @@ function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
       <span
         className={cn(
           'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-          getLiquidityRegimeClass(item.liquidityRegime)
+          getEvidenceTierChipClass(getLiquidityEvidenceTier(item))
         )}
       >
         {formatLiquidityRegime(item.liquidityRegime)}
@@ -185,14 +195,138 @@ function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
   );
 }
 
-function getForwardPerComparisonClass(
-  per: number | null | undefined,
-  forwardPer: number | null | undefined
-): string | undefined {
-  if (per == null || forwardPer == null || !Number.isFinite(per) || !Number.isFinite(forwardPer) || forwardPer === per) {
-    return undefined;
+type EvidenceColorTier = 'excellent' | 'good' | 'neutral' | 'bad' | 'very_bad';
+
+function getEvidenceTierClass(tier: EvidenceColorTier): string | undefined {
+  if (tier === 'excellent') return 'text-green-600 dark:text-green-400';
+  if (tier === 'good') return 'text-sky-600 dark:text-sky-400';
+  if (tier === 'bad') return 'text-yellow-600 dark:text-yellow-400';
+  if (tier === 'very_bad') return 'text-red-600 dark:text-red-400';
+  return undefined;
+}
+
+function getCheapValuationPercentileTier(percentile: number | null | undefined): EvidenceColorTier {
+  if (percentile == null || !Number.isFinite(percentile)) return 'neutral';
+  if (percentile <= 0.1) return 'excellent';
+  if (percentile <= 0.2) return 'good';
+  if (percentile >= 0.9) return 'very_bad';
+  if (percentile >= 0.8) return 'bad';
+  return 'neutral';
+}
+
+function getPerEvidenceTier(percentile: number | null | undefined): EvidenceColorTier {
+  if (percentile == null || !Number.isFinite(percentile)) return 'neutral';
+  if (percentile <= 0.2) return 'good';
+  if (percentile >= 0.9) return 'very_bad';
+  if (percentile >= 0.8) return 'bad';
+  return 'neutral';
+}
+
+function hasLowPer(perPercentile: number | null | undefined): boolean {
+  return perPercentile != null && Number.isFinite(perPercentile) && perPercentile <= 0.2;
+}
+
+function getPositiveRatio(numerator: number | null | undefined, denominator: number | null | undefined): number | null {
+  if (
+    numerator == null ||
+    denominator == null ||
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    numerator <= 0 ||
+    denominator <= 0
+  ) {
+    return null;
   }
-  return forwardPer > per ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400';
+  return numerator / denominator;
+}
+
+function getForwardPerEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
+  const standaloneTier = getCheapValuationPercentileTier(item.forwardPerPercentile);
+  if (standaloneTier === 'very_bad' || standaloneTier === 'bad') {
+    return standaloneTier;
+  }
+  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
+  if (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null) {
+    if (forwardPerToPerRatio <= 0.8) return 'excellent';
+    if (forwardPerToPerRatio <= 1.0) return 'good';
+  }
+  if (standaloneTier === 'excellent') {
+    return 'excellent';
+  }
+  return standaloneTier;
+}
+
+function getForwardPOpEvidenceTier(
+  forwardPOpPercentile: number | null | undefined,
+  forwardPerPercentile: number | null | undefined,
+  perPercentile: number | null | undefined,
+  forwardPOp: number | null | undefined,
+  per: number | null | undefined
+): EvidenceColorTier {
+  if (forwardPOpPercentile == null || !Number.isFinite(forwardPOpPercentile)) {
+    return 'neutral';
+  }
+  if (forwardPOpPercentile >= 0.9) return 'very_bad';
+  if (forwardPOpPercentile >= 0.8) return 'bad';
+  const forwardPOpToPerRatio = getPositiveRatio(forwardPOp, per);
+  if (hasLowPer(perPercentile) && forwardPOpToPerRatio != null && forwardPOpToPerRatio > 1.25) {
+    return 'bad';
+  }
+  if (
+    forwardPerPercentile != null &&
+    Number.isFinite(forwardPerPercentile) &&
+    forwardPerPercentile <= 0.2 &&
+    forwardPOpPercentile <= 0.2
+  ) {
+    return 'good';
+  }
+  return 'neutral';
+}
+
+function hasLowPbr(item: EquityRankingItem): boolean {
+  return item.pbrPercentile != null && Number.isFinite(item.pbrPercentile) && item.pbrPercentile <= 0.2;
+}
+
+function hasLowForwardPer(item: EquityRankingItem): boolean {
+  return (
+    item.forwardPerPercentile != null && Number.isFinite(item.forwardPerPercentile) && item.forwardPerPercentile <= 0.2
+  );
+}
+
+function hasLowPerForwardPerImprovement(item: EquityRankingItem): boolean {
+  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
+  return hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 0.8;
+}
+
+function hasCrowdedReratingGreenConfirmation(item: EquityRankingItem): boolean {
+  return (hasLowPbr(item) && hasLowForwardPer(item)) || hasLowPerForwardPerImprovement(item);
+}
+
+function hasReratingValueConfirmation(item: EquityRankingItem): boolean {
+  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
+  return (
+    hasCrowdedReratingGreenConfirmation(item) ||
+    hasLowPbr(item) ||
+    (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 1.0)
+  );
+}
+
+function getLiquidityEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
+  if (item.liquidityRegime === 'neutral_rerating') {
+    return hasLowPerForwardPerImprovement(item) ? 'excellent' : 'good';
+  }
+  if (item.liquidityRegime === 'crowded_rerating') {
+    if (hasCrowdedReratingGreenConfirmation(item)) return 'excellent';
+    if (hasReratingValueConfirmation(item)) return 'good';
+    return 'bad';
+  }
+  if (item.liquidityRegime === 'distribution_stress') return 'bad';
+  if (item.liquidityRegime === 'stale_liquidity') return 'bad';
+  if (item.liquidityRegime === 'neutral') return 'neutral';
+  if (item.liquidityResidualZ != null && Number.isFinite(item.liquidityResidualZ) && item.liquidityResidualZ <= -1) {
+    return 'bad';
+  }
+  return 'neutral';
 }
 
 function SortHeader({
@@ -229,6 +363,18 @@ function SortHeader({
 function VirtualSpacer({ height }: { height: number }) {
   if (height <= 0) return null;
   return <div aria-hidden="true" className="shrink-0" style={{ height }} />;
+}
+
+function EvidenceColorLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/40 px-3 py-2 text-[11px] text-muted-foreground">
+      <span>Prime 20d excess evidence</span>
+      <span className="font-medium text-green-600 dark:text-green-400">strong</span>
+      <span className="font-medium text-sky-600 dark:text-sky-400">good</span>
+      <span className="font-medium text-yellow-600 dark:text-yellow-400">caution</span>
+      <span className="font-medium text-red-600 dark:text-red-400">weak/tail</span>
+    </div>
+  );
 }
 
 function EquityCard<T extends EquityRankingItem>({
@@ -291,18 +437,43 @@ function EquityCard<T extends EquityRankingItem>({
         />
         {showValuation ? (
           <>
-            <Metric label="PER" value={formatRatio(item.per)} />
+            <Metric
+              label="PER"
+              value={formatRatio(item.per)}
+              valueClassName={getEvidenceTierClass(getPerEvidenceTier(item.perPercentile))}
+            />
             <Metric
               label="Fwd PER"
               value={formatRatio(item.forwardPer)}
-              valueClassName={getForwardPerComparisonClass(item.per, item.forwardPer)}
+              valueClassName={getEvidenceTierClass(getForwardPerEvidenceTier(item))}
             />
-            <Metric label="Fwd P/OP" value={formatRatio(item.forwardPOp)} />
+            <Metric
+              label="Fwd P/OP"
+              value={formatRatio(item.forwardPOp)}
+              valueClassName={getEvidenceTierClass(
+                getForwardPOpEvidenceTier(
+                  item.forwardPOpPercentile,
+                  item.forwardPerPercentile,
+                  item.perPercentile,
+                  item.forwardPOp,
+                  item.per
+                )
+              )}
+            />
+            <Metric
+              label="PBR"
+              value={formatRatio(item.pbr)}
+              valueClassName={getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))}
+            />
           </>
         ) : null}
         {showLiquidity ? (
           <>
-            <Metric label="流動性Z" value={formatSignedNumber(item.liquidityResidualZ)} />
+            <Metric
+              label="流動性Z"
+              value={formatSignedNumber(item.liquidityResidualZ)}
+              valueClassName={getEvidenceTierClass(getLiquidityEvidenceTier(item))}
+            />
             <Metric label="Med ADV60/FF" value={formatPercent(item.adv60ToFreeFloatPct)} />
           </>
         ) : null}
@@ -580,23 +751,56 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
       {showValuation ? (
         <>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.per)}</td>
+          <td
+            className={cn(
+              'px-2 py-1.5 text-right tabular-nums',
+              getEvidenceTierClass(getPerEvidenceTier(item.perPercentile))
+            )}
+          >
+            {formatRatio(item.per)}
+          </td>
           <td
             className={cn(
               'px-2 py-1.5 text-right font-medium tabular-nums',
-              getForwardPerComparisonClass(item.per, item.forwardPer)
+              getEvidenceTierClass(getForwardPerEvidenceTier(item))
             )}
           >
             {formatRatio(item.forwardPer)}
           </td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.forwardPOp)}</td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatRatio(item.pbr)}</td>
+          <td
+            className={cn(
+              'px-2 py-1.5 text-right tabular-nums',
+              getEvidenceTierClass(
+                getForwardPOpEvidenceTier(
+                  item.forwardPOpPercentile,
+                  item.forwardPerPercentile,
+                  item.perPercentile,
+                  item.forwardPOp,
+                  item.per
+                )
+              )
+            )}
+          >
+            {formatRatio(item.forwardPOp)}
+          </td>
+          <td
+            className={cn(
+              'px-2 py-1.5 text-right tabular-nums',
+              getEvidenceTierClass(getCheapValuationPercentileTier(item.pbrPercentile))
+            )}
+          >
+            {formatRatio(item.pbr)}
+          </td>
           <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
         </>
       ) : null}
       {showLiquidity ? (
         <>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatSignedNumber(item.liquidityResidualZ)}</td>
+          <td
+            className={cn('px-2 py-1.5 text-right tabular-nums', getEvidenceTierClass(getLiquidityEvidenceTier(item)))}
+          >
+            {formatSignedNumber(item.liquidityResidualZ)}
+          </td>
           <td className="px-2 py-1.5 text-center">
             <LiquidityStateChips item={item} />
           </td>
@@ -648,6 +852,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
 
   return (
     <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
+      {showValuation || showLiquidity ? <EvidenceColorLegend /> : null}
       <DataStateWrapper
         isLoading={isLoading}
         error={error}
