@@ -302,6 +302,12 @@ function hasCrowdedReratingGreenConfirmation(item: EquityRankingItem): boolean {
   return (hasLowPbr(item) && hasLowForwardPer(item)) || hasLowPerForwardPerImprovement(item);
 }
 
+function hasExpensiveValuationWarning(item: EquityRankingItem): boolean {
+  return [item.perPercentile, item.forwardPerPercentile, item.forwardPOpPercentile, item.pbrPercentile].some(
+    (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.8
+  );
+}
+
 function hasReratingValueConfirmation(item: EquityRankingItem): boolean {
   const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
   return (
@@ -317,6 +323,7 @@ function getLiquidityEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
   }
   if (item.liquidityRegime === 'crowded_rerating') {
     if (hasCrowdedReratingGreenConfirmation(item)) return 'excellent';
+    if (hasExpensiveValuationWarning(item)) return 'bad';
     if (hasReratingValueConfirmation(item)) return 'good';
     return 'bad';
   }
