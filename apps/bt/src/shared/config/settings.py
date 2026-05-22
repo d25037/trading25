@@ -14,17 +14,24 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-# Monorepo SoT: repository root の .env を読み込む
-def _find_repo_root(start: Path) -> Path:
-    for current in (start, *start.parents):
-        if (current / ".git").exists():
-            return current
-    raise RuntimeError(f"Repository root not found from {start}")
+ENV_RUNTIME_ENV_FILE = "TRADING25_ENV_FILE"
 
 
-_repo_root = _find_repo_root(Path(__file__).resolve())
-_dotenv_path = _repo_root / ".env"
-load_dotenv(_dotenv_path, override=False)
+def _runtime_env_file_path() -> Path | None:
+    raw_path = os.environ.get(ENV_RUNTIME_ENV_FILE, "").strip()
+    if not raw_path:
+        return None
+    return Path(raw_path).expanduser()
+
+
+def _load_runtime_env_file() -> Path | None:
+    env_file = _runtime_env_file_path()
+    if env_file is None:
+        return None
+    if not env_file.exists():
+        raise RuntimeError(f"{ENV_RUNTIME_ENV_FILE} points to a missing file: {env_file}")
+    load_dotenv(env_file, override=False)
+    return env_file
 
 
 def _default_data_dir() -> str:
@@ -97,6 +104,7 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     """キャッシュされた設定を取得"""
+    _load_runtime_env_file()
     return Settings.model_validate(dict(os.environ))
 
 

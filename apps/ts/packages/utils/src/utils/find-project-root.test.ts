@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findProjectRoot, findRepositoryRoot, getProjectEnvPath } from './find-project-root';
+import { findProjectRoot, getRuntimeEnvFilePath } from './find-project-root';
 
 describe('findProjectRoot', () => {
   let testDir: string;
@@ -38,11 +38,9 @@ describe('findProjectRoot', () => {
 
   test('ignores package.json without workspaces', () => {
     writeFileSync(join(testDir, 'package.json'), JSON.stringify({ name: 'test' }));
-    // Also add .env to parent so it eventually finds something
-    writeFileSync(join(testDir, '.env'), 'KEY=val');
+    writeFileSync(join(testDir, 'AGENTS.md'), '# Project');
 
     const result = findProjectRoot(testDir);
-    // Should still find via .env fallback
     expect(result).toBe(testDir);
   });
 
@@ -55,12 +53,6 @@ describe('findProjectRoot', () => {
     expect(result).toBe(testDir);
   });
 
-  test('finds root via .env file', () => {
-    writeFileSync(join(testDir, '.env'), 'KEY=val');
-    const result = findProjectRoot(testDir);
-    expect(result).toBe(testDir);
-  });
-
   test('finds root via AGENTS.md', () => {
     writeFileSync(join(testDir, 'AGENTS.md'), '# Project');
     const result = findProjectRoot(testDir);
@@ -69,7 +61,7 @@ describe('findProjectRoot', () => {
 
   test('handles invalid package.json gracefully', () => {
     writeFileSync(join(testDir, 'package.json'), 'not json');
-    writeFileSync(join(testDir, '.env'), 'KEY=val');
+    writeFileSync(join(testDir, 'AGENTS.md'), '# Project');
 
     const result = findProjectRoot(testDir);
     expect(result).toBe(testDir);
@@ -94,7 +86,7 @@ describe('findProjectRoot', () => {
   });
 });
 
-describe('getProjectEnvPath', () => {
+describe('getRuntimeEnvFilePath', () => {
   let testDir: string;
 
   beforeEach(() => {
@@ -108,21 +100,17 @@ describe('getProjectEnvPath', () => {
     }
   });
 
-  test('returns path to .env in repository root', () => {
-    const envPath = getProjectEnvPath();
-    expect(envPath).toMatch(/\.env$/);
+  test('returns undefined when TRADING25_ENV_FILE is unset', () => {
+    const env = {};
+
+    const envPath = getRuntimeEnvFilePath(env);
+
+    expect(envPath).toBeUndefined();
   });
 
-  test('resolves to repository-root .env even with nested workspace', () => {
-    const repoRoot = join(testDir, 'repo');
-    const workspaceRoot = join(repoRoot, 'apps', 'ts');
-    const nestedDir = join(workspaceRoot, 'packages', 'shared');
+  test('returns explicit repo-external runtime env file path', () => {
+    const envPath = join(testDir, 'trading25.env');
 
-    mkdirSync(join(repoRoot, '.git'), { recursive: true });
-    mkdirSync(nestedDir, { recursive: true });
-    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'ts', workspaces: ['packages/*'] }));
-
-    expect(findRepositoryRoot(nestedDir)).toBe(repoRoot);
-    expect(getProjectEnvPath(nestedDir)).toBe(join(repoRoot, '.env'));
+    expect(getRuntimeEnvFilePath({ TRADING25_ENV_FILE: envPath })).toBe(envPath);
   });
 });

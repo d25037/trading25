@@ -23,8 +23,7 @@ type TaskDefinition = {
 
 const ROOT = resolve(import.meta.dir, '..');
 const WEB_ROOT = resolve(ROOT, 'packages/web');
-const ENV_FILE = '../../.env';
-const ROOT_ENV_FILE = resolve(ROOT, ENV_FILE);
+const RUNTIME_ENV_FILE = process.env.TRADING25_ENV_FILE?.trim();
 
 const TASKS: Record<string, TaskDefinition> = {
   'api:hint': {
@@ -57,7 +56,7 @@ const TASKS: Record<string, TaskDefinition> = {
 };
 
 async function runBun(args: string[], options: { withEnvFile?: boolean; cwd?: string } = {}): Promise<number> {
-  const bunArgs = options.withEnvFile ? [`--env-file=${ROOT_ENV_FILE}`, ...args] : args;
+  const bunArgs = options.withEnvFile && RUNTIME_ENV_FILE ? [`--env-file=${RUNTIME_ENV_FILE}`, ...args] : args;
   const proc = Bun.spawn({
     cmd: ['bun', ...bunArgs],
     cwd: options.cwd ?? ROOT,

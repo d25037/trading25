@@ -82,7 +82,7 @@
   - `<repo-root>/apps/bt/tests/conftest.py:160`
   - `<repo-root>/apps/bt/tests/unit/server/clients/test_jquants_client.py:17`
   - `<repo-root>/apps/ts/packages/cli/src/utils/cli-token-manager.test.ts:150`
-  - `<repo-root>/docs/security/secret-key-runbook.md:7`
+  - `<repo-root>/docs/security/runtime-secret-runbook.md:7`
 - **Resolution Evidence**
   - テスト用トークンを低エントロピーのダミー値へ統一
   - runbook 文言を調整

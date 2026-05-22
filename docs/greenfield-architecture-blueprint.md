@@ -220,7 +220,7 @@ CI 必須ジョブ:
 
 ## 9. セキュリティ/運用
 
-- secret は `.env` ではなく keychain/secret manager 優先（開発時のみ `.env`）
+- secret は keychain / 1Password などの secret manager を優先し、runtime config はリポジトリ外に置く。repo root `.env` は使用しない
 - SQL は SQLAlchemy Core + bind parameters を強制
 - 監査ログ: dataset build / strategy update / backtest run を記録
 - 障害時 runbook を docs 化（API, DB, J-Quants rate limit, job stuck）

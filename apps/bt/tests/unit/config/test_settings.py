@@ -82,24 +82,29 @@ def test_settings_ignores_legacy_api_base_url(monkeypatch):
     assert settings.bt_api_url == "http://localhost:3002"
 
 
-def test_settings_module_loads_dotenv():
-    """settings モジュールが load_dotenv をモジュールレベルで呼び出していること"""
+def test_settings_module_does_not_define_repo_dotenv_source():
     import src.shared.config.settings as settings_mod
 
-    # モジュールレベルで _dotenv_path が定義されていることを確認
-    assert hasattr(settings_mod, "_dotenv_path")
-    expected = settings_mod._repo_root / ".env"
-    assert settings_mod._dotenv_path == expected
+    assert not hasattr(settings_mod, "_dotenv_path")
 
 
-def test_find_repo_root_raises_when_git_not_found(tmp_path):
-    from src.shared.config.settings import _find_repo_root
+def test_settings_loads_explicit_runtime_env_file(monkeypatch, tmp_path):
+    env_file = tmp_path / "trading25.env"
+    env_file.write_text("BT_API_URL=http://runtime-config.example:3002\n", encoding="utf-8")
+    monkeypatch.delenv("BT_API_URL", raising=False)
+    monkeypatch.setenv("TRADING25_ENV_FILE", str(env_file))
 
-    start = tmp_path / "nested" / "path"
-    start.mkdir(parents=True)
+    settings = reload_settings()
 
-    with pytest.raises(RuntimeError):
-        _find_repo_root(start)
+    assert settings.bt_api_url == "http://runtime-config.example:3002"
+
+
+def test_settings_raises_when_explicit_runtime_env_file_is_missing(monkeypatch, tmp_path):
+    missing_path = tmp_path / "missing.env"
+    monkeypatch.setenv("TRADING25_ENV_FILE", str(missing_path))
+
+    with pytest.raises(RuntimeError, match="TRADING25_ENV_FILE points to a missing file"):
+        reload_settings()
 
 
 def test_settings_respects_explicit_db_paths(monkeypatch):

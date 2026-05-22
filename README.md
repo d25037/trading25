@@ -39,16 +39,29 @@ uv sync
 uv run bt server --port 3002
 ```
 
+1Password Environments の local env file から secrets/config を注入して起動する場合:
+
+```bash
+cd <repo-root>
+export TRADING25_ENV_FILE="$HOME/.config/trading25/env"
+op run --env-file "$TRADING25_ENV_FILE" -- uv run --project apps/bt bt server --port 3002
+```
+
 ### 2) Web 起動（apps/ts）
 ```bash
 cd <repo-root>
-cp .env.example .env
 cd apps/ts
 bun install
 bun run workspace:dev
 ```
 
-`.env` の SoT はリポジトリルート（`<repo-root>/.env`）です。
+Runtime config はリポジトリ外で管理します。1Password Environments の local env file を使う場合は、たとえば以下のように明示します。
+
+```bash
+export TRADING25_ENV_FILE="$HOME/.config/trading25/env"
+```
+
+`op://...` secret reference を含む env file を使う場合は、起動コマンドを `op run --env-file "$TRADING25_ENV_FILE" -- ...` で包みます。repo root `.env` は使用しません。
 
 `bun run workspace:dev:sync` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。`bt:sync` 失敗時は warning を出して `web:dev` を継続します。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。

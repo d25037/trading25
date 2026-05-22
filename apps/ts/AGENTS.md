@@ -91,9 +91,10 @@ uv run --project ../bt bt --help
 
 ## Environment Variables
 
-`.env` のSoTはリポジトリルート（`<repo-root>/.env`）。
+環境変数の SoT はプロセス環境、または `TRADING25_ENV_FILE` で明示したリポジトリ外 runtime config。repo root `.env` は使用しない。
 
 ```
+TRADING25_ENV_FILE      # Optional: repo-external runtime env file
 JQUANTS_API_KEY         # JQuants API key (v2 API)
 JQUANTS_PLAN            # Required: free, light, standard, premium (rate limit)
 LOG_LEVEL               # debug, info, warn, error

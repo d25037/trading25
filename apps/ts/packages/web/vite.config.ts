@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { $ } from 'bun';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig, loadEnv, type PluginOption } from 'vite';
+import { defineConfig, type PluginOption } from 'vite';
 import { resolveBtApiUrl } from './src/lib/btApiUrl';
 
 const WEB_PORT = 5173;
@@ -68,12 +68,11 @@ function resolveManualChunk(id: string): string | undefined {
 	return undefined;
 }
 
-export default defineConfig(({ mode }) => {
-	const env = { ...loadEnv(mode, REPO_ROOT, ''), ...process.env };
-	const btApiUrl = resolveBtApiUrl(env);
+export default defineConfig(() => {
+	const btApiUrl = resolveBtApiUrl(process.env);
 
 	return {
-		envDir: REPO_ROOT,
+		envDir: false,
 		plugins: [killPortPlugin(), react(), tailwindcss()],
 		resolve: {
 			alias: [

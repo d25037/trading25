@@ -58,10 +58,9 @@ function checkForProjectIndicators(dir: string): boolean {
     return true;
   }
 
-  // Fallback indicators (less reliable in CI/Docker environments)
-  const envPath = path.join(dir, '.env');
+  // Fallback indicator for repo-level agent guidance in local worktrees.
   const agentsMdPath = path.join(dir, 'AGENTS.md');
-  return fs.existsSync(envPath) || fs.existsSync(agentsMdPath);
+  return fs.existsSync(agentsMdPath);
 }
 
 /**
@@ -81,14 +80,14 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
   }
 
   throw new Error(
-    `Could not find project root starting from ${startDir}. Looked for .git, package.json with workspaces, pnpm-workspace.yaml, .env, or AGENTS.md`
+    `Could not find project root starting from ${startDir}. Looked for .git, package.json with workspaces, pnpm-workspace.yaml, or AGENTS.md`
   );
 }
 
 /**
- * Get the path to the .env file in the repository root
+ * Get the explicit repo-external runtime env file path, if configured.
  */
-export function getProjectEnvPath(startDir?: string): string {
-  const repositoryRoot = findRepositoryRoot(startDir);
-  return path.join(repositoryRoot, '.env');
+export function getRuntimeEnvFilePath(env: Record<string, string | undefined> = process.env): string | undefined {
+  const envFile = env.TRADING25_ENV_FILE?.trim();
+  return envFile ? envFile : undefined;
 }

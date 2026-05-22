@@ -19,6 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.shared.config.settings import get_settings
+from src.shared.config.settings import ENV_RUNTIME_ENV_FILE
 
 console = Console()
 
@@ -121,50 +122,15 @@ def _print_fetch_summary(title: str, count: int, output_path: Path | None = None
     console.print(table)
 
 
-def _find_repo_root(start: Path) -> Path | None:
-    for current in (start, *start.parents):
-        if (current / ".git").exists():
-            return current
-    return None
-
-
-def _find_env_file() -> Path | None:
-    # Monorepo SoT: always target repository root .env
-    repo_root = _find_repo_root(Path(__file__).resolve())
-    if repo_root is None:
+def _runtime_env_file_path() -> Path | None:
+    raw_path = os.getenv(ENV_RUNTIME_ENV_FILE, "").strip()
+    if not raw_path:
         return None
-    env_path = repo_root / ".env"
-    if env_path.exists():
-        return env_path
-    return None
+    return Path(raw_path).expanduser()
 
 
-def _has_local_api_key(env_file: Path | None) -> bool:
-    if env_file is not None and env_file.exists():
-        try:
-            for raw in env_file.read_text(encoding="utf-8").splitlines():
-                line = raw.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("JQUANTS_API_KEY="):
-                    _, value = line.split("=", 1)
-                    return len(value.strip().strip('"').strip("'")) > 0
-        except Exception:
-            pass
+def _has_local_api_key() -> bool:
     return len(os.getenv("JQUANTS_API_KEY", "").strip()) > 0
-
-
-def _clear_local_api_key(env_file: Path) -> bool:
-    lines = env_file.read_text(encoding="utf-8").splitlines()
-    kept: list[str] = []
-    removed = False
-    for line in lines:
-        if line.strip().startswith("JQUANTS_API_KEY="):
-            removed = True
-            continue
-        kept.append(line)
-    env_file.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
-    return removed
 
 
 @auth_app.command("status")
@@ -172,15 +138,15 @@ def auth_status(
     bt_url: str = typer.Option(DEFAULT_BT_API_URL, "--bt-url", help="bt FastAPI URL"),
 ) -> None:
     """Show local key status and /api/jquants/auth/status."""
-    env_file = _find_env_file()
-    local_key = _has_local_api_key(env_file)
+    env_file = _runtime_env_file_path()
+    local_key = _has_local_api_key()
     api_status = _request_json(bt_url, "/api/jquants/auth/status")
 
     table = Table(title="JQuants Auth Status", show_header=False)
     table.add_column("key", style="cyan")
     table.add_column("value", style="white")
-    table.add_row("env file", str(env_file) if env_file else "(not found)")
-    table.add_row("local JQUANTS_API_KEY", "yes" if local_key else "no")
+    table.add_row("runtime env file", str(env_file) if env_file else f"({ENV_RUNTIME_ENV_FILE} not set)")
+    table.add_row("process JQUANTS_API_KEY", "yes" if local_key else "no")
     table.add_row("api authenticated", "yes" if bool(api_status.get("authenticated")) else "no")
     table.add_row("api hasApiKey", "yes" if bool(api_status.get("hasApiKey")) else "no")
     console.print(table)
@@ -188,17 +154,12 @@ def auth_status(
 
 @auth_app.command("clear")
 def auth_clear() -> None:
-    """Clear JQUANTS_API_KEY from nearest .env."""
-    env_file = _find_env_file()
-    if env_file is None:
-        console.print("[red]No .env file found.[/red]")
-        raise typer.Exit(code=1)
-
-    removed = _clear_local_api_key(env_file)
-    if removed:
-        console.print(f"[green]Cleared JQUANTS_API_KEY from {env_file}[/green]")
-    else:
-        console.print(f"[yellow]JQUANTS_API_KEY not found in {env_file}[/yellow]")
+    """Explain where to clear externally managed J-Quants credentials."""
+    console.print(
+        "[yellow]JQUANTS_API_KEY is managed outside the repository. "
+        "Clear it in 1Password or in the file referenced by TRADING25_ENV_FILE.[/yellow]"
+    )
+    raise typer.Exit(code=1)
 
 
 @auth_app.command("refresh-tokens")

@@ -91,52 +91,24 @@ def test_jquants_refresh_tokens_alias_calls_status() -> None:
     mock_status.assert_called_once_with(bt_url=jquants_module.DEFAULT_BT_API_URL)
 
 
-def test_find_env_file_uses_repo_root_env(monkeypatch, tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("JQUANTS_API_KEY=test\n", encoding="utf-8")
-    monkeypatch.setattr(jquants_module, "_find_repo_root", lambda _start: tmp_path)
+def test_runtime_env_file_path_uses_trading25_env_file(monkeypatch, tmp_path: Path) -> None:
+    env_file = tmp_path / "trading25.env"
+    monkeypatch.setenv("TRADING25_ENV_FILE", str(env_file))
 
-    assert jquants_module._find_env_file() == env_file
-
-
-def test_auth_clear_removes_key_from_env(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=1\nJQUANTS_API_KEY=abc\nBAR=2\n", encoding="utf-8")
-
-    with patch("src.entrypoints.cli.jquants._find_env_file", return_value=env_file):
-        result = runner.invoke(jquants_module.jquants_app, ["auth", "clear"])
-
-    assert result.exit_code == 0
-    content = env_file.read_text(encoding="utf-8")
-    assert "JQUANTS_API_KEY=" not in content
-    assert "FOO=1" in content
-    assert "BAR=2" in content
+    assert jquants_module._runtime_env_file_path() == env_file
 
 
-def test_auth_clear_fails_when_env_missing() -> None:
-    with patch("src.entrypoints.cli.jquants._find_env_file", return_value=None):
-        result = runner.invoke(jquants_module.jquants_app, ["auth", "clear"])
+def test_auth_clear_reports_external_secret_management() -> None:
+    result = runner.invoke(jquants_module.jquants_app, ["auth", "clear"])
 
     assert result.exit_code == 1
-    assert "No .env file found" in result.stdout
-
-
-def test_auth_clear_reports_when_key_not_found(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("FOO=1\nBAR=2\n", encoding="utf-8")
-
-    with patch("src.entrypoints.cli.jquants._find_env_file", return_value=env_file):
-        result = runner.invoke(jquants_module.jquants_app, ["auth", "clear"])
-
-    assert result.exit_code == 0
-    assert "JQUANTS_API_KEY not found" in result.stdout
+    assert "managed outside the repository" in result.stdout
 
 
 def test_auth_status_renders_local_and_api_status(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("JQUANTS_API_KEY=abc\n", encoding="utf-8")
+    env_file = tmp_path / "trading25.env"
     with (
-        patch("src.entrypoints.cli.jquants._find_env_file", return_value=env_file),
+        patch("src.entrypoints.cli.jquants._runtime_env_file_path", return_value=env_file),
         patch("src.entrypoints.cli.jquants._has_local_api_key", return_value=True),
         patch(
             "src.entrypoints.cli.jquants._request_json",
@@ -147,6 +119,7 @@ def test_auth_status_renders_local_and_api_status(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "JQuants Auth Status" in result.stdout
+    assert "runtime env file" in result.stdout
     assert "api authenticated" in result.stdout
 
 
@@ -193,16 +166,12 @@ def test_write_csv_handles_empty_rows(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == ""
 
 
-def test_has_local_api_key_reads_env_file_and_falls_back_to_process_env(tmp_path: Path) -> None:
-    env_file = tmp_path / ".env"
-    env_file.write_text("# comment\nJQUANTS_API_KEY='abc'\n", encoding="utf-8")
-    assert jquants_module._has_local_api_key(env_file) is True
-
-    env_file.write_text("JQUANTS_API_KEY=\n", encoding="utf-8")
-    assert jquants_module._has_local_api_key(env_file) is False
-
+def test_has_local_api_key_reads_process_env() -> None:
     with patch.dict(os.environ, {"JQUANTS_API_KEY": "from-process"}, clear=False):
-        assert jquants_module._has_local_api_key(None) is True
+        assert jquants_module._has_local_api_key() is True
+
+    with patch.dict(os.environ, {"JQUANTS_API_KEY": ""}, clear=False):
+        assert jquants_module._has_local_api_key() is False
 
 
 def test_fetch_listed_info_writes_csv(tmp_path: Path) -> None:
@@ -314,20 +283,16 @@ def test_request_json_success_and_non_object_payload() -> None:
             jquants_module._request_json("http://localhost:3002", "/api/jquants/auth/status")
 
 
-def test_find_repo_root_and_today_label(tmp_path: Path) -> None:
-    nested = tmp_path / "a" / "b"
-    nested.mkdir(parents=True)
-    (tmp_path / ".git").mkdir()
-    assert jquants_module._find_repo_root(nested) == tmp_path
+def test_runtime_env_file_path_and_today_label(monkeypatch, tmp_path: Path) -> None:
+    env_file = tmp_path / "trading25.env"
+    monkeypatch.setenv("TRADING25_ENV_FILE", str(env_file))
+    assert jquants_module._runtime_env_file_path() == env_file
     assert len(jquants_module._today_label()) == 10
 
 
-def test_find_env_file_returns_none_for_missing_repo_or_env(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(jquants_module, "_find_repo_root", lambda _start: None)
-    assert jquants_module._find_env_file() is None
-
-    monkeypatch.setattr(jquants_module, "_find_repo_root", lambda _start: tmp_path)
-    assert jquants_module._find_env_file() is None
+def test_runtime_env_file_path_returns_none_when_unset(monkeypatch) -> None:
+    monkeypatch.delenv("TRADING25_ENV_FILE", raising=False)
+    assert jquants_module._runtime_env_file_path() is None
 
 
 def test_fetch_daily_quotes_csv_and_non_list_payload(tmp_path: Path) -> None:

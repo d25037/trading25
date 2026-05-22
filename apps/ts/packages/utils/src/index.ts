@@ -31,11 +31,8 @@ export {
   resolveDatasetPath,
 } from './utils/dataset-paths';
 export { dateRangeToISO, toISODateString, toISODateStringOrDefault, toISODateStringOrNull } from './utils/date-helpers';
-export { EnvManager, type EnvTokens } from './utils/env-manager';
-export { FileTokenStorage } from './utils/file-token-storage';
-export { findProjectRoot } from './utils/find-project-root';
+export { findProjectRoot, getRuntimeEnvFilePath } from './utils/find-project-root';
 export { logger } from './utils/logger';
 export type { ILogger, ILoggerFactory, LogContext, LogLevel } from './utils/logger-interface';
-export { SecureEnvManager } from './utils/secure-env-manager';
 export { TokenManager } from './utils/token-manager';
 export type { TokenData, TokenStorage, TokenStorageOptions } from './utils/token-storage';
