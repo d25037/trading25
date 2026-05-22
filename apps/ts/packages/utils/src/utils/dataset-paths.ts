@@ -321,8 +321,3 @@ export function getDatasetPath(filename: string): string {
 
   return finalPath;
 }
-
-/**
- * @deprecated Use getDatasetPath instead. Will be removed in v3.0.
- */
-export const getDatasetV2Path = getDatasetPath;

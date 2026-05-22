@@ -44,10 +44,6 @@ class DatasetResolver:
     def get_dataset_path(self, name: str) -> str:
         return self.get_snapshot_dir(name)
 
-    def get_legacy_db_path(self, name: str) -> str:
-        normalized = self._validate_name(name)
-        return os.path.join(self._base_path, f"{normalized}.db")
-
     def _snapshot_is_supported(self, snapshot_dir: str) -> bool:
         return os.path.exists(os.path.join(snapshot_dir, "dataset.duckdb")) and os.path.exists(
             os.path.join(snapshot_dir, "manifest.v2.json")
@@ -62,10 +58,6 @@ class DatasetResolver:
         paths: list[str] = []
         if os.path.isdir(snapshot_dir):
             paths.append(snapshot_dir)
-
-        legacy_db = self.get_legacy_db_path(normalized)
-        if os.path.exists(legacy_db):
-            paths.append(legacy_db)
         return paths
 
     def resolve(self, name: str) -> DatasetSnapshotReader | None:

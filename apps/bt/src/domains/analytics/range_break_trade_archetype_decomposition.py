@@ -54,7 +54,7 @@ from src.domains.strategy.indicators import (
     compute_trading_value_ma,
 )
 from src.domains.strategy.indicators.calculations import compute_volume_mas
-from src.domains.strategy.signals.beta import vectorbt_rolling_beta
+from src.domains.strategy.signals.beta import numba_rolling_beta
 from src.domains.strategy.signals.registry import _select_forward_forecast_eps_column
 from src.infrastructure.data_access.loaders import (
     load_statements_data,
@@ -476,7 +476,7 @@ def _build_symbol_feature_payload(
     trading_value_ma = compute_trading_value_ma(close, volume, trading_value_period)
     trading_value_min = _coerce_float(trading_value_params.get("min_threshold"))
     trading_value_max = _coerce_float(trading_value_params.get("max_threshold"))
-    rolling_beta = vectorbt_rolling_beta(
+    rolling_beta = numba_rolling_beta(
         close,
         topix_close.reindex(close.index).ffill(),
         window=int(beta_params.get("lookback_period", 50)),

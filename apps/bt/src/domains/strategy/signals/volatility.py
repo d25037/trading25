@@ -235,7 +235,6 @@ def bollinger_position_signal(
     )
     return result
 
-
 def bollinger_cross_signal(
     ohlc_data: pd.DataFrame,
     window: int = 20,
@@ -266,37 +265,3 @@ def bollinger_cross_signal(
         len(result),
     )
     return result
-
-
-def bollinger_bands_signal(
-    ohlc_data: pd.DataFrame,
-    window: int = 20,
-    alpha: float = 2.0,
-    position: str = "below_upper",
-) -> pd.Series:
-    """Backward-compatible alias for the legacy Bollinger position signal API."""
-
-    position_map = {
-        "below_upper": ("upper", "below"),
-        "above_lower": ("lower", "above"),
-        "above_middle": ("middle", "above"),
-        "below_middle": ("middle", "below"),
-        "above_upper": ("upper", "above"),
-        "below_lower": ("lower", "below"),
-    }
-
-    resolved = position_map.get(position)
-    if resolved is None:
-        raise ValueError(
-            f"不正なposition: {position} "
-            "(below_upper/above_lower/above_middle/below_middle/above_upper/below_lowerのみ)"
-        )
-
-    level, direction = resolved
-    return bollinger_position_signal(
-        ohlc_data=ohlc_data,
-        window=window,
-        alpha=alpha,
-        level=level,
-        direction=direction,
-    )

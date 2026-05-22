@@ -17,7 +17,7 @@ import {
   SplitSidebar,
   Surface,
 } from '@/components/Layout/Workspace';
-import { useBacktestRouteState, useMigrateBacktestRouteState } from '@/hooks/usePageRouteState';
+import { useBacktestRouteState } from '@/hooks/usePageRouteState';
 import type { BacktestSubTab } from '@/types/backtest';
 
 const subTabs = [
@@ -41,7 +41,6 @@ const BACKTEST_VIEW_META: Record<BacktestSubTab, { label: string; focus: string 
 };
 
 export function BacktestPage() {
-  useMigrateBacktestRouteState();
   const {
     activeSubTab,
     setActiveSubTab,

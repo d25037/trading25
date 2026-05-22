@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreateWatchlist } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
-import type { WatchlistSummary } from '@/types/watchlist';
+import type { WatchlistSummaryResponse } from '@/types/watchlist';
 
 interface CreateWatchlistDialogProps {
   onSuccess?: (id: number) => void;
@@ -106,7 +106,7 @@ function CreateWatchlistDialog({ onSuccess }: CreateWatchlistDialogProps) {
 }
 
 interface WatchlistListProps {
-  watchlists: WatchlistSummary[];
+  watchlists: WatchlistSummaryResponse[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   isLoading: boolean;
@@ -132,7 +132,7 @@ function WatchlistListContent({
   selectedId,
   onSelect,
 }: {
-  watchlists: WatchlistSummary[];
+  watchlists: WatchlistSummaryResponse[];
   selectedId: number | null;
   onSelect: (id: number) => void;
 }) {

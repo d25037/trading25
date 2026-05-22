@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import type { EnginePolicyMode, LabGenerateRequest } from '@/types/backtest';
 
+type UniversePresetSelection = 'default' | 'prime' | 'standard' | 'growth' | 'topix100' | 'primeExTopix500';
+
 interface LabGenerateFormProps {
   onSubmit: (request: LabGenerateRequest) => void;
   disabled?: boolean;
@@ -17,7 +19,7 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [top, setTop] = useState('5');
   const [direction, setDirection] = useState<'longonly' | 'shortonly' | 'both'>('longonly');
   const [timeframe, setTimeframe] = useState('daily');
-  const [dataset, setDataset] = useState('');
+  const [universePreset, setUniversePreset] = useState<UniversePresetSelection>('default');
   const [entryFilterOnly, setEntryFilterOnly] = useState(false);
   const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
   const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
@@ -31,8 +33,8 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       timeframe,
     };
     request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
-    if (dataset.trim()) {
-      request.dataset = dataset.trim();
+    if (universePreset !== 'default') {
+      request.universe_preset = universePreset;
     }
     if (entryFilterOnly) {
       request.entry_filter_only = true;
@@ -105,16 +107,24 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="gen-dataset" className="text-xs">
-          Dataset (optional)
-        </Label>
-        <Input
-          id="gen-dataset"
-          placeholder="e.g., prime.db"
-          value={dataset}
-          onChange={(e) => setDataset(e.target.value)}
+        <Label className="text-xs">Universe Preset</Label>
+        <Select
+          value={universePreset}
+          onValueChange={(value) => setUniversePreset(value as UniversePresetSelection)}
           disabled={disabled}
-        />
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="default">Backend default</SelectItem>
+            <SelectItem value="prime">Prime</SelectItem>
+            <SelectItem value="standard">Standard</SelectItem>
+            <SelectItem value="growth">Growth</SelectItem>
+            <SelectItem value="topix100">TOPIX100</SelectItem>
+            <SelectItem value="primeExTopix500">Prime ex TOPIX500</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex items-center justify-between">

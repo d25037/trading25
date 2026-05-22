@@ -460,7 +460,7 @@ class TestIndicatorServiceResample:
 class TestIndicatorServiceLoadOHLCV:
     """load_ohlcv テスト"""
 
-    @patch("src.application.services.indicator_service.DatasetAPIClient")
+    @patch("src.application.services.indicator_service.get_dataset_client")
     def test_load_dataset_source(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -482,7 +482,7 @@ class TestIndicatorServiceLoadOHLCV:
         assert exc_info.value.reason == "local_stock_data_missing"
         assert exc_info.value.recovery == "market_db_sync"
 
-    @patch("src.application.services.indicator_service.MarketAPIClient")
+    @patch("src.application.services.indicator_service.get_market_client")
     def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
         reader = MarketDbReader(market_db_path)
         try:
@@ -494,7 +494,7 @@ class TestIndicatorServiceLoadOHLCV:
         finally:
             reader.close()
 
-    @patch("src.application.services.indicator_service.DatasetAPIClient")
+    @patch("src.application.services.indicator_service.get_dataset_client")
     def test_load_with_dates(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -506,7 +506,7 @@ class TestIndicatorServiceLoadOHLCV:
         service.load_ohlcv("7203", "topix500", date(2024, 1, 1), date(2024, 6, 30))
         mock_client.get_stock_ohlcv.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
 
-    @patch("src.application.services.indicator_service.DatasetAPIClient")
+    @patch("src.application.services.indicator_service.get_dataset_client")
     def test_load_empty_raises(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()

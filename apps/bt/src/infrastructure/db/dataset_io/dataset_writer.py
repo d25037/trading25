@@ -44,12 +44,14 @@ class StockDataCopyResult:
 
 
 def snapshot_dir_for_path(path: str) -> Path:
-    """Resolve snapshot directory from current or legacy dataset path representations."""
+    """Resolve the dataset snapshot directory."""
     source = Path(path)
-    if source.name in {"dataset.duckdb", "dataset.db"}:
+    if source.name == "dataset.duckdb":
         return source.parent
-    if source.suffix in {".db", ".duckdb"}:
-        return source.with_suffix("")
+    if source.suffix:
+        raise ValueError(
+            "DatasetWriter expects a snapshot directory or a dataset.duckdb path"
+        )
     return source
 
 

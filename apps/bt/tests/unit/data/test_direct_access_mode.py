@@ -11,7 +11,7 @@ from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
 
 def test_load_stock_data_direct_mode_bypasses_http(monkeypatch):
-    class _FakeDatasetDb:
+    class _FakeDatasetReader:
         def get_stock_ohlcv(self, _code, start=None, end=None):  # noqa: ANN001, ANN202
             _ = (start, end)
             return [
@@ -26,8 +26,8 @@ def test_load_stock_data_direct_mode_bypasses_http(monkeypatch):
             ]
 
     monkeypatch.setattr(
-        "src.infrastructure.data_access.clients._resolve_dataset_db",
-        lambda _dataset_name: _FakeDatasetDb(),
+        "src.infrastructure.data_access.clients._resolve_dataset_reader",
+        lambda _dataset_name: _FakeDatasetReader(),
     )
 
     def _fail_http_request(*args, **kwargs):  # noqa: ANN001, ANN002, ARG001

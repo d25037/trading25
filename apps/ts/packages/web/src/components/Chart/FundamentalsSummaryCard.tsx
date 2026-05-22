@@ -133,9 +133,6 @@ function resolveSummaryDisplayValues(metrics: ApiFundamentalDataPoint): SummaryD
   const displayBps = metrics.adjustedBps ?? metrics.bps ?? null;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
   const displayForecastDividendFy = metrics.adjustedForecastDividendFy ?? metrics.forecastDividendFy ?? null;
-  const forecastEpsAboveRecentFyActuals =
-    metrics.forecastEpsAboveRecentFyActuals ?? metrics.forecastEpsAboveAllHistoricalActuals;
-
   return {
     displayEps,
     displayForecastEps,
@@ -144,7 +141,7 @@ function resolveSummaryDisplayValues(metrics: ApiFundamentalDataPoint): SummaryD
     displayDividendFy,
     displayForecastDividendFy,
     forecastEpsLookbackFyCount: metrics.forecastEpsLookbackFyCount ?? 3,
-    forecastEpsAboveRecentFyActualsLabel: toBooleanLabel(forecastEpsAboveRecentFyActuals),
+    forecastEpsAboveRecentFyActualsLabel: toBooleanLabel(metrics.forecastEpsAboveRecentFyActuals),
   };
 }
 

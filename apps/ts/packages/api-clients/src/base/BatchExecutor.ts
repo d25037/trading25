@@ -239,27 +239,6 @@ export class BatchExecutor {
     const jitter = Math.random() * cappedDelay;
     await new Promise((resolve) => setTimeout(resolve, jitter));
   }
-
-  /**
-   * Get executor statistics (minimal implementation for compatibility)
-   */
-  getStats(): { config: BatchExecutorConfig } {
-    return { config: this.config };
-  }
-
-  /**
-   * Get detailed performance report (minimal implementation for compatibility)
-   */
-  getDetailedReport(): string {
-    return `[BATCH EXECUTOR] Config: maxRetries=${this.config.maxRetries}, retryDelayMs=${this.config.retryDelayMs}`;
-  }
-
-  /**
-   * Reset executor state (no-op for this simple implementation)
-   */
-  reset(): void {
-    // No state to reset in this simple implementation
-  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { ConsoleLogger, SilentLogger, createDefaultLogger, logger } from './logger';
+import { logger } from './logger';
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalLogLevel = process.env.LOG_LEVEL;
@@ -36,23 +36,6 @@ describe('shared logger', () => {
     loggerState.correlationId = undefined;
   });
 
-  test('createDefaultLogger returns ConsoleLogger', () => {
-    const instance = createDefaultLogger();
-    expect(instance).toBeInstanceOf(ConsoleLogger);
-  });
-
-  test('SilentLogger methods are no-op', () => {
-    const silent = new SilentLogger();
-    expect(() => {
-      silent.trace();
-      silent.debug();
-      silent.info();
-      silent.warn();
-      silent.error();
-      silent.fatal();
-    }).not.toThrow();
-  });
-
   test('logs in server mode using console log/warn/error routing', () => {
     const logSpy = spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
@@ -68,28 +51,6 @@ describe('shared logger', () => {
     expect(logSpy).toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
     expect(errorSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-
-    logSpy.mockRestore();
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  test('ConsoleLogger delegates all methods to the shared singleton logger', () => {
-    const compatibilityLogger = new ConsoleLogger();
-    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
-    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
-    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
-
-    compatibilityLogger.trace('compat-trace');
-    compatibilityLogger.debug('compat-debug');
-    compatibilityLogger.info('compat-info');
-    compatibilityLogger.warn('compat-warn');
-    compatibilityLogger.error('compat-error');
-    compatibilityLogger.fatal('compat-fatal');
-
-    expect(logSpy.mock.calls.length).toBeGreaterThan(0);
-    expect(warnSpy.mock.calls.length).toBeGreaterThan(0);
-    expect(errorSpy.mock.calls.length).toBeGreaterThan(0);
 
     logSpy.mockRestore();
     warnSpy.mockRestore();

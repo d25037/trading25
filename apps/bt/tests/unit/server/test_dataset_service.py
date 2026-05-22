@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,9 +38,6 @@ class DummyResolver:
     def get_dataset_path(self, name: str) -> str:
         return self._path_by_name.get(name, self.get_snapshot_dir(name))
 
-    def get_legacy_db_path(self, name: str) -> str:
-        return str(self._base_dir / f"{name}.db")
-
     def resolve(self, name: str) -> object | None:
         return self._db_by_name.get(name)
 
@@ -53,9 +49,6 @@ class DummyResolver:
         dataset_path = self.get_dataset_path(name)
         if os.path.exists(dataset_path):
             paths.append(dataset_path)
-        legacy_db_path = self.get_legacy_db_path(name)
-        if legacy_db_path != dataset_path and os.path.exists(legacy_db_path):
-            paths.append(legacy_db_path)
         return paths
 
 
@@ -354,15 +347,11 @@ def test_search_dataset_deduplicates_exact_and_partial_results() -> None:
     assert result.results[1].match_type == "partial"
 
 
-def test_delete_dataset_removes_snapshot_and_legacy_artifacts(tmp_path: Path) -> None:
+def test_delete_dataset_removes_snapshot_artifacts(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "sample"
     snapshot_dir.mkdir()
     (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
     (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
-    legacy_db = tmp_path / "sample.db"
-    conn = sqlite3.connect(legacy_db)
-    conn.execute("CREATE TABLE IF NOT EXISTS dataset_info (key TEXT PRIMARY KEY, value TEXT)")
-    conn.close()
 
     resolver = DatasetResolver(str(tmp_path))
 
@@ -370,4 +359,3 @@ def test_delete_dataset_removes_snapshot_and_legacy_artifacts(tmp_path: Path) ->
 
     assert deleted is True
     assert not snapshot_dir.exists()
-    assert not legacy_db.exists()

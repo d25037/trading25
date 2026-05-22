@@ -70,8 +70,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     if (parsedSeed !== undefined) request.seed = parsedSeed;
   };
 
-  const applyCompatibilityFlags = (request: LabOptimizeRequest) => {
-    if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
+  const applyOptionalFilters = (request: LabOptimizeRequest) => {
     if (selectedCategories.length > 0) request.allowed_categories = selectedCategories;
   };
 
@@ -87,7 +86,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
       target_scope: targetScope,
     };
     applyRandomAddOptions(request);
-    applyCompatibilityFlags(request);
+    applyOptionalFilters(request);
     request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };

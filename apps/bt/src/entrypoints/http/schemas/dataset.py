@@ -25,7 +25,7 @@ class DatasetStorageInfo(BaseModel):
 
 
 class DatasetListItem(BaseModel):
-    name: str = Field(description="Dataset name (without .db)")
+    name: str = Field(description="Dataset snapshot name")
     path: str = Field(description="Full file path")
     fileSize: int = Field(description="File size in bytes")
     lastModified: str = Field(description="Last modified ISO datetime")

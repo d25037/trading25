@@ -11,10 +11,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useUpdatePortfolioItem } from '@/hooks/usePortfolio';
-import type { PortfolioItem } from '@/types/portfolio';
+import type { PortfolioItemResponse } from '@/types/portfolio';
 import { type StockFormData, StockFormFields, validateStockForm } from './StockFormFields';
 
-const createFormDataFromItem = (item: PortfolioItem): StockFormData => ({
+const createFormDataFromItem = (item: PortfolioItemResponse): StockFormData => ({
   quantity: item.quantity.toString(),
   purchasePrice: item.purchasePrice.toString(),
   purchaseDate: item.purchaseDate,
@@ -23,7 +23,7 @@ const createFormDataFromItem = (item: PortfolioItem): StockFormData => ({
 });
 
 interface EditStockDialogProps {
-  item: PortfolioItem;
+  item: PortfolioItemResponse;
 }
 
 export function EditStockDialog({ item }: EditStockDialogProps) {

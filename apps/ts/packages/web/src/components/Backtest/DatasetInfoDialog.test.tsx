@@ -54,17 +54,17 @@ describe('DatasetInfoDialog', () => {
   it('renders loading state', () => {
     mockState.isLoading = true;
 
-    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
+    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting" />);
 
     expect(document.querySelector('.animate-spin')).toBeInTheDocument();
-    expect(mockUseDatasetInfo).toHaveBeenCalledWith('quickTesting.db');
+    expect(mockUseDatasetInfo).toHaveBeenCalledWith('quickTesting');
   });
 
   it('renders error state', () => {
     mockState.isError = true;
     mockState.error = new Error('failed to load');
 
-    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
+    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting" />);
 
     expect(screen.getByText('Error: failed to load')).toBeInTheDocument();
   });
@@ -113,9 +113,9 @@ describe('DatasetInfoDialog', () => {
       },
     };
 
-    render(<DatasetInfoDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting.db" />);
+    render(<DatasetInfoDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting" />);
 
-    expect(screen.getByText('quickTesting')).toBeInTheDocument();
+    expect(screen.getAllByText('quickTesting').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('/tmp/quickTesting/dataset.duckdb').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Quotes')).toBeInTheDocument();
@@ -177,7 +177,7 @@ describe('DatasetInfoDialog', () => {
       },
     };
 
-    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
+    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting" />);
 
     expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('missing quotes')).toBeInTheDocument();
@@ -187,44 +187,4 @@ describe('DatasetInfoDialog', () => {
     expect(screen.getByText('FK integrity')).toBeInTheDocument();
   });
 
-  it('renders unsupported legacy dataset diagnostics from the hook', () => {
-    mockState.data = {
-      storage: {
-        backend: 'duckdb-parquet',
-        primaryPath: '/tmp/sqlite-only/dataset.db',
-        duckdbPath: null,
-        manifestPath: null,
-      },
-      snapshot: {
-        preset: null,
-        createdAt: null,
-      },
-      fileSize: 1234,
-      lastModified: '2026-01-02T00:00:00Z',
-      stats: {
-        totalStocks: 10,
-        totalQuotes: 20,
-        dateRange: { from: '2025-01-01', to: '2025-01-02' },
-        hasMarginData: false,
-        hasTOPIXData: false,
-        hasSectorData: false,
-        hasStatementsData: false,
-        statementsFieldCoverage: null,
-      },
-      validation: {
-        isValid: false,
-        errors: ['Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.'],
-        warnings: [],
-        details: null,
-      },
-    };
-
-    render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="sqlite-only.db" />);
-
-    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('/tmp/sqlite-only/dataset.db')).toBeInTheDocument();
-    expect(
-      screen.getByText('Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.')
-    ).toBeInTheDocument();
-  });
 });

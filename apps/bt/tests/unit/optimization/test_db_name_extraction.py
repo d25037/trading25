@@ -12,9 +12,9 @@ def test_db_name_extraction():
         ("primeExTopix500", "primeExTopix500"),
         ("topix100-A", "topix100-A"),
         ("sampleA", "sampleA"),
-        ("primeExTopix500.db", "primeExTopix500"),
-        ("dataset/primeExTopix500.db", "primeExTopix500"),
-        ("nested/path/test", "test"),
+        ("primeExTopix500.db", "unknown"),
+        ("dataset/primeExTopix500", "unknown"),
+        ("nested/path/test", "unknown"),
         ("", "unknown"),  # 空文字列の場合
         ("../test.db", "unknown"),
     ]

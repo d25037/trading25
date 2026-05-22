@@ -85,7 +85,6 @@ export class AnalyticsClient {
       markets: params.markets,
       forecastAboveRecentFyActuals: params.forecastAboveRecentFyActuals,
       forecastLookbackFyCount: params.forecastLookbackFyCount,
-      forecastAboveAllActuals: params.forecastAboveAllActuals,
     });
   }
 

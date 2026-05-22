@@ -173,10 +173,6 @@ class FundamentalDataPoint(BaseModel):
         None,
         description="Whether latest forecast EPS is greater than recent FY actual EPS values (lookback window)",
     )
-    forecastEpsAboveAllHistoricalActuals: bool | None = Field(
-        None,
-        description="Deprecated: use forecastEpsAboveRecentFyActuals",
-    )
 
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = Field(

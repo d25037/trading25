@@ -212,7 +212,7 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('予想配当性向')).toBeInTheDocument();
   });
 
-  it('compacts a wide persisted default visibility at render time', () => {
+  it('renders explicitly visible optional metrics at render time', () => {
     mockUseFundamentals.mockReturnValue({
       data: {
         data: [
@@ -268,14 +268,14 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('売上高')).toBeInTheDocument();
     expect(screen.getByText('営業利益')).toBeInTheDocument();
     expect(screen.getByText('営業利益率')).toBeInTheDocument();
-    expect(screen.queryByText('BPS')).not.toBeInTheDocument();
-    expect(screen.queryByText('営業CF')).not.toBeInTheDocument();
-    expect(screen.queryByText('予想1株配当')).not.toBeInTheDocument();
-    expect(screen.queryByText('配当性向')).not.toBeInTheDocument();
-    expect(screen.queryByText('予想配当性向')).not.toBeInTheDocument();
+    expect(screen.getByText('BPS')).toBeInTheDocument();
+    expect(screen.getByText('営業CF')).toBeInTheDocument();
+    expect(screen.getByText('予想1株配当')).toBeInTheDocument();
+    expect(screen.getByText('配当性向')).toBeInTheDocument();
+    expect(screen.getByText('予想配当性向')).toBeInTheDocument();
   });
 
-  it('expands a persisted combined operating metric order at render time', () => {
+  it('respects explicit operating metric order at render time', () => {
     mockUseFundamentals.mockReturnValue({
       data: {
         data: [
@@ -299,9 +299,9 @@ describe('FundamentalsHistoryPanel', () => {
       error: null,
     });
 
-    const legacyMetricOrder = ['eps', 'operatingProfitMargin', 'roe'] as unknown as FundamentalsHistoryMetricId[];
+    const metricOrder = ['eps', 'operatingProfit', 'operatingMargin', 'roe'] as FundamentalsHistoryMetricId[];
 
-    render(<FundamentalsHistoryPanel symbol="7203" metricOrder={legacyMetricOrder} />);
+    render(<FundamentalsHistoryPanel symbol="7203" metricOrder={metricOrder} />);
 
     const headers = screen
       .getAllByRole('columnheader')

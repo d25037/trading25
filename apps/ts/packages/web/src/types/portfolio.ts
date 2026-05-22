@@ -1,20 +1,15 @@
 /**
  * Portfolio types for web frontend
- * Re-exports from @trading25/contracts with backward-compatible aliases
+ * Re-exports from @trading25/contracts.
  */
 
 export type {
   DeleteResponse,
-  // Backward-compatible aliases used by web components
-  DeleteResponse as DeleteSuccessResponse,
   ListPortfoliosResponse,
   PortfolioItemResponse,
-  PortfolioItemResponse as PortfolioItem,
   PortfolioResponse,
   PortfolioSummaryResponse,
-  PortfolioSummaryResponse as PortfolioSummary,
   PortfolioWithItemsResponse,
-  PortfolioWithItemsResponse as PortfolioWithItems,
 } from '@trading25/contracts/types/api-response-types';
 
 // Frontend-specific request types

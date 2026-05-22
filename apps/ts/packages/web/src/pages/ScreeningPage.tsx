@@ -18,7 +18,7 @@ import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
 import { useStrategies } from '@/hooks/useBacktest';
-import { useMigrateScreeningRouteState, useScreeningRouteState } from '@/hooks/usePageRouteState';
+import { useScreeningRouteState } from '@/hooks/usePageRouteState';
 import {
   useCancelScreeningJob,
   useRunScreeningJob,
@@ -563,7 +563,6 @@ function useScreeningController({
 }
 
 export function ScreeningPage() {
-  useMigrateScreeningRouteState();
   const {
     activeSubTab,
     preOpenScreeningParams,

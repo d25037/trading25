@@ -191,7 +191,6 @@ describe('FundamentalsSummaryCard', () => {
     const metrics: ApiFundamentalDataPoint = {
       ...baseMetrics,
       forecastEpsAboveRecentFyActuals: null,
-      forecastEpsAboveAllHistoricalActuals: null,
     };
 
     render(<FundamentalsSummaryCard metrics={metrics} />);

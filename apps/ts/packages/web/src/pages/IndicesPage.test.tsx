@@ -39,7 +39,6 @@ vi.mock('@/hooks/usePageRouteState', () => ({
     selectedIndexCode,
     setSelectedIndexCode: mockSetSelectedIndexCode,
   }),
-  useMigrateIndicesRouteState: () => {},
 }));
 
 vi.mock('@tanstack/react-router', () => ({

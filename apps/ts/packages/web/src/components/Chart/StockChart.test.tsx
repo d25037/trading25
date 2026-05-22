@@ -11,7 +11,7 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { CHART_COLORS } from '@/lib/constants';
 import type { StockDataPoint } from '@/types/chart';
-import { calculateChangePct, formatPrice, StockChart, timeToDateString } from './StockChart';
+import { calculateChangePct, StockChart, timeToDateString } from './StockChart';
 
 // Mock the chart store
 const mockChartStore = {
@@ -531,23 +531,6 @@ describe('timeToDateString', () => {
   it('pads single-digit month and day', () => {
     const businessDay = { year: 2024, month: 1, day: 9 };
     expect(timeToDateString(businessDay)).toBe('2024-01-09');
-  });
-});
-
-describe('formatPrice', () => {
-  it('formats large prices (>=10000) with no decimals', () => {
-    expect(formatPrice(12345)).toBe('12,345');
-    expect(formatPrice(100000)).toBe('100,000');
-  });
-
-  it('formats medium prices (>=1000) with 1 decimal', () => {
-    expect(formatPrice(1234.56)).toBe('1,234.6');
-    expect(formatPrice(9999.9)).toBe('9,999.9');
-  });
-
-  it('formats small prices (<1000) with 2 decimals', () => {
-    expect(formatPrice(123.456)).toBe('123.46');
-    expect(formatPrice(0.12)).toBe('0.12');
   });
 });
 

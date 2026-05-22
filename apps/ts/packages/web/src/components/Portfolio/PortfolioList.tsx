@@ -2,11 +2,11 @@ import { Briefcase, ChevronRight } from 'lucide-react';
 import { Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { cn } from '@/lib/utils';
-import type { PortfolioSummary } from '@/types/portfolio';
+import type { PortfolioSummaryResponse } from '@/types/portfolio';
 import { CreatePortfolioDialog } from './CreatePortfolioDialog';
 
 interface PortfolioListProps {
-  portfolios: PortfolioSummary[];
+  portfolios: PortfolioSummaryResponse[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   isLoading: boolean;
@@ -32,7 +32,7 @@ function PortfolioListContent({
   selectedId,
   onSelect,
 }: {
-  portfolios: PortfolioSummary[];
+  portfolios: PortfolioSummaryResponse[];
   selectedId: number | null;
   onSelect: (id: number) => void;
 }) {

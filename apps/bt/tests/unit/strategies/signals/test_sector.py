@@ -43,7 +43,7 @@ class TestGetSectorStocks:
         mock_client.get_sector_stocks.return_value = ["1234", "5678"]
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.get_dataset_client", return_value=mock_client):
             result = get_sector_stocks("test", "化学")
         assert result == ["1234", "5678"]
 
@@ -52,7 +52,7 @@ class TestGetSectorStocks:
         mock_client.get_sector_stocks.return_value = []
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.get_dataset_client", return_value=mock_client):
             with pytest.raises(ValueError, match="銘柄が見つかりません"):
                 get_sector_stocks("test", "化学")
 
@@ -63,7 +63,7 @@ class TestGetAllSectors:
         mock_client.get_all_sectors.return_value = _make_mapping_df()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.get_dataset_client", return_value=mock_client):
             result = get_all_sectors("test")
         assert len(result) == 2
 

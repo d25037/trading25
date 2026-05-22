@@ -29,9 +29,6 @@ class ParameterEvolver:
 
     戦略のパラメータを進化的に最適化し、最良の組み合わせを探索
     """
-
-    # Backward-compatible alias (used by older internal callers).
-    PARAM_RANGES = PARAM_RANGES
     MIN_ACCEPTABLE_RETURN_RATIO = 0.95
 
     def __init__(
@@ -592,7 +589,7 @@ class ParameterEvolver:
             変異後のパラメータ
         """
         mutated = copy.deepcopy(params)
-        ranges = self.PARAM_RANGES.get(signal_name, {})
+        ranges = PARAM_RANGES.get(signal_name, {})
 
         self._mutate_nested_params(mutated, ranges, mutation_strength)
         return mutated

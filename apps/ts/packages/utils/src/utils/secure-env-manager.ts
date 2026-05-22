@@ -312,10 +312,4 @@ export class SecureEnvManager {
     }
   }
 
-  /**
-   * Get the underlying env manager for compatibility
-   */
-  getEnvManager(): EnvManager {
-    return this.envManager;
-  }
 }

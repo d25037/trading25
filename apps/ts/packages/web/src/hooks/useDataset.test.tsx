@@ -80,13 +80,16 @@ describe('useDatasets', () => {
     ]);
   });
 
-  it('filters unsupported legacy dataset list items', async () => {
+  it('filters unsupported dataset backends', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce([
       {
-        name: 'legacy',
-        path: '/tmp/legacy.db',
+        name: 'unsupported',
+        path: '/tmp/unsupported',
         fileSize: 10,
         lastModified: '2026-01-03T00:00:00Z',
+        preset: null,
+        createdAt: null,
+        backend: 'sqlite',
       },
     ]);
 
@@ -149,44 +152,6 @@ describe('useDatasetInfo', () => {
     expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
     expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(9);
     expect(result.current.data?.storage.manifestPath).toBe('/tmp/prime/manifest.v2.json');
-  });
-
-  it('normalizes legacy dataset info payloads as unsupported diagnostics', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
-      name: 'legacy',
-      path: '/tmp/legacy.db',
-      fileSize: 100,
-      lastModified: '2026-01-01T00:00:00Z',
-      snapshot: {
-        preset: 'quickTesting',
-        createdAt: '2026-01-01T00:00:00Z',
-        totalStocks: 3,
-        stocksWithQuotes: 2,
-        dateRange: { min: '2025-01-01', max: '2025-01-31' },
-        validation: {
-          isValid: true,
-          errors: [],
-          warnings: ['No TOPIX data'],
-        },
-      },
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('legacy'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.storage.backend).toBe('duckdb-parquet');
-    expect(result.current.data?.storage.primaryPath).toBe('/tmp/legacy.db');
-    expect(result.current.data?.storage.duckdbPath).toBeNull();
-    expect(result.current.data?.storage.manifestPath).toBeNull();
-    expect(result.current.data?.stats.totalStocks).toBe(3);
-    expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
-    expect(result.current.data?.stats.hasTOPIXData).toBe(false);
-    expect(result.current.data?.validation.isValid).toBe(false);
-    expect(result.current.data?.validation.errors).toContain(
-      'Unsupported legacy dataset snapshot; recreate it as dataset.duckdb + parquet/ + manifest.v2.json.'
-    );
-    expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(2);
   });
 
   it('does not fetch when name is null', () => {

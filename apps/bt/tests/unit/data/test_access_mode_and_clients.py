@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Generator
+from typing import Any, Generator, cast
 
 import pandas as pd
 import pytest
@@ -56,25 +56,25 @@ def test_mode_normalization_and_context(monkeypatch: pytest.MonkeyPatch) -> None
     assert mode.get_data_access_mode() == "direct"
 
 
-def test_resolve_dataset_db_raises_when_missing(
+def test_resolve_dataset_reader_raises_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
 
     with pytest.raises(FileNotFoundError, match="Dataset not found"):
-        clients._resolve_dataset_db("missing")
+        clients._resolve_dataset_reader("missing")
 
 
-def test_resolve_dataset_db_rejects_invalid_name(
+def test_resolve_dataset_reader_rejects_invalid_name(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
 
     with pytest.raises(ValueError, match="Invalid dataset name"):
-        clients._resolve_dataset_db("../sample.db")
+        clients._resolve_dataset_reader("../sample.db")
 
 
-def test_resolve_dataset_db_uses_cache(
+def test_resolve_dataset_reader_uses_cache(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
@@ -91,14 +91,14 @@ def test_resolve_dataset_db_uses_cache(
 
     monkeypatch.setattr(clients, "DatasetSnapshotReader", _FakeSnapshotReader)
 
-    first = clients._resolve_dataset_db("sample")
-    second = clients._resolve_dataset_db("sample.db")
+    first = clients._resolve_dataset_reader("sample")
+    second = clients._resolve_dataset_reader("sample")
 
     assert first is second
     assert len(init_calls) == 1
 
 
-def test_resolve_dataset_db_prefers_snapshot_reader(
+def test_resolve_dataset_reader_prefers_snapshot_reader(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
@@ -115,13 +115,13 @@ def test_resolve_dataset_db_prefers_snapshot_reader(
 
     monkeypatch.setattr(clients, "DatasetSnapshotReader", _FakeSnapshotReader)
 
-    resolved = clients._resolve_dataset_db("sample")
+    resolved = clients._resolve_dataset_reader("sample")
 
     assert isinstance(resolved, _FakeSnapshotReader)
     assert init_calls == [str(snapshot_dir)]
 
 
-def test_resolve_dataset_db_rejects_snapshot_without_manifest_v2(
+def test_resolve_dataset_reader_rejects_snapshot_without_manifest_v2(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
@@ -130,7 +130,7 @@ def test_resolve_dataset_db_rejects_snapshot_without_manifest_v2(
     (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
 
     with pytest.raises(FileNotFoundError, match="Dataset not found"):
-        clients._resolve_dataset_db("sample")
+        clients._resolve_dataset_reader("sample")
 
 
 def test_resolve_market_reader_raises_when_missing(
@@ -176,13 +176,13 @@ def test_close_all_cached_data_access_clients_closes_cached_resources() -> None:
         def close(self) -> None:
             events.append("market")
 
-    clients._dataset_db_cache["dataset"] = _ClosableDataset()
-    clients._market_reader_cache["market"] = _ClosableMarketReader()
+    clients._dataset_reader_cache["dataset"] = cast(Any, _ClosableDataset())
+    clients._market_reader_cache["market"] = cast(Any, _ClosableMarketReader())
 
     clients.close_all_cached_data_access_clients()
 
     assert events == ["dataset", "market"]
-    assert clients._dataset_db_cache == {}
+    assert clients._dataset_reader_cache == {}
     assert clients._market_reader_cache == {}
 
 
@@ -196,7 +196,7 @@ def test_conversion_helpers_empty_rows() -> None:
 def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
-    class _FakeDatasetDb:
+    class _FakeDatasetReader:
         def get_stock_ohlcv(self, code: str, start=None, end=None):  # noqa: ANN001, ANN202
             assert code == "7203"
             assert start == "2024-01-01"
@@ -405,10 +405,10 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
         def get_sectors_with_count(self) -> list[SimpleNamespace]:
             return [_ns(sectorName="電気機器", count=2)]
 
-    fake_db = _FakeDatasetDb()
-    monkeypatch.setattr(clients, "_resolve_dataset_db", lambda _dataset_name: fake_db)
+    fake_reader = _FakeDatasetReader()
+    monkeypatch.setattr(clients, "_resolve_dataset_reader", lambda _dataset_name: fake_reader)
 
-    client = clients.DirectDatasetClient("sample.db")
+    client = clients.DirectDatasetClient("sample")
     assert client.dataset_name == "sample"
     assert client.__enter__() is client
     assert client.__exit__(None, None, None) is None
@@ -722,7 +722,7 @@ def test_direct_market_client_get_margin_batch(monkeypatch: pytest.MonkeyPatch) 
 def test_direct_market_dataset_client_delegates_batch_methods(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    events: list[tuple[str, Any]] = []
+    events: list[tuple[Any, ...]] = []
 
     class _FakeMarketClient:
         def get_stocks_ohlcv_batch(self, codes, start, end, timeframe):  # noqa: ANN001, ANN202

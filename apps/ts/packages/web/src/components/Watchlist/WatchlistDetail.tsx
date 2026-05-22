@@ -24,7 +24,7 @@ import {
   useRemoveWatchlistItem,
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
-import type { WatchlistItem, WatchlistStockPrice, WatchlistWithItems } from '@/types/watchlist';
+import type { WatchlistItemResponse, WatchlistStockPrice, WatchlistWithItemsResponse } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 
 function normalizeStockCode(value: string): string {
@@ -145,7 +145,13 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
   );
 }
 
-function DeleteWatchlistDialog({ watchlist, onSuccess }: { watchlist: WatchlistWithItems; onSuccess?: () => void }) {
+function DeleteWatchlistDialog({
+  watchlist,
+  onSuccess,
+}: {
+  watchlist: WatchlistWithItemsResponse;
+  onSuccess?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const deleteWatchlist = useDeleteWatchlist();
 
@@ -189,7 +195,7 @@ function DeleteWatchlistDialog({ watchlist, onSuccess }: { watchlist: WatchlistW
 }
 
 interface StockRowProps {
-  item: WatchlistItem;
+  item: WatchlistItemResponse;
   price: WatchlistStockPrice | undefined;
   watchlistId: number;
   onNavigateToChart: (code: string) => void;
@@ -253,7 +259,7 @@ function WatchlistTable({
   watchlistId,
   onNavigateToChart,
 }: {
-  items: WatchlistItem[];
+  items: WatchlistItemResponse[];
   priceMap: Map<string, WatchlistStockPrice>;
   watchlistId: number;
   onNavigateToChart: (code: string) => void;
@@ -322,7 +328,7 @@ function WatchlistTable({
 }
 
 interface WatchlistDetailProps {
-  watchlist: WatchlistWithItems | undefined;
+  watchlist: WatchlistWithItemsResponse | undefined;
   isLoading: boolean;
   error: Error | null;
   onWatchlistDeleted?: () => void;
@@ -343,7 +349,7 @@ function WatchlistDetailContent({
   watchlist,
   onWatchlistDeleted,
 }: {
-  watchlist: WatchlistWithItems;
+  watchlist: WatchlistWithItemsResponse;
   onWatchlistDeleted?: () => void;
 }) {
   const navigate = useNavigate();

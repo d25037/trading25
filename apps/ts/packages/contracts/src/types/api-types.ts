@@ -322,9 +322,6 @@ export interface ApiFundamentalDataPoint {
   forecastEpsAboveRecentFyActuals?: boolean | null;
   /** Lookback FY count used for forecast-vs-actual EPS comparison */
   forecastEpsLookbackFyCount?: number;
-  /** Whether latest forecast EPS exceeds all historical actual EPS values */
-  /** @deprecated Use forecastEpsAboveRecentFyActuals */
-  forecastEpsAboveAllHistoricalActuals?: boolean | null;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
   /** Source period type of revised forecast (e.g. 1Q, 2Q, 3Q) */

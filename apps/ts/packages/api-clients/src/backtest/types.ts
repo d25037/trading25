@@ -804,7 +804,7 @@ export interface LabGenerateRequest {
   save?: boolean;
   direction?: 'longonly' | 'shortonly' | 'both';
   timeframe?: string;
-  dataset?: string;
+  universe_preset?: string | null;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
   engine_policy?: EnginePolicy;

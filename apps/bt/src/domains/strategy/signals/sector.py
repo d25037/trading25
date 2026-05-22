@@ -13,8 +13,6 @@ from src.infrastructure.data_access.loaders import get_sector_mapping, load_inde
 from src.infrastructure.data_access.clients import get_dataset_client
 from src.infrastructure.data_access.loaders.utils import extract_dataset_name
 
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 
 
 def get_sector_index_code(dataset: str, sector_name: str) -> str:
@@ -22,7 +20,7 @@ def get_sector_index_code(dataset: str, sector_name: str) -> str:
     セクター名からインデックスコードを取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         sector_name: セクター名（例: "化学", "医薬品"）
 
     Returns:
@@ -45,7 +43,7 @@ def get_sector_stocks(dataset: str, sector_name: str) -> list[str]:
     セクターに属する銘柄コードのリストを取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         sector_name: セクター名（例: "化学", "医薬品"）
 
     Returns:
@@ -56,7 +54,7 @@ def get_sector_stocks(dataset: str, sector_name: str) -> list[str]:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         stocks = client.get_sector_stocks(sector_name)
 
     if not stocks:
@@ -70,7 +68,7 @@ def get_all_sectors(dataset: str) -> pd.DataFrame:
     全セクターの一覧を取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
 
     Returns:
         pandas.DataFrame: セクター一覧
@@ -81,7 +79,7 @@ def get_all_sectors(dataset: str) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_all_sectors()
 
     return df
@@ -98,7 +96,7 @@ def create_sector_signal_by_index_performance(
     インデックス パフォーマンスに基づくセクターシグナル作成
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
         top_n_sectors: 上位N セクター
@@ -171,7 +169,7 @@ def validate_sector_name(dataset: str, sector_name: str) -> bool:
     セクター名の妥当性を検証
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         sector_name: セクター名
 
     Returns:
@@ -194,7 +192,7 @@ def get_sector_correlation_matrix(
     セクター間の相関関係マトリックスを計算
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
         price_column: 価格カラム

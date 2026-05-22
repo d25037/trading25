@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -143,30 +142,3 @@ class MarginDataMixin:
             except Exception:
                 continue
         return result
-
-    def get_multiple_margin(
-        self: "DatasetClientProtocol",
-        codes: list[str],
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> dict[str, pd.DataFrame]:
-        """Get margin data for multiple stocks at once.
-
-        .. deprecated::
-            Use :meth:`get_margin_batch` instead, which uses the batch API
-            for better performance.
-
-        Args:
-            codes: List of stock codes
-            start_date: Start date in YYYY-MM-DD format (optional)
-            end_date: End date in YYYY-MM-DD format (optional)
-
-        Returns:
-            Dictionary mapping stock_code to DataFrame
-        """
-        warnings.warn(
-            "get_multiple_margin() is deprecated, use get_margin_batch() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.get_margin_batch(codes, start_date, end_date)

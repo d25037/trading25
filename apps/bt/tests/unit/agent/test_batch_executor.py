@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 from src.domains.lab_agent.evaluator.batch_executor import (
     _is_forecast_signal_enabled,
-    _should_include_forecast_revision,
     execute_batch_evaluation,
     execute_parallel,
     execute_single_process,
@@ -14,6 +13,7 @@ from src.domains.lab_agent.evaluator.batch_executor import (
     get_max_workers,
     handle_future_result,
     prepare_batch_data,
+    should_include_forecast_revision,
 )
 from src.domains.lab_agent.models import EvaluationResult, StrategyCandidate
 
@@ -211,22 +211,14 @@ class TestForecastRevisionHelpers:
             {
                 "fundamental": {
                     "enabled": True,
-                    "forecast_eps_above_all_actuals": {"enabled": True},
-                }
-            }
-        ) is True
-        assert _is_forecast_signal_enabled(
-            {
-                "fundamental": {
-                    "enabled": True,
                     "forward_payout_ratio": {"enabled": True},
                 }
             }
         ) is True
 
     def test_should_include_forecast_revision_checks_entry_and_exit(self):
-        assert _should_include_forecast_revision(None) is False
-        assert _should_include_forecast_revision([]) is False
+        assert should_include_forecast_revision(None) is False
+        assert should_include_forecast_revision([]) is False
 
         candidate = _candidate(
             "exit-only",
@@ -238,7 +230,7 @@ class TestForecastRevisionHelpers:
                 }
             },
         )
-        assert _should_include_forecast_revision([candidate]) is True
+        assert should_include_forecast_revision([candidate]) is True
 
 
 class TestBatchExecutionPaths:

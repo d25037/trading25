@@ -40,8 +40,6 @@ from .statements_loaders import (
 from .stock_loaders import get_available_stocks, load_stock_data
 from .utils import extract_dataset_name
 
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 
 
 def _latest_index_date(index: pd.DatetimeIndex) -> str | None:
@@ -168,7 +166,7 @@ def prepare_data(
     VectorBT用のデータを準備する統合関数
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         stock_code: 銘柄コード（'all'の場合は全銘柄対象）
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -255,7 +253,7 @@ def prepare_multi_data(
     複数銘柄のデータを一括でバッチ取得する関数
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         stock_codes: 銘柄コードのリスト
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -283,7 +281,7 @@ def prepare_multi_data(
     ohlcv_batch: Dict[str, pd.DataFrame] = {}
 
     try:
-        with DatasetAPIClient(dataset_name) as client:
+        with get_dataset_client(dataset_name) as client:
             ohlcv_batch = client.get_stocks_ohlcv_batch(
                 stock_codes, start_date, end_date, timeframe
             )
@@ -310,7 +308,7 @@ def prepare_multi_data(
         logger.debug("信用残高データ読み込み開始（バッチAPI）")
         margin_codes = list(result.keys())
         try:
-            with DatasetAPIClient(dataset_name) as client:
+            with get_dataset_client(dataset_name) as client:
                 margin_batch = client.get_margin_batch(
                     margin_codes, start_date, end_date
                 )
@@ -348,7 +346,7 @@ def prepare_multi_data(
         try:
             revision_batch: dict[str, pd.DataFrame] = {}
             adjustment_events_by_code: dict[str, list[ShareAdjustmentEvent]] = {}
-            with DatasetAPIClient(dataset_name) as client:
+            with get_dataset_client(dataset_name) as client:
                 statements_batch = client.get_statements_batch(
                     statements_codes, start_date, end_date,
                     period_type=period_type, actual_only=True,

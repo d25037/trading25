@@ -464,14 +464,6 @@ class TestFundamentalRanking:
         }
         assert "33330" not in filtered_codes
 
-    def test_legacy_forecast_above_all_actuals_param_still_supported(
-        self, analytics_client
-    ):
-        filtered_resp = analytics_client.get(
-            "/api/analytics/fundamental-ranking?forecastAboveAllActuals=true"
-        )
-        assert filtered_resp.status_code == 200
-
     def test_422_unsupported_metric_key(self, analytics_client):
         resp = analytics_client.get(
             "/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual"

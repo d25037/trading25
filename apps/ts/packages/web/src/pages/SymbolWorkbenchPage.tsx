@@ -27,7 +27,7 @@ import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
-import { useMigrateSymbolWorkbenchRouteState, useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
+import { useSymbolWorkbenchRouteState } from '@/hooks/usePageRouteState';
 import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -200,7 +200,6 @@ function formatLiquidityRegime(value: string | null | undefined): string {
     case 'neutral_rerating':
       return 'Neutral Re-rating';
     case 'crowded_rerating':
-    case 'rerating_participation':
       return 'Crowded Re-rating';
     case 'distribution_stress':
       return 'Stress';
@@ -1322,7 +1321,6 @@ function SymbolWorkbenchPanelsContent({
 }
 
 export function SymbolWorkbenchPage() {
-  useMigrateSymbolWorkbenchRouteState();
   const queryClient = useQueryClient();
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();

@@ -25,8 +25,6 @@ from src.shared.utils.share_adjustment import (
 )
 from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 
 # カラム名マッピング（API -> VectorBT PascalCase）
 _COLUMN_MAPPING = {
@@ -482,7 +480,7 @@ def load_statements_data(
     次の決算発表まで継続することでフィルター計算を可能にします。
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         stock_code: 銘柄コード
         daily_index: 株価データと同期するための日次インデックス（必須）
         start_date: 開始日 (YYYY-MM-DD)
@@ -526,7 +524,7 @@ def load_statements_data(
     adjustment_events: list[ShareAdjustmentEvent] = []
     through_date = daily_index.max().strftime("%Y-%m-%d") if not daily_index.empty else None
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_statements(
             stock_code,
             start_date,

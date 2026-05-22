@@ -28,7 +28,7 @@ from src.entrypoints.http.schemas.jquants import (
 
 
 def _proxy_service(app_client: TestClient) -> Any:
-    return cast(Any, app_client.app.state).jquants_proxy_service
+    return cast(Any, app_client.app).state.jquants_proxy_service
 
 
 def _proxy_client(app_client: TestClient) -> Any:
@@ -282,15 +282,7 @@ class TestN225Options:
         assert resp.status_code == 422
 
 
-class TestHealthAlias:
-    def test_health_alias(self, app_client):
-        """Hono 互換 /health エイリアス"""
-        resp = app_client.get("/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "healthy"
-        assert data["service"] == "trading25-bt"
-
+class TestHealthEndpoint:
     def test_api_health(self, app_client):
         """既存 /api/health"""
         resp = app_client.get("/api/health")

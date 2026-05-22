@@ -31,13 +31,3 @@ async def health_check() -> HealthResponse:
     サーバーの状態を確認
     """
     return _health_response
-
-
-@router.get("/health", response_model=HealthResponse)
-async def health_check_alias() -> HealthResponse:
-    """
-    ヘルスチェック（Hono 互換エイリアス）
-
-    `/api/health` と同一レスポンスを返す
-    """
-    return _health_response

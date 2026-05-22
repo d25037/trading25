@@ -45,22 +45,24 @@ describe('LabGenerateForm', () => {
     });
   });
 
-  it('submits fundamental-only constraints and trimmed dataset', async () => {
+  it('submits fundamental-only constraints and universe preset', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
 
     render(<LabGenerateForm onSubmit={onSubmit} />);
 
-    await user.clear(screen.getByLabelText('Dataset (optional)'));
-    await user.type(screen.getByLabelText('Dataset (optional)'), '  custom_dataset  ');
     await user.click(screen.getByRole('switch', { name: 'Entry Filter Only' }));
 
     const comboboxes = screen.getAllByRole('combobox');
-    const categoryCombobox = comboboxes.at(2);
+    const universeCombobox = comboboxes.at(2);
+    const categoryCombobox = comboboxes.at(3);
+    expect(universeCombobox).toBeDefined();
     expect(categoryCombobox).toBeDefined();
-    if (!categoryCombobox) {
+    if (!universeCombobox || !categoryCombobox) {
       return;
     }
+    await user.click(universeCombobox);
+    await user.click(screen.getByText('Prime ex TOPIX500'));
     await user.click(categoryCombobox);
     await user.click(screen.getByText('Fundamental Only'));
 
@@ -72,7 +74,7 @@ describe('LabGenerateForm', () => {
       top: 5,
       direction: 'longonly',
       timeframe: 'daily',
-      dataset: 'custom_dataset',
+      universe_preset: 'primeExTopix500',
       entry_filter_only: true,
       allowed_categories: ['fundamental'],
       engine_policy: {

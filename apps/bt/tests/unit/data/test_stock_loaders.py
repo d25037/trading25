@@ -32,7 +32,7 @@ def _mock_cache_disabled():
 class TestGetStockList:
     @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
     @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_returns_list(self, mock_client_cls, mock_extract, mock_cache_cls):
         from src.infrastructure.data_access.loaders.stock_loaders import get_stock_list
 
@@ -47,7 +47,7 @@ class TestGetStockList:
 
     @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
     @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_empty_returns_empty_list(self, mock_client_cls, mock_extract, mock_cache_cls):
         from src.infrastructure.data_access.loaders.stock_loaders import get_stock_list
 
@@ -64,7 +64,7 @@ class TestGetStockList:
 class TestLoadStockData:
     @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
     @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_returns_dataframe(self, mock_client_cls, mock_extract, mock_cache_cls):
         from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
@@ -80,7 +80,7 @@ class TestLoadStockData:
 
     @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
     @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_empty_raises_value_error(self, mock_client_cls, mock_extract, mock_cache_cls):
         from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
@@ -96,7 +96,7 @@ class TestLoadStockData:
 
 class TestGetAvailableStocks:
     @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_returns_dataframe(self, mock_client_cls, mock_extract):
         from src.infrastructure.data_access.loaders.stock_loaders import get_available_stocks
 

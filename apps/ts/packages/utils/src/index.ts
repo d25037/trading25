@@ -25,7 +25,6 @@ export { type AuthCredentials, AuthService, type AuthStatus } from './services/a
 export { BrowserTokenStorage } from './utils/browser-token-storage';
 export {
   getDatasetPath,
-  getDatasetV2Path,
   getMarketDbPath,
   getPortfolioDbPath,
   normalizeDatasetPath,
@@ -35,7 +34,7 @@ export { dateRangeToISO, toISODateString, toISODateStringOrDefault, toISODateStr
 export { EnvManager, type EnvTokens } from './utils/env-manager';
 export { FileTokenStorage } from './utils/file-token-storage';
 export { findProjectRoot } from './utils/find-project-root';
-export { ConsoleLogger, createDefaultLogger, type Logger, SilentLogger } from './utils/logger';
+export { logger } from './utils/logger';
 export type { ILogger, ILoggerFactory, LogContext, LogLevel } from './utils/logger-interface';
 export { SecureEnvManager } from './utils/secure-env-manager';
 export { TokenManager } from './utils/token-manager';

@@ -13,7 +13,6 @@ export type RankingRiskFlag = 'overheat';
 export type RankingLiquidityState =
   | 'neutral_rerating'
   | 'crowded_rerating'
-  | 'rerating_participation'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral'
@@ -221,8 +220,6 @@ export interface FundamentalRankingParams {
   markets?: string;
   forecastAboveRecentFyActuals?: boolean;
   forecastLookbackFyCount?: number;
-  /** @deprecated Use forecastAboveRecentFyActuals */
-  forecastAboveAllActuals?: boolean;
 }
 
 export type ValueCompositeScoreMethod =

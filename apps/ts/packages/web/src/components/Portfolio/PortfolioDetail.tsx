@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { CompactMetric, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { type HoldingPerformance, usePortfolioPerformance } from '@/hooks/usePortfolioPerformance';
-import type { PortfolioItem, PortfolioWithItems } from '@/types/portfolio';
+import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@/types/portfolio';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 import { formatCurrency, formatRate } from '@/utils/formatters';
 import { AddStockDialog } from './AddStockDialog';
@@ -18,7 +18,7 @@ import { PerformanceSummary } from './PerformanceSummary';
 import { PortfolioFactorRegressionPanel } from './PortfolioFactorRegressionPanel';
 
 interface StockRowProps {
-  item: PortfolioItem;
+  item: PortfolioItemResponse;
   performance: HoldingPerformance | undefined;
   onNavigateToChart: (code: string) => void;
 }
@@ -75,7 +75,7 @@ function StockRow({ item, performance, onNavigateToChart }: StockRowProps) {
 }
 
 interface PortfolioDetailProps {
-  portfolio: PortfolioWithItems | undefined;
+  portfolio: PortfolioWithItemsResponse | undefined;
   isLoading: boolean;
   error: Error | null;
   onPortfolioDeleted?: () => void;
@@ -103,7 +103,7 @@ function EmptySelectionState(): ReactNode {
 }
 
 interface PortfolioHeaderProps {
-  portfolio: PortfolioWithItems;
+  portfolio: PortfolioWithItemsResponse;
   currentValue: number;
   totalPnL: number;
   onPortfolioDeleted?: () => void;
@@ -153,7 +153,7 @@ function PortfolioHeader({ portfolio, currentValue, totalPnL, onPortfolioDeleted
 }
 
 interface HoldingsTableProps {
-  items: PortfolioItem[];
+  items: PortfolioItemResponse[];
   holdingPerformanceMap: Map<string, HoldingPerformance>;
   onNavigateToChart: (code: string) => void;
 }
@@ -206,7 +206,7 @@ function SortableHeader({ column, label, sortConfig, onSort, align = 'left' }: S
 }
 
 function getSortValue(
-  item: PortfolioItem,
+  item: PortfolioItemResponse,
   performance: HoldingPerformance | undefined,
   column: SortColumn
 ): string | number {
@@ -385,7 +385,7 @@ export function PortfolioDetail({ portfolio, isLoading, error, onPortfolioDelete
 }
 
 interface PortfolioDetailContentProps {
-  portfolio: PortfolioWithItems;
+  portfolio: PortfolioWithItemsResponse;
   performanceData: ReturnType<typeof usePortfolioPerformance>['data'];
   isPerformanceLoading: boolean;
   holdingPerformanceMap: Map<string, HoldingPerformance>;

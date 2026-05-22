@@ -15,24 +15,16 @@ from sqlalchemy import ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
 from src.infrastructure.db.market.tables import (
-    dataset_info,
-    dataset_meta,
-    ds_indices_data,
-    ds_stock_data,
-    ds_stocks,
-    ds_topix_data,
     index_master,
     indices_data,
     jobs,
     market_margin_data,
     market_statements,
-    margin_data,
     market_meta,
     portfolio_items,
     portfolio_meta,
     portfolio_metadata,
     portfolios,
-    statements,
     stock_data_raw,
     stock_data,
     stocks,
@@ -67,15 +59,6 @@ def _sa_type_name(col_type: object) -> str:
     if type_name in ("INTEGER", "INT"):
         return "integer"
     return type_name.lower()
-
-
-def _resolve_column_spec(spec: dict) -> dict:
-    """$ref を解決せず、const 直接またはネストした const を取得"""
-    if "const" in spec:
-        return spec["const"]
-    # dataset-db-schema-v2 uses $ref but we already validated via allOf
-    # For direct const (market-db-schema-v1), use as-is
-    return spec.get("const", spec)
 
 
 # ===========================================================================
@@ -223,138 +206,6 @@ class TestMarketDbContractV2:
 
 
 # ===========================================================================
-# dataset-db-schema-v2.json 契約テスト
-# ===========================================================================
-
-class TestDatasetDbContract:
-    """dataset.db テーブル定義が dataset-db-schema-v2.json と一致"""
-
-    @pytest.fixture(autouse=True)
-    def _load(self) -> None:
-        self.contract = _load_contract("dataset-db-schema-v2.json")
-        self.tables = self.contract["properties"]["tables"]["properties"]
-        # $defs から型を解決するヘルパー
-        self.defs = self.contract["$defs"]
-
-    def _resolve_type(self, col_spec: dict) -> dict:
-        """$ref を解決して {type, nullable} を返す"""
-        if "const" in col_spec:
-            return col_spec["const"]
-        if "$ref" in col_spec:
-            ref_name = col_spec["$ref"].split("/")[-1]
-            # $defs は allOf で定義されているので、2番目の要素から const を取得
-            ref_def = self.defs[ref_name]
-            if "allOf" in ref_def:
-                for part in ref_def["allOf"]:
-                    if "properties" in part:
-                        type_val = part["properties"].get("type", {}).get("const")
-                        nullable_val = part["properties"].get("nullable", {}).get("const")
-                        if type_val is not None and nullable_val is not None:
-                            return {"type": type_val, "nullable": nullable_val}
-        # allOf wrapper pattern
-        if "allOf" in col_spec:
-            for part in col_spec["allOf"]:
-                if "$ref" in part:
-                    return self._resolve_type(part)
-        return col_spec
-
-    def _verify_table_columns(self, table_obj: object, table_name: str) -> None:
-        spec = self.tables[table_name]["properties"]["columns"]["properties"]
-        from sqlalchemy import Table as SATable
-
-        assert isinstance(table_obj, SATable)
-        for col_name, col_spec in spec.items():
-            col = table_obj.c[col_name]
-            expected = self._resolve_type(col_spec)
-            assert _sa_type_name(col.type) == expected["type"], f"{table_name}.{col_name} type mismatch"
-            assert col.nullable == expected["nullable"], f"{table_name}.{col_name} nullable mismatch"
-
-    def _verify_primary_key(self, table_obj: object, table_name: str) -> None:
-        from sqlalchemy import Table as SATable
-
-        assert isinstance(table_obj, SATable)
-        pk_cols = [c.name for c in table_obj.primary_key.columns]
-        expected_pk = self.tables[table_name]["properties"]["primary_key"]["const"]
-        assert pk_cols == expected_pk, f"{table_name} PK mismatch: {pk_cols} != {expected_pk}"
-
-    def _verify_indexes(self, table_name: str) -> None:
-        expected_indexes = self.tables[table_name]["properties"]["indexes"]["const"]
-        # dataset テーブルのインデックスは ds_ プレフィックス付きで定義されている
-        meta_indexes = {idx.name: [c.name for c in idx.columns] for idx in dataset_meta.tables[table_name].indexes}
-        for idx_spec in expected_indexes:
-            # 実際のインデックス名は ds_ プレフィックス or 元名
-            found = False
-            for idx_name, idx_cols in meta_indexes.items():
-                if idx_cols == idx_spec["columns"]:
-                    found = True
-                    break
-            assert found, f"{table_name} index {idx_spec['name']} with columns {idx_spec['columns']} not found"
-
-    def test_stocks_columns(self) -> None:
-        self._verify_table_columns(ds_stocks, "stocks")
-
-    def test_stocks_primary_key(self) -> None:
-        self._verify_primary_key(ds_stocks, "stocks")
-
-    def test_stocks_indexes(self) -> None:
-        self._verify_indexes("stocks")
-
-    def test_stock_data_columns(self) -> None:
-        self._verify_table_columns(ds_stock_data, "stock_data")
-
-    def test_stock_data_primary_key(self) -> None:
-        self._verify_primary_key(ds_stock_data, "stock_data")
-
-    def test_stock_data_indexes(self) -> None:
-        self._verify_indexes("stock_data")
-
-    def test_topix_data_columns(self) -> None:
-        self._verify_table_columns(ds_topix_data, "topix_data")
-
-    def test_topix_data_primary_key(self) -> None:
-        self._verify_primary_key(ds_topix_data, "topix_data")
-
-    def test_topix_data_indexes(self) -> None:
-        self._verify_indexes("topix_data")
-
-    def test_indices_data_columns(self) -> None:
-        self._verify_table_columns(ds_indices_data, "indices_data")
-
-    def test_indices_data_primary_key(self) -> None:
-        self._verify_primary_key(ds_indices_data, "indices_data")
-
-    def test_indices_data_indexes(self) -> None:
-        self._verify_indexes("indices_data")
-
-    def test_dataset_info_columns(self) -> None:
-        self._verify_table_columns(dataset_info, "dataset_info")
-
-    def test_dataset_info_primary_key(self) -> None:
-        self._verify_primary_key(dataset_info, "dataset_info")
-
-    def test_margin_data_columns(self) -> None:
-        self._verify_table_columns(margin_data, "margin_data")
-
-    def test_margin_data_primary_key(self) -> None:
-        self._verify_primary_key(margin_data, "margin_data")
-
-    def test_margin_data_indexes(self) -> None:
-        self._verify_indexes("margin_data")
-
-    def test_statements_columns(self) -> None:
-        self._verify_table_columns(statements, "statements")
-
-    def test_statements_primary_key(self) -> None:
-        self._verify_primary_key(statements, "statements")
-
-    def test_statements_indexes(self) -> None:
-        self._verify_indexes("statements")
-
-    def test_dataset_meta_has_7_tables(self) -> None:
-        assert len(dataset_meta.tables) == 7
-
-
-# ===========================================================================
 # portfolio-db-schema-v2.json 契約テスト
 # ===========================================================================
 
@@ -424,7 +275,7 @@ class TestPortfolioDbContract:
         actual_uniques: dict[str, list[str]] = {}
         for constraint in table_obj.constraints:
             if isinstance(constraint, UniqueConstraint) and constraint.name:
-                actual_uniques[constraint.name] = [c.name for c in constraint.columns]
+                actual_uniques[str(constraint.name)] = [c.name for c in constraint.columns]
         for uq_spec in expected:
             assert uq_spec["name"] in actual_uniques, f"{table_name} missing unique {uq_spec['name']}"
             assert actual_uniques[uq_spec["name"]] == uq_spec["columns"]
@@ -614,23 +465,6 @@ class TestDrizzleRoundTrip:
             assert result[0].code == "7203"
 
         engine.dispose()
-
-    def test_dataset_create_all_and_insert(self, tmp_path: Path) -> None:
-        from sqlalchemy import create_engine, insert, select
-
-        db_path = tmp_path / "test_dataset.db"
-        engine = create_engine(f"sqlite:///{db_path}")
-
-        dataset_meta.create_all(engine)
-
-        with engine.begin() as conn:
-            conn.execute(insert(dataset_info).values(key="schema_version", value="2.0.0"))
-            result = conn.execute(select(dataset_info)).fetchall()
-            assert len(result) == 1
-            assert result[0].value == "2.0.0"
-
-        engine.dispose()
-
 
 def text_sql(sql: str):  # noqa: ANN201
     """sqlalchemy text() ラッパー"""

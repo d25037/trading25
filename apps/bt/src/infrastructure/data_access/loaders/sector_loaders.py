@@ -14,8 +14,6 @@ from src.shared.exceptions import IndexDataLoadError, SectorDataLoadError
 from .index_loaders import load_index_data
 from .utils import extract_dataset_name
 
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 
 # セクターデータキャッシュ（同一セッション内での重複APIコール回避）
 _sector_indices_cache: dict[str, dict[str, pd.DataFrame]] = {}
@@ -27,7 +25,7 @@ def get_sector_mapping(dataset: str) -> pd.DataFrame:
     セクター対応関係を取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
 
     Returns:
         pandas.DataFrame: セクター対応関係
@@ -38,7 +36,7 @@ def get_sector_mapping(dataset: str) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_sector_mapping()
 
     return df
@@ -54,7 +52,7 @@ def prepare_sector_data(
     セクター別データを準備する関数
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         sector_name: セクター名（例: "化学", "医薬品"）
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -104,7 +102,7 @@ def load_all_sector_indices(
     全33セクターインデックスのOHLCデータを一括取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
 
@@ -158,7 +156,7 @@ def get_stock_sector_mapping(dataset: str) -> dict[str, str]:
     全銘柄のセクター名マッピングを取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
 
     Returns:
         dict[str, str]: {stock_code: sector_name} マッピング
@@ -172,7 +170,7 @@ def get_stock_sector_mapping(dataset: str) -> dict[str, str]:
     logger.info("銘柄→セクターマッピング取得開始")
 
     try:
-        with DatasetAPIClient(dataset_name) as client:
+        with get_dataset_client(dataset_name) as client:
             mapping = client.get_stock_sector_mapping()
 
         logger.info(f"銘柄→セクターマッピング取得完了: {len(mapping)}銘柄")

@@ -30,16 +30,10 @@ from src.infrastructure.data_access.clients import DirectMarketClient
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.shared.utils.market_code_alias import normalize_market_scope
 
-# Backward-compatible symbol for tests patching module-local client constructor.
-MarketDataClient = DirectMarketClient
-
-
 class FundamentalsService:
     """Service for fundamentals API orchestration."""
 
     def __init__(self) -> None:
-        # Legacy slot kept for backward-compatible cleanup/tests.
-        self._jquants_client: Any | None = None
         self._market_client: Any | None = None
         self._calculator = FundamentalsCalculator()
 
@@ -49,13 +43,10 @@ class FundamentalsService:
     @property
     def market_client(self) -> Any:
         if self._market_client is None:
-            self._market_client = MarketDataClient()
+            self._market_client = DirectMarketClient()
         return self._market_client
 
     def close(self) -> None:
-        if self._jquants_client is not None:
-            self._jquants_client.close()
-            self._jquants_client = None
         if self._market_client is not None:
             self._market_client.close()
             self._market_client = None

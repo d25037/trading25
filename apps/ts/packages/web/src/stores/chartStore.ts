@@ -371,7 +371,7 @@ function normalizeFundamentalsPanelOrder(value: unknown): FundamentalsPanelId[] 
   return normalizedOrder;
 }
 
-function normalizeWorkbenchPanelOrder(value: unknown, legacyFundamentalsOrder: unknown): WorkbenchPanelId[] {
+function normalizeWorkbenchPanelOrder(value: unknown): WorkbenchPanelId[] {
   const normalizedOrder: WorkbenchPanelId[] = [];
   const seen = new Set<WorkbenchPanelId>();
 
@@ -383,9 +383,7 @@ function normalizeWorkbenchPanelOrder(value: unknown, legacyFundamentalsOrder: u
     }
   }
 
-  const fallbackOrder = Array.isArray(value)
-    ? DEFAULT_WORKBENCH_PANEL_ORDER
-    : [...DEFAULT_SUB_CHART_PANEL_ORDER, ...normalizeFundamentalsPanelOrder(legacyFundamentalsOrder)];
+  const fallbackOrder = DEFAULT_WORKBENCH_PANEL_ORDER;
 
   for (const panelId of fallbackOrder) {
     if (seen.has(panelId)) continue;
@@ -551,7 +549,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
       defaultSettings.showFactorRegressionPanel
     ),
     fundamentalsPanelOrder: normalizeFundamentalsPanelOrder(partial.fundamentalsPanelOrder),
-    workbenchPanelOrder: normalizeWorkbenchPanelOrder(partial.workbenchPanelOrder, partial.fundamentalsPanelOrder),
+    workbenchPanelOrder: normalizeWorkbenchPanelOrder(partial.workbenchPanelOrder),
     fundamentalsMetricOrder: normalizeFundamentalMetricOrder(partial.fundamentalsMetricOrder),
     fundamentalsMetricVisibility: normalizeFundamentalMetricVisibility(partial.fundamentalsMetricVisibility),
     fundamentalsHistoryMetricOrder: normalizeFundamentalsHistoryMetricOrder(partial.fundamentalsHistoryMetricOrder),

@@ -53,12 +53,12 @@ describe('DatasetDeleteDialog', () => {
       options?.onSuccess?.();
     });
 
-    render(<DatasetDeleteDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting.db" />);
+    render(<DatasetDeleteDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting" />);
 
-    expect(screen.getByText('quickTesting.db')).toBeInTheDocument();
+    expect(screen.getByText('quickTesting')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '削除' }));
 
-    expect(mockMutate).toHaveBeenCalledWith('quickTesting.db', expect.any(Object));
+    expect(mockMutate).toHaveBeenCalledWith('quickTesting', expect.any(Object));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -66,7 +66,7 @@ describe('DatasetDeleteDialog', () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
 
-    render(<DatasetDeleteDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting.db" />);
+    render(<DatasetDeleteDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting" />);
 
     await user.click(screen.getByRole('button', { name: 'キャンセル' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -77,7 +77,7 @@ describe('DatasetDeleteDialog', () => {
     mockDeleteState.isError = true;
     mockDeleteState.error = new Error('delete failed');
 
-    render(<DatasetDeleteDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
+    render(<DatasetDeleteDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting" />);
 
     expect(screen.getByRole('button', { name: '削除中...' })).toBeDisabled();
     expect(screen.getByText('Error: delete failed')).toBeInTheDocument();

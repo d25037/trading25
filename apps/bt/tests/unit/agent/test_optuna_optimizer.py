@@ -10,6 +10,7 @@ import pytest
 from src.domains.lab_agent import optuna_optimizer as optuna_optimizer_module
 from src.domains.lab_agent.models import OptunaConfig, StrategyCandidate
 from src.domains.lab_agent.optuna_optimizer import OptunaOptimizer, _extract_enabled_signal_names
+from src.domains.lab_agent.signal_search_space import PARAM_RANGES
 
 
 def _make_candidate(sid: str = "test_strat"):
@@ -33,7 +34,7 @@ def _make_optimizer(
     sampler="tpe",
     pruning=False,
     entry_filter_only=False,
-    target_scope="both",
+    target_scope: Any = "both",
     allowed_categories=None,
 ):
     config = OptunaConfig(
@@ -58,8 +59,7 @@ class TestOptunaOptimizerInit:
         assert optimizer is not None
 
     def test_param_ranges(self):
-        optimizer = _make_optimizer()
-        assert "volume_ratio_above" in optimizer.PARAM_RANGES
+        assert "volume_ratio_above" in PARAM_RANGES
 
     def test_default_config(self):
         optimizer = OptunaOptimizer()
@@ -375,7 +375,7 @@ class TestOptimizeFlow:
             "entry_volume_ratio_above_ratio_threshold": (1.1, 2.0, "float"),
         }
 
-        optimizer._enqueue_stage2_seed_trials(cast(Any, study), cast(Any, top_trials), overrides)
+        optimizer._enqueue_stage2_seed_trials(cast(Any, study), cast(Any, top_trials), cast(Any, overrides))
 
         study.enqueue_trial.assert_called_once()
         seeded = study.enqueue_trial.call_args.args[0]
@@ -1090,7 +1090,7 @@ class TestPrefetchAndBacktestHelpers:
             "cache-error"
         )
 
-        portfolio = optimizer._run_backtest_for_trial(strategy, shared_config, trial)
+        portfolio = optimizer._run_backtest_for_trial(strategy, cast(Any, shared_config), trial)
 
         assert portfolio is fallback_portfolio
         strategy.run_multi_backtest_from_cached_signals.assert_called_once_with(0.3)

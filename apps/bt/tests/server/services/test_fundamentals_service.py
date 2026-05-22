@@ -79,14 +79,13 @@ class TestFundamentalsServiceInit:
     def test_init(self):
         """インスタンス初期化"""
         service = FundamentalsService()
-        assert service._jquants_client is None
         assert service._market_client is None
 
     def test_lazy_client_initialization(self):
         """遅延初期化でクライアントが生成される"""
         service = FundamentalsService()
         with patch(
-            "src.application.services.fundamentals_service.MarketDataClient"
+            "src.application.services.fundamentals_service.DirectMarketClient"
         ) as mock_market_client:
             mock_market_client.return_value = MagicMock()
             _ = service.market_client
@@ -95,16 +94,12 @@ class TestFundamentalsServiceInit:
     def test_close_clients(self):
         """close()でクライアントがクローズされる"""
         service = FundamentalsService()
-        mock_jquants = MagicMock()
         mock_market = MagicMock()
-        service._jquants_client = mock_jquants
         service._market_client = mock_market
 
         service.close()
 
-        mock_jquants.close.assert_called_once()
         mock_market.close.assert_called_once()
-        assert service._jquants_client is None
         assert service._market_client is None
 
 
@@ -1141,7 +1136,6 @@ class TestComputeFundamentals:
         mock_market.get_stock_info.return_value = mock_stock_info
         mock_market.get_stock_ohlcv.return_value = mock_prices_df
 
-        service._jquants_client = MagicMock()
         service._market_client = mock_market
 
         request = FundamentalsComputeRequest(symbol="7203", trading_value_period=2)
@@ -1160,7 +1154,11 @@ class TestComputeFundamentals:
         assert result.data[0].tradingValueToMarketCapRatio is not None
         assert result.latestMetrics is not None
         assert result.latestMetrics.tradingValueToMarketCapRatio is not None
-        service._jquants_client.get_statements.assert_not_called()
+        mock_market.get_statements.assert_called_once_with(
+            "7203",
+            period_type="all",
+            actual_only=False,
+        )
 
     def test_share_adjusted_metrics(self, service: FundamentalsService):
         """発行済株式数でEPS/BPS/予想EPSを調整する"""
@@ -1464,7 +1462,7 @@ class TestForecastEps:
             FNCEPS=None,
             NxFNCEPS=None,
         )
-        forecast, change_rate = service._get_forecast_eps(stmt, 225.0, True)
+        forecast, _change_rate = service._get_forecast_eps(stmt, 225.0, True)
         assert forecast == 320.0  # FEPS優先
 
     def test_get_forecast_eps_non_consolidated(self, service: FundamentalsService):

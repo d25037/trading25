@@ -21,9 +21,6 @@ from src.infrastructure.data_access.clients import get_dataset_client, get_marke
 from src.infrastructure.data_access.loaders.cache import cached_loader
 from src.infrastructure.data_access.loaders.utils import extract_dataset_name
 
-# Backward-compatible symbols for tests patching module-local client constructors.
-DatasetAPIClient = get_dataset_client
-MarketAPIClient = get_market_client
 
 
 @cached_loader("topix:{dataset}:{start_date}:{end_date}")
@@ -37,7 +34,7 @@ def load_topix_data(
     現行 runtime では `dataset.duckdb + parquet + manifest.v2.json` を解決して利用する。
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
 
@@ -50,7 +47,7 @@ def load_topix_data(
     dataset_name = extract_dataset_name(dataset)
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_topix(start_date, end_date)
 
     if df.empty:
@@ -89,7 +86,7 @@ def load_topix_data_from_market_db(
         - 直近1年間の市場データ（日次更新）
         - バックテスト用の load_topix_data() とは data plane が異なる
     """
-    with MarketAPIClient() as client:
+    with get_market_client() as client:
         df = client.get_topix(start_date, end_date)
 
     if df.empty:
@@ -113,7 +110,7 @@ def load_index_data(
     API経由でインデックスデータを読み込み（VectorBT用）
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         index_code: インデックスコード
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -127,7 +124,7 @@ def load_index_data(
     dataset_name = extract_dataset_name(dataset)
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_index(index_code, start_date, end_date)
 
     if df.empty:
@@ -145,7 +142,7 @@ def get_index_list(dataset: str, min_records: int = 100) -> list[str]:
     データベースから利用可能なインデックスコードリストを取得
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         min_records: 最小レコード数
 
     Returns:
@@ -153,7 +150,7 @@ def get_index_list(dataset: str, min_records: int = 100) -> list[str]:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_index_list(min_records)
 
     if df.empty:
@@ -167,7 +164,7 @@ def get_available_indices(dataset: str, min_records: int = 100) -> pd.DataFrame:
     利用可能なインデックス一覧を取得（VectorBT用）
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         min_records: 最小レコード数
 
     Returns:
@@ -175,7 +172,7 @@ def get_available_indices(dataset: str, min_records: int = 100) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_index_list(min_records)
 
     return df

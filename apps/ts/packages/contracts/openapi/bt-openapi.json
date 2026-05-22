@@ -2915,7 +2915,7 @@
             "type": "string"
           },
           "name": {
-            "description": "Dataset name (without .db)",
+            "description": "Dataset snapshot name",
             "title": "Name",
             "type": "string"
           },
@@ -4240,18 +4240,6 @@
             ],
             "description": "Forecast EPS (JPY)",
             "title": "Forecasteps"
-          },
-          "forecastEpsAboveAllHistoricalActuals": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Deprecated: use forecastEpsAboveRecentFyActuals",
-            "title": "Forecastepsaboveallhistoricalactuals"
           },
           "forecastEpsAboveRecentFyActuals": {
             "anyOf": [
@@ -19951,10 +19939,6 @@
                   "type": "string"
                 },
                 {
-                  "const": "rerating_participation",
-                  "type": "string"
-                },
-                {
                   "const": "overheat",
                   "type": "string"
                 },
@@ -32953,58 +32937,6 @@
         "summary": "Get watchlist stock prices",
         "tags": [
           "Watchlist"
-        ]
-      }
-    },
-    "/health": {
-      "get": {
-        "description": "ヘルスチェック（Hono 互換エイリアス）\n\n`/api/health` と同一レスポンスを返す",
-        "operationId": "health_check_alias_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Health Check Alias",
-        "tags": [
-          "Health"
         ]
       }
     }

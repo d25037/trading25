@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  extractLegacyBacktestSearch,
-  extractLegacyIndicesSearch,
-  extractLegacyPortfolioSearch,
-  extractLegacyScreeningSearch,
-  extractLegacySymbolWorkbenchSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
-  prunePersistedStoreFields,
-  readPersistedStoreState,
   serializeBacktestSearch,
   serializeIndicesSearch,
   serializeOptions225Search,
@@ -25,27 +18,6 @@ import {
   validateScreeningSearch,
   validateSymbolWorkbenchSearch,
 } from './routeSearch';
-
-function createMemoryStorage(initial: Record<string, string> = {}): Storage {
-  const store = new Map(Object.entries(initial));
-
-  return {
-    getItem: (key) => store.get(key) ?? null,
-    setItem: (key, value) => {
-      store.set(key, value);
-    },
-    removeItem: (key) => {
-      store.delete(key);
-    },
-    clear: () => {
-      store.clear();
-    },
-    key: (index) => Array.from(store.keys())[index] ?? null,
-    get length() {
-      return store.size;
-    },
-  } as Storage;
-}
 
 describe('routeSearch', () => {
   it('validates and serializes symbol workbench/portfolio search params', () => {
@@ -67,31 +39,17 @@ describe('routeSearch', () => {
     expect(serializeResearchSearch({ experimentId: ' market/a ', runId: '   ' })).toEqual({
       experimentId: 'market/a',
     });
-    expect(extractLegacySymbolWorkbenchSearch({ selectedSymbol: '6758' })).toEqual({ symbol: '6758' });
-    expect(
-      extractLegacyPortfolioSearch({
-        portfolioSubTab: 'watchlists',
-        selectedPortfolioId: '5',
-        selectedWatchlistId: 8,
-      })
-    ).toEqual({
-      tab: 'watchlists',
-      portfolioId: 5,
-      watchlistId: 8,
-    });
-    expect(extractLegacyIndicesSearch({ selectedIndexCode: 'jasdaq' })).toEqual({ code: 'jasdaq' });
   });
 
   it('roundtrips screening search state with defaults', () => {
     const search = validateScreeningSearch({
-      tab: 'sameDayScreening',
-      sameDayMarkets: '0113',
-      sameDayStrategies: 'production/in_session_strategy',
-      sameDayRecentDays: '5',
-      sameDaySortBy: 'matchStrategyCount',
-      sameDayOrder: 'asc',
-      sameDayLimit: '60',
-      rankingLimit: '25',
+      tab: 'inSessionScreening',
+      inSessionMarkets: '0113',
+      inSessionStrategies: 'production/in_session_strategy',
+      inSessionRecentDays: '5',
+      inSessionSortBy: 'matchStrategyCount',
+      inSessionOrder: 'asc',
+      inSessionLimit: '60',
     });
 
     const state = getScreeningStateFromSearch(search);
@@ -110,21 +68,8 @@ describe('routeSearch', () => {
       inSessionSortBy: 'matchStrategyCount',
       inSessionOrder: 'asc',
       inSessionLimit: 60,
-      rankingLimit: 25,
     });
 
-    expect(
-      extractLegacyScreeningSearch({
-        activeSubTab: 'fundamentalRanking',
-        screeningParams: { strategies: 'production/a' },
-        sameDayScreeningParams: { strategies: 'production/b' },
-        rankingParams: { lookbackDays: 5 },
-      })
-    ).toEqual({
-      preOpenStrategies: 'production/a',
-      inSessionStrategies: 'production/b',
-      rankingLookbackDays: 5,
-    });
   });
 
   it('omits auto screening markets from serialized screening search', () => {
@@ -133,30 +78,6 @@ describe('routeSearch', () => {
     expect(state.preOpenScreeningParams.markets).toBeUndefined();
     expect(state.inSessionScreeningParams.markets).toBeUndefined();
     expect(serializeScreeningSearch(state)).toEqual({});
-  });
-
-  it('serializes non-default ranking filters', () => {
-    const search = validateScreeningSearch({
-      rankingMarkets: '0111',
-      rankingLookbackDays: '15',
-      rankingPeriodDays: '60',
-      rankingLiquidityState: 'overheat',
-      rankingSortBy: 'forwardPer',
-      rankingOrder: 'asc',
-      rankingForwardEpsDisclosedWithinDays: '126',
-    });
-
-    const state = getScreeningStateFromSearch(search);
-
-    expect(serializeScreeningSearch(state)).toEqual({
-      rankingMarkets: '0111',
-      rankingLookbackDays: 15,
-      rankingPeriodDays: 60,
-      rankingLiquidityState: 'overheat',
-      rankingSortBy: 'forwardPer',
-      rankingOrder: 'asc',
-      rankingForwardEpsDisclosedWithinDays: 126,
-    });
   });
 
   it('drops removed topix100 ranking url state', () => {
@@ -200,14 +121,6 @@ describe('routeSearch', () => {
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
     });
-  });
-
-  it('normalizes legacy rerating liquidity state to crowded rerating', () => {
-    const rankingSearch = validateRankingSearch({
-      rankingLiquidityState: 'rerating_participation',
-    });
-
-    expect(rankingSearch.rankingLiquidityState).toBe('crowded_rerating');
   });
 
   it('drops removed ranking tabs and value-composite url state', () => {
@@ -260,90 +173,14 @@ describe('routeSearch', () => {
       labType: 'improve',
     });
 
-    expect(
-      extractLegacyBacktestSearch({
-        activeSubTab: 'lab',
-        selectedStrategy: 'production/beta',
-        selectedResultJobId: 'job-9',
-        selectedDatasetName: 'snapshot-b',
-        activeLabType: 'evolve',
-      })
-    ).toEqual({
-      tab: 'lab',
-      strategy: 'production/beta',
-      resultJobId: 'job-9',
-      dataset: 'snapshot-b',
-      labType: 'evolve',
-    });
-  });
-
-  it('reads and prunes persisted legacy state containers', () => {
-    const storage = createMemoryStorage({
-      'trading25-chart-store': JSON.stringify({
-        state: {
-          selectedSymbol: '7203',
-          settings: { visibleBars: 180 },
-        },
-        version: 0,
-      }),
-    });
-
-    expect(readPersistedStoreState(storage, 'trading25-chart-store')).toEqual({
-      selectedSymbol: '7203',
-      settings: { visibleBars: 180 },
-    });
-
-    prunePersistedStoreFields(storage, 'trading25-chart-store', ['selectedSymbol']);
-
-    expect(JSON.parse(storage.getItem('trading25-chart-store') ?? '{}')).toEqual({
-      state: {
-        settings: { visibleBars: 180 },
-      },
-      version: 0,
-    });
-  });
-
-  it('prunes persisted raw records without removing remaining fields', () => {
-    const storage = createMemoryStorage({
-      rawRecord: JSON.stringify({
-        selectedSymbol: '7203',
-        settings: { visibleBars: 180 },
-      }),
-    });
-
-    prunePersistedStoreFields(storage, 'rawRecord', ['selectedSymbol']);
-
-    expect(JSON.parse(storage.getItem('rawRecord') ?? '{}')).toEqual({
-      settings: { visibleBars: 180 },
-    });
-  });
-
-  it('handles malformed or non-record persisted state safely', () => {
-    const storage = createMemoryStorage({
-      invalid: '{',
-      plain: JSON.stringify(['not-a-record']),
-      broken: '{',
-      rawRecord: JSON.stringify({ selectedSymbol: '7203' }),
-    });
-
-    expect(readPersistedStoreState(storage, 'missing')).toBeNull();
-    expect(readPersistedStoreState(storage, 'invalid')).toBeNull();
-    expect(readPersistedStoreState(storage, 'plain')).toBeNull();
-    expect(readPersistedStoreState(storage, 'rawRecord')).toEqual({ selectedSymbol: '7203' });
-
-    prunePersistedStoreFields(storage, 'broken', ['selectedSymbol']);
-    expect(storage.getItem('broken')).toBeNull();
-
-    prunePersistedStoreFields(storage, 'rawRecord', ['selectedSymbol']);
-    expect(storage.getItem('rawRecord')).toBeNull();
   });
 
   it('drops invalid screening and backtest search values', () => {
     expect(
       validateScreeningSearch({
         tab: 'unknown',
-        screeningRecentDays: '0',
-        screeningOrder: 'invalid',
+        preOpenRecentDays: '0',
+        preOpenOrder: 'invalid',
       })
     ).toEqual({});
 
@@ -367,27 +204,6 @@ describe('routeSearch', () => {
     ).toEqual({
       dataset: 'snapshot-a',
     });
-  });
-
-  it('extracts legacy searches with safe defaults when persisted payloads are malformed', () => {
-    expect(
-      extractLegacyScreeningSearch({
-        activeSubTab: 'not-a-tab',
-        screeningParams: 'bad',
-        sameDayScreeningParams: null,
-        rankingParams: 1,
-      })
-    ).toEqual({});
-
-    expect(
-      extractLegacyBacktestSearch({
-        activeSubTab: 'not-a-tab',
-        selectedStrategy: 123,
-        selectedResultJobId: [],
-        selectedDatasetName: null,
-        activeLabType: 'unknown',
-      })
-    ).toEqual({});
   });
 
   it('validates and normalizes options-225 search params', () => {

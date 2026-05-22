@@ -266,7 +266,7 @@ class BaseAPIClient:
             True if the server is healthy, False otherwise
         """
         try:
-            self._get("/health")
+            self._get("/api/health")
             return True
         except APIError:
             return False

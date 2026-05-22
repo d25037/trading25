@@ -4,7 +4,7 @@
 
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import BaseModel, Field
 
 from src.shared.models.types import StatementsPeriodType
 
@@ -489,10 +489,6 @@ class FundamentalSignalParams(BaseSignalParams):
     forecast_eps_above_recent_fy_actuals: ForecastEPSAboveRecentFYActualsParams = Field(
         default_factory=ForecastEPSAboveRecentFYActualsParams,
         description="最新予想EPSが直近FY実績EPSの最大値より大きいシグナル",
-        validation_alias=AliasChoices(
-            "forecast_eps_above_recent_fy_actuals",
-            "forecast_eps_above_all_actuals",
-        ),
     )
     forward_dividend_growth: ForwardDividendGrowthParams = Field(
         default_factory=ForwardDividendGrowthParams,

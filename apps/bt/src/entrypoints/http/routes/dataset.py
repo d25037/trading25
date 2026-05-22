@@ -38,6 +38,7 @@ from src.application.services.dataset_builder_service import (
 from src.application.services.dataset_presets import get_preset, list_presets
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 from src.shared.config.settings import get_settings
 
 router = APIRouter(tags=["Dataset"])
@@ -231,20 +232,26 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         )
 
     # Check existing dataset
-    name_stem = body.name.removesuffix(".db")
-    existing_artifacts = resolver.get_artifact_paths(name_stem)
+    try:
+        dataset_name = normalize_dataset_snapshot_name(body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if dataset_name is None:
+        raise HTTPException(status_code=400, detail="Dataset name is required")
+
+    existing_artifacts = resolver.get_artifact_paths(dataset_name)
     if existing_artifacts and not body.overwrite:
-        if resolver.exists(name_stem):
-            detail = f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.'
+        if resolver.exists(dataset_name):
+            detail = f'Dataset "{dataset_name}" already exists. Use overwrite=true to replace.'
         else:
             detail = (
-                f'Dataset "{name_stem}" has unsupported or partial artifacts on disk. '
+                f'Dataset "{dataset_name}" has unsupported or partial artifacts on disk. '
                 "Use overwrite=true to clean them up and rebuild."
             )
         raise HTTPException(status_code=409, detail=detail)
 
     data = DatasetJobData(
-        name=name_stem,
+        name=dataset_name,
         preset=body.preset,
         overwrite=body.overwrite,
     )
@@ -257,7 +264,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         content=DatasetCreateResponse(
             jobId=job.job_id,
             status="pending",
-            name=name_stem,
+            name=dataset_name,
             preset=body.preset,
             message="Dataset creation job started",
             estimatedTime=_estimate_time(body.preset),

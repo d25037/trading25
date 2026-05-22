@@ -59,8 +59,7 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
     if (parsedSeed !== undefined) request.seed = parsedSeed;
   };
 
-  const applyCompatibilityFlags = (request: LabEvolveRequest) => {
-    if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
+  const applyOptionalFilters = (request: LabEvolveRequest) => {
     if (categoryScope === 'fundamental') request.allowed_categories = ['fundamental'];
   };
 
@@ -73,7 +72,7 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
       target_scope: targetScope,
     };
     applyRandomAddOptions(request);
-    applyCompatibilityFlags(request);
+    applyOptionalFilters(request);
     request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };

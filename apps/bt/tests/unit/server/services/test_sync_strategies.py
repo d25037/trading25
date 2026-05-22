@@ -92,7 +92,6 @@ class DummyMarketDb:
         self._prime_codes: set[str] = set()
         self._fundamentals_target_codes: set[str] = set()
         self._stocks_needing_refresh = list(stocks_needing_refresh or [])
-        self.resolved_adjustment_calls: list[list[str] | None] = []
 
     def get_sync_metadata(self, key: str) -> str | None:
         if key in self.metadata:
@@ -402,19 +401,6 @@ class DummyMarketDb:
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         self.metadata[key] = value
-
-    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
-        normalized = None if codes is None else list(dict.fromkeys(str(code) for code in codes))
-        self.resolved_adjustment_calls.append(normalized)
-        if normalized is None:
-            self._stocks_needing_refresh = []
-            return 0
-        resolved = set(normalized)
-        self._stocks_needing_refresh = [
-            code for code in self._stocks_needing_refresh
-            if code not in resolved
-        ]
-        return len(normalized)
 
     def ensure_schema(self) -> None:
         return None

@@ -42,7 +42,7 @@ class TestGetSectorMapping:
         mock_client.get_sector_mapping.return_value = _make_mapping_df()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_dataset_client", return_value=mock_client):
             result = get_sector_mapping("test_dataset")
         assert len(result) == 2
         assert "sector_name" in result.columns
@@ -132,7 +132,7 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.return_value = {"1234": "化学", "5678": "医薬品"}
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_dataset_client", return_value=mock_client):
             result = get_stock_sector_mapping("test_dataset")
         assert result == {"1234": "化学", "5678": "医薬品"}
 
@@ -141,7 +141,7 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.return_value = {"1234": "化学"}
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_dataset_client", return_value=mock_client):
             result1 = get_stock_sector_mapping("test_cache")
             result2 = get_stock_sector_mapping("test_cache")
         assert result1 is result2
@@ -152,6 +152,6 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.side_effect = Exception("API error")
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_dataset_client", return_value=mock_client):
             result = get_stock_sector_mapping("test_error")
         assert result == {}

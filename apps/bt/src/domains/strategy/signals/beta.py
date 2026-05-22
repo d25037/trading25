@@ -11,7 +11,6 @@
 高速化実装:
 - Pandas rolling.cov/var: 中速（従来比5-10倍高速）
 - Numba最適化: 高速（従来比10-50倍高速）
-- `method="vectorbt"`: 互換 alias。内部では numba 実装を使う
 """
 
 import numpy as np
@@ -21,7 +20,7 @@ from typing import Literal, cast
 
 from src.shared.models.signals import normalize_bool_series
 
-BetaMethod = Literal["pandas", "numba", "vectorbt"]
+BetaMethod = Literal["pandas", "numba"]
 
 
 def calculate_beta(
@@ -139,7 +138,7 @@ def beta_range_signal(
         beta_max: β値上限閾値
         lookback_period: β値計算期間（日数）
         fast: 高速化実装を使用するか（推奨: True）
-        method: 高速化方法 ("auto", "pandas", "numba", "vectorbt")
+        method: 高速化方法 ("auto", "pandas", "numba")
 
     Returns:
         pd.Series: シグナル結果（True: 条件を満たす、False: 条件を満たさない）
@@ -324,34 +323,9 @@ def _rolling_beta_by_method(
     """method 名に対応するローリングβ計算を解決する。"""
     if method == "pandas":
         return pandas_rolling_beta(stock_price, market_price, window)
-    if method in ("numba", "vectorbt"):
+    if method == "numba":
         return numba_rolling_beta(stock_price, market_price, window)
-    raise ValueError(
-        f"Unknown method: {method}. Use 'pandas', 'numba', or 'vectorbt'"
-    )
-
-
-def vectorbt_rolling_beta(
-    stock_price: pd.Series,
-    market_price: pd.Series,
-    window: int = 200,
-) -> pd.Series:
-    """
-    旧 `vectorbt` method 互換のローリングβ値計算。
-
-    Args:
-        stock_price: 銘柄価格シリーズ
-        market_price: 市場価格シリーズ
-        window: ローリングウィンドウサイズ
-
-    Returns:
-        pd.Series: ローリングβ値
-
-    Note:
-        `vectorbt` 依存を domain surface から外したため、内部では
-        numba 実装にフォールバックする。
-    """
-    return numba_rolling_beta(stock_price, market_price, window)
+    raise ValueError(f"Unknown method: {method}. Use 'pandas' or 'numba'")
 
 
 def beta_range_signal_with_value(
@@ -371,7 +345,7 @@ def beta_range_signal_with_value(
         beta_min: β値下限閾値
         beta_max: β値上限閾値
         lookback_period: β値計算期間
-        method: 計算方法 ("pandas", "numba", "vectorbt")
+        method: 計算方法 ("pandas", "numba")
 
     Returns:
         tuple[pd.Series, float | None]: (シグナル結果, 最新β値)
@@ -416,7 +390,7 @@ def fast_beta_range_signal(
         beta_min: β値下限閾値
         beta_max: β値上限閾値
         lookback_period: β値計算期間
-        method: 計算方法 ("pandas", "numba", "vectorbt")
+        method: 計算方法 ("pandas", "numba")
 
     Returns:
         pd.Series: シグナル結果
@@ -424,7 +398,6 @@ def fast_beta_range_signal(
     Performance:
         - pandas: 中速（rolling.cov/var使用）
         - numba: 高速（@njit最適化）
-        - vectorbt: 互換 alias（内部では numba を利用）
     """
     rolling_beta = _rolling_beta_by_method(
         stock_price,

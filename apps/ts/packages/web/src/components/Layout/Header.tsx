@@ -70,11 +70,7 @@ function useIsMobileHeaderLayout(): boolean {
 }
 
 function isNavigationItemActive(item: NavigationItem, pathname: string): boolean {
-  return (
-    pathname === item.path ||
-    pathname.startsWith(`${item.path}/`) ||
-    (item.path === '/market-db' && pathname === '/settings')
-  );
+  return pathname === item.path || pathname.startsWith(`${item.path}/`);
 }
 
 function getNavigationItemClasses(isActive: boolean): string {

@@ -64,54 +64,13 @@ describe('router', () => {
     expect(await screen.findByRole('heading', { name: 'Symbol Workbench Page' })).toBeInTheDocument();
   });
 
-  it('shows migration guidance for legacy ?tab= query links', async () => {
+  it('redirects root path with query params to /symbol-workbench', async () => {
     renderRouterAt('/?tab=history');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/symbol-workbench');
     });
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?tab=history');
-    expect(screen.getByRole('link', { name: 'Open suggested route (/history)' })).toHaveAttribute('href', '/history');
-  });
-
-  it('shows screening route guidance for renamed legacy query links', async () => {
-    renderRouterAt('/?tab=screening');
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
-    });
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?tab=screening');
-    expect(screen.getByRole('link', { name: 'Open suggested route (/screening)' })).toHaveAttribute(
-      'href',
-      '/screening'
-    );
-  });
-
-  it('omits the suggested route link for unknown legacy tabs', async () => {
-    renderRouterAt('/?tab=unknown');
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
-    });
-
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?tab=unknown');
-    expect(screen.getByText('Requested URL:')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
-  });
-
-  it('does not offer a suggested route for removed charts legacy tabs', async () => {
-    renderRouterAt('/?tab=charts');
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
-    });
-
-    expect(window.location.pathname).toBe('/');
-    expect(window.location.search).toBe('?tab=charts');
-    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Symbol Workbench Page' })).toBeInTheDocument();
   });
 
   it('renders market db page when path is /market-db', async () => {
@@ -141,22 +100,4 @@ describe('router', () => {
     expect(await screen.findByRole('heading', { name: 'Screening Page' })).toBeInTheDocument();
   });
 
-  it('redirects screening ranking tabs to /ranking', async () => {
-    renderRouterAt('/screening?tab=ranking&rankingMarkets=growth');
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/ranking');
-    });
-    expect(window.location.search).toBe('?rankingMarkets=growth');
-    expect(await screen.findByRole('heading', { name: 'Ranking Page' })).toBeInTheDocument();
-  });
-
-  it('redirects legacy /settings path to /market-db', async () => {
-    renderRouterAt('/settings');
-
-    await waitFor(() => {
-      expect(window.location.pathname).toBe('/market-db');
-    });
-    expect(screen.getByRole('heading', { name: 'Market DB Page' })).toBeInTheDocument();
-  });
 });

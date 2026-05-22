@@ -1027,7 +1027,7 @@ def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[d
 
 
 def _convert_stocks(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """JQuants 銘柄マスタ → ds_stocks 行"""
+    """JQuants 銘柄マスタ → stock row"""
     return [
         {
             "code": normalize_stock_code(d.get("Code", "")),

@@ -62,7 +62,7 @@ class TestLoadMultipleStocks:
         mock_get_client.return_value = _mock_context_manager(client)
 
         result = load_multiple_stocks(
-            dataset="dataset.db",
+            dataset="dataset",
             stock_codes=["7203", "6758"],
             price_column="Close",
         )
@@ -95,7 +95,7 @@ class TestLoadMultipleStocks:
         ]
 
         result = load_multiple_stocks(
-            dataset="dataset.db",
+            dataset="dataset",
             stock_codes=["7203", "6758"],
             price_column="Close",
         )
@@ -113,7 +113,7 @@ class TestLoadMultipleStocks:
 
         with pytest.raises(NoValidDataError):
             load_multiple_stocks(
-                dataset="dataset.db",
+                dataset="dataset",
                 stock_codes=["7203"],
                 price_column="Close",
             )
@@ -128,7 +128,7 @@ class TestLoadMultipleIndices:
         ]
 
         result = load_multiple_indices(
-            dataset="dataset.db",
+            dataset="dataset",
             index_codes=["TOPIX", "JPX-NIKKEI"],
             price_column="Close",
         )
@@ -142,7 +142,7 @@ class TestLoadMultipleIndices:
 
         with pytest.raises(ValueError, match="No valid index data"):
             load_multiple_indices(
-                dataset="dataset.db",
+                dataset="dataset",
                 index_codes=["TOPIX"],
                 price_column="Close",
             )
@@ -168,7 +168,7 @@ class TestLoadMultipleMarginData:
         mock_get_client.return_value = _mock_context_manager(client)
 
         result = load_multiple_margin_data(
-            dataset="dataset.db",
+            dataset="dataset",
             stock_codes=["7203"],
             margin_column="TotalMargin",
         )
@@ -196,7 +196,7 @@ class TestLoadMultipleMarginData:
         ]
 
         result = load_multiple_margin_data(
-            dataset="dataset.db",
+            dataset="dataset",
             stock_codes=["7203", "6758"],
             margin_column="LongMargin",
         )
@@ -220,7 +220,7 @@ class TestLoadMultipleMarginData:
 
         with pytest.raises(ValueError, match="No valid margin data"):
             load_multiple_margin_data(
-                dataset="dataset.db",
+                dataset="dataset",
                 stock_codes=["7203"],
                 margin_column="TotalMargin",
             )

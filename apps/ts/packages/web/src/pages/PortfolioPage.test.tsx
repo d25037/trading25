@@ -41,7 +41,6 @@ let mockWatchlistWithItemsResult: {
 
 vi.mock('@/hooks/usePageRouteState', () => ({
   usePortfolioRouteState: () => mockRouteState,
-  useMigratePortfolioRouteState: () => {},
 }));
 
 vi.mock('@/hooks/usePortfolio', () => ({

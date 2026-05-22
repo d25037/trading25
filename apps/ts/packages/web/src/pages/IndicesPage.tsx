@@ -7,7 +7,7 @@ import { SectionEyebrow, SplitLayout, SplitMain, SplitSidebar, Surface } from '@
 import { RankingTable } from '@/components/Ranking';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
-import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
+import { useIndicesRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
@@ -1041,7 +1041,6 @@ function IndexChart({ code, indexInfo, onStockClick, panelMinHeight }: IndexChar
 }
 
 export function IndicesPage() {
-  useMigrateIndicesRouteState();
   const navigate = useNavigate();
   const { selectedIndexCode, setSelectedIndexCode } = useIndicesRouteState();
   const { data: indicesData, isLoading: indicesLoading, error: indicesError } = useIndicesList();

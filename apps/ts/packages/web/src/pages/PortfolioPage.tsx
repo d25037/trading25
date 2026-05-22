@@ -10,18 +10,18 @@ import {
 } from '@/components/Layout/Workspace';
 import { PortfolioDetail, PortfolioList } from '@/components/Portfolio';
 import { WatchlistDetail, WatchlistList } from '@/components/Watchlist';
-import { useMigratePortfolioRouteState, usePortfolioRouteState } from '@/hooks/usePageRouteState';
+import { usePortfolioRouteState } from '@/hooks/usePageRouteState';
 import { usePortfolios, usePortfolioWithItems } from '@/hooks/usePortfolio';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
-import type { PortfolioSummary } from '@/types/portfolio';
-import type { WatchlistSummary } from '@/types/watchlist';
+import type { PortfolioSummaryResponse } from '@/types/portfolio';
+import type { WatchlistSummaryResponse } from '@/types/watchlist';
 
 function PortfolioContent({
   portfolios,
   portfoliosLoading,
   portfoliosError,
 }: {
-  portfolios: PortfolioSummary[];
+  portfolios: PortfolioSummaryResponse[];
   portfoliosLoading: boolean;
   portfoliosError: Error | null;
 }) {
@@ -82,7 +82,7 @@ function WatchlistContent({
   watchlistsLoading,
   watchlistsError,
 }: {
-  watchlists: WatchlistSummary[];
+  watchlists: WatchlistSummaryResponse[];
   watchlistsLoading: boolean;
   watchlistsError: Error | null;
 }) {
@@ -139,7 +139,6 @@ function WatchlistContent({
 }
 
 export function PortfolioPage() {
-  useMigratePortfolioRouteState();
   const { portfolioSubTab, setPortfolioSubTab, selectedPortfolioId, selectedWatchlistId } = usePortfolioRouteState();
   const { data: portfoliosData, isLoading: portfoliosLoading, error: portfoliosError } = usePortfolios();
   const { data: watchlistsData, isLoading: watchlistsLoading, error: watchlistsError } = useWatchlists();

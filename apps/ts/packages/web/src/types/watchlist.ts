@@ -1,21 +1,12 @@
-/**
- * Watchlist types for web frontend
- * Re-exports from @trading25/contracts with aliases
- */
-
 export type {
   ListWatchlistsResponse,
   WatchlistDeleteResponse,
   WatchlistItemResponse,
-  // Aliases for convenience
-  WatchlistItemResponse as WatchlistItem,
   WatchlistPricesResponse,
   WatchlistResponse,
   WatchlistStockPrice,
   WatchlistSummaryResponse,
-  WatchlistSummaryResponse as WatchlistSummary,
   WatchlistWithItemsResponse,
-  WatchlistWithItemsResponse as WatchlistWithItems,
 } from '@trading25/contracts/types/api-response-types';
 
 // Frontend-specific request types

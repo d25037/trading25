@@ -1430,15 +1430,10 @@ class RankingService:
                     item for item in collection if liquidity_state in item.riskFlags
                 ]
             else:
-                effective_liquidity_state = (
-                    "crowded_rerating"
-                    if liquidity_state == "rerating_participation"
-                    else liquidity_state
-                )
                 collection[:] = [
                     item
                     for item in collection
-                    if item.liquidityRegime == effective_liquidity_state
+                    if item.liquidityRegime == liquidity_state
                 ]
 
     def _enrich_ranking_collections_with_prime_liquidity(

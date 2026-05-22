@@ -924,39 +924,6 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["72030"]
         assert result.rankings.tradingValue[0].rank == 1
 
-    def test_legacy_rerating_filter_alias_matches_crowded_rerating(
-        self, service, monkeypatch
-    ):
-        def fake_enrich_prime_liquidity(
-            self,
-            collections,
-            *,
-            target_date,
-            price_basis_date,
-        ):
-            del self, target_date, price_basis_date
-            for collection in collections:
-                for item in collection:
-                    item.liquidityRegime = (
-                        "crowded_rerating" if item.code == "72030" else "neutral"
-                    )
-
-        monkeypatch.setattr(
-            RankingService,
-            "_enrich_ranking_collections_with_prime_liquidity",
-            fake_enrich_prime_liquidity,
-        )
-
-        result = service.get_rankings(
-            date="2024-01-19",
-            markets="prime",
-            limit=1,
-            include_valuation=True,
-            liquidity_state="rerating_participation",
-        )
-
-        assert [item.code for item in result.rankings.tradingValue] == ["72030"]
-
     def test_liquidity_state_filter_can_match_overheat_risk_flag(
         self, service, monkeypatch
     ):

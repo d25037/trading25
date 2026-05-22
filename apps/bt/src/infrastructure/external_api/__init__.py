@@ -10,7 +10,7 @@ Clients:
 """
 
 from src.infrastructure.external_api.client import BaseAPIClient
-from src.infrastructure.external_api.dataset_client import DatasetAPIClient
+from src.infrastructure.external_api.dataset import DatasetAPIClient
 from src.infrastructure.external_api.exceptions import APIConnectionError, APIError, APINotFoundError, APITimeoutError
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.infrastructure.external_api.portfolio_client import PortfolioAPIClient

@@ -15,7 +15,6 @@ const mockBacktestState = {
 
 vi.mock('@/hooks/usePageRouteState', () => ({
   useBacktestRouteState: () => mockBacktestState,
-  useMigrateBacktestRouteState: () => {},
 }));
 
 vi.mock('@/components/Backtest', () => ({

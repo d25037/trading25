@@ -57,9 +57,6 @@ def _is_forecast_signal_enabled(side_params: dict[str, Any]) -> bool:
         return True
 
     forecast_vs_actual = fundamental.get("forecast_eps_above_recent_fy_actuals")
-    if not isinstance(forecast_vs_actual, dict):
-        # Backward compatibility for legacy key
-        forecast_vs_actual = fundamental.get("forecast_eps_above_all_actuals")
     if isinstance(forecast_vs_actual, dict) and bool(forecast_vs_actual.get("enabled", False)):
         return True
 
@@ -88,10 +85,6 @@ def should_include_forecast_revision(
         or _is_forecast_signal_enabled(candidate.exit_trigger_params)
         for candidate in candidates
     )
-
-
-# Backward-compatible alias.
-_should_include_forecast_revision = should_include_forecast_revision
 
 
 def prepare_batch_data(

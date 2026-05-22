@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PortfolioWithItems } from '@/types/portfolio';
+import type { PortfolioWithItemsResponse } from '@/types/portfolio';
 import { PortfolioDetail } from './PortfolioDetail';
 
 const mockNavigate = vi.fn();
@@ -47,7 +47,7 @@ vi.mock('./PortfolioFactorRegressionPanel', () => ({
   PortfolioFactorRegressionPanel: () => <div>PortfolioFactorRegressionPanel</div>,
 }));
 
-const samplePortfolio: PortfolioWithItems = {
+const samplePortfolio: PortfolioWithItemsResponse = {
   id: 1,
   name: 'Main Portfolio',
   description: 'Core holdings',
@@ -70,7 +70,7 @@ const samplePortfolio: PortfolioWithItems = {
   ],
 };
 
-const samplePortfolioWithTwoItems: PortfolioWithItems = {
+const samplePortfolioWithTwoItems: PortfolioWithItemsResponse = {
   id: 2,
   name: 'Growth Portfolio',
   description: 'Aggressive growth',
@@ -212,7 +212,7 @@ describe('PortfolioDetail', () => {
   });
 
   it('renders empty holdings table when selected portfolio has no items', () => {
-    const emptyPortfolio: PortfolioWithItems = {
+    const emptyPortfolio: PortfolioWithItemsResponse = {
       ...samplePortfolio,
       id: 3,
       name: 'Empty Portfolio',

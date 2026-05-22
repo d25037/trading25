@@ -3,11 +3,11 @@ import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import type {
   CreatePortfolioItemRequest,
   CreatePortfolioRequest,
-  DeleteSuccessResponse,
+  DeleteResponse,
   ListPortfoliosResponse,
-  PortfolioItem,
-  PortfolioSummary,
-  PortfolioWithItems,
+  PortfolioItemResponse,
+  PortfolioSummaryResponse,
+  PortfolioWithItemsResponse,
   UpdatePortfolioItemRequest,
   UpdatePortfolioRequest,
 } from '@/types/portfolio';
@@ -16,24 +16,24 @@ import { logger } from '@/utils/logger';
 // Fetch functions
 const fetchPortfolios = () => apiGet<ListPortfoliosResponse>('/api/portfolio');
 
-const fetchPortfolioWithItems = (id: number) => apiGet<PortfolioWithItems>(`/api/portfolio/${id}`);
+const fetchPortfolioWithItems = (id: number) => apiGet<PortfolioWithItemsResponse>(`/api/portfolio/${id}`);
 
 // Mutation functions
-const createPortfolio = (data: CreatePortfolioRequest) => apiPost<PortfolioSummary>('/api/portfolio', data);
+const createPortfolio = (data: CreatePortfolioRequest) => apiPost<PortfolioSummaryResponse>('/api/portfolio', data);
 
 const updatePortfolio = (id: number, data: UpdatePortfolioRequest) =>
-  apiPut<PortfolioSummary>(`/api/portfolio/${id}`, data);
+  apiPut<PortfolioSummaryResponse>(`/api/portfolio/${id}`, data);
 
-const deletePortfolio = (id: number) => apiDelete<DeleteSuccessResponse>(`/api/portfolio/${id}`);
+const deletePortfolio = (id: number) => apiDelete<DeleteResponse>(`/api/portfolio/${id}`);
 
 const addPortfolioItem = (portfolioId: number, data: CreatePortfolioItemRequest) =>
-  apiPost<PortfolioItem>(`/api/portfolio/${portfolioId}/items`, data);
+  apiPost<PortfolioItemResponse>(`/api/portfolio/${portfolioId}/items`, data);
 
 const updatePortfolioItem = (portfolioId: number, itemId: number, data: UpdatePortfolioItemRequest) =>
-  apiPut<PortfolioItem>(`/api/portfolio/${portfolioId}/items/${itemId}`, data);
+  apiPut<PortfolioItemResponse>(`/api/portfolio/${portfolioId}/items/${itemId}`, data);
 
 const deletePortfolioItem = (portfolioId: number, itemId: number) =>
-  apiDelete<DeleteSuccessResponse>(`/api/portfolio/${portfolioId}/items/${itemId}`);
+  apiDelete<DeleteResponse>(`/api/portfolio/${portfolioId}/items/${itemId}`);
 
 // Query hooks
 export function usePortfolios() {

@@ -21,7 +21,7 @@ from src.infrastructure.external_api.dataset.helpers import (
     convert_index_response,
     convert_ohlcv_response,
 )
-from src.infrastructure.external_api.dataset_client import DatasetAPIClient
+from src.infrastructure.external_api.dataset import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.shared.config.settings import get_settings
@@ -38,8 +38,8 @@ from src.shared.utils.share_adjustment import (
 
 from .mode import should_use_direct_db
 
-_dataset_db_cache: dict[str, DatasetSnapshotReader] = {}
-_dataset_db_lock = threading.Lock()
+_dataset_reader_cache: dict[str, DatasetSnapshotReader] = {}
+_dataset_reader_lock = threading.Lock()
 
 _market_reader_cache: dict[str, MarketDbReader] = {}
 _market_reader_lock = threading.Lock()
@@ -54,16 +54,16 @@ _STATEMENTS_ACTUAL_ONLY_COLUMNS = (
 def close_all_cached_data_access_clients() -> None:
     """Close process-global direct-mode caches."""
 
-    with _dataset_db_lock:
-        dataset_dbs = list(_dataset_db_cache.values())
-        _dataset_db_cache.clear()
+    with _dataset_reader_lock:
+        dataset_readers = list(_dataset_reader_cache.values())
+        _dataset_reader_cache.clear()
 
     with _market_reader_lock:
         market_readers = list(_market_reader_cache.values())
         _market_reader_cache.clear()
 
-    for db in dataset_dbs:
-        close = getattr(db, "close", None)
+    for reader in dataset_readers:
+        close = getattr(reader, "close", None)
         if callable(close):
             close()
     for reader in market_readers:
@@ -121,15 +121,15 @@ def _resolve_dataset_artifact(
     raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
 
-def _resolve_dataset_db(dataset_name: str) -> DatasetSnapshotReader:
+def _resolve_dataset_reader(dataset_name: str) -> DatasetSnapshotReader:
     _backend, snapshot_root, primary_path = _resolve_dataset_artifact(dataset_name)
     cache_key = primary_path
-    with _dataset_db_lock:
-        db = _dataset_db_cache.get(cache_key)
-        if db is None:
-            db = DatasetSnapshotReader(snapshot_root)
-            _dataset_db_cache[cache_key] = db
-        return db
+    with _dataset_reader_lock:
+        reader = _dataset_reader_cache.get(cache_key)
+        if reader is None:
+            reader = DatasetSnapshotReader(snapshot_root)
+            _dataset_reader_cache[cache_key] = reader
+        return reader
 
 
 def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
@@ -344,7 +344,7 @@ class DirectDatasetClient:
         if normalized_dataset_name is None:
             raise FileNotFoundError(f"Dataset not found: {dataset_name}")
         self.dataset_name = normalized_dataset_name
-        self._db = _resolve_dataset_db(self.dataset_name)
+        self._reader = _resolve_dataset_reader(self.dataset_name)
 
     def __enter__(self) -> DirectDatasetClient:
         return self
@@ -367,7 +367,7 @@ class DirectDatasetClient:
     ) -> pd.DataFrame:
         _ = timeframe  # Current HTTP route ignores timeframe for dataset endpoint.
         return _to_ohlcv_df(
-            self._db.get_stock_ohlcv(stock_code, start=start_date, end=end_date)
+            self._reader.get_stock_ohlcv(stock_code, start=start_date, end=end_date)
         )
 
     def get_stocks_ohlcv_batch(
@@ -378,7 +378,7 @@ class DirectDatasetClient:
         timeframe: Literal["daily", "weekly", "monthly"] = "daily",
     ) -> dict[str, pd.DataFrame]:
         _ = timeframe
-        batch = self._db.get_ohlcv_batch(
+        batch = self._reader.get_ohlcv_batch(
             stock_codes,
             start=start_date,
             end=end_date,
@@ -392,7 +392,7 @@ class DirectDatasetClient:
         detail: bool = False,
     ) -> pd.DataFrame:
         _ = detail
-        rows = self._db.get_stock_list_with_counts(min_records=min_records)
+        rows = self._reader.get_stock_list_with_counts(min_records=min_records)
         df = pd.DataFrame(
             [
                 {
@@ -416,7 +416,7 @@ class DirectDatasetClient:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pd.DataFrame:
-        return _to_ohlc_df(self._db.get_topix(start=start_date, end=end_date))
+        return _to_ohlc_df(self._reader.get_topix(start=start_date, end=end_date))
 
     def get_index(
         self,
@@ -425,7 +425,7 @@ class DirectDatasetClient:
         end_date: str | None = None,
     ) -> pd.DataFrame:
         return _to_ohlc_df(
-            self._db.get_index_data(index_code, start=start_date, end=end_date)
+            self._reader.get_index_data(index_code, start=start_date, end=end_date)
         )
 
     def get_index_list(
@@ -433,7 +433,7 @@ class DirectDatasetClient:
         min_records: int = 100,
         codes: list[str] | None = None,
     ) -> pd.DataFrame:
-        rows = self._db.get_index_list_with_counts(min_records=min_records)
+        rows = self._reader.get_index_list_with_counts(min_records=min_records)
         df = pd.DataFrame(
             [
                 {
@@ -463,7 +463,7 @@ class DirectDatasetClient:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> pd.DataFrame:
-        rows = self._db.get_margin(code=stock_code, start=start_date, end=end_date)
+        rows = self._reader.get_margin(code=stock_code, start=start_date, end=end_date)
         return _to_margin_df(rows)
 
     def get_margin_batch(
@@ -472,7 +472,7 @@ class DirectDatasetClient:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> dict[str, pd.DataFrame]:
-        batch = self._db.get_margin_batch(
+        batch = self._reader.get_margin_batch(
             stock_codes,
             start=start_date,
             end=end_date,
@@ -484,7 +484,7 @@ class DirectDatasetClient:
         min_records: int = 10,
         codes: list[str] | None = None,
     ) -> pd.DataFrame:
-        rows = self._db.get_margin_list(min_records=min_records)
+        rows = self._reader.get_margin_list(min_records=min_records)
         df = pd.DataFrame(
             [
                 {
@@ -518,7 +518,7 @@ class DirectDatasetClient:
         actual_only: bool = True,
     ) -> pd.DataFrame:
         return _to_statements_df(
-            self._db.get_statements(
+            self._reader.get_statements(
                 stock_code,
                 start=start_date,
                 end=end_date,
@@ -535,7 +535,7 @@ class DirectDatasetClient:
         period_type: str = "all",
         actual_only: bool = True,
     ) -> dict[str, pd.DataFrame]:
-        batch = self._db.get_statements_batch(
+        batch = self._reader.get_statements_batch(
             stock_codes,
             start=start_date,
             end=end_date,
@@ -545,8 +545,8 @@ class DirectDatasetClient:
         return {code: _to_statements_df(rows) for code, rows in batch.items() if rows}
 
     def get_sector_mapping(self) -> pd.DataFrame:
-        sectors = self._db.get_sectors()
-        indices = self._db.get_indices()
+        sectors = self._reader.get_sectors()
+        indices = self._reader.get_indices()
         sector_code_by_name = {item["name"]: item["code"] for item in sectors}
 
         records = [
@@ -561,7 +561,7 @@ class DirectDatasetClient:
         return pd.DataFrame(records)
 
     def get_stock_sector_mapping(self) -> dict[str, str]:
-        sector_to_stocks = self._db.get_sector_stock_mapping()
+        sector_to_stocks = self._reader.get_sector_stock_mapping()
         result: dict[str, str] = {}
         for sector_name, codes in sector_to_stocks.items():
             for code in codes:
@@ -569,13 +569,13 @@ class DirectDatasetClient:
         return result
 
     def get_sector_stocks(self, sector_name: str) -> list[str]:
-        rows = self._db.get_sector_stocks(sector_name)
+        rows = self._reader.get_sector_stocks(sector_name)
         return [row.code for row in rows]
 
     def get_all_sectors(self) -> pd.DataFrame:
         mapping_df = self.get_sector_mapping()
         counts = {
-            row.sectorName: row.count for row in self._db.get_sectors_with_count()
+            row.sectorName: row.count for row in self._reader.get_sectors_with_count()
         }
 
         if mapping_df.empty:

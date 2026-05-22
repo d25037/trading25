@@ -19,9 +19,6 @@ import { formatPrice } from '@/utils/formatters';
 import { logger } from '@/utils/logger';
 import { hasVolumeData } from '@/utils/typeGuards';
 
-// Re-export formatPrice for backward compatibility with tests
-export { formatPrice };
-
 // Helper function to set visible bars range
 function setChartVisibleBars(chart: IChartApi, dataLength: number, barsToShow: number) {
   if (dataLength === 0) return;

@@ -1,15 +1,10 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import {
   useBacktestRouteState,
   useSymbolWorkbenchRouteState,
   useIndicesRouteState,
-  useMigrateBacktestRouteState,
-  useMigrateSymbolWorkbenchRouteState,
-  useMigrateIndicesRouteState,
-  useMigratePortfolioRouteState,
-  useMigrateScreeningRouteState,
   usePortfolioRouteState,
   useRankingRouteState,
   useScreeningRouteState,
@@ -238,112 +233,4 @@ describe('usePageRouteState', () => {
     });
   });
 
-  it('migrates symbol workbench and indices persisted state into route search', async () => {
-    window.localStorage.setItem(
-      'trading25-chart-store',
-      JSON.stringify({
-        state: {
-          selectedSymbol: '7203',
-          settings: { visibleBars: 180 },
-        },
-        version: 0,
-      })
-    );
-    window.localStorage.setItem(
-      'trading25-ui-store',
-      JSON.stringify({
-        state: {
-          selectedIndexCode: 'topix',
-        },
-        version: 0,
-      })
-    );
-
-    renderHook(() => useMigrateSymbolWorkbenchRouteState());
-    renderHook(() => useMigrateIndicesRouteState());
-
-    await waitFor(() => {
-      expect(routeSearchState.symbolWorkbench).toEqual({ symbol: '7203' });
-      expect(routeSearchState.indices).toEqual({ code: 'topix' });
-    });
-
-    expect(JSON.parse(window.localStorage.getItem('trading25-chart-store') ?? '{}')).toEqual({
-      state: {
-        settings: { visibleBars: 180 },
-      },
-      version: 0,
-    });
-    expect(window.localStorage.getItem('trading25-ui-store')).toBeNull();
-  });
-
-  it('migrates screening and backtest persisted state when route search is empty', async () => {
-    window.sessionStorage.setItem(
-      'trading25-screening-store',
-      JSON.stringify({
-        state: {
-          activeSubTab: 'preOpenScreening',
-          screeningParams: { strategies: 'production/a' },
-          rankingParams: { limit: 15 },
-        },
-        version: 0,
-      })
-    );
-    window.localStorage.setItem(
-      'trading25-backtest-store',
-      JSON.stringify({
-        state: {
-          activeSubTab: 'lab',
-          selectedStrategy: 'production/beta',
-          selectedResultJobId: 'job-9',
-          selectedDatasetName: 'snapshot-b',
-          activeLabType: 'evolve',
-        },
-        version: 0,
-      })
-    );
-
-    renderHook(() => useMigrateScreeningRouteState());
-    renderHook(() => useMigrateBacktestRouteState());
-
-    await waitFor(() => {
-      expect(routeSearchState.screening).toEqual({
-        preOpenStrategies: 'production/a',
-        rankingLimit: 15,
-      });
-      expect(routeSearchState.backtest).toEqual({
-        tab: 'lab',
-        strategy: 'production/beta',
-        resultJobId: 'job-9',
-        dataset: 'snapshot-b',
-        labType: 'evolve',
-      });
-    });
-
-    expect(window.sessionStorage.getItem('trading25-screening-store')).toBeNull();
-    expect(window.localStorage.getItem('trading25-backtest-store')).toBeNull();
-  });
-
-  it('skips navigation when route search already manages the migrated state', async () => {
-    routeSearchState.portfolio = { tab: 'watchlists' };
-    window.localStorage.setItem(
-      'trading25-ui-store',
-      JSON.stringify({
-        state: {
-          selectedPortfolioId: 11,
-          selectedWatchlistId: 19,
-          portfolioSubTab: 'watchlists',
-        },
-        version: 0,
-      })
-    );
-
-    renderHook(() => useMigratePortfolioRouteState());
-
-    await waitFor(() => {
-      expect(window.localStorage.getItem('trading25-ui-store')).toBeNull();
-    });
-
-    expect(routeSearchState.portfolio).toEqual({ tab: 'watchlists' });
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
 });

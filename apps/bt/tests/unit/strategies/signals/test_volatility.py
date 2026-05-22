@@ -10,7 +10,6 @@ import numpy as np
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.volatility import (
-    bollinger_bands_signal,
     bollinger_cross_signal,
     bollinger_position_signal,
     volatility_relative_signal,
@@ -386,45 +385,6 @@ class TestBollingerCrossSignal:
                 level="upper",
                 direction="invalid",
             )
-
-
-class TestBollingerBandsSignalAlias:
-    """後方互換 alias のテスト"""
-
-    def setup_method(self):
-        self.dates = pd.date_range("2023-01-01", periods=120)
-        close = np.linspace(100, 110, 120)
-        self.ohlc_data = pd.DataFrame(
-            {
-                "Open": close - 1,
-                "High": close + 1,
-                "Low": close - 1,
-                "Close": close,
-                "Volume": np.random.randint(1000, 10000, 120),
-            },
-            index=self.dates,
-        )
-
-    def test_alias_maps_to_position_signal(self):
-        alias_signal = bollinger_bands_signal(
-            self.ohlc_data,
-            window=20,
-            alpha=2.0,
-            position="below_upper",
-        )
-        direct_signal = bollinger_position_signal(
-            self.ohlc_data,
-            window=20,
-            alpha=2.0,
-            level="upper",
-            direction="below",
-        )
-
-        pd.testing.assert_series_equal(alias_signal, direct_signal)
-
-    def test_invalid_position_raises(self):
-        with pytest.raises(ValueError, match="不正なposition"):
-            bollinger_bands_signal(self.ohlc_data, position="invalid")
 
 
 class TestVolatilitySignalIntegration:

@@ -325,7 +325,7 @@ def test_prefetch_data_loads_multi_data_and_benchmark(monkeypatch):
 
     multi_data, benchmark = engine._prefetch_data()
     assert multi_data == {"1301": {"close": []}}
-    assert benchmark == {"Date": []}
+    assert cast(Any, benchmark) == {"Date": []}
     assert called["include_forecast_revision"] is True
 
 
@@ -717,9 +717,9 @@ def test_generate_visualization_report_handles_unknown_dataset(monkeypatch, tmp_
     assert out.endswith(".html")
 
 
-def test_generate_visualization_report_uses_dataset_stem(monkeypatch, tmp_path):
+def test_generate_visualization_report_uses_universe_preset(monkeypatch, tmp_path):
     engine = _make_engine()
-    engine.shared_config_dict = {"dataset": "datasets/primeExTopix500.db"}
+    engine.shared_config_dict = {"data_source": "market", "universe_preset": "primeExTopix500"}
 
     import src.domains.optimization.optimization_report_renderer as report_mod
     import src.shared.paths as paths_mod

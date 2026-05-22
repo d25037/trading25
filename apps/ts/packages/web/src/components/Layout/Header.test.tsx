@@ -131,21 +131,6 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Market DB' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('maps settings route to the market db overflow navigation state', async () => {
-    const user = userEvent.setup();
-
-    pathname = '/settings';
-    render(<Header />);
-
-    const moreTrigger = screen.getByRole('button', { name: 'Market DB' });
-
-    expect(moreTrigger).toHaveAttribute('data-state', 'active');
-
-    await user.click(moreTrigger);
-
-    expect(screen.getByRole('link', { name: 'Market DB' })).toHaveAttribute('aria-current', 'page');
-  });
-
   it('closes the overflow menu on outside click', async () => {
     const user = userEvent.setup();
 

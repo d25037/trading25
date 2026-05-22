@@ -13,6 +13,7 @@ from src.domains.lab_agent.models import (
     StrategyCandidate,
 )
 from src.domains.lab_agent.parameter_evolver import ParameterEvolver
+from src.domains.lab_agent.signal_search_space import PARAM_RANGES
 
 
 def _make_candidate(sid="test", entry_params=None, exit_params=None):
@@ -83,9 +84,8 @@ class TestParameterEvolverInit:
         assert evolver is not None
 
     def test_param_ranges_populated(self):
-        evolver = _make_evolver()
-        assert "volume_ratio_above" in evolver.PARAM_RANGES
-        assert "crossover" in evolver.PARAM_RANGES
+        assert "volume_ratio_above" in PARAM_RANGES
+        assert "crossover" in PARAM_RANGES
 
 
 class TestMutation:

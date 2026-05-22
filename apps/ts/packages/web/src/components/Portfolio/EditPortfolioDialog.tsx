@@ -13,10 +13,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdatePortfolio } from '@/hooks/usePortfolio';
-import type { PortfolioWithItems } from '@/types/portfolio';
+import type { PortfolioWithItemsResponse } from '@/types/portfolio';
 
 interface EditPortfolioDialogProps {
-  portfolio: PortfolioWithItems;
+  portfolio: PortfolioWithItemsResponse;
 }
 
 export function EditPortfolioDialog({ portfolio }: EditPortfolioDialogProps) {

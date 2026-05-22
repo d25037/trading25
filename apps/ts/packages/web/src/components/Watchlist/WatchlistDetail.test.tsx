@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WatchlistWithItems } from '@/types/watchlist';
+import type { WatchlistWithItemsResponse } from '@/types/watchlist';
 import { WatchlistDetail } from './WatchlistDetail';
 
 const mockNavigate = vi.fn();
@@ -30,7 +30,7 @@ vi.mock('@/hooks/useStockSearch', () => ({
   useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
 }));
 
-const sampleWatchlist: WatchlistWithItems = {
+const sampleWatchlist: WatchlistWithItemsResponse = {
   id: 1,
   name: 'Tech Watchlist',
   description: 'Major names',
@@ -184,7 +184,7 @@ describe('WatchlistDetail', () => {
   });
 
   it('shows empty table state when watchlist has no items', () => {
-    const emptyWatchlist: WatchlistWithItems = {
+    const emptyWatchlist: WatchlistWithItemsResponse = {
       ...sampleWatchlist,
       id: 2,
       name: 'Empty Watchlist',

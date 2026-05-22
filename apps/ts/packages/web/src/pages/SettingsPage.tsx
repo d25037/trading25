@@ -297,14 +297,12 @@ interface ValidationDiagnosticListProps {
 }
 
 interface RepairTargets {
-  stocksNeedingRefresh: number;
   missingListedMarketFundamentals: number;
   failedFundamentalsDates: number;
   failedFundamentalsCodes: number;
 }
 
 const EMPTY_REPAIR_TARGETS: RepairTargets = {
-  stocksNeedingRefresh: 0,
   missingListedMarketFundamentals: 0,
   failedFundamentalsDates: 0,
   failedFundamentalsCodes: 0,
@@ -763,14 +761,6 @@ function buildValidationDiagnosticSections(dbValidation: MarketValidationRespons
     sampleHint: buildSampleHint(sampleWindows?.failedDates),
   });
 
-  appendValidationDiagnostic(warningDiagnostics, dbValidation.stocksNeedingRefreshCount, {
-    label: 'Stocks Needing Refresh',
-    helpText: 'Deprecated diagnostic retained for response compatibility. Local projection should keep this at zero.',
-    sampleItems: dbValidation.stocksNeedingRefresh,
-    sampleLabel: 'Sample codes',
-    sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
-  });
-
   appendValidationDiagnostic(informationalDiagnostics, dbValidation.adjustmentEventsCount, {
     label: 'Adjustment Events',
     helpText: 'Recent split or reverse-split events tracked from stock_data.',
@@ -852,7 +842,6 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
   const fundamentals = dbValidation.fundamentals;
 
   return {
-    stocksNeedingRefresh: dbValidation.stocksNeedingRefreshCount ?? 0,
     missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount ?? 0,
     failedFundamentalsDates: fundamentals.failedDatesCount ?? 0,
     failedFundamentalsCodes: fundamentals.failedCodesCount ?? 0,
@@ -861,7 +850,6 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
 
 function hasRepairTargets(targets: RepairTargets): boolean {
   return (
-    targets.stocksNeedingRefresh > 0 ||
     targets.missingListedMarketFundamentals > 0 ||
     targets.failedFundamentalsDates > 0 ||
     targets.failedFundamentalsCodes > 0
@@ -870,7 +858,6 @@ function hasRepairTargets(targets: RepairTargets): boolean {
 
 function sumRepairTargets(targets: RepairTargets): number {
   return (
-    targets.stocksNeedingRefresh +
     targets.missingListedMarketFundamentals +
     targets.failedFundamentalsDates +
     targets.failedFundamentalsCodes
@@ -1220,11 +1207,7 @@ function WarningRecoverySection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Stocks needing refresh</p>
-            <p className="mt-2 text-lg font-semibold">{repairTargets.stocksNeedingRefresh}</p>
-          </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-border/70 bg-[var(--app-surface-muted)] p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               Missing listed-market fundamentals

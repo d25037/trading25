@@ -10,7 +10,6 @@ import * as path from 'node:path';
 import {
   ensureDbExtension,
   getDatasetPath,
-  getDatasetV2Path,
   getMarketDbPath,
   getPortfolioDbPath,
   normalizeDatasetPath,
@@ -156,119 +155,6 @@ describe('Dataset Paths', () => {
       const dbPath = getMarketDbPath();
 
       expect(dbPath).toContain('trading25');
-    });
-  });
-
-  describe('getDatasetV2Path', () => {
-    let originalXdgDataHome: string | undefined;
-
-    beforeEach(() => {
-      originalXdgDataHome = process.env.XDG_DATA_HOME;
-    });
-
-    afterEach(() => {
-      if (originalXdgDataHome === undefined) {
-        unsetXdgDataHome();
-      } else {
-        process.env.XDG_DATA_HOME = originalXdgDataHome;
-      }
-    });
-
-    test('should return default XDG path when XDG_DATA_HOME not set', () => {
-      unsetXdgDataHome();
-      const dbPath = getDatasetV2Path('prime.db');
-      const expectedPath = path.join(os.homedir(), '.local', 'share', 'trading25', 'datasets', 'prime.db');
-      expect(dbPath).toBe(expectedPath);
-    });
-
-    test('should use XDG_DATA_HOME when set', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trading25-test-'));
-      const customDataHome = path.join(tempDir, 'custom-data');
-      process.env.XDG_DATA_HOME = customDataHome;
-
-      try {
-        const dbPath = getDatasetV2Path('prime.db');
-        const expectedPath = path.join(customDataHome, 'trading25', 'datasets', 'prime.db');
-        expect(dbPath).toBe(expectedPath);
-      } finally {
-        if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
-      }
-    });
-
-    test('should create directory if it does not exist', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trading25-test-'));
-      const customDataHome = path.join(tempDir, 'custom-data');
-      process.env.XDG_DATA_HOME = customDataHome;
-
-      try {
-        expect(fs.existsSync(customDataHome)).toBe(false);
-        const dbPath = getDatasetV2Path('prime.db');
-        const datasetsDir = path.join(customDataHome, 'trading25', 'datasets');
-        expect(fs.existsSync(datasetsDir)).toBe(true);
-        expect(dbPath).toContain('datasets');
-      } finally {
-        if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
-      }
-    });
-
-    test('should handle subdirectories', () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trading25-test-'));
-      const customDataHome = path.join(tempDir, 'custom-data');
-      process.env.XDG_DATA_HOME = customDataHome;
-
-      try {
-        const dbPath = getDatasetV2Path('markets/prime.db');
-        const expectedPath = path.join(customDataHome, 'trading25', 'datasets', 'markets', 'prime.db');
-        expect(dbPath).toBe(expectedPath);
-
-        // Verify subdirectory was created
-        const marketsDir = path.join(customDataHome, 'trading25', 'datasets', 'markets');
-        expect(fs.existsSync(marketsDir)).toBe(true);
-      } finally {
-        if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        }
-      }
-    });
-
-    test('should auto-add .db extension', () => {
-      const dbPath = getDatasetV2Path('prime');
-      expect(dbPath.endsWith('prime.db')).toBe(true);
-    });
-
-    test('should reject absolute paths', () => {
-      expect(() => getDatasetV2Path('/absolute/path/prime.db')).toThrow('Absolute paths are not allowed');
-    });
-
-    test('should reject parent directory references', () => {
-      expect(() => getDatasetV2Path('../outside/prime.db')).toThrow('Parent directory references (..) are not allowed');
-    });
-
-    test('should reject invalid filesystem characters', () => {
-      expect(() => getDatasetV2Path('invalid<>:"|?*.db')).toThrow('Invalid characters in filename');
-    });
-
-    test('should reject paths exceeding 255 characters', () => {
-      const longPath = `${'a'.repeat(256)}.db`;
-      expect(() => getDatasetV2Path(longPath)).toThrow('Path too long');
-    });
-
-    test('should normalize leading ./ in paths', () => {
-      const dbPath = getDatasetV2Path('./prime.db');
-      expect(dbPath.endsWith('datasets/prime.db')).toBe(true);
-    });
-
-    test('should verify resolved path stays within datasets directory', () => {
-      const dbPath = getDatasetV2Path('prime.db');
-      expect(dbPath).toContain('trading25/datasets');
-    });
-
-    test('should throw error for empty filename', () => {
-      expect(() => getDatasetV2Path('')).toThrow('Invalid filename provided');
     });
   });
 

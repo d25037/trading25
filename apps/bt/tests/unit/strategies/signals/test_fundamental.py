@@ -2709,21 +2709,6 @@ class TestFundamentalSignalParamsConfig:
         assert params.forecast_eps_above_recent_fy_actuals.enabled is True
         assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 3
 
-    def test_forecast_eps_above_recent_fy_actuals_accepts_legacy_key(self):
-        """legacy key でも新フィールドへマッピングされること"""
-        from src.shared.models.signals.fundamental import FundamentalSignalParams
-
-        params = FundamentalSignalParams.model_validate(
-            {
-                "forecast_eps_above_all_actuals": {
-                    "enabled": True,
-                    "lookback_fy_count": 5,
-                }
-            }
-        )
-        assert params.forecast_eps_above_recent_fy_actuals.enabled is True
-        assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 5
-
     def test_eps_growth_field_exists(self):
         """eps_growth（実績ベース）フィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams

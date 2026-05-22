@@ -5,11 +5,12 @@ from pathlib import Path
 import pytest
 
 from tests.unit.analytics_market_research_db import build_topix100_research_market_db
-from src.domains.analytics.topix100_price_vs_sma20_rank_future_close import (
-    PRIMARY_PRICE_FEATURE,
-    get_topix100_price_vs_sma20_rank_future_close_available_date_range,
-    run_topix100_price_vs_sma20_rank_future_close_research,
+from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
+    get_topix100_price_vs_sma_rank_future_close_available_date_range,
+    run_topix100_price_vs_sma_rank_future_close_research,
 )
+
+PRIMARY_PRICE_FEATURE = "price_vs_sma_20_gap"
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ def test_available_date_range_and_primary_feature_are_returned(
     analytics_db_path: str,
 ) -> None:
     available_start, available_end = (
-        get_topix100_price_vs_sma20_rank_future_close_available_date_range(
+        get_topix100_price_vs_sma_rank_future_close_available_date_range(
             analytics_db_path
         )
     )
@@ -29,9 +30,10 @@ def test_available_date_range_and_primary_feature_are_returned(
     assert available_start == "2023-01-02"
     assert available_end == "2023-11-03"
 
-    result = run_topix100_price_vs_sma20_rank_future_close_research(
+    result = run_topix100_price_vs_sma_rank_future_close_research(
         analytics_db_path,
         min_constituents_per_day=10,
+        price_sma_windows=(20,),
     )
 
     assert result.available_start_date == "2023-01-02"
@@ -49,9 +51,10 @@ def test_available_date_range_and_primary_feature_are_returned(
 def test_deciles_and_price_volume_split_tables_are_built(
     analytics_db_path: str,
 ) -> None:
-    result = run_topix100_price_vs_sma20_rank_future_close_research(
+    result = run_topix100_price_vs_sma_rank_future_close_research(
         analytics_db_path,
         min_constituents_per_day=10,
+        price_sma_windows=(20,),
     )
 
     assert sorted(result.event_panel_df["code"].unique().tolist()) == [
@@ -86,9 +89,10 @@ def test_deciles_and_price_volume_split_tables_are_built(
 
 
 def test_hypothesis_tables_contain_expected_labels(analytics_db_path: str) -> None:
-    result = run_topix100_price_vs_sma20_rank_future_close_research(
+    result = run_topix100_price_vs_sma_rank_future_close_research(
         analytics_db_path,
         min_constituents_per_day=10,
+        price_sma_windows=(20,),
     )
 
     group_hypothesis = result.group_hypothesis_df[

@@ -2,10 +2,9 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-21 テーブルを 3 つの MetaData に分離定義する。
+16 テーブルを 2 つの MetaData に分離定義する。
 
 - market_meta: market DuckDB（9 テーブル定義）
-- dataset_meta: historical dataset.db contract（7 テーブル — tests/reference 用）
 - portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
@@ -31,7 +30,6 @@ from sqlalchemy.types import REAL
 # ---------------------------------------------------------------------------
 
 market_meta = MetaData()
-dataset_meta = MetaData()
 portfolio_meta = MetaData()
 
 # ===========================================================================
@@ -215,141 +213,6 @@ index_master = Table(
     Column("created_at", Text),
     Column("updated_at", Text),
 )
-
-# ===========================================================================
-# historical dataset.db contract (7 tables)
-# DuckDB-only runtime では未使用。SQLite legacy contract / tests 用に保持する。
-# 共通テーブル（stocks, stock_data, topix_data, indices_data）は
-# dataset_meta に再定義する。
-# ===========================================================================
-
-# --- dataset: stocks ---
-ds_stocks = Table(
-    "stocks",
-    dataset_meta,
-    Column("code", Text, primary_key=True),
-    Column("company_name", Text, nullable=False),
-    Column("company_name_english", Text),
-    Column("market_code", Text, nullable=False),
-    Column("market_name", Text, nullable=False),
-    Column("sector_17_code", Text, nullable=False),
-    Column("sector_17_name", Text, nullable=False),
-    Column("sector_33_code", Text, nullable=False),
-    Column("sector_33_name", Text, nullable=False),
-    Column("scale_category", Text),
-    Column("listed_date", Text, nullable=False),
-    Column("created_at", Text),
-    Column("updated_at", Text),
-)
-Index("ds_idx_stocks_market", ds_stocks.c.market_code)
-Index("ds_idx_stocks_sector", ds_stocks.c.sector_33_code)
-
-# --- dataset: stock_data ---
-ds_stock_data = Table(
-    "stock_data",
-    dataset_meta,
-    Column("code", Text, nullable=False),
-    Column("date", Text, nullable=False),
-    Column("open", REAL, nullable=False),
-    Column("high", REAL, nullable=False),
-    Column("low", REAL, nullable=False),
-    Column("close", REAL, nullable=False),
-    Column("volume", Integer, nullable=False),
-    Column("adjustment_factor", REAL),
-    Column("created_at", Text),
-    PrimaryKeyConstraint("code", "date"),
-)
-Index("ds_idx_stock_data_date", ds_stock_data.c.date)
-Index("ds_idx_stock_data_code", ds_stock_data.c.code)
-
-# --- dataset: topix_data ---
-ds_topix_data = Table(
-    "topix_data",
-    dataset_meta,
-    Column("date", Text, primary_key=True),
-    Column("open", REAL, nullable=False),
-    Column("high", REAL, nullable=False),
-    Column("low", REAL, nullable=False),
-    Column("close", REAL, nullable=False),
-    Column("created_at", Text),
-)
-Index("ds_idx_topix_date", ds_topix_data.c.date)
-
-# --- dataset: indices_data ---
-ds_indices_data = Table(
-    "indices_data",
-    dataset_meta,
-    Column("code", Text, nullable=False),
-    Column("date", Text, nullable=False),
-    Column("open", REAL),
-    Column("high", REAL),
-    Column("low", REAL),
-    Column("close", REAL),
-    Column("sector_name", Text),
-    Column("created_at", Text),
-    PrimaryKeyConstraint("code", "date"),
-)
-Index("ds_idx_indices_data_date", ds_indices_data.c.date)
-Index("ds_idx_indices_data_code", ds_indices_data.c.code)
-
-# --- dataset: dataset_info ---
-dataset_info = Table(
-    "dataset_info",
-    dataset_meta,
-    Column("key", Text, primary_key=True),
-    Column("value", Text, nullable=False),
-    Column("updated_at", Text),
-)
-
-# --- dataset: margin_data ---
-margin_data = Table(
-    "margin_data",
-    dataset_meta,
-    Column("code", Text, nullable=False),
-    Column("date", Text, nullable=False),
-    Column("long_margin_volume", REAL),
-    Column("short_margin_volume", REAL),
-    PrimaryKeyConstraint("code", "date"),
-)
-Index("idx_margin_data_date", margin_data.c.date)
-Index("idx_margin_data_code", margin_data.c.code)
-
-# --- dataset: statements ---
-statements = Table(
-    "statements",
-    dataset_meta,
-    Column("code", Text, nullable=False),
-    Column("disclosed_date", Text, nullable=False),
-    Column("earnings_per_share", REAL),
-    Column("profit", REAL),
-    Column("equity", REAL),
-    Column("type_of_current_period", Text),
-    Column("type_of_document", Text),
-    Column("next_year_forecast_earnings_per_share", REAL),
-    Column("bps", REAL),
-    Column("sales", REAL),
-    Column("operating_profit", REAL),
-    Column("forecast_operating_profit", REAL),
-    Column("next_year_forecast_operating_profit", REAL),
-    Column("ordinary_profit", REAL),
-    Column("operating_cash_flow", REAL),
-    Column("dividend_fy", REAL),
-    Column("forecast_dividend_fy", REAL),
-    Column("next_year_forecast_dividend_fy", REAL),
-    Column("payout_ratio", REAL),
-    Column("forecast_payout_ratio", REAL),
-    Column("next_year_forecast_payout_ratio", REAL),
-    Column("forecast_eps", REAL),
-    Column("investing_cash_flow", REAL),
-    Column("financing_cash_flow", REAL),
-    Column("cash_and_equivalents", REAL),
-    Column("total_assets", REAL),
-    Column("shares_outstanding", REAL),
-    Column("treasury_shares", REAL),
-    PrimaryKeyConstraint("code", "disclosed_date"),
-)
-Index("idx_statements_date", statements.c.disclosed_date)
-Index("idx_statements_code", statements.c.code)
 
 # ===========================================================================
 # portfolio.db (6 tables)

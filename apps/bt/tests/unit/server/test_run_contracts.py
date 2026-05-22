@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -127,22 +128,22 @@ class TestRunSpecBuilders:
         run_spec = build_parameterized_run_spec(
             "screening",
             "analytics/screening",
-            dataset_name=" sample.db ",
+            dataset_name=" sample ",
         )
 
-        assert run_spec.dataset_name == " sample.db "
+        assert run_spec.dataset_name == " sample "
         assert run_spec.dataset_snapshot_id == "sample"
         assert run_spec.market_snapshot_id == "market:latest"
 
-    def test_build_parameterized_run_spec_canonicalizes_legacy_path_snapshot_id(self) -> None:
+    def test_build_parameterized_run_spec_rejects_path_like_snapshot_id(self) -> None:
         run_spec = build_parameterized_run_spec(
             "screening",
             "analytics/screening",
-            dataset_name="dataset/primeExTopix500.db",
+            dataset_name="dataset/primeExTopix500",
         )
 
-        assert run_spec.dataset_name == "dataset/primeExTopix500.db"
-        assert run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert run_spec.dataset_name == "dataset/primeExTopix500"
+        assert run_spec.dataset_snapshot_id is None
         assert run_spec.market_snapshot_id == "market:latest"
 
     def test_build_parameterized_run_spec_does_not_fallback_to_invalid_raw_snapshot_id(self) -> None:
@@ -187,7 +188,7 @@ class TestRunSpecBuilders:
 
         dataset_name = resolve_strategy_dataset_name(
             "demo-strategy",
-            config_loader=_StubConfigLoader(),
+            config_loader=cast(Any, _StubConfigLoader()),
         )
 
         assert dataset_name == "primeExTopix500"
@@ -207,7 +208,7 @@ class TestRunSpecBuilders:
         with pytest.raises(ValueError, match="shared_config.universe_preset explicitly"):
             resolve_strategy_dataset_name(
                 "production/demo-strategy",
-                config_loader=_StubConfigLoader(),
+                config_loader=cast(Any, _StubConfigLoader()),
             )
 
     def test_build_strategy_run_spec_uses_base_strategy_dataset_when_override_missing(self) -> None:
@@ -226,7 +227,7 @@ class TestRunSpecBuilders:
             "optimization",
             "demo-strategy",
             parameters={"optimization_mode": "grid_search"},
-            config_loader=_StubConfigLoader(),
+            config_loader=cast(Any, _StubConfigLoader()),
         )
 
         assert run_spec.dataset_name == "primeExTopix500"
@@ -254,7 +255,7 @@ class TestRunSpecBuilders:
             "backtest",
             "demo-strategy",
             config_override={"shared_config": {"universe_preset": "   ", "direction": "shortonly"}},
-            config_loader=_StubConfigLoader(),
+            config_loader=cast(Any, _StubConfigLoader()),
         )
 
         assert run_spec.dataset_name == "primeExTopix500"
@@ -283,7 +284,7 @@ class TestRunSpecBuilders:
                 "backtest",
                 "production/demo-strategy",
                 config_override={"shared_config": {"universe_preset": "runtime-override"}},
-                config_loader=_StubConfigLoader(),
+                config_loader=cast(Any, _StubConfigLoader()),
             )
 
     def test_build_strategy_run_spec_attaches_compiled_strategy_requirements(self) -> None:
@@ -312,7 +313,7 @@ class TestRunSpecBuilders:
         run_spec = build_strategy_run_spec(
             "backtest",
             "demo-strategy",
-            config_loader=_StubConfigLoader(),
+            config_loader=cast(Any, _StubConfigLoader()),
         )
 
         assert run_spec.compiled_strategy_requirements is not None
@@ -356,7 +357,7 @@ class TestRunSpecBuilders:
                     "execution_policy": {"mode": "next_session_round_trip"}
                 }
             },
-            config_loader=_StubConfigLoader(),
+            config_loader=cast(Any, _StubConfigLoader()),
         )
 
         assert run_spec.compiled_strategy_requirements is None
@@ -406,7 +407,7 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.RESULT_SUMMARY in kinds
         assert ArtifactKind.RAW_RESULT_JSON in kinds
 
-    def test_refresh_job_execution_contracts_canonicalizes_legacy_dataset_snapshot_id(
+    def test_refresh_job_execution_contracts_rejects_path_like_dataset_snapshot_id(
         self, tmp_path: Path
     ) -> None:
         html_path = tmp_path / "result.html"
@@ -414,17 +415,17 @@ class TestRefreshJobExecutionContracts:
 
         job = JobInfo("job-path", "demo-strategy", job_type="backtest")
         job.status = JobStatus.COMPLETED
-        job.dataset_name = "dataset/primeExTopix500.db"
+        job.dataset_name = "dataset/primeExTopix500"
         job.html_path = str(html_path)
 
         refresh_job_execution_contracts(job)
 
         assert job.run_spec is not None
-        assert job.run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert job.run_spec.dataset_snapshot_id is None
         assert job.run_metadata is not None
-        assert job.run_metadata.dataset_snapshot_id == "primeExTopix500"
+        assert job.run_metadata.dataset_snapshot_id is None
         assert job.canonical_result is not None
-        assert job.canonical_result.dataset_snapshot_id == "primeExTopix500"
+        assert job.canonical_result.dataset_snapshot_id is None
 
     def test_backtest_job_indexes_metrics_and_manifest_without_html(self, tmp_path: Path) -> None:
         metrics_path = tmp_path / "result.metrics.json"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -57,21 +56,14 @@ def _write_manifest(snapshot_dir: Path, name: str) -> None:
 def resolver_dir(tmp_path: Path) -> str:
     """テスト用のデータセットディレクトリ"""
     for name in ["test-market", "prime_v2"]:
-        writer = DatasetWriter(str(tmp_path / f"{name}.db"))
+        writer = DatasetWriter(str(tmp_path / name))
         writer.set_dataset_info("preset", "quickTesting")
         writer.close()
         _write_manifest(tmp_path / name, name)
 
-    legacy_db_path = tmp_path / "quickTesting.db"
-    conn = sqlite3.connect(legacy_db_path)
-    conn.execute("CREATE TABLE IF NOT EXISTS dataset_info (key TEXT PRIMARY KEY, value TEXT)")
-    conn.close()
-
     compat_snapshot_dir = tmp_path / "compat_only"
     compat_snapshot_dir.mkdir()
-    compat_conn = sqlite3.connect(compat_snapshot_dir / "dataset.db")
-    compat_conn.execute("CREATE TABLE IF NOT EXISTS dataset_info (key TEXT PRIMARY KEY, value TEXT)")
-    compat_conn.close()
+    (compat_snapshot_dir / "dataset.db").write_text("", encoding="utf-8")
     return str(tmp_path)
 
 
@@ -86,10 +78,10 @@ class TestDatasetResolver:
         db = resolver.resolve("test-market")
         assert db is not None
 
-    def test_resolve_with_db_extension(self, resolver_dir: str) -> None:
+    def test_resolve_rejects_db_extension(self, resolver_dir: str) -> None:
         resolver = DatasetResolver(resolver_dir)
-        db = resolver.resolve("test-market.db")
-        assert db is not None
+        with pytest.raises(ValueError, match="Invalid dataset name"):
+            resolver.resolve("test-market.db")
 
     def test_resolve_nonexistent(self, resolver_dir: str) -> None:
         resolver = DatasetResolver(resolver_dir)
@@ -143,7 +135,6 @@ class TestDatasetResolver:
         assert resolver.exists("test-market") is True
         assert resolver.exists("prime_v2") is True
         assert resolver.exists("compat_only") is False
-        assert resolver.exists("quickTesting") is False
         assert resolver.exists("missing") is False
 
     def test_resolve_unsupported_compatibility_snapshot_returns_none(self, resolver_dir: str) -> None:

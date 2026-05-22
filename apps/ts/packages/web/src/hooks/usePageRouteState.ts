@@ -1,23 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import {
-  BACKTEST_STORE_STORAGE_KEY,
-  CHART_STORE_STORAGE_KEY,
-  SCREENING_STORE_STORAGE_KEY,
-  UI_STORE_STORAGE_KEY,
-} from '@/lib/persistedState';
-import {
-  extractLegacyBacktestSearch,
-  extractLegacySymbolWorkbenchSearch,
-  extractLegacyIndicesSearch,
-  extractLegacyPortfolioSearch,
-  extractLegacyScreeningSearch,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   type PortfolioSubTab,
-  prunePersistedStoreFields,
-  readPersistedStoreState,
-  type ScreeningRouteSearch,
   serializeBacktestSearch,
   serializeSymbolWorkbenchSearch,
   serializeIndicesSearch,
@@ -37,41 +23,6 @@ import type { RankingDailyView, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
 const SYMBOL_WORKBENCH_PATH = '/symbol-workbench';
-
-function useLegacySearchMigration<TSearch extends object>(params: {
-  storageType: 'local' | 'session';
-  storageKey: string;
-  pruneFields: string[];
-  hasManagedSearchValues: boolean;
-  extractLegacySearch: (state: Record<string, unknown>) => TSearch;
-  to: string;
-}): void {
-  const navigate = useNavigate();
-  const hasRunRef = useRef(false);
-  const { storageType, storageKey, pruneFields, hasManagedSearchValues, extractLegacySearch, to } = params;
-
-  useEffect(() => {
-    if (hasRunRef.current || typeof window === 'undefined') return;
-    hasRunRef.current = true;
-
-    const storage = storageType === 'local' ? window.localStorage : window.sessionStorage;
-    const persistedState = readPersistedStoreState(storage, storageKey);
-    if (!persistedState) return;
-
-    const legacySearch = extractLegacySearch(persistedState);
-    prunePersistedStoreFields(storage, storageKey, pruneFields);
-
-    if (hasManagedSearchValues || Object.keys(legacySearch).length === 0) {
-      return;
-    }
-
-    void navigate({
-      to,
-      replace: true,
-      search: (current: Record<string, unknown>) => ({ ...current, ...legacySearch }),
-    });
-  }, [extractLegacySearch, hasManagedSearchValues, navigate, pruneFields, storageKey, storageType, to]);
-}
 
 function coerceRouteString(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -125,18 +76,6 @@ export function useSymbolWorkbenchRouteState(): {
   return { selectedSymbol, strategyName, matchedDate, setSelectedSymbol };
 }
 
-export function useMigrateSymbolWorkbenchRouteState(): void {
-  const search = symbolWorkbenchRoute.useSearch();
-  useLegacySearchMigration({
-    storageType: 'local',
-    storageKey: CHART_STORE_STORAGE_KEY,
-    pruneFields: ['selectedSymbol'],
-    hasManagedSearchValues: Boolean(search.symbol) || Boolean(search.strategy) || Boolean(search.matchedDate),
-    extractLegacySearch: extractLegacySymbolWorkbenchSearch,
-    to: SYMBOL_WORKBENCH_PATH,
-  });
-}
-
 export function usePortfolioRouteState(): {
   portfolioSubTab: PortfolioSubTab;
   setPortfolioSubTab: (tab: PortfolioSubTab) => void;
@@ -187,19 +126,6 @@ export function usePortfolioRouteState(): {
   };
 }
 
-export function useMigratePortfolioRouteState(): void {
-  const search = portfolioRoute.useSearch();
-  useLegacySearchMigration({
-    storageType: 'local',
-    storageKey: UI_STORE_STORAGE_KEY,
-    pruneFields: ['selectedPortfolioId', 'selectedWatchlistId', 'portfolioSubTab'],
-    hasManagedSearchValues:
-      Boolean(search.tab) || typeof search.portfolioId === 'number' || typeof search.watchlistId === 'number',
-    extractLegacySearch: extractLegacyPortfolioSearch,
-    to: '/portfolio',
-  });
-}
-
 export function useIndicesRouteState(): {
   selectedIndexCode: string | null;
   setSelectedIndexCode: (code: string | null, options?: { replace?: boolean }) => void;
@@ -222,18 +148,6 @@ export function useIndicesRouteState(): {
   return { selectedIndexCode, setSelectedIndexCode };
 }
 
-export function useMigrateIndicesRouteState(): void {
-  const search = indicesRoute.useSearch();
-  useLegacySearchMigration({
-    storageType: 'local',
-    storageKey: UI_STORE_STORAGE_KEY,
-    pruneFields: ['selectedIndexCode'],
-    hasManagedSearchValues: Boolean(search.code),
-    extractLegacySearch: extractLegacyIndicesSearch,
-    to: '/indices',
-  });
-}
-
 export function useScreeningRouteState(): {
   activeSubTab: ScreeningSubTab;
   setActiveSubTab: (tab: ScreeningSubTab) => void;
@@ -241,8 +155,6 @@ export function useScreeningRouteState(): {
   setPreOpenScreeningParams: (params: ScreeningParams) => void;
   inSessionScreeningParams: ScreeningParams;
   setInSessionScreeningParams: (params: ScreeningParams) => void;
-  rankingParams: RankingParams;
-  setRankingParams: (params: RankingParams) => void;
 } {
   const navigate = useNavigate();
   const search = screeningRoute.useSearch();
@@ -254,12 +166,10 @@ export function useScreeningRouteState(): {
         activeSubTab: ScreeningSubTab;
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
-        rankingParams: RankingParams;
       }) => {
         activeSubTab: ScreeningSubTab;
         preOpenScreeningParams: ScreeningParams;
         inSessionScreeningParams: ScreeningParams;
-        rankingParams: RankingParams;
       }
     ) => {
       void navigate({
@@ -280,7 +190,6 @@ export function useScreeningRouteState(): {
       updateSearch((currentState) => ({ ...currentState, preOpenScreeningParams: params })),
     setInSessionScreeningParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, inSessionScreeningParams: params })),
-    setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
   };
 }
 
@@ -320,28 +229,6 @@ export function useRankingRouteState(): {
     setActiveDailyView: (view) => updateSearch((currentState) => ({ ...currentState, activeDailyView: view })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
   };
-}
-
-export function useMigrateScreeningRouteState(): void {
-  const search = screeningRoute.useSearch();
-  const hasManagedSearchValues = Object.keys(search as ScreeningRouteSearch).length > 0;
-
-  useLegacySearchMigration({
-    storageType: 'session',
-    storageKey: SCREENING_STORE_STORAGE_KEY,
-    pruneFields: [
-      'activeSubTab',
-      'screeningParams',
-      'sameDayScreeningParams',
-      'preOpenScreeningParams',
-      'inSessionScreeningParams',
-      'rankingParams',
-      'fundamentalRankingParams',
-    ],
-    hasManagedSearchValues,
-    extractLegacySearch: extractLegacyScreeningSearch,
-    to: '/screening',
-  });
 }
 
 export function useBacktestRouteState(): {
@@ -414,18 +301,4 @@ export function useBacktestRouteState(): {
     activeLabType,
     setActiveLabType: (labType) => updateSearch((currentState) => ({ ...currentState, activeLabType: labType })),
   };
-}
-
-export function useMigrateBacktestRouteState(): void {
-  const search = backtestRoute.useSearch();
-  const hasManagedSearchValues = Object.keys(search).length > 0;
-
-  useLegacySearchMigration({
-    storageType: 'local',
-    storageKey: BACKTEST_STORE_STORAGE_KEY,
-    pruneFields: ['activeSubTab', 'selectedStrategy', 'selectedResultJobId', 'selectedDatasetName', 'activeLabType'],
-    hasManagedSearchValues,
-    extractLegacySearch: extractLegacyBacktestSearch,
-    to: '/backtest',
-  });
 }

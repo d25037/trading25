@@ -2789,11 +2789,6 @@ class MarketDb:
         """local projection 移行後は常に 0 を返す。"""
         return 0
 
-    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
-        """Deprecated no-op kept for call-site compatibility."""
-        del codes
-        return 0
-
     def get_stock_data_unique_date_count(self) -> int:
         """stock_data のユニーク日付数。"""
         if not self._table_exists("stock_data"):

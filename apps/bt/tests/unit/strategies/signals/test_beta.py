@@ -18,7 +18,6 @@ from src.domains.strategy.signals.beta import (
     rolling_beta_multi_signal,
     rolling_beta_nb,
     rolling_beta_calculation,
-    vectorbt_rolling_beta,
 )
 
 
@@ -95,20 +94,6 @@ class TestRollingBetaCalculation:
         )
         assert isinstance(rolling_beta, pd.Series)
         assert len(rolling_beta) == len(self.stock_price)
-
-    def test_vectorbt_rolling_beta_alias_matches_numba(self):
-        """vectorbt alias 関数は numba と一致する"""
-        alias_beta = vectorbt_rolling_beta(
-            self.stock_price,
-            self.market_price,
-            window=30,
-        )
-        numba_beta = numba_rolling_beta(
-            self.stock_price,
-            self.market_price,
-            window=30,
-        )
-        pd.testing.assert_series_equal(alias_beta, numba_beta)
 
 
 class TestBetaRangeSignal:
@@ -225,28 +210,6 @@ class TestBetaRangeSignal:
         )
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
-
-    def test_method_vectorbt_alias(self):
-        """vectorbt method は numba 互換 alias として動作する"""
-        signal_vectorbt = beta_range_signal(
-            self.high_beta_price,
-            self.market_price,
-            beta_min=0.5,
-            beta_max=1.5,
-            lookback_period=50,
-            fast=True,
-            method="vectorbt",
-        )
-        signal_numba = beta_range_signal(
-            self.high_beta_price,
-            self.market_price,
-            beta_min=0.5,
-            beta_max=1.5,
-            lookback_period=50,
-            fast=True,
-            method="numba",
-        )
-        pd.testing.assert_series_equal(signal_vectorbt, signal_numba)
 
     def test_fast_false(self):
         """従来実装テスト"""
@@ -420,17 +383,6 @@ class TestBetaSignalEdgeCases:
         # NaN期間周辺はFalseになる
         assert not signal.iloc[40:50].any()
 
-    def test_vectorbt_rolling_beta_alias_matches_numba(self):
-        """vectorbt 互換関数は numba 実装と一致する"""
-        dates = pd.date_range("2024-01-01", periods=120)
-        stock = pd.Series(np.linspace(100, 130, 120), index=dates)
-        market = pd.Series(np.linspace(1000, 1120, 120), index=dates)
-
-        direct = vectorbt_rolling_beta(stock, market, window=20)
-        numba = numba_rolling_beta(stock, market, window=20)
-
-        pd.testing.assert_series_equal(direct, numba)
-
     def test_invalid_method_raises(self):
         """未対応 method は ValueError"""
         dates = pd.date_range("2024-01-01", periods=80)
@@ -552,7 +504,7 @@ class TestBetaRangeSignalWithValue:
 
     def test_different_methods(self):
         """異なる計算方法で動作テスト"""
-        for method in ["pandas", "numba", "vectorbt"]:
+        for method in ["pandas", "numba"]:
             signal, beta_value = beta_range_signal_with_value(
                 self.high_beta_price,
                 self.market_price,
@@ -565,26 +517,6 @@ class TestBetaRangeSignalWithValue:
             assert beta_value is not None
             # β値は妥当な範囲
             assert 0.5 < beta_value < 2.0
-
-    def test_vectorbt_value_alias_matches_numba(self):
-        """vectorbt method は β値も numba と一致する"""
-        _, beta_value_vectorbt = beta_range_signal_with_value(
-            self.high_beta_price,
-            self.market_price,
-            beta_min=0.5,
-            beta_max=1.5,
-            lookback_period=50,
-            method="vectorbt",
-        )
-        _, beta_value_numba = beta_range_signal_with_value(
-            self.high_beta_price,
-            self.market_price,
-            beta_min=0.5,
-            beta_max=1.5,
-            lookback_period=50,
-            method="numba",
-        )
-        assert beta_value_vectorbt == beta_value_numba
 
 
 class TestMultiAndScreenSignals:

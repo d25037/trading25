@@ -377,8 +377,6 @@ class ParameterOptimizationEngine:
             for signal_name in (
                 "forward_eps_growth",
                 "forecast_eps_above_recent_fy_actuals",
-                # Backward compatibility for legacy key
-                "forecast_eps_above_all_actuals",
                 "peg_ratio",
                 "forward_dividend_growth",
                 "forward_payout_ratio",
@@ -654,8 +652,20 @@ class ParameterOptimizationEngine:
         from .optimization_report_renderer import generate_optimization_report
         from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
-        dataset = self.shared_config_dict.get("dataset", "")
-        dataset_name = canonicalize_dataset_snapshot_id(dataset) or "unknown"
+        if self.shared_config_dict.get("data_source") == "dataset_snapshot":
+            dataset_name = (
+                canonicalize_dataset_snapshot_id(
+                    self.shared_config_dict.get("dataset_snapshot")
+                )
+                or "unknown"
+            )
+        else:
+            universe_preset = self.shared_config_dict.get("universe_preset")
+            dataset_name = (
+                universe_preset.strip()
+                if isinstance(universe_preset, str) and universe_preset.strip()
+                else "unknown"
+            )
 
         # 出力パス生成（外部ディレクトリまたはプロジェクト内）
         from src.shared.paths import get_optimization_results_dir

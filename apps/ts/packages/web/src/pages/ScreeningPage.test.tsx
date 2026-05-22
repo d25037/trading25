@@ -136,7 +136,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/hooks/usePageRouteState', () => ({
   useScreeningRouteState: () => mockRouteState,
-  useMigrateScreeningRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useScreening', () => ({

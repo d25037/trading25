@@ -2,8 +2,7 @@
 Dataset Data Service
 
 Dataset Data エンドポイント（15 EP）のデータ変換ロジック。
-DatasetSnapshotReader / legacy DatasetDb の row-like オブジェクトを
-Pydantic スキーマに変換する。
+DatasetSnapshotReader の row-like オブジェクトを Pydantic スキーマに変換する。
 """
 
 from __future__ import annotations

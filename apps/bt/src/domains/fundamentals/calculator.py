@@ -1143,7 +1143,6 @@ class FundamentalsCalculator:
             **{
                 **metrics.model_dump(),
                 "forecastEpsAboveRecentFyActuals": comparison,
-                "forecastEpsAboveAllHistoricalActuals": comparison,
             }
         )
 

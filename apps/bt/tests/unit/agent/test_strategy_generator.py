@@ -3,6 +3,7 @@ StrategyGenerator のユニットテスト
 """
 
 from src.domains.lab_agent.models import GeneratorConfig, StrategyCandidate
+from src.domains.lab_agent.signal_search_space import PARAM_RANGES
 from src.domains.lab_agent.strategy_generator import (
     AVAILABLE_SIGNALS,
     SIGNAL_CONSTRAINTS_MAP,
@@ -176,8 +177,6 @@ class TestStrategyGenerator:
 
     def test_generate_parameters_within_valid_ranges(self):
         """生成されたパラメータが有効範囲内であることを確認"""
-        from src.domains.lab_agent.parameter_evolver import ParameterEvolver
-
         config = GeneratorConfig(n_strategies=10, seed=42)
         generator = StrategyGenerator(config=config)
         candidates = generator.generate()
@@ -185,8 +184,8 @@ class TestStrategyGenerator:
         for candidate in candidates:
             # entry_filter_params のチェック
             for signal_name, params in candidate.entry_filter_params.items():
-                if signal_name in ParameterEvolver.PARAM_RANGES:
-                    ranges = ParameterEvolver.PARAM_RANGES[signal_name]
+                if signal_name in PARAM_RANGES:
+                    ranges = PARAM_RANGES[signal_name]
                     for param_name, (min_val, max_val, _) in ranges.items():
                         if param_name in params:
                             value = params[param_name]
@@ -197,8 +196,8 @@ class TestStrategyGenerator:
 
             # exit_trigger_params のチェック
             for signal_name, params in candidate.exit_trigger_params.items():
-                if signal_name in ParameterEvolver.PARAM_RANGES:
-                    ranges = ParameterEvolver.PARAM_RANGES[signal_name]
+                if signal_name in PARAM_RANGES:
+                    ranges = PARAM_RANGES[signal_name]
                     for param_name, (min_val, max_val, _) in ranges.items():
                         if param_name in params:
                             value = params[param_name]

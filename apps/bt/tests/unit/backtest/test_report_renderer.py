@@ -71,7 +71,7 @@ def test_static_html_report_renderer_resolves_dataset_snapshot_result_filename(
         {
             "shared_config": {
                 "data_source": "dataset_snapshot",
-                "dataset_snapshot": "dataset/demo-snapshot.db",
+                "dataset_snapshot": "demo-snapshot",
             }
         },
         strategy_name="demo_strategy",
@@ -97,7 +97,7 @@ def test_static_html_report_renderer_rejects_invalid_paths_and_filenames(
 
 def test_static_html_report_renderer_scope_name_fallbacks() -> None:
     assert _resolve_report_data_scope_name({}) == "unknown"
-    assert _resolve_report_data_scope_name({"dataset": "dataset/legacy.db"}) == "legacy"
+    assert _resolve_report_data_scope_name({"dataset": "legacy"}) == "unknown"
     assert _resolve_report_data_scope_name("invalid") == "unknown"  # type: ignore[arg-type]
 
 

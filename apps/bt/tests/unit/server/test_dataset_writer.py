@@ -2,10 +2,7 @@
 
 from collections.abc import Generator
 import importlib
-import os
 from pathlib import Path
-import shutil
-import tempfile
 
 import pytest
 
@@ -121,15 +118,11 @@ def _create_source_market_duckdb(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def writer() -> Generator[DatasetWriter, None, None]:
+def writer(tmp_path: Path) -> Generator[DatasetWriter, None, None]:
     """Temporary database writer."""
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    w = DatasetWriter(path)
+    w = DatasetWriter(str(tmp_path / "dataset-writer"))
     yield w
     w.close()
-    os.unlink(path)
-    shutil.rmtree(w.snapshot_dir)
 
 
 def test_ensure_schema(writer: DatasetWriter) -> None:
@@ -279,10 +272,8 @@ def test_existing_code_helpers_and_topix_presence(writer: DatasetWriter) -> None
     assert writer.get_existing_statement_codes() == {"7203"}
 
 
-def test_close_exports_parquet_bundle() -> None:
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    writer = DatasetWriter(path)
+def test_close_exports_parquet_bundle(tmp_path: Path) -> None:
+    writer = DatasetWriter(str(tmp_path / "parquet-export"))
     try:
         writer.upsert_stocks([
             {
@@ -315,8 +306,7 @@ def test_close_exports_parquet_bundle() -> None:
         assert (writer.parquet_dir / "stocks.parquet").exists() is True
         assert (writer.parquet_dir / "stock_data.parquet").exists() is True
     finally:
-        os.unlink(path)
-        shutil.rmtree(writer.snapshot_dir)
+        writer.close()
 
 
 def test_copy_stock_data_from_source_merges_alias_rows_and_tracks_invalid_rows(

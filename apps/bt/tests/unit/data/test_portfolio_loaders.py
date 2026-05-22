@@ -110,7 +110,7 @@ class TestLoadPortfolioStockData:
                 return_value=portfolio_client,
             ),
             patch(
-                "src.infrastructure.data_access.loaders.portfolio_loaders.MarketAPIClient",
+                "src.infrastructure.data_access.loaders.portfolio_loaders.get_market_client",
                 return_value=market_client,
             ),
         ):

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.infrastructure.external_api.dataset_client import DatasetAPIClient
+from src.infrastructure.external_api.dataset import DatasetAPIClient
 
 
 class TestDatasetAPIClient:
@@ -393,35 +393,6 @@ class TestDatasetAPIClient:
         assert "I1002" in result
 
     @patch("httpx.Client")
-    def test_get_multiple_margin(self, mock_client_class: MagicMock) -> None:
-        """Test multiple margin data retrieval (deprecated, delegates to batch)."""
-        import warnings
-
-        mock_response = MagicMock()
-        mock_response.is_success = True
-        mock_response.json.return_value = {
-            "7203": [
-                {"date": "2024-01-01", "longMarginVolume": 10000, "shortMarginVolume": 5000},
-            ],
-            "9984": [
-                {"date": "2024-01-01", "longMarginVolume": 20000, "shortMarginVolume": 8000},
-            ],
-        }
-
-        mock_httpx_client = MagicMock()
-        mock_httpx_client.request.return_value = mock_response
-        mock_client_class.return_value = mock_httpx_client
-
-        client = DatasetAPIClient("sampleA")
-        with warnings.catch_warnings(record=True):
-            warnings.simplefilter("always")
-            result = client.get_multiple_margin(["7203", "9984"])
-
-        assert len(result) == 2
-        assert "7203" in result
-        assert "9984" in result
-
-    @patch("httpx.Client")
     def test_context_manager(self, mock_client_class: MagicMock) -> None:
         """Test context manager usage."""
         mock_response = MagicMock()
@@ -652,31 +623,6 @@ class TestDatasetAPIClient:
         assert len(result) == 2
         assert "7203" in result
         assert "9984" in result
-
-    @patch("httpx.Client")
-    def test_get_multiple_margin_deprecated(self, mock_client_class: MagicMock) -> None:
-        """Test that get_multiple_margin issues a deprecation warning."""
-        import warnings
-
-        mock_response = MagicMock()
-        mock_response.is_success = True
-        mock_response.json.return_value = {
-            "7203": [
-                {"date": "2024-01-01", "longMarginVolume": 10000, "shortMarginVolume": 5000},
-            ],
-        }
-
-        mock_httpx_client = MagicMock()
-        mock_httpx_client.request.return_value = mock_response
-        mock_client_class.return_value = mock_httpx_client
-
-        client = DatasetAPIClient("sampleA")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            _ = client.get_multiple_margin(["7203"])
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "get_margin_batch" in str(w[0].message)
 
     # ===== Statements Batch Tests =====
 

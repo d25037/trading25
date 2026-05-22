@@ -49,7 +49,6 @@ describe('LabEvolveForm', () => {
       population: 20,
       structure_mode: 'params_only',
       target_scope: 'entry_filter_only',
-      entry_filter_only: true,
       allowed_categories: ['fundamental'],
       engine_policy: {
         mode: 'fast_only',

@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import time
 from collections.abc import Generator
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -321,7 +322,7 @@ def test_dataset_dir(tmp_path: Path, dataset_template_dir: Path) -> str:
 
 @pytest.fixture
 def client(app_client: TestClient, test_dataset_dir: str) -> TestClient:
-    app_client.app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
+    cast(Any, app_client.app).state.dataset_resolver = DatasetResolver(test_dataset_dir)
     return app_client
 
 
@@ -403,14 +404,11 @@ class TestDatasetManagementRoutes:
     def test_delete_dataset(self, client: TestClient, test_dataset_dir: str) -> None:
         delete_dir = Path(test_dataset_dir) / "to-delete"
         _build_snapshot(Path(test_dataset_dir), "to-delete")
-        legacy_db = Path(test_dataset_dir) / "to-delete.db"
-        legacy_db.write_text("", encoding="utf-8")
 
         resp = client.delete("/api/dataset/to-delete")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
         assert not delete_dir.exists()
-        assert not legacy_db.exists()
 
     def test_delete_nonexistent(self, client: TestClient) -> None:
         resp = client.delete("/api/dataset/nonexistent")

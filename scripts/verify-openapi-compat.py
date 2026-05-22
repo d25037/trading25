@@ -23,6 +23,9 @@ from pathlib import Path
 
 BASELINE_PATH = Path(__file__).parent.parent / "contracts" / "hono-openapi-baseline.json"
 FASTAPI_URL = "http://localhost:3002/openapi.json"
+RETIRED_BASELINE_PATHS = {
+    "/health",
+}
 
 
 def load_baseline() -> dict:
@@ -136,6 +139,9 @@ def track_migration_status(baseline: dict, fastapi: dict) -> dict[str, str]:
 
     status: dict[str, str] = {}
     for p in sorted(baseline_paths):
+        if p in RETIRED_BASELINE_PATHS:
+            status[p] = "retired"
+            continue
         normalized = _normalize_path(p)
         if p in fastapi_paths or normalized in fastapi_normalized:
             status[p] = "migrated"
@@ -227,7 +233,8 @@ def main() -> None:
     migrated = sum(1 for s in status.values() if s == "migrated")
     pending = sum(1 for s in status.values() if s == "pending")
     bt_only = sum(1 for s in status.values() if s == "bt-only")
-    print(f"  移行済み: {migrated}, 未移行: {pending}, bt固有: {bt_only}")
+    retired = sum(1 for s in status.values() if s == "retired")
+    print(f"  移行済み: {migrated}, retired: {retired}, 未移行: {pending}, bt固有: {bt_only}")
 
     # Summary
     print("\n" + "=" * 60)

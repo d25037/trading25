@@ -55,7 +55,7 @@ export interface Options225RouteSearch {
 }
 
 export interface ScreeningRouteSearch {
-  tab?: ScreeningSubTab | 'ranking' | 'fundamentalRanking';
+  tab?: ScreeningSubTab;
   preOpenMarkets?: string;
   preOpenStrategies?: string;
   preOpenRecentDays?: number;
@@ -70,16 +70,6 @@ export interface ScreeningRouteSearch {
   inSessionSortBy?: ScreeningSortBy;
   inSessionOrder?: SortOrder;
   inSessionLimit?: number;
-  rankingDate?: string;
-  rankingLimit?: number;
-  rankingMarkets?: string;
-  rankingLookbackDays?: number;
-  rankingPeriodDays?: number;
-  rankingTechnicalEventType?: RankingTechnicalEventType;
-  rankingLiquidityState?: RankingLiquidityState;
-  rankingSortBy?: RankingSortField;
-  rankingOrder?: RankingSortOrder;
-  rankingForwardEpsDisclosedWithinDays?: number;
 }
 
 export interface RankingRouteSearch {
@@ -104,13 +94,7 @@ export interface BacktestRouteSearch {
   labType?: LabType;
 }
 
-interface PersistedContainer {
-  state?: Record<string, unknown>;
-  version?: number;
-}
-
 const SCREENING_SUB_TABS: ScreeningSubTab[] = ['preOpenScreening', 'inSessionScreening'];
-const LEGACY_SCREENING_RANKING_TABS = ['ranking', 'fundamentalRanking'] as const;
 const RANKING_DAILY_VIEWS: RankingDailyView[] = ['stocks', 'technicalEvents', 'indices'];
 const RANKING_TECHNICAL_EVENT_TYPES: RankingTechnicalEventType[] = ['periodHigh', 'periodLow'];
 const RANKING_LIQUIDITY_STATE_VALUES: RankingLiquidityState[] = [
@@ -162,10 +146,6 @@ const SCREENING_SORT_VALUES: ScreeningSortBy[] = [
 const SORT_ORDER_VALUES: SortOrder[] = ['asc', 'desc'];
 const RANKING_SORT_ORDER_VALUES: RankingSortOrder[] = ['asc', 'desc'];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function normalizeString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -211,18 +191,7 @@ function normalizeEnum<T extends string>(value: unknown, values: readonly T[]): 
 }
 
 function normalizeScreeningSubTab(value: unknown): ScreeningSubTab | undefined {
-  const tab = normalizeString(value);
-  if (tab === 'screening') {
-    return 'preOpenScreening';
-  }
-  if (tab === 'sameDayScreening') {
-    return 'inSessionScreening';
-  }
-  return normalizeEnum(tab, SCREENING_SUB_TABS);
-}
-
-function normalizeLegacyScreeningRankingTab(value: unknown): 'ranking' | 'fundamentalRanking' | undefined {
-  return normalizeEnum(normalizeString(value), LEGACY_SCREENING_RANKING_TABS);
+  return normalizeEnum(normalizeString(value), SCREENING_SUB_TABS);
 }
 
 function normalizeRankingDailyView(value: unknown): RankingDailyView | undefined {
@@ -234,9 +203,7 @@ function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEve
 }
 
 function normalizeRankingLiquidityState(value: unknown): RankingLiquidityState | undefined {
-  const normalized = normalizeString(value);
-  if (normalized === 'rerating_participation') return 'crowded_rerating';
-  return normalizeEnum(normalized, RANKING_LIQUIDITY_STATE_VALUES);
+  return normalizeEnum(normalizeString(value), RANKING_LIQUIDITY_STATE_VALUES);
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {
@@ -245,10 +212,6 @@ function normalizeRankingSortField(value: unknown): RankingSortField | undefined
 
 function normalizeRankingSortOrder(value: unknown): RankingSortOrder | undefined {
   return normalizeEnum(normalizeString(value), RANKING_SORT_ORDER_VALUES);
-}
-
-function isEmptyObject(value: Record<string, unknown>): boolean {
-  return Object.keys(value).length === 0;
 }
 
 function assignIfDefined<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
@@ -416,92 +379,22 @@ export function serializeOptions225Search(state: {
 export function validateScreeningSearch(search: Record<string, unknown>): ScreeningRouteSearch {
   const next: ScreeningRouteSearch = {};
   const normalizedTab = normalizeScreeningSubTab(search.tab);
-  const legacyRankingTab = normalizeLegacyScreeningRankingTab(search.tab);
 
-  assignIfDefined(next, 'tab', normalizedTab ?? legacyRankingTab);
-  assignIfDefined(
-    next,
-    'preOpenMarkets',
-    normalizeString(search.preOpenMarkets) ?? normalizeString(search.screeningMarkets)
-  );
-  assignIfDefined(
-    next,
-    'preOpenStrategies',
-    normalizeString(search.preOpenStrategies) ?? normalizeString(search.screeningStrategies)
-  );
-  assignIfDefined(
-    next,
-    'preOpenRecentDays',
-    normalizePositiveInt(search.preOpenRecentDays) ?? normalizePositiveInt(search.screeningRecentDays)
-  );
-  assignIfDefined(next, 'preOpenDate', normalizeString(search.preOpenDate) ?? normalizeString(search.screeningDate));
-  assignIfDefined(
-    next,
-    'preOpenSortBy',
-    normalizeEnum(search.preOpenSortBy, SCREENING_SORT_VALUES) ??
-      normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES)
-  );
-  assignIfDefined(
-    next,
-    'preOpenOrder',
-    normalizeEnum(search.preOpenOrder, SORT_ORDER_VALUES) ?? normalizeEnum(search.screeningOrder, SORT_ORDER_VALUES)
-  );
-  assignIfDefined(
-    next,
-    'preOpenLimit',
-    normalizePositiveInt(search.preOpenLimit) ?? normalizePositiveInt(search.screeningLimit)
-  );
-  assignIfDefined(
-    next,
-    'inSessionMarkets',
-    normalizeString(search.inSessionMarkets) ?? normalizeString(search.sameDayMarkets)
-  );
-  assignIfDefined(
-    next,
-    'inSessionStrategies',
-    normalizeString(search.inSessionStrategies) ?? normalizeString(search.sameDayStrategies)
-  );
-  assignIfDefined(
-    next,
-    'inSessionRecentDays',
-    normalizePositiveInt(search.inSessionRecentDays) ?? normalizePositiveInt(search.sameDayRecentDays)
-  );
-  assignIfDefined(next, 'inSessionDate', normalizeString(search.inSessionDate) ?? normalizeString(search.sameDayDate));
-  assignIfDefined(
-    next,
-    'inSessionSortBy',
-    normalizeEnum(search.inSessionSortBy, SCREENING_SORT_VALUES) ??
-      normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES)
-  );
-  assignIfDefined(
-    next,
-    'inSessionOrder',
-    normalizeEnum(search.inSessionOrder, SORT_ORDER_VALUES) ?? normalizeEnum(search.sameDayOrder, SORT_ORDER_VALUES)
-  );
-  assignIfDefined(
-    next,
-    'inSessionLimit',
-    normalizePositiveInt(search.inSessionLimit) ?? normalizePositiveInt(search.sameDayLimit)
-  );
-  assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
-  assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
-  assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
-  assignIfDefined(next, 'rankingLookbackDays', normalizePositiveInt(search.rankingLookbackDays));
-  assignIfDefined(next, 'rankingPeriodDays', normalizePositiveInt(search.rankingPeriodDays));
-  assignIfDefined(
-    next,
-    'rankingTechnicalEventType',
-    normalizeRankingTechnicalEventType(search.rankingTechnicalEventType)
-  );
-  assignIfDefined(next, 'rankingLiquidityState', normalizeRankingLiquidityState(search.rankingLiquidityState));
-  assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
-  assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
-  assignIfDefined(
-    next,
-    'rankingForwardEpsDisclosedWithinDays',
-    normalizeNonNegativeInt(search.rankingForwardEpsDisclosedWithinDays)
-  );
-
+  assignIfDefined(next, 'tab', normalizedTab);
+  assignIfDefined(next, 'preOpenMarkets', normalizeString(search.preOpenMarkets));
+  assignIfDefined(next, 'preOpenStrategies', normalizeString(search.preOpenStrategies));
+  assignIfDefined(next, 'preOpenRecentDays', normalizePositiveInt(search.preOpenRecentDays));
+  assignIfDefined(next, 'preOpenDate', normalizeString(search.preOpenDate));
+  assignIfDefined(next, 'preOpenSortBy', normalizeEnum(search.preOpenSortBy, SCREENING_SORT_VALUES));
+  assignIfDefined(next, 'preOpenOrder', normalizeEnum(search.preOpenOrder, SORT_ORDER_VALUES));
+  assignIfDefined(next, 'preOpenLimit', normalizePositiveInt(search.preOpenLimit));
+  assignIfDefined(next, 'inSessionMarkets', normalizeString(search.inSessionMarkets));
+  assignIfDefined(next, 'inSessionStrategies', normalizeString(search.inSessionStrategies));
+  assignIfDefined(next, 'inSessionRecentDays', normalizePositiveInt(search.inSessionRecentDays));
+  assignIfDefined(next, 'inSessionDate', normalizeString(search.inSessionDate));
+  assignIfDefined(next, 'inSessionSortBy', normalizeEnum(search.inSessionSortBy, SCREENING_SORT_VALUES));
+  assignIfDefined(next, 'inSessionOrder', normalizeEnum(search.inSessionOrder, SORT_ORDER_VALUES));
+  assignIfDefined(next, 'inSessionLimit', normalizePositiveInt(search.inSessionLimit));
   return next;
 }
 
@@ -509,21 +402,7 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
   activeSubTab: ScreeningSubTab;
   preOpenScreeningParams: ScreeningParams;
   inSessionScreeningParams: ScreeningParams;
-  rankingParams: RankingParams;
 } {
-  const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
-    ['date', search.rankingDate],
-    ['limit', search.rankingLimit],
-    ['markets', search.rankingMarkets],
-    ['lookbackDays', search.rankingLookbackDays],
-    ['periodDays', search.rankingPeriodDays],
-    ['technicalEventType', search.rankingTechnicalEventType],
-    ['liquidityState', search.rankingLiquidityState],
-    ['sortBy', search.rankingSortBy],
-    ['order', search.rankingOrder],
-    ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
-  ]);
-
   return {
     activeSubTab: normalizeScreeningSubTab(search.tab) ?? 'preOpenScreening',
     preOpenScreeningParams: assignSearchParams({ ...DEFAULT_PRE_OPEN_SCREENING_PARAMS }, [
@@ -544,7 +423,6 @@ export function getScreeningStateFromSearch(search: ScreeningRouteSearch): {
       ['order', search.inSessionOrder],
       ['limit', search.inSessionLimit],
     ]),
-    rankingParams,
   };
 }
 
@@ -571,22 +449,10 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
   };
 }
 
-export function getRankingStateFromScreeningSearch(search: ScreeningRouteSearch): {
-  activeDailyView: RankingDailyView;
-  rankingParams: RankingParams;
-} {
-  const state = getScreeningStateFromSearch(search);
-  return {
-    activeDailyView: 'stocks',
-    rankingParams: state.rankingParams,
-  };
-}
-
 export function serializeScreeningSearch(state: {
   activeSubTab: ScreeningSubTab;
   preOpenScreeningParams: ScreeningParams;
   inSessionScreeningParams: ScreeningParams;
-  rankingParams: RankingParams;
 }): ScreeningRouteSearch {
   const next: ScreeningRouteSearch = {};
 
@@ -659,48 +525,6 @@ export function serializeScreeningSearch(state: {
     DEFAULT_IN_SESSION_SCREENING_PARAMS.limit
   );
 
-  assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingLimit',
-    typeof state.rankingParams.limit === 'number' ? state.rankingParams.limit : undefined,
-    DEFAULT_RANKING_PARAMS.limit
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingMarkets',
-    normalizeString(state.rankingParams.markets),
-    DEFAULT_RANKING_PARAMS.markets
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingLookbackDays',
-    typeof state.rankingParams.lookbackDays === 'number' ? state.rankingParams.lookbackDays : undefined,
-    DEFAULT_RANKING_PARAMS.lookbackDays
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingPeriodDays',
-    typeof state.rankingParams.periodDays === 'number' ? state.rankingParams.periodDays : undefined,
-    DEFAULT_RANKING_PARAMS.periodDays
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingTechnicalEventType',
-    state.rankingParams.technicalEventType,
-    DEFAULT_RANKING_PARAMS.technicalEventType
-  );
-  assignIfDefined(next, 'rankingLiquidityState', state.rankingParams.liquidityState);
-  assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
-  assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
-  assignIfDefinedAndNotDefault(
-    next,
-    'rankingForwardEpsDisclosedWithinDays',
-    typeof state.rankingParams.forwardEpsDisclosedWithinDays === 'number'
-      ? state.rankingParams.forwardEpsDisclosedWithinDays
-      : undefined,
-    DEFAULT_RANKING_PARAMS.forwardEpsDisclosedWithinDays
-  );
   return next;
 }
 
@@ -816,96 +640,4 @@ export function serializeBacktestSearch(state: {
   if (state.activeLabType) next.labType = state.activeLabType;
 
   return next;
-}
-
-export function readPersistedStoreState(storage: Storage, key: string): Record<string, unknown> | null {
-  const raw = storage.getItem(key);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as PersistedContainer | Record<string, unknown>;
-    if (isRecord(parsed) && isRecord(parsed.state)) {
-      return parsed.state;
-    }
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-export function prunePersistedStoreFields(storage: Storage, key: string, fields: string[]): void {
-  const raw = storage.getItem(key);
-  if (!raw) return;
-
-  try {
-    const parsed = JSON.parse(raw) as PersistedContainer | Record<string, unknown>;
-    const container = isRecord(parsed) ? parsed : {};
-    const state = isRecord(container.state) ? { ...container.state } : isRecord(parsed) ? { ...parsed } : {};
-
-    for (const field of fields) {
-      delete state[field];
-    }
-
-    if (isEmptyObject(state)) {
-      storage.removeItem(key);
-      return;
-    }
-
-    const next = isRecord(container.state) ? { ...container, state } : state;
-    storage.setItem(key, JSON.stringify(next));
-  } catch {
-    storage.removeItem(key);
-  }
-}
-
-export function extractLegacySymbolWorkbenchSearch(state: Record<string, unknown>): SymbolWorkbenchRouteSearch {
-  return serializeSymbolWorkbenchSearch({
-    symbol: typeof state.selectedSymbol === 'string' ? state.selectedSymbol : null,
-  });
-}
-
-export function extractLegacyPortfolioSearch(state: Record<string, unknown>): PortfolioRouteSearch {
-  return serializePortfolioSearch({
-    tab: normalizeEnum(state.portfolioSubTab, PORTFOLIO_SUB_TABS) ?? 'portfolios',
-    portfolioId: normalizePositiveInt(state.selectedPortfolioId) ?? null,
-    watchlistId: normalizePositiveInt(state.selectedWatchlistId) ?? null,
-  });
-}
-
-export function extractLegacyIndicesSearch(state: Record<string, unknown>): IndicesRouteSearch {
-  return serializeIndicesSearch(typeof state.selectedIndexCode === 'string' ? state.selectedIndexCode : null);
-}
-
-export function extractLegacyScreeningSearch(state: Record<string, unknown>): ScreeningRouteSearch {
-  const screeningParams = isRecord(state.screeningParams)
-    ? (state.screeningParams as ScreeningParams)
-    : DEFAULT_PRE_OPEN_SCREENING_PARAMS;
-  const sameDayScreeningParams = isRecord(state.sameDayScreeningParams)
-    ? (state.sameDayScreeningParams as ScreeningParams)
-    : DEFAULT_IN_SESSION_SCREENING_PARAMS;
-  const rankingParams = isRecord(state.rankingParams) ? (state.rankingParams as RankingParams) : DEFAULT_RANKING_PARAMS;
-  return serializeScreeningSearch({
-    activeSubTab: normalizeScreeningSubTab(state.activeSubTab) ?? 'preOpenScreening',
-    preOpenScreeningParams: {
-      ...DEFAULT_PRE_OPEN_SCREENING_PARAMS,
-      ...screeningParams,
-      entry_decidability: 'pre_open_decidable',
-    },
-    inSessionScreeningParams: {
-      ...DEFAULT_IN_SESSION_SCREENING_PARAMS,
-      ...sameDayScreeningParams,
-      entry_decidability: 'requires_same_session_observation',
-    },
-    rankingParams: { ...DEFAULT_RANKING_PARAMS, ...rankingParams },
-  });
-}
-
-export function extractLegacyBacktestSearch(state: Record<string, unknown>): BacktestRouteSearch {
-  return serializeBacktestSearch({
-    activeSubTab: normalizeEnum(state.activeSubTab, BACKTEST_SUB_TABS) ?? 'runner',
-    selectedStrategy: typeof state.selectedStrategy === 'string' ? state.selectedStrategy : null,
-    selectedResultJobId: typeof state.selectedResultJobId === 'string' ? state.selectedResultJobId : null,
-    selectedDatasetName: typeof state.selectedDatasetName === 'string' ? state.selectedDatasetName : null,
-    activeLabType: normalizeEnum(state.activeLabType, LAB_TYPES) ?? null,
-  });
 }

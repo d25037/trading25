@@ -160,11 +160,6 @@ async def get_fundamental_ranking(
         le=20,
         description="Lookback FY count used by forecastAboveRecentFyActuals filter.",
     ),
-    forecastAboveAllActuals: bool | None = Query(
-        None,
-        include_in_schema=False,
-        description="Deprecated legacy query param. Use forecastAboveRecentFyActuals.",
-    ),
 ) -> MarketFundamentalRankingResponse:
     """ファンダメンタルランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -173,19 +168,13 @@ async def get_fundamental_ranking(
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
 
-    effective_forecast_filter = (
-        forecastAboveRecentFyActuals
-        if forecastAboveRecentFyActuals is not None
-        else bool(forecastAboveAllActuals)
-    )
-
     service = RankingService(reader)
     try:
         return service.get_fundamental_rankings(
             limit=limit,
             markets=markets,
             metric_key=metricKey,
-            forecast_above_recent_fy_actuals=effective_forecast_filter,
+            forecast_above_recent_fy_actuals=bool(forecastAboveRecentFyActuals),
             forecast_lookback_fy_count=forecastLookbackFyCount,
         )
     except ValueError as e:

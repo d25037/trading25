@@ -21,8 +21,8 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
-from src.domains.analytics.topix100_price_vs_sma20_rank_future_close import (
-    run_topix100_price_vs_sma20_rank_future_close_research,
+from src.domains.analytics.topix100_price_vs_sma_rank_future_close import (
+    run_topix100_price_vs_sma_rank_future_close_research,
 )
 from src.domains.analytics.topix_regime_conditioning_core import (
     DEFAULT_SIGMA_THRESHOLD_1,
@@ -71,12 +71,13 @@ def run_topix100_price_vs_sma20_regime_conditioning_research(
     if sigma_threshold_2 <= sigma_threshold_1:
         raise ValueError("sigma_threshold_2 must be greater than sigma_threshold_1")
 
-    base_result = run_topix100_price_vs_sma20_rank_future_close_research(
+    base_result = run_topix100_price_vs_sma_rank_future_close_research(
         db_path,
         start_date=start_date,
         end_date=end_date,
         lookback_years=lookback_years,
         min_constituents_per_day=min_constituents_per_day,
+        price_sma_windows=(20,),
     )
 
     with _open_analysis_connection(db_path) as ctx:

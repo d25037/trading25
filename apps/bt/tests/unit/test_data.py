@@ -35,7 +35,7 @@ def sample_daily_data():
 class TestLoadStockData:
     """load_stock_data関数のテストクラス"""
 
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_load_stock_data_success(self, mock_client_class):
         """データ読み込み成功のテスト"""
         # モックデータ作成（VectorBT形式：DatetimeIndex + OHLCV列）
@@ -58,7 +58,7 @@ class TestLoadStockData:
         mock_client_class.return_value.__exit__.return_value = None
 
         # テスト実行
-        result = load_stock_data("test.db", "1234")
+        result = load_stock_data("test", "1234")
 
         # 検証
         assert isinstance(result, pd.DataFrame)
@@ -66,7 +66,7 @@ class TestLoadStockData:
         assert isinstance(result.index, pd.DatetimeIndex)
         mock_client.get_stock_ohlcv.assert_called_once_with("1234", None, None, "daily")
 
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_load_stock_data_empty_result(self, mock_client_class):
         """空のデータの場合のテスト"""
         # 空のDataFrameを返すモック
@@ -76,9 +76,9 @@ class TestLoadStockData:
         mock_client_class.return_value.__exit__.return_value = None
 
         with pytest.raises(ValueError, match="No data found for stock code"):
-            load_stock_data("test.db", "NONEXISTENT")
+            load_stock_data("test", "NONEXISTENT")
 
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_load_stock_data_with_date_range(self, mock_client_class):
         """日付範囲指定のテスト"""
         dates = pd.to_datetime(["2023-01-01", "2023-01-02"])
@@ -98,7 +98,7 @@ class TestLoadStockData:
         mock_client_class.return_value.__enter__.return_value = mock_client
         mock_client_class.return_value.__exit__.return_value = None
 
-        load_stock_data("test.db", "1234", "2023-01-01", "2023-01-31")
+        load_stock_data("test", "1234", "2023-01-01", "2023-01-31")
 
         # 日付パラメータが渡されることを確認
         mock_client.get_stock_ohlcv.assert_called_once_with(
@@ -129,7 +129,7 @@ class TestMultipleStocks:
 
         mock_load_stock.side_effect = mock_load_side_effect
 
-        result = load_multiple_stocks("test.db", ["1234", "5678"])
+        result = load_multiple_stocks("test", ["1234", "5678"])
 
         # 検証
         assert isinstance(result, pd.DataFrame)
@@ -161,7 +161,7 @@ class TestMultipleStocks:
 
         mock_load_stock.side_effect = mock_load_side_effect
 
-        result = load_multiple_stocks("test.db", ["1234", "ERROR", "5678"])
+        result = load_multiple_stocks("test", ["1234", "ERROR", "5678"])
 
         # 検証
         assert len(result.columns) == 2  # エラー銘柄は除外される
@@ -196,7 +196,7 @@ class TestRelativeStrength:
 class TestGetAvailableStocks:
     """利用可能銘柄取得のテストクラス"""
 
-    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.get_dataset_client")
     def test_get_available_stocks(self, mock_client_class):
         """利用可能銘柄取得のテスト"""
         mock_df = pd.DataFrame(
@@ -213,7 +213,7 @@ class TestGetAvailableStocks:
         mock_client_class.return_value.__enter__.return_value = mock_client
         mock_client_class.return_value.__exit__.return_value = None
 
-        result = get_available_stocks("test.db", min_records=1000)
+        result = get_available_stocks("test", min_records=1000)
 
         # 検証
         assert isinstance(result, pd.DataFrame)
@@ -243,7 +243,7 @@ class TestPrepareData:
 
         mock_load_stock.return_value = mock_daily_data
 
-        result = prepare_data("test.db", "1234")
+        result = prepare_data("test", "1234")
 
         # 検証
         assert isinstance(result, dict)

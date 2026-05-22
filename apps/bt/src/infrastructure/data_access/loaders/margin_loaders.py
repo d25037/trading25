@@ -14,8 +14,6 @@ from src.infrastructure.data_access.clients import get_dataset_client
 from src.infrastructure.data_access.loaders.cache import DataCache
 from src.infrastructure.data_access.loaders.utils import extract_dataset_name
 
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 
 
 def transform_margin_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -49,7 +47,7 @@ def load_margin_data(
     API経由で信用残高データを読み込み（VectorBT用）
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         stock_code: 銘柄コード
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -73,7 +71,7 @@ def load_margin_data(
             return cached
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_margin(stock_code, start_date, end_date)
 
     if df.empty:
@@ -103,7 +101,7 @@ def get_margin_available_stocks(dataset: str, min_records: int = 10) -> pd.DataF
     信用残高データがある銘柄一覧を取得（VectorBT用）
 
     Args:
-        dataset: データセット名または legacy 互換パス表現
+        dataset: データセット名
         min_records: 最小レコード数
 
     Returns:
@@ -111,7 +109,7 @@ def get_margin_available_stocks(dataset: str, min_records: int = 10) -> pd.DataF
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_margin_list(min_records)
 
     return df

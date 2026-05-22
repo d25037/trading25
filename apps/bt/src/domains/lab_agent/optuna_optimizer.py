@@ -60,9 +60,6 @@ class OptunaOptimizer:
 
     TPEサンプラーを使用してパラメータ空間を効率的に探索
     """
-
-    # Backward-compatible alias.
-    PARAM_RANGES = PARAM_RANGES
     MIN_ACCEPTABLE_RETURN_RATIO = 0.95
     MIN_TRIALS_FOR_TWO_STAGE = 40
     TWO_STAGE_STAGE1_RATIO = 0.6
@@ -541,7 +538,7 @@ class OptunaOptimizer:
                 continue
             if not self._is_signal_optimization_allowed(signal_name, usage_type):
                 continue
-            ranges = self.PARAM_RANGES.get(signal_name, {})
+            ranges = PARAM_RANGES.get(signal_name, {})
             self._collect_nested_optuna_params(
                 usage_type=usage_type,
                 signal_name=signal_name,
@@ -604,7 +601,7 @@ class OptunaOptimizer:
                 continue
             if not self._is_signal_optimization_allowed(signal_name, usage_type):
                 continue
-            ranges = self.PARAM_RANGES.get(signal_name, {})
+            ranges = PARAM_RANGES.get(signal_name, {})
             self._collect_nested_param_specs(
                 usage_type=usage_type,
                 signal_name=signal_name,
@@ -988,7 +985,7 @@ class OptunaOptimizer:
                 sampled[signal_name] = sampled_signal
                 continue
 
-            ranges = self.PARAM_RANGES.get(signal_name, {})
+            ranges = PARAM_RANGES.get(signal_name, {})
             self._sample_nested_params(
                 trial=trial,
                 usage_type=usage_type,
@@ -1118,7 +1115,7 @@ class OptunaOptimizer:
                 # signal_nameに複数の_が含まれる場合を処理
                 # (例: entry_trading_value_range_period)
                 for known_signal in sorted(
-                    self.PARAM_RANGES.keys(), key=len, reverse=True
+                    PARAM_RANGES.keys(), key=len, reverse=True
                 ):
                     if param_name.startswith(f"{usage_type}_{known_signal}_"):
                         signal_name = known_signal

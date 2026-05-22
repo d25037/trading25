@@ -47,9 +47,6 @@ MARGIN_REGISTRY: dict[str, Any] = {
     "margin_volume_ratio": compute_margin_volume_ratio,
 }
 
-# Backward-compatible symbols for tests patching module-local client constructors.
-DatasetAPIClient = get_dataset_client
-MarketAPIClient = get_market_client
 
 
 class IndicatorService:
@@ -62,7 +59,7 @@ class IndicatorService:
     @property
     def market_client(self) -> Any:
         if self._market_client is None:
-            self._market_client = MarketAPIClient()
+            self._market_client = get_market_client()
         return self._market_client
 
     def close(self) -> None:
@@ -102,7 +99,7 @@ class IndicatorService:
                     recovery="market_db_sync",
                 )
         else:
-            with DatasetAPIClient(source) as client:
+            with get_dataset_client(source) as client:
                 df = client.get_stock_ohlcv(stock_code, sd, ed)
 
         if df.empty:

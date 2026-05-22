@@ -215,8 +215,7 @@ def _resolve_report_data_scope_name(shared_config: dict[str, Any]) -> str:
     universe_preset = shared_config.get("universe_preset")
     if isinstance(universe_preset, str) and universe_preset.strip():
         return universe_preset.strip()
-    legacy_dataset = canonicalize_dataset_snapshot_id(shared_config.get("dataset"))
-    return legacy_dataset or "unknown"
+    return "unknown"
 
 
 def _table_from_mapping(title: str, values: dict[str, Any]) -> str:

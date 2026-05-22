@@ -235,7 +235,7 @@ describe('chartStore', () => {
     expect(useChartStore.getState().presets).toHaveLength(1);
   });
 
-  it('rehydrates legacy persisted settings with missing nested fields safely', async () => {
+  it('rehydrates persisted settings with missing nested fields safely', async () => {
     localStorage.setItem(
       'trading25-chart-store',
       JSON.stringify({
@@ -249,14 +249,14 @@ describe('chartStore', () => {
           },
           presets: [
             {
-              id: 'legacy-preset',
-              name: 'Legacy',
+              id: 'partial-preset',
+              name: 'Partial',
               settings: { showVolume: false },
               createdAt: 1,
               updatedAt: 2,
             },
           ],
-          activePresetId: 'legacy-preset',
+          activePresetId: 'partial-preset',
         },
         version: 0,
       })
@@ -290,7 +290,7 @@ describe('chartStore', () => {
     expect(state.settings.signalOverlay.enabled).toBe(false);
     expect(state.settings.signalOverlay.signals).toEqual([]);
     expect(state.presets[0]?.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
-    expect(state.activePresetId).toBe('legacy-preset');
+    expect(state.activePresetId).toBe('partial-preset');
   });
 
   it('sanitizes invalid persisted scalar types during rehydrate', async () => {
@@ -574,10 +574,10 @@ describe('chartStore', () => {
       'chaikinOscillator',
       'obvFlowScore',
       'tradingValueMA',
-      'marginPressure',
       'fundamentals',
       'fundamentalsHistory',
       'costStructure',
+      'marginPressure',
       'factorRegression',
     ]);
     expect(settings.fundamentalsMetricOrder).toEqual([

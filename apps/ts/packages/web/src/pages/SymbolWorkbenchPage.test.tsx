@@ -38,7 +38,6 @@ vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
 
 vi.mock('@/hooks/usePageRouteState', () => ({
   useSymbolWorkbenchRouteState: () => mockSymbolWorkbenchRouteState,
-  useMigrateSymbolWorkbenchRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useBtMarginIndicators', () => ({

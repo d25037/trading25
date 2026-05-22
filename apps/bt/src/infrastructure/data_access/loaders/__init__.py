@@ -14,9 +14,6 @@ VectorBTで使用できる形式に変換します。
 - data_preparation: データ準備・統合処理
 """
 
-# Import logger for backwards compatibility with tests
-from loguru import logger
-
 # Cache for optimization
 from .cache import DataCache
 
@@ -103,6 +100,4 @@ __all__ = [
     "prepare_data",
     "prepare_all_stocks_data",
     "prepare_multi_data",
-    # Logger for backwards compatibility
-    "logger",
 ]

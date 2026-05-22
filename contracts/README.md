@@ -65,7 +65,7 @@ bun run --filter @trading25/contracts bt:sync
 | `fundamentals-metrics-v2.schema.json` | **Active** | Fundamentals API response contract (`/api/analytics/fundamentals/{symbol}`), including `cfoToNetProfitRatio`, `tradingValueToMarketCapRatio`, and `tradingValuePeriod`. |
 | `portfolio-db-schema-v1.json` | **Deprecated** | Legacy portfolio DB schema contract (without jobs table). |
 | `portfolio-db-schema-v2.json` | **Active** | Portfolio DB schema contract (portfolios/watchlists + jobs metadata table). |
-| `hono-openapi-baseline.json` | **Archived** | Hono OpenAPI snapshot used as Phase 3 migration baseline. Phase 3F (2026-02-07) で全 90 EP 移行完了・Hono 廃止済み。参照用に保持。 |
+| `hono-openapi-baseline.json` | **Archived** | Hono OpenAPI snapshot used as Phase 3 migration baseline. Phase 3F (2026-02-07) で FastAPI 移行完了・Hono 廃止済み。`/health` alias は retired、現行 health check は `/api/health`。参照用に保持。 |
 
 ## OpenAPI Snapshot
 

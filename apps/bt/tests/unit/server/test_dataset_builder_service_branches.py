@@ -8,7 +8,7 @@ import sqlite3
 import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -460,7 +460,7 @@ async def test_query_market_rows_awaits_coroutine_results():
 
             return _rows()
 
-    rows = await dataset_builder_service._query_market_rows(_CoroutineReader(), "SELECT 1")
+    rows = await dataset_builder_service._query_market_rows(cast(Any, _CoroutineReader()), "SELECT 1")
 
     assert rows == [{"value": 1}]
 
@@ -654,7 +654,7 @@ async def test_load_market_statements_batch_merges_alias_rows_by_disclosed_date(
 async def test_build_dataset_returns_error_for_unknown_preset(isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="unknown")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/unknown.db"
+    resolver.get_dataset_path.return_value = "/tmp/unknown"
     reader = MagicMock()
 
     result = await _build_dataset(job, resolver, reader)
@@ -667,7 +667,7 @@ async def test_build_dataset_returns_cancelled_before_master_fetch(monkeypatch, 
     job = await _create_job(isolated_dataset_manager, preset="quickTesting")
     job.cancelled.set()
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/cancelled.db"
+    resolver.get_dataset_path.return_value = "/tmp/cancelled"
     reader = MagicMock()
 
     monkeypatch.setattr(
@@ -686,7 +686,7 @@ async def test_build_dataset_returns_cancelled_before_master_fetch(monkeypatch, 
 async def test_build_dataset_returns_error_when_no_stock_matches_preset(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="quickTesting")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/empty.db"
+    resolver.get_dataset_path.return_value = "/tmp/empty"
 
     async def fake_get_paginated(path: str, params=None):
         del params
@@ -710,7 +710,7 @@ async def test_build_dataset_returns_error_when_no_stock_matches_preset(monkeypa
 async def test_build_dataset_success_copies_all_enabled_tables(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="full")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/full.db"
+    resolver.get_dataset_path.return_value = "/tmp/full"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -799,7 +799,7 @@ async def test_build_dataset_returns_partial_result_when_cancelled_during_stock_
 ):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/partial.db"
+    resolver.get_dataset_path.return_value = "/tmp/partial"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -857,7 +857,7 @@ async def test_build_dataset_keeps_dataset_writer_on_one_worker_thread(
 ):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/thread-affinity.db"
+    resolver.get_dataset_path.return_value = "/tmp/thread-affinity"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -915,7 +915,7 @@ async def test_build_dataset_keeps_dataset_writer_on_one_worker_thread(
 async def test_build_dataset_writes_manifest_v2(monkeypatch, isolated_dataset_manager, tmp_path):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    db_path = tmp_path / "manifest.db"
+    db_path = tmp_path / "manifest"
     resolver.get_dataset_path.return_value = str(db_path)
 
     preset = PresetConfig(
@@ -964,7 +964,7 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
     tmp_path,
 ):
     resolver = MagicMock()
-    db_path = tmp_path / "repro.db"
+    db_path = tmp_path / "repro"
     resolver.get_dataset_path.return_value = str(db_path)
 
     preset = PresetConfig(
@@ -1011,7 +1011,7 @@ async def test_build_dataset_manifest_uses_duckdb_state_as_sot(
 ):
     job = await _create_job(isolated_dataset_manager, name="duckdb-sot", preset="quick")
     resolver = MagicMock()
-    db_path = tmp_path / "duckdb-sot.db"
+    db_path = tmp_path / "duckdb-sot"
     resolver.get_dataset_path.return_value = str(db_path)
 
     preset = PresetConfig(
@@ -1060,7 +1060,7 @@ async def test_build_dataset_manifest_uses_duckdb_state_as_sot(
 async def test_build_dataset_raises_when_manifest_generation_fails(monkeypatch, isolated_dataset_manager, tmp_path):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = str(tmp_path / "manifest-fail.db")
+    resolver.get_dataset_path.return_value = str(tmp_path / "manifest-fail")
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1094,7 +1094,7 @@ async def test_build_dataset_raises_when_manifest_generation_fails(monkeypatch, 
 async def test_build_dataset_handles_empty_stock_rows_and_progress_mod10(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/no_rows.db"
+    resolver.get_dataset_path.return_value = "/tmp/no_rows"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1161,7 +1161,7 @@ async def test_build_dataset_handles_empty_stock_rows_and_progress_mod10(monkeyp
 async def test_build_dataset_queries_stock_data_per_batch(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/batch.db"
+    resolver.get_dataset_path.return_value = "/tmp/batch"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1233,18 +1233,19 @@ async def test_build_dataset_queries_stock_data_per_batch(monkeypatch, isolated_
 
 
 @pytest.mark.asyncio
-async def test_build_dataset_overwrite_removes_legacy_db_artifact(
+async def test_build_dataset_overwrite_removes_existing_snapshot_artifact(
     monkeypatch,
     isolated_dataset_manager,
     tmp_path,
 ):
     job = await _create_job(isolated_dataset_manager, name="overwrite", preset="quick", overwrite=True)
-    legacy_db = tmp_path / "overwrite.db"
-    legacy_db.write_text("legacy", encoding="utf-8")
+    snapshot_dir = tmp_path / "overwrite"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
 
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = str(tmp_path / "overwrite" / "dataset.db")
-    resolver.get_artifact_paths.return_value = [str(legacy_db)]
+    resolver.get_dataset_path.return_value = str(tmp_path / "overwrite" / "dataset.duckdb")
+    resolver.get_artifact_paths.return_value = [str(snapshot_dir)]
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1286,14 +1287,14 @@ async def test_build_dataset_overwrite_removes_legacy_db_artifact(
 
     assert result.success is True
     assert resolver.method_calls[0] == call.evict("overwrite")
-    assert legacy_db.exists() is False
+    assert snapshot_dir.exists() is False
 
 
 @pytest.mark.asyncio
 async def test_build_dataset_topix_skips_fetch_when_cancelled_before_topix(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="topix")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/topix_skip.db"
+    resolver.get_dataset_path.return_value = "/tmp/topix_skip"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1349,7 +1350,7 @@ async def test_build_dataset_topix_rows_true_and_false_branches(
 ):
     job = await _create_job(isolated_dataset_manager, preset="topix")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/topix_rows.db"
+    resolver.get_dataset_path.return_value = "/tmp/topix_rows"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1405,7 +1406,7 @@ async def test_build_dataset_topix_rows_true_and_false_branches(
 async def test_build_dataset_fetches_sector_indices_from_catalog(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="indices")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/indices.db"
+    resolver.get_dataset_path.return_value = "/tmp/indices"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1466,7 +1467,7 @@ async def test_build_dataset_fetches_sector_indices_from_catalog(monkeypatch, is
 async def test_build_dataset_skips_incomplete_ohlcv_rows_without_failing_stock(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="ohlcv")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/ohlcv.db"
+    resolver.get_dataset_path.return_value = "/tmp/ohlcv"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1528,7 +1529,7 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
 ):
     job = await _create_job(isolated_dataset_manager, name="direct-copy", preset="quickTesting")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = str(tmp_path / "direct-copy.db")
+    resolver.get_dataset_path.return_value = str(tmp_path / "direct-copy")
     source_duckdb_path = _create_market_source_duckdb(tmp_path)
 
     preset = PresetConfig(
@@ -1591,7 +1592,7 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
 ):
     job = await _create_job(isolated_dataset_manager, name="direct-copy-reopen", preset="quickTesting")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/direct-copy-reopen.db"
+    resolver.get_dataset_path.return_value = "/tmp/direct-copy-reopen"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1713,7 +1714,7 @@ async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
 async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="statements")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/statements_break.db"
+    resolver.get_dataset_path.return_value = "/tmp/statements_break"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -1774,7 +1775,7 @@ async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monk
 async def test_build_dataset_margin_handles_empty_rows_and_cancel_break(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="margin")
     resolver = MagicMock()
-    resolver.get_dataset_path.return_value = "/tmp/margin_break.db"
+    resolver.get_dataset_path.return_value = "/tmp/margin_break"
 
     preset = PresetConfig(
         markets=["prime"],

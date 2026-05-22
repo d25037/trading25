@@ -25,7 +25,7 @@ def test_resolve_dataset_requires_duckdb_snapshot_with_manifest_v2(tmp_path: Pat
     (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     resolver = SnapshotResolver(str(tmp_path), str(tmp_path / "market-timeseries"))
-    resolved = resolver.resolve_dataset("sample.db")
+    resolved = resolver.resolve_dataset("sample")
 
     assert resolved is not None
     assert resolved.plane == SnapshotPlane.DATASET
@@ -42,7 +42,7 @@ def test_resolve_dataset_rejects_snapshot_without_manifest_v2(tmp_path: Path) ->
     snapshot_dir = tmp_path / "sample"
     snapshot_dir.mkdir()
     (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
-    (snapshot_dir / "dataset.db").write_text("", encoding="utf-8")
+    (snapshot_dir / "dataset").write_text("", encoding="utf-8")
     (snapshot_dir / "manifest.v1.json").write_text("{}", encoding="utf-8")
 
     resolver = SnapshotResolver(str(tmp_path), str(tmp_path / "market-timeseries"))
@@ -86,8 +86,13 @@ def test_normalize_dataset_snapshot_name_rejects_path_like_input() -> None:
         normalize_dataset_snapshot_name("../sample.db")
 
 
-def test_canonicalize_dataset_snapshot_id_accepts_legacy_path_input() -> None:
-    assert canonicalize_dataset_snapshot_id("dataset/sample.db") == "sample"
+def test_normalize_dataset_snapshot_name_rejects_db_suffix() -> None:
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        normalize_dataset_snapshot_name("sample.db")
+
+
+def test_canonicalize_dataset_snapshot_id_accepts_snapshot_name() -> None:
+    assert canonicalize_dataset_snapshot_id(" sample ") == "sample"
 
 
 def test_canonicalize_dataset_snapshot_id_rejects_path_traversal() -> None:
@@ -102,11 +107,11 @@ def test_resolve_dataset_rejects_invalid_dataset_name(tmp_path: Path) -> None:
 
 
 def test_resolve_dataset_snapshot_id_falls_back_to_normalized_name_for_missing_snapshot() -> None:
-    assert resolve_dataset_snapshot_id(" sample.db ") == "sample"
+    assert resolve_dataset_snapshot_id(" sample ") == "sample"
 
 
-def test_resolve_dataset_snapshot_id_canonicalizes_legacy_path() -> None:
-    assert resolve_dataset_snapshot_id("dataset/sample.db") == "sample"
+def test_resolve_dataset_snapshot_id_rejects_path_like_input() -> None:
+    assert resolve_dataset_snapshot_id("dataset/sample") is None
 
 
 def test_resolve_dataset_snapshot_id_returns_none_for_invalid_name() -> None:

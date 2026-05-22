@@ -11,10 +11,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useDeletePortfolio } from '@/hooks/usePortfolio';
-import type { PortfolioWithItems } from '@/types/portfolio';
+import type { PortfolioWithItemsResponse } from '@/types/portfolio';
 
 interface DeletePortfolioDialogProps {
-  portfolio: PortfolioWithItems;
+  portfolio: PortfolioWithItemsResponse;
   onSuccess?: () => void;
 }
 

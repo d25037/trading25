@@ -18,8 +18,6 @@ from src.infrastructure.data_access.clients import get_market_client
 from src.infrastructure.external_api.portfolio_client import PortfolioAPIClient
 from src.shared.models.portfolio import Portfolio, PortfolioItem, PortfolioSummary
 
-# Backward-compatible symbol for tests patching module-local client constructor.
-MarketAPIClient = get_market_client
 
 
 def _convert_portfolio_code_to_market_code(code: str) -> str:
@@ -176,7 +174,7 @@ def load_portfolio_stock_data(
 
     # 各銘柄のデータを取得
     stock_data: Dict[str, pd.DataFrame] = {}
-    with MarketAPIClient() as market_client:
+    with get_market_client() as market_client:
         for code in codes:
             try:
                 # portfolio.dbのコードを市場データ側コードに変換

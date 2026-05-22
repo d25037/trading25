@@ -74,7 +74,6 @@ class FundamentalDataPoint(BaseModel):
     forecastOperatingProfit: float | None = None
     forecastOperatingProfitChangeRate: float | None = None
     forecastEpsAboveRecentFyActuals: bool | None = None
-    forecastEpsAboveAllHistoricalActuals: bool | None = None
 
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = None

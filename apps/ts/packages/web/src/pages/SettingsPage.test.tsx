@@ -232,22 +232,21 @@ beforeEach(() => {
         { code: '7203', date: '2026-02-14', adjustmentFactor: 0.5, close: 1000, eventType: 'stock_split' },
       ],
       adjustmentEventsCount: 8,
-      stocksNeedingRefresh: ['7203', '6758'],
-      stocksNeedingRefreshCount: 100,
+      stocksNeedingRefresh: [],
+      stocksNeedingRefreshCount: 0,
       integrityIssues: [{ code: 'chart.stock_data.missing_dates', count: 12 }],
       integrityIssuesCount: 1,
       sampleWindows: {
         stockDataMissingDates: { returnedCount: 2, totalCount: 12, limit: 20, truncated: false },
         failedDates: { returnedCount: 2, totalCount: 3, limit: 10, truncated: false },
         adjustmentEvents: { returnedCount: 1, totalCount: 8, limit: 20, truncated: false },
-        stocksNeedingRefresh: { returnedCount: 2, totalCount: 100, limit: 20, truncated: true },
+        stocksNeedingRefresh: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
         options225MissingTopixCoverageDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
         missingListedMarketStocks: { returnedCount: 2, totalCount: 7, limit: 20, truncated: false },
         fundamentalsEmptySkippedCodes: { returnedCount: 2, totalCount: 4, limit: 20, truncated: false },
         marginEmptySkippedCodes: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
       },
       recommendations: [
-        'Run repair sync to refresh 100 stocks with pending adjustment backfill',
         'Run repair sync to backfill fundamentals for 7 listed-market stocks',
         'Run incremental sync to ingest N225 options data into options_225_data',
       ],
@@ -487,8 +486,8 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('Sample dates: 2026-02-27, 2026-02-20').length).toBeGreaterThan(0);
     expect(screen.getByText('Failed Sync Dates')).toBeInTheDocument();
     expect(screen.getByText('Adjustment Events')).toBeInTheDocument();
-    expect(screen.getByText('Stocks Needing Refresh')).toBeInTheDocument();
-    expect(screen.getByText('Showing 2 of 100.')).toBeInTheDocument();
+    expect(screen.queryByText('Stocks Needing Refresh')).not.toBeInTheDocument();
+    expect(screen.queryByText('Showing 2 of 100.')).not.toBeInTheDocument();
     expect(screen.getByText('Readiness Issues')).toBeInTheDocument();
     expect(screen.getAllByText('Missing Listed-Market Fundamentals').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Unsupported/Empty Fundamentals').length).toBeGreaterThan(0);
@@ -497,9 +496,6 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Sample codes: 464A, 500A')).toBeInTheDocument();
     expect(screen.getByText('Sample codes: 4957')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
-    expect(
-      screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
-    ).toBeGreaterThan(0);
     expect(
       screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length
     ).toBeGreaterThan(0);
@@ -1126,7 +1122,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('renders warning recovery safely when fundamentals counts are zero', () => {
+  it('does not treat deprecated stock refresh diagnostics as repair targets', () => {
     mockUseDbValidation.mockReturnValue({
       data: {
         status: 'warning',
@@ -1152,7 +1148,7 @@ describe('SettingsPage', () => {
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 3,
         integrityIssuesCount: 0,
-        recommendations: ['Run repair sync to refresh 3 stocks with pending adjustment backfill'],
+        recommendations: [],
       },
       isLoading: false,
       error: null,
@@ -1162,7 +1158,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
-    expect(screen.getByText('Stocks needing refresh')).toBeInTheDocument();
+    expect(screen.queryByText('Stocks needing refresh')).not.toBeInTheDocument();
     expect(screen.getByText('Missing listed-market fundamentals')).toBeInTheDocument();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });

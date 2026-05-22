@@ -209,7 +209,7 @@ class TestPrepareAllStocksData:
 
 class TestPrepareMultiData:
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_basic(self, mock_client_cls, mock_extract):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
@@ -230,7 +230,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_batch_fallback(self, mock_client_cls, mock_extract, mock_load):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
         from src.shared.exceptions import BatchAPIError
@@ -246,7 +246,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_batch_fallback_skips_invalid_stock_code(self, mock_client_cls, mock_extract, mock_load):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
         from src.shared.exceptions import BatchAPIError
@@ -263,7 +263,7 @@ class TestPrepareMultiData:
         assert "6758" in result
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_no_valid_data_raises(self, mock_client_cls, mock_extract):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
@@ -276,7 +276,7 @@ class TestPrepareMultiData:
             prepare_multi_data("testds", ["7203"])
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_include_forecast_revision_fetches_all_period_batch(self, mock_client_cls, mock_extract):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
@@ -329,7 +329,7 @@ class TestPrepareMultiData:
         assert client.get_statements_batch.call_args_list[1].kwargs["actual_only"] is False
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_forecast_revision_skipped_when_period_type_not_fy(self, mock_client_cls, mock_extract):
         from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
@@ -362,7 +362,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.transform_margin_df")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_include_margin_data_batch_success(
         self,
         mock_client_cls,
@@ -392,7 +392,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.load_margin_data")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_include_margin_data_batch_failure_fallback(
         self,
         mock_client_cls,
@@ -424,7 +424,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.logger")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_revision_batch_failure_continues_with_fy_data(
         self,
         mock_client_cls,
@@ -467,7 +467,7 @@ class TestPrepareMultiData:
 
     @patch("src.infrastructure.data_access.loaders.data_preparation.load_statements_data")
     @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
-    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_dataset_client")
     def test_statements_batch_failure_fallback_to_individual(
         self,
         mock_client_cls,

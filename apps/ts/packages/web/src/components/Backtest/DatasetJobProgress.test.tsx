@@ -23,7 +23,7 @@ function createDatasetJob(overrides: Partial<DatasetJobResponse>): DatasetJobRes
     jobId: 'job-default',
     status: 'running',
     preset: 'quickTesting',
-    name: 'quickTesting.db',
+    name: 'quickTesting',
     startedAt: '2026-02-10T00:00:00Z',
     ...overrides,
   };
@@ -144,7 +144,7 @@ describe('DatasetJobProgress', () => {
         totalStocks: 10,
         warnings: ['warn-1'],
         errors: [],
-        outputPath: '/tmp/quickTesting.db',
+        outputPath: '/tmp/quickTesting',
       },
     });
 

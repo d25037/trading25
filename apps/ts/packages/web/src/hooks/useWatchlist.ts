@@ -6,30 +6,30 @@ import type {
   ListWatchlistsResponse,
   UpdateWatchlistRequest,
   WatchlistDeleteResponse,
-  WatchlistItem,
+  WatchlistItemResponse,
   WatchlistPricesResponse,
-  WatchlistSummary,
-  WatchlistWithItems,
+  WatchlistSummaryResponse,
+  WatchlistWithItemsResponse,
 } from '@/types/watchlist';
 import { logger } from '@/utils/logger';
 
 // Fetch functions
 const fetchWatchlists = () => apiGet<ListWatchlistsResponse>('/api/watchlist');
 
-const fetchWatchlistWithItems = (id: number) => apiGet<WatchlistWithItems>(`/api/watchlist/${id}`);
+const fetchWatchlistWithItems = (id: number) => apiGet<WatchlistWithItemsResponse>(`/api/watchlist/${id}`);
 
 const fetchWatchlistPrices = (id: number) => apiGet<WatchlistPricesResponse>(`/api/watchlist/${id}/prices`);
 
 // Mutation functions
-const createWatchlist = (data: CreateWatchlistRequest) => apiPost<WatchlistSummary>('/api/watchlist', data);
+const createWatchlist = (data: CreateWatchlistRequest) => apiPost<WatchlistSummaryResponse>('/api/watchlist', data);
 
 const updateWatchlist = (id: number, data: UpdateWatchlistRequest) =>
-  apiPut<WatchlistSummary>(`/api/watchlist/${id}`, data);
+  apiPut<WatchlistSummaryResponse>(`/api/watchlist/${id}`, data);
 
 const deleteWatchlist = (id: number) => apiDelete<WatchlistDeleteResponse>(`/api/watchlist/${id}`);
 
 const addWatchlistItem = (watchlistId: number, data: CreateWatchlistItemRequest) =>
-  apiPost<WatchlistItem>(`/api/watchlist/${watchlistId}/items`, data);
+  apiPost<WatchlistItemResponse>(`/api/watchlist/${watchlistId}/items`, data);
 
 const removeWatchlistItem = (watchlistId: number, itemId: number) =>
   apiDelete<WatchlistDeleteResponse>(`/api/watchlist/${watchlistId}/items/${itemId}`);
