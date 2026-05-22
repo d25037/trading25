@@ -11,7 +11,6 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
                      │               └─ SQLite (portfolio/jobs metadata)
                      ↓
                   ts/web (:5173)
-                  ts/cli
 ```
 
 | サービス | ポート | 技術 |
@@ -45,14 +44,14 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で `DatasetSnapshotReader` / `MarketDbReader` を直接参照し、FastAPI 内部HTTPを経由しない
 - Dataset snapshot は `dataset.duckdb` と `manifest.v2.json` の両方が揃った bundle のみ解決対象とし、旧 `dataset.db` / root-level `*.db` snapshot は unsupported とする
 - Dataset API `GET /api/dataset/{name}/info` の SoT は `snapshot` + `stats` + `validation`（`details.dataCoverage` / `details.fkIntegrity` / `details.stockCountValidation` 含む）で、DuckDB snapshot のみを返す
-- Dataset create（`POST /api/dataset`）は `market.duckdb` snapshot を SoT とし、`stock_data` / `statements` / `statement_metrics_adjusted` / `daily_valuation` / `margin_data` / `topix_data` / `indices_data` を DuckDB 直結 copy で取り込む。`stock_data` は 4桁/5桁 code を正規化し、同日重複は 4桁優先 + 5桁 NULL backfill で 1 行化し、欠損OHLCV row の warning 集約と partial snapshot / manifest 挙動を維持する。生成物は `dataset.duckdb + parquet/ + manifest.v2.json`。直結 source が使えない場合のみ legacy query path へ fallback する。再試行は `overwrite=true` に統一し、`resume` route と `timeoutMinutes` request override は廃止した。backend job timeout は内部固定値のみを使う
+- Dataset create（`POST /api/dataset`）は `market.duckdb` snapshot を SoT とし、`stock_data` / `statements` / `statement_metrics_adjusted` / `daily_valuation` / `margin_data` / `topix_data` / `indices_data` を DuckDB 直結 copy で取り込む。`stock_data` は 4桁/5桁 code を正規化し、同日重複は 4桁優先 + 5桁 NULL backfill で 1 行化し、欠損OHLCV row の warning 集約と partial snapshot / manifest 挙動を維持する。生成物は `dataset.duckdb + parquet/ + manifest.v2.json`。public API route は `market_reader` と `market.duckdb` source を必須とし、source 不在時は作成不可にする。再試行は `overwrite=true` に統一し、`resume` route と `timeoutMinutes` request override は廃止した。backend job timeout は内部固定値のみを使う
 - Dataset cancel は API caller に対して即時返却し、cancelled build は `manifest.v2.json` を書かない partial snapshot のまま resolve 不可にする。in-flight cleanup/export は background task 完了まで継続しうる
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
 - Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks` / `margin_data` / `statement_metrics_adjusted` / `daily_valuation`）とし、dataset へのフォールバックを禁止する
 - `Symbol Workbench`/`Analysis` の `stock_data` 読み取りは 4桁/5桁コード混在を正規化し、同日重複行は 4桁コード優先で 1 行化する。`stocks` 欠落時でも `stock_data` からの OHLCV 取得を継続する
 - Screening / Symbol Workbench / Backtest / Signal semantics の SoT matrix は [`docs/architecture-sot-matrix.md`](docs/architecture-sot-matrix.md) を参照する
-- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）。通常の backtest / research / lab / screening は `shared_config.data_source: market` と `shared_config.universe_preset` を SoT とし、`shared_config.dataset` は unsupported とする。`production/*` は raw YAML で `shared_config.universe_preset` の明示宣言を必須とし、`default.yaml` 継承のみでは不十分とする。物理 dataset snapshot は `data_source: dataset_snapshot` + `dataset_snapshot` + `static_universe: true` を明示した archived reproducibility run だけで使う
+- Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend は API 結果・metadata・schema guidance の表示に限定する。frontend-local validation 実装を再導入しない。通常の backtest / research / lab / screening は `shared_config.data_source: market` と `shared_config.universe_preset` を SoT とし、`shared_config.dataset` は unsupported とする。`production/*` は raw YAML で `shared_config.universe_preset` の明示宣言を必須とし、`default.yaml` 継承のみでは不十分とする。物理 dataset snapshot は `data_source: dataset_snapshot` + `dataset_snapshot` + `static_universe: true` を明示した archived reproducibility run だけで使う
 - Backtest family（`backtest` / `attribution` / `optimize` / `lab`）は `shared_config.execution_policy.mode` として `next_session_round_trip` / `current_session_round_trip` / `overnight_round_trip` をサポートする。`next_session_round_trip` は entry signal の翌営業日 `Open` で建てて同日 `Close` で閉じ、`current_session_round_trip` は当日 `Open` で建てて当日 `Close` で閉じ、`overnight_round_trip` は当日 `Close` で建てて翌営業日 `Open` で閉じる。`screening` は `next_session_round_trip` を unsupported error で拒否し、production strategy を `screening_support` (`supported` / `unsupported`) と `entry_decidability` (`pre_open_decidable` / `requires_same_session_observation`) で分類する
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - Strategy `rename` / `delete` の権限判定はトップレベルカテゴリ基準で行い、`experimental/**`（例: `experimental/optuna/foo`）は許可する
@@ -172,7 +171,7 @@ uv run pyright src/              # 型チェック
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/contracts/` | OpenAPI 生成型・API response 型・bt:sync |
 | `packages/utils/` | logger/env/date/path などの共通ユーティリティ |
-| `packages/api-clients/` | FastAPI クライアント（backtest/analytics/JQuants） |
+| `packages/api-clients/` | shared FastAPI クライアント（backtest/analytics） |
 
 ```bash
 bun run workspace:dev            # web 起動（FastAPI :3002 にプロキシ）
@@ -197,7 +196,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - `Screening / Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - frontend の desktop 作業幅はユーザーの常用レイアウト（おおむね 1180px 前後のコンテンツ幅）を優先し、hero/header/meta の縦占有を抑えて主テーブル・主チャートの可視領域を確保する
 - Screening 画面は `Pre-Open Decidable / Requires In-Session Observation` の2タブ構成。Ranking 画面は `Daily Ranking / Fundamental Ranking` の2タブ構成で、Daily Ranking は `Individual Stocks / Indices` の2サブタブを持つ。Indices は backend `indexPerformance` を表示し、`lookbackDays` と `date` を共有 filter として使う。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
-- `/symbol-workbench` `symbol|strategy|matchedDate`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/options-225` `date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`、`/screening` `tab + filter params`、`/ranking` `tab|dailyView + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する
+- `/symbol-workbench` `symbol|strategy|matchedDate`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/research/detail` `experimentId|runId`、`/options-225` `date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`、`/screening` `tab + filter params`、`/ranking` `dailyView + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する
 - Symbol Workbench の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする

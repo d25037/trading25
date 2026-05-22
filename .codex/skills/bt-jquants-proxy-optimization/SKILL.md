@@ -27,7 +27,7 @@ description: bt FastAPI の J-Quants proxy 最適化を扱うスキル。`/api/j
 
 ## Guardrails
 
-- TS/Web/CLI からの direct J-Quants 呼び出しを前提にしない。
+- ts/web や shared TS clients からの direct J-Quants 呼び出しを前提にしない。
 - キャッシュキーは API パラメータ差分を確実に反映する。
 - 部分失敗は呼び出し単位で扱い、バッチ全体失敗に短絡しない。
 

@@ -22,12 +22,14 @@ description: bt の戦略 YAML 設定とローダーを扱うスキル。`config
 
 1. YAML schema、runtime loader、strategy route の順で影響範囲を確認する。
 2. category、探索順、rename/delete 権限の互換を確認する。
-3. validation 変更時は backend strict validation と schema の整合を確認する。
+3. validation 変更時は backend strict validation、OpenAPI/schema、web 表示の整合を確認する。
 
 ## Guardrails
 
 - 3層構造（`experimental/`, `production/`, `legacy/`, `reference/`）を維持する。
 - カテゴリ省略時の探索順を壊さない。
+- `shared_config.dataset` は unsupported。market run は `shared_config.data_source: market` + `universe_preset`、archived reproducibility は `data_source: dataset_snapshot` + `dataset_snapshot` + `static_universe: true` を使う。
+- frontend-local validation を再導入しない。web は backend validation result と metadata-driven guidance を表示する。
 - YAML 主導設計を維持し、戦略固有ロジックのハードコードを避ける。
 
 ## Verification

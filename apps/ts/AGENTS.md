@@ -11,7 +11,7 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
 - **`packages/contracts/`** - OpenAPI generated 型、API response 型、`bt:sync`
 - **`packages/utils/`** - logger/env/date/path など共通ユーティリティ
-- **`packages/api-clients/`** - FastAPI client packages (backtest/JQuants)
+- **`packages/api-clients/`** - shared FastAPI clients (backtest / analytics) and HTTP utilities
 
 ## Critical Rules
 
@@ -29,7 +29,7 @@ const first = getFirstElementOrFail(array, 'Expected element');
 
 ### API Response Type Pattern
 
-API レスポンス型は `@trading25/contracts/types/api-response-types` で一元管理。Web/CLI の型ファイルは re-export パターンで参照する（`backtest.ts` が模範）。型の重複定義は禁止。
+API レスポンス型は `@trading25/contracts/types/api-response-types` で一元管理。web と shared api-clients の型ファイルは re-export パターンで参照する（`backtest.ts` が模範）。型の重複定義は禁止。
 
 ```typescript
 // web/src/types/ranking.ts - re-export pattern
@@ -43,7 +43,7 @@ export interface RankingParams { ... }
 Root `tsconfig.json` は contracts/utils を対象にし、web は別設定で型検査する。
 - **Root**: packages/contracts + packages/utils
 - **Web**: JSX + DOM APIs (React 19)
-- **API**: Node.js-specific (ESNext)
+- **API clients**: shared HTTP clients are checked from `packages/api-clients`
 
 ## Essential Commands
 
@@ -74,19 +74,18 @@ uv run --project ../bt bt --help
 
 **ランタイム**: ubuntu-latest, Bun 1.3.8
 
-**ステップ**:
-1. Lint (`bun run quality:lint`)
-2. bt OpenAPI 型生成 (`cd packages/contracts && bun run bt:generate-types`)
-3. Build contracts/utils/api-clients/web package (`bun run workspace:build`)
-4. Typecheck (`bun run quality:typecheck`)
-5. Test with coverage (`bun run workspace:test:coverage`)
-6. Coverage threshold 検証 (`bun run coverage:check`)
+**主要ジョブ**:
+- `repo-guardrails`: `scripts/skills/audit_skills.py --strict-legacy` と privacy leak check
+- `quality`: `./scripts/lint.sh` と `./scripts/typecheck.sh`
+- `contract-tests`: `./scripts/check-contract-sync.sh`
+- `package-unit-tests` / `app-integration-tests` / `coverage-gate`: package/web/bt tests と coverage threshold
+- `web-e2e`: Playwright smoke（必要な scope のとき）
 
 ## Technology Stack
 
-- **Core**: TypeScript + Bun workspaces + Biome 2.1.4
+- **Core**: TypeScript + Bun workspaces + Biome 2.4.15
 - **Testing**: Bun (backend) + Vitest (web)
-- **Web**: React 19 + Vite 7 + Tailwind CSS v4 + TanStack Query + Zustand
+- **Web**: React 19 + Vite 8 + Tailwind CSS v4 + TanStack Query + Zustand
 - **API**: FastAPI (`apps/bt`, port `3002`) + OpenAPI
 - **Data**: FastAPI (:3002) + OpenAPI generated types + JQuants API
 

@@ -1,7 +1,7 @@
 # Trading Backtesting
 
 ## プロジェクト概要
-**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、結果確認は runner bundle / canonical docs / static HTML report に寄せる。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
+**runner-first research bundle** と高速バックテストを中心とした戦略ツール。研究定義は domain / runner に実装し、VectorBT基盤の高速ベクトル化バックテスト、必要時のみ Nautilus verification、結果確認は runner bundle / canonical docs / static HTML report に寄せる。**FastAPI サーバー (:3002) が唯一の API バックエンド**。フロントエンドは `apps/ts/packages/web/` に集約済み。
 
 ## 重要原則
 - **表面的なごまかしを絶対に行わない。根本的な解決ができないときは、「今は○○の理由で解決できなかった」と素直に言う**
@@ -22,11 +22,12 @@
 
 ## 🛡️ 本番環境対応・信頼性強化
 
-### API接続管理
+### API / Data Access 境界
 **詳細**: `../../.codex/skills/bt-api-architecture/SKILL.md`
-- **統一APIクライアント**: `src/infrastructure/external_api/` によるREST API（localhost:3002）経由データアクセス
-- **リソース管理**: HTTPセッション管理・リトライ機構・タイムアウト設定・エラーハンドリング
-- **旧実装削除**: `src/data/database.py` は削除済み（SQLite直接アクセス廃止）
+- **外部APIクライアント**: `src/infrastructure/external_api/` は J-Quants / moomoo など外部接続を担当する
+- **ローカルData Plane**: backtest / analytics / screening は `DatasetSnapshotReader` / `MarketDbReader` を直接使い、FastAPI 内部HTTPを経由しない
+- **公開API境界**: ts/web との接続は FastAPI (:3002) + OpenAPI contracts を SoT にする
+- **旧実装削除**: `src/data/database.py` や Hono / ts API サーバーの互換経路を再導入しない
 
 ### Kelly基準数値安全性
 - **ゼロ除算対策**: Kelly係数計算時の分母チェック（b > 0 検証）
@@ -44,9 +45,9 @@
 - **実装箇所**: `src/domains/strategy/signals/processor.py:220-228`
 
 ### テスト品質
-- **100%テスト成功率**: 1,996/1,996 passed（2026-02-03時点）
-- **カバレッジ計測**: pytest-cov導入済み、ラインカバレッジ73%、CIゲート70%
-- **包括的テストスイート**: unit/integration/security 各テストカテゴリ完備
+- **カバレッジ計測**: pytest-cov導入済み、CI の coverage gate を SoT にする
+- **包括的テストスイート**: unit / integration / server / domain tests を変更範囲に合わせて実行する
+- **古い件数固定禁止**: test count や coverage 数値は固定文書化せず、現在の CI / coverage 出力で確認する
 
 ## 🎯 統一Signalsシステム
 **詳細**: `../../.codex/skills/bt-signal-system/SKILL.md`
@@ -76,11 +77,11 @@
 ## 技術スタック
 
 ### 主要ライブラリ
-- **vectorbt** (>=0.26.0): 高速ベクトル化バックテストフレームワーク
+- **vectorbt** (>=1.0.0): 高速ベクトル化バックテストフレームワーク
 - **pydantic** (>=2.0.0): データバリデーション
 - **pandas/numpy**: データ処理・数値計算
-- **fastapi** (>=0.115.0): バックテストAPI サーバー
-- **uvicorn** (>=0.34.0): ASGIサーバー
+- **fastapi** (>=0.136.1): バックテストAPI サーバー
+- **uvicorn** (>=0.47.0): ASGIサーバー
 - **typer/rich**: CLIフレームワーク・美化
 
 ### 開発ツール
@@ -113,13 +114,12 @@
 │   │   ├── production/       # 本番環境用戦略（Git管理）
 │   │   ├── legacy/          # レガシー戦略（Git管理）
 │   │   └── reference/       # リファレンス・テンプレート（Git管理）
-│   ├── optimization/        # パラメータ最適化グリッド設定
 │   └── default.yaml         # デフォルト設定
 ├── notebooks/
 │   ├── templates/           # テンプレートNotebook
-│   └── generated/           # （廃止: XDG準拠パスへ移行）
+│   └── playground/          # ad hoc notebook playground（SoT ではない）
 ├── docs/                    # プロジェクトドキュメント
-├── tests/                   # テストスイート（843+ tests）
+├── tests/                   # pytest suite
 └── src/                     # ソースコード（5層構成）
     ├── entrypoints/         # 実行入口（http/cli）
     │   ├── http/            # FastAPI app, routes, middleware, schemas
@@ -149,7 +149,6 @@
 ├── backtest/
 │   ├── results/{strategy}/        # バックテスト結果HTML
 │   └── optimization/{strategy}/   # 最適化結果
-├── optimization/                  # 最適化グリッド設定
 └── cache/                         # キャッシュ
 ```
 
@@ -239,7 +238,7 @@ uv run pytest tests/
 - **Runner First**: domain -> runner -> bundle -> optional notebook viewer を既定にする
 - **型安全性重視**: Python標準型ヒントによる軽量・高速バリデーション
 - **YAML完全制御**: 戦略実装パッケージ完全削除（1,000+ lines削減）・`entry_filter_params`/`exit_trigger_params`による統一管理
-- **API統合**: データローダー全面API移行完了（REST API経由データアクセス）
+- **Data Plane統合**: runtime のデータ取得は DuckDB-backed reader を SoT にし、FastAPI は ts/web 向け公開境界として扱う
 
 ### VectorBT使用の利点
 - 100倍以上の高速化を実現
