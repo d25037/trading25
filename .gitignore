@@ -24,6 +24,7 @@ htmlcov/
 **/playwright-report/
 **/test-results/
 .playwright-mcp/
+.superpowers/
 .worktrees/
 
 # === OS / Editor ===
