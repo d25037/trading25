@@ -171,7 +171,7 @@ Prime 判定としての初期mapping:
 | `Fwd PER` | `perPercentile <= 0.20` かつ `forwardPer / per <= 0.8` green、同 `<= 1.0` blue。その他は `forwardPerPercentile <= 0.10` green, `<= 0.20` blue, `>= 0.80` yellow, `>= 0.90` red |
 | `PER` | `perPercentile <= 0.20` blue, `>= 0.80` yellow, `>= 0.90` red. `<=0.10` green は弱めに扱う |
 | `Fwd P/OP` | standalone cheap color は弱め。`forwardPerPercentile <= 0.20` かつ `forwardPOpPercentile <= 0.20` を blue、`perPercentile <= 0.20` かつ `forwardPOp / per > 1.25` は yellow、`forwardPOpPercentile >= 0.80` は yellow、`>= 0.90` は red |
-| `流動性Z` | green は3条件に限定: `neutral_rerating` は low PER20 + Fwd PER/PER <= 0.8 のみ green、`crowded_rerating` は low PBR20 + low Fwd PER20 または low PER20 + Fwd PER/PER <= 0.8 のみ green。その他の `neutral_rerating` は blue、`crowded_rerating` は中valueあり blue・valueなし yellow。ただし `crowded_rerating` は PER/Fwd PER/Fwd P/OP/PBR のいずれかが high 20% なら、green 条件に該当しない限り yellow。`distribution_stress` / `stale_liquidity` は yellow |
+| `流動性Z` | green は3条件に限定: `neutral_rerating` は low PER20 + Fwd PER/PER <= 0.8 のみ green、`crowded_rerating` は low PBR20 + low Fwd PER20 または low PER20 + Fwd PER/PER <= 0.8 のみ green。その他の `neutral_rerating` は blue、`crowded_rerating` は中valueあり blue・valueなし yellow。ただし `crowded_rerating` は PER/Fwd PER/Fwd P/OP/PBR のいずれかが high 20%、または PER/Fwd PER が両方 null（赤字・正のPER未成立を含む）なら、green 条件に該当しない限り yellow。`distribution_stress` / `stale_liquidity` は yellow |
 
 TOPIX regime は今回の配色には直接混ぜない。もし UI に入れるなら、`流動性Z` の色そのものではなく、`TOPIX 20d<0` かつ `crowded_rerating`、特に value confirmation なしを別の market-adjustment caution overlay として扱うほうが解釈が明確。
 

@@ -154,6 +154,18 @@ describe('RankingTable', () => {
             liquidityResidualZ: 1.6,
             adv60ToFreeFloatPct: 7,
           },
+          {
+            ...createItem(6),
+            per: null,
+            perPercentile: null,
+            forwardPer: null,
+            forwardPerPercentile: null,
+            pbr: 0.46,
+            pbrPercentile: 0.03,
+            liquidityRegime: 'crowded_rerating',
+            liquidityResidualZ: 3.05,
+            adv60ToFreeFloatPct: 12,
+          },
         ]}
         isLoading={false}
         error={null}
@@ -169,6 +181,7 @@ describe('RankingTable', () => {
     expect(screen.getAllByText('Crowded Rerating')[0]).toHaveClass('text-yellow-800');
     expect(screen.getAllByText('Crowded Rerating')[1]).toHaveClass('text-green-700');
     expect(screen.getAllByText('Crowded Rerating')[2]).toHaveClass('text-yellow-800');
+    expect(screen.getAllByText('Crowded Rerating')[3]).toHaveClass('text-yellow-800');
     expect(screen.getByText('Prime 20d excess evidence')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
@@ -185,6 +198,7 @@ describe('RankingTable', () => {
     expect(screen.getByText('-0.20')).toHaveClass('text-sky-600');
     expect(screen.getByText('+2.00')).toHaveClass('text-green-600');
     expect(screen.getByText('+1.60')).toHaveClass('text-yellow-600');
+    expect(screen.getByText('+3.05')).toHaveClass('text-yellow-600');
   });
 
   it('renders mobile ranking cards and keeps stock navigation', async () => {

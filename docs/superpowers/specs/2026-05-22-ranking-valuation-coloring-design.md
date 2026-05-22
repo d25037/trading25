@@ -98,13 +98,14 @@ PBR has the strongest direct Prime evidence among the requested valuation column
 
 Raw `liquidityResidualZ` alone is ambiguous; Prime evidence says liquidity state is a rerating/crowding/investability diagnostic rather than "higher is better". Color the numeric `流動性Z` cell using `liquidityRegime x value confirmation` when present, with raw-Z fallback only for stale-style low residual.
 
-Green is intentionally narrow. For `neutral_rerating`, green requires `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. For `crowded_rerating`, green requires either `pbrPercentile <= 0.20 AND forwardPerPercentile <= 0.20`, or `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. Medium value confirmation for `crowded_rerating` remains blue and includes `pbrPercentile <= 0.20` or `perPercentile <= 0.20 AND forwardPer / per <= 1.00`, but high valuation percentiles (`PER` / `Fwd PER` / `Fwd P/OP` / `PBR >= 0.80`) veto blue unless the narrow green confirmation already matched.
+Green is intentionally narrow. For `neutral_rerating`, green requires `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. For `crowded_rerating`, green requires either `pbrPercentile <= 0.20 AND forwardPerPercentile <= 0.20`, or `perPercentile <= 0.20 AND forwardPer / per <= 0.80`. Medium value confirmation for `crowded_rerating` remains blue and includes `pbrPercentile <= 0.20` or `perPercentile <= 0.20 AND forwardPer / per <= 1.00`, but high valuation percentiles (`PER` / `Fwd PER` / `Fwd P/OP` / `PBR >= 0.80`) and missing positive earnings valuation (`PER` and `Fwd PER` percentiles both null, including negative-PER cases) veto blue unless the narrow green confirmation already matched.
 
 | Condition | Tier |
 | --- | --- |
 | `liquidityRegime === "neutral_rerating"` and `perPercentile <= 0.20 AND forwardPer / per <= 0.80` | `excellent` |
 | `liquidityRegime === "neutral_rerating"` otherwise | `good` |
 | `liquidityRegime === "crowded_rerating"` and green confirmation | `excellent` |
+| `liquidityRegime === "crowded_rerating"` and both `perPercentile` / `forwardPerPercentile` are null | `bad` |
 | `liquidityRegime === "crowded_rerating"` and any valuation percentile `>= 0.80` | `bad` |
 | `liquidityRegime === "crowded_rerating"` and medium value confirmation | `good` |
 | `liquidityRegime === "crowded_rerating"` without value confirmation | `bad` |

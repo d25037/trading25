@@ -308,6 +308,10 @@ function hasExpensiveValuationWarning(item: EquityRankingItem): boolean {
   );
 }
 
+function hasEarningsValuationWarning(item: EquityRankingItem): boolean {
+  return item.perPercentile == null && item.forwardPerPercentile == null;
+}
+
 function hasReratingValueConfirmation(item: EquityRankingItem): boolean {
   const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
   return (
@@ -317,15 +321,20 @@ function hasReratingValueConfirmation(item: EquityRankingItem): boolean {
   );
 }
 
+function getCrowdedReratingEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
+  if (hasCrowdedReratingGreenConfirmation(item)) return 'excellent';
+  if (hasEarningsValuationWarning(item)) return 'bad';
+  if (hasExpensiveValuationWarning(item)) return 'bad';
+  if (hasReratingValueConfirmation(item)) return 'good';
+  return 'bad';
+}
+
 function getLiquidityEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
   if (item.liquidityRegime === 'neutral_rerating') {
     return hasLowPerForwardPerImprovement(item) ? 'excellent' : 'good';
   }
   if (item.liquidityRegime === 'crowded_rerating') {
-    if (hasCrowdedReratingGreenConfirmation(item)) return 'excellent';
-    if (hasExpensiveValuationWarning(item)) return 'bad';
-    if (hasReratingValueConfirmation(item)) return 'good';
-    return 'bad';
+    return getCrowdedReratingEvidenceTier(item);
   }
   if (item.liquidityRegime === 'distribution_stress') return 'bad';
   if (item.liquidityRegime === 'stale_liquidity') return 'bad';
