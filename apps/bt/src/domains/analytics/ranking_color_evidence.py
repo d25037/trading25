@@ -203,6 +203,7 @@ class RankingColorEvidenceResult:
     forward_per_pop_interaction_df: pd.DataFrame
     liquidity_regime_evidence_df: pd.DataFrame
     topix_regime_liquidity_value_evidence_df: pd.DataFrame
+    liquidity_color_long_trend_evidence_df: pd.DataFrame
     high_valuation_size_liquidity_interaction_df: pd.DataFrame
 
 
@@ -229,7 +230,7 @@ def run_ranking_color_evidence_research(
     if not db_path_obj.is_file():
         raise FileNotFoundError(f"market.duckdb was not found: {db_path_obj}")
 
-    query_start = _offset_calendar_date(start_date, days=-120)
+    query_start = _offset_calendar_date(start_date, days=-150)
     query_end = _offset_calendar_date(end_date, days=max(resolved_horizons) * 4 + 30)
 
     with open_readonly_analysis_connection(
@@ -319,6 +320,14 @@ def run_ranking_color_evidence_research(
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
+            liquidity_color_long_trend_evidence_df=(
+                _build_liquidity_color_long_trend_evidence_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            ),
             high_valuation_size_liquidity_interaction_df=(
                 _build_high_valuation_size_liquidity_interaction_df(
                     ctx.connection,
@@ -371,6 +380,9 @@ def write_ranking_color_evidence_bundle(
             "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
             "topix_regime_liquidity_value_evidence_df": (
                 result.topix_regime_liquidity_value_evidence_df
+            ),
+            "liquidity_color_long_trend_evidence_df": (
+                result.liquidity_color_long_trend_evidence_df
             ),
             "high_valuation_size_liquidity_interaction_df": (
                 result.high_valuation_size_liquidity_interaction_df
@@ -434,6 +446,13 @@ def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
         "",
         _top_rows_for_markdown(
             result.topix_regime_liquidity_value_evidence_df,
+            limit=120,
+        ),
+        "",
+        "## Liquidity Color x Long Trend Evidence",
+        "",
+        _top_rows_for_markdown(
+            result.liquidity_color_long_trend_evidence_df,
             limit=120,
         ),
         "",
@@ -582,6 +601,8 @@ def _create_observation_panel(
                 ) AS med_adv60_sessions,
                 lag(close, 20) over (partition by code order by date) as close_lag_20d,
                 lag(close, 60) over (partition by code order by date) as close_lag_60d,
+                lag(close, 120) over (partition by code order by date) as close_lag_120d,
+                lag(close, 150) over (partition by code order by date) as close_lag_150d,
                 {forward_exprs}
             FROM scoped
         ),
@@ -602,6 +623,10 @@ def _create_observation_panel(
                     as recent_return_20d_pct,
                 case when close_lag_60d > 0 then (close / close_lag_60d - 1.0) * 100.0 end
                     as recent_return_60d_pct,
+                case when close_lag_120d > 0 then (close / close_lag_120d - 1.0) * 100.0 end
+                    as recent_return_120d_pct,
+                case when close_lag_150d > 0 then (close / close_lag_150d - 1.0) * 100.0 end
+                    as recent_return_150d_pct,
                 case when topix_close_lag_20d > 0 then (topix_close / topix_close_lag_20d - 1.0) * 100.0 end
                     as topix_recent_return_20d_pct,
                 case when topix_close_lag_60d > 0 then (topix_close / topix_close_lag_60d - 1.0) * 100.0 end
@@ -1202,6 +1227,54 @@ def _build_topix_regime_liquidity_value_evidence_df(
     return _concat_sorted(frames, columns=_topix_regime_liquidity_value_columns())
 
 
+def _build_liquidity_color_long_trend_evidence_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    trend_conditions: tuple[tuple[int, str, str], ...] = (
+        (120, "trend_positive", "recent_return_120d_pct > 0"),
+        (120, "trend_non_positive", "recent_return_120d_pct <= 0"),
+        (150, "trend_positive", "recent_return_150d_pct > 0"),
+        (150, "trend_non_positive", "recent_return_150d_pct <= 0"),
+    )
+    for regime_order, (regime, ui_colors) in enumerate(_liquidity_color_sql().items()):
+        for color_order, (ui_color, color_sql) in enumerate(ui_colors.items()):
+            for trend_order, (trend_window, trend_condition, trend_sql) in enumerate(
+                trend_conditions
+            ):
+                for horizon in horizons:
+                    frames.append(
+                        _aggregate_condition(
+                            conn,
+                            source_name="ranking_color_liquidity_ranked",
+                            condition=(
+                                f"liquidity_scope = '{regime}' "
+                                f"AND ({color_sql}) "
+                                f"AND ({trend_sql})"
+                            ),
+                            condition_fields={
+                                "condition_family": "liquidity_color_long_trend",
+                                "liquidity_regime": regime,
+                                "liquidity_regime_order": regime_order,
+                                "ui_color": ui_color,
+                                "ui_color_order": color_order,
+                                "trend_window": int(trend_window),
+                                "trend_condition": trend_condition,
+                                "trend_condition_order": trend_order,
+                                "horizon": int(horizon),
+                            },
+                            return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                            min_observations=min_observations,
+                            severe_loss_threshold_pct=severe_loss_threshold_pct,
+                        )
+                    )
+    return _concat_sorted(frames, columns=_liquidity_color_long_trend_columns())
+
+
 def _build_high_valuation_size_liquidity_interaction_df(
     conn: Any,
     *,
@@ -1279,6 +1352,8 @@ def _aggregate_condition(
                 AS severe_loss_rate_pct,
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
+            median(recent_return_120d_pct) AS median_recent_return_120d_pct,
+            median(recent_return_150d_pct) AS median_recent_return_150d_pct,
             median(topix_recent_return_20d_pct) AS median_topix_recent_return_20d_pct,
             median(topix_recent_return_60d_pct) AS median_topix_recent_return_60d_pct,
             median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy,
@@ -1354,6 +1429,8 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             close,
             recent_return_20d_pct,
             recent_return_60d_pct,
+            recent_return_120d_pct,
+            recent_return_150d_pct,
             topix_recent_return_20d_pct,
             topix_recent_return_60d_pct,
             med_adv60_jpy / 1000000.0 AS med_adv60_mil_jpy,
@@ -1484,6 +1561,29 @@ def _forward_per_pop_condition(bucket: str) -> str:
     raise ValueError(f"unsupported forward PER/P-OP bucket: {bucket}")
 
 
+def _liquidity_color_sql() -> dict[str, dict[str, str]]:
+    strong_value = (
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) "
+        "OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)"
+    )
+    neutral_green = "per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8"
+    crowded_green = strong_value
+    medium_value = (
+        "pbr_percentile <= 0.2 "
+        "OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0)"
+    )
+    return {
+        "crowded_rerating": {
+            "green": f"({crowded_green})",
+            "blue": f"({medium_value}) AND NOT ({crowded_green})",
+        },
+        "neutral_rerating": {
+            "green": f"({neutral_green})",
+            "blue": f"NOT ({neutral_green})",
+        },
+    }
+
+
 def _evidence_tier(bucket: str) -> str:
     return {
         "cheapest_10pct": "excellent",
@@ -1559,6 +1659,8 @@ def _aggregate_metric_columns() -> list[str]:
         "severe_loss_rate_pct",
         "median_recent_return_20d_pct",
         "median_recent_return_60d_pct",
+        "median_recent_return_120d_pct",
+        "median_recent_return_150d_pct",
         "median_topix_recent_return_20d_pct",
         "median_topix_recent_return_60d_pct",
         "median_med_adv60_mil_jpy",
@@ -1663,6 +1765,22 @@ def _topix_regime_liquidity_value_columns() -> list[str]:
         "liquidity_regime",
         "value_condition",
         "value_condition_order",
+        "horizon",
+        "market_scope",
+        *_aggregate_metric_columns(),
+    ]
+
+
+def _liquidity_color_long_trend_columns() -> list[str]:
+    return [
+        "condition_family",
+        "liquidity_regime",
+        "liquidity_regime_order",
+        "ui_color",
+        "ui_color_order",
+        "trend_window",
+        "trend_condition",
+        "trend_condition_order",
         "horizon",
         "market_scope",
         *_aggregate_metric_columns(),

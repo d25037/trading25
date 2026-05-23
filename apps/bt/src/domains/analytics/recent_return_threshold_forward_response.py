@@ -29,7 +29,8 @@ from src.domains.analytics.research_bundle import (
 RECENT_RETURN_THRESHOLD_FORWARD_RESPONSE_EXPERIMENT_ID = (
     "market-behavior/recent-return-threshold-forward-response"
 )
-DEFAULT_PRE_WINDOWS: tuple[int, ...] = (20, 60)
+DEFAULT_PRE_WINDOWS: tuple[int, ...] = (20, 60, 120, 150)
+DEFAULT_LONG_TREND_WINDOWS: tuple[int, ...] = (120, 150)
 DEFAULT_HORIZONS: tuple[int, ...] = (5, 20)
 DEFAULT_20D_THRESHOLDS: tuple[float, ...] = (0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0)
 DEFAULT_60D_THRESHOLDS: tuple[float, ...] = (
@@ -76,6 +77,12 @@ _VALUATION_INTERACTION_BUCKET_ORDER: tuple[str, ...] = (
     "low_forward_per_only",
     "neither_low",
 )
+_LONG_TREND_QUADRANT_ORDER: tuple[str, ...] = (
+    "persistent_rerating",
+    "relief_bounce",
+    "uptrend_pullback",
+    "short_bounce",
+)
 _ENTRY_MODES: tuple[str, ...] = ("close_to_close", "next_open_to_close")
 _SAMPLE_SCOPES: tuple[str, ...] = ("daily", "weekly", "monthly")
 
@@ -92,6 +99,7 @@ class RecentReturnThresholdForwardResponseResult:
     horizons: tuple[int, ...]
     thresholds_20d: tuple[float, ...]
     thresholds_60d: tuple[float, ...]
+    long_trend_windows: tuple[int, ...]
     market_scopes: tuple[str, ...]
     min_observations: int
     severe_loss_threshold_pct: float
@@ -103,6 +111,7 @@ class RecentReturnThresholdForwardResponseResult:
     percentile_response_df: pd.DataFrame
     valuation_response_df: pd.DataFrame
     valuation_interaction_df: pd.DataFrame
+    long_trend_quadrant_response_df: pd.DataFrame
     nonoverlap_response_df: pd.DataFrame
     annual_threshold_response_df: pd.DataFrame
     liquidity_interaction_df: pd.DataFrame
@@ -117,12 +126,18 @@ def run_recent_return_threshold_forward_response_research(
     horizons: Iterable[int] = DEFAULT_HORIZONS,
     thresholds_20d: Sequence[float] = DEFAULT_20D_THRESHOLDS,
     thresholds_60d: Sequence[float] = DEFAULT_60D_THRESHOLDS,
+    long_trend_windows: Iterable[int] = DEFAULT_LONG_TREND_WINDOWS,
     market_scopes: Sequence[str] = DEFAULT_MARKET_SCOPES,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RecentReturnThresholdForwardResponseResult:
-    resolved_pre_windows = tuple(sorted({int(window) for window in pre_windows}))
+    resolved_long_trend_windows = tuple(
+        sorted({int(window) for window in long_trend_windows})
+    )
+    resolved_pre_windows = tuple(
+        sorted({int(window) for window in pre_windows} | set(resolved_long_trend_windows))
+    )
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
     resolved_thresholds_20d = _normalize_thresholds(
         thresholds_20d, name="thresholds_20d"
@@ -133,6 +148,7 @@ def run_recent_return_threshold_forward_response_research(
     resolved_market_scopes = _normalize_market_scopes(market_scopes)
     _validate_params(
         pre_windows=resolved_pre_windows,
+        long_trend_windows=resolved_long_trend_windows,
         horizons=resolved_horizons,
         min_observations=min_observations,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -217,6 +233,14 @@ def run_recent_return_threshold_forward_response_research(
             severe_loss_threshold_pct=severe_loss_threshold_pct,
             sample_scope="daily",
         )
+        long_trend_quadrant_response_df = _build_long_trend_quadrant_response_df(
+            ctx.connection,
+            long_trend_windows=resolved_long_trend_windows,
+            horizons=resolved_horizons,
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            sample_scope="daily",
+        )
         nonoverlap_response_df = _build_nonoverlap_response_df(
             ctx.connection,
             pre_windows=resolved_pre_windows,
@@ -265,6 +289,7 @@ def run_recent_return_threshold_forward_response_research(
         horizons=resolved_horizons,
         thresholds_20d=resolved_thresholds_20d,
         thresholds_60d=resolved_thresholds_60d,
+        long_trend_windows=resolved_long_trend_windows,
         market_scopes=resolved_market_scopes,
         min_observations=min_observations,
         severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -276,6 +301,7 @@ def run_recent_return_threshold_forward_response_research(
         percentile_response_df=percentile_response_df,
         valuation_response_df=valuation_response_df,
         valuation_interaction_df=valuation_interaction_df,
+        long_trend_quadrant_response_df=long_trend_quadrant_response_df,
         nonoverlap_response_df=nonoverlap_response_df,
         annual_threshold_response_df=annual_threshold_response_df,
         liquidity_interaction_df=liquidity_interaction_df,
@@ -298,6 +324,7 @@ def write_recent_return_threshold_forward_response_bundle(
             "horizons": list(result.horizons),
             "thresholds_20d": list(result.thresholds_20d),
             "thresholds_60d": list(result.thresholds_60d),
+            "long_trend_windows": list(result.long_trend_windows),
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
@@ -319,6 +346,7 @@ def write_recent_return_threshold_forward_response_bundle(
             "percentile_response_df": result.percentile_response_df,
             "valuation_response_df": result.valuation_response_df,
             "valuation_interaction_df": result.valuation_interaction_df,
+            "long_trend_quadrant_response_df": result.long_trend_quadrant_response_df,
             "nonoverlap_response_df": result.nonoverlap_response_df,
             "annual_threshold_response_df": result.annual_threshold_response_df,
             "liquidity_interaction_df": result.liquidity_interaction_df,
@@ -393,6 +421,18 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
         ],
         limit=60,
     )
+    long_trend_quadrant = _top_rows_for_markdown(
+        result.long_trend_quadrant_response_df,
+        sort_columns=[
+            "trend_window",
+            "trend_quadrant_order",
+            "entry_mode",
+            "horizon",
+            "market_scope",
+            "liquidity_scope",
+        ],
+        limit=80,
+    )
     nonoverlap = _top_rows_for_markdown(
         result.nonoverlap_response_df,
         sort_columns=[
@@ -430,6 +470,7 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
             f"- Forward horizons: `{list(result.horizons)}`",
             f"- 20d thresholds: `{list(result.thresholds_20d)}`",
             f"- 60d thresholds: `{list(result.thresholds_60d)}`",
+            f"- Long trend windows: `{list(result.long_trend_windows)}`",
             f"- Market scopes: `{list(result.market_scopes)}`",
             f"- Min observations: `{result.min_observations}`",
             "",
@@ -457,6 +498,10 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
             "",
             valuation_interaction,
             "",
+            "## Long Trend Quadrant Response",
+            "",
+            long_trend_quadrant,
+            "",
             "## Non-Overlap Response",
             "",
             nonoverlap,
@@ -472,6 +517,7 @@ def build_summary_markdown(result: RecentReturnThresholdForwardResponseResult) -
 def _validate_params(
     *,
     pre_windows: Sequence[int],
+    long_trend_windows: Sequence[int],
     horizons: Sequence[int],
     min_observations: int,
     severe_loss_threshold_pct: float,
@@ -479,6 +525,16 @@ def _validate_params(
 ) -> None:
     if not pre_windows or any(window <= 0 for window in pre_windows):
         raise ValueError("pre_windows must be positive")
+    if not long_trend_windows or any(window <= 0 for window in long_trend_windows):
+        raise ValueError("long_trend_windows must be positive")
+    unsupported_long_windows = [
+        window for window in long_trend_windows if window not in DEFAULT_LONG_TREND_WINDOWS
+    ]
+    if unsupported_long_windows:
+        raise ValueError("long_trend_windows currently supports only 120 and 150")
+    missing_required = [window for window in (20, 60) if window not in pre_windows]
+    if missing_required:
+        raise ValueError("pre_windows must include 20 and 60 for quadrant analysis")
     if not horizons or any(horizon <= 0 for horizon in horizons):
         raise ValueError("horizons must be positive")
     if min_observations <= 0:
@@ -1402,6 +1458,51 @@ def _build_valuation_interaction_df(
     return _concat_sorted(frames, columns=_valuation_interaction_columns())
 
 
+def _build_long_trend_quadrant_response_df(
+    conn: Any,
+    *,
+    long_trend_windows: Sequence[int],
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+    sample_scope: str,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for trend_window in long_trend_windows:
+        for trend_quadrant in _LONG_TREND_QUADRANT_ORDER:
+            condition = _long_trend_quadrant_condition(
+                trend_quadrant,
+                trend_window=trend_window,
+            )
+            for entry_mode in _ENTRY_MODES:
+                for horizon in horizons:
+                    frame = _aggregate_condition(
+                        conn,
+                        condition=condition,
+                        condition_fields={
+                            "condition_family": "long_trend_quadrant",
+                            "sample_scope": sample_scope,
+                            "trend_window": int(trend_window),
+                            "trend_quadrant": trend_quadrant,
+                            "trend_quadrant_order": _LONG_TREND_QUADRANT_ORDER.index(
+                                trend_quadrant
+                            ),
+                            "entry_mode": entry_mode,
+                            "horizon": int(horizon),
+                        },
+                        return_column=_return_column(entry_mode, horizon),
+                        sample_scope=sample_scope,
+                        group_by_year=False,
+                        min_observations=min_observations,
+                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    )
+                    if not frame.empty:
+                        source_column = f"median_recent_return_{int(trend_window)}d_pct"
+                        frame["median_recent_return_long_pct"] = frame.get(source_column)
+                    frames.append(frame)
+    return _concat_sorted(frames, columns=_long_trend_quadrant_response_columns())
+
+
 def _build_nonoverlap_response_df(
     conn: Any,
     *,
@@ -1549,6 +1650,8 @@ def _aggregate_condition(
             avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0 AS severe_loss_rate_pct,
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
+            median(recent_return_120d_pct) AS median_recent_return_120d_pct,
+            median(recent_return_150d_pct) AS median_recent_return_150d_pct,
             median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy,
             median(liquidity_residual_z) AS median_liquidity_residual_z,
             median(per) AS median_per,
@@ -1587,6 +1690,8 @@ def _aggregate_condition(
             "severe_loss_rate_pct",
             "median_recent_return_20d_pct",
             "median_recent_return_60d_pct",
+            "median_recent_return_120d_pct",
+            "median_recent_return_150d_pct",
             "median_med_adv60_mil_jpy",
             "median_liquidity_residual_z",
             "median_per",
@@ -1612,6 +1717,8 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             close,
             recent_return_20d_pct,
             recent_return_60d_pct,
+            recent_return_120d_pct,
+            recent_return_150d_pct,
             med_adv60_jpy / 1000000.0 AS med_adv60_mil_jpy,
             free_float_market_cap_jpy / 1000000000.0 AS free_float_market_cap_bil_jpy,
             liquidity_residual_z,
@@ -1701,6 +1808,35 @@ def _valuation_interaction_condition(bucket: str) -> str:
     raise ValueError(f"unsupported valuation interaction bucket: {bucket}")
 
 
+def _long_trend_quadrant_condition(quadrant: str, *, trend_window: int) -> str:
+    long_return = f"recent_return_{int(trend_window)}d_pct"
+    if quadrant == "persistent_rerating":
+        return (
+            "recent_return_20d_pct > 0 "
+            "AND recent_return_60d_pct > 0 "
+            f"AND {long_return} > 0"
+        )
+    if quadrant == "relief_bounce":
+        return (
+            "recent_return_20d_pct > 0 "
+            "AND recent_return_60d_pct > 0 "
+            f"AND {long_return} <= 0"
+        )
+    if quadrant == "uptrend_pullback":
+        return (
+            "recent_return_20d_pct < 0 "
+            "AND recent_return_60d_pct > 0 "
+            f"AND {long_return} > 0"
+        )
+    if quadrant == "short_bounce":
+        return (
+            "recent_return_20d_pct > 0 "
+            "AND recent_return_60d_pct <= 0 "
+            f"AND {long_return} <= 0"
+        )
+    raise ValueError(f"unsupported long trend quadrant: {quadrant}")
+
+
 def _return_column(entry_mode: str, horizon: int) -> str:
     if entry_mode == "close_to_close":
         return f"forward_close_excess_return_{horizon}d_pct"
@@ -1757,6 +1893,8 @@ def _base_response_columns() -> list[str]:
         "severe_loss_rate_pct",
         "median_recent_return_20d_pct",
         "median_recent_return_60d_pct",
+        "median_recent_return_120d_pct",
+        "median_recent_return_150d_pct",
         "median_med_adv60_mil_jpy",
         "median_liquidity_residual_z",
         "median_per",
@@ -1840,6 +1978,22 @@ def _valuation_interaction_columns() -> list[str]:
         "entry_mode",
         "horizon",
         *_base_response_columns()[6:],
+    ]
+
+
+def _long_trend_quadrant_response_columns() -> list[str]:
+    return [
+        "condition_family",
+        "sample_scope",
+        "trend_window",
+        "trend_quadrant",
+        "trend_quadrant_order",
+        "market_scope",
+        "liquidity_scope",
+        "entry_mode",
+        "horizon",
+        *_base_response_columns()[6:],
+        "median_recent_return_long_pct",
     ]
 
 

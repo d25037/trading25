@@ -27,6 +27,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert not result.low_per_relation_level_evidence_df.empty
     assert not result.forward_per_pop_interaction_df.empty
     assert not result.topix_regime_liquidity_value_evidence_df.empty
+    assert not result.liquidity_color_long_trend_evidence_df.empty
     assert not result.high_valuation_size_liquidity_interaction_df.empty
     assert {
         "valuation_feature",
@@ -49,9 +50,24 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "pbr_percentile",
         "topix_recent_return_20d_pct",
         "topix_recent_return_60d_pct",
+        "recent_return_120d_pct",
+        "recent_return_150d_pct",
         "liquidity_residual_z",
         "liquidity_regime",
     }.issubset(result.observation_sample_df.columns)
+    assert set(
+        result.liquidity_color_long_trend_evidence_df["liquidity_regime"].astype(str)
+    ).issubset({"crowded_rerating", "neutral_rerating"})
+    assert {
+        "green",
+        "blue",
+    }.issubset(set(result.liquidity_color_long_trend_evidence_df["ui_color"].astype(str)))
+    assert {120, 150}.issubset(
+        set(result.liquidity_color_long_trend_evidence_df["trend_window"].astype(int))
+    )
+    assert set(
+        result.liquidity_color_long_trend_evidence_df["trend_condition"].astype(str)
+    ).issubset({"trend_positive", "trend_non_positive"})
     assert {
         "topix_20d_lt_0_60d_gt_0",
         "topix_60d_lt_0",
@@ -114,6 +130,7 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "Low PER x Forward Valuation Relation Level Evidence" in summary
     assert "Forward PER x Forward P/OP Interaction" in summary
     assert "TOPIX Regime x Liquidity x Value Evidence" in summary
+    assert "Liquidity Color x Long Trend Evidence" in summary
     assert "High Valuation x Size x Liquidity Interaction" in summary
 
     bundle = write_ranking_color_evidence_bundle(
@@ -138,7 +155,7 @@ def _run_test_research(db_path: Path) -> RankingColorEvidenceResult:
 
 
 def _build_ranking_color_db(db_path: Path) -> Path:
-    dates = pd.bdate_range("2023-11-01", "2024-06-28").strftime("%Y-%m-%d").tolist()
+    dates = pd.bdate_range("2023-07-03", "2024-06-28").strftime("%Y-%m-%d").tolist()
     conn = duckdb.connect(str(db_path))
     conn.execute(
         """
@@ -229,12 +246,12 @@ def _build_ranking_color_db(db_path: Path) -> Path:
     )
     topix_rows: list[tuple[str, float, float, float, float]] = []
     for index, date in enumerate(dates):
-        if index < 80:
+        if index < 150:
             topix_close = 1000.0 + index
-        elif index < 120:
-            topix_close = 1080.0 - (index - 80) * 1.2
+        elif index < 190:
+            topix_close = 1150.0 - (index - 150) * 1.2
         else:
-            topix_close = 1032.0 + (index - 120) * 0.5
+            topix_close = 1102.0 + (index - 190) * 0.5
         topix_rows.append(
             (
                 date,

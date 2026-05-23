@@ -26,6 +26,7 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
     assert not result.percentile_response_df.empty
     assert not result.valuation_response_df.empty
     assert not result.valuation_interaction_df.empty
+    assert not result.long_trend_quadrant_response_df.empty
     assert not result.nonoverlap_response_df.empty
     assert not result.annual_threshold_response_df.empty
     assert not result.liquidity_interaction_df.empty
@@ -55,6 +56,22 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
     assert {"both_low", "low_pbr_only", "low_forward_per_only", "neither_low"}.issubset(
         set(result.valuation_interaction_df["interaction_bucket"].astype(str))
     )
+    assert {120, 150}.issubset(
+        set(result.long_trend_quadrant_response_df["trend_window"].astype(int))
+    )
+    assert {
+        "persistent_rerating",
+        "relief_bounce",
+        "uptrend_pullback",
+        "short_bounce",
+    }.issubset(set(result.long_trend_quadrant_response_df["trend_quadrant"].astype(str)))
+    assert {
+        "trend_window",
+        "trend_quadrant",
+        "median_recent_return_20d_pct",
+        "median_recent_return_60d_pct",
+        "median_recent_return_long_pct",
+    }.issubset(result.long_trend_quadrant_response_df.columns)
 
 
 def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) -> None:
@@ -65,6 +82,7 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
     assert "Threshold Response" in summary
     assert "Valuation Response" in summary
     assert "Valuation Interaction" in summary
+    assert "Long Trend Quadrant Response" in summary
     assert "Non-Overlap Response" in summary
 
     bundle = write_recent_return_threshold_forward_response_bundle(
@@ -85,6 +103,10 @@ def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) 
         (
             {"severe_loss_threshold_pct": 0.0},
             "severe_loss_threshold_pct must be negative",
+        ),
+        (
+            {"long_trend_windows": (200,)},
+            "long_trend_windows currently supports only 120 and 150",
         ),
     ],
 )
@@ -113,7 +135,7 @@ def _run_test_research(db_path: Path) -> RecentReturnThresholdForwardResponseRes
         db_path,
         start_date="2024-03-01",
         end_date="2024-04-30",
-        pre_windows=(20, 60),
+        pre_windows=(20, 60, 120, 150),
         horizons=(5, 20),
         thresholds_20d=(0.0, 5.0, 10.0),
         thresholds_60d=(0.0, 10.0, 20.0),
@@ -123,7 +145,7 @@ def _run_test_research(db_path: Path) -> RecentReturnThresholdForwardResponseRes
 
 
 def _build_recent_return_db(db_path: Path) -> Path:
-    dates = pd.bdate_range("2023-11-01", "2024-06-28").strftime("%Y-%m-%d").tolist()
+    dates = pd.bdate_range("2023-07-03", "2024-06-28").strftime("%Y-%m-%d").tolist()
     conn = duckdb.connect(str(db_path))
     conn.execute(
         """
@@ -194,16 +216,28 @@ def _build_recent_return_db(db_path: Path) -> Path:
     stock_rows: list[tuple[str, str, float, float, float, float, int]] = []
     master_rows: list[tuple[str, str, str, str, str, str | None]] = []
     codes = [
-        ("1111", "Alpha", "0111", 100.0, 0.35),
-        ("2222", "Beta", "0111", 180.0, -0.15),
-        ("3333", "Gamma", "0111", 90.0, 0.05),
-        ("4444", "Delta", "0111", 120.0, 0.12),
-        ("5555", "Epsilon", "0111", 150.0, -0.03),
-        ("6666", "Zeta", "0111", 75.0, 0.18),
+        ("1111", "Alpha", "0111", 100.0),
+        ("2222", "Beta", "0111", 180.0),
+        ("3333", "Gamma", "0111", 90.0),
+        ("4444", "Delta", "0111", 120.0),
+        ("5555", "Epsilon", "0111", 150.0),
+        ("6666", "Zeta", "0111", 75.0),
     ]
     for index, date in enumerate(dates):
-        for code, name, market_code, base, slope in codes:
-            close = base + index * slope
+        for code, name, market_code, base in codes:
+            recent_index = max(0, index - 130)
+            if code == "1111":
+                close = base + index * 0.18
+            elif code == "2222":
+                close = base - index * 0.2 + recent_index * 0.65
+            elif code == "3333":
+                close = base + index * 0.12 - max(0, index - 190) * 0.2
+            elif code == "4444":
+                close = base - index * 0.1 + max(0, index - 190) * 0.25
+            elif code == "5555":
+                close = base - index * 0.03
+            else:
+                close = base + index * 0.12
             open_price = close * 0.995
             stock_rows.append(
                 (code, date, open_price, close * 1.01, close * 0.99, close, 10_000)

@@ -27,6 +27,7 @@ from src.domains.analytics.recent_return_threshold_forward_response import (  # 
     DEFAULT_20D_THRESHOLDS,
     DEFAULT_60D_THRESHOLDS,
     DEFAULT_HORIZONS,
+    DEFAULT_LONG_TREND_WINDOWS,
     DEFAULT_MARKET_SCOPES,
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
@@ -73,6 +74,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Comma-separated absolute 60d return thresholds in percent.",
     )
     parser.add_argument(
+        "--long-trend-windows",
+        default=",".join(str(window) for window in DEFAULT_LONG_TREND_WINDOWS),
+        help="Comma-separated long trend windows used for 20d/60d/long quadrant analysis.",
+    )
+    parser.add_argument(
         "--markets",
         default=",".join(DEFAULT_MARKET_SCOPES),
         help="Comma-separated market scopes to include: prime, standard, growth, unknown, or all.",
@@ -110,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         horizons=_parse_positive_ints(args.horizons, name="horizons"),
         thresholds_20d=_parse_non_negative_floats(args.thresholds_20d, name="thresholds-20d"),
         thresholds_60d=_parse_non_negative_floats(args.thresholds_60d, name="thresholds-60d"),
+        long_trend_windows=_parse_positive_ints(
+            args.long_trend_windows,
+            name="long-trend-windows",
+        ),
         market_scopes=_parse_strings(args.markets),
         min_observations=args.min_observations,
         severe_loss_threshold_pct=args.severe_loss_threshold_pct,

@@ -153,6 +153,41 @@ Prime-only `liquidity_regime_evidence_df`。production regime 名に合わせて
 | TOPIX 20d >= 0, 60d >= 0 | `neutral_rerating` | green | 2,252 | +2.261% | +1.661% | 60.52% | 1.24% |
 | TOPIX 20d >= 0, 60d >= 0 | `neutral_rerating` | blue | 339,911 | +0.130% | -0.312% | 47.97% | 6.87% |
 
+#### 結論: 120D/150D は crowded green の品質確認には使えるが、blue 判定には混ぜない
+
+2026-05-23 follow-up `20260523_ranking_color_liquidity_color_long_trend_prime_v2` では、上の `crowded_rerating` / `neutral_rerating` の green / blue 非重複判定だけに絞り、個別銘柄の `120d` / `150d` return が正かどうかで分解した。outcome は引き続き 20d close-to-close TOPIX excess return。`green/blue` 定義は上表の非重複 evidence に合わせ、`crowded blue` は `medium_value_confirmation AND NOT green` とした。
+
+`crowded green` は long trend positive で大きく改善する。120d positive は observation `3,413`、median `+1.211%`、win rate `55.52%`、severe loss `8.00%`。120d non-positive は observation `773`、median `-0.505%`、win rate `46.57%`、severe loss `10.35%`。150d でも同方向だが、120d の方が positive / non-positive の median 差が大きい。
+
+| Regime | UI color | Long condition | Observation | Mean | Median | Win rate | Severe loss | Read |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `crowded_rerating` | green | `120d > 0` | 3,413 | +3.555% | +1.211% | 55.52% | 8.00% | 採用候補の品質確認として有効 |
+| `crowded_rerating` | green | `120d <= 0` | 773 | +0.312% | -0.505% | 46.57% | 10.35% | greenを弱める caution |
+| `crowded_rerating` | green | `150d > 0` | 3,337 | +3.276% | +0.966% | 54.54% | 8.12% | 有効だが120dより少し鈍い |
+| `crowded_rerating` | green | `150d <= 0` | 778 | +0.900% | -0.155% | 48.84% | 9.90% | caution だが120dほど切れない |
+
+一方で `crowded blue` は long trend positive が逆に悪い。120d positive は median `-1.178%` / severe loss `10.99%`、120d non-positive は median `-0.582%` / severe loss `5.33%`。150d でも positive 側は median `-0.992%`、non-positive 側は `-1.251%` で、少なくとも「長期上昇なら blue を上げる」根拠にはならない。`crowded blue` は medium value だが strong value ではないため、長期上昇がむしろ crowded/extended な状態を拾っている可能性がある。
+
+| Regime | UI color | Long condition | Observation | Mean | Median | Win rate | Severe loss | Read |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `crowded_rerating` | blue | `120d > 0` | 3,138 | -0.035% | -1.178% | 43.59% | 10.99% | blueを強めない |
+| `crowded_rerating` | blue | `120d <= 0` | 882 | +2.475% | -0.582% | 47.05% | 5.33% | mean は右尾、median は弱い |
+| `crowded_rerating` | blue | `150d > 0` | 3,099 | +0.071% | -0.992% | 44.18% | 10.16% | blueを強めない |
+| `crowded_rerating` | blue | `150d <= 0` | 836 | +0.700% | -1.251% | 42.94% | 8.61% | 改善なし |
+
+`neutral_rerating green` はもともと強く、long trend positive しか十分な観測が出ない。120d positive は median `+1.507%`、150d positive は `+1.651%` で、既存 green を補強するが、追加条件にすると sample を少し落とすだけで本質的な新情報は少ない。`neutral_rerating blue` では 120d/150d positive と non-positive の差が小さく、配色には混ぜないほうがよい。
+
+| Regime | UI color | Long condition | Observation | Mean | Median | Win rate | Severe loss | Read |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `neutral_rerating` | green | `120d > 0` | 2,568 | +2.093% | +1.507% | 58.57% | 2.26% | 既存greenの補強 |
+| `neutral_rerating` | green | `150d > 0` | 2,520 | +2.261% | +1.651% | 59.52% | 2.14% | 既存greenの補強 |
+| `neutral_rerating` | blue | `120d > 0` | 340,928 | -0.053% | -0.512% | 46.76% | 7.46% | ほぼ使えない |
+| `neutral_rerating` | blue | `120d <= 0` | 61,894 | -0.071% | -0.417% | 47.18% | 6.58% | ほぼ使えない |
+| `neutral_rerating` | blue | `150d > 0` | 327,702 | +0.014% | -0.454% | 47.15% | 7.26% | ほぼ使えない |
+| `neutral_rerating` | blue | `150d <= 0` | 64,645 | -0.243% | -0.515% | 46.44% | 7.25% | ほぼ使えない |
+
+このため、120D/150D は `流動性Z` の green/blue を全面的に変える条件ではない。使うなら `crowded_rerating green` の補助 badge/overlay として、`120d <= 0` を green の弱め警告にするのが最も筋が良い。`150d` より `120d` の方が green の良否を切りやすい。`crowded blue` と `neutral blue` には入れない。
+
 #### 結論: 高PER + 高PBRは大型・高ADVでも「良いreturn」には反転しない
 
 2026-05-23 follow-up `20260523_high_valuation_size_liquidity_prime_v1` では、既存の Prime target-date percentile を使って `PER` / `PBR` の高valuation条件を定義し、時価総額と median ADV60 は絶対値bucketで切った。目的は「高PER・高PBRは全体では悪いが、大型・高売買代金ならよいのではないか」を検証すること。結果は、mega cap / high ADV では左尾riskはやや緩むが、20d TOPIX excess return の中央値はプラスに反転しない。
@@ -178,6 +213,8 @@ Prime-only `liquidity_regime_evidence_df`。production regime 名に合わせて
 
 流動性は raw z を直接色分けしない。`neutral_rerating` / `crowded_rerating` は value confirmation と掛け合わせて読む。`crowded_rerating` 単体は severe-loss rate が 17.55% と高いが、低PBR + 低Fwd PERや低PER + Fwd PER/PER改善が揃うと mean / median が強くなる。ただし TOPIX 20d<0 の市場調整局面では、`crowded_rerating` の median と左尾が大きく悪化する。`stale_liquidity` は20d severe loss は低いが、流動性・執行可能性の警告なので return tier と混ぜすぎない。
 
+120D/150D の個別銘柄 trend は、`crowded_rerating green` だけで有用性が明確だった。特に `120d > 0` は green の品質確認として効き、`120d <= 0` は green を弱める警告になる。一方、`crowded blue` / `neutral blue` では long trend positive が改善条件にならず、`neutral green` は元々強いため追加条件としての情報量が小さい。
+
 高PER・高PBRの大型/高ADV follow-up は、既存の赤/黄 valuation 判定を弱める材料ではあるが、反転材料ではない。大型・高ADVは「避けやすい危険」ではなく「bad がやや薄い expensive large liquid bucket」として扱い、valuation color そのものは引き続き high percentile を caution とする。
 
 ### Production Implication
@@ -190,7 +227,7 @@ Prime 判定としての初期mapping:
 | `Fwd PER` | `perPercentile <= 0.20` かつ `forwardPer / per <= 0.8` green、同 `<= 1.0` blue。その他は `forwardPerPercentile <= 0.10` green, `<= 0.20` blue, `>= 0.80` yellow, `>= 0.90` red |
 | `PER` | `perPercentile <= 0.20` blue, `>= 0.80` yellow, `>= 0.90` red. `<=0.10` green は弱めに扱う |
 | `Fwd P/OP` | standalone cheap color は弱め。`forwardPerPercentile <= 0.20` かつ `forwardPOpPercentile <= 0.20` を blue、`perPercentile <= 0.20` かつ `forwardPOp / per > 1.25` は yellow、`forwardPOpPercentile >= 0.80` は yellow、`>= 0.90` は red |
-| `流動性Z` | green は3条件に限定: `neutral_rerating` は low PER20 + Fwd PER/PER <= 0.8 のみ green、`crowded_rerating` は low PBR20 + low Fwd PER20 または low PER20 + Fwd PER/PER <= 0.8 のみ green。その他の `neutral_rerating` は blue、`crowded_rerating` は中valueあり blue・valueなし yellow。ただし `crowded_rerating` は PER/Fwd PER/Fwd P/OP/PBR のいずれかが high 20%、または PER/Fwd PER が両方 null（赤字・正のPER未成立を含む）なら、green 条件に該当しない限り yellow。`distribution_stress` / `stale_liquidity` は yellow |
+| `流動性Z` | green は3条件に限定: `neutral_rerating` は low PER20 + Fwd PER/PER <= 0.8 のみ green、`crowded_rerating` は low PBR20 + low Fwd PER20 または low PER20 + Fwd PER/PER <= 0.8 のみ green。その他の `neutral_rerating` は blue、`crowded_rerating` は中valueあり blue・valueなし yellow。ただし `crowded_rerating` は PER/Fwd PER/Fwd P/OP/PBR のいずれかが high 20%、または PER/Fwd PER が両方 null（赤字・正のPER未成立を含む）なら、green 条件に該当しない限り yellow。`distribution_stress` / `stale_liquidity` は yellow。120D/150D は色そのものではなく、`crowded_rerating green` に限って `120d <= 0` caution overlay として扱う |
 
 TOPIX regime は今回の配色には直接混ぜない。もし UI に入れるなら、`流動性Z` の色そのものではなく、`TOPIX 20d<0` かつ `crowded_rerating`、特に value confirmation なしを別の market-adjustment caution overlay として扱うほうが解釈が明確。
 
@@ -207,5 +244,6 @@ TOPIX regime は今回の配色には直接混ぜない。もし UI に入れる
 | runner | `apps/bt/scripts/research/run_ranking_color_evidence.py` |
 | domain module | `apps/bt/src/domains/analytics/ranking_color_evidence.py` |
 | prime bundle | `/tmp/trading25-research/market-behavior/ranking-color-evidence/20260522_ranking_color_evidence_prime_topix_regime_v7` |
+| liquidity color long trend follow-up bundle | `/private/tmp/trading25-research/market-behavior/ranking-color-evidence/20260523_ranking_color_liquidity_color_long_trend_prime_v2` |
 | high valuation size/liquidity follow-up bundle | `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/ranking-color-evidence/20260523_high_valuation_size_liquidity_prime_v1` |
-| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `high_valuation_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |
+| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `liquidity_color_long_trend_evidence_df`, `high_valuation_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |
