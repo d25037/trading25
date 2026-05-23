@@ -37,6 +37,15 @@ def test_configure_logging_non_verbose_has_timestamp_and_warning_level() -> None
     assert TIMESTAMP_TOKEN in add_kwargs["format"]
 
 
+def test_configure_logging_forces_color_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("TRADING25_FORCE_COLOR", "1")
+
+    with patch("src.entrypoints.cli.logger") as mock_logger:
+        configure_logging(False)
+
+    assert mock_logger.add.call_args.kwargs["colorize"] is True
+
+
 def test_build_uvicorn_log_config_has_timestamp_for_default_and_access() -> None:
     original_default_fmt = uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"]
     original_access_fmt = uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"]
@@ -51,3 +60,12 @@ def test_build_uvicorn_log_config_has_timestamp_for_default_and_access() -> None
     # uvicorn のグローバル定数を破壊しないこと
     assert uvicorn.config.LOGGING_CONFIG["formatters"]["default"]["fmt"] == original_default_fmt
     assert uvicorn.config.LOGGING_CONFIG["formatters"]["access"]["fmt"] == original_access_fmt
+
+
+def test_build_uvicorn_log_config_forces_color_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("TRADING25_FORCE_COLOR", "1")
+
+    log_config = _build_uvicorn_log_config()
+
+    assert log_config["formatters"]["default"]["use_colors"] is True
+    assert log_config["formatters"]["access"]["use_colors"] is True

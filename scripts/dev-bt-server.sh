@@ -19,9 +19,10 @@ if [[ ! -e "${secrets_file}" ]]; then
 fi
 
 port="${BT_PORT:-3002}"
+export TRADING25_FORCE_COLOR="${TRADING25_FORCE_COLOR:-1}"
 
 if [[ "${TRADING25_DRY_RUN:-}" == "1" ]]; then
-  printf 'op run --env-file %s -- uv run --project apps/bt bt server --port %s\n' "${secrets_file}" "${port}"
+  printf 'TRADING25_FORCE_COLOR=%s op run --env-file %s -- uv run --project apps/bt bt server --port %s\n' "${TRADING25_FORCE_COLOR}" "${secrets_file}" "${port}"
   exit 0
 fi
 

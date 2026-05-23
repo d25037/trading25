@@ -5,6 +5,7 @@ Unified CLI Interface for Backtesting Tool
 """
 
 from copy import deepcopy
+import os
 import sys
 from typing import Any
 
@@ -23,6 +24,10 @@ app = typer.Typer(
 )
 
 
+def _force_color_enabled() -> bool:
+    return os.getenv("TRADING25_FORCE_COLOR", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def configure_logging(verbose: bool) -> None:
     """
     グローバルログ設定
@@ -38,7 +43,12 @@ def configure_logging(verbose: bool) -> None:
             "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
             "<level>{message}</level>"
         )
-        logger.add(sys.stderr, level="DEBUG", format=log_format)
+        logger.add(
+            sys.stderr,
+            level="DEBUG",
+            format=log_format,
+            colorize=True if _force_color_enabled() else None,
+        )
     else:
         logger.add(
             sys.stderr,
@@ -48,6 +58,7 @@ def configure_logging(verbose: bool) -> None:
                 "<level>{level: <8}</level> | "
                 "<level>{message}</level>"
             ),
+            colorize=True if _force_color_enabled() else None,
         )
 
 
@@ -238,6 +249,9 @@ def _build_uvicorn_log_config() -> dict[str, Any]:
 
     log_config: dict[str, Any] = deepcopy(uvicorn.config.LOGGING_CONFIG)
     timestamp_prefix = "%(asctime)s.%(msecs)03d | "
+    if _force_color_enabled():
+        log_config["formatters"]["default"]["use_colors"] = True
+        log_config["formatters"]["access"]["use_colors"] = True
 
     log_config["formatters"]["default"]["fmt"] = (
         f"{timestamp_prefix}%(levelprefix)s %(message)s"

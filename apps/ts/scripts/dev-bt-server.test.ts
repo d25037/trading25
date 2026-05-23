@@ -36,6 +36,7 @@ describe('dev-bt-server wrapper', () => {
 
       expect(exitCode).toBe(0);
       expect(stderr).toBe('');
+      expect(stdout).toContain('TRADING25_FORCE_COLOR=1');
       expect(stdout).toContain(`op run --env-file ${secretsPath}`);
       expect(stdout).toContain('uv run --project apps/bt bt server --port 3999');
     } finally {
