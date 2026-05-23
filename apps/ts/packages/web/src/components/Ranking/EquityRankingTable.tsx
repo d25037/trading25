@@ -655,13 +655,20 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
             {labels.price}
           </SortHeader>
         </th>
-        {showValuation ? <ValuationHeaders labels={labels} sortState={sortState} /> : null}
+        {showValuation ? <ValuationHeaders sortState={sortState} /> : null}
         {showLiquidity ? <LiquidityHeaders sortState={sortState} /> : null}
         <th className="w-28 px-2 py-1.5 text-right">
           <SortHeader field="tradingValue" sortState={sortState} align="right">
             {labels.tradingValue}
           </SortHeader>
         </th>
+        {showValuation ? (
+          <th className="w-28 px-2 py-1.5 text-right">
+            <SortHeader field="marketCap" sortState={sortState} align="right">
+              {labels.marketCap}
+            </SortHeader>
+          </th>
+        ) : null}
         {showChange ? (
           <th className="w-24 px-2 py-1.5 text-right">
             <SortHeader field="changePercentage" sortState={sortState} align="right">
@@ -697,10 +704,8 @@ function LiquidityHeaders<T extends EquityRankingItem>({
 }
 
 function ValuationHeaders<T extends EquityRankingItem>({
-  labels,
   sortState,
 }: {
-  labels: EquityRankingLabels;
   sortState?: EquityRankingTableProps<T>['sortState'];
 }) {
   return (
@@ -723,11 +728,6 @@ function ValuationHeaders<T extends EquityRankingItem>({
       <th className="w-20 px-2 py-1.5 text-right">
         <SortHeader field="pbr" sortState={sortState} align="right">
           PBR
-        </SortHeader>
-      </th>
-      <th className="w-28 px-2 py-1.5 text-right">
-        <SortHeader field="marketCap" sortState={sortState} align="right">
-          {labels.marketCap}
         </SortHeader>
       </th>
     </>
@@ -807,7 +807,6 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           >
             {formatRatio(item.pbr)}
           </td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
         </>
       ) : null}
       {showLiquidity ? (
@@ -826,6 +825,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
         {formatLargeValue(item.tradingValue ?? item.tradingValueAverage)}
       </td>
+      {showValuation ? <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td> : null}
       {showChange ? (
         <td
           className={cn(

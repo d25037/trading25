@@ -75,6 +75,17 @@ describe('RankingTable', () => {
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
   });
 
+  it('places market cap immediately to the right of trading value when valuation columns are shown', () => {
+    render(
+      <RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} showValuation />
+    );
+
+    const headerRow = screen.getAllByRole('row').at(0);
+    expect(headerRow).toBeDefined();
+    const headerText = headerRow?.textContent ?? '';
+    expect(headerText.indexOf('売買代金')).toBeLessThan(headerText.indexOf('時価総額'));
+  });
+
   it('colors valuation percentiles and liquidity evidence tiers', () => {
     render(
       <RankingTable
