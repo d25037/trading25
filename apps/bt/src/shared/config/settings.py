@@ -11,27 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-
-ENV_RUNTIME_ENV_FILE = "TRADING25_ENV_FILE"
-
-
-def _runtime_env_file_path() -> Path | None:
-    raw_path = os.environ.get(ENV_RUNTIME_ENV_FILE, "").strip()
-    if not raw_path:
-        return None
-    return Path(raw_path).expanduser()
-
-
-def _load_runtime_env_file() -> Path | None:
-    env_file = _runtime_env_file_path()
-    if env_file is None:
-        return None
-    if not env_file.exists():
-        raise RuntimeError(f"{ENV_RUNTIME_ENV_FILE} points to a missing file: {env_file}")
-    load_dotenv(env_file, override=False)
-    return env_file
 
 
 def _default_data_dir() -> str:
@@ -104,7 +84,6 @@ class Settings(BaseModel):
 @lru_cache
 def get_settings() -> Settings:
     """キャッシュされた設定を取得"""
-    _load_runtime_env_file()
     return Settings.model_validate(dict(os.environ))
 
 

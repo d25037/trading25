@@ -83,11 +83,3 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
     `Could not find project root starting from ${startDir}. Looked for .git, package.json with workspaces, pnpm-workspace.yaml, or AGENTS.md`
   );
 }
-
-/**
- * Get the explicit repo-external runtime env file path, if configured.
- */
-export function getRuntimeEnvFilePath(env: Record<string, string | undefined> = process.env): string | undefined {
-  const envFile = env.TRADING25_ENV_FILE?.trim();
-  return envFile ? envFile : undefined;
-}

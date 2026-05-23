@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findProjectRoot, getRuntimeEnvFilePath } from './find-project-root';
+import { findProjectRoot } from './find-project-root';
 
 describe('findProjectRoot', () => {
   let testDir: string;
@@ -83,34 +83,5 @@ describe('findProjectRoot', () => {
       expect(e).toBeInstanceOf(Error);
       expect((e as Error).message).toContain('Could not find project root');
     }
-  });
-});
-
-describe('getRuntimeEnvFilePath', () => {
-  let testDir: string;
-
-  beforeEach(() => {
-    testDir = join(tmpdir(), `find-env-path-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(testDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    if (existsSync(testDir)) {
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  test('returns undefined when TRADING25_ENV_FILE is unset', () => {
-    const env = {};
-
-    const envPath = getRuntimeEnvFilePath(env);
-
-    expect(envPath).toBeUndefined();
-  });
-
-  test('returns explicit repo-external runtime env file path', () => {
-    const envPath = join(testDir, 'trading25.env');
-
-    expect(getRuntimeEnvFilePath({ TRADING25_ENV_FILE: envPath })).toBe(envPath);
   });
 });

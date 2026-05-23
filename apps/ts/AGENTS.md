@@ -91,10 +91,9 @@ uv run --project ../bt bt --help
 
 ## Environment Variables
 
-環境変数の SoT はプロセス環境、または `TRADING25_ENV_FILE` で明示したリポジトリ外 runtime config。repo root `.env` は使用しない。
+環境変数の SoT はプロセス環境。非機密設定は `~/.config/trading25/config.env` を shell source し、機密情報は `~/.config/trading25/secrets.env` の `op://...` reference を `op run` で注入する。repo root `.env` は使用しない。
 
 ```
-TRADING25_ENV_FILE      # Optional: repo-external runtime env file
 JQUANTS_API_KEY         # JQuants API key (v2 API)
 JQUANTS_PLAN            # Required: free, light, standard, premium (rate limit)
 LOG_LEVEL               # debug, info, warn, error

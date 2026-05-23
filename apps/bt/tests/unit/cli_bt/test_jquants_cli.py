@@ -91,24 +91,16 @@ def test_jquants_refresh_tokens_alias_calls_status() -> None:
     mock_status.assert_called_once_with(bt_url=jquants_module.DEFAULT_BT_API_URL)
 
 
-def test_runtime_env_file_path_uses_trading25_env_file(monkeypatch, tmp_path: Path) -> None:
-    env_file = tmp_path / "trading25.env"
-    monkeypatch.setenv("TRADING25_ENV_FILE", str(env_file))
-
-    assert jquants_module._runtime_env_file_path() == env_file
-
-
 def test_auth_clear_reports_external_secret_management() -> None:
     result = runner.invoke(jquants_module.jquants_app, ["auth", "clear"])
 
     assert result.exit_code == 1
     assert "managed outside the repository" in result.stdout
+    assert "secrets.env" in result.stdout
 
 
-def test_auth_status_renders_local_and_api_status(tmp_path: Path) -> None:
-    env_file = tmp_path / "trading25.env"
+def test_auth_status_renders_process_and_api_status() -> None:
     with (
-        patch("src.entrypoints.cli.jquants._runtime_env_file_path", return_value=env_file),
         patch("src.entrypoints.cli.jquants._has_local_api_key", return_value=True),
         patch(
             "src.entrypoints.cli.jquants._request_json",
@@ -119,7 +111,7 @@ def test_auth_status_renders_local_and_api_status(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "JQuants Auth Status" in result.stdout
-    assert "runtime env file" in result.stdout
+    assert "process JQUANTS_API_KEY" in result.stdout
     assert "api authenticated" in result.stdout
 
 
@@ -283,16 +275,8 @@ def test_request_json_success_and_non_object_payload() -> None:
             jquants_module._request_json("http://localhost:3002", "/api/jquants/auth/status")
 
 
-def test_runtime_env_file_path_and_today_label(monkeypatch, tmp_path: Path) -> None:
-    env_file = tmp_path / "trading25.env"
-    monkeypatch.setenv("TRADING25_ENV_FILE", str(env_file))
-    assert jquants_module._runtime_env_file_path() == env_file
+def test_today_label() -> None:
     assert len(jquants_module._today_label()) == 10
-
-
-def test_runtime_env_file_path_returns_none_when_unset(monkeypatch) -> None:
-    monkeypatch.delenv("TRADING25_ENV_FILE", raising=False)
-    assert jquants_module._runtime_env_file_path() is None
 
 
 def test_fetch_daily_quotes_csv_and_non_list_payload(tmp_path: Path) -> None:

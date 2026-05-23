@@ -1,8 +1,4 @@
-"""
-Settings unit tests
-"""
-
-import pytest
+"""Settings unit tests."""
 
 from src.shared.config.settings import get_settings, reload_settings
 
@@ -88,7 +84,7 @@ def test_settings_module_does_not_define_repo_dotenv_source():
     assert not hasattr(settings_mod, "_dotenv_path")
 
 
-def test_settings_loads_explicit_runtime_env_file(monkeypatch, tmp_path):
+def test_settings_ignores_runtime_env_file_hint(monkeypatch, tmp_path):
     env_file = tmp_path / "trading25.env"
     env_file.write_text("BT_API_URL=http://runtime-config.example:3002\n", encoding="utf-8")
     monkeypatch.delenv("BT_API_URL", raising=False)
@@ -96,15 +92,16 @@ def test_settings_loads_explicit_runtime_env_file(monkeypatch, tmp_path):
 
     settings = reload_settings()
 
-    assert settings.bt_api_url == "http://runtime-config.example:3002"
+    assert settings.bt_api_url == "http://localhost:3002"
 
 
-def test_settings_raises_when_explicit_runtime_env_file_is_missing(monkeypatch, tmp_path):
+def test_settings_ignores_missing_runtime_env_file_hint(monkeypatch, tmp_path):
     missing_path = tmp_path / "missing.env"
     monkeypatch.setenv("TRADING25_ENV_FILE", str(missing_path))
 
-    with pytest.raises(RuntimeError, match="TRADING25_ENV_FILE points to a missing file"):
-        reload_settings()
+    settings = reload_settings()
+
+    assert settings.bt_api_url == "http://localhost:3002"
 
 
 def test_settings_respects_explicit_db_paths(monkeypatch):

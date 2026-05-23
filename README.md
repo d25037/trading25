@@ -34,17 +34,20 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 
 ### 1) FastAPI 起動（apps/bt）
 ```bash
-cd apps/bt
-uv sync
-uv run bt server --port 3002
+cd <repo-root>
+scripts/dev-bt-server.sh
 ```
 
-1Password Environments の local env file から secrets/config を注入して起動する場合:
+`scripts/dev-bt-server.sh` は非機密設定を `~/.config/trading25/config.env` から shell source し、機密情報を `~/.config/trading25/secrets.env` の `op://...` reference から 1Password CLI で注入します。
 
 ```bash
-cd <repo-root>
-export TRADING25_ENV_FILE="$HOME/.config/trading25/env"
-op run --env-file "$TRADING25_ENV_FILE" -- uv run --project apps/bt bt server --port 3002
+# ~/.config/trading25/config.env
+JQUANTS_PLAN=standard
+LOG_LEVEL=debug
+BT_PORT=3002
+
+# ~/.config/trading25/secrets.env
+JQUANTS_API_KEY=op://Personal/Jpx-jquants/API-KEY
 ```
 
 ### 2) Web 起動（apps/ts）
@@ -55,13 +58,16 @@ bun install
 bun run workspace:dev
 ```
 
-Runtime config はリポジトリ外で管理します。1Password Environments の local env file を使う場合は、たとえば以下のように明示します。
+Runtime config はリポジトリ外で管理します。非機密設定は `~/.config/trading25/config.env`、機密情報の 1Password reference は `~/.config/trading25/secrets.env` に分けます。repo root `.env` は使用しません。Web 起動時に非機密設定が必要な場合は、起動 shell で明示的に source します。
 
 ```bash
-export TRADING25_ENV_FILE="$HOME/.config/trading25/env"
-```
+set -a
+. "$HOME/.config/trading25/config.env"
+set +a
 
-`op://...` secret reference を含む env file を使う場合は、起動コマンドを `op run --env-file "$TRADING25_ENV_FILE" -- ...` で包みます。repo root `.env` は使用しません。
+cd apps/ts
+bun run workspace:dev
+```
 
 `bun run workspace:dev:sync` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。`bt:sync` 失敗時は warning を出して `web:dev` を継続します。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。

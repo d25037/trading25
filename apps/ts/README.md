@@ -25,7 +25,6 @@ uv run bt server --port 3002
 ### 2) この workspace を起動
 ```bash
 cd <repo-root>
-export TRADING25_ENV_FILE="$HOME/.config/trading25/env"  # optional, repo-external runtime config
 cd apps/ts
 bun install
 bun run workspace:dev
@@ -35,7 +34,7 @@ bun run workspace:dev
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
 通常の build/test/lint/typecheck script は `package.json` から各 workspace command を直接呼びます。
-`scripts/tasks.ts` は optional sync を含む `workspace:dev:sync`、`web:dev` の repo-external runtime config 注入、および `workspace:clean` のような独自 orchestration に限定しています。
+`scripts/tasks.ts` は optional sync を含む `workspace:dev:sync`、`web:dev`、および `workspace:clean` のような独自 orchestration に限定しています。
 
 ## Common Commands
 
@@ -93,10 +92,9 @@ bun run --filter @trading25/contracts bt:sync
 
 ## Environment Variables
 
-環境変数の SoT はプロセス環境、または `TRADING25_ENV_FILE` で明示したリポジトリ外 runtime config です。repo root `.env` は使用しません。
+環境変数の SoT はプロセス環境です。非機密設定は `~/.config/trading25/config.env` を shell source し、機密情報は `~/.config/trading25/secrets.env` の `op://...` reference を `op run` で注入します。repo root `.env` は使用しません。
 
 ```bash
-TRADING25_ENV_FILE  # optional: repo-external env file path, e.g. ~/.config/trading25/env
 JQUANTS_API_KEY
 JQUANTS_PLAN
 BT_API_URL           # bt FastAPI URL for TS clients, OpenAPI fallback, and Vite proxy (default: http://localhost:3002)

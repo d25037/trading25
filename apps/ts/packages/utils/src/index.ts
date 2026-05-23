@@ -31,7 +31,7 @@ export {
   resolveDatasetPath,
 } from './utils/dataset-paths';
 export { dateRangeToISO, toISODateString, toISODateStringOrDefault, toISODateStringOrNull } from './utils/date-helpers';
-export { findProjectRoot, getRuntimeEnvFilePath } from './utils/find-project-root';
+export { findProjectRoot } from './utils/find-project-root';
 export { logger } from './utils/logger';
 export type { ILogger, ILoggerFactory, LogContext, LogLevel } from './utils/logger-interface';
 export { TokenManager } from './utils/token-manager';

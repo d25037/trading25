@@ -9,7 +9,6 @@ type TaskStep =
     }
   | {
       command: string[];
-      withEnvFile?: boolean;
       cwd?: string;
     }
   | {
@@ -23,7 +22,6 @@ type TaskDefinition = {
 
 const ROOT = resolve(import.meta.dir, '..');
 const WEB_ROOT = resolve(ROOT, 'packages/web');
-const RUNTIME_ENV_FILE = process.env.TRADING25_ENV_FILE?.trim();
 
 const TASKS: Record<string, TaskDefinition> = {
   'api:hint': {
@@ -36,7 +34,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'web:dev': {
     description: 'Run web dev server',
-    steps: [{ command: ['./scripts/vite-bun-compat.ts', '--configLoader', 'native'], withEnvFile: true, cwd: WEB_ROOT }],
+    steps: [{ command: ['./scripts/vite-bun-compat.ts', '--configLoader', 'native'], cwd: WEB_ROOT }],
   },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',
@@ -55,10 +53,9 @@ const TASKS: Record<string, TaskDefinition> = {
   },
 };
 
-async function runBun(args: string[], options: { withEnvFile?: boolean; cwd?: string } = {}): Promise<number> {
-  const bunArgs = options.withEnvFile && RUNTIME_ENV_FILE ? [`--env-file=${RUNTIME_ENV_FILE}`, ...args] : args;
+async function runBun(args: string[], options: { cwd?: string } = {}): Promise<number> {
   const proc = Bun.spawn({
-    cmd: ['bun', ...bunArgs],
+    cmd: ['bun', ...args],
     cwd: options.cwd ?? ROOT,
     stdin: 'inherit',
     stdout: 'inherit',
@@ -117,7 +114,7 @@ async function runTask(taskName: string): Promise<number> {
     }
 
     if ('command' in step) {
-      const code = await runBun(step.command, { withEnvFile: step.withEnvFile, cwd: step.cwd });
+      const code = await runBun(step.command, { cwd: step.cwd });
       if (code !== 0) {
         return code;
       }

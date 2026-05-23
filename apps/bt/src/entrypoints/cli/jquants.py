@@ -19,7 +19,6 @@ from rich.console import Console
 from rich.table import Table
 
 from src.shared.config.settings import get_settings
-from src.shared.config.settings import ENV_RUNTIME_ENV_FILE
 
 console = Console()
 
@@ -122,13 +121,6 @@ def _print_fetch_summary(title: str, count: int, output_path: Path | None = None
     console.print(table)
 
 
-def _runtime_env_file_path() -> Path | None:
-    raw_path = os.getenv(ENV_RUNTIME_ENV_FILE, "").strip()
-    if not raw_path:
-        return None
-    return Path(raw_path).expanduser()
-
-
 def _has_local_api_key() -> bool:
     return len(os.getenv("JQUANTS_API_KEY", "").strip()) > 0
 
@@ -138,14 +130,12 @@ def auth_status(
     bt_url: str = typer.Option(DEFAULT_BT_API_URL, "--bt-url", help="bt FastAPI URL"),
 ) -> None:
     """Show local key status and /api/jquants/auth/status."""
-    env_file = _runtime_env_file_path()
     local_key = _has_local_api_key()
     api_status = _request_json(bt_url, "/api/jquants/auth/status")
 
     table = Table(title="JQuants Auth Status", show_header=False)
     table.add_column("key", style="cyan")
     table.add_column("value", style="white")
-    table.add_row("runtime env file", str(env_file) if env_file else f"({ENV_RUNTIME_ENV_FILE} not set)")
     table.add_row("process JQUANTS_API_KEY", "yes" if local_key else "no")
     table.add_row("api authenticated", "yes" if bool(api_status.get("authenticated")) else "no")
     table.add_row("api hasApiKey", "yes" if bool(api_status.get("hasApiKey")) else "no")
@@ -157,7 +147,7 @@ def auth_clear() -> None:
     """Explain where to clear externally managed J-Quants credentials."""
     console.print(
         "[yellow]JQUANTS_API_KEY is managed outside the repository. "
-        "Clear it in 1Password or in the file referenced by TRADING25_ENV_FILE.[/yellow]"
+        "Clear it in 1Password or in ~/.config/trading25/secrets.env.[/yellow]"
     )
     raise typer.Exit(code=1)
 
