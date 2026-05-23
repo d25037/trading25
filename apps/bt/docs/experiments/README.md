@@ -41,6 +41,8 @@
   - `SMA50 Q10 Low` bounce を same-day `TOPIX close` / `NT ratio` regime で条件付けし、どの market state で反発が強いかを見る実験。
 - [market-behavior/topix100-sma50-raw-vs-atr-q10-bounce/](./market-behavior/topix100-sma50-raw-vs-atr-q10-bounce/README.md)
   - `SMA50` の plain gap と `ATR14` 正規化 gap を同じ `Q10 / middle x volume` frame で比較し、見た目の違いを volatility scale で説明できるかを見る実験。
+- [market-behavior/atr-expansion-forward-response/](./market-behavior/atr-expansion-forward-response/README.md)
+  - 20D / 60D ATR 拡大を annual percentile、20D/60D return regime、ATR20/ATR60 pair で切り、forward TOPIX-excess return に使える technical 補助特徴かを見る実験。
 - [market-behavior/topix100-price-to-sma50-decile-partitions/](./market-behavior/topix100-price-to-sma50-decile-partitions/README.md)
   - `Price / SMA50` decile を contiguous partition に分け、high / middle / low の境界を比較する実験。
 - [market-behavior/topix100-sma-ratio-rank-future-close/](./market-behavior/topix100-sma-ratio-rank-future-close/README.md)
