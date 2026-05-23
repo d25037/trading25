@@ -124,6 +124,60 @@ _RERATING_VALUE_CONDITIONS: tuple[tuple[str, str], ...] = (
         "(per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)",
     ),
 )
+_HIGH_VALUATION_CONDITIONS: tuple[tuple[str, str], ...] = (
+    (
+        "all_positive_per_pbr",
+        "per_percentile IS NOT NULL AND pbr_percentile IS NOT NULL",
+    ),
+    (
+        "high_per20_high_pbr20",
+        "per_percentile >= 0.8 AND pbr_percentile >= 0.8",
+    ),
+    (
+        "high_forward_per20_high_pbr20",
+        "forward_per_percentile >= 0.8 AND pbr_percentile >= 0.8",
+    ),
+    (
+        "high_per_or_pbr20",
+        "per_percentile >= 0.8 OR pbr_percentile >= 0.8",
+    ),
+    (
+        "not_high_per_pbr20",
+        "per_percentile < 0.8 AND pbr_percentile < 0.8",
+    ),
+)
+_MARKET_CAP_ABS_BUCKETS: tuple[tuple[str, str], ...] = (
+    ("cap_lt_10bn", "market_cap_bil_jpy > 0 AND market_cap_bil_jpy < 10"),
+    ("cap_10_50bn", "market_cap_bil_jpy >= 10 AND market_cap_bil_jpy < 50"),
+    ("cap_50_200bn", "market_cap_bil_jpy >= 50 AND market_cap_bil_jpy < 200"),
+    ("cap_200bn_1tn", "market_cap_bil_jpy >= 200 AND market_cap_bil_jpy < 1000"),
+    ("cap_ge_1tn", "market_cap_bil_jpy >= 1000"),
+)
+_ADV60_ABS_BUCKETS: tuple[tuple[str, str], ...] = (
+    (
+        "adv_lt_10mn",
+        "med_adv60_sessions >= 60 AND med_adv60_jpy > 0 AND med_adv60_jpy < 10000000",
+    ),
+    (
+        "adv_10_50mn",
+        "med_adv60_sessions >= 60 AND med_adv60_jpy >= 10000000 "
+        "AND med_adv60_jpy < 50000000",
+    ),
+    (
+        "adv_50_300mn",
+        "med_adv60_sessions >= 60 AND med_adv60_jpy >= 50000000 "
+        "AND med_adv60_jpy < 300000000",
+    ),
+    (
+        "adv_300mn_1bn",
+        "med_adv60_sessions >= 60 AND med_adv60_jpy >= 300000000 "
+        "AND med_adv60_jpy < 1000000000",
+    ),
+    (
+        "adv_ge_1bn",
+        "med_adv60_sessions >= 60 AND med_adv60_jpy >= 1000000000",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -149,6 +203,7 @@ class RankingColorEvidenceResult:
     forward_per_pop_interaction_df: pd.DataFrame
     liquidity_regime_evidence_df: pd.DataFrame
     topix_regime_liquidity_value_evidence_df: pd.DataFrame
+    high_valuation_size_liquidity_interaction_df: pd.DataFrame
 
 
 def run_ranking_color_evidence_research(
@@ -264,6 +319,14 @@ def run_ranking_color_evidence_research(
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
+            high_valuation_size_liquidity_interaction_df=(
+                _build_high_valuation_size_liquidity_interaction_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            ),
         )
     return result
 
@@ -308,6 +371,9 @@ def write_ranking_color_evidence_bundle(
             "liquidity_regime_evidence_df": result.liquidity_regime_evidence_df,
             "topix_regime_liquidity_value_evidence_df": (
                 result.topix_regime_liquidity_value_evidence_df
+            ),
+            "high_valuation_size_liquidity_interaction_df": (
+                result.high_valuation_size_liquidity_interaction_df
             ),
         },
         summary_markdown=build_summary_markdown(result),
@@ -369,6 +435,13 @@ def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
         _top_rows_for_markdown(
             result.topix_regime_liquidity_value_evidence_df,
             limit=120,
+        ),
+        "",
+        "## High Valuation x Size x Liquidity Interaction",
+        "",
+        _top_rows_for_markdown(
+            result.high_valuation_size_liquidity_interaction_df,
+            limit=160,
         ),
     ]
     return "\n".join(parts).rstrip() + "\n"
@@ -1124,9 +1197,57 @@ def _build_topix_regime_liquidity_value_evidence_df(
                             return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
                             min_observations=min_observations,
                             severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            )
+    return _concat_sorted(frames, columns=_topix_regime_liquidity_value_columns())
+
+
+def _build_high_valuation_size_liquidity_interaction_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for value_order, (valuation_condition, valuation_sql) in enumerate(
+        _HIGH_VALUATION_CONDITIONS
+    ):
+        for cap_order, (market_cap_bucket, market_cap_sql) in enumerate(
+            _MARKET_CAP_ABS_BUCKETS
+        ):
+            for adv_order, (adv60_bucket, adv60_sql) in enumerate(_ADV60_ABS_BUCKETS):
+                for horizon in horizons:
+                    frames.append(
+                        _aggregate_condition(
+                            conn,
+                            source_name="ranking_color_ranked",
+                            condition=(
+                                f"({valuation_sql}) "
+                                f"AND ({market_cap_sql}) "
+                                f"AND ({adv60_sql})"
+                            ),
+                            condition_fields={
+                                "condition_family": (
+                                    "high_valuation_size_liquidity_interaction"
+                                ),
+                                "valuation_condition": valuation_condition,
+                                "valuation_condition_order": value_order,
+                                "market_cap_abs_bucket": market_cap_bucket,
+                                "market_cap_abs_bucket_order": cap_order,
+                                "adv60_abs_bucket": adv60_bucket,
+                                "adv60_abs_bucket_order": adv_order,
+                                "horizon": int(horizon),
+                            },
+                            return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                            min_observations=min_observations,
+                            severe_loss_threshold_pct=severe_loss_threshold_pct,
                         )
                     )
-    return _concat_sorted(frames, columns=_topix_regime_liquidity_value_columns())
+    return _concat_sorted(
+        frames,
+        columns=_high_valuation_size_liquidity_interaction_columns(),
+    )
 
 
 def _aggregate_condition(
@@ -1161,6 +1282,9 @@ def _aggregate_condition(
             median(topix_recent_return_20d_pct) AS median_topix_recent_return_20d_pct,
             median(topix_recent_return_60d_pct) AS median_topix_recent_return_60d_pct,
             median(med_adv60_jpy) / 1000000.0 AS median_med_adv60_mil_jpy,
+            median(market_cap_bil_jpy) AS median_market_cap_bil_jpy,
+            median(free_float_market_cap_jpy) / 1000000000.0
+                AS median_free_float_market_cap_bil_jpy,
             median(liquidity_residual_z) AS median_liquidity_residual_z,
             median(per) AS median_per,
             median(forward_per) AS median_forward_per,
@@ -1438,6 +1562,8 @@ def _aggregate_metric_columns() -> list[str]:
         "median_topix_recent_return_20d_pct",
         "median_topix_recent_return_60d_pct",
         "median_med_adv60_mil_jpy",
+        "median_market_cap_bil_jpy",
+        "median_free_float_market_cap_bil_jpy",
         "median_liquidity_residual_z",
         "median_per",
         "median_forward_per",
@@ -1537,6 +1663,21 @@ def _topix_regime_liquidity_value_columns() -> list[str]:
         "liquidity_regime",
         "value_condition",
         "value_condition_order",
+        "horizon",
+        "market_scope",
+        *_aggregate_metric_columns(),
+    ]
+
+
+def _high_valuation_size_liquidity_interaction_columns() -> list[str]:
+    return [
+        "condition_family",
+        "valuation_condition",
+        "valuation_condition_order",
+        "market_cap_abs_bucket",
+        "market_cap_abs_bucket_order",
+        "adv60_abs_bucket",
+        "adv60_abs_bucket_order",
         "horizon",
         "market_scope",
         *_aggregate_metric_columns(),

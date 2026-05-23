@@ -27,6 +27,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert not result.low_per_relation_level_evidence_df.empty
     assert not result.forward_per_pop_interaction_df.empty
     assert not result.topix_regime_liquidity_value_evidence_df.empty
+    assert not result.high_valuation_size_liquidity_interaction_df.empty
     assert {
         "valuation_feature",
         "ranking_color_bucket",
@@ -55,6 +56,22 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         "topix_20d_lt_0_60d_gt_0",
         "topix_60d_lt_0",
     }.issubset(set(result.topix_regime_liquidity_value_evidence_df["topix_regime"].astype(str)))
+    assert {
+        "high_per20_high_pbr20",
+        "high_forward_per20_high_pbr20",
+    }.issubset(
+        set(
+            result.high_valuation_size_liquidity_interaction_df[
+                "valuation_condition"
+            ].astype(str)
+        )
+    )
+    assert {
+        "market_cap_abs_bucket",
+        "adv60_abs_bucket",
+        "median_market_cap_bil_jpy",
+        "median_med_adv60_mil_jpy",
+    }.issubset(result.high_valuation_size_liquidity_interaction_df.columns)
     assert {
         "all_value",
         "strong_value_confirmation",
@@ -97,6 +114,7 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "Low PER x Forward Valuation Relation Level Evidence" in summary
     assert "Forward PER x Forward P/OP Interaction" in summary
     assert "TOPIX Regime x Liquidity x Value Evidence" in summary
+    assert "High Valuation x Size x Liquidity Interaction" in summary
 
     bundle = write_ranking_color_evidence_bundle(
         result,

@@ -153,6 +153,23 @@ Prime-only `liquidity_regime_evidence_df`。production regime 名に合わせて
 | TOPIX 20d >= 0, 60d >= 0 | `neutral_rerating` | green | 2,252 | +2.261% | +1.661% | 60.52% | 1.24% |
 | TOPIX 20d >= 0, 60d >= 0 | `neutral_rerating` | blue | 339,911 | +0.130% | -0.312% | 47.97% | 6.87% |
 
+#### 結論: 高PER + 高PBRは大型・高ADVでも「良いreturn」には反転しない
+
+2026-05-23 follow-up `20260523_high_valuation_size_liquidity_prime_v1` では、既存の Prime target-date percentile を使って `PER` / `PBR` の高valuation条件を定義し、時価総額と median ADV60 は絶対値bucketで切った。目的は「高PER・高PBRは全体では悪いが、大型・高売買代金ならよいのではないか」を検証すること。結果は、mega cap / high ADV では左尾riskはやや緩むが、20d TOPIX excess return の中央値はプラスに反転しない。
+
+`high_valuation_size_liquidity_interaction_df`。20d close-to-close TOPIX excess return。
+
+| Valuation condition | Market cap bucket | ADV60 bucket | Observation | Mean | Median | Win rate | Severe loss | Interpretation |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| high PER20 + high PBR20 | `cap_50_200bn` | `adv_50_300mn` | 15,120 | -1.97% | -2.10% | 37.9% | 13.5% | 高valuationの悪さが強い中型・中流動性。 |
+| high PER20 + high PBR20 | `cap_200bn_1tn` | `adv_ge_1bn` | 25,553 | -1.22% | -2.04% | 41.2% | 18.2% | 高ADVでも中央値は悪い。 |
+| high PER20 + high PBR20 | `cap_ge_1tn` | `adv_ge_1bn` | 34,790 | -0.57% | -1.35% | 43.1% | 12.9% | mega cap では悪さは緩むが、good bucket ではない。 |
+| high Fwd PER20 + high PBR20 | `cap_50_200bn` | `adv_50_300mn` | 14,783 | -2.17% | -2.24% | 37.2% | 13.9% | forward valuation でも同方向。 |
+| high Fwd PER20 + high PBR20 | `cap_200bn_1tn` | `adv_ge_1bn` | 25,005 | -1.22% | -1.94% | 41.5% | 17.1% | 高ADVは反転条件ではない。 |
+| high Fwd PER20 + high PBR20 | `cap_ge_1tn` | `adv_ge_1bn` | 31,509 | -0.66% | -1.46% | 42.5% | 12.7% | mega cap でも bad 寄り。 |
+
+一部に `cap_200bn_1tn / adv_50_300mn` の `high Fwd PER20 + high PBR20` が median `-0.14%` まで改善する小sample bucket（527 observations）はあるが、これは良いreturnと読むほど強くない。むしろ本筋は、時価総額・売買代金の絶対水準は高valuationの左尾riskを一部和らげる capacity / quality context であり、`PBR` / `PER` の high percentile red/yellow を green/blue へ反転させる根拠ではない。
+
 ### Interpretation
 
 この readout は UI evidence layer であり、portfolio rule ではない。Prime の 20d TOPIX excess では、PBR と Fwd PER の低percentileが相対的に最も良く、高percentileは明確に悪い。したがって valuation coloring は percentile rank を使う。`Fwd PER / PER` や `Fwd P/OP / PER` のrelation percentile 単独は主軸にしないが、低PERを前提にした exact ratio level は補助条件として有効。
@@ -160,6 +177,8 @@ Prime-only `liquidity_regime_evidence_df`。production regime 名に合わせて
 ただし、低valuation側の中央値は小さい。`excellent` green は「絶対的に強いalpha」ではなく、Prime cross-section の中で相対的に return distribution が良いことを示す UI cue として扱う。
 
 流動性は raw z を直接色分けしない。`neutral_rerating` / `crowded_rerating` は value confirmation と掛け合わせて読む。`crowded_rerating` 単体は severe-loss rate が 17.55% と高いが、低PBR + 低Fwd PERや低PER + Fwd PER/PER改善が揃うと mean / median が強くなる。ただし TOPIX 20d<0 の市場調整局面では、`crowded_rerating` の median と左尾が大きく悪化する。`stale_liquidity` は20d severe loss は低いが、流動性・執行可能性の警告なので return tier と混ぜすぎない。
+
+高PER・高PBRの大型/高ADV follow-up は、既存の赤/黄 valuation 判定を弱める材料ではあるが、反転材料ではない。大型・高ADVは「避けやすい危険」ではなく「bad がやや薄い expensive large liquid bucket」として扱い、valuation color そのものは引き続き high percentile を caution とする。
 
 ### Production Implication
 
@@ -188,4 +207,5 @@ TOPIX regime は今回の配色には直接混ぜない。もし UI に入れる
 | runner | `apps/bt/scripts/research/run_ranking_color_evidence.py` |
 | domain module | `apps/bt/src/domains/analytics/ranking_color_evidence.py` |
 | prime bundle | `/tmp/trading25-research/market-behavior/ranking-color-evidence/20260522_ranking_color_evidence_prime_topix_regime_v7` |
-| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `coverage_diagnostics_df`, `observation_sample_df` |
+| high valuation size/liquidity follow-up bundle | `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/ranking-color-evidence/20260523_high_valuation_size_liquidity_prime_v1` |
+| result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `high_valuation_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |
