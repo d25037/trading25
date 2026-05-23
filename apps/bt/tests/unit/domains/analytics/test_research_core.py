@@ -5,6 +5,7 @@ import pytest
 
 from src.domains.analytics.research_core import (
     UNIVERSE_LABELS,
+    build_event_portfolio_daily_df,
     build_market_universe_case_sql,
     normalize_positive_int_sequence,
     research_universe_market_codes,
@@ -88,3 +89,83 @@ def test_sort_research_table_uses_universe_and_extra_order_without_temp_columns(
     assert sorted_frame["universe_key"].tolist() == ["topix500", "topix500", "growth"]
     assert sorted_frame["condition_key"].tolist() == ["high", "low", "high"]
     assert not any(column.startswith("_") for column in sorted_frame.columns)
+
+
+def test_build_event_portfolio_daily_df_uses_grouped_price_paths() -> None:
+    selected_event_df = pd.DataFrame(
+        [
+            {
+                "market_scope": "standard",
+                "score_method": "value",
+                "code": "1000",
+                "entry_date": "2024-01-02",
+                "exit_date": "2024-01-04",
+                "entry_open": 100.0,
+            },
+            {
+                "market_scope": "standard",
+                "score_method": "value",
+                "code": "2000",
+                "entry_date": "2024-01-03",
+                "exit_date": "2024-01-05",
+                "entry_open": 50.0,
+            },
+            {
+                "market_scope": "growth",
+                "score_method": "value",
+                "code": "3000",
+                "entry_date": "2024-01-02",
+                "exit_date": "2024-01-04",
+                "entry_open": 0.0,
+            },
+        ]
+    )
+    price_df = pd.DataFrame(
+        [
+            {"code": "1000", "date": "2024-01-02", "close": 110.0},
+            {"code": "1000", "date": "2024-01-03", "close": 121.0},
+            {"code": "1000", "date": "2024-01-04", "close": 108.9},
+            {"code": "2000", "date": "2024-01-03", "close": 55.0},
+            {"code": "2000", "date": "2024-01-04", "close": 60.5},
+            {"code": "2000", "date": "2024-01-05", "close": 54.45},
+            {"code": "3000", "date": "2024-01-02", "close": 10.0},
+        ]
+    )
+
+    result = build_event_portfolio_daily_df(
+        selected_event_df,
+        price_df,
+        group_columns=("market_scope", "score_method"),
+    )
+
+    standard = result[result["market_scope"].astype(str) == "standard"].reset_index(drop=True)
+    assert standard["date"].tolist() == [
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-04",
+        "2024-01-05",
+    ]
+    assert standard["active_positions"].tolist() == [1, 2, 2, 1]
+    assert standard["mean_daily_return"].round(6).tolist() == [0.1, 0.1, 0.0, -0.1]
+    assert standard["portfolio_value"].round(6).tolist() == [1.1, 1.21, 1.21, 1.089]
+    assert standard["drawdown_pct"].round(6).tolist() == [0.0, 0.0, 0.0, -10.0]
+
+
+def test_build_event_portfolio_daily_df_returns_stable_empty_shape() -> None:
+    result = build_event_portfolio_daily_df(
+        pd.DataFrame(),
+        pd.DataFrame(),
+        group_columns=("market_scope", "score_method"),
+    )
+
+    assert result.columns.tolist() == [
+        "market_scope",
+        "score_method",
+        "date",
+        "active_positions",
+        "mean_daily_return",
+        "mean_daily_return_pct",
+        "portfolio_value",
+        "drawdown_pct",
+    ]
+    assert result.empty

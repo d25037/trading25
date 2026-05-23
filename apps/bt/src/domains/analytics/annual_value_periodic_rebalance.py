@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +63,7 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
+from src.domains.analytics.research_core import build_event_portfolio_daily_df
 from src.domains.analytics.value_composite_scoring import (
     build_value_composite_score_frame,
 )
@@ -78,6 +78,13 @@ _CORE_SCORE_COLUMNS: tuple[str, ...] = (
     "low_pbr_score",
     "small_market_cap_score",
     "low_forward_per_score",
+)
+_PERIODIC_PORTFOLIO_GROUP_COLUMNS: tuple[str, ...] = (
+    "market_scope",
+    "score_method",
+    "liquidity_scenario",
+    "rebalance_months",
+    "selection_count",
 )
 _RESULT_TABLE_NAMES: tuple[str, ...] = (
     "rebalance_calendar_df",
@@ -942,107 +949,11 @@ def _build_portfolio_daily_df(
     selected_event_df: pd.DataFrame,
     price_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    columns = [
-        "market_scope",
-        "score_method",
-        "liquidity_scenario",
-        "rebalance_months",
-        "selection_count",
-        "date",
-        "active_positions",
-        "mean_daily_return",
-        "mean_daily_return_pct",
-        "portfolio_value",
-        "drawdown_pct",
-    ]
-    if selected_event_df.empty or price_df.empty:
-        return _empty_df(columns)
-    price_by_code = {
-        str(code): frame.sort_values("date", kind="stable").reset_index(drop=True)
-        for code, frame in price_df.groupby("code", sort=False)
-    }
-    aggregate: dict[tuple[str, str, str, int, int, str], list[float]] = defaultdict(lambda: [0.0, 0.0])
-    for event in selected_event_df.to_dict(orient="records"):
-        price_frame = price_by_code.get(str(event["code"]))
-        if price_frame is None:
-            continue
-        path_df = price_frame[
-            (price_frame["date"].astype(str) >= str(event["entry_date"]))
-            & (price_frame["date"].astype(str) <= str(event["exit_date"]))
-        ].copy()
-        if path_df.empty:
-            continue
-        entry_open = event.get("entry_open")
-        try:
-            entry_open_value = float(cast(float, entry_open))
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(entry_open_value) or entry_open_value <= 0:
-            continue
-        close_values = pd.to_numeric(path_df["close"], errors="coerce").astype(float).to_numpy()
-        if not np.isfinite(close_values).all():
-            continue
-        previous_close = np.concatenate(([entry_open_value], close_values[:-1]))
-        daily_returns = close_values / previous_close - 1.0
-        for date_value, daily_return in zip(path_df["date"].astype(str), daily_returns, strict=True):
-            key = (
-                str(event["market_scope"]),
-                str(event["score_method"]),
-                str(event["liquidity_scenario"]),
-                int(cast(int, event["rebalance_months"])),
-                int(cast(int, event["selection_count"])),
-                str(date_value),
-            )
-            aggregate[key][0] += float(daily_return)
-            aggregate[key][1] += 1.0
-    if not aggregate:
-        return _empty_df(columns)
-    records = [
-        {
-            "market_scope": market_scope,
-            "score_method": score_method,
-            "liquidity_scenario": liquidity_scenario,
-            "rebalance_months": rebalance_months,
-            "selection_count": selection_count,
-            "date": date_value,
-            "active_positions": int(values[1]),
-            "mean_daily_return": float(values[0] / values[1]),
-            "mean_daily_return_pct": float(values[0] / values[1] * 100.0),
-        }
-        for (
-            market_scope,
-            score_method,
-            liquidity_scenario,
-            rebalance_months,
-            selection_count,
-            date_value,
-        ), values
-        in aggregate.items()
-    ]
-    daily_df = pd.DataFrame(records).sort_values(
-        [
-            "market_scope",
-            "score_method",
-            "liquidity_scenario",
-            "rebalance_months",
-            "selection_count",
-            "date",
-        ],
-        kind="stable",
-    ).reset_index(drop=True)
-    daily_df["portfolio_value"] = np.nan
-    daily_df["drawdown_pct"] = np.nan
-    for _, group in daily_df.groupby(
-        ["market_scope", "score_method", "liquidity_scenario", "rebalance_months", "selection_count"],
-        observed=True,
-        sort=False,
-    ):
-        idx = list(group.index)
-        values = (1.0 + daily_df.loc[idx, "mean_daily_return"]).cumprod()
-        peaks = values.cummax()
-        daily_df.loc[idx, "portfolio_value"] = values.to_numpy()
-        daily_df.loc[idx, "drawdown_pct"] = ((values / peaks - 1.0) * 100.0).to_numpy()
-    return daily_df[columns]
+    return build_event_portfolio_daily_df(
+        selected_event_df,
+        price_df,
+        group_columns=_PERIODIC_PORTFOLIO_GROUP_COLUMNS,
+    )
 
 
 def _build_portfolio_summary_df(

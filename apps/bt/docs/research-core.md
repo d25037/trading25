@@ -22,16 +22,28 @@ removing low-value duplication from individual studies.
 - `research_core.tables`
   - Stable output-table ordering with universe order and optional local ordering
     maps.
+- `research_core.portfolio`
+  - Per-code close-path lookup with one-time sorting and binary-search event
+    slicing.
+  - Equal-weight event portfolio daily curves from `selected_event_df` style
+    rows (`code`, `entry_date`, `exit_date`, `entry_open`) plus configurable
+    grouping columns.
+  - This is the shared fast path for research runners that already selected
+    events and only need the daily portfolio lens afterward.
 
 The initial migration covers these representative market-behavior studies:
 
 - `classical_momentum_research`
 - `new_high_momentum_research`
 - `turtle_like_momentum_research`
+- `annual_value_periodic_rebalance`
+- `annual_value_breakout_periodic_rebalance`
+- `standard_value_pump_fade_portfolio_filter`
 
 These were chosen because they share the same market universe, output ordering,
-and warmup/parameter patterns while still exercising different research shapes:
-event selection, condition bucket summaries, and trade-ledger portfolio output.
+warmup/parameter patterns, and selected-event portfolio-curve construction
+while still exercising different research shapes: event selection, condition
+bucket summaries, and trade-ledger portfolio output.
 
 ## Boundaries
 
@@ -44,6 +56,9 @@ event selection, condition bucket summaries, and trade-ledger portfolio output.
   bundle payload printing.
 - Individual research modules still own study-specific SQL, features, buckets,
   portfolio construction, interpretation, and Published Readout content.
+- Portfolio daily-curve helpers intentionally start after event selection. They
+  do not choose candidates, compute scores, size positions, or replace vectorbt
+  accounting for full backtest-family runs.
 
 ## Candidate Backlog
 
