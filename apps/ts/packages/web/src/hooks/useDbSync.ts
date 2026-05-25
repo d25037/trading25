@@ -124,6 +124,13 @@ function isTerminalSyncStatus(status: string | null | undefined): status is Sync
   return TERMINAL_SYNC_STATUSES.includes(status as SyncJobResponse['status']);
 }
 
+function resolveSyncJobPollInterval(status: string | null | undefined, sseConnected = false): false | 1000 {
+  if (sseConnected || isTerminalSyncStatus(status)) {
+    return false;
+  }
+  return 1000;
+}
+
 function getFetchDetailKey(detail: SyncFetchDetail): string {
   return `${detail.timestamp}-${detail.stage}-${detail.endpoint}-${detail.eventType}`;
 }
@@ -310,14 +317,7 @@ export function useSyncJobStatus(jobId: string | null, sseConnected = false) {
     },
     enabled: !!jobId && !sseConnected,
     refetchInterval: (query) => {
-      if (sseConnected) {
-        return false;
-      }
-      const status = query.state.data?.status;
-      if (isTerminalSyncStatus(status)) {
-        return false;
-      }
-      return 1000;
+      return resolveSyncJobPollInterval(query.state.data?.status, sseConnected);
     },
     staleTime: 0,
   });
@@ -333,11 +333,7 @@ export function useAdjustedMetricsMaterializeJobStatus(jobId: string | null) {
     },
     enabled: !!jobId,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (isTerminalSyncStatus(status)) {
-        return false;
-      }
-      return 1000;
+      return resolveSyncJobPollInterval(query.state.data?.status);
     },
     staleTime: 0,
   });
@@ -353,14 +349,7 @@ export function useSyncFetchDetails(jobId: string | null, sseConnected = false) 
     },
     enabled: !!jobId && !sseConnected,
     refetchInterval: (query) => {
-      if (sseConnected) {
-        return false;
-      }
-      const status = query.state.data?.status;
-      if (isTerminalSyncStatus(status)) {
-        return false;
-      }
-      return 1000;
+      return resolveSyncJobPollInterval(query.state.data?.status, sseConnected);
     },
     staleTime: 0,
   });
