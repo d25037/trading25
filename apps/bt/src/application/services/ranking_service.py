@@ -42,7 +42,6 @@ from src.application.services.ranking_fundamental_queries import (
     table_exists as _table_exists_query,
 )
 from src.shared.utils.share_adjustment import (
-    ShareAdjustmentEvent,
     adjust_share_count_to_price_basis,
     resolve_latest_quarterly_share_snapshot,
 )
@@ -884,16 +883,15 @@ class RankingService:
             statements,
             as_of_date=target_date,
         )
-        baseline_shares = self._adjust_shares_to_price_basis(
+        baseline_shares = adjust_share_count_to_price_basis(
             baseline_snapshot.shares if baseline_snapshot is not None else None,
-            disclosed_date=(
+            adjustment_events_by_code.get(str(target_stock["code"]), []),
+            from_date=(
                 baseline_snapshot.disclosed_date
                 if baseline_snapshot is not None
                 else None
             ),
-            events_by_code=adjustment_events_by_code,
-            code=str(target_stock["code"]),
-            target_date=price_basis_date,
+            through_date=price_basis_date,
         )
         forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
             statements,
@@ -989,24 +987,6 @@ class RankingService:
             for row in eligible_rows
         ]
         return resolve_latest_quarterly_share_snapshot(snapshots)
-
-    def _adjust_shares_to_price_basis(
-        self,
-        shares: float | None,
-        *,
-        disclosed_date: str | None,
-        events_by_code: Mapping[str, list[ShareAdjustmentEvent]],
-        code: str,
-        target_date: str,
-        allow_zero: bool = False,
-    ) -> float | None:
-        return adjust_share_count_to_price_basis(
-            shares,
-            events_by_code.get(code, []),
-            from_date=disclosed_date,
-            through_date=target_date,
-            allow_zero=allow_zero,
-        )
 
     def _resolve_value_composite_forecast_snapshot(
         self,

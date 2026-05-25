@@ -22,7 +22,10 @@ from src.domains.analytics.fundamental_ranking import (
     normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
 )
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_share_count_to_price_basis,
+)
 from src.application.services.ranking_service import (
     RankingService,
 )
@@ -2964,20 +2967,17 @@ class TestRankingHelperBranches:
             is None
         )
 
-    def test_adjust_shares_to_price_basis_uses_split_events(self, service):
-        adjusted = service._adjust_shares_to_price_basis(
+    def test_adjust_share_count_to_price_basis_uses_split_events(self):
+        adjusted = adjust_share_count_to_price_basis(
             2_260_000.0,
-            disclosed_date="2026-02-09",
-            events_by_code={
-                "1798": [
-                    ShareAdjustmentEvent(
-                        date="2026-03-30",
-                        adjustment_factor=0.2,
-                    )
-                ]
-            },
-            code="1798",
-            target_date="2026-05-01",
+            [
+                ShareAdjustmentEvent(
+                    date="2026-03-30",
+                    adjustment_factor=0.2,
+                )
+            ],
+            from_date="2026-02-09",
+            through_date="2026-05-01",
         )
 
         assert adjusted == pytest.approx(11_300_000.0)
