@@ -31,6 +31,7 @@ from src.application.services.ranking_query_helpers import (
 )
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
+    ensure_supported_value_composite_forward_eps_mode,
     normalize_value_composite_weights,
     resolve_value_composite_profile_and_score_method,
     value_composite_ranking_score_policy,
@@ -2598,6 +2599,9 @@ class TestRankingHelperBranches:
                 profile_id=None,
                 score_method="unknown",  # type: ignore[arg-type]
             )
+        ensure_supported_value_composite_forward_eps_mode("latest")
+        with pytest.raises(ValueError, match="Unsupported forwardEpsMode"):
+            ensure_supported_value_composite_forward_eps_mode("unknown")  # type: ignore[arg-type]
 
     def test_value_composite_config_formats_score_response_parts(self):
         weights = normalize_value_composite_weights(

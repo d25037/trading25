@@ -119,6 +119,13 @@ VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str]
 }
 
 
+def ensure_supported_value_composite_forward_eps_mode(
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+) -> None:
+    if forward_eps_mode not in VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
+        raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
+
+
 def value_composite_score_policy(
     score_method: ValueCompositeScoreMethod,
     forward_eps_mode: ValueCompositeForwardEpsMode,

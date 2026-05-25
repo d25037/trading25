@@ -54,10 +54,10 @@ from src.domains.analytics.value_composite_scoring import (
 )
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
-    VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
+    ensure_supported_value_composite_forward_eps_mode as _ensure_supported_value_composite_forward_eps_mode,
     normalize_value_composite_weights as _normalize_value_composite_weights,
     resolve_value_composite_profile_and_score_method as _resolve_value_composite_profile_and_score_method,
     value_composite_ranking_score_policy as _value_composite_ranking_score_policy,
@@ -519,8 +519,7 @@ class RankingService:
                 score_method=score_method,
             )
         )
-        if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
-            raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
+        _ensure_supported_value_composite_forward_eps_mode(forward_eps_mode)
         weights = _normalize_value_composite_weights(
             _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[resolved_score_method]
         )
@@ -641,8 +640,7 @@ class RankingService:
     ) -> ValueCompositeScoreResponse:
         """単一銘柄の market-specific value composite score を取得"""
 
-        if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
-            raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
+        _ensure_supported_value_composite_forward_eps_mode(forward_eps_mode)
         target_date = self._resolve_value_composite_target_date(date)
         target_date = self._resolve_value_composite_symbol_target_date(
             code,
