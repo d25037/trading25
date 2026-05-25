@@ -1,4 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { EnginePolicyMode } from '@trading25/api-clients/backtest';
+import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
 import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
@@ -19,8 +21,6 @@ import {
   useStrategyOptimization,
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
-import type { EnginePolicyMode } from '@/types/backtest';
-import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';

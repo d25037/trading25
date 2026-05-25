@@ -5,12 +5,12 @@
  * bt APIからシグナル定義を動的に取得
  */
 
+import type { SignalCategory, SignalDefinition } from '@trading25/api-clients/backtest';
 import { Check, ChevronDown, ChevronRight, Copy, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSignalReference } from '@/hooks/useBacktest';
-import type { SignalCategory, SignalDefinition } from '@/types/backtest';
 import { logger } from '@/utils/logger';
 import { formatConstraints } from './signalConstraints';
 

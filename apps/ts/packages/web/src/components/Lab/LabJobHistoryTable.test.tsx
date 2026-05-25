@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { LabJobResponse } from '@trading25/api-clients/backtest';
 import { describe, expect, it, vi } from 'vitest';
-import type { LabJobResponse } from '@/types/backtest';
 import { LabJobHistoryTable } from './LabJobHistoryTable';
 
 function createJob(overrides: Partial<LabJobResponse> = {}): LabJobResponse {

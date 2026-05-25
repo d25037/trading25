@@ -1,18 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { backtestClient } from '@/lib/backtest-client';
-import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type {
   OptimizationRequest,
   StrategyOptimizationSaveRequest,
   StrategyOptimizationStateResponse,
-} from '@/types/backtest';
+} from '@trading25/api-clients/backtest';
+import { describe, expect, it, vi } from 'vitest';
+import { backtestClient } from '@/lib/backtest-client';
+import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import { logger } from '@/utils/logger';
 import {
   optimizationKeys,
   useCancelOptimization,
-  useDeleteStrategyOptimization,
   useDeleteOptimizationHtmlFile,
+  useDeleteStrategyOptimization,
   useGenerateStrategyOptimizationDraft,
   useOptimizationHtmlFileContent,
   useOptimizationHtmlFiles,
@@ -108,9 +108,9 @@ describe('optimization job hooks', () => {
     const { result } = renderHook(() => useRunOptimization(), { wrapper });
 
     await act(async () => {
-      await expect(result.current.mutateAsync({ strategy_name: 'production/demo' } as OptimizationRequest)).rejects.toThrow(
-        'run failed'
-      );
+      await expect(
+        result.current.mutateAsync({ strategy_name: 'production/demo' } as OptimizationRequest)
+      ).rejects.toThrow('run failed');
     });
 
     expect(logger.error).toHaveBeenCalledWith('Failed to start optimization', {

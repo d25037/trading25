@@ -1,11 +1,11 @@
+import type { JobStatus, OptimizationJobResponse } from '@trading25/api-clients/backtest';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { Loader2 } from 'lucide-react';
 import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { Surface } from '@/components/Layout/Workspace';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
-import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface OptimizationJobProgressCardProps {
   job: OptimizationJobResponse | null | undefined;

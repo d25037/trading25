@@ -1,11 +1,14 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { StrategyMetadata } from '@trading25/api-clients/backtest';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import type {
   EntryDecidability,
   MarketScreeningResponse,
   ScreeningJobResponse,
   ScreeningResultItem,
 } from '@trading25/contracts/types/api-response-types';
+import { DATASET_PRESETS } from '@trading25/contracts/types/api-response-types';
 import { Filter } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -36,10 +39,7 @@ import { ApiError } from '@/lib/api-client';
 import { formatMarketsLabel, unionMarkets } from '@/lib/marketUtils';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
-import type { StrategyMetadata } from '@/types/backtest';
-import { DATASET_PRESETS } from '@trading25/contracts/types/api-response-types';
 import type { ScreeningParams } from '@/types/screening';
-import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 const subTabs = [
   { value: 'preOpenScreening' as ScreeningSubTab, label: 'Pre-Open Decidable', icon: Filter },

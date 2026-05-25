@@ -1,11 +1,11 @@
+import type { JobStatus } from '@trading25/api-clients/backtest';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { XCircle } from 'lucide-react';
 import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
-import type { JobStatus } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface LabJobProgressProps {
   status: JobStatus | null;

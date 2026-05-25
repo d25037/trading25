@@ -1,3 +1,4 @@
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 import { Zap } from 'lucide-react';
 import { useCallback, useId, useMemo } from 'react';
 import { buildDefaultSignalParams, SignalFieldInputs } from '@/components/Backtest/SignalFieldInputs';
@@ -7,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { type SignalConfig, useChartStore } from '@/stores/chartStore';
-import type { SignalDefinition } from '@/types/backtest';
 import { IndicatorToggle } from './IndicatorToggle';
 
 interface SignalOverlayControlsProps {

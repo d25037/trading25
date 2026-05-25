@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '@/lib/api-client';
 import type {
   LabEvolveRequest,
   LabGenerateRequest,
@@ -9,8 +8,9 @@ import type {
   LabOptimizeTrialRecommendationResponse,
   LabSignalCategory,
   LabTargetScope,
-} from '@/types/backtest';
+} from '@trading25/api-clients/backtest';
 import { isActiveJobStatus, resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
+import { apiGet, apiPost } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
 export const labKeys = {

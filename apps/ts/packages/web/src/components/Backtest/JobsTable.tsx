@@ -1,5 +1,5 @@
+import type { BacktestJobResponse, JobStatus } from '@trading25/api-clients/backtest';
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
-import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatDateTimeShort, formatPercentage, formatShortId } from '@/utils/formatters';
 
 interface JobsTableProps {

@@ -1,4 +1,4 @@
-import type { SignalDefinition } from '@/types/backtest';
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 
 export function formatConstraints(constraints: SignalDefinition['fields'][number]['constraints']): string[] {
   if (!constraints) return [];

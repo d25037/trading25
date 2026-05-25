@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { OptimizationHtmlFileContentResponse, OptimizationHtmlFileInfo } from '@trading25/api-clients/backtest';
 import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react';
 import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OptimizationHtmlFileContentResponse, OptimizationHtmlFileInfo } from '@/types/backtest';
 import { OptimizationHtmlFileBrowser } from './OptimizationHtmlFileBrowser';
 
 const mockUseOptimizationHtmlFiles = vi.fn();

@@ -1,8 +1,8 @@
+import type { LabResultData } from '@trading25/api-clients/backtest';
 import { validateLabResultData } from '@trading25/api-clients/backtest';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import type { LabResultData } from '@/types/backtest';
 import { LabEvolveResults } from './LabEvolveResults';
 import { LabGenerateResults } from './LabGenerateResults';
 import { LabImproveResults } from './LabImproveResults';

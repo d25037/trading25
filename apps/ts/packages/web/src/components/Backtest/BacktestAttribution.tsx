@@ -1,3 +1,9 @@
+import type {
+  SignalAttributionJobResponse,
+  SignalAttributionResult,
+  SignalAttributionSignalResult,
+} from '@trading25/api-clients/backtest';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { ChevronDown, GitBranch } from 'lucide-react';
 import { type ComponentProps, useMemo, useState } from 'react';
 import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
@@ -16,13 +22,7 @@ import {
 } from '@/hooks/useBacktest';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { useBacktestStore } from '@/stores/backtestStore';
-import type {
-  SignalAttributionJobResponse,
-  SignalAttributionResult,
-  SignalAttributionSignalResult,
-} from '@/types/backtest';
 import { formatElapsedSeconds, formatRate } from '@/utils/formatters';
-import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { AttributionArtifactBrowser } from './AttributionArtifactBrowser';
 import { StrategySelector } from './StrategySelector';
 

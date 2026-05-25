@@ -1,3 +1,9 @@
+import type {
+  AuthoringFieldSchema,
+  SignalDefinition,
+  SignalFieldDefinition,
+  StrategyValidationResponse,
+} from '@trading25/api-clients/backtest';
 import { AlertCircle, CheckCircle2, Eye, FileCode2, Loader2, PencilLine, Sparkles } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
@@ -26,12 +32,6 @@ import {
 import { useDatasetInfo, useDatasets } from '@/hooks/useDataset';
 import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
-import type {
-  AuthoringFieldSchema,
-  SignalDefinition,
-  SignalFieldDefinition,
-  StrategyValidationResponse,
-} from '@/types/backtest';
 import {
   buildVisualAdvancedOnlyPaths,
   canVisualizeStrategyConfig,
@@ -103,7 +103,7 @@ function getReferenceSelectCopy(path: string) {
     ? { chooserLabel: 'Choose universe preset', placeholderLabel: 'Select a universe preset' }
     : path === 'dataset_snapshot'
       ? { chooserLabel: 'Choose archived dataset snapshot', placeholderLabel: 'Select a dataset snapshot' }
-    : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
+      : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
 }
 
 function formatTimingLabel(value: string) {

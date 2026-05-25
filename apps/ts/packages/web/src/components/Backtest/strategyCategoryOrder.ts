@@ -1,4 +1,4 @@
-import type { StrategyMoveTargetCategory } from '@/types/backtest';
+import type { StrategyMoveTargetCategory } from '@trading25/api-clients/backtest';
 
 export const MANAGED_STRATEGY_CATEGORIES: readonly StrategyMoveTargetCategory[] = [
   'production',

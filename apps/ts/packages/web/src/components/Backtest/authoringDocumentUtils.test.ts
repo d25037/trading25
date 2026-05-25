@@ -1,5 +1,5 @@
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 import { describe, expect, it } from 'vitest';
-import type { SignalDefinition } from '@/types/backtest';
 import {
   buildDefaultDocumentAdvancedOnlyPaths,
   buildVisualAdvancedOnlyPaths,

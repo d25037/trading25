@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { BacktestJobResponse, HealthResponse } from '@trading25/api-clients/backtest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BacktestJobResponse, HealthResponse } from '@/types/backtest';
 import { BacktestStatus } from './BacktestStatus';
 
 const mockOnViewJob = vi.fn();

@@ -1,3 +1,9 @@
+import type {
+  EnginePolicyMode,
+  LabOptimizeRequest,
+  LabOptimizeTrialRecommendationResponse,
+  LabSignalCategory,
+} from '@trading25/api-clients/backtest';
 import { useState } from 'react';
 import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
@@ -5,12 +11,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLabOptimizeRecommendation } from '@/hooks/useLab';
-import type {
-  EnginePolicyMode,
-  LabOptimizeRequest,
-  LabOptimizeTrialRecommendationResponse,
-  LabSignalCategory,
-} from '@/types/backtest';
 
 type CategoryScope = 'all' | 'fundamental';
 type TargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';

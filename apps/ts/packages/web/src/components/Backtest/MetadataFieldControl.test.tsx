@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { AuthoringFieldSchema } from '@trading25/api-clients/backtest';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { AuthoringFieldSchema } from '@/types/backtest';
 import { MetadataFieldControl } from './MetadataFieldControl';
 
 vi.mock('@/components/ui/select', () => ({

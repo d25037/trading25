@@ -1,3 +1,4 @@
+import type { OptimizationHtmlFileInfo } from '@trading25/api-clients/backtest';
 import { Check, ExternalLink, File, Loader2, Pencil, Search, Trash2, X } from 'lucide-react';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -18,7 +19,6 @@ import {
   useOptimizationHtmlFiles,
   useRenameOptimizationHtmlFile,
 } from '@/hooks/useOptimization';
-import type { OptimizationHtmlFileInfo } from '@/types/backtest';
 import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatDateTimeLong } from '@/utils/formatters';
 import { ResultHtmlViewer } from './ResultHtmlViewer';

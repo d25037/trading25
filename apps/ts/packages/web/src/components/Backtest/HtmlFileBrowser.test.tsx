@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { HtmlFileContentResponse, HtmlFileInfo, HtmlFileMetrics } from '@trading25/api-clients/backtest';
 import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react';
 import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HtmlFileContentResponse, HtmlFileInfo, HtmlFileMetrics } from '@/types/backtest';
 import { HtmlFileBrowser } from './HtmlFileBrowser';
 
 const mockUseHtmlFiles = vi.fn();

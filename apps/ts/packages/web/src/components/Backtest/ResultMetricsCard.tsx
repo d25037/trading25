@@ -1,5 +1,5 @@
+import type { BacktestResultSummary } from '@trading25/api-clients/backtest';
 import { Card, CardContent } from '@/components/ui/card';
-import type { BacktestResultSummary } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
 interface ResultMetricsCardProps {

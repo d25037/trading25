@@ -1,24 +1,32 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { LabType } from '@trading25/api-clients/backtest';
 import { useCallback } from 'react';
 import {
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   type PortfolioSubTab,
   serializeBacktestSearch,
-  serializeSymbolWorkbenchSearch,
   serializeIndicesSearch,
   serializePortfolioSearch,
   serializeRankingSearch,
   serializeScreeningSearch,
+  serializeSymbolWorkbenchSearch,
   validateBacktestSearch,
-  validateSymbolWorkbenchSearch,
   validatePortfolioSearch,
   validateRankingSearch,
   validateScreeningSearch,
+  validateSymbolWorkbenchSearch,
 } from '@/lib/routeSearch';
-import { backtestRoute, symbolWorkbenchRoute, indicesRoute, portfolioRoute, rankingRoute, screeningRoute } from '@/router';
+import {
+  backtestRoute,
+  indicesRoute,
+  portfolioRoute,
+  rankingRoute,
+  screeningRoute,
+  symbolWorkbenchRoute,
+} from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
-import type { BacktestSubTab, LabType } from '@/types/backtest';
+import type { BacktestSubTab } from '@/types/backtest';
 import type { RankingDailyView, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
@@ -205,10 +213,7 @@ export function useRankingRouteState(): {
 
   const updateSearch = useCallback(
     (
-      updater: (currentState: {
-        activeDailyView: RankingDailyView;
-        rankingParams: RankingParams;
-      }) => {
+      updater: (currentState: { activeDailyView: RankingDailyView; rankingParams: RankingParams }) => {
         activeDailyView: RankingDailyView;
         rankingParams: RankingParams;
       }

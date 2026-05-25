@@ -1,3 +1,4 @@
+import type { StrategyMetadata } from '@trading25/api-clients/backtest';
 import { Loader2 } from 'lucide-react';
 import {
   Select,
@@ -8,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { StrategyMetadata } from '@/types/backtest';
 import { compareOptionalTimestampDesc } from '@/utils/dateComparators';
 import { compareManagedStrategyCategory } from './strategyCategoryOrder';
 

@@ -1,4 +1,4 @@
-import type { SignalCategory, SignalDefinition, SignalFieldDefinition } from '@/types/backtest';
+import type { SignalCategory, SignalDefinition, SignalFieldDefinition } from '@trading25/api-clients/backtest';
 import { isPlainObject } from './yamlUtils';
 
 export { dumpYamlObject, isPlainObject, parseYamlObject, safeDumpYaml } from './yamlUtils';

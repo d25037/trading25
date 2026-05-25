@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { JobStatus } from '@/types/backtest';
+import type { JobStatus } from '@trading25/api-clients/backtest';
 import { isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
+import { useCallback, useEffect, useState } from 'react';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { SignalReferenceResponse } from '@trading25/api-clients/backtest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SignalReferenceResponse } from '@/types/backtest';
 import { SignalReferencePanel } from './SignalReferencePanel';
 
 const mockUseSignalReference = vi.fn();

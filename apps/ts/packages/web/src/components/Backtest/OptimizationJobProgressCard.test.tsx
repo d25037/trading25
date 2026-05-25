@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import type { OptimizationJobResponse } from '@trading25/api-clients/backtest';
 import { describe, expect, it } from 'vitest';
-import type { OptimizationJobResponse } from '@/types/backtest';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
 
 const baseJob: OptimizationJobResponse = {

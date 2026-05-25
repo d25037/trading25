@@ -1,7 +1,7 @@
+import type { EnginePolicy, EnginePolicyMode } from '@trading25/api-clients/backtest';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { EnginePolicy, EnginePolicyMode } from '@/types/backtest';
 
 interface EnginePolicySelectorProps {
   mode: EnginePolicyMode;

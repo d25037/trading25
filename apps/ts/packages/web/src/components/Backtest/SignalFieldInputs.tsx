@@ -1,10 +1,10 @@
+import type { SignalDefinition, SignalFieldDefinition } from '@trading25/api-clients/backtest';
 import { useId } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import type { SignalDefinition, SignalFieldDefinition } from '@/types/backtest';
 import { formatConstraints } from './signalConstraints';
 
 type PrimitiveValue = boolean | number | string;

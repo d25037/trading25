@@ -1,7 +1,4 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import { backtestClient } from '@/lib/backtest-client';
-import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type {
   BacktestRequest,
   DefaultConfigUpdateRequest,
@@ -11,7 +8,10 @@ import type {
   StrategyRenameRequest,
   StrategyUpdateRequest,
   StrategyValidationRequest,
-} from '@/types/backtest';
+} from '@trading25/api-clients/backtest';
+import { describe, expect, it, vi } from 'vitest';
+import { backtestClient } from '@/lib/backtest-client';
+import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import {
   backtestKeys,
   useAttributionArtifactContent,

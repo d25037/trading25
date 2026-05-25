@@ -1,3 +1,4 @@
+import type { HtmlFileInfo, HtmlFileMetrics } from '@trading25/api-clients/backtest';
 import { Check, ExternalLink, File, Loader2, Pencil, Search, Trash2, X } from 'lucide-react';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -13,7 +14,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDeleteHtmlFile, useHtmlFileContent, useHtmlFiles, useRenameHtmlFile } from '@/hooks/useBacktest';
-import type { HtmlFileInfo, HtmlFileMetrics } from '@/types/backtest';
 import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatDateTimeLong } from '@/utils/formatters';
 import { ResultHtmlViewer } from './ResultHtmlViewer';

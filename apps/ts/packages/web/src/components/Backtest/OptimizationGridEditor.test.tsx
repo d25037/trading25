@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { StrategyOptimizationStateResponse } from '@trading25/api-clients/backtest';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StrategyOptimizationStateResponse } from '@/types/backtest';
 import { OptimizationSpecEditor } from './OptimizationGridEditor';
 
 const mockSaveMutate = vi.fn();
@@ -162,15 +162,18 @@ describe('OptimizationSpecEditor', () => {
   });
 
   it('generates draft using the full strategy name', async () => {
-    mockGenerateMutate.mockImplementation((_strategy: string, options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }) => {
-      options?.onSuccess?.({
-        ...createSavedState(),
-        persisted: false,
-        source: 'draft',
-        ready_to_run: false,
-        yaml_content: 'description: draft\nparameter_ranges:\n  exit_trigger_params:\n    atr_stop:\n      atr_multiplier: [1.5, 2.0]\n',
-      });
-    });
+    mockGenerateMutate.mockImplementation(
+      (_strategy: string, options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }) => {
+        options?.onSuccess?.({
+          ...createSavedState(),
+          persisted: false,
+          source: 'draft',
+          ready_to_run: false,
+          yaml_content:
+            'description: draft\nparameter_ranges:\n  exit_trigger_params:\n    atr_stop:\n      atr_multiplier: [1.5, 2.0]\n',
+        });
+      }
+    );
 
     render(<OptimizationSpecEditor strategyName="production/demo" />);
 
@@ -182,14 +185,12 @@ describe('OptimizationSpecEditor', () => {
 
   it('saves edited YAML using strategy-scoped payload', async () => {
     mockSaveMutate.mockImplementation(
-      (
-        _payload: unknown,
-        options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }
-      ) => {
+      (_payload: unknown, options?: { onSuccess?: (value: ReturnType<typeof createSavedState>) => void }) => {
         options?.onSuccess?.({
           ...createSavedState(),
           combinations: 4,
-          yaml_content: 'description: updated\nparameter_ranges:\n  entry_filter_params:\n    period_extrema_break:\n      period: [5, 10, 15, 20]\n',
+          yaml_content:
+            'description: updated\nparameter_ranges:\n  entry_filter_params:\n    period_extrema_break:\n      period: [5, 10, 15, 20]\n',
         });
       }
     );

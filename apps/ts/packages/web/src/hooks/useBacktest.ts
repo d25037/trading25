@@ -2,7 +2,6 @@
  * TanStack Query hooks for Backtest API
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { backtestClient } from '@/lib/backtest-client';
 import type {
   AttributionArtifactContentResponse,
   AttributionArtifactListResponse,
@@ -39,8 +38,9 @@ import type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
-} from '@/types/backtest';
+} from '@trading25/api-clients/backtest';
 import { resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
+import { backtestClient } from '@/lib/backtest-client';
 import { logger } from '@/utils/logger';
 
 // Query Keys

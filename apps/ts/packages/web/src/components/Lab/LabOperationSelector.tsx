@@ -1,6 +1,6 @@
+import type { LabType } from '@trading25/api-clients/backtest';
 import { Dna, Lightbulb, Shuffle, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { LabType } from '@/types/backtest';
 
 const operations: { id: LabType; label: string; icon: typeof Shuffle; description: string }[] = [
   { id: 'generate', label: 'Generate', icon: Shuffle, description: 'Random strategy generation' },

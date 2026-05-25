@@ -1,12 +1,12 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type {
   CanonicalExecutionMetrics,
   FastCandidateSummary,
   VerificationCandidate,
   VerificationDelta,
   VerificationSummary,
-} from '@/types/backtest';
+} from '@trading25/api-clients/backtest';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface VerificationSummarySectionProps {
   fastCandidates?: FastCandidateSummary[] | null;

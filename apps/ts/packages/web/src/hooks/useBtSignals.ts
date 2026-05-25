@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { useMemo } from 'react';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
 import type { SignalOverlaySettings } from '@/stores/chartStore';
-import type { SignalDefinition } from '@/types/backtest';
 
 export interface BtSignalSpec {
   type: string;

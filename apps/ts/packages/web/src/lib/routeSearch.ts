@@ -1,3 +1,4 @@
+import type { LabType } from '@trading25/api-clients/backtest';
 import type {
   Options225PutCallFilter,
   Options225SortBy,
@@ -10,7 +11,7 @@ import {
   DEFAULT_RANKING_PARAMS,
   type ScreeningSubTab,
 } from '@/stores/screeningStore';
-import type { BacktestSubTab, LabType } from '@/types/backtest';
+import type { BacktestSubTab } from '@/types/backtest';
 import type {
   RankingDailyView,
   RankingLiquidityState,

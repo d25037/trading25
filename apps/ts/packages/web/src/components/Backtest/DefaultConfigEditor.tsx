@@ -1,3 +1,4 @@
+import type { AuthoringFieldSchema } from '@trading25/api-clients/backtest';
 import { FileCode2, Loader2, PencilLine, Settings } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
@@ -22,7 +23,6 @@ import {
 import { useDatasets } from '@/hooks/useDataset';
 import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
-import type { AuthoringFieldSchema } from '@/types/backtest';
 import { buildDefaultDocumentAdvancedOnlyPaths, canVisualizeDefaultDocument } from './authoringDocumentUtils';
 import {
   getValueAtPath,
@@ -50,7 +50,7 @@ function getReferenceSelectCopy(path: string) {
     ? { chooserLabel: 'Choose universe preset', placeholderLabel: 'Select a universe preset' }
     : path === 'dataset_snapshot'
       ? { chooserLabel: 'Choose archived dataset snapshot', placeholderLabel: 'Select a dataset snapshot' }
-    : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
+      : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
 }
 
 function EditorTabButton({

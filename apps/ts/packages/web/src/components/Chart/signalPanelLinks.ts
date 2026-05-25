@@ -1,5 +1,5 @@
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 import type { SignalConfig } from '@/stores/chartStore';
-import type { SignalDefinition } from '@/types/backtest';
 
 export type SignalLinkedPanel =
   | 'ppo'

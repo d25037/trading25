@@ -1,4 +1,4 @@
-import type { SignalDefinition } from '@/types/backtest';
+import type { SignalDefinition } from '@trading25/api-clients/backtest';
 import { isPlainObject, parseYamlObject } from './yamlUtils';
 
 const DEFAULT_FUNDAMENTAL_PARENT_FIELDS = ['enabled', 'period_type', 'use_adjusted'];

@@ -1,8 +1,8 @@
+import type { AuthoringFieldSchema } from '@trading25/api-clients/backtest';
 import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import type { AuthoringFieldSchema } from '@/types/backtest';
 
 interface ReferenceSelectFieldCardProps {
   field: AuthoringFieldSchema;

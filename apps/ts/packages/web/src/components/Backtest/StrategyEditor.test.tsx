@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { AuthoringFieldSchema, SignalDefinition } from '@trading25/api-clients/backtest';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuthoringFieldSchema, SignalDefinition } from '@/types/backtest';
 import { StrategyEditor } from './StrategyEditor';
 
 const mockValidateMutateAsync = vi.fn();

@@ -1,3 +1,4 @@
+import type { StrategyMoveTargetCategory } from '@trading25/api-clients/backtest';
 import { ArrowLeftRight, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMoveStrategy } from '@/hooks/useBacktest';
-import type { StrategyMoveTargetCategory } from '@/types/backtest';
 import { MANAGED_STRATEGY_CATEGORIES } from './strategyCategoryOrder';
 
 function getCategoryLabel(category: StrategyMoveTargetCategory): string {

@@ -1,3 +1,4 @@
+import type { AuthoringFieldSchema } from '@trading25/api-clients/backtest';
 import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import type { AuthoringFieldSchema } from '@/types/backtest';
 import { formatConstraints } from './signalConstraints';
 
 interface MetadataFieldControlProps {

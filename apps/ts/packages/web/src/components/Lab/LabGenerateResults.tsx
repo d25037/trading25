@@ -1,6 +1,6 @@
+import type { LabGenerateResult } from '@trading25/api-clients/backtest';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
-import type { LabGenerateResult } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
 interface LabGenerateResultsProps {

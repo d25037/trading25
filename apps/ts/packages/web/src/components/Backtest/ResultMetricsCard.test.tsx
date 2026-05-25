@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import type { BacktestResultSummary } from '@trading25/api-clients/backtest';
 import { describe, expect, it } from 'vitest';
-import type { BacktestResultSummary } from '@/types/backtest';
 import { ResultMetricsCard } from './ResultMetricsCard';
 
 function createSummary(overrides: Partial<BacktestResultSummary> = {}): BacktestResultSummary {

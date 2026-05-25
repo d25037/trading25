@@ -1,3 +1,4 @@
+import type { AttributionArtifactInfo } from '@trading25/api-clients/backtest';
 import { FileJson, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -5,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { JsonTreeView } from '@/components/ui/json-tree-view';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAttributionArtifactContent, useAttributionArtifactFiles } from '@/hooks/useBacktest';
-import type { AttributionArtifactInfo } from '@/types/backtest';
 import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatBytes } from '@/utils/formatters';
 

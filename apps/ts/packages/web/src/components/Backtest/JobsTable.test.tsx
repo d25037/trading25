@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { BacktestJobResponse } from '@trading25/api-clients/backtest';
 import { describe, expect, it, vi } from 'vitest';
-import type { BacktestJobResponse } from '@/types/backtest';
 import { JobsTable } from './JobsTable';
 
 const baseJob = {

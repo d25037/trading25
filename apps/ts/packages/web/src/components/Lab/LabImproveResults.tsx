@@ -1,5 +1,5 @@
+import type { LabImproveResult } from '@trading25/api-clients/backtest';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { LabImproveResult } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
 interface LabImproveResultsProps {

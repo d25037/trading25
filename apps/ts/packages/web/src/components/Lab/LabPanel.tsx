@@ -1,3 +1,5 @@
+import type { LabType } from '@trading25/api-clients/backtest';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { FlaskConical } from 'lucide-react';
 import { useState } from 'react';
 import { StrategySelector } from '@/components/Backtest/StrategySelector';
@@ -13,8 +15,6 @@ import {
 } from '@/hooks/useLab';
 import { useLabSSE } from '@/hooks/useLabSSE';
 import { useBacktestStore } from '@/stores/backtestStore';
-import type { LabType } from '@/types/backtest';
-import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { LabEvolveForm } from './LabEvolveForm';
 import { LabGenerateForm } from './LabGenerateForm';
 import { LabImproveForm } from './LabImproveForm';

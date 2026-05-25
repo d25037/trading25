@@ -1,3 +1,7 @@
+import type {
+  OptimizationDiagnosticResponse,
+  StrategyOptimizationStateResponse,
+} from '@trading25/api-clients/backtest';
 import { AlertCircle, CheckCircle2, Edit, Info, Loader2, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
@@ -17,15 +21,7 @@ import {
   useStrategyOptimization,
 } from '@/hooks/useOptimization';
 import { cn } from '@/lib/utils';
-import type {
-  OptimizationDiagnosticResponse,
-  StrategyOptimizationStateResponse,
-} from '@/types/backtest';
-import {
-  analyzeGridParameters,
-  type GridParameterAnalysis,
-  type GridValidationIssue,
-} from './optimizationGridParams';
+import { analyzeGridParameters, type GridParameterAnalysis, type GridValidationIssue } from './optimizationGridParams';
 import { SignalReferencePanel } from './SignalReferencePanel';
 
 const EMPTY_OPTIMIZATION_YAML = `description: ""

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { LabResultData } from '@trading25/api-clients/backtest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LabResultData } from '@/types/backtest';
 import { LabResultSection } from './LabResultSection';
 
 // Mock child result components

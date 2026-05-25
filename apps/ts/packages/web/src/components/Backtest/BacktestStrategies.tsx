@@ -1,10 +1,10 @@
+import type { StrategyMetadata } from '@trading25/api-clients/backtest';
 import { ArrowLeftRight, Code, Copy, Edit, FileText, Loader2, Lock, Pencil, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { useStrategies, useStrategy } from '@/hooks/useBacktest';
 import { cn } from '@/lib/utils';
-import type { StrategyMetadata } from '@/types/backtest';
 import { compareOptionalTimestampDesc } from '@/utils/dateComparators';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DuplicateDialog } from './DuplicateDialog';

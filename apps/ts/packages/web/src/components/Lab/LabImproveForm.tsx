@@ -1,9 +1,9 @@
+import type { LabImproveRequest } from '@trading25/api-clients/backtest';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import type { LabImproveRequest } from '@/types/backtest';
 
 interface LabImproveFormProps {
   strategyName: string | null;
