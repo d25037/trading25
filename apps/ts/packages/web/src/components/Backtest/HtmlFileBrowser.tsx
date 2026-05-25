@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDeleteHtmlFile, useHtmlFileContent, useHtmlFiles, useRenameHtmlFile } from '@/hooks/useBacktest';
 import type { HtmlFileInfo, HtmlFileMetrics } from '@/types/backtest';
+import { formatDateTimeLong } from '@/utils/formatters';
 import { ResultHtmlViewer } from './ResultHtmlViewer';
 
 function safeAtob(base64: string): string | null {
@@ -23,16 +24,6 @@ function safeAtob(base64: string): string | null {
     console.error('Failed to decode base64 HTML content');
     return null;
   }
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 interface FileListItemProps {
@@ -56,7 +47,7 @@ function FileListItem({ file, isSelected, onSelect }: FileListItemProps) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>{file.strategy_name}</span>
           <span>|</span>
-          <span>{formatDate(file.created_at)}</span>
+          <span>{formatDateTimeLong(file.created_at)}</span>
         </div>
       </div>
     </button>
@@ -323,7 +314,7 @@ function PreviewCard({
               </div>
             )}
             <p className="text-sm text-muted-foreground">
-              {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDate(selectedFile.created_at)}
+              {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDateTimeLong(selectedFile.created_at)}
             </p>
           </div>
           <Button
@@ -337,7 +328,9 @@ function PreviewCard({
             Open in new tab
           </Button>
         </div>
-        {renameErrorMessage && <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>}
+        {renameErrorMessage && (
+          <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>
+        )}
         {metrics && <MetricsGrid metrics={metrics} />}
         <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
       </div>

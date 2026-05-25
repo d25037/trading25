@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatCurrency,
   formatDateShort,
+  formatDateTimeLong,
   formatDateTimeShort,
   formatElapsedSeconds,
   formatFundamentalValue,
@@ -193,6 +194,15 @@ describe('formatDateTimeShort', () => {
   it('returns - for missing timestamp', () => {
     expect(formatDateTimeShort(null)).toBe('-');
     expect(formatDateTimeShort(undefined)).toBe('-');
+  });
+});
+
+describe('formatDateTimeLong', () => {
+  it('formats timestamp with year and minute precision', () => {
+    const value = formatDateTimeLong('2024-03-15T09:30:45');
+    expect(value).toContain('2024');
+    expect(value).toContain('03/15');
+    expect(value).toContain('09:30');
   });
 });
 

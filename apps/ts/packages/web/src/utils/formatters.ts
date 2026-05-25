@@ -132,6 +132,19 @@ export function formatDateTimeShort(dateStr: string | null | undefined): string 
 }
 
 /**
+ * Format timestamp with year and minute precision for artifact metadata.
+ */
+export function formatDateTimeLong(dateStr: string): string {
+  return new Date(dateStr).toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+/**
  * Format long generated IDs for compact table cells.
  */
 export function formatShortId(id: string, visibleChars = 8): string {
