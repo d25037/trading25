@@ -48,7 +48,7 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@/types/sync';
-import { formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
+import { formatBytes, formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 const EMPTY_OPTIONS_225_STATS = {
@@ -339,24 +339,6 @@ function formatCount(value: number | null | undefined): string {
 
 function formatPercentage(value: number | null | undefined): string {
   return `${(((value ?? 0) * 100) as number).toFixed(1)}%`;
-}
-
-function formatBytes(value: number | null | undefined): string {
-  const bytes = value ?? 0;
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '0 B';
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let amount = bytes;
-  let unitIndex = 0;
-  while (amount >= 1024 && unitIndex < units.length - 1) {
-    amount /= 1024;
-    unitIndex += 1;
-  }
-
-  const digits = amount >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${amount.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function isDateBefore(lhs: string | null | undefined, rhs: string | null | undefined): boolean {

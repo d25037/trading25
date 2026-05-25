@@ -350,7 +350,18 @@ describe('formatBytes', () => {
   });
 
   it('formats gigabytes', () => {
-    expect(formatBytes(1_610_612_736)).toBe('1.50 GB');
+    expect(formatBytes(1_610_612_736)).toBe('1.5 GB');
+  });
+
+  it('formats large byte counts up to terabytes', () => {
+    expect(formatBytes(1_099_511_627_776)).toBe('1.0 TB');
+  });
+
+  it('returns zero bytes for missing or invalid byte counts', () => {
+    expect(formatBytes(null)).toBe('0 B');
+    expect(formatBytes(undefined)).toBe('0 B');
+    expect(formatBytes(Number.NaN)).toBe('0 B');
+    expect(formatBytes(-1)).toBe('0 B');
   });
 });
 

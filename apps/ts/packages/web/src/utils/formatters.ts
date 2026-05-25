@@ -228,13 +228,24 @@ export function formatReturnPercent(changePercent: number | null | undefined): s
 }
 
 /**
- * Format byte count to human-readable string (B, KB, MB, GB).
+ * Format byte count to a compact human-readable string (B, KB, MB, GB, TB).
  */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+export function formatBytes(value: number | null | undefined): string {
+  const bytes = value ?? 0;
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let amount = bytes;
+  let unitIndex = 0;
+  while (amount >= 1024 && unitIndex < units.length - 1) {
+    amount /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = amount >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${amount.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 /**
