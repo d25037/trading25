@@ -15,6 +15,7 @@ import type {
   SyncFetchDetailsResponse,
   SyncJobResponse,
 } from '@/types/sync';
+import { isTerminalJobStatus } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 
@@ -59,7 +60,6 @@ const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
 const SNAPSHOT_STALE_TIME_RUNNING_MS = 0;
 const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
 const ACTIVE_SYNC_STATUSES = ['pending', 'running'] as const;
-const TERMINAL_SYNC_STATUSES: SyncJobResponse['status'][] = ['completed', 'failed', 'cancelled'];
 const SYNC_SSE_EVENTS = ['snapshot', 'job', 'fetch-detail'] as const;
 
 // Fetch functions
@@ -122,7 +122,7 @@ function resolveSnapshotQueryTiming(isSyncRunning: boolean): SnapshotQueryTiming
 }
 
 function isTerminalSyncStatus(status: string | null | undefined): status is SyncJobResponse['status'] {
-  return TERMINAL_SYNC_STATUSES.includes(status as SyncJobResponse['status']);
+  return isTerminalJobStatus(status);
 }
 
 function resolveSyncJobPollInterval(status: string | null | undefined, sseConnected = false): false | 1000 {

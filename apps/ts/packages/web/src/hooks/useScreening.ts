@@ -8,7 +8,7 @@ import type {
   ScreeningJobResponse,
   ScreeningParams,
 } from '@/types/screening';
-import { resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
+import { isTerminalJobStatus, resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 
@@ -23,12 +23,7 @@ interface ScreeningJobSSEState {
 }
 
 const MAX_SSE_RETRIES = 3;
-const TERMINAL_SCREENING_STATUSES: ScreeningJobResponse['status'][] = ['completed', 'failed', 'cancelled'];
 const SCREENING_SSE_EVENTS = ['snapshot', 'job'] as const;
-
-function isTerminalScreeningStatus(status: unknown): status is ScreeningJobResponse['status'] {
-  return TERMINAL_SCREENING_STATUSES.includes(status as ScreeningJobResponse['status']);
-}
 
 function runScreeningJob(request: ScreeningJobRequest): Promise<ScreeningJobResponse> {
   return analyticsClient.createScreeningJob(request);
@@ -103,7 +98,7 @@ export function useScreeningJobSSE(jobId: string | null): ScreeningJobSSEState {
       }
 
       updateScreeningJobCache(queryClient, payload);
-      if (isTerminalScreeningStatus(payload.status)) {
+      if (isTerminalJobStatus(payload.status)) {
         controls.close();
       }
     },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { JobStatus } from '@/types/backtest';
+import { isTerminalJobStatus } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 
@@ -11,7 +12,6 @@ interface LabSSEState {
 }
 
 const MAX_RETRIES = 3;
-const TERMINAL_STATUSES: JobStatus[] = ['completed', 'failed', 'cancelled'];
 const STATUS_EVENTS: JobStatus[] = ['pending', 'running', 'completed', 'failed', 'cancelled'];
 const INITIAL_LAB_SSE_STATE: Omit<LabSSEState, 'isConnected'> = {
   progress: null,
@@ -51,7 +51,7 @@ export function useLabSSE(jobId: string | null): LabSSEState {
         status,
       });
 
-      if (TERMINAL_STATUSES.includes(status)) {
+      if (isTerminalJobStatus(status)) {
         controls.close();
       }
     } catch (e) {
