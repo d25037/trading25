@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -20,8 +20,14 @@ from src.application.services.ranking_query_helpers import (
     normalized_code_sql,
     prefer_4digit_order_sql,
 )
-from src.application.services.ranking_response_items import finite_or_none, int_or_none, str_or_none
+from src.application.services.ranking_response_items import (
+    build_value_composite_item,
+    finite_or_none,
+    int_or_none,
+    str_or_none,
+)
 from src.application.services.ranking_value_composite_config import ValueCompositeProfileSpec
+from src.entrypoints.http.schemas.ranking import ValueCompositeRankingItem
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -233,6 +239,50 @@ def append_value_composite_technical_metrics(
             lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
         )
     return result
+
+
+def build_value_composite_ranking_items(
+    scored: pd.DataFrame,
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+) -> list[ValueCompositeRankingItem]:
+    scored = append_value_composite_technical_metrics(
+        scored,
+        reader,
+        target_date=target_date,
+    )
+    return [
+        build_value_composite_item(cast(Mapping[str, Any], row), rank)
+        for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
+    ]
+
+
+def find_value_composite_score_item(
+    scored: pd.DataFrame,
+    reader: MarketDbReader,
+    *,
+    normalized_target_code: str,
+    target_date: str,
+) -> tuple[ValueCompositeRankingItem | None, int]:
+    rows = scored.to_dict(orient="records")
+    for rank, row in enumerate(rows, start=1):
+        if normalize_equity_code(row["code"]) != normalized_target_code:
+            continue
+        row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
+        row_df = append_value_composite_technical_metrics(
+            pd.DataFrame.from_records([row_payload]),
+            reader,
+            target_date=target_date,
+        )
+        return (
+            build_value_composite_item(
+                cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
+                rank,
+            ),
+            len(rows),
+        )
+    return None, len(rows)
 
 
 def load_value_composite_technical_metrics(

@@ -69,9 +69,10 @@ from src.application.services.ranking_value_composite_config import (
 )
 from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
-    append_value_composite_technical_metrics as _append_value_composite_technical_metrics_query,
     apply_value_composite_profile as _apply_value_composite_profile_frame,
     build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
+    build_value_composite_ranking_items as _build_value_composite_ranking_items,
+    find_value_composite_score_item as _find_value_composite_score_item,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
     score_value_composite_records as _score_value_composite_records,
@@ -81,7 +82,6 @@ from src.application.services.ranking_valuation import (
 )
 from src.application.services.ranking_response_items import (
     build_fundamental_ranking_item,
-    build_value_composite_item,
     build_value_composite_score_response,
     finite_or_none as _finite_or_none,
     str_or_none as _str_or_none,
@@ -111,7 +111,6 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     RankingStateFilter,
     Rankings,
-    ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
@@ -557,8 +556,9 @@ class RankingService:
             profile=profile,
             apply_liquidity_filter=apply_liquidity_filter,
         )
-        items = self._build_value_composite_ranking_items(
+        items = _build_value_composite_ranking_items(
             scored.head(limit),
+            self._reader,
             target_date=target_date,
         )
 
@@ -671,8 +671,9 @@ class RankingService:
             weights=weights,
             forward_eps_mode=forward_eps_mode,
         )
-        item, universe_count = self._find_value_composite_score_item(
+        item, universe_count = _find_value_composite_score_item(
             scored,
+            self._reader,
             normalized_target_code=normalized_target_code,
             target_date=target_date,
         )
@@ -721,48 +722,6 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
-
-    def _build_value_composite_ranking_items(
-        self,
-        scored: pd.DataFrame,
-        *,
-        target_date: str,
-    ) -> list[ValueCompositeRankingItem]:
-        scored = _append_value_composite_technical_metrics_query(
-            scored,
-            self._reader,
-            target_date=target_date,
-        )
-        return [
-            build_value_composite_item(cast(Mapping[str, Any], row), rank)
-            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
-        ]
-
-    def _find_value_composite_score_item(
-        self,
-        scored: pd.DataFrame,
-        *,
-        normalized_target_code: str,
-        target_date: str,
-    ) -> tuple[ValueCompositeRankingItem | None, int]:
-        rows = scored.to_dict(orient="records")
-        for rank, row in enumerate(rows, start=1):
-            if _normalize_equity_code(row["code"]) != normalized_target_code:
-                continue
-            row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
-            row_df = _append_value_composite_technical_metrics_query(
-                pd.DataFrame.from_records([row_payload]),
-                self._reader,
-                target_date=target_date,
-            )
-            return (
-                build_value_composite_item(
-                    cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
-                    rank,
-                ),
-                len(rows),
-            )
-        return None, len(rows)
 
     def _load_value_composite_target_stock(
         self,
