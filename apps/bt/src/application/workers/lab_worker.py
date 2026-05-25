@@ -37,7 +37,7 @@ from src.entrypoints.http.schemas.backtest import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
 from src.domains.lab_agent.models import LabStructureMode, LabTargetScope
-from src.application.workers.job_runtime import duration_ms_for_job
+from src.application.workers.job_runtime import duration_ms_for_job, elapsed_ms_since
 from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
@@ -416,7 +416,7 @@ async def run_lab_worker(
             message=complete_message,
             progress=1.0,
         )
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        duration_ms = elapsed_ms_since(started_at)
         metrics_recorder.record_job_duration(claimed.job_type, JobStatus.COMPLETED.value, duration_ms)
         logger.info(
             f"lab worker completed job: {job_id} ({lab_type})",
@@ -435,7 +435,7 @@ async def run_lab_worker(
             job_id,
             reason="parent_job_failed",
         )
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        duration_ms = elapsed_ms_since(started_at)
         metrics_recorder.record_job_duration(f"lab_{lab_type}", JobStatus.FAILED.value, duration_ms)
         logger.exception(
             f"lab worker failed: {job_id} ({lab_type})",

@@ -22,7 +22,7 @@ from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
-from src.application.workers.job_runtime import duration_ms_for_job
+from src.application.workers.job_runtime import duration_ms_for_job, elapsed_ms_since
 from src.shared.config.settings import get_settings
 from src.shared.observability.metrics import metrics_recorder
 
@@ -243,7 +243,7 @@ async def run_backtest_worker(
             message="バックテスト完了",
             progress=1.0,
         )
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        duration_ms = elapsed_ms_since(started_at)
         metrics_recorder.record_job_duration("backtest", JobStatus.COMPLETED.value, duration_ms)
         logger.info(
             f"backtest worker completed job: {job_id}",
@@ -257,7 +257,7 @@ async def run_backtest_worker(
         )
         return 0
     except Exception as exc:
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        duration_ms = elapsed_ms_since(started_at)
         metrics_recorder.record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
         logger.exception(
             f"backtest worker failed: {job_id}",
