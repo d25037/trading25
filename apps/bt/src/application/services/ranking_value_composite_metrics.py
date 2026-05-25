@@ -8,6 +8,7 @@ import pandas as pd
 
 from src.application.services.ranking_daily_queries import get_trading_date_before
 from src.application.services.ranking_query_helpers import (
+    equity_code_variants,
     normalize_equity_code,
     normalized_code_sql,
     prefer_4digit_order_sql,
@@ -15,6 +16,39 @@ from src.application.services.ranking_query_helpers import (
 from src.application.services.ranking_response_items import finite_or_none, int_or_none, str_or_none
 from src.application.services.ranking_value_composite_config import ValueCompositeProfileSpec
 from src.infrastructure.db.market.market_reader import MarketDbReader
+
+
+def resolve_value_composite_target_date(
+    reader: MarketDbReader,
+    date: str | None,
+) -> str:
+    if date:
+        return date
+    date_row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+    if date_row is None or date_row["max_date"] is None:
+        raise ValueError("No trading data available in database")
+    return str(date_row["max_date"])
+
+
+def resolve_value_composite_symbol_target_date(
+    reader: MarketDbReader,
+    code: str,
+    target_date: str,
+) -> str:
+    code_variants = equity_code_variants(code)
+    placeholders = ",".join("?" for _ in code_variants)
+    row = reader.query_one(
+        f"""
+        SELECT MAX(date) AS max_date
+        FROM stock_data
+        WHERE date <= ?
+          AND code IN ({placeholders})
+        """,
+        (target_date, *code_variants),
+    )
+    if row is None or row["max_date"] is None:
+        return target_date
+    return str(row["max_date"])
 
 
 def append_value_composite_profile_metrics(

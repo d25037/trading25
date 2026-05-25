@@ -18,7 +18,6 @@ from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
     build_market_filter as _build_market_filter,
     canonical_market_label as _canonical_market_label,
-    equity_code_variants as _equity_code_variants,
     normalize_equity_code as _normalize_equity_code,
     normalized_code_sql as _normalized_code_sql,
     positive_ratio as _positive_ratio,
@@ -73,6 +72,8 @@ from src.application.services.ranking_value_composite_config import (
 from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
     append_value_composite_technical_metrics as _append_value_composite_technical_metrics_query,
+    resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
+    resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -542,7 +543,7 @@ class RankingService:
             markets,
             fallback=["standard"],
         )
-        target_date = self._resolve_value_composite_target_date(date)
+        target_date = _resolve_value_composite_target_date_query(self._reader, date)
         scored = self._load_value_composite_scored_frame(
             target_date=target_date,
             query_market_codes=query_market_codes,
@@ -657,8 +658,9 @@ class RankingService:
         """単一銘柄の market-specific value composite score を取得"""
 
         _ensure_supported_value_composite_forward_eps_mode(forward_eps_mode)
-        target_date = self._resolve_value_composite_target_date(date)
-        target_date = self._resolve_value_composite_symbol_target_date(
+        target_date = _resolve_value_composite_target_date_query(self._reader, date)
+        target_date = _resolve_value_composite_symbol_target_date_query(
+            self._reader,
             code,
             target_date,
         )
@@ -794,36 +796,6 @@ class RankingService:
                 len(rows),
             )
         return None, len(rows)
-
-    def _resolve_value_composite_target_date(self, date: str | None) -> str:
-        if date:
-            return date
-        date_row = self._reader.query_one(
-            "SELECT MAX(date) as max_date FROM stock_data"
-        )
-        if date_row is None or date_row["max_date"] is None:
-            raise ValueError("No trading data available in database")
-        return str(date_row["max_date"])
-
-    def _resolve_value_composite_symbol_target_date(
-        self,
-        code: str,
-        target_date: str,
-    ) -> str:
-        code_variants = _equity_code_variants(code)
-        placeholders = ",".join("?" for _ in code_variants)
-        row = self._reader.query_one(
-            f"""
-            SELECT MAX(date) AS max_date
-            FROM stock_data
-            WHERE date <= ?
-              AND code IN ({placeholders})
-            """,
-            (target_date, *code_variants),
-        )
-        if row is None or row["max_date"] is None:
-            return target_date
-        return str(row["max_date"])
 
     def _load_value_composite_target_stock(
         self,
