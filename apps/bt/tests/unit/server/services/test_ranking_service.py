@@ -29,6 +29,10 @@ from src.application.services.ranking_query_helpers import (
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
 )
+from src.application.services.ranking_liquidity import (
+    classify_prime_liquidity_regime,
+    classify_risk_flags,
+)
 
 
 @pytest.fixture
@@ -1257,20 +1261,20 @@ class TestGetRankings:
         assert item.riskFlags == []
 
     def test_classifies_short_term_overheat_risk_flag(self):
-        assert RankingService._classify_risk_flags(29.99) == ()
-        assert RankingService._classify_risk_flags(30.0) == ("overheat",)
+        assert classify_risk_flags(29.99) == ()
+        assert classify_risk_flags(30.0) == ("overheat",)
 
     def test_classifies_neutral_and_crowded_rerating_states(self):
         assert (
-            RankingService._classify_prime_liquidity_regime(0.5, 1.0, 2.0)
+            classify_prime_liquidity_regime(0.5, 1.0, 2.0)
             == "neutral_rerating"
         )
         assert (
-            RankingService._classify_prime_liquidity_regime(1.2, 1.0, 2.0)
+            classify_prime_liquidity_regime(1.2, 1.0, 2.0)
             == "crowded_rerating"
         )
         assert (
-            RankingService._classify_prime_liquidity_regime(1.2, 0.0, 2.0)
+            classify_prime_liquidity_regime(1.2, 0.0, 2.0)
             == "distribution_stress"
         )
 

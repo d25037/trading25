@@ -7,7 +7,6 @@ DuckDB market data からランキングデータを取得するサービス。
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from datetime import UTC, date as calendar_date, datetime, timedelta
 from collections.abc import Mapping
 from typing import Any, Literal, cast
@@ -57,9 +56,7 @@ from src.domains.analytics.value_composite_scoring import (
     build_value_composite_score_frame,
 )
 from src.application.services.ranking_value_composite_config import (
-    OVERHEAT_RISK_FLAG,
     PRIME_VALUATION_PERCENTILE_COLUMNS as _PRIME_VALUATION_PERCENTILE_COLUMNS,
-    SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
@@ -68,15 +65,19 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
 )
+from src.application.services.ranking_liquidity import (
+    PrimeLiquidityMetrics,
+    classify_prime_liquidity_regime,
+    classify_risk_flags,
+    fit_log_liquidity_regression,
+)
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
     FundamentalRankingItem,
     FundamentalRankings,
-    LiquidityRegime,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
-    RankingRiskFlag,
     RankingStateFilter,
     Rankings,
     ValueCompositeRankingItem,
@@ -190,14 +191,6 @@ def _with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
             )
         result.loc[percentiles.index, percentile_column] = percentiles.astype(float)
     return result
-
-
-@dataclass(frozen=True)
-class _PrimeLiquidityMetrics:
-    liquidity_residual_z: float
-    liquidity_regime: LiquidityRegime
-    adv60_to_free_float_pct: float
-    risk_flags: tuple[RankingRiskFlag, ...]
 
 
 class RankingService:
@@ -1305,7 +1298,7 @@ class RankingService:
         self,
         target_date: str,
         price_basis_date: str,
-    ) -> dict[str, _PrimeLiquidityMetrics]:
+    ) -> dict[str, PrimeLiquidityMetrics]:
         """Build Prime ADV60-vs-free-float residuals using data as of target_date."""
         if not target_date:
             return {}
@@ -1477,14 +1470,14 @@ class RankingService:
         if len(samples) < 100:
             return {}
 
-        regression = self._fit_log_liquidity_regression(samples)
+        regression = fit_log_liquidity_regression(samples)
         if regression is None:
             return {}
         alpha, beta, residual_std = regression
         if beta <= 0 or residual_std <= 0:
             return {}
 
-        metrics_by_code: dict[str, _PrimeLiquidityMetrics] = {}
+        metrics_by_code: dict[str, PrimeLiquidityMetrics] = {}
         for sample in samples:
             adv60 = cast(float, sample["adv60"])
             free_float_market_cap = cast(float, sample["free_float_market_cap"])
@@ -1493,9 +1486,9 @@ class RankingService:
             expected_log_adv = alpha + beta * math.log(free_float_market_cap)
             residual = math.log(adv60) - expected_log_adv
             residual_z = residual / residual_std
-            metrics_by_code[cast(str, sample["code"])] = _PrimeLiquidityMetrics(
+            metrics_by_code[cast(str, sample["code"])] = PrimeLiquidityMetrics(
                 liquidity_residual_z=round(residual_z, 4),
-                liquidity_regime=self._classify_prime_liquidity_regime(
+                liquidity_regime=classify_prime_liquidity_regime(
                     residual_z,
                     recent_return_20d_pct,
                     recent_return_60d_pct,
@@ -1504,72 +1497,9 @@ class RankingService:
                     (adv60 / free_float_market_cap) * 100.0,
                     4,
                 ),
-                risk_flags=self._classify_risk_flags(recent_return_20d_pct),
+                risk_flags=classify_risk_flags(recent_return_20d_pct),
             )
         return metrics_by_code
-
-    @staticmethod
-    def _fit_log_liquidity_regression(
-        samples: list[dict[str, float | str | None]],
-    ) -> tuple[float, float, float] | None:
-        x_values = [math.log(cast(float, sample["free_float_market_cap"])) for sample in samples]
-        y_values = [math.log(cast(float, sample["adv60"])) for sample in samples]
-        count = len(x_values)
-        if count < 3:
-            return None
-        x_mean = sum(x_values) / count
-        y_mean = sum(y_values) / count
-        x_var = sum((value - x_mean) ** 2 for value in x_values)
-        if x_var <= 0:
-            return None
-        xy_cov = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, y_values, strict=True))
-        beta = xy_cov / x_var
-        alpha = y_mean - beta * x_mean
-        residual_sum_sq = sum(
-            (y - (alpha + beta * x)) ** 2
-            for x, y in zip(x_values, y_values, strict=True)
-        )
-        dof = count - 2
-        if dof <= 0:
-            return None
-        residual_std = math.sqrt(residual_sum_sq / dof)
-        if not all(math.isfinite(value) for value in (alpha, beta, residual_std)):
-            return None
-        return alpha, beta, residual_std
-
-    @staticmethod
-    def _classify_prime_liquidity_regime(
-        residual_z: float,
-        recent_return_20d_pct: float | None,
-        recent_return_60d_pct: float | None,
-    ) -> LiquidityRegime:
-        valid_returns = [
-            value
-            for value in (recent_return_20d_pct, recent_return_60d_pct)
-            if value is not None
-        ]
-        has_persistent_runup = len(valid_returns) == 2 and all(
-            value > 0 for value in valid_returns
-        )
-        if residual_z >= 1.0 and len(valid_returns) == 2:
-            if has_persistent_runup:
-                return "crowded_rerating"
-            if any(value <= 0 for value in valid_returns):
-                return "distribution_stress"
-        if residual_z <= -1.0:
-            return "stale_liquidity"
-        if -1.0 < residual_z < 1.0 and has_persistent_runup:
-            return "neutral_rerating"
-        return "neutral"
-
-    @staticmethod
-    def _classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRiskFlag, ...]:
-        if (
-            recent_return_20d_pct is not None
-            and recent_return_20d_pct >= SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT
-        ):
-            return (OVERHEAT_RISK_FLAG,)
-        return ()
 
     def _append_value_composite_technical_metrics(
         self,
