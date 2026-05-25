@@ -9,6 +9,8 @@ from datetime import datetime
 from time import perf_counter
 from typing import Any
 
+from src.application.services.job_status import TERMINAL_JOB_STATUSES
+from src.entrypoints.http.schemas.common import JobStatus
 from src.shared.observability.metrics import metrics_recorder
 
 DEFAULT_HEARTBEAT_SECONDS = 5.0
@@ -36,6 +38,14 @@ def record_elapsed_job_duration(job_type: str, status: str, *, started_at: float
 
 def worker_lease_owner(worker_name: str) -> str:
     return f"{worker_name}:{socket.gethostname()}:{os.getpid()}"
+
+
+def terminal_worker_exit_code(status: JobStatus, error: str | None) -> int | None:
+    if status not in TERMINAL_JOB_STATUSES:
+        return None
+    if error == WORKER_TIMED_OUT_ERROR:
+        return 124
+    return 0 if status == JobStatus.CANCELLED else 1
 
 
 def job_lifecycle_fields(

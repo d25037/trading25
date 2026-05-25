@@ -37,6 +37,7 @@ from src.application.workers.job_runtime import (
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
+    terminal_worker_exit_code,
     worker_lease_owner,
 )
 from src.shared.config.settings import get_settings
@@ -239,10 +240,10 @@ async def run_optimization_worker(
         else:
             result = strip_verification_metadata(result)
         current_job = await resolved_manager.reload_job_from_storage(job_id)
-        if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
-            if current_job.error == WORKER_TIMED_OUT_ERROR:
-                return 124
-            return 0 if current_job.status == JobStatus.CANCELLED else 1
+        if current_job is not None:
+            exit_code = terminal_worker_exit_code(current_job.status, current_job.error)
+            if exit_code is not None:
+                return exit_code
         await resolved_manager.set_job_optimization_result(
             job_id,
             raw_result=result,

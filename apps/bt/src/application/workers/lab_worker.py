@@ -43,6 +43,7 @@ from src.application.workers.job_runtime import (
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
+    terminal_worker_exit_code,
     worker_lease_owner,
 )
 
@@ -364,10 +365,10 @@ async def run_lab_worker(
             payload,
         )
         current_job = await resolved_manager.reload_job_from_storage(job_id)
-        if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
-            if current_job.error == WORKER_TIMED_OUT_ERROR:
-                return 124
-            return 0 if current_job.status == JobStatus.CANCELLED else 1
+        if current_job is not None:
+            exit_code = terminal_worker_exit_code(current_job.status, current_job.error)
+            if exit_code is not None:
+                return exit_code
         should_run_verification = _should_run_verification(lab_type, engine_policy)
         complete_message = messages["complete"]
         persisted_result = result
