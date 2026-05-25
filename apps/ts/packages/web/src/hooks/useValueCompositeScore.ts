@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ValueCompositeScoreResponse } from '@trading25/contracts/types/api-response-types';
 import { analyticsClient } from '@/lib/analytics-client';
-import type { ValueCompositeScoreParams, ValueCompositeScoreResponse } from '@/types/valueCompositeScore';
+
+interface ValueCompositeScoreParams {
+  symbol: string;
+  date?: string;
+  forwardEpsMode?: ValueCompositeScoreResponse['forwardEpsMode'];
+}
 
 function fetchValueCompositeScore(params: ValueCompositeScoreParams): Promise<ValueCompositeScoreResponse> {
   return analyticsClient.getValueCompositeScore(params);
