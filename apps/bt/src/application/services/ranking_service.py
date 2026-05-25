@@ -1492,7 +1492,8 @@ class RankingService:
         if frame.empty:
             return frame.copy()
         result = frame.copy()
-        profile_metrics = self._load_value_composite_profile_metrics(
+        profile_metrics = _load_value_composite_profile_metrics_query(
+            self._reader,
             target_date=target_date,
             codes=[str(code) for code in result["code"].tolist()],
             profile=profile,
@@ -1515,20 +1516,6 @@ class RankingService:
                 lambda code, column=column: profile_metrics.get(str(code), {}).get(column)
             )
         return result
-
-    def _load_value_composite_profile_metrics(
-        self,
-        *,
-        target_date: str,
-        codes: list[str],
-        profile: _ValueCompositeProfileSpec,
-    ) -> dict[str, dict[str, Any]]:
-        return _load_value_composite_profile_metrics_query(
-            self._reader,
-            target_date=target_date,
-            codes=codes,
-            profile=profile,
-        )
 
     def _load_value_composite_technical_metrics(
         self,
