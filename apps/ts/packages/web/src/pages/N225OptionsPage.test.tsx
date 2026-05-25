@@ -40,7 +40,6 @@ const mockRefetch = vi.fn(() => Promise.resolve());
 
 vi.mock('@/hooks/useOptions225RouteState', () => ({
   useOptions225RouteState: () => mockRouteState,
-  useMigrateOptions225RouteState: () => {},
 }));
 
 vi.mock('@/hooks/useN225Options', () => ({

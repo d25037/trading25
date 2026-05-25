@@ -88,5 +88,3 @@ export function useOptions225RouteState(): Options225RouteState & {
       })),
   };
 }
-
-export function useMigrateOptions225RouteState(): void {}

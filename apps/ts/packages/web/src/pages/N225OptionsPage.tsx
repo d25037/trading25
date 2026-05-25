@@ -7,7 +7,7 @@ import {
   N225OptionsSummaryGrid,
 } from '@/components/N225Options/N225OptionsSections';
 import { useN225Options } from '@/hooks/useN225Options';
-import { useMigrateOptions225RouteState, useOptions225RouteState } from '@/hooks/useOptions225RouteState';
+import { useOptions225RouteState } from '@/hooks/useOptions225RouteState';
 import { ApiError } from '@/lib/api-client';
 import {
   filterOptionsItems,
@@ -17,8 +17,6 @@ import {
 } from '@/lib/options225';
 
 export function N225OptionsPage() {
-  useMigrateOptions225RouteState();
-
   const {
     date,
     putCall,

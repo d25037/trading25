@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useMigrateOptions225RouteState, useOptions225RouteState } from './useOptions225RouteState';
+import { useOptions225RouteState } from './useOptions225RouteState';
 
 const routeSearchState = {
   options225: {} as Record<string, unknown>,
@@ -82,11 +82,5 @@ describe('useOptions225RouteState', () => {
     expect(result.current.strikeMax).toBe(35500);
     expect(result.current.sortBy).toBe('wholeDayClose');
     expect(result.current.order).toBe('asc');
-  });
-
-  it('keeps migrate hook as a no-op', () => {
-    renderHook(() => useMigrateOptions225RouteState());
-
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
