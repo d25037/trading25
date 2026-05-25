@@ -111,6 +111,35 @@ def value_composite_score_policy(
     )
 
 
+def value_composite_ranking_score_policy(
+    score_method: ValueCompositeScoreMethod,
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+    *,
+    profile: ValueCompositeProfileSpec | None,
+    apply_liquidity_filter: bool,
+) -> str:
+    profile_prefix = f"{profile.label}: " if profile is not None else ""
+    breakout_suffix = (
+        f"; breakout additive boost: {profile.breakout_window}d high within "
+        f"{profile.breakout_lookback_sessions} sessions, boost "
+        f"{profile.breakout_score_boost:g}"
+        if profile is not None and profile.breakout_window is not None
+        else ""
+    )
+    liquidity_suffix = (
+        f"; {'hard' if apply_liquidity_filter else 'diagnostic'} "
+        f"ADV60 >= {profile.min_adv60_mil_jpy:g}mn JPY liquidity floor"
+        if profile is not None and profile.min_adv60_mil_jpy is not None
+        else ""
+    )
+    return (
+        f"{profile_prefix}"
+        f"{value_composite_score_policy(score_method, forward_eps_mode)}"
+        f"{breakout_suffix}"
+        f"{liquidity_suffix}"
+    )
+
+
 def value_composite_response_weights(
     weights: Mapping[str, float],
 ) -> dict[str, float]:

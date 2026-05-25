@@ -32,6 +32,7 @@ from src.application.services.ranking_query_helpers import (
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
     normalize_value_composite_weights,
+    value_composite_ranking_score_policy,
     value_composite_response_weights,
     value_composite_score_policy,
 )
@@ -2603,6 +2604,15 @@ class TestRankingHelperBranches:
             "forward EPS basis: latest revised forecast EPS"
             in value_composite_score_policy("standard_pbr_tilt", "latest")
         )
+        ranking_policy = value_composite_ranking_score_policy(
+            "prime_size_tilt",
+            "latest",
+            profile=VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"],
+            apply_liquidity_filter=False,
+        )
+        assert ranking_policy.startswith("Standard value + 120d breakout boost: ")
+        assert "breakout additive boost: 120d high within 20 sessions" in ranking_policy
+        assert "diagnostic ADV60 >= 10mn JPY liquidity floor" in ranking_policy
 
     def test_prime_valuation_percentiles_only_rank_prime_positive_values(self):
         frame = pd.DataFrame(

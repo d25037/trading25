@@ -57,10 +57,10 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
     VALUE_COMPOSITE_PROFILE_BY_ID as _VALUE_COMPOSITE_PROFILE_BY_ID,
-    VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD as _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
     normalize_value_composite_weights as _normalize_value_composite_weights,
+    value_composite_ranking_score_policy as _value_composite_ranking_score_policy,
     value_composite_response_weights as _value_composite_response_weights,
     value_composite_score_policy as _value_composite_score_policy,
 )
@@ -581,29 +581,13 @@ class RankingService:
             ),
             breakoutScoreBoost=profile.breakout_score_boost if profile is not None else None,
             applyLiquidityFilter=apply_liquidity_filter,
-            scorePolicy=(
-                f"{profile.label + ': ' if profile is not None else ''}"
-                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[resolved_score_method]}; "
-                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
-                + (
-                    f"; breakout additive boost: {profile.breakout_window}d high within "
-                    f"{profile.breakout_lookback_sessions} sessions, boost "
-                    f"{profile.breakout_score_boost:g}"
-                    if profile is not None and profile.breakout_window is not None
-                    else ""
-                )
-                + (
-                    f"; {'hard' if apply_liquidity_filter else 'diagnostic'} "
-                    f"ADV60 >= {profile.min_adv60_mil_jpy:g}mn JPY liquidity floor"
-                    if profile is not None and profile.min_adv60_mil_jpy is not None
-                    else ""
-                )
+            scorePolicy=_value_composite_ranking_score_policy(
+                resolved_score_method,
+                forward_eps_mode,
+                profile=profile,
+                apply_liquidity_filter=apply_liquidity_filter,
             ),
-            weights={
-                "smallMarketCap": weights["small_market_cap_score"],
-                "lowPbr": weights["low_pbr_score"],
-                "lowForwardPer": weights["low_forward_per_score"],
-            },
+            weights=_value_composite_response_weights(weights),
             itemCount=len(items),
             items=items,
             lastUpdated=_now_iso(),
