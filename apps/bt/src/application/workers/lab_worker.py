@@ -40,6 +40,7 @@ from src.application.workers.job_runtime import (
     WORKER_TIMED_OUT_ERROR,
     duration_ms_for_job,
     external_worker_lifecycle_fields,
+    normalized_heartbeat_seconds,
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
@@ -354,7 +355,7 @@ async def run_lab_worker(
                 resolved_manager,
                 job_id,
                 lease_owner=lease_owner,
-                heartbeat_seconds=max(heartbeat_seconds, 0.1),
+                heartbeat_seconds=normalized_heartbeat_seconds(heartbeat_seconds),
                 exit_on_cancel=exit_on_cancel,
             )
         )

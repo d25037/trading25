@@ -14,6 +14,7 @@ from src.entrypoints.http.schemas.common import JobStatus
 from src.shared.observability.metrics import metrics_recorder
 
 DEFAULT_HEARTBEAT_SECONDS = 5.0
+MIN_HEARTBEAT_SECONDS = 0.1
 WORKER_TIMED_OUT_ERROR = "worker_timed_out"
 
 
@@ -38,6 +39,10 @@ def record_elapsed_job_duration(job_type: str, status: str, *, started_at: float
 
 def worker_lease_owner(worker_name: str) -> str:
     return f"{worker_name}:{socket.gethostname()}:{os.getpid()}"
+
+
+def normalized_heartbeat_seconds(heartbeat_seconds: float) -> float:
+    return max(heartbeat_seconds, MIN_HEARTBEAT_SECONDS)
 
 
 def terminal_worker_exit_code(status: JobStatus, error: str | None) -> int | None:
