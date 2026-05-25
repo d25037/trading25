@@ -44,6 +44,10 @@ from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
     latest_value_bps_statement,
 )
+from src.application.services.ranking_statement_rows import (
+    statement_row_from_mapping,
+    statement_rows_by_code,
+)
 
 
 @pytest.fixture
@@ -2672,6 +2676,47 @@ class TestRankingHelperBranches:
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None
+
+    def test_statement_row_adapter_normalizes_period_and_groups_by_code(self):
+        rows = [
+            {
+                "code": "72030",
+                "disclosed_date": "2024-01-18",
+                "type_of_current_period": "1Q",
+                "type_of_document": "EarnForecastRevision",
+                "earnings_per_share": None,
+                "forecast_eps": "140.5",
+                "next_year_forecast_earnings_per_share": None,
+                "shares_outstanding": "100",
+            },
+            {
+                "code": "67580",
+                "disclosed_date": "2024-01-12",
+                "type_of_current_period": "FY",
+                "earnings_per_share": "200",
+                "forecast_eps": None,
+                "next_year_forecast_earnings_per_share": "220",
+                "shares_outstanding": None,
+            },
+        ]
+
+        converted = statement_row_from_mapping(rows[0])
+        grouped = statement_rows_by_code(rows)
+
+        assert converted == _StatementRow(
+            code="72030",
+            disclosed_date="2024-01-18",
+            period_type="1Q",
+            earnings_per_share=None,
+            forecast_eps=140.5,
+            next_year_forecast_earnings_per_share=None,
+            shares_outstanding=100.0,
+            fy_cycle_key="2024",
+            type_of_document="EarnForecastRevision",
+        )
+        assert list(grouped) == ["72030", "67580"]
+        assert grouped["67580"][0].period_type == "FY"
+        assert grouped["67580"][0].type_of_document is None
 
     def test_private_fundamental_helper_none_paths(self, service):
         baseline_fallback = service._resolve_baseline_shares(

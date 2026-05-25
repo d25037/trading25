@@ -46,7 +46,6 @@ from src.domains.analytics.fundamental_ranking import (
     StatementRow as _StatementRow,
     adjust_per_share_value as _adjust_per_share_value,
     normalize_period_label as _normalize_period_label,
-    resolve_fy_cycle_key as _resolve_fy_cycle_key,
     to_nullable_float as _to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import (
@@ -70,12 +69,15 @@ from src.application.services.ranking_response_items import (
     build_value_composite_item,
     finite_or_none as _finite_or_none,
     int_or_none as _int_or_none,
-    row_get as _row_get,
     str_or_none as _str_or_none,
 )
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
     latest_value_bps_statement,
+)
+from src.application.services.ranking_statement_rows import (
+    statement_rows_by_code,
+    statement_rows_from_mappings,
 )
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
@@ -444,25 +446,7 @@ class RankingService:
             target_date, query_market_codes
         )
 
-        statements_by_code: dict[str, list[_StatementRow]] = {}
-        for row in statement_rows:
-            code = str(row["code"])
-            period_type = _normalize_period_label(row["type_of_current_period"])
-            statements_by_code.setdefault(code, []).append(
-                _StatementRow(
-                    code=code,
-                    disclosed_date=str(row["disclosed_date"]),
-                    period_type=period_type,
-                    earnings_per_share=_to_nullable_float(row["earnings_per_share"]),
-                    forecast_eps=_to_nullable_float(row["forecast_eps"]),
-                    next_year_forecast_earnings_per_share=_to_nullable_float(
-                        row["next_year_forecast_earnings_per_share"]
-                    ),
-                    shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
-                    fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
-                    type_of_document=_str_or_none(_row_get(row, "type_of_document")),
-                )
-            )
+        statements_by_code = statement_rows_by_code(statement_rows)
 
         ratio_candidates: list[FundamentalItem] = []
         for stock in stock_rows:
@@ -2014,27 +1998,12 @@ class RankingService:
         statement_rows = self._load_fundamental_statement_rows(
             target_date, query_market_codes
         )
-        statements: list[_StatementRow] = []
-        raw_statements: list[Mapping[str, Any]] = []
-        for row in statement_rows:
-            if _normalize_equity_code(row["code"]) != target_code:
-                continue
-            raw_statements.append(row)
-            statements.append(
-                _StatementRow(
-                    code=str(row["code"]),
-                    disclosed_date=str(row["disclosed_date"]),
-                    period_type=_normalize_period_label(row["type_of_current_period"]),
-                    earnings_per_share=_to_nullable_float(row["earnings_per_share"]),
-                    forecast_eps=_to_nullable_float(row["forecast_eps"]),
-                    next_year_forecast_earnings_per_share=_to_nullable_float(
-                        row["next_year_forecast_earnings_per_share"]
-                    ),
-                    shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
-                    fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
-                    type_of_document=_str_or_none(_row_get(row, "type_of_document")),
-                )
-            )
+        raw_statements = [
+            row
+            for row in statement_rows
+            if _normalize_equity_code(row["code"]) == target_code
+        ]
+        statements = statement_rows_from_mappings(raw_statements)
         if not statements:
             return "not_rankable"
 
