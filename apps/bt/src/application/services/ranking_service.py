@@ -101,6 +101,7 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     RankingStateFilter,
     Rankings,
+    ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
@@ -697,20 +698,12 @@ class RankingService:
             weights=weights,
             forward_eps_mode=forward_eps_mode,
         )
-        rows = scored.to_dict(orient="records")
-        universe_count = len(rows)
-        for rank, row in enumerate(rows, start=1):
-            if _normalize_equity_code(row["code"]) != normalized_target_code:
-                continue
-            row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
-            row_df = self._append_value_composite_technical_metrics(
-                pd.DataFrame.from_records([row_payload]),
-                target_date=target_date,
-            )
-            item = build_value_composite_item(
-                cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
-                rank,
-            )
+        item, universe_count = self._find_value_composite_score_item(
+            scored,
+            normalized_target_code=normalized_target_code,
+            target_date=target_date,
+        )
+        if item is not None:
             return build_value_composite_score_response(
                 date=target_date,
                 code=str(target_stock["code"]),
@@ -755,6 +748,31 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
+
+    def _find_value_composite_score_item(
+        self,
+        scored: pd.DataFrame,
+        *,
+        normalized_target_code: str,
+        target_date: str,
+    ) -> tuple[ValueCompositeRankingItem | None, int]:
+        rows = scored.to_dict(orient="records")
+        for rank, row in enumerate(rows, start=1):
+            if _normalize_equity_code(row["code"]) != normalized_target_code:
+                continue
+            row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
+            row_df = self._append_value_composite_technical_metrics(
+                pd.DataFrame.from_records([row_payload]),
+                target_date=target_date,
+            )
+            return (
+                build_value_composite_item(
+                    cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
+                    rank,
+                ),
+                len(rows),
+            )
+        return None, len(rows)
 
     def _resolve_value_composite_target_date(self, date: str | None) -> str:
         if date:
