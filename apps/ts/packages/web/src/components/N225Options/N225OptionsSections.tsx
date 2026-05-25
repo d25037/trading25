@@ -1,4 +1,6 @@
 import type {
+  N225OptionItem,
+  N225OptionsExplorerResponse,
   Options225PutCallFilter,
   Options225SortBy,
   SortOrder,
@@ -20,7 +22,6 @@ import {
   parseOptionsNumericInput,
 } from '@/lib/options225';
 import { cn } from '@/lib/utils';
-import type { N225OptionItem, N225OptionsExplorerResponse } from '@/types/options225';
 
 const SORT_OPTIONS: Array<{ value: Options225SortBy; label: string }> = [
   { value: 'openInterest', label: 'Open Interest' },

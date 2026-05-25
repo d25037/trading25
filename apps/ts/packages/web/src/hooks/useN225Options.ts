@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import type { N225OptionsExplorerResponse } from '@trading25/contracts/types/api-response-types';
 import { ApiError, apiGet } from '@/lib/api-client';
-import type { N225OptionsExplorerResponse } from '@/types/options225';
 import { logger } from '@/utils/logger';
 
 interface UseN225OptionsOptions {

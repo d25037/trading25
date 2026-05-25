@@ -1,5 +1,4 @@
-import type { Options225SortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
-import type { N225OptionItem } from '@/types/options225';
+import type { N225OptionItem, Options225SortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 
 export interface Options225FilterState {
   putCall: 'all' | 'put' | 'call';

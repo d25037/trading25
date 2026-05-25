@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { N225OptionItem } from '@/types/options225';
+import type { N225OptionItem } from '@trading25/contracts/types/api-response-types';
 import {
   buildOptionsComparator,
   filterOptionsItems,
