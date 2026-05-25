@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface OptimizationJobProgressCardProps {
   job: OptimizationJobResponse | null | undefined;
@@ -106,13 +107,13 @@ function StatusLabel({ status }: { status: JobStatus }) {
 }
 
 function resolveStageLabel(job: OptimizationJobResponse): string | null {
-  if (job.status !== 'pending' && job.status !== 'running') return null;
+  if (!isActiveJobStatus(job.status)) return null;
   if (job.message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
   return 'Fast stage';
 }
 
 export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobProgressCardProps) {
-  const isActive = job?.status === 'pending' || job?.status === 'running';
+  const isActive = isActiveJobStatus(job?.status);
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {

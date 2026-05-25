@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { datasetKeys, useCancelDatasetJob, useDatasetJobStatus } from '@/hooks/useDataset';
 import { ApiError } from '@/lib/api-client';
 import { useBacktestStore } from '@/stores/backtestStore';
+import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -19,8 +20,8 @@ export function DatasetJobProgress() {
   const cancelJob = useCancelDatasetJob();
   const queryClient = useQueryClient();
 
-  const isActive = job?.status === 'pending' || job?.status === 'running';
-  const isTerminal = job?.status === 'completed' || job?.status === 'failed' || job?.status === 'cancelled';
+  const isActive = isActiveJobStatus(job?.status);
+  const isTerminal = isTerminalJobStatus(job?.status);
 
   const [elapsed, setElapsed] = useState(0);
   const startedAt = job?.startedAt;

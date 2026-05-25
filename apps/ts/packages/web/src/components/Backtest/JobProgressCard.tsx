@@ -4,6 +4,7 @@ import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface JobProgressCardProps {
   job: BacktestJobResponse | null | undefined;
@@ -106,7 +107,7 @@ function StatusAlert({ job }: { job: BacktestJobResponse }) {
 }
 
 export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobProgressCardProps) {
-  const isActive = job?.status === 'pending' || job?.status === 'running';
+  const isActive = isActiveJobStatus(job?.status);
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
