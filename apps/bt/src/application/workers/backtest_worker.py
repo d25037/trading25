@@ -21,6 +21,8 @@ from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
+    DEFAULT_HEARTBEAT_SECONDS,
+    WORKER_TIMED_OUT_ERROR,
     duration_ms_for_job,
     external_worker_lifecycle_fields,
     parse_json_object_arg,
@@ -29,9 +31,6 @@ from src.application.workers.job_runtime import (
     worker_lease_owner,
 )
 from src.shared.config.settings import get_settings
-
-_HEARTBEAT_SECONDS = 5.0
-_TIMED_OUT_ERROR = "worker_timed_out"
 
 
 def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
@@ -76,12 +75,12 @@ async def _heartbeat_loop(
                 job_id,
                 JobStatus.FAILED,
                 message="バックテストがタイムアウトしました",
-                error=_TIMED_OUT_ERROR,
+                error=WORKER_TIMED_OUT_ERROR,
             )
             record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"backtest worker timed out: {job_id}",
-                error=_TIMED_OUT_ERROR,
+                error=WORKER_TIMED_OUT_ERROR,
                 **external_worker_lifecycle_fields(
                     "backtest",
                     job_id,
@@ -127,7 +126,7 @@ async def run_backtest_worker(
     manager: JobManager | None = None,
     runner: BacktestRunner | None = None,
     nautilus_runner: NautilusVerificationRunner | None = None,
-    heartbeat_seconds: float = _HEARTBEAT_SECONDS,
+    heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
     timeout_seconds: int | None = None,
     exit_on_cancel: Callable[[int], None] = os._exit,
 ) -> int:
@@ -229,7 +228,7 @@ async def run_backtest_worker(
             raise ValueError(f"Unsupported backtest engine: {effective_engine_family}")
         current_job = await resolved_manager.reload_job_from_storage(job_id)
         if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
-            if current_job.error == _TIMED_OUT_ERROR:
+            if current_job.error == WORKER_TIMED_OUT_ERROR:
                 return 124
             return 0 if current_job.status == JobStatus.CANCELLED else 1
         summary = _extract_result_summary(result)

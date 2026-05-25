@@ -11,6 +11,9 @@ from typing import Any
 
 from src.shared.observability.metrics import metrics_recorder
 
+DEFAULT_HEARTBEAT_SECONDS = 5.0
+WORKER_TIMED_OUT_ERROR = "worker_timed_out"
+
 
 def duration_ms_for_job(now: datetime, *, started_at: datetime | None, created_at: datetime | None) -> float:
     reference = started_at or created_at or now

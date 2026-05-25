@@ -30,6 +30,8 @@ from src.domains.optimization.engine import ParameterOptimizationEngine
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
+    DEFAULT_HEARTBEAT_SECONDS,
+    WORKER_TIMED_OUT_ERROR,
     duration_ms_for_job,
     external_worker_lifecycle_fields,
     parse_json_object_arg,
@@ -38,9 +40,6 @@ from src.application.workers.job_runtime import (
     worker_lease_owner,
 )
 from src.shared.config.settings import get_settings
-
-_HEARTBEAT_SECONDS = 5.0
-_TIMED_OUT_ERROR = "worker_timed_out"
 
 
 def _execute_optimization_sync(strategy_name: str) -> dict[str, Any]:
@@ -115,7 +114,7 @@ async def _heartbeat_loop(
                 job_id,
                 JobStatus.FAILED,
                 message="最適化がタイムアウトしました",
-                error=_TIMED_OUT_ERROR,
+                error=WORKER_TIMED_OUT_ERROR,
             )
             await cancel_verification_children(
                 manager,
@@ -125,7 +124,7 @@ async def _heartbeat_loop(
             record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"optimization worker timed out: {job_id}",
-                error=_TIMED_OUT_ERROR,
+                error=WORKER_TIMED_OUT_ERROR,
                 **external_worker_lifecycle_fields(
                     "optimization",
                     job_id,
@@ -175,7 +174,7 @@ async def run_optimization_worker(
     manager: JobManager | None = None,
     execute_sync: Callable[[str], dict[str, Any]] = _execute_optimization_sync,
     engine_policy: EnginePolicy | None = None,
-    heartbeat_seconds: float = _HEARTBEAT_SECONDS,
+    heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
     timeout_seconds: int | None = None,
     exit_on_cancel: Callable[[int], None] = os._exit,
 ) -> int:
@@ -241,7 +240,7 @@ async def run_optimization_worker(
             result = strip_verification_metadata(result)
         current_job = await resolved_manager.reload_job_from_storage(job_id)
         if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
-            if current_job.error == _TIMED_OUT_ERROR:
+            if current_job.error == WORKER_TIMED_OUT_ERROR:
                 return 124
             return 0 if current_job.status == JobStatus.CANCELLED else 1
         await resolved_manager.set_job_optimization_result(
