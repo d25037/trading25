@@ -1,5 +1,6 @@
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { JobStatus, LabJobResponse } from '@/types/backtest';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface LabJobHistoryTableProps {
   jobs: LabJobResponse[] | undefined;
@@ -31,7 +32,7 @@ function resolveVerificationLabel(job: LabJobResponse): string {
   }
   if (
     (job.lab_type === 'generate' || job.lab_type === 'evolve' || job.lab_type === 'optimize') &&
-    (job.status === 'pending' || job.status === 'running')
+    isActiveJobStatus(job.status)
   ) {
     return 'fast path';
   }

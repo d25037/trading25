@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import type { ScreeningJobResponse } from '@/types/screening';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface ScreeningJobProgressProps {
   job: ScreeningJobResponse | null;
@@ -47,7 +48,7 @@ export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps)
 
 export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: ScreeningJobProgressProps) {
   const startTime = job?.started_at ?? job?.created_at ?? null;
-  const isActive = job?.status === 'pending' || job?.status === 'running';
+  const isActive = isActiveJobStatus(job?.status);
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
