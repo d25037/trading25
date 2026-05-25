@@ -73,6 +73,7 @@ from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
     append_value_composite_technical_metrics as _append_value_composite_technical_metrics_query,
     apply_value_composite_profile as _apply_value_composite_profile_frame,
+    build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
 )
@@ -793,7 +794,7 @@ class RankingService:
                 query_market_codes,
             )
             if not adjusted.empty:
-                scored = self._build_value_composite_score_frame_from_adjusted(
+                scored = _build_value_composite_score_frame_from_adjusted(
                     adjusted,
                     weights=weights,
                 )
@@ -887,67 +888,6 @@ class RankingService:
                 }
             )
 
-        if not records:
-            return pd.DataFrame()
-
-        scored = build_value_composite_score_frame(
-            pd.DataFrame.from_records(records),
-            group_columns=("market",),
-            required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
-            score_column=VALUE_COMPOSITE_SCORE_COLUMN,
-            weights=weights,
-        )
-        scored = scored[
-            pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
-        ].copy()
-        return scored.sort_values(
-            [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
-            ascending=[False, True],
-            kind="stable",
-        ).reset_index(drop=True)
-
-    def _build_value_composite_score_frame_from_adjusted(
-        self,
-        adjusted: pd.DataFrame,
-        *,
-        weights: Mapping[str, float],
-    ) -> pd.DataFrame:
-        records: list[dict[str, Any]] = []
-        for row in adjusted.to_dict(orient="records"):
-            price = _finite_or_none(row.get("current_price"))
-            volume = _finite_or_none(row.get("volume"))
-            pbr = _finite_or_none(row.get("pbr"))
-            forward_per = _finite_or_none(row.get("forward_per"))
-            market_cap = _finite_or_none(row.get("market_cap"))
-            if price is None or price <= 0:
-                continue
-            records.append(
-                {
-                    "code": str(row["code"]),
-                    "company_name": str(row["company_name"]),
-                    "market_code": str(row["market_code"]),
-                    "market": _canonical_market_label(str(row["market_code"])),
-                    "sector_33_name": str(row["sector_33_name"]),
-                    "current_price": price,
-                    "volume": volume if volume is not None else 0.0,
-                    "pbr": pbr,
-                    "forward_per": forward_per,
-                    "market_cap_bil_jpy": (
-                        market_cap / 1_000_000_000.0
-                        if market_cap is not None
-                        else None
-                    ),
-                    "bps": _finite_or_none(row.get("bps")),
-                    "forward_eps": _finite_or_none(row.get("forward_eps")),
-                    "latest_fy_disclosed_date": _str_or_none(
-                        row.get("statement_disclosed_date")
-                    ),
-                    "forward_eps_disclosed_date": _str_or_none(
-                        row.get("forward_eps_disclosed_date")
-                    ),
-                    "forward_eps_source": _str_or_none(row.get("forward_eps_source")),
-                }
-            )
         if not records:
             return pd.DataFrame()
 

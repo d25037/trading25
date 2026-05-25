@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 
-from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
+from src.domains.analytics.value_composite_scoring import (
+    VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+    VALUE_COMPOSITE_SCORE_COLUMN,
+    build_value_composite_score_frame,
+)
 from src.application.services.ranking_daily_queries import get_trading_date_before
 from src.application.services.ranking_query_helpers import (
+    canonical_market_label,
     equity_code_variants,
     normalize_equity_code,
     normalized_code_sql,
@@ -120,6 +126,67 @@ def apply_value_composite_profile(
         if apply_liquidity_filter:
             result = result[result["liquidity_eligible"]].copy()
     return result
+
+
+def build_value_composite_score_frame_from_adjusted(
+    adjusted: pd.DataFrame,
+    *,
+    weights: Mapping[str, float],
+) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    for row in adjusted.to_dict(orient="records"):
+        price = finite_or_none(row.get("current_price"))
+        volume = finite_or_none(row.get("volume"))
+        pbr = finite_or_none(row.get("pbr"))
+        forward_per = finite_or_none(row.get("forward_per"))
+        market_cap = finite_or_none(row.get("market_cap"))
+        if price is None or price <= 0:
+            continue
+        records.append(
+            {
+                "code": str(row["code"]),
+                "company_name": str(row["company_name"]),
+                "market_code": str(row["market_code"]),
+                "market": canonical_market_label(str(row["market_code"])),
+                "sector_33_name": str(row["sector_33_name"]),
+                "current_price": price,
+                "volume": volume if volume is not None else 0.0,
+                "pbr": pbr,
+                "forward_per": forward_per,
+                "market_cap_bil_jpy": (
+                    market_cap / 1_000_000_000.0
+                    if market_cap is not None
+                    else None
+                ),
+                "bps": finite_or_none(row.get("bps")),
+                "forward_eps": finite_or_none(row.get("forward_eps")),
+                "latest_fy_disclosed_date": str_or_none(
+                    row.get("statement_disclosed_date")
+                ),
+                "forward_eps_disclosed_date": str_or_none(
+                    row.get("forward_eps_disclosed_date")
+                ),
+                "forward_eps_source": str_or_none(row.get("forward_eps_source")),
+            }
+        )
+    if not records:
+        return pd.DataFrame()
+
+    scored = build_value_composite_score_frame(
+        pd.DataFrame.from_records(records),
+        group_columns=("market",),
+        required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
+        score_column=VALUE_COMPOSITE_SCORE_COLUMN,
+        weights=weights,
+    )
+    scored = scored[
+        pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
+    ].copy()
+    return scored.sort_values(
+        [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+        ascending=[False, True],
+        kind="stable",
+    ).reset_index(drop=True)
 
 
 def append_value_composite_technical_metrics(
