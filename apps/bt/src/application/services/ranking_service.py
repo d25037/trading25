@@ -34,7 +34,6 @@ from src.shared.utils.share_adjustment import (
     adjust_share_count_to_price_basis,
     resolve_latest_quarterly_share_snapshot,
 )
-from src.shared.utils.statement_document import is_actual_fy_financial_statement
 from src.domains.fundamentals import (
     FundamentalsCalculator,
     market_statement_row_to_jquants_statement,
@@ -73,6 +72,10 @@ from src.application.services.ranking_response_items import (
     int_or_none as _int_or_none,
     row_get as _row_get,
     str_or_none as _str_or_none,
+)
+from src.application.services.ranking_statement_selection import (
+    latest_actual_fy_disclosed_date,
+    latest_value_bps_statement,
 )
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
@@ -933,7 +936,7 @@ class RankingService:
                     "market_cap_bil_jpy": market_cap_bil_jpy,
                     "bps": bps,
                     "forward_eps": forward_eps,
-                    "latest_fy_disclosed_date": self._latest_actual_fy_disclosed_date(
+                    "latest_fy_disclosed_date": latest_actual_fy_disclosed_date(
                         raw_statements,
                         as_of_date=target_date,
                     ),
@@ -2063,7 +2066,7 @@ class RankingService:
         if forecast_snapshot is None or forecast_snapshot.value <= 0:
             return "forward_eps_missing"
 
-        latest_fy = self._latest_value_bps_statement(
+        latest_fy = latest_value_bps_statement(
             raw_statements,
             baseline_shares,
             as_of_date=target_date,
@@ -2633,55 +2636,6 @@ class RankingService:
                 )
             )
         return ranked
-
-    def _latest_value_bps_statement(
-        self,
-        rows: list[Mapping[str, Any]],
-        baseline_shares: float | None,
-        *,
-        as_of_date: str,
-    ) -> Mapping[str, Any] | None:
-        eligible = [
-            row
-            for row in rows
-            if str(row["disclosed_date"]) <= str(as_of_date)
-            and is_actual_fy_financial_statement(
-                _normalize_period_label(row["type_of_current_period"]),
-                _str_or_none(_row_get(row, "type_of_document")),
-                allow_unknown_document=True,
-            )
-        ]
-        for row in sorted(
-            eligible, key=lambda row: str(row["disclosed_date"]), reverse=True
-        ):
-            bps = _adjust_per_share_value(
-                _to_nullable_float(row["bps"]),
-                _to_nullable_float(row["shares_outstanding"]),
-                baseline_shares,
-            )
-            if bps is not None and bps > 0:
-                return row
-        return None
-
-    def _latest_actual_fy_disclosed_date(
-        self,
-        rows: list[Mapping[str, Any]],
-        *,
-        as_of_date: str,
-    ) -> str | None:
-        eligible = [
-            row
-            for row in rows
-            if str(row["disclosed_date"]) <= str(as_of_date)
-            and is_actual_fy_financial_statement(
-                _normalize_period_label(row["type_of_current_period"]),
-                _str_or_none(_row_get(row, "type_of_document")),
-                allow_unknown_document=True,
-            )
-        ]
-        if not eligible:
-            return None
-        return str(max(eligible, key=lambda row: str(row["disclosed_date"]))["disclosed_date"])
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         """N営業日前の取引日を取得"""

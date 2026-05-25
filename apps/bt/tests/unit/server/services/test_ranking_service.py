@@ -40,6 +40,10 @@ from src.application.services.ranking_valuation import (
 from src.application.services.ranking_response_items import (
     build_value_composite_item,
 )
+from src.application.services.ranking_statement_selection import (
+    latest_actual_fy_disclosed_date,
+    latest_value_bps_statement,
+)
 
 
 @pytest.fixture
@@ -2635,6 +2639,36 @@ class TestRankingHelperBranches:
         assert item.liquidityEligible is True
         assert item.technicalMetrics.newHigh20d is False
         assert item.technicalMetrics.newHigh120d is True
+
+    def test_statement_selection_respects_as_of_and_positive_adjusted_bps(self):
+        rows = [
+            {
+                "disclosed_date": "2024-01-01",
+                "type_of_current_period": "FY",
+                "type_of_document": "FinancialStatement",
+                "bps": 120.0,
+                "shares_outstanding": 100.0,
+            },
+            {
+                "disclosed_date": "2024-02-01",
+                "type_of_current_period": "FY",
+                "type_of_document": "FinancialStatement",
+                "bps": -1.0,
+                "shares_outstanding": 100.0,
+            },
+            {
+                "disclosed_date": "2024-03-01",
+                "type_of_current_period": "FY",
+                "type_of_document": "FinancialStatement",
+                "bps": 999.0,
+                "shares_outstanding": 100.0,
+            },
+        ]
+
+        selected = latest_value_bps_statement(rows, baseline_shares=100.0, as_of_date="2024-02-15")
+
+        assert selected is rows[0]
+        assert latest_actual_fy_disclosed_date(rows, as_of_date="2024-02-15") == "2024-02-01"
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None
