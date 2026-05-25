@@ -8,6 +8,7 @@ import type {
   ScreeningJobResponse,
   ScreeningParams,
 } from '@/types/screening';
+import { resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 
@@ -134,9 +135,7 @@ export function useScreeningJobStatus(jobId: string | null, sseConnected = false
     },
     refetchInterval: (query) => {
       if (sseConnected) return false;
-      const status = query.state.data?.status;
-      if (status === 'running' || status === 'pending') return 2000;
-      return false;
+      return resolveActiveJobRefetchInterval(query.state.data?.status);
     },
     staleTime: 0,
   });

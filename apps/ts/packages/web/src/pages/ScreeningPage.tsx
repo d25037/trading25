@@ -39,6 +39,7 @@ import type {
   ScreeningParams,
   ScreeningResultItem,
 } from '@/types/screening';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 const subTabs = [
   { value: 'preOpenScreening' as ScreeningSubTab, label: 'Pre-Open Decidable', icon: Filter },
@@ -516,7 +517,7 @@ function useScreeningController({
 
   const job = screeningJobStatus.data ?? runScreeningJob.data ?? null;
   const status = job?.status ?? null;
-  const isRunning = runScreeningJob.isPending || status === 'pending' || status === 'running';
+  const isRunning = runScreeningJob.isPending || isActiveJobStatus(status);
   const error = resolveScreeningError(
     runScreeningJob.error as Error | null,
     staleJob,
