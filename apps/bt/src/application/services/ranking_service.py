@@ -7,8 +7,6 @@ DuckDB market data からランキングデータを取得するサービス。
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from collections.abc import Mapping
-from typing import Any
 
 import pandas as pd
 
@@ -17,7 +15,6 @@ from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
     canonical_market_label as _canonical_market_label,
     normalize_equity_code as _normalize_equity_code,
-    positive_ratio as _positive_ratio,
 )
 from src.application.services.ranking_daily_queries import (
     ranking_by_period_high as _ranking_by_period_high_query,
@@ -35,16 +32,11 @@ from src.application.services.ranking_collection_filters import (
 )
 from src.application.services.ranking_fundamental_queries import (
     build_adjusted_fundamental_ratio_candidates as _build_adjusted_fundamental_ratio_candidates,
-    load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
-    resolve_baseline_share_snapshot as _resolve_baseline_share_snapshot,
     resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
     table_exists as _table_exists_query,
-)
-from src.shared.utils.share_adjustment import (
-    adjust_share_count_to_price_basis,
 )
 from src.domains.fundamentals import (
     FundamentalsCalculator,
@@ -52,8 +44,6 @@ from src.domains.fundamentals import (
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
-    adjust_per_share_value as _adjust_per_share_value,
-    to_nullable_float as _to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import (
     VALUE_COMPOSITE_SCORE_COLUMN,
@@ -77,9 +67,9 @@ from src.application.services.ranking_value_composite_metrics import (
     find_value_composite_score_item as _find_value_composite_score_item,
     find_value_composite_target_stock as _find_value_composite_target_stock,
     load_value_composite_scored_frame as _load_value_composite_scored_frame,
-    resolve_value_composite_forecast_snapshot as _resolve_value_composite_forecast_snapshot,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
+    resolve_value_composite_unavailable_reason as _resolve_value_composite_unavailable_reason,
 )
 from src.application.services.ranking_valuation import (
     enrich_items_from_adjusted_daily_valuation as _enrich_items_from_adjusted_daily_valuation,
@@ -89,12 +79,8 @@ from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
     build_value_composite_score_response,
 )
-from src.application.services.ranking_statement_selection import (
-    latest_value_bps_statement,
-)
 from src.application.services.ranking_statement_rows import (
     statement_rows_by_code,
-    statement_rows_from_mappings,
 )
 from src.application.services.ranking_index_performance import (
     load_index_performance,
@@ -113,7 +99,6 @@ from src.entrypoints.http.schemas.ranking import (
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeProfileId,
-    ValueCompositeScoreUnavailableReason,
     ValueCompositeScoreMethod,
 )
 
@@ -640,7 +625,9 @@ class RankingService:
                 last_updated=last_updated,
             )
 
-        unsupported_reason = self._resolve_value_composite_unavailable_reason(
+        unsupported_reason = _resolve_value_composite_unavailable_reason(
+            self._reader,
+            self._fundamental_calculator,
             target_stock=target_stock,
             target_date=target_date,
             query_market_codes=query_market_codes,
@@ -697,78 +684,3 @@ class RankingService:
             query_market_codes=query_market_codes,
             price_basis_date=price_basis_date,
         )
-
-    def _resolve_value_composite_unavailable_reason(
-        self,
-        *,
-        target_stock: Mapping[str, Any],
-        target_date: str,
-        query_market_codes: list[str],
-        forward_eps_mode: ValueCompositeForwardEpsMode,
-        price_basis_date: str,
-    ) -> ValueCompositeScoreUnavailableReason:
-        price = _to_nullable_float(target_stock["current_price"])
-        if price is None or price <= 0:
-            return "not_rankable"
-
-        target_code = _normalize_equity_code(target_stock["code"])
-        statement_rows = _load_fundamental_statement_rows_query(
-            self._reader,
-            target_date,
-            query_market_codes,
-        )
-        raw_statements = [
-            row
-            for row in statement_rows
-            if _normalize_equity_code(row["code"]) == target_code
-        ]
-        statements = statement_rows_from_mappings(raw_statements)
-        if not statements:
-            return "not_rankable"
-
-        adjustment_events_by_code = _load_adjustment_events_by_code_query(
-            self._reader,
-            through_date=price_basis_date,
-            market_codes=query_market_codes,
-        )
-        baseline_snapshot = _resolve_baseline_share_snapshot(
-            statements,
-            as_of_date=target_date,
-        )
-        baseline_shares = adjust_share_count_to_price_basis(
-            baseline_snapshot.shares if baseline_snapshot is not None else None,
-            adjustment_events_by_code.get(str(target_stock["code"]), []),
-            from_date=(
-                baseline_snapshot.disclosed_date
-                if baseline_snapshot is not None
-                else None
-            ),
-            through_date=price_basis_date,
-        )
-        forecast_snapshot = _resolve_value_composite_forecast_snapshot(
-            self._fundamental_calculator,
-            statements,
-            baseline_shares,
-            forward_eps_mode=forward_eps_mode,
-            as_of_date=target_date,
-        )
-        if forecast_snapshot is None or forecast_snapshot.value <= 0:
-            return "forward_eps_missing"
-
-        latest_fy = latest_value_bps_statement(
-            raw_statements,
-            baseline_shares,
-            as_of_date=target_date,
-        )
-        if latest_fy is None:
-            return "bps_missing"
-        bps = _adjust_per_share_value(
-            _to_nullable_float(latest_fy["bps"]),
-            _to_nullable_float(latest_fy["shares_outstanding"]),
-            baseline_shares,
-        )
-        if _positive_ratio(price, bps) is None:
-            return "bps_missing"
-        if _positive_ratio(price, forecast_snapshot.value) is None:
-            return "forward_eps_missing"
-        return "not_rankable"

@@ -11,6 +11,7 @@ from src.domains.analytics.fundamental_ranking import (
     ForecastValue,
     FundamentalRankingCalculator,
     StatementRow,
+    adjust_per_share_value,
     normalize_period_label,
     to_nullable_float,
 )
@@ -29,6 +30,7 @@ from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame,
     load_fundamental_statement_rows,
     load_fundamental_stock_rows,
+    resolve_baseline_share_snapshot,
     resolve_latest_stock_data_date,
 )
 from src.application.services.ranking_query_helpers import (
@@ -37,6 +39,7 @@ from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
     normalized_code_sql,
     prefer_4digit_order_sql,
+    positive_ratio,
 )
 from src.application.services.ranking_response_items import (
     build_value_composite_item,
@@ -46,13 +49,21 @@ from src.application.services.ranking_response_items import (
 )
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
+    latest_value_bps_statement,
+)
+from src.application.services.ranking_statement_rows import (
+    statement_rows_from_mappings,
 )
 from src.application.services.ranking_value_composite_config import ValueCompositeProfileSpec
 from src.entrypoints.http.schemas.ranking import (
     ValueCompositeForwardEpsMode,
     ValueCompositeRankingItem,
+    ValueCompositeScoreUnavailableReason,
 )
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    adjust_share_count_to_price_basis,
+)
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
@@ -157,6 +168,83 @@ def load_value_composite_scored_frame(
         weights=weights,
         forward_eps_mode=forward_eps_mode,
     )
+
+
+def resolve_value_composite_unavailable_reason(
+    reader: MarketDbReader,
+    calculator: FundamentalRankingCalculator,
+    *,
+    target_stock: Mapping[str, Any],
+    target_date: str,
+    query_market_codes: list[str],
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+    price_basis_date: str,
+) -> ValueCompositeScoreUnavailableReason:
+    price = to_nullable_float(target_stock["current_price"])
+    if price is None or price <= 0:
+        return "not_rankable"
+
+    target_code = normalize_equity_code(target_stock["code"])
+    statement_rows = load_fundamental_statement_rows(
+        reader,
+        target_date,
+        query_market_codes,
+    )
+    raw_statements = [
+        row
+        for row in statement_rows
+        if normalize_equity_code(row["code"]) == target_code
+    ]
+    statements = statement_rows_from_mappings(raw_statements)
+    if not statements:
+        return "not_rankable"
+
+    adjustment_events_by_code = load_adjustment_events_by_code(
+        reader,
+        through_date=price_basis_date,
+        market_codes=query_market_codes,
+    )
+    baseline_snapshot = resolve_baseline_share_snapshot(
+        statements,
+        as_of_date=target_date,
+    )
+    baseline_shares = adjust_share_count_to_price_basis(
+        baseline_snapshot.shares if baseline_snapshot is not None else None,
+        adjustment_events_by_code.get(str(target_stock["code"]), []),
+        from_date=(
+            baseline_snapshot.disclosed_date
+            if baseline_snapshot is not None
+            else None
+        ),
+        through_date=price_basis_date,
+    )
+    forecast_snapshot = resolve_value_composite_forecast_snapshot(
+        calculator,
+        statements,
+        baseline_shares,
+        forward_eps_mode=forward_eps_mode,
+        as_of_date=target_date,
+    )
+    if forecast_snapshot is None or forecast_snapshot.value <= 0:
+        return "forward_eps_missing"
+
+    latest_fy = latest_value_bps_statement(
+        raw_statements,
+        baseline_shares,
+        as_of_date=target_date,
+    )
+    if latest_fy is None:
+        return "bps_missing"
+    bps = adjust_per_share_value(
+        to_nullable_float(latest_fy["bps"]),
+        to_nullable_float(latest_fy["shares_outstanding"]),
+        baseline_shares,
+    )
+    if positive_ratio(price, bps) is None:
+        return "bps_missing"
+    if positive_ratio(price, forecast_snapshot.value) is None:
+        return "forward_eps_missing"
+    return "not_rankable"
 
 
 def append_value_composite_profile_metrics(
