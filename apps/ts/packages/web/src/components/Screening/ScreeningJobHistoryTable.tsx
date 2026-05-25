@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
-import { formatDateTimeShort } from '@/utils/formatters';
+import { formatDateTimeShort, formatShortId } from '@/utils/formatters';
 
 interface ScreeningJobHistoryTableProps {
   entryDecidability: EntryDecidability;
@@ -15,10 +15,6 @@ interface ScreeningJobHistoryTableProps {
   onShowHistoryChange: (showHistory: boolean) => void;
   selectedJobId?: string | null;
   onSelectJob: (job: ScreeningJobResponse) => void;
-}
-
-function truncateJobId(jobId: string): string {
-  return jobId.length <= 8 ? jobId : `${jobId.slice(0, 8)}...`;
 }
 
 export function ScreeningJobHistoryTable({
@@ -41,7 +37,7 @@ export function ScreeningJobHistoryTable({
     {
       key: 'jobId',
       header: 'Job ID',
-      render: (job) => <span className="font-mono text-xs">{truncateJobId(job.job_id)}</span>,
+      render: (job) => <span className="font-mono text-xs">{formatShortId(job.job_id)}</span>,
     },
     {
       key: 'markets',

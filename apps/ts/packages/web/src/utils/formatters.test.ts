@@ -12,6 +12,7 @@ import {
   formatPriceJPY,
   formatRate,
   formatReturnPercent,
+  formatShortId,
   formatTradingValue,
   formatVolume,
   formatVolumeRatio,
@@ -192,6 +193,20 @@ describe('formatDateTimeShort', () => {
   it('returns - for missing timestamp', () => {
     expect(formatDateTimeShort(null)).toBe('-');
     expect(formatDateTimeShort(undefined)).toBe('-');
+  });
+});
+
+describe('formatShortId', () => {
+  it('truncates long IDs', () => {
+    expect(formatShortId('abcdefghijk')).toBe('abcdefgh...');
+  });
+
+  it('keeps short IDs unchanged', () => {
+    expect(formatShortId('abcd')).toBe('abcd');
+  });
+
+  it('supports custom visible length', () => {
+    expect(formatShortId('abcdefghijk', 4)).toBe('abcd...');
   });
 });
 

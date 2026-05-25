@@ -1,6 +1,6 @@
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
-import { formatDateTimeShort, formatPercentage } from '@/utils/formatters';
+import { formatDateTimeShort, formatPercentage, formatShortId } from '@/utils/formatters';
 
 interface JobsTableProps {
   jobs: BacktestJobResponse[] | undefined;
@@ -24,7 +24,7 @@ export function JobsTable({ jobs, isLoading, onSelectJob, selectedJobId }: JobsT
     {
       key: 'jobId',
       header: 'Job ID',
-      render: (job) => <span className="font-mono text-xs">{job.job_id.slice(0, 8)}...</span>,
+      render: (job) => <span className="font-mono text-xs">{formatShortId(job.job_id)}</span>,
     },
     {
       key: 'startedAt',

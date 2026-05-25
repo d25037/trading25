@@ -132,6 +132,13 @@ export function formatDateTimeShort(dateStr: string | null | undefined): string 
 }
 
 /**
+ * Format long generated IDs for compact table cells.
+ */
+export function formatShortId(id: string, visibleChars = 8): string {
+  return id.length <= visibleChars ? id : `${id.slice(0, visibleChars)}...`;
+}
+
+/**
  * Format fundamental metrics with appropriate units.
  * Used for displaying financial metrics in FundamentalsSummaryCard.
  */
