@@ -285,6 +285,17 @@ def find_value_composite_score_item(
     return None, len(rows)
 
 
+def find_value_composite_target_stock(
+    stock_rows: list[Mapping[str, Any]],
+    code: str,
+) -> Mapping[str, Any] | None:
+    normalized_target_code = normalize_equity_code(code)
+    for row in stock_rows:
+        if normalize_equity_code(row["code"]) == normalized_target_code:
+            return row
+    return None
+
+
 def load_value_composite_technical_metrics(
     reader: MarketDbReader,
     *,

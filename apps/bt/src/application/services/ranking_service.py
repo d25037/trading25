@@ -73,6 +73,7 @@ from src.application.services.ranking_value_composite_metrics import (
     build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
     build_value_composite_ranking_items as _build_value_composite_ranking_items,
     find_value_composite_score_item as _find_value_composite_score_item,
+    find_value_composite_target_stock as _find_value_composite_target_stock,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
     score_value_composite_records as _score_value_composite_records,
@@ -632,9 +633,13 @@ class RankingService:
             target_date,
         )
         normalized_target_code = _normalize_equity_code(code)
-        target_stock = self._load_value_composite_target_stock(
+        _, target_market_codes = resolve_market_codes(
+            "prime,standard,growth",
+            fallback=["prime", "standard", "growth"],
+        )
+        target_stock = _find_value_composite_target_stock(
+            self._load_fundamental_stock_rows(target_date, target_market_codes),
             code,
-            target_date,
         )
         last_updated = _now_iso()
         if target_stock is None:
@@ -722,21 +727,6 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
-
-    def _load_value_composite_target_stock(
-        self,
-        code: str,
-        target_date: str,
-    ) -> Mapping[str, Any] | None:
-        _, query_market_codes = resolve_market_codes(
-            "prime,standard,growth",
-            fallback=["prime", "standard", "growth"],
-        )
-        normalized_target_code = _normalize_equity_code(code)
-        for row in self._load_fundamental_stock_rows(target_date, query_market_codes):
-            if _normalize_equity_code(row["code"]) == normalized_target_code:
-                return row
-        return None
 
     def _load_value_composite_scored_frame(
         self,
