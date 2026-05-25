@@ -35,3 +35,19 @@ def build_job_execution_control(job: Any) -> JobExecutionControl:
         cancel_reason=_optional_str(getattr(job, "cancel_reason", None)),
         timeout_at=_optional_datetime(getattr(job, "timeout_at", None)),
     )
+
+
+def build_job_response_base(job: Any) -> dict[str, Any]:
+    """Build common job response fields shared across route-specific payloads."""
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "progress": job.progress,
+        "message": job.message,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+        "error": job.error,
+        "run_metadata": build_run_metadata(job),
+        "execution_control": build_job_execution_control(job),
+    }

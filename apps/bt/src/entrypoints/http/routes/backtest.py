@@ -21,8 +21,7 @@ from src.entrypoints.http.routes.html_file_utils import (
     rename_html_file,
 )
 from src.entrypoints.http.routes.job_response_utils import (
-    build_job_execution_control,
-    build_run_metadata,
+    build_job_response_base,
 )
 from src.entrypoints.http.schemas.backtest import (
     AttributionArtifactContentResponse,
@@ -76,16 +75,7 @@ def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
             result_summary = resolved
 
     return BacktestJobResponse(
-        job_id=job.job_id,
-        status=job.status,
-        progress=job.progress,
-        message=job.message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error=job.error,
-        run_metadata=build_run_metadata(job),
-        execution_control=build_job_execution_control(job),
+        **build_job_response_base(job),
         result=result_summary,
     )
 
@@ -116,16 +106,7 @@ def _build_signal_attribution_job_response(job: JobInfo) -> SignalAttributionJob
         result_data = resolve_signal_attribution_result(job)
 
     return SignalAttributionJobResponse(
-        job_id=job.job_id,
-        status=job.status,
-        progress=job.progress,
-        message=job.message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error=job.error,
-        run_metadata=build_run_metadata(job),
-        execution_control=build_job_execution_control(job),
+        **build_job_response_base(job),
         result_data=result_data,
     )
 

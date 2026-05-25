@@ -12,8 +12,7 @@ from src.entrypoints.http.routes.html_file_utils import (
     rename_html_file,
 )
 from src.entrypoints.http.routes.job_response_utils import (
-    build_job_execution_control,
-    build_run_metadata,
+    build_job_response_base,
 )
 from src.entrypoints.http.schemas.backtest import (
     HtmlFileDeleteResponse,
@@ -55,16 +54,7 @@ def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobRe
             fast_candidates = payload
     verification = resolve_verification_summary(job_manager, job)
     return OptimizationJobResponse(
-        job_id=job.job_id,
-        status=job.status,
-        progress=job.progress,
-        message=job.message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error=job.error,
-        run_metadata=build_run_metadata(job),
-        execution_control=build_job_execution_control(job),
+        **build_job_response_base(job),
         best_score=job.best_score,
         best_params=job.best_params,
         worst_score=job.worst_score,

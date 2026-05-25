@@ -12,8 +12,7 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from src.entrypoints.http.routes.job_response_utils import (
-    build_job_execution_control,
-    build_run_metadata,
+    build_job_response_base,
 )
 from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
@@ -84,16 +83,7 @@ def _build_lab_job_response(job: JobInfo) -> LabJobResponse:
                 logger.warning(f"Lab結果のパースに失敗: {e}")
 
     return LabJobResponse(
-        job_id=job.job_id,
-        status=job.status,
-        progress=job.progress,
-        message=job.message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error=job.error,
-        run_metadata=build_run_metadata(job),
-        execution_control=build_job_execution_control(job),
+        **build_job_response_base(job),
         lab_type=lab_type,
         strategy_name=job.strategy_name,
         result_data=result_data,
