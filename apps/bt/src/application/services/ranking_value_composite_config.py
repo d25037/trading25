@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from src.domains.analytics.value_composite_scoring import (
@@ -41,6 +42,17 @@ VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[
     "prime_size75_forward_per25": PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
     "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
 }
+
+
+def normalize_value_composite_weights(
+    weights: dict[str, float],
+) -> dict[str, float]:
+    weight_sum = sum(float(value) for value in weights.values())
+    if not math.isfinite(weight_sum) or weight_sum <= 0:
+        raise ValueError("value composite weights must sum to a positive finite value")
+    return {column: float(value) / weight_sum for column, value in weights.items()}
+
+
 VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
     "prime": "prime_size_tilt",
     "standard": "standard_pbr_tilt",

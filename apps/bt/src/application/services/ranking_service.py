@@ -60,6 +60,7 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD as _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
+    normalize_value_composite_weights as _normalize_value_composite_weights,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -107,15 +108,6 @@ from src.entrypoints.http.schemas.ranking import (
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _normalize_value_composite_weights(
-    weights: Mapping[str, float],
-) -> dict[str, float]:
-    weight_sum = sum(float(value) for value in weights.values())
-    if not math.isfinite(weight_sum) or weight_sum <= 0:
-        raise ValueError("value composite weights must sum to a positive finite value")
-    return {column: float(value) / weight_sum for column, value in weights.items()}
 
 
 RANKING_BASE_COLUMNS = "s.code, s.company_name, s.market_code, s.sector_33_name"
