@@ -42,6 +42,12 @@ def _read_positive_int_env(name: str, default: int) -> int:
         return default
 
 
+def _record_screening_job_duration(status: JobStatus, *, started_at: float) -> float:
+    elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+    metrics_recorder.record_job_duration("screening", status.value, elapsed_ms)
+    return elapsed_ms
+
+
 class ScreeningJobService:
     """Screening ジョブ実行サービス"""
 
@@ -188,8 +194,7 @@ class ScreeningJobService:
                 message="Screening ジョブが完了しました",
             )
 
-            elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-            metrics_recorder.record_job_duration("screening", JobStatus.COMPLETED.value, elapsed_ms)
+            elapsed_ms = _record_screening_job_duration(JobStatus.COMPLETED, started_at=started_at)
             logger.info(
                 f"Screening job completed: {job_id} ({elapsed_ms}ms)",
                 event="job_lifecycle",
@@ -201,8 +206,7 @@ class ScreeningJobService:
             )
 
         except asyncio.CancelledError:
-            elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-            metrics_recorder.record_job_duration("screening", JobStatus.CANCELLED.value, elapsed_ms)
+            elapsed_ms = _record_screening_job_duration(JobStatus.CANCELLED, started_at=started_at)
             await self._manager.update_job_status(
                 job_id,
                 JobStatus.CANCELLED,
@@ -220,8 +224,7 @@ class ScreeningJobService:
             raise
 
         except Exception as exc:
-            elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-            metrics_recorder.record_job_duration("screening", JobStatus.FAILED.value, elapsed_ms)
+            elapsed_ms = _record_screening_job_duration(JobStatus.FAILED, started_at=started_at)
             logger.exception(
                 f"Screening job failed: {job_id}",
                 event="job_lifecycle",
