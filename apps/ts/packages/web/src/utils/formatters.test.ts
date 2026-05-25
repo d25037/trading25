@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   formatBytes,
   formatCurrency,
+  formatDateRangeText,
   formatDateShort,
   formatDateTimeLong,
   formatDateTimeShort,
   formatElapsedSeconds,
   formatFundamentalValue,
   formatInteger,
+  formatOptionalDate,
+  formatOptionalDateRange,
+  formatOptionalTimestamp,
   formatPercentage,
   formatPrice,
   formatPriceJPY,
@@ -203,6 +207,58 @@ describe('formatDateTimeLong', () => {
     expect(value).toContain('2024');
     expect(value).toContain('03/15');
     expect(value).toContain('09:30');
+  });
+});
+
+describe('formatOptionalTimestamp', () => {
+  it('formats valid timestamps', () => {
+    expect(formatOptionalTimestamp('2024-03-15T09:30:00')).toContain('2024');
+  });
+
+  it('returns n/a for missing timestamps', () => {
+    expect(formatOptionalTimestamp(null)).toBe('n/a');
+    expect(formatOptionalTimestamp(undefined)).toBe('n/a');
+  });
+
+  it('preserves invalid timestamp strings', () => {
+    expect(formatOptionalTimestamp('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('formatOptionalDate', () => {
+  it('formats valid date values', () => {
+    expect(formatOptionalDate('2024-03-15T09:30:00')).toContain('2024');
+  });
+
+  it('returns n/a for missing date values', () => {
+    expect(formatOptionalDate(null)).toBe('n/a');
+    expect(formatOptionalDate(undefined)).toBe('n/a');
+  });
+
+  it('preserves invalid date strings', () => {
+    expect(formatOptionalDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('formatDateRangeText', () => {
+  it('formats start and end dates', () => {
+    expect(formatDateRangeText('2024-01-01', '2024-03-31')).toBe('2024-01-01 -> 2024-03-31');
+  });
+
+  it('returns n/a when either side is missing', () => {
+    expect(formatDateRangeText('2024-01-01', null)).toBe('n/a');
+    expect(formatDateRangeText(undefined, '2024-03-31')).toBe('n/a');
+  });
+});
+
+describe('formatOptionalDateRange', () => {
+  it('formats range objects', () => {
+    expect(formatOptionalDateRange({ min: '2024-01-01', max: '2024-03-31' })).toBe('2024-01-01 -> 2024-03-31');
+  });
+
+  it('returns n/a for missing range objects', () => {
+    expect(formatOptionalDateRange(null)).toBe('n/a');
+    expect(formatOptionalDateRange(undefined)).toBe('n/a');
   });
 });
 

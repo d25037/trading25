@@ -7,6 +7,7 @@ import { useResearchCatalog } from '@/hooks/useResearch';
 import { serializeResearchSearch } from '@/lib/routeSearch';
 import { cn } from '@/lib/utils';
 import type { ResearchCatalogItem, ResearchDecisionStatus } from '@/types/research';
+import { formatDateRangeText, formatOptionalDate } from '@/utils/formatters';
 
 type FilterValue = 'all' | string;
 type StatusFilterValue = 'all' | ResearchDecisionStatus;
@@ -46,13 +47,6 @@ function getRiskFlagClassName(flag: string): string {
   return 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300';
 }
 
-function formatTimestamp(value?: string | null): string {
-  if (!value) return 'n/a';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString();
-}
-
 function getTimestampValue(value?: string | null): number {
   if (!value) return 0;
   const parsed = new Date(value).getTime();
@@ -60,8 +54,7 @@ function getTimestampValue(value?: string | null): number {
 }
 
 function formatRange(item: ResearchCatalogItem): string {
-  if (!item.analysisStartDate || !item.analysisEndDate) return 'n/a';
-  return `${item.analysisStartDate} -> ${item.analysisEndDate}`;
+  return formatDateRangeText(item.analysisStartDate, item.analysisEndDate);
 }
 
 function buildUniqueList(items: ResearchCatalogItem[], getValue: (item: ResearchCatalogItem) => string): string[] {
@@ -277,7 +270,7 @@ function EvidenceMatrix({
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                         Created
                       </p>
-                      <p className="text-sm font-medium text-foreground">{formatTimestamp(item.createdAt)}</p>
+                      <p className="text-sm font-medium text-foreground">{formatOptionalDate(item.createdAt)}</p>
                     </div>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

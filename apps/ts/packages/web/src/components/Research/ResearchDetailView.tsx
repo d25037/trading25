@@ -15,23 +15,12 @@ import type {
   ResearchHighlightTone,
   ResearchRunReference,
 } from '@/types/research';
+import { formatDateRangeText, formatOptionalTimestamp } from '@/utils/formatters';
 import {
   buildResearchReadingModel,
   type ResearchReadingModel,
   type ResearchReadingSection,
 } from '@/utils/researchReading';
-
-function formatTimestamp(value?: string | null): string {
-  if (!value) return 'n/a';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
-}
-
-function formatDateRange(start?: string | null, end?: string | null): string {
-  if (!start || !end) return 'n/a';
-  return `${start} -> ${end}`;
-}
 
 function getHighlightTone(tone: ResearchHighlightTone): ResearchHighlightTone {
   switch (tone) {
@@ -557,7 +546,7 @@ function RunSelector({
               )}
             >
               <p className="font-mono text-xs">{run.runId}</p>
-              <p className="mt-2 text-sm font-medium">{formatTimestamp(run.createdAt)}</p>
+              <p className="mt-2 text-sm font-medium">{formatOptionalTimestamp(run.createdAt)}</p>
               <p className="mt-1 text-[11px] uppercase tracking-[0.14em]">{run.isLatest ? 'Latest' : 'Previous'}</p>
             </button>
           );
@@ -580,8 +569,8 @@ export function ResearchDetailView({ detail, onBack, onSelectRun }: ResearchDeta
   const markdownLabel = detail.resultMetadata.source === 'docs' ? 'README.md' : 'summary.md';
   const markdownTitle = detail.resultMetadata.source === 'docs' ? 'Source Markdown' : 'Raw Bundle Markdown';
   const metaItems = [
-    { label: 'Analysis Range', value: formatDateRange(detail.item.analysisStartDate, detail.item.analysisEndDate) },
-    { label: 'Created', value: formatTimestamp(detail.item.createdAt) },
+    { label: 'Analysis Range', value: formatDateRangeText(detail.item.analysisStartDate, detail.item.analysisEndDate) },
+    { label: 'Created', value: formatOptionalTimestamp(detail.item.createdAt) },
     { label: 'Run', value: detail.item.runId },
     { label: 'Git', value: detail.item.gitCommit ?? 'n/a' },
   ];

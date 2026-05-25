@@ -48,14 +48,8 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@/types/sync';
+import { formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
-
-function formatTimestamp(value?: string | null): string {
-  if (!value) return 'n/a';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
-}
 
 const EMPTY_OPTIONS_225_STATS = {
   count: 0,
@@ -365,13 +359,6 @@ function formatBytes(value: number | null | undefined): string {
   return `${amount.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-function formatDateRange(range: { min: string; max: string } | null | undefined): string {
-  if (!range) {
-    return 'n/a';
-  }
-  return `${range.min} -> ${range.max}`;
-}
-
 function isDateBefore(lhs: string | null | undefined, rhs: string | null | undefined): boolean {
   if (!lhs || !rhs) {
     return false;
@@ -480,7 +467,7 @@ function resolveSnapshotObservedAt(
     }
     return rightTime - leftTime;
   });
-  return formatTimestamp(sorted[0]);
+  return formatOptionalTimestamp(sorted[0]);
 }
 
 function buildSnapshotSummaryItems(
@@ -498,7 +485,7 @@ function buildSnapshotSummaryItems(
     });
     items.push({
       label: 'Last Stock Refresh',
-      value: formatTimestamp(dbValidation.lastStocksRefresh),
+      value: formatOptionalTimestamp(dbValidation.lastStocksRefresh),
       helpText: `Status checked: ${resolveSnapshotObservedAt(dbStats, dbValidation)}`,
     });
   }
@@ -506,7 +493,7 @@ function buildSnapshotSummaryItems(
   if (dbStats) {
     items.push({
       label: 'Last Sync',
-      value: formatTimestamp(dbStats.lastSync),
+      value: formatOptionalTimestamp(dbStats.lastSync),
       helpText: `Initialized: ${dbStats.initialized ? 'Yes' : 'No'}`,
     });
     items.push({
@@ -561,7 +548,7 @@ function buildCoverageItems(
       label: 'Stock Data',
       value: dbStats.stockData.dateRange?.max ?? 'n/a',
       meta: [
-        `Range: ${formatDateRange(dbStats.stockData.dateRange)}`,
+        `Range: ${formatOptionalDateRange(dbStats.stockData.dateRange)}`,
         `Rows: ${formatCount(dbStats.stockData.count)}`,
         `Trading dates: ${formatCount(dbStats.stockData.dateCount)}`,
         `Average stocks/day: ${formatCount(Math.round(dbStats.stockData.averageStocksPerDay ?? 0))}`,
@@ -570,13 +557,13 @@ function buildCoverageItems(
     {
       label: 'TOPIX',
       value: dbStats.topix.dateRange?.max ?? 'n/a',
-      meta: [`Range: ${formatDateRange(dbStats.topix.dateRange)}`, `Rows: ${formatCount(dbStats.topix.count)}`],
+      meta: [`Range: ${formatOptionalDateRange(dbStats.topix.dateRange)}`, `Rows: ${formatCount(dbStats.topix.count)}`],
     },
     {
       label: 'Indices',
       value: dbStats.indices.dateRange?.max ?? 'n/a',
       meta: [
-        `Range: ${formatDateRange(dbStats.indices.dateRange)}`,
+        `Range: ${formatOptionalDateRange(dbStats.indices.dateRange)}`,
         `Rows: ${formatCount(dbStats.indices.dataCount)}`,
         `Master entries: ${formatCount(dbStats.indices.masterCount)}`,
         `Categories: ${formatCategoryBreakdown(dbStats.indices.byCategory)}`,
@@ -587,7 +574,7 @@ function buildCoverageItems(
       value: optionsDisplay.value,
       meta: [
         optionsDisplay.status,
-        `Range: ${formatDateRange(options225.dateRange)}`,
+        `Range: ${formatOptionalDateRange(options225.dateRange)}`,
         `Rows: ${formatCount(options225.count)}`,
         `Trading dates: ${formatCount(options225.dateCount)}`,
       ],
@@ -596,7 +583,7 @@ function buildCoverageItems(
       label: 'Margin',
       value: dbStats.margin.dateRange?.max ?? 'n/a',
       meta: [
-        `Range: ${formatDateRange(dbStats.margin.dateRange)}`,
+        `Range: ${formatOptionalDateRange(dbStats.margin.dateRange)}`,
         `Rows: ${formatCount(dbStats.margin.count)}`,
         `Stocks: ${formatCount(dbStats.margin.uniqueStockCount)}`,
         `Dates: ${formatCount(dbStats.margin.dateCount)}`,
@@ -1041,7 +1028,7 @@ function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
         </div>
         <div className="rounded-xl border border-border/70 bg-background/60 p-3">
           <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</span>
-          <p className="mt-2 text-sm font-semibold">{formatTimestamp(result.lastUpdated)}</p>
+          <p className="mt-2 text-sm font-semibold">{formatOptionalTimestamp(result.lastUpdated)}</p>
         </div>
       </div>
 
@@ -1546,7 +1533,7 @@ function MarketDbHero({
           />
           <CompactMetric
             label="Last Sync"
-            value={formatTimestamp(dbStats?.lastSync)}
+            value={formatOptionalTimestamp(dbStats?.lastSync)}
             tone="neutral"
             detail={`Initialized: ${dbStats?.initialized ? 'Yes' : 'No'}`}
           />

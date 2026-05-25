@@ -145,6 +145,42 @@ export function formatDateTimeLong(dateStr: string): string {
 }
 
 /**
+ * Format optional timestamp values while preserving the original value when parsing fails.
+ */
+export function formatOptionalTimestamp(value?: string | null): string {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
+/**
+ * Format optional date values while preserving the original value when parsing fails.
+ */
+export function formatOptionalDate(value?: string | null): string {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString();
+}
+
+/**
+ * Format an inclusive date range from explicit start/end values.
+ */
+export function formatDateRangeText(start?: string | null, end?: string | null): string {
+  if (!start || !end) return 'n/a';
+  return `${start} -> ${end}`;
+}
+
+/**
+ * Format an inclusive date range from API range objects.
+ */
+export function formatOptionalDateRange(range: { min: string; max: string } | null | undefined): string {
+  if (!range) return 'n/a';
+  return formatDateRangeText(range.min, range.max);
+}
+
+/**
  * Format long generated IDs for compact table cells.
  */
 export function formatShortId(id: string, visibleChars = 8): string {
