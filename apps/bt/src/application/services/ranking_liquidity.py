@@ -11,6 +11,9 @@ import pandas as pd
 from src.application.services.ranking_fundamental_queries import (
     load_adjustment_events_by_code,
 )
+from src.application.services.ranking_collection_filters import (
+    group_ranking_items_by_normalized_code,
+)
 from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
     normalized_code_sql,
@@ -21,7 +24,11 @@ from src.application.services.ranking_value_composite_config import (
     OVERHEAT_RISK_FLAG,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
 )
-from src.entrypoints.http.schemas.ranking import LiquidityRegime, RankingRiskFlag
+from src.entrypoints.http.schemas.ranking import (
+    LiquidityRegime,
+    RankingItem,
+    RankingRiskFlag,
+)
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.shared.utils.share_adjustment import adjust_free_float_shares_to_price_basis
@@ -33,6 +40,33 @@ class PrimeLiquidityMetrics:
     liquidity_regime: LiquidityRegime
     adv60_to_free_float_pct: float
     risk_flags: tuple[RankingRiskFlag, ...]
+
+
+def enrich_ranking_collections_with_prime_liquidity(
+    reader: MarketDbReader,
+    collections: tuple[list[RankingItem], ...],
+    *,
+    target_date: str,
+    price_basis_date: str,
+) -> None:
+    items_by_code = group_ranking_items_by_normalized_code(collections)
+    if not items_by_code:
+        return
+
+    liquidity_by_code = load_prime_liquidity_metrics(
+        reader,
+        target_date,
+        price_basis_date,
+    )
+    for code, items in items_by_code.items():
+        metrics = liquidity_by_code.get(code)
+        if metrics is None:
+            continue
+        for item in items:
+            item.liquidityResidualZ = metrics.liquidity_residual_z
+            item.liquidityRegime = metrics.liquidity_regime
+            item.adv60ToFreeFloatPct = metrics.adv60_to_free_float_pct
+            item.riskFlags = list(dict.fromkeys([*item.riskFlags, *metrics.risk_flags]))
 
 
 def fit_log_liquidity_regression(

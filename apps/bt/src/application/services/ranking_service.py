@@ -100,7 +100,7 @@ from src.application.services.ranking_index_performance import (
     load_index_performance,
 )
 from src.application.services.ranking_liquidity import (
-    load_prime_liquidity_metrics,
+    enrich_ranking_collections_with_prime_liquidity as _enrich_ranking_collections_with_prime_liquidity,
 )
 from src.entrypoints.http.schemas.ranking import (
     FundamentalRankings,
@@ -257,7 +257,8 @@ class RankingService:
                 forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
             )
             if apply_liquidity_state_filter:
-                self._enrich_ranking_collections_with_prime_liquidity(
+                _enrich_ranking_collections_with_prime_liquidity(
+                    self._reader,
                     ranking_collections,
                     target_date=target_date,
                     price_basis_date=price_basis_date,
@@ -269,7 +270,8 @@ class RankingService:
                 _limit_and_rerank_ranking_collections(ranking_collections, limit)
             else:
                 _limit_and_rerank_ranking_collections(ranking_collections, limit)
-                self._enrich_ranking_collections_with_prime_liquidity(
+                _enrich_ranking_collections_with_prime_liquidity(
+                    self._reader,
                     ranking_collections,
                     target_date=target_date,
                     price_basis_date=price_basis_date,
@@ -695,32 +697,6 @@ class RankingService:
             query_market_codes=query_market_codes,
             price_basis_date=price_basis_date,
         )
-
-    def _enrich_ranking_collections_with_prime_liquidity(
-        self,
-        collections: tuple[list[RankingItem], ...],
-        *,
-        target_date: str,
-        price_basis_date: str,
-    ) -> None:
-        items_by_code = _group_ranking_items_by_normalized_code(collections)
-        if not items_by_code:
-            return
-
-        liquidity_by_code = load_prime_liquidity_metrics(
-            self._reader,
-            target_date,
-            price_basis_date,
-        )
-        for code, items in items_by_code.items():
-            metrics = liquidity_by_code.get(code)
-            if metrics is None:
-                continue
-            for item in items:
-                item.liquidityResidualZ = metrics.liquidity_residual_z
-                item.liquidityRegime = metrics.liquidity_regime
-                item.adv60ToFreeFloatPct = metrics.adv60_to_free_float_pct
-                item.riskFlags = list(dict.fromkeys([*item.riskFlags, *metrics.risk_flags]))
 
     def _resolve_value_composite_unavailable_reason(
         self,

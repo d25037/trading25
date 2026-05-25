@@ -9,6 +9,7 @@ import pandas as pd
 
 import pytest
 
+import src.application.services.ranking_service as ranking_service_module
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
@@ -1016,13 +1017,13 @@ class TestGetRankings:
 
     def test_liquidity_state_filter_applies_before_limit(self, service, monkeypatch):
         def fake_enrich_prime_liquidity(
-            self,
+            reader,
             collections,
             *,
             target_date,
             price_basis_date,
         ):
-            del self, target_date, price_basis_date
+            del reader, target_date, price_basis_date
             for collection in collections:
                 for item in collection:
                     if item.code == "72030":
@@ -1031,7 +1032,7 @@ class TestGetRankings:
                         item.liquidityRegime = "distribution_stress"
 
         monkeypatch.setattr(
-            RankingService,
+            ranking_service_module,
             "_enrich_ranking_collections_with_prime_liquidity",
             fake_enrich_prime_liquidity,
         )
@@ -1051,13 +1052,13 @@ class TestGetRankings:
         self, service, monkeypatch
     ):
         def fake_enrich_prime_liquidity(
-            self,
+            reader,
             collections,
             *,
             target_date,
             price_basis_date,
         ):
-            del self, target_date, price_basis_date
+            del reader, target_date, price_basis_date
             for collection in collections:
                 for item in collection:
                     item.liquidityRegime = "neutral"
@@ -1065,7 +1066,7 @@ class TestGetRankings:
                         item.riskFlags = ["overheat"]
 
         monkeypatch.setattr(
-            RankingService,
+            ranking_service_module,
             "_enrich_ranking_collections_with_prime_liquidity",
             fake_enrich_prime_liquidity,
         )
