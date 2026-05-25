@@ -1,36 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { analyticsClient } from '@/lib/analytics-client';
 import { logger } from '@/utils/logger';
 
-export interface SectorStockItem {
-  rank: number;
-  code: string;
-  companyName: string;
-  marketCode: string;
-  sector33Name: string;
-  currentPrice: number;
-  volume: number;
-  tradingValue?: number;
-  per?: number | null;
-  forwardPer?: number | null;
-  pbr?: number | null;
-  marketCap?: number | null;
-  basePrice?: number;
-  changeAmount?: number;
-  changePercentage?: number;
-  lookbackDays?: number;
-}
-
-export interface SectorStocksResponse {
-  sector33Name?: string;
-  sector17Name?: string;
-  markets: string[];
-  lookbackDays: number;
-  sortBy: string;
-  sortOrder: string;
-  stocks: SectorStockItem[];
-  lastUpdated: string;
-}
+export type SectorStockItem = components['schemas']['SectorStockItem'];
+export type SectorStocksResponse = components['schemas']['SectorStocksResponse'];
 
 export interface SectorStocksParams {
   sector33Name?: string;
