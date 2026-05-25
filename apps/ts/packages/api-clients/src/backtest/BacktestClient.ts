@@ -4,6 +4,7 @@
  * trading25-bt FastAPI サーバーと通信するクライアント
  */
 
+import { HttpRequestError, requestJson } from '../base/http-client.js';
 import type {
   AttributionArtifactContentResponse,
   AttributionArtifactListResponse,
@@ -40,13 +41,13 @@ import type {
   StrategyDuplicateResponse,
   StrategyEditorContextResponse,
   StrategyEditorReferenceResponse,
+  StrategyListResponse,
+  StrategyMoveRequest,
+  StrategyMoveResponse,
   StrategyOptimizationDeleteResponse,
   StrategyOptimizationSaveRequest,
   StrategyOptimizationSaveResponse,
   StrategyOptimizationStateResponse,
-  StrategyListResponse,
-  StrategyMoveRequest,
-  StrategyMoveResponse,
   StrategyRenameRequest,
   StrategyRenameResponse,
   StrategyUpdateRequest,
@@ -81,6 +82,13 @@ function resolveDefaultBaseUrl(): string | undefined {
   return 'http://localhost:3002';
 }
 
+function toBacktestApiError(error: unknown): never {
+  if (error instanceof HttpRequestError) {
+    throw new BacktestApiError(error.status ?? 0, error.statusText ?? 'Unknown', error.message);
+  }
+  throw error;
+}
+
 export class BacktestClient {
   private readonly baseUrl?: string;
   private readonly timeout: number;
@@ -91,43 +99,18 @@ export class BacktestClient {
   }
 
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-    const url = this.baseUrl ? `${this.baseUrl}${endpoint}` : endpoint;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
     try {
-      const response = await fetch(url, {
+      return await requestJson<T>(endpoint, {
         ...options,
-        signal: controller.signal,
+        baseUrl: this.baseUrl,
+        timeoutMs: this.timeout,
         headers: {
           'Content-Type': 'application/json',
           ...options?.headers,
         },
       });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new BacktestApiError(response.status, response.statusText, errorBody);
-      }
-
-      const text = await response.text();
-      if (!text) {
-        throw new BacktestApiError(response.status, response.statusText || 'Unknown', 'Empty response body');
-      }
-      try {
-        return JSON.parse(text) as T;
-      } catch (parseError) {
-        const parseMessage = parseError instanceof Error ? parseError.message : String(parseError);
-        const parseReason = parseMessage.slice(0, 80);
-        const bodyPreview = text.slice(0, 150);
-        throw new BacktestApiError(
-          response.status,
-          response.statusText || 'Unknown',
-          `Invalid JSON response (${parseReason}): ${bodyPreview}`
-        );
-      }
-    } finally {
-      clearTimeout(timeoutId);
+    } catch (error) {
+      toBacktestApiError(error);
     }
   }
 

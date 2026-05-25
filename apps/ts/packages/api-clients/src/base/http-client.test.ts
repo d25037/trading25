@@ -16,7 +16,9 @@ describe('http-client', () => {
     });
 
     test('appends query to absolute URL with baseUrl', () => {
-      expect(buildUrl('/api/test', { limit: 10 }, 'http://localhost:3003')).toBe('http://localhost:3003/api/test?limit=10');
+      expect(buildUrl('/api/test', { limit: 10 }, 'http://localhost:3003')).toBe(
+        'http://localhost:3003/api/test?limit=10'
+      );
     });
 
     test('appends query with ampersand when path already has query', () => {
@@ -132,7 +134,9 @@ describe('http-client', () => {
       expect(requestError.body).toBe('Service down');
       expect(requestError.message).toBe('Service down');
       expect(
-        warnSpy.mock.calls.some(([message]) => String(message).includes('[http-client] Received non-JSON error response body'))
+        warnSpy.mock.calls.some(([message]) =>
+          String(message).includes('[http-client] Received non-JSON error response body')
+        )
       ).toBe(true);
 
       warnSpy.mockRestore();
@@ -180,6 +184,16 @@ describe('http-client', () => {
       expect(requestError.kind).toBe('invalid-json');
     });
 
+    test('throws HttpRequestError for empty JSON response bodies', async () => {
+      fetchSpy.mockResolvedValueOnce(new Response('', { status: 200, statusText: 'OK' }));
+
+      const error = await requestJson('/api/empty').catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(HttpRequestError);
+      const requestError = error as HttpRequestError;
+      expect(requestError.kind).toBe('invalid-json');
+      expect(requestError.message).toBe('Empty response body');
+    });
+
     test('throws HttpRequestError for network failures', async () => {
       fetchSpy.mockRejectedValueOnce(new Error('connection reset'));
 
@@ -191,27 +205,29 @@ describe('http-client', () => {
     });
 
     test('throws timeout errors when fetch is aborted by timeout signal', async () => {
-      fetchSpy.mockImplementationOnce(((_url: string | URL | Request, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal as AbortSignal | undefined;
-          if (!signal) {
-            reject(new Error('missing signal'));
-            return;
-          }
+      fetchSpy.mockImplementationOnce(
+        ((_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal as AbortSignal | undefined;
+            if (!signal) {
+              reject(new Error('missing signal'));
+              return;
+            }
 
-          if (signal.aborted) {
-            reject(new DOMException('Aborted', 'AbortError'));
-            return;
-          }
-
-          signal.addEventListener(
-            'abort',
-            () => {
+            if (signal.aborted) {
               reject(new DOMException('Aborted', 'AbortError'));
-            },
-            { once: true }
-          );
-        })) as unknown as typeof fetch);
+              return;
+            }
+
+            signal.addEventListener(
+              'abort',
+              () => {
+                reject(new DOMException('Aborted', 'AbortError'));
+              },
+              { once: true }
+            );
+          })) as unknown as typeof fetch
+      );
 
       const error = await requestJson('/api/slow', { timeoutMs: 10 }).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(HttpRequestError);

@@ -173,12 +173,34 @@ async function throwHttpError(response: Response): Promise<never> {
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
+  let text: string;
   try {
-    return (await response.json()) as T;
+    text = await response.text();
   } catch (cause) {
     throw new HttpRequestError('Invalid JSON response', 'invalid-json', {
       status: response.status,
       statusText: response.statusText,
+      cause,
+    });
+  }
+
+  if (text.length === 0) {
+    throw new HttpRequestError('Empty response body', 'invalid-json', {
+      status: response.status,
+      statusText: response.statusText,
+    });
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (cause) {
+    const parseMessage = cause instanceof Error ? cause.message : String(cause);
+    const parseReason = parseMessage.slice(0, 80);
+    const bodyPreview = text.slice(0, 150);
+    throw new HttpRequestError(`Invalid JSON response (${parseReason}): ${bodyPreview}`, 'invalid-json', {
+      status: response.status,
+      statusText: response.statusText,
+      body: text,
       cause,
     });
   }
