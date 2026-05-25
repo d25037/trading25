@@ -11,6 +11,7 @@ import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.domains.analytics.fundamental_ranking import (
+    FundamentalItem,
     FundamentalRankingCalculator,
     ForecastValue as _ForecastValue,
     LatestFyRow as _LatestFyRow,
@@ -39,6 +40,7 @@ from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_response_items import (
+    build_fundamental_ranking_item,
     build_ranking_item,
     build_value_composite_item,
 )
@@ -2665,6 +2667,29 @@ class TestRankingHelperBranches:
         assert item.tradingValue == 12_345_000.0
         assert item.previousPrice is None
         assert "previousPrice" not in item.model_fields_set
+
+    def test_build_fundamental_ranking_item_maps_domain_item(self):
+        item = build_fundamental_ranking_item(
+            FundamentalItem(
+                code="7203",
+                company_name="Toyota",
+                market_code="prime",
+                sector_33_name="輸送用機器",
+                current_price=1000.0,
+                volume=12345.0,
+                eps_value=1.25,
+                disclosed_date="2024-01-18",
+                period_type="1Q",
+                source="revised",
+            ),
+            rank=4,
+        )
+
+        assert item.rank == 4
+        assert item.code == "7203"
+        assert item.epsValue == 1.25
+        assert item.disclosedDate == "2024-01-18"
+        assert item.source == "revised"
 
     def test_statement_selection_respects_as_of_and_positive_adjusted_bps(self):
         rows = [

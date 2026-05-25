@@ -66,6 +66,7 @@ from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_response_items import (
+    build_fundamental_ranking_item,
     build_ranking_item,
     build_value_composite_item,
     finite_or_none as _finite_or_none,
@@ -2470,24 +2471,10 @@ class RankingService:
             limit,
             descending=descending,
         )
-        ranked: list[FundamentalRankingItem] = []
-        for index, item in enumerate(sorted_items, start=1):
-            ranked.append(
-                FundamentalRankingItem(
-                    rank=index,
-                    code=item.code,
-                    companyName=item.company_name,
-                    marketCode=item.market_code,
-                    sector33Name=item.sector_33_name,
-                    currentPrice=item.current_price,
-                    volume=item.volume,
-                    epsValue=item.eps_value,
-                    disclosedDate=item.disclosed_date,
-                    periodType=item.period_type,
-                    source=item.source,
-                )
-            )
-        return ranked
+        return [
+            build_fundamental_ranking_item(item, index)
+            for index, item in enumerate(sorted_items, start=1)
+        ]
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         """N営業日前の取引日を取得"""

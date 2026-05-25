@@ -6,9 +6,13 @@ import math
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
-from src.domains.analytics.fundamental_ranking import to_nullable_float
+from src.domains.analytics.fundamental_ranking import (
+    FundamentalItem,
+    to_nullable_float,
+)
 from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
 from src.entrypoints.http.schemas.ranking import (
+    FundamentalRankingItem,
     RankingItem,
     ValueCompositeRankingItem,
     ValueCompositeTechnicalMetrics,
@@ -58,6 +62,25 @@ def build_ranking_item(
         currentPrice=row["current_price"],
         volume=row["volume"],
         **{key: value for key, value in extra.items() if value is not None},
+    )
+
+
+def build_fundamental_ranking_item(
+    item: FundamentalItem,
+    rank: int,
+) -> FundamentalRankingItem:
+    return FundamentalRankingItem(
+        rank=rank,
+        code=item.code,
+        companyName=item.company_name,
+        marketCode=item.market_code,
+        sector33Name=item.sector_33_name,
+        currentPrice=item.current_price,
+        volume=item.volume,
+        epsValue=item.eps_value,
+        disclosedDate=item.disclosed_date,
+        periodType=item.period_type,
+        source=item.source,
     )
 
 
