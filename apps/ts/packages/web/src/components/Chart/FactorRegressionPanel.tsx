@@ -1,6 +1,7 @@
 import type { ApiIndexMatch } from '@trading25/contracts/types/api-types';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFactorRegression } from '@/hooks/useFactorRegression';
+import { formatRatioPercentage } from '@/utils/formatters';
 
 interface FactorRegressionPanelProps {
   symbol: string | null;
@@ -58,7 +59,7 @@ function IndexMatchList({ title, matches }: { title: string; matches: ApiIndexMa
               {index + 1}. {match.indexName}
             </span>
             <div className="flex items-center gap-2 ml-2">
-              <span className={getRSquaredColor(match.rSquared)}>R²={(match.rSquared * 100).toFixed(1)}%</span>
+              <span className={getRSquaredColor(match.rSquared)}>R²={formatRatioPercentage(match.rSquared)}</span>
               <span className="text-muted-foreground">β={match.beta.toFixed(2)}</span>
             </div>
           </div>
@@ -116,7 +117,7 @@ function FactorRegressionContent({ data }: FactorRegressionContentProps) {
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">Market R²</span>
               <span className={`text-sm font-mono ${getRSquaredColor(data.marketRSquared)}`}>
-                {(data.marketRSquared * 100).toFixed(1)}%
+                {formatRatioPercentage(data.marketRSquared)}
               </span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t border-border/50">

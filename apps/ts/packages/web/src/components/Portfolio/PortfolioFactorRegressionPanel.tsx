@@ -2,7 +2,7 @@ import type { ApiExcludedStock, ApiIndexMatch, ApiPortfolioWeight } from '@tradi
 import { AlertTriangle } from 'lucide-react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { usePortfolioFactorRegression } from '@/hooks/usePortfolioFactorRegression';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatRatioPercentage } from '@/utils/formatters';
 
 interface PortfolioFactorRegressionPanelProps {
   portfolioId: number | null;
@@ -30,10 +30,6 @@ function isFiniteNumber(value: unknown): value is number {
 
 function formatFixed(value: number | null, digits: number): string {
   return value === null ? 'N/A' : value.toFixed(digits);
-}
-
-function formatPercentFromRatio(value: number | null, digits = 1): string {
-  return value === null ? 'N/A' : `${(value * 100).toFixed(digits)}%`;
 }
 
 function normalizeIndexMatch(match: ApiIndexMatch, index: number): NormalizedIndexMatch {
@@ -101,7 +97,7 @@ function IndexMatchList({ matches }: { matches: ApiIndexMatch[] }) {
                   normalized.rSquared === null ? 'text-muted-foreground' : getRSquaredColor(normalized.rSquared)
                 }
               >
-                R²={formatPercentFromRatio(normalized.rSquared, 1)}
+                R²={formatRatioPercentage(normalized.rSquared, { fallback: 'N/A' })}
               </span>
               <span className="text-muted-foreground">β={formatFixed(normalized.beta, 2)}</span>
             </div>
@@ -138,7 +134,7 @@ function WeightSummary({ weights, totalValue }: { weights: ApiPortfolioWeight[];
             {w.code} {(w.companyName ?? '').slice(0, 8)}
           </span>
           <span className="text-primary font-medium ml-2 shrink-0">
-            {formatPercentFromRatio(isFiniteNumber(w.weight) ? w.weight : null, 1)}
+            {formatRatioPercentage(isFiniteNumber(w.weight) ? w.weight : null, { fallback: 'N/A' })}
           </span>
         </div>
       ))}
@@ -241,7 +237,7 @@ function PortfolioFactorRegressionContent({ data }: PortfolioFactorRegressionCon
               <span
                 className={`text-sm font-mono ${marketRSquared === null ? 'text-muted-foreground' : getRSquaredColor(marketRSquared)}`}
               >
-                {formatPercentFromRatio(marketRSquared, 1)}
+                {formatRatioPercentage(marketRSquared, { fallback: 'N/A' })}
               </span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t border-border/50">

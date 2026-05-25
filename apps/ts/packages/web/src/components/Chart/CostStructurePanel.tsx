@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import type { CostStructureAnalysisView } from '@trading25/api-clients/analytics';
 import type { ApiCostStructurePoint } from '@trading25/contracts/types/api-types';
 import { AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
 import { SegmentedTabs } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useCostStructureAnalysis } from '@/hooks/useCostStructureAnalysis';
-import { formatFundamentalValue } from '@/utils/formatters';
+import { formatFundamentalValue, formatRatioPercentage } from '@/utils/formatters';
 
 interface CostStructurePanelProps {
   symbol: string | null;
@@ -61,11 +61,6 @@ function formatMillions(value: number | null | undefined): string {
 function formatPercent(value: number | null | undefined, decimals = 1): string {
   if (value == null || !Number.isFinite(value)) return '-';
   return `${value.toFixed(decimals)}%`;
-}
-
-function formatRatioPercent(value: number | null | undefined, decimals = 1): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return `${(value * 100).toFixed(decimals)}%`;
 }
 
 function getAnalysisOptions(mode: CostStructurePanelMode): {
@@ -320,7 +315,9 @@ function CostStructureContent({ data, mode, onModeChange }: CostStructureContent
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Recommended Analysis</div>
-            <div className="mt-1 text-sm text-foreground">Default is recent 12 quarters. Use Same Q or FY only for seasonality checks.</div>
+            <div className="mt-1 text-sm text-foreground">
+              Default is recent 12 quarters. Use Same Q or FY only for seasonality checks.
+            </div>
           </div>
           <SegmentedTabs items={COST_STRUCTURE_MODE_ITEMS} value={mode} onChange={onModeChange} />
         </div>
@@ -343,12 +340,12 @@ function CostStructureContent({ data, mode, onModeChange }: CostStructureContent
               value={formatPercent(data.latestPoint.operatingMargin)}
               subValue={`${data.latestPoint.fiscalYear} ${data.latestPoint.analysisPeriodType}`}
             />
-            <SummaryCard label="Variable Cost Ratio" value={formatRatioPercent(data.regression.variableCostRatio)} />
+            <SummaryCard label="Variable Cost Ratio" value={formatRatioPercentage(data.regression.variableCostRatio)} />
             <SummaryCard label="Fixed Cost" value={formatMillions(data.regression.fixedCost)} />
             <SummaryCard label="Break-Even Sales" value={formatMillions(data.regression.breakEvenSales)} />
             <SummaryCard
               label="R²"
-              value={formatRatioPercent(data.regression.rSquared)}
+              value={formatRatioPercentage(data.regression.rSquared)}
               subValue={`${data.regression.sampleCount} samples`}
             />
           </div>

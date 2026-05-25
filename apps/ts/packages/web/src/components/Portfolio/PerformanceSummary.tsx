@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import { CompactMetric } from '@/components/Layout/Workspace';
 import type { BenchmarkMetrics, PortfolioSummary } from '@/hooks/usePortfolioPerformance';
-import { formatCurrency, formatRate } from '@/utils/formatters';
+import { formatCurrency, formatRate, formatRatioPercentage } from '@/utils/formatters';
 
 interface PerformanceSummaryProps {
   summary: PortfolioSummary;
@@ -46,7 +46,7 @@ export function PerformanceSummary({ summary, benchmark, isLoading }: Performanc
         <CompactMetric
           label={`Beta vs ${benchmark.name}`}
           value={benchmark.beta.toFixed(2)}
-          detail={`R² ${(benchmark.rSquared * 100).toFixed(1)}%`}
+          detail={`R² ${formatRatioPercentage(benchmark.rSquared)}`}
         />
       ) : (
         <CompactMetric label="Beta" value="-" detail="Insufficient data" />

@@ -48,7 +48,13 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@/types/sync';
-import { formatBytes, formatCount, formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
+import {
+  formatBytes,
+  formatCount,
+  formatOptionalDateRange,
+  formatOptionalTimestamp,
+  formatRatioPercentage,
+} from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 const EMPTY_OPTIONS_225_STATS = {
@@ -331,10 +337,6 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
   return 'rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4';
 }
 
-function formatPercentage(value: number | null | undefined): string {
-  return `${(((value ?? 0) * 100) as number).toFixed(1)}%`;
-}
-
 function isDateBefore(lhs: string | null | undefined, rhs: string | null | undefined): boolean {
   if (!lhs || !rhs) {
     return false;
@@ -570,7 +572,7 @@ function buildCoverageItems(
       value: dbStats.fundamentals.latestDisclosedDate ?? 'n/a',
       meta: [
         `Statements: ${formatCount(dbStats.fundamentals.count)}`,
-        `Covered stocks: ${formatCount(fundamentalsCoverage.coveredStocks)} / ${formatCount(fundamentalsCoverage.listedMarketStocks)} (${formatPercentage(fundamentalsCoverage.coverageRatio)})`,
+        `Covered stocks: ${formatCount(fundamentalsCoverage.coveredStocks)} / ${formatCount(fundamentalsCoverage.listedMarketStocks)} (${formatRatioPercentage(fundamentalsCoverage.coverageRatio, { fallback: '0.0%' })})`,
         `Alias covered: ${formatCount(fundamentalsCoverage.issuerAliasCoveredCount)}`,
         `Deferred/empty: ${formatCount(fundamentalsCoverage.emptySkippedCount)}`,
       ],

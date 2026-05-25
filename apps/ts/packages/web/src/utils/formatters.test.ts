@@ -17,6 +17,7 @@ import {
   formatPrice,
   formatPriceJPY,
   formatRate,
+  formatRatioPercentage,
   formatReturnPercent,
   formatShortId,
   formatTradingValue,
@@ -124,6 +125,22 @@ describe('formatRate', () => {
 
   it('returns - for NaN', () => {
     expect(formatRate(Number.NaN)).toBe('-');
+  });
+});
+
+describe('formatRatioPercentage', () => {
+  it('converts a decimal ratio to an unsigned percentage', () => {
+    expect(formatRatioPercentage(0.1234)).toBe('12.3%');
+  });
+
+  it('respects decimals option', () => {
+    expect(formatRatioPercentage(0.1234, { decimals: 2 })).toBe('12.34%');
+  });
+
+  it('uses fallback for missing or invalid values', () => {
+    expect(formatRatioPercentage(null)).toBe('-');
+    expect(formatRatioPercentage(undefined, { fallback: 'N/A' })).toBe('N/A');
+    expect(formatRatioPercentage(Number.NaN, { fallback: '0.0%' })).toBe('0.0%');
   });
 });
 

@@ -70,6 +70,21 @@ export function formatRate(rate: number): string {
 }
 
 /**
+ * Format a decimal ratio as an unsigned percentage.
+ * @param value - The ratio as a decimal (e.g., 0.05 for 5%)
+ * @param options.decimals - Number of decimal places (default: 1)
+ * @param options.fallback - Text for null/undefined/non-finite values (default: '-')
+ */
+export function formatRatioPercentage(
+  value: number | null | undefined,
+  options: { decimals?: number; fallback?: string } = {}
+): string {
+  const { decimals = 1, fallback = '-' } = options;
+  if (value == null || !Number.isFinite(value)) return fallback;
+  return `${(value * 100).toFixed(decimals)}%`;
+}
+
+/**
  * Format volume ratio with 'x' suffix.
  */
 export function formatVolumeRatio(value: number | undefined): string {
