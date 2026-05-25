@@ -14,6 +14,7 @@ from typing import Any, Callable, cast
 
 from loguru import logger
 
+from src.application.services.job_status import TERMINAL_JOB_STATUSES
 from src.application.services.job_manager import JobManager
 from src.application.services.lab_service import (
     _INTERNAL_JOB_MESSAGE_KEY,
@@ -40,7 +41,6 @@ from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
 _TIMED_OUT_ERROR = "worker_timed_out"
-_TERMINAL_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
 _VERIFICATION_ENABLED_LAB_TYPES = {"generate", "evolve", "optimize"}
 
 
@@ -69,7 +69,7 @@ async def _heartbeat_loop(
         job = await manager.reload_job_from_storage(job_id)
         if job is None:
             return
-        if job.status in _TERMINAL_STATUSES:
+        if job.status in TERMINAL_JOB_STATUSES:
             return
         if job.timeout_at is not None and datetime.now() >= job.timeout_at:
             now = datetime.now()
@@ -364,7 +364,7 @@ async def run_lab_worker(
             payload,
         )
         current_job = await resolved_manager.reload_job_from_storage(job_id)
-        if current_job is not None and current_job.status in _TERMINAL_STATUSES:
+        if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
             if current_job.error == _TIMED_OUT_ERROR:
                 return 124
             return 0 if current_job.status == JobStatus.CANCELLED else 1

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 from pydantic import BaseModel
 
+from src.application.services.job_status import INCOMPLETE_JOB_STATUSES, TERMINAL_JOB_STATUSES
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     CanonicalExecutionResult,
@@ -32,8 +33,6 @@ from src.application.services.run_contracts import (
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.entrypoints.http.schemas.common import SSEJobEvent
 
-_TERMINAL_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
-_INCOMPLETE_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
 _DEFAULT_LEASE_SECONDS = 60
 
 if TYPE_CHECKING:
@@ -528,7 +527,7 @@ class JobManager:
                 return
 
             # terminal状態からの巻き戻しを防止
-            if job.status in _TERMINAL_STATUSES:
+            if job.status in TERMINAL_JOB_STATUSES:
                 logger.debug(
                     f"ジョブ {job_id} は既にterminal状態 ({job.status})、"
                     f"{status} への更新をスキップ"
@@ -545,7 +544,7 @@ class JobManager:
 
             if status == JobStatus.RUNNING:
                 self._claim_execution_locked(job)
-            elif status in _TERMINAL_STATUSES:
+            elif status in TERMINAL_JOB_STATUSES:
                 job.completed_at = datetime.now()
                 self._clear_execution_claim_locked(job)
             self._persist_job(job)
@@ -560,7 +559,7 @@ class JobManager:
         await self._notify_subscribers(job_id, event)
 
         # terminal状態ではNoneを送信して終了シグナル
-        if status in _TERMINAL_STATUSES:
+        if status in TERMINAL_JOB_STATUSES:
             await self._notify_subscribers(job_id, None)
 
     async def set_job_result(
@@ -656,7 +655,7 @@ class JobManager:
         """ジョブ実行 lease を取得し RUNNING へ遷移させる。"""
         async with self._lock:
             job = self._resolve_job(job_id)
-            if job is None or job.status in _TERMINAL_STATUSES:
+            if job is None or job.status in TERMINAL_JOB_STATUSES:
                 return None
             if not self._can_claim_execution_locked(job, lease_owner=lease_owner):
                 return None
@@ -685,7 +684,7 @@ class JobManager:
         """ジョブ実行中の heartbeat を durable に更新する。"""
         async with self._lock:
             job = self._resolve_job(job_id)
-            if job is None or job.status in _TERMINAL_STATUSES:
+            if job is None or job.status in TERMINAL_JOB_STATUSES:
                 return None
             if not self._can_heartbeat_execution_locked(job, lease_owner=lease_owner):
                 return None
@@ -771,7 +770,7 @@ class JobManager:
                     progress=reloaded_job.progress,
                     message=reloaded_job.message,
                 )
-                terminal_event = reloaded_job.status in _TERMINAL_STATUSES
+                terminal_event = reloaded_job.status in TERMINAL_JOB_STATUSES
 
         if event is not None:
             await self._notify_subscribers(job_id, event)
@@ -820,7 +819,7 @@ class JobManager:
         jobs = self.list_jobs(limit=limit, job_types=job_types)
 
         for job in jobs:
-            if job.status not in _INCOMPLETE_STATUSES:
+            if job.status not in INCOMPLETE_JOB_STATUSES:
                 continue
             if job.task is not None and not job.task.done():
                 continue
@@ -866,7 +865,7 @@ class JobManager:
         requested = 0
         tasks_to_wait: list[asyncio.Task[None]] = []
         for job in self.list_jobs(limit=limit, job_types=job_types):
-            if job.status not in _INCOMPLETE_STATUSES:
+            if job.status not in INCOMPLETE_JOB_STATUSES:
                 continue
             result = await self.request_job_cancel(job.job_id, reason=reason)
             if result is not None:
@@ -1022,7 +1021,7 @@ class JobManager:
 
         for job in source_jobs:
             age = (now - job.created_at).total_seconds() / 3600
-            if age > max_age_hours and job.status in _TERMINAL_STATUSES:
+            if age > max_age_hours and job.status in TERMINAL_JOB_STATUSES:
                 to_delete.append(job.job_id)
 
         for job_id in to_delete:

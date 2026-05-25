@@ -10,7 +10,8 @@ from collections.abc import AsyncGenerator
 from loguru import logger
 
 from src.entrypoints.http.schemas.common import SSEJobEvent
-from src.application.services.job_manager import JobManager, _TERMINAL_STATUSES, job_manager
+from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.job_status import TERMINAL_JOB_STATUSES
 
 
 class SSEManager:
@@ -51,7 +52,7 @@ class SSEManager:
             return
 
         # 既に完了済みの場合、現在状態を送信して終了
-        if job.status in _TERMINAL_STATUSES:
+        if job.status in TERMINAL_JOB_STATUSES:
             yield {
                 "event": job.status.value,
                 "data": SSEJobEvent(

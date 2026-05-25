@@ -15,6 +15,7 @@ from typing import Any, Callable
 from loguru import logger
 
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
+from src.application.services.job_status import TERMINAL_JOB_STATUSES
 from src.application.services.job_manager import JobManager
 from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
@@ -26,7 +27,6 @@ from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
 _TIMED_OUT_ERROR = "worker_timed_out"
-_TERMINAL_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
 
 
 def _duration_ms_for_job(now: datetime, *, started_at: datetime | None, created_at: datetime | None) -> float:
@@ -67,7 +67,7 @@ async def _heartbeat_loop(
         job = await manager.reload_job_from_storage(job_id)
         if job is None:
             return
-        if job.status in _TERMINAL_STATUSES:
+        if job.status in TERMINAL_JOB_STATUSES:
             return
         if job.timeout_at is not None and datetime.now() >= job.timeout_at:
             now = datetime.now()
@@ -228,7 +228,7 @@ async def run_backtest_worker(
         else:
             raise ValueError(f"Unsupported backtest engine: {effective_engine_family}")
         current_job = await resolved_manager.reload_job_from_storage(job_id)
-        if current_job is not None and current_job.status in _TERMINAL_STATUSES:
+        if current_job is not None and current_job.status in TERMINAL_JOB_STATUSES:
             if current_job.error == _TIMED_OUT_ERROR:
                 return 124
             return 0 if current_job.status == JobStatus.CANCELLED else 1
