@@ -24,6 +24,7 @@ from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStat
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
+    external_worker_lifecycle_fields,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -80,14 +81,14 @@ async def _heartbeat_loop(
             record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"backtest worker timed out: {job_id}",
-                event="job_lifecycle",
-                jobType="backtest",
-                jobId=job_id,
-                status=JobStatus.FAILED.value,
                 error=_TIMED_OUT_ERROR,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    "backtest",
+                    job_id,
+                    JobStatus.FAILED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(124)
             return
@@ -101,13 +102,13 @@ async def _heartbeat_loop(
             record_job_duration("backtest", JobStatus.CANCELLED.value, duration_ms)
             logger.info(
                 f"backtest worker cancelled: {job_id}",
-                event="job_lifecycle",
-                jobType="backtest",
-                jobId=job_id,
-                status=JobStatus.CANCELLED.value,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    "backtest",
+                    job_id,
+                    JobStatus.CANCELLED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(0)
             return
@@ -159,13 +160,13 @@ async def run_backtest_worker(
             return 2
         logger.info(
             f"backtest worker claimed job: {job_id}",
-            event="job_lifecycle",
-            jobType="backtest",
-            jobId=job_id,
-            status=JobStatus.RUNNING.value,
-            leaseOwner=lease_owner,
-            timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "backtest",
+                job_id,
+                JobStatus.RUNNING.value,
+                lease_owner=lease_owner,
+                timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
+            ),
         )
         effective_run_spec = claimed.run_spec
         effective_strategy_name = (
@@ -249,26 +250,26 @@ async def run_backtest_worker(
         duration_ms = record_elapsed_job_duration("backtest", JobStatus.COMPLETED.value, started_at=started_at)
         logger.info(
             f"backtest worker completed job: {job_id}",
-            event="job_lifecycle",
-            jobType="backtest",
-            jobId=job_id,
-            status=JobStatus.COMPLETED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "backtest",
+                job_id,
+                JobStatus.COMPLETED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         return 0
     except Exception as exc:
         duration_ms = record_elapsed_job_duration("backtest", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"backtest worker failed: {job_id}",
-            event="job_lifecycle",
-            jobType="backtest",
-            jobId=job_id,
-            status=JobStatus.FAILED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "backtest",
+                job_id,
+                JobStatus.FAILED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         await resolved_manager.update_job_status(
             job_id,

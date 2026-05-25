@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from time import perf_counter
+from typing import Any
 
 from src.shared.observability.metrics import metrics_recorder
 
@@ -25,3 +26,22 @@ def record_elapsed_job_duration(job_type: str, status: str, *, started_at: float
     duration_ms = elapsed_ms_since(started_at)
     record_job_duration(job_type, status, duration_ms)
     return duration_ms
+
+
+def external_worker_lifecycle_fields(
+    job_type: str,
+    job_id: str,
+    status: str,
+    *,
+    lease_owner: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    return {
+        "event": "job_lifecycle",
+        "jobType": job_type,
+        "jobId": job_id,
+        "status": status,
+        "leaseOwner": lease_owner,
+        "executionMode": "external_worker",
+        **extra,
+    }

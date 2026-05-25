@@ -39,6 +39,7 @@ from src.shared.config.settings import get_settings
 from src.domains.lab_agent.models import LabStructureMode, LabTargetScope
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
+    external_worker_lifecycle_fields,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -92,14 +93,14 @@ async def _heartbeat_loop(
             record_job_duration(job.job_type, JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"lab worker timed out: {job_id} ({lab_type})",
-                event="job_lifecycle",
-                jobType=job.job_type,
-                jobId=job_id,
-                status=JobStatus.FAILED.value,
                 error=_TIMED_OUT_ERROR,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    job.job_type,
+                    job_id,
+                    JobStatus.FAILED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(124)
             return
@@ -118,13 +119,13 @@ async def _heartbeat_loop(
             record_job_duration(job.job_type, JobStatus.CANCELLED.value, duration_ms)
             logger.info(
                 f"lab worker cancelled: {job_id} ({job.job_type.removeprefix('lab_')})",
-                event="job_lifecycle",
-                jobType=job.job_type,
-                jobId=job_id,
-                status=JobStatus.CANCELLED.value,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    job.job_type,
+                    job_id,
+                    JobStatus.CANCELLED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(0)
             return
@@ -338,13 +339,13 @@ async def run_lab_worker(
             return 2
         logger.info(
             f"lab worker claimed job: {job_id} ({lab_type})",
-            event="job_lifecycle",
-            jobType=claimed.job_type,
-            jobId=job_id,
-            status=JobStatus.RUNNING.value,
-            leaseOwner=lease_owner,
-            timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                claimed.job_type,
+                job_id,
+                JobStatus.RUNNING.value,
+                lease_owner=lease_owner,
+                timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
+            ),
         )
 
         heartbeat_task = asyncio.create_task(
@@ -422,13 +423,13 @@ async def run_lab_worker(
         duration_ms = record_elapsed_job_duration(claimed.job_type, JobStatus.COMPLETED.value, started_at=started_at)
         logger.info(
             f"lab worker completed job: {job_id} ({lab_type})",
-            event="job_lifecycle",
-            jobType=claimed.job_type,
-            jobId=job_id,
-            status=JobStatus.COMPLETED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                claimed.job_type,
+                job_id,
+                JobStatus.COMPLETED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         return 0
     except Exception as exc:
@@ -440,13 +441,13 @@ async def run_lab_worker(
         duration_ms = record_elapsed_job_duration(f"lab_{lab_type}", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"lab worker failed: {job_id} ({lab_type})",
-            event="job_lifecycle",
-            jobType=f"lab_{lab_type}",
-            jobId=job_id,
-            status=JobStatus.FAILED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                f"lab_{lab_type}",
+                job_id,
+                JobStatus.FAILED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         await resolved_manager.update_job_status(
             job_id,

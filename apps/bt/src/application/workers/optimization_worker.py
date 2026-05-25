@@ -33,6 +33,7 @@ from src.entrypoints.http.schemas.backtest import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
+    external_worker_lifecycle_fields,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -124,14 +125,14 @@ async def _heartbeat_loop(
             record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"optimization worker timed out: {job_id}",
-                event="job_lifecycle",
-                jobType="optimization",
-                jobId=job_id,
-                status=JobStatus.FAILED.value,
                 error=_TIMED_OUT_ERROR,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    "optimization",
+                    job_id,
+                    JobStatus.FAILED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(124)
             return
@@ -150,13 +151,13 @@ async def _heartbeat_loop(
             record_job_duration("optimization", JobStatus.CANCELLED.value, duration_ms)
             logger.info(
                 f"optimization worker cancelled: {job_id}",
-                event="job_lifecycle",
-                jobType="optimization",
-                jobId=job_id,
-                status=JobStatus.CANCELLED.value,
-                durationMs=duration_ms,
-                leaseOwner=lease_owner,
-                executionMode="external_worker",
+                **external_worker_lifecycle_fields(
+                    "optimization",
+                    job_id,
+                    JobStatus.CANCELLED.value,
+                    lease_owner=lease_owner,
+                    durationMs=duration_ms,
+                ),
             )
             exit_on_cancel(0)
             return
@@ -206,13 +207,13 @@ async def run_optimization_worker(
             return 2
         logger.info(
             f"optimization worker claimed job: {job_id}",
-            event="job_lifecycle",
-            jobType="optimization",
-            jobId=job_id,
-            status=JobStatus.RUNNING.value,
-            leaseOwner=lease_owner,
-            timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "optimization",
+                job_id,
+                JobStatus.RUNNING.value,
+                lease_owner=lease_owner,
+                timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
+            ),
         )
 
         heartbeat_task = asyncio.create_task(
@@ -290,13 +291,13 @@ async def run_optimization_worker(
         duration_ms = record_elapsed_job_duration("optimization", JobStatus.COMPLETED.value, started_at=started_at)
         logger.info(
             f"optimization worker completed job: {job_id}",
-            event="job_lifecycle",
-            jobType="optimization",
-            jobId=job_id,
-            status=JobStatus.COMPLETED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "optimization",
+                job_id,
+                JobStatus.COMPLETED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         return 0
     except Exception as exc:
@@ -308,13 +309,13 @@ async def run_optimization_worker(
         duration_ms = record_elapsed_job_duration("optimization", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"optimization worker failed: {job_id}",
-            event="job_lifecycle",
-            jobType="optimization",
-            jobId=job_id,
-            status=JobStatus.FAILED.value,
-            durationMs=duration_ms,
-            leaseOwner=lease_owner,
-            executionMode="external_worker",
+            **external_worker_lifecycle_fields(
+                "optimization",
+                job_id,
+                JobStatus.FAILED.value,
+                lease_owner=lease_owner,
+                durationMs=duration_ms,
+            ),
         )
         await resolved_manager.update_job_status(
             job_id,
