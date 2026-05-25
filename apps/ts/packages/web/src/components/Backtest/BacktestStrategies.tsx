@@ -1,10 +1,11 @@
 import { ArrowLeftRight, Code, Copy, Edit, FileText, Loader2, Lock, Pencil, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { SegmentedTabs, SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { useStrategies, useStrategy } from '@/hooks/useBacktest';
 import { cn } from '@/lib/utils';
 import type { StrategyMetadata } from '@/types/backtest';
+import { compareOptionalTimestampDesc } from '@/utils/dateComparators';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DuplicateDialog } from './DuplicateDialog';
 import { MoveGroupDialog } from './MoveGroupDialog';
@@ -40,7 +41,9 @@ function StrategyCard({
             </div>
             <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">{strategy.category}</p>
           </div>
-          {strategy.description ? <p className="line-clamp-2 text-sm text-muted-foreground">{strategy.description}</p> : null}
+          {strategy.description ? (
+            <p className="line-clamp-2 text-sm text-muted-foreground">{strategy.description}</p>
+          ) : null}
         </div>
       </Surface>
     </button>
@@ -107,13 +110,7 @@ function StrategyActionBar({
   );
 }
 
-function StrategyMetadataCard({
-  title,
-  content,
-}: {
-  title: string;
-  content: string | null;
-}) {
+function StrategyMetadataCard({ title, content }: { title: string; content: string | null }) {
   if (!content) {
     return null;
   }
@@ -126,13 +123,7 @@ function StrategyMetadataCard({
   );
 }
 
-function StrategyJsonCard({
-  title,
-  value,
-}: {
-  title: string;
-  value: unknown;
-}) {
+function StrategyJsonCard({ title, value }: { title: string; value: unknown }) {
   if (!value || (typeof value === 'object' && Object.keys(value as Record<string, unknown>).length === 0)) {
     return null;
   }
@@ -348,11 +339,7 @@ export function BacktestStrategies() {
   );
 
   for (const category of Object.keys(grouped)) {
-    grouped[category]?.sort((left, right) => {
-      const leftTime = left.last_modified ? new Date(left.last_modified).getTime() : 0;
-      const rightTime = right.last_modified ? new Date(right.last_modified).getTime() : 0;
-      return rightTime - leftTime;
-    });
+    grouped[category]?.sort((left, right) => compareOptionalTimestampDesc(left.last_modified, right.last_modified));
   }
 
   const sortedCategories = Object.keys(grouped).sort(compareManagedStrategyCategory);
@@ -365,7 +352,8 @@ export function BacktestStrategies() {
             <SectionEyebrow>Strategy Library</SectionEyebrow>
             <h2 className="text-lg font-semibold tracking-tight text-foreground">Strategy Catalog</h2>
             <p className="text-sm text-muted-foreground">
-              Production and experimental strategies stay grouped here so detail, editor, and optimization work remain in one workspace.
+              Production and experimental strategies stay grouped here so detail, editor, and optimization work remain
+              in one workspace.
             </p>
           </div>
 

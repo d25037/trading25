@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { StrategyMetadata } from '@/types/backtest';
+import { compareOptionalTimestampDesc } from '@/utils/dateComparators';
 import { compareManagedStrategyCategory } from './strategyCategoryOrder';
 
 interface StrategySelectorProps {
@@ -50,11 +51,7 @@ export function StrategySelector({ strategies, isLoading, value, onChange, disab
 
   // Sort strategies within each category by last_modified descending
   for (const cat of Object.keys(grouped)) {
-    grouped[cat]?.sort((a, b) => {
-      const aTime = a.last_modified ? new Date(a.last_modified).getTime() : 0;
-      const bTime = b.last_modified ? new Date(b.last_modified).getTime() : 0;
-      return bTime - aTime;
-    });
+    grouped[cat]?.sort((a, b) => compareOptionalTimestampDesc(a.last_modified, b.last_modified));
   }
 
   // Sort managed categories first: production, experimental, legacy
