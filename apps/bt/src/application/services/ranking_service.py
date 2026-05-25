@@ -71,7 +71,7 @@ from src.application.services.ranking_value_composite_config import (
     value_composite_score_policy as _value_composite_score_policy,
 )
 from src.application.services.ranking_value_composite_metrics import (
-    load_value_composite_profile_metrics as _load_value_composite_profile_metrics_query,
+    append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -631,8 +631,9 @@ class RankingService:
     ) -> pd.DataFrame:
         if profile is None or scored.empty:
             return scored
-        scored = self._append_value_composite_profile_metrics(
+        scored = _append_value_composite_profile_metrics_query(
             scored,
+            self._reader,
             target_date=target_date,
             profile=profile,
         )
@@ -1479,41 +1480,6 @@ class RankingService:
         for column in technical_columns:
             result[column] = normalized_codes.map(
                 lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
-            )
-        return result
-
-    def _append_value_composite_profile_metrics(
-        self,
-        frame: pd.DataFrame,
-        *,
-        target_date: str,
-        profile: _ValueCompositeProfileSpec,
-    ) -> pd.DataFrame:
-        if frame.empty:
-            return frame.copy()
-        result = frame.copy()
-        profile_metrics = _load_value_composite_profile_metrics_query(
-            self._reader,
-            target_date=target_date,
-            codes=[str(code) for code in result["code"].tolist()],
-            profile=profile,
-        )
-        technical_columns = [
-            "avg_trading_value_60d_mil_jpy",
-            "avg_trading_value_60d_source_sessions",
-        ]
-        if profile.breakout_window is not None:
-            technical_columns.extend(
-                [
-                    f"new_high_{profile.breakout_window}d",
-                    f"days_since_new_high_{profile.breakout_window}d",
-                    f"close_to_prior_high_{profile.breakout_window}d_pct",
-                ]
-            )
-        normalized_codes = result["code"].map(_normalize_equity_code)
-        for column in technical_columns:
-            result[column] = normalized_codes.map(
-                lambda code, column=column: profile_metrics.get(str(code), {}).get(column)
             )
         return result
 

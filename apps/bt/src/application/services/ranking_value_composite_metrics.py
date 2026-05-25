@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+
 from src.application.services.ranking_daily_queries import get_trading_date_before
 from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
@@ -13,6 +15,42 @@ from src.application.services.ranking_query_helpers import (
 from src.application.services.ranking_response_items import finite_or_none, int_or_none
 from src.application.services.ranking_value_composite_config import ValueCompositeProfileSpec
 from src.infrastructure.db.market.market_reader import MarketDbReader
+
+
+def append_value_composite_profile_metrics(
+    frame: pd.DataFrame,
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+    profile: ValueCompositeProfileSpec,
+) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    profile_metrics = load_value_composite_profile_metrics(
+        reader,
+        target_date=target_date,
+        codes=[str(code) for code in result["code"].tolist()],
+        profile=profile,
+    )
+    technical_columns = [
+        "avg_trading_value_60d_mil_jpy",
+        "avg_trading_value_60d_source_sessions",
+    ]
+    if profile.breakout_window is not None:
+        technical_columns.extend(
+            [
+                f"new_high_{profile.breakout_window}d",
+                f"days_since_new_high_{profile.breakout_window}d",
+                f"close_to_prior_high_{profile.breakout_window}d_pct",
+            ]
+        )
+    normalized_codes = result["code"].map(normalize_equity_code)
+    for column in technical_columns:
+        result[column] = normalized_codes.map(
+            lambda code, column=column: profile_metrics.get(str(code), {}).get(column)
+        )
+    return result
 
 
 def load_value_composite_profile_metrics(
