@@ -431,7 +431,7 @@ function PortfolioDetailContent({
           <div className="mt-4">
             <PerformanceSummary
               summary={performanceData.summary}
-              benchmark={performanceData.benchmark}
+              benchmark={performanceData.benchmark ?? null}
               isLoading={isPerformanceLoading}
             />
           </div>

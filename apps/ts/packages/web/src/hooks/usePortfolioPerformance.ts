@@ -1,83 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { apiGet } from '@/lib/api-client';
 
-/**
- * Portfolio summary metrics
- */
-export interface PortfolioSummary {
-  totalCost: number;
-  currentValue: number;
-  totalPnL: number;
-  returnRate: number;
-}
-
-/**
- * Individual holding performance
- */
-export interface HoldingPerformance {
-  code: string;
-  companyName: string;
-  quantity: number;
-  purchasePrice: number;
-  currentPrice: number;
-  cost: number;
-  marketValue: number;
-  pnl: number;
-  returnRate: number;
-  weight: number;
-  purchaseDate: string;
-  account?: string;
-}
-
-/**
- * Performance time series data point
- */
-export interface PerformanceDataPoint {
-  date: string;
-  dailyReturn: number;
-  cumulativeReturn: number;
-}
-
-/**
- * Benchmark metrics
- */
-export interface BenchmarkMetrics {
-  code: string;
-  name: string;
-  beta: number;
-  alpha: number;
-  correlation: number;
-  rSquared: number;
-  benchmarkReturn: number;
-  relativeReturn: number;
-}
-
-/**
- * Benchmark time series data point
- */
-export interface BenchmarkDataPoint {
-  date: string;
-  portfolioReturn: number;
-  benchmarkReturn: number;
-}
-
-/**
- * Portfolio performance response
- */
-export interface PortfolioPerformanceResponse {
-  portfolioId: number;
-  portfolioName: string;
-  portfolioDescription?: string;
-  summary: PortfolioSummary;
-  holdings: HoldingPerformance[];
-  timeSeries: PerformanceDataPoint[];
-  benchmark: BenchmarkMetrics | null;
-  benchmarkTimeSeries: BenchmarkDataPoint[] | null;
-  analysisDate: string;
-  dateRange: { from: string; to: string } | null;
-  dataPoints: number;
-  warnings: string[];
-}
+export type PortfolioSummary = components['schemas']['PerformanceSummary'];
+export type HoldingPerformance = components['schemas']['HoldingDetail'];
+export type PerformanceDataPoint = components['schemas']['TimeSeriesPoint'];
+export type BenchmarkMetrics = components['schemas']['BenchmarkResult'];
+export type BenchmarkDataPoint = components['schemas']['BenchmarkTimeSeriesPoint'];
+export type PortfolioPerformanceResponse = components['schemas']['PortfolioPerformanceResponse'];
 
 function fetchPortfolioPerformance(
   portfolioId: number,
