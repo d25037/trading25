@@ -29,6 +29,13 @@ from src.application.services.ranking_service import (
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
 )
+from src.application.services.ranking_daily_queries import (
+    ranking_by_period_high,
+    ranking_by_period_low,
+    ranking_by_price_change,
+    ranking_by_price_change_from_days,
+    ranking_by_trading_value_average,
+)
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
     ensure_supported_value_composite_forward_eps_mode,
@@ -2977,16 +2984,24 @@ class TestRankingHelperBranches:
 
 
 class TestRankingDateEdgeCases:
-    def test_returns_empty_when_reference_dates_are_unavailable(self, service):
-        assert service._ranking_by_trading_value_average("2024-01-15", 3, 20, []) == []
-        assert service._ranking_by_price_change("2024-01-15", 20, [], "DESC") == []
-        assert (
-            service._ranking_by_price_change_from_days("2024-01-15", 3, 20, [], "DESC")
-            == []
-        )
+    def test_returns_empty_when_reference_dates_are_unavailable(self, ranking_db):
+        reader = MarketDbReader(ranking_db)
+        try:
+            assert ranking_by_trading_value_average(reader, "2024-01-15", 3, 20, []) == []
+            assert ranking_by_price_change(reader, "2024-01-15", 20, [], "DESC") == []
+            assert (
+                ranking_by_price_change_from_days(reader, "2024-01-15", 3, 20, [], "DESC")
+                == []
+            )
+        finally:
+            reader.close()
 
-    def test_period_high_low_paths_with_available_window(self, service):
-        high = service._ranking_by_period_high("2024-01-19", 2, 20, [])
-        low = service._ranking_by_period_low("2024-01-19", 2, 20, [])
-        assert isinstance(high, list)
-        assert isinstance(low, list)
+    def test_period_high_low_paths_with_available_window(self, ranking_db):
+        reader = MarketDbReader(ranking_db)
+        try:
+            high = ranking_by_period_high(reader, "2024-01-19", 2, 20, [])
+            low = ranking_by_period_low(reader, "2024-01-19", 2, 20, [])
+            assert isinstance(high, list)
+            assert isinstance(low, list)
+        finally:
+            reader.close()

@@ -246,7 +246,8 @@ class RankingService:
 
         # 5種類のランキングを取得
         if lookback_days > 1:
-            trading_value = self._ranking_by_trading_value_average(
+            trading_value = _ranking_by_trading_value_average_query(
+                self._reader,
                 target_date,
                 lookback_days,
                 query_limit,
@@ -255,7 +256,8 @@ class RankingService:
                 sector17_name=sector17_name,
             )
         else:
-            trading_value = self._ranking_by_trading_value(
+            trading_value = _ranking_by_trading_value_query(
+                self._reader,
                 target_date,
                 query_limit,
                 query_market_codes,
@@ -264,7 +266,8 @@ class RankingService:
             )
 
         if lookback_days > 1:
-            gainers = self._ranking_by_price_change_from_days(
+            gainers = _ranking_by_price_change_from_days_query(
+                self._reader,
                 target_date,
                 lookback_days,
                 query_limit,
@@ -273,7 +276,8 @@ class RankingService:
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
             )
-            losers = self._ranking_by_price_change_from_days(
+            losers = _ranking_by_price_change_from_days_query(
+                self._reader,
                 target_date,
                 lookback_days,
                 query_limit,
@@ -283,7 +287,8 @@ class RankingService:
                 sector17_name=sector17_name,
             )
         else:
-            gainers = self._ranking_by_price_change(
+            gainers = _ranking_by_price_change_query(
+                self._reader,
                 target_date,
                 query_limit,
                 query_market_codes,
@@ -291,7 +296,8 @@ class RankingService:
                 sector33_name=sector33_name,
                 sector17_name=sector17_name,
             )
-            losers = self._ranking_by_price_change(
+            losers = _ranking_by_price_change_query(
+                self._reader,
                 target_date,
                 query_limit,
                 query_market_codes,
@@ -300,7 +306,8 @@ class RankingService:
                 sector17_name=sector17_name,
             )
 
-        period_high = self._ranking_by_period_high(
+        period_high = _ranking_by_period_high_query(
+            self._reader,
             target_date,
             period_days,
             query_limit,
@@ -308,7 +315,8 @@ class RankingService:
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
-        period_low = self._ranking_by_period_low(
+        period_low = _ranking_by_period_low_query(
+            self._reader,
             target_date,
             period_days,
             query_limit,
@@ -1529,7 +1537,11 @@ class RankingService:
                 int(profile.breakout_window)
                 + int(profile.breakout_lookback_sessions or 0),
             )
-        start_date = self._get_trading_date_before(target_date, required_session_offset)
+        start_date = _get_trading_date_before_query(
+            self._reader,
+            target_date,
+            required_session_offset,
+        )
         lower_bound_clause = " AND date >= ?" if start_date is not None else ""
         params: tuple[Any, ...] = (
             (target_date, start_date, *normalized_codes)
@@ -2495,133 +2507,3 @@ class RankingService:
             build_fundamental_ranking_item(item, index)
             for index, item in enumerate(sorted_items, start=1)
         ]
-
-    def _get_trading_date_before(self, date: str, offset: int) -> str | None:
-        """N営業日前の取引日を取得"""
-        return _get_trading_date_before_query(self._reader, date, offset)
-
-    def _ranking_by_trading_value(
-        self,
-        date: str,
-        limit: int,
-        market_codes: list[str],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """売買代金ランキング（単日）"""
-        return _ranking_by_trading_value_query(
-            self._reader,
-            date,
-            limit,
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-
-    def _ranking_by_trading_value_average(
-        self,
-        date: str,
-        lookback_days: int,
-        limit: int,
-        market_codes: list[str],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """売買代金平均ランキング（N日平均）"""
-        return _ranking_by_trading_value_average_query(
-            self._reader,
-            date,
-            lookback_days,
-            limit,
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-
-    def _ranking_by_price_change(
-        self,
-        date: str,
-        limit: int,
-        market_codes: list[str],
-        order_dir: Literal["ASC", "DESC"],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """騰落率ランキング（単日）"""
-        return _ranking_by_price_change_query(
-            self._reader,
-            date,
-            limit,
-            market_codes,
-            order_dir,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-
-    def _ranking_by_price_change_from_days(
-        self,
-        date: str,
-        lookback_days: int,
-        limit: int,
-        market_codes: list[str],
-        order_dir: Literal["ASC", "DESC"],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """騰落率ランキング（N日前比較）"""
-        return _ranking_by_price_change_from_days_query(
-            self._reader,
-            date,
-            lookback_days,
-            limit,
-            market_codes,
-            order_dir,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-
-    def _ranking_by_period_high(
-        self,
-        date: str,
-        period_days: int,
-        limit: int,
-        market_codes: list[str],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """期間高値ランキング"""
-        return _ranking_by_period_high_query(
-            self._reader,
-            date,
-            period_days,
-            limit,
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-
-    def _ranking_by_period_low(
-        self,
-        date: str,
-        period_days: int,
-        limit: int,
-        market_codes: list[str],
-        *,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        """期間安値ランキング"""
-        return _ranking_by_period_low_query(
-            self._reader,
-            date,
-            period_days,
-            limit,
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
