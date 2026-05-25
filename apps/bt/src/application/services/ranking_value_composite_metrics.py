@@ -169,9 +169,16 @@ def build_value_composite_score_frame_from_adjusted(
                 "forward_eps_source": str_or_none(row.get("forward_eps_source")),
             }
         )
+    return score_value_composite_records(records, weights=weights)
+
+
+def score_value_composite_records(
+    records: list[dict[str, Any]],
+    *,
+    weights: Mapping[str, float],
+) -> pd.DataFrame:
     if not records:
         return pd.DataFrame()
-
     scored = build_value_composite_score_frame(
         pd.DataFrame.from_records(records),
         group_columns=("market",),

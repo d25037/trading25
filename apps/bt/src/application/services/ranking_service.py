@@ -54,8 +54,6 @@ from src.domains.analytics.fundamental_ranking import (
 )
 from src.domains.analytics.value_composite_scoring import (
     VALUE_COMPOSITE_SCORE_COLUMN,
-    VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
-    build_value_composite_score_frame,
 )
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
@@ -76,6 +74,7 @@ from src.application.services.ranking_value_composite_metrics import (
     build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
+    score_value_composite_records as _score_value_composite_records,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -888,24 +887,10 @@ class RankingService:
                 }
             )
 
-        if not records:
-            return pd.DataFrame()
-
-        scored = build_value_composite_score_frame(
-            pd.DataFrame.from_records(records),
-            group_columns=("market",),
-            required_positive_columns=VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
-            score_column=VALUE_COMPOSITE_SCORE_COLUMN,
+        return _score_value_composite_records(
+            records,
             weights=weights,
         )
-        scored = scored[
-            pd.to_numeric(scored[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce").notna()
-        ].copy()
-        return scored.sort_values(
-            [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
-            ascending=[False, True],
-            kind="stable",
-        ).reset_index(drop=True)
 
     def _enrich_ranking_collections_with_valuation(
         self,
