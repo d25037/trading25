@@ -25,6 +25,7 @@ import type {
   HtmlFileListResponse,
   HtmlFileRenameRequest,
   HtmlFileRenameResponse,
+  JobStatus,
   OHLCVResampleRequest,
   OHLCVResampleResponse,
   OptimizationHtmlFileContentResponse,
@@ -55,6 +56,16 @@ import type {
   StrategyValidationRequest,
   StrategyValidationResponse,
 } from './types.js';
+
+type PollableJob = {
+  job_id: string;
+  status: JobStatus;
+};
+
+type WaitForJobOptions<TJob> = {
+  pollInterval?: number;
+  onProgress?: (job: TJob) => void;
+};
 
 export class BacktestApiError extends Error {
   constructor(
@@ -89,6 +100,14 @@ function toBacktestApiError(error: unknown): never {
   throw error;
 }
 
+function isActiveJob(status: JobStatus): boolean {
+  return status === 'pending' || status === 'running';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class BacktestClient {
   private readonly baseUrl?: string;
   private readonly timeout: number;
@@ -112,6 +131,23 @@ export class BacktestClient {
     } catch (error) {
       toBacktestApiError(error);
     }
+  }
+
+  private async waitForJob<TJob extends PollableJob>(
+    initialJob: TJob,
+    fetchJob: (jobId: string) => Promise<TJob>,
+    options?: WaitForJobOptions<TJob>
+  ): Promise<TJob> {
+    const pollInterval = options?.pollInterval ?? 2000;
+
+    let job = initialJob;
+    while (isActiveJob(job.status)) {
+      await sleep(pollInterval);
+      job = await fetchJob(job.job_id);
+      options?.onProgress?.(job);
+    }
+
+    return job;
   }
 
   // Health
@@ -418,23 +454,10 @@ export class BacktestClient {
 
   async runSignalAttributionAndWait(
     request: SignalAttributionRequest,
-    options?: {
-      pollInterval?: number;
-      onProgress?: (job: SignalAttributionJobResponse) => void;
-    }
+    options?: WaitForJobOptions<SignalAttributionJobResponse>
   ): Promise<SignalAttributionJobResponse> {
-    const pollInterval = options?.pollInterval ?? 2000;
-
     const initialJob = await this.runSignalAttribution(request);
-
-    let job = initialJob;
-    while (job.status === 'pending' || job.status === 'running') {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      job = await this.getSignalAttributionJob(job.job_id);
-      options?.onProgress?.(job);
-    }
-
-    return job;
+    return this.waitForJob(initialJob, (jobId) => this.getSignalAttributionJob(jobId), options);
   }
 
   /**
@@ -445,25 +468,10 @@ export class BacktestClient {
    */
   async runAndWait(
     request: BacktestRequest,
-    options?: {
-      pollInterval?: number;
-      onProgress?: (job: BacktestJobResponse) => void;
-    }
+    options?: WaitForJobOptions<BacktestJobResponse>
   ): Promise<BacktestJobResponse> {
-    const pollInterval = options?.pollInterval ?? 2000;
-
-    // ジョブを開始
     const initialJob = await this.runBacktest(request);
-
-    // 完了までポーリング
-    let job = initialJob;
-    while (job.status === 'pending' || job.status === 'running') {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      job = await this.getJobStatus(job.job_id);
-      options?.onProgress?.(job);
-    }
-
-    return job;
+    return this.waitForJob(initialJob, (jobId) => this.getJobStatus(jobId), options);
   }
 
   // OHLCV Resample
