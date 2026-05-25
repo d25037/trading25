@@ -555,16 +555,10 @@ class RankingService:
                 ascending=[False, True],
                 kind="stable",
             ).reset_index(drop=True)
-        scored = scored.head(limit)
-        scored = self._append_value_composite_technical_metrics(
-            scored,
+        items = self._build_value_composite_ranking_items(
+            scored.head(limit),
             target_date=target_date,
         )
-
-        items = [
-            build_value_composite_item(cast(Mapping[str, Any], row), rank)
-            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
-        ]
 
         return ValueCompositeRankingResponse(
             date=target_date,
@@ -732,6 +726,21 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
+
+    def _build_value_composite_ranking_items(
+        self,
+        scored: pd.DataFrame,
+        *,
+        target_date: str,
+    ) -> list[ValueCompositeRankingItem]:
+        scored = self._append_value_composite_technical_metrics(
+            scored,
+            target_date=target_date,
+        )
+        return [
+            build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
+        ]
 
     def _find_value_composite_score_item(
         self,
