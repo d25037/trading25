@@ -67,6 +67,11 @@ type WaitForJobOptions<TJob> = {
   onProgress?: (job: TJob) => void;
 };
 
+type StrategyLimitParams = {
+  strategy?: string;
+  limit?: number;
+};
+
 export class BacktestApiError extends Error {
   constructor(
     public readonly status: number,
@@ -106,6 +111,13 @@ function isActiveJob(status: JobStatus): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildStrategyLimitQuery(params?: StrategyLimitParams): string {
+  const query = new URLSearchParams();
+  if (params?.strategy) query.set('strategy', params.strategy);
+  query.set('limit', String(params?.limit ?? 100));
+  return query.toString();
 }
 
 export class BacktestClient {
@@ -269,15 +281,10 @@ export class BacktestClient {
     );
   }
 
-  async listAttributionArtifactFiles(params?: {
-    strategy?: string;
-    limit?: number;
-  }): Promise<AttributionArtifactListResponse> {
-    const query = new URLSearchParams();
-    if (params?.strategy) query.set('strategy', params.strategy);
-    query.set('limit', String(params?.limit ?? 100));
-
-    return this.request<AttributionArtifactListResponse>(`/api/backtest/attribution-files?${query.toString()}`);
+  async listAttributionArtifactFiles(params?: StrategyLimitParams): Promise<AttributionArtifactListResponse> {
+    return this.request<AttributionArtifactListResponse>(
+      `/api/backtest/attribution-files?${buildStrategyLimitQuery(params)}`
+    );
   }
 
   async getAttributionArtifactContent(strategy: string, filename: string): Promise<AttributionArtifactContentResponse> {
@@ -291,10 +298,7 @@ export class BacktestClient {
   }
 
   async listHtmlFiles(params?: { strategy?: string; limit?: number }): Promise<HtmlFileListResponse> {
-    const query = new URLSearchParams();
-    if (params?.strategy) query.set('strategy', params.strategy);
-    query.set('limit', String(params?.limit ?? 100));
-    return this.request<HtmlFileListResponse>(`/api/backtest/html-files?${query.toString()}`);
+    return this.request<HtmlFileListResponse>(`/api/backtest/html-files?${buildStrategyLimitQuery(params)}`);
   }
 
   async getHtmlFileContent(strategy: string, filename: string): Promise<HtmlFileContentResponse> {
@@ -409,15 +413,10 @@ export class BacktestClient {
     );
   }
 
-  async listOptimizationHtmlFiles(params?: {
-    strategy?: string;
-    limit?: number;
-  }): Promise<OptimizationHtmlFileListResponse> {
-    const query = new URLSearchParams();
-    if (params?.strategy) query.set('strategy', params.strategy);
-    query.set('limit', String(params?.limit ?? 100));
-
-    return this.request<OptimizationHtmlFileListResponse>(`/api/optimize/html-files?${query.toString()}`);
+  async listOptimizationHtmlFiles(params?: StrategyLimitParams): Promise<OptimizationHtmlFileListResponse> {
+    return this.request<OptimizationHtmlFileListResponse>(
+      `/api/optimize/html-files?${buildStrategyLimitQuery(params)}`
+    );
   }
 
   async getOptimizationHtmlFileContent(
