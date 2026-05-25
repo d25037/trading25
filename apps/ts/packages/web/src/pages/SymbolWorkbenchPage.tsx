@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { MarketRefreshResponse } from '@trading25/contracts/types/api-response-types';
 import type { ApiLiquidityProfile, DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
 import { AlertCircle, BookOpen, Loader2, RotateCcw, SettingsIcon, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -47,7 +48,6 @@ import type {
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
-import type { MarketRefreshResponse } from '@/types/sync';
 import { formatMarketCap } from '@/utils/formatters';
 import { logger } from '@/utils/logger';
 

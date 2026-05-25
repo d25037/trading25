@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import type { SyncJobResponse } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { SyncJobResponse } from '@/types/sync';
 import { SyncStatusCard } from './SyncStatusCard';
 
 function createJob(overrides: Partial<SyncJobResponse> = {}): SyncJobResponse {

@@ -1,3 +1,12 @@
+import type {
+  AdjustedMetricsMaterializeJobResponse,
+  MarketRefreshResponse,
+  MarketStatsResponse,
+  MarketValidationResponse,
+  StartSyncRequest,
+  SyncJobResponse,
+  SyncMode,
+} from '@trading25/contracts/types/api-response-types';
 import { Activity, Database, Loader2, RotateCcw, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
@@ -39,15 +48,6 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { ACTIVE_SYNC_JOB_STORAGE_KEY, readStoredString, writeStoredString } from '@/lib/persistedState';
 import { cn } from '@/lib/utils';
-import type {
-  AdjustedMetricsMaterializeJobResponse,
-  MarketRefreshResponse,
-  MarketStatsResponse,
-  MarketValidationResponse,
-  StartSyncRequest,
-  SyncJobResponse,
-  SyncMode,
-} from '@/types/sync';
 import {
   formatBytes,
   formatCount,

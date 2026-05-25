@@ -1,6 +1,6 @@
+import type { SyncMode } from '@trading25/contracts/types/api-response-types';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { SyncMode } from '@/types/sync';
 
 interface SyncModeSelectProps {
   value: SyncMode;

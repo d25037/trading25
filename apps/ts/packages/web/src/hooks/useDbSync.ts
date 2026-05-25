@@ -1,6 +1,4 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
-import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import type {
   AdjustedMetricsMaterializeJobResponse,
   CancelJobResponse,
@@ -9,12 +7,13 @@ import type {
   MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
-  RefreshStocksRequest,
   StartSyncRequest,
   SyncFetchDetail,
   SyncFetchDetailsResponse,
   SyncJobResponse,
-} from '@/types/sync';
+} from '@trading25/contracts/types/api-response-types';
+import { useCallback } from 'react';
+import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
@@ -52,6 +51,10 @@ interface SyncFetchDetailStreamPayload {
   status: SyncJobResponse['status'];
   mode: SyncJobResponse['mode'];
   detail: SyncFetchDetail | null;
+}
+
+interface RefreshStocksRequest {
+  codes: string[];
 }
 
 const MAX_SSE_RETRIES = 3;

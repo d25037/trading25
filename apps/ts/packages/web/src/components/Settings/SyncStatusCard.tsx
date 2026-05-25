@@ -1,8 +1,8 @@
+import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@trading25/contracts/types/api-response-types';
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
 import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface SyncStatusCardProps {
