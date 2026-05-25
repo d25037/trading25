@@ -6,11 +6,25 @@ import math
 from dataclasses import dataclass
 from typing import cast
 
+import pandas as pd
+
+from src.application.services.ranking_fundamental_queries import (
+    load_adjustment_events_by_code,
+)
+from src.application.services.ranking_query_helpers import (
+    normalize_equity_code,
+    normalized_code_sql,
+    prefer_4digit_order_sql,
+)
+from src.application.services.ranking_response_items import finite_or_none, str_or_none
 from src.application.services.ranking_value_composite_config import (
     OVERHEAT_RISK_FLAG,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
 )
 from src.entrypoints.http.schemas.ranking import LiquidityRegime, RankingRiskFlag
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.utils.market_code_alias import resolve_market_codes
+from src.shared.utils.share_adjustment import adjust_free_float_shares_to_price_basis
 
 
 @dataclass(frozen=True)
@@ -82,3 +96,212 @@ def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRis
     ):
         return (OVERHEAT_RISK_FLAG,)
     return ()
+
+
+def load_prime_liquidity_metrics(
+    reader: MarketDbReader,
+    target_date: str,
+    price_basis_date: str,
+) -> dict[str, PrimeLiquidityMetrics]:
+    """Build Prime ADV60-vs-free-float residuals using data as of target_date."""
+    if not target_date:
+        return {}
+
+    _, prime_market_codes = resolve_market_codes("prime")
+    if not prime_market_codes:
+        return {}
+
+    start_date = (
+        pd.Timestamp(target_date) - pd.Timedelta(days=60 * 4 + 30)
+    ).strftime("%Y-%m-%d")
+    market_placeholders = ",".join("?" for _ in prime_market_codes)
+    stock_code = normalized_code_sql("s.code")
+    price_code = normalized_code_sql("sd.code")
+    statement_code = normalized_code_sql("st.code")
+    price_order = prefer_4digit_order_sql("sd.code")
+    statement_order = prefer_4digit_order_sql("st.code")
+    adjustment_events_by_code = load_adjustment_events_by_code(
+        reader,
+        through_date=price_basis_date,
+        market_codes=prime_market_codes,
+    )
+    rows = reader.query(
+        f"""
+        WITH prime_codes AS (
+            SELECT DISTINCT {stock_code} AS code
+            FROM stocks s
+            WHERE lower(trim(s.market_code)) IN ({market_placeholders})
+        ),
+        price_base AS (
+            SELECT code, date, close, volume
+            FROM (
+                SELECT
+                    {price_code} AS code,
+                    sd.date,
+                    sd.close,
+                    sd.volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {price_code}, sd.date
+                        ORDER BY {price_order}
+                    ) AS rn
+                FROM stock_data sd
+                WHERE sd.date >= ?
+                  AND sd.date <= ?
+                  AND sd.close > 0
+                  AND sd.volume IS NOT NULL
+            )
+            WHERE rn = 1
+        ),
+        prime_price AS (
+            SELECT price_base.*
+            FROM price_base
+            JOIN prime_codes USING (code)
+        ),
+        price_features AS (
+            SELECT
+                *,
+                MEDIAN(close * volume) OVER (
+                    PARTITION BY code ORDER BY date
+                    ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS adv60_jpy,
+                COUNT(*) OVER (
+                    PARTITION BY code ORDER BY date
+                    ROWS BETWEEN 59 PRECEDING AND CURRENT ROW
+                ) AS adv60_count,
+                LAG(close, 20) OVER (PARTITION BY code ORDER BY date) AS close_20d_ago,
+                LAG(close, 60) OVER (PARTITION BY code ORDER BY date) AS close_60d_ago
+            FROM prime_price
+        ),
+        statement_base AS (
+            SELECT code, disclosed_date, shares_outstanding, treasury_shares
+            FROM (
+                SELECT
+                    {statement_code} AS code,
+                    st.disclosed_date,
+                    st.shares_outstanding,
+                    st.treasury_shares,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {statement_code}, st.disclosed_date
+                        ORDER BY {statement_order}
+                    ) AS rn
+                FROM statements st
+                WHERE st.disclosed_date <= ?
+                  AND st.shares_outstanding > 0
+            )
+            WHERE rn = 1
+        ),
+        statement_asof AS (
+            SELECT code, disclosed_date, shares_outstanding, treasury_shares
+            FROM (
+                SELECT
+                    code,
+                    disclosed_date,
+                    shares_outstanding,
+                    treasury_shares,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY code
+                        ORDER BY disclosed_date DESC
+                    ) AS asof_rn
+                FROM statement_base
+            )
+            WHERE asof_rn = 1
+        )
+        SELECT
+            pf.code,
+            pf.close,
+            CASE WHEN pf.adv60_count >= 60 THEN pf.adv60_jpy ELSE NULL END AS adv60_jpy,
+            pf.close_20d_ago,
+            pf.close_60d_ago,
+            st.disclosed_date,
+            st.shares_outstanding,
+            st.treasury_shares
+        FROM price_features pf
+        JOIN statement_asof st USING (code)
+        WHERE pf.date = ?
+          AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
+        ORDER BY pf.code
+        """,
+        (*prime_market_codes, start_date, target_date, target_date, target_date),
+    )
+
+    samples: list[dict[str, float | str | None]] = []
+    for row in rows:
+        code = normalize_equity_code(row["code"])
+        adv60 = finite_or_none(row["adv60_jpy"])
+        close = finite_or_none(row["close"])
+        shares_outstanding = finite_or_none(row["shares_outstanding"])
+        free_float_shares = adjust_free_float_shares_to_price_basis(
+            shares_outstanding,
+            finite_or_none(row["treasury_shares"]),
+            adjustment_events_by_code.get(code, []),
+            from_date=str_or_none(row["disclosed_date"]),
+            through_date=price_basis_date,
+        )
+        free_float_market_cap = (
+            close * free_float_shares
+            if close is not None and free_float_shares is not None
+            else None
+        )
+        if (
+            adv60 is None
+            or free_float_market_cap is None
+            or close is None
+            or adv60 <= 0
+            or free_float_market_cap <= 0
+        ):
+            continue
+        close_20d_ago = finite_or_none(row["close_20d_ago"])
+        close_60d_ago = finite_or_none(row["close_60d_ago"])
+        recent_return_20d_pct = (
+            (close / close_20d_ago - 1.0) * 100.0
+            if close_20d_ago is not None and close_20d_ago > 0
+            else None
+        )
+        recent_return_60d_pct = (
+            (close / close_60d_ago - 1.0) * 100.0
+            if close_60d_ago is not None and close_60d_ago > 0
+            else None
+        )
+        samples.append(
+            {
+                "code": code,
+                "adv60": adv60,
+                "free_float_market_cap": free_float_market_cap,
+                "recent_return_20d_pct": recent_return_20d_pct,
+                "recent_return_60d_pct": recent_return_60d_pct,
+            }
+        )
+
+    if len(samples) < 100:
+        return {}
+
+    regression = fit_log_liquidity_regression(samples)
+    if regression is None:
+        return {}
+    alpha, beta, residual_std = regression
+    if beta <= 0 or residual_std <= 0:
+        return {}
+
+    metrics_by_code: dict[str, PrimeLiquidityMetrics] = {}
+    for sample in samples:
+        adv60 = cast(float, sample["adv60"])
+        free_float_market_cap = cast(float, sample["free_float_market_cap"])
+        recent_return_20d_pct = cast(float | None, sample["recent_return_20d_pct"])
+        recent_return_60d_pct = cast(float | None, sample["recent_return_60d_pct"])
+        expected_log_adv = alpha + beta * math.log(free_float_market_cap)
+        residual = math.log(adv60) - expected_log_adv
+        residual_z = residual / residual_std
+        metrics_by_code[cast(str, sample["code"])] = PrimeLiquidityMetrics(
+            liquidity_residual_z=round(residual_z, 4),
+            liquidity_regime=classify_prime_liquidity_regime(
+                residual_z,
+                recent_return_20d_pct,
+                recent_return_60d_pct,
+            ),
+            adv60_to_free_float_pct=round(
+                (adv60 / free_float_market_cap) * 100.0,
+                4,
+            ),
+            risk_flags=classify_risk_flags(recent_return_20d_pct),
+        )
+    return metrics_by_code
