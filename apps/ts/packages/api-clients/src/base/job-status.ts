@@ -13,3 +13,10 @@ export function isActiveJobStatus(status: string | null | undefined): status is 
 export function isTerminalJobStatus(status: string | null | undefined): status is TerminalJobStatus {
   return TERMINAL_JOB_STATUSES.includes(status as TerminalJobStatus);
 }
+
+export function resolveActiveJobRefetchInterval(
+  status: string | null | undefined,
+  intervalMs = 2000
+): false | number {
+  return isActiveJobStatus(status) ? intervalMs : false;
+}
