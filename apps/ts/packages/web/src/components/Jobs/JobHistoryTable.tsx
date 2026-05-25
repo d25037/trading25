@@ -2,6 +2,7 @@ import { Ban, CheckCircle2, Clock, Loader2, RotateCw, XCircle } from 'lucide-rea
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 export type JobHistoryStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | string;
 
@@ -46,7 +47,7 @@ function StatusIcon({ status }: { status: JobHistoryStatus }) {
 }
 
 function defaultActionLabel(status: JobHistoryStatus): string {
-  if (status === 'pending' || status === 'running') return 'Monitor';
+  if (isActiveJobStatus(status)) return 'Monitor';
   return 'View';
 }
 

@@ -14,6 +14,7 @@ import {
 import { useLabSSE } from '@/hooks/useLabSSE';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { LabType } from '@/types/backtest';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 import { LabEvolveForm } from './LabEvolveForm';
 import { LabGenerateForm } from './LabGenerateForm';
 import { LabImproveForm } from './LabImproveForm';
@@ -29,10 +30,6 @@ function tabButtonClass(isActive: boolean): string {
   }`;
 }
 
-function isRunningStatus(status: string | null | undefined): boolean {
-  return status === 'pending' || status === 'running';
-}
-
 function resolveIsJobActive(params: {
   generatePending: boolean;
   evolvePending: boolean;
@@ -46,8 +43,8 @@ function resolveIsJobActive(params: {
     params.evolvePending ||
     params.optimizePending ||
     params.improvePending ||
-    isRunningStatus(params.sseStatus) ||
-    isRunningStatus(params.jobStatus)
+    isActiveJobStatus(params.sseStatus) ||
+    isActiveJobStatus(params.jobStatus)
   );
 }
 
@@ -145,7 +142,7 @@ export function LabPanel({ selectedStrategy, onSelectedStrategyChange, operation
   const mutationError = labGenerate.error ?? labEvolve.error ?? labOptimize.error ?? labImprove.error;
   const shouldShowProgress = !!activeLabJobId && !!currentStatus;
   const cancelHandler =
-    activeLabJobId && isRunningStatus(currentStatus) ? () => cancelLabJob.mutate(activeLabJobId) : undefined;
+    activeLabJobId && isActiveJobStatus(currentStatus) ? () => cancelLabJob.mutate(activeLabJobId) : undefined;
 
   const handleGenerateSubmit = async (request: unknown) => {
     const result = await labGenerate.mutateAsync(request as Parameters<typeof labGenerate.mutateAsync>[0]);

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { JobStatus } from '@/types/backtest';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface LabJobProgressProps {
   status: JobStatus | null;
@@ -32,7 +33,7 @@ function ProgressStatusIcon({ status }: { status: JobStatus }) {
 }
 
 function resolveStageLabel(status: JobStatus, message: string | null): string | null {
-  if (status !== 'pending' && status !== 'running') return null;
+  if (!isActiveJobStatus(status)) return null;
   if (message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
   return 'Fast stage';
 }
@@ -47,7 +48,7 @@ export function LabJobProgress({
   onCancel,
   isCancelling,
 }: LabJobProgressProps) {
-  const isActive = status === 'pending' || status === 'running';
+  const isActive = isActiveJobStatus(status);
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
