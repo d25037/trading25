@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { IndexItem } from '@trading25/contracts/types/api-response-types';
 import { ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { type CSSProperties, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LinePriceChart } from '@/components/Chart/LinePriceChart';
@@ -11,7 +12,6 @@ import { useIndicesRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { INDEX_CATEGORY_LABELS, INDEX_CATEGORY_ORDER } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
-import type { IndexItem } from '@/types/indices';
 import type { RankingParams } from '@/types/ranking';
 import { formatDateShort, formatPercentage } from '@/utils/formatters';
 import {

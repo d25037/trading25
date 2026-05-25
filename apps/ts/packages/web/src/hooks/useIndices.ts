@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import type { IndexDataResponse, IndicesListResponse } from '@trading25/contracts/types/api-response-types';
 import { apiGet } from '@/lib/api-client';
-import type { IndexDataResponse, IndicesListResponse } from '@/types/indices';
 import { logger } from '@/utils/logger';
 
 function fetchIndicesList(): Promise<IndicesListResponse> {
