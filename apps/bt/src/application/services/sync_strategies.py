@@ -203,6 +203,14 @@ class _StageFetchDecision:
     reason_detail: str | None = None
 
 
+@dataclass(frozen=True)
+class _BulkFetchStageOutcome:
+    api_calls: int
+    bulk_result: BulkFetchResult | None
+    used_rest_fallback: bool
+    fallback_reason: str | None
+
+
 class BulkFetchRequiredError(RuntimeError):
     """Raised when stock_data sync requires bulk but planner/execution cannot use it."""
 
@@ -726,6 +734,78 @@ def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
     return "bulk_plan_unavailable"
 
 
+async def _execute_bulk_fetch_stage(
+    ctx: SyncContext,
+    *,
+    decision: _StageFetchDecision,
+    stage_name: str,
+    progress_stage: str,
+    current: int,
+    total: int,
+    endpoint: str,
+    target_label: str | None,
+    on_rows_batch: Callable[[list[dict[str, Any]], BulkFileInfo], Awaitable[None]],
+    fallback_log_message: str,
+) -> _BulkFetchStageOutcome:
+    if decision.method != "bulk":
+        return _BulkFetchStageOutcome(
+            api_calls=0,
+            bulk_result=None,
+            used_rest_fallback=False,
+            fallback_reason=None,
+        )
+
+    if decision.plan is None or len(decision.plan.files) == 0:
+        fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+        logger.warning(fallback_log_message, fallback_reason)
+        return _BulkFetchStageOutcome(
+            api_calls=0,
+            bulk_result=None,
+            used_rest_fallback=True,
+            fallback_reason=fallback_reason,
+        )
+
+    try:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage=progress_stage,
+            current=current,
+            total=total,
+            endpoint=endpoint,
+            method="bulk",
+            target_label=target_label,
+        )
+        bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+            decision.plan,
+            on_rows_batch=on_rows_batch,
+            accumulate_rows=False,
+        )
+        _log_sync_fetch_execution(
+            stage=stage_name,
+            endpoint=endpoint,
+            decision=decision,
+            executed="bulk",
+            actual_api_calls=bulk_result.api_calls,
+            fallback=False,
+            bulk_result=bulk_result,
+        )
+        return _BulkFetchStageOutcome(
+            api_calls=bulk_result.api_calls,
+            bulk_result=bulk_result,
+            used_rest_fallback=False,
+            fallback_reason=None,
+        )
+    except Exception as e:
+        fallback_reason = _summarize_exception(e)
+        logger.warning(fallback_log_message, fallback_reason)
+        return _BulkFetchStageOutcome(
+            api_calls=0,
+            bulk_result=None,
+            used_rest_fallback=True,
+            fallback_reason=fallback_reason,
+        )
+
+
 def _filter_bulk_plan_after_exclusive_anchor(
     plan: BulkFetchPlan,
     *,
@@ -887,50 +967,38 @@ class IndicesOnlySyncStrategy:
             )
 
             used_rest_fallback = False
+            bulk_fallback_reason: str | None = None
             stage_api_calls = 0
             bulk_result: BulkFetchResult | None = None
-            if decision.method == "bulk" and decision.plan is not None:
-                try:
-                    _emit_fetch_execution_progress(
+            if decision.method == "bulk":
+                async def _consume_indices_only_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    await _ingest_indices_only_bulk_batch(
                         ctx,
-                        progress_stage="indices_data",
-                        current=1,
-                        total=total_steps,
-                        endpoint="/indices/bars/daily",
-                        method="bulk",
-                        target_label=f"{len(target_codes)} codes",
+                        batch_rows=batch_rows,
+                        target_code_set=target_code_set,
+                        known_master_codes=known_master_codes,
                     )
 
-                    async def _consume_indices_only_bulk_rows(
-                        batch_rows: list[dict[str, Any]],
-                        _file_info: BulkFileInfo,
-                    ) -> None:
-                        await _ingest_indices_only_bulk_batch(
-                            ctx,
-                            batch_rows=batch_rows,
-                            target_code_set=target_code_set,
-                            known_master_codes=known_master_codes,
-                        )
-
-                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                        decision.plan,
-                        on_rows_batch=_consume_indices_only_bulk_rows,
-                        accumulate_rows=False,
-                    )
-                    total_calls += bulk_result.api_calls
-                    stage_api_calls += bulk_result.api_calls
-                    _log_sync_fetch_execution(
-                        stage="indices_data",
-                        endpoint="/indices/bars/daily",
-                        decision=decision,
-                        executed="bulk",
-                        actual_api_calls=stage_api_calls,
-                        fallback=False,
-                        bulk_result=bulk_result,
-                    )
-                except Exception as e:
-                    used_rest_fallback = True
-                    logger.warning("indices-only bulk fetch failed, falling back to REST: {}", e)
+                bulk_outcome = await _execute_bulk_fetch_stage(
+                    ctx,
+                    decision=decision,
+                    stage_name="indices_data",
+                    progress_stage="indices_data",
+                    current=1,
+                    total=total_steps,
+                    endpoint="/indices/bars/daily",
+                    target_label=f"{len(target_codes)} codes",
+                    on_rows_batch=_consume_indices_only_bulk_rows,
+                    fallback_log_message="indices-only bulk fetch unavailable, falling back to REST: {}",
+                )
+                total_calls += bulk_outcome.api_calls
+                stage_api_calls += bulk_outcome.api_calls
+                bulk_result = bulk_outcome.bulk_result
+                used_rest_fallback = bulk_outcome.used_rest_fallback
+                bulk_fallback_reason = bulk_outcome.fallback_reason
 
             if decision.method == "rest" or used_rest_fallback:
                 _emit_fetch_execution_progress(
@@ -942,6 +1010,7 @@ class IndicesOnlySyncStrategy:
                     method="rest",
                     target_label=f"{len(target_codes)} codes",
                     fallback=used_rest_fallback,
+                    fallback_reason=bulk_fallback_reason,
                 )
                 for i, code in enumerate(target_codes, start=1):
                     if ctx.cancelled.is_set():
@@ -1684,57 +1753,46 @@ class IncrementalSyncStrategy:
             )
 
             used_indices_rest_fallback = False
+            indices_bulk_fallback_reason: str | None = None
             indices_stage_api_calls = 0
             indices_bulk_result: BulkFetchResult | None = None
-            if decision_indices.method == "bulk" and decision_indices.plan is not None:
-                try:
-                    fallback_date_set = {
-                        normalized
-                        for normalized in (_to_iso_date_text(value) for value in fallback_dates)
-                        if normalized is not None
-                    }
-                    _emit_fetch_execution_progress(
+            if decision_indices.method == "bulk":
+                fallback_date_set = {
+                    normalized
+                    for normalized in (_to_iso_date_text(value) for value in fallback_dates)
+                    if normalized is not None
+                }
+
+                async def _consume_incremental_indices_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    await _ingest_incremental_indices_bulk_batch(
                         ctx,
-                        progress_stage="indices",
-                        current=3,
-                        total=7,
-                        endpoint="/indices/bars/daily",
-                        method="bulk",
-                        target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
+                        batch_rows=batch_rows,
+                        target_code_set=target_code_set,
+                        known_master_codes=known_master_codes,
+                        latest_index_dates=latest_index_dates,
+                        fallback_date_set=fallback_date_set,
                     )
 
-                    async def _consume_incremental_indices_bulk_rows(
-                        batch_rows: list[dict[str, Any]],
-                        _file_info: BulkFileInfo,
-                    ) -> None:
-                        await _ingest_incremental_indices_bulk_batch(
-                            ctx,
-                            batch_rows=batch_rows,
-                            target_code_set=target_code_set,
-                            known_master_codes=known_master_codes,
-                            latest_index_dates=latest_index_dates,
-                            fallback_date_set=fallback_date_set,
-                        )
-
-                    indices_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                        decision_indices.plan,
-                        on_rows_batch=_consume_incremental_indices_bulk_rows,
-                        accumulate_rows=False,
-                    )
-                    total_calls += indices_bulk_result.api_calls
-                    indices_stage_api_calls += indices_bulk_result.api_calls
-                    _log_sync_fetch_execution(
-                        stage="indices_incremental",
-                        endpoint="/indices/bars/daily",
-                        decision=decision_indices,
-                        executed="bulk",
-                        actual_api_calls=indices_stage_api_calls,
-                        fallback=False,
-                        bulk_result=indices_bulk_result,
-                    )
-                except Exception as e:
-                    used_indices_rest_fallback = True
-                    logger.warning("Incremental indices bulk fetch failed, falling back to REST: {}", e)
+                indices_bulk_outcome = await _execute_bulk_fetch_stage(
+                    ctx,
+                    decision=decision_indices,
+                    stage_name="indices_incremental",
+                    progress_stage="indices",
+                    current=3,
+                    total=7,
+                    endpoint="/indices/bars/daily",
+                    target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
+                    on_rows_batch=_consume_incremental_indices_bulk_rows,
+                    fallback_log_message="Incremental indices bulk fetch unavailable, falling back to REST: {}",
+                )
+                total_calls += indices_bulk_outcome.api_calls
+                indices_stage_api_calls += indices_bulk_outcome.api_calls
+                indices_bulk_result = indices_bulk_outcome.bulk_result
+                used_indices_rest_fallback = indices_bulk_outcome.used_rest_fallback
+                indices_bulk_fallback_reason = indices_bulk_outcome.fallback_reason
 
             if decision_indices.method == "rest" or used_indices_rest_fallback:
                 _emit_fetch_execution_progress(
@@ -1746,6 +1804,7 @@ class IncrementalSyncStrategy:
                     method="rest",
                     target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
                     fallback=used_indices_rest_fallback,
+                    fallback_reason=indices_bulk_fallback_reason,
                 )
                 for code_idx, code in enumerate(target_codes, start=1):
                     if ctx.cancelled.is_set():
@@ -2047,69 +2106,47 @@ async def _sync_options_225_dates(
     )
 
     target_date_set = _build_target_date_set(target_dates)
-    used_rest_fallback = False
-    bulk_fallback_reason: str | None = None
     stage_api_calls = 0
     bulk_result: BulkFetchResult | None = None
     if decision.method == "bulk":
-        if decision.plan is None or len(decision.plan.files) == 0:
-            used_rest_fallback = True
-            bulk_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
-            logger.warning(
-                "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
-                stage_name,
-                bulk_fallback_reason,
+        async def _consume_options_bulk_rows(
+            batch_rows: list[dict[str, Any]],
+            _file_info: BulkFileInfo,
+        ) -> None:
+            normalized_rows = _convert_options_225_rows(_normalize_bulk_options_225_rows(batch_rows))
+            if target_date_set is not None:
+                normalized_rows[:] = [row for row in normalized_rows if row.get("date") in target_date_set]
+            rows = validate_rows_required_fields(
+                normalized_rows,
+                required_fields=("code", "date"),
+                dedupe_keys=("code", "date"),
+                stage="options_225",
             )
-        else:
-            try:
-                _emit_fetch_execution_progress(
-                    ctx,
-                    progress_stage=progress_stage,
-                    current=progress_current,
-                    total=progress_total,
-                    endpoint="/derivatives/bars/daily/options/225",
-                    method="bulk",
-                    target_label=f"{len(target_dates)} dates",
-                )
+            if not rows:
+                return
+            await _publish_options_225_rows(ctx, rows)
+            await _publish_synthetic_nikkei_rows(ctx, rows)
 
-                async def _consume_options_bulk_rows(
-                    batch_rows: list[dict[str, Any]],
-                    _file_info: BulkFileInfo,
-                ) -> None:
-                    normalized_rows = _convert_options_225_rows(_normalize_bulk_options_225_rows(batch_rows))
-                    if target_date_set is not None:
-                        normalized_rows[:] = [row for row in normalized_rows if row.get("date") in target_date_set]
-                    rows = validate_rows_required_fields(
-                        normalized_rows,
-                        required_fields=("code", "date"),
-                        dedupe_keys=("code", "date"),
-                        stage="options_225",
-                    )
-                    if not rows:
-                        return
-                    await _publish_options_225_rows(ctx, rows)
-                    await _publish_synthetic_nikkei_rows(ctx, rows)
-
-                bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                    decision.plan,
-                    on_rows_batch=_consume_options_bulk_rows,
-                    accumulate_rows=False,
-                )
-                api_calls += bulk_result.api_calls
-                stage_api_calls += bulk_result.api_calls
-                _log_sync_fetch_execution(
-                    stage=stage_name,
-                    endpoint="/derivatives/bars/daily/options/225",
-                    decision=decision,
-                    executed="bulk",
-                    actual_api_calls=stage_api_calls,
-                    fallback=False,
-                    bulk_result=bulk_result,
-                )
-            except Exception as e:
-                used_rest_fallback = True
-                bulk_fallback_reason = _summarize_exception(e)
-                logger.warning("options_225 bulk fetch failed, falling back to REST: {}", e)
+        bulk_outcome = await _execute_bulk_fetch_stage(
+            ctx,
+            decision=decision,
+            stage_name=stage_name,
+            progress_stage=progress_stage,
+            current=progress_current,
+            total=progress_total,
+            endpoint="/derivatives/bars/daily/options/225",
+            target_label=f"{len(target_dates)} dates",
+            on_rows_batch=_consume_options_bulk_rows,
+            fallback_log_message="options_225 bulk fetch unavailable, falling back to REST: {}",
+        )
+        api_calls += bulk_outcome.api_calls
+        stage_api_calls += bulk_outcome.api_calls
+        bulk_result = bulk_outcome.bulk_result
+        used_rest_fallback = bulk_outcome.used_rest_fallback
+        bulk_fallback_reason = bulk_outcome.fallback_reason
+    else:
+        used_rest_fallback = False
+        bulk_fallback_reason = None
 
     if decision.method == "rest" or used_rest_fallback:
         _emit_fetch_execution_progress(

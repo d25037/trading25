@@ -34,6 +34,7 @@ from src.application.services.sync_strategies import (
     _dedupe_preserve_order,
     _extract_dates_after,
     _extract_list_items,
+    _execute_bulk_fetch_stage,
     _fetch_fins_summary_by_code,
     _get_bulk_service,
     _get_paginated_rows_with_call_count,
@@ -989,6 +990,135 @@ def test_enforce_stock_bulk_plan_available_accepts_non_empty_bulk_plan_files() -
         total=5,
         target_count=3,
     )
+
+
+@pytest.mark.asyncio
+async def test_execute_bulk_fetch_stage_reports_empty_plan_fallback_without_fetch() -> None:
+    bulk_service = _FakeBulkService()
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        bulk_service=bulk_service,
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=10,
+        estimated_bulk_calls=1,
+        plan=BulkFetchPlan(
+            endpoint="/derivatives/bars/daily/options/225",
+            files=[],
+            list_api_calls=1,
+            estimated_api_calls=1,
+            estimated_cache_hits=0,
+            estimated_cache_misses=0,
+        ),
+        reason="bulk_estimate_lower",
+    )
+
+    async def consume_rows(
+        _batch_rows: list[dict[str, Any]],
+        _file_info: BulkFileInfo,
+    ) -> None:
+        raise AssertionError("empty bulk plan must not fetch rows")
+
+    outcome = await _execute_bulk_fetch_stage(
+        ctx,
+        decision=decision,
+        stage_name="options_225_initial",
+        progress_stage="options_225",
+        current=2,
+        total=5,
+        endpoint="/derivatives/bars/daily/options/225",
+        target_label="2 dates",
+        on_rows_batch=consume_rows,
+        fallback_log_message="options_225 bulk fetch selected but unavailable: {}",
+    )
+
+    assert outcome.api_calls == 0
+    assert outcome.bulk_result is None
+    assert outcome.used_rest_fallback is True
+    assert outcome.fallback_reason == "bulk_plan_empty"
+    assert bulk_service.fetch_calls == []
+
+
+@pytest.mark.asyncio
+async def test_execute_bulk_fetch_stage_runs_bulk_and_reports_api_calls() -> None:
+    endpoint = "/derivatives/bars/daily/options/225"
+    bulk_rows = [{"Date": "2026-02-06", "Code": "131040018"}]
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            endpoint: BulkFetchResult(
+                rows=bulk_rows,
+                api_calls=3,
+                cache_hits=1,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+    progress_messages: list[str] = []
+    fetch_details: list[dict[str, Any]] = []
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        bulk_service=bulk_service,
+        on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
+    )
+    ctx.on_fetch_detail = fetch_details.append
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=10,
+        estimated_bulk_calls=3,
+        plan=BulkFetchPlan(
+            endpoint=endpoint,
+            files=[
+                BulkFileInfo(
+                    key="options.csv.gz",
+                    last_modified="2026-03-19T00:00:00Z",
+                    size=123,
+                    range_start=None,
+                    range_end=None,
+                )
+            ],
+            list_api_calls=1,
+            estimated_api_calls=3,
+            estimated_cache_hits=1,
+            estimated_cache_misses=1,
+        ),
+        reason="bulk_estimate_lower",
+    )
+    consumed_rows: list[dict[str, Any]] = []
+
+    async def consume_rows(
+        batch_rows: list[dict[str, Any]],
+        _file_info: BulkFileInfo,
+    ) -> None:
+        consumed_rows.extend(batch_rows)
+
+    outcome = await _execute_bulk_fetch_stage(
+        ctx,
+        decision=decision,
+        stage_name="options_225_initial",
+        progress_stage="options_225",
+        current=2,
+        total=5,
+        endpoint=endpoint,
+        target_label="2 dates",
+        on_rows_batch=consume_rows,
+        fallback_log_message="options_225 bulk fetch failed, falling back to REST: {}",
+    )
+
+    assert outcome.api_calls == 3
+    assert outcome.bulk_result is not None
+    assert outcome.used_rest_fallback is False
+    assert outcome.fallback_reason is None
+    assert consumed_rows == bulk_rows
+    assert bulk_service.fetch_calls == [endpoint]
+    assert any("via BULK" in message for message in progress_messages)
+    assert fetch_details[-1]["eventType"] == "execution"
+    assert fetch_details[-1]["method"] == "bulk"
 
 
 @pytest.mark.asyncio
