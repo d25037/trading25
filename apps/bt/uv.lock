@@ -1510,7 +1510,6 @@ dependencies = [
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "lightgbm" },
     { name = "loguru" },
     { name = "moomoo-api" },
     { name = "numpy" },
@@ -1542,6 +1541,9 @@ dev = [
 nautilus = [
     { name = "nautilus-trader" },
 ]
+research = [
+    { name = "lightgbm" },
+]
 rust = [
     { name = "vectorbt-rust" },
 ]
@@ -1551,7 +1553,6 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.5.3" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "lightgbm", specifier = ">=4.0.0" },
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "moomoo-api", specifier = ">=10.6.6608" },
     { name = "numpy", specifier = ">=2.4.6" },
@@ -1581,7 +1582,7 @@ dev = [
     { name = "ruff", specifier = ">=0.15.14" },
 ]
 nautilus = [{ name = "nautilus-trader", specifier = ">=1.227.0" }]
-research = []
+research = [{ name = "lightgbm", specifier = ">=4.0.0" }]
 rust = [{ name = "vectorbt-rust", specifier = ">=1.0.0" }]
 
 [[package]]

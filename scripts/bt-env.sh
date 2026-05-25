@@ -64,7 +64,6 @@ modules = [
     "rich",
     "ruamel.yaml",
     "scipy",
-    "sklearn",
     "sse_starlette",
     "typer",
     "uvicorn",
