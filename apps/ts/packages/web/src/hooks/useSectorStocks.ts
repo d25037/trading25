@@ -1,23 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type { SectorStockItem, SectorStocksParams, SectorStocksResponse } from '@trading25/api-clients/analytics';
 import { analyticsClient } from '@/lib/analytics-client';
 import { logger } from '@/utils/logger';
 
-export type SectorStockItem = components['schemas']['SectorStockItem'];
-export type SectorStocksResponse = components['schemas']['SectorStocksResponse'];
-
-export interface SectorStocksParams {
-  sector33Name?: string;
-  sector17Name?: string;
-  markets?: string;
-  lookbackDays?: number;
-  sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'pbr' | 'marketCap';
-  sortOrder?: 'asc' | 'desc';
-  limit?: number;
-}
+export type { SectorStockItem, SectorStocksParams, SectorStocksResponse };
 
 function fetchSectorStocks(params: SectorStocksParams): Promise<SectorStocksResponse> {
-  return analyticsClient.getSectorStocks<SectorStocksResponse>({
+  return analyticsClient.getSectorStocks({
     sector33Name: params.sector33Name,
     sector17Name: params.sector17Name,
     markets: params.markets,

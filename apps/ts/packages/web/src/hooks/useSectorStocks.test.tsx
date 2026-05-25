@@ -20,7 +20,14 @@ afterEach(() => {
 
 describe('useSectorStocks', () => {
   it('fetches sector stocks when enabled', async () => {
-    vi.mocked(analyticsClient.getSectorStocks).mockResolvedValueOnce({ items: [] } as never);
+    vi.mocked(analyticsClient.getSectorStocks).mockResolvedValueOnce({
+      lastUpdated: '2026-05-26T00:00:00Z',
+      lookbackDays: 30,
+      markets: ['prime'],
+      sortBy: 'tradingValue',
+      sortOrder: 'desc',
+      stocks: [],
+    });
     const { wrapper } = createTestWrapper();
     const params = { sector33Name: '輸送用機器' };
     const { result } = renderHook(() => useSectorStocks(params, true), { wrapper });

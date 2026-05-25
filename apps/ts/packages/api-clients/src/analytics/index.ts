@@ -41,6 +41,8 @@ export type {
   ScreeningResultItem,
   ScreeningSortBy,
   ScreeningSummary,
+  SectorStockItem,
   SectorStocksParams,
+  SectorStocksResponse,
   SortOrder,
 } from './types.js';

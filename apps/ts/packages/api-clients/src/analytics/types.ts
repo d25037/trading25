@@ -68,7 +68,13 @@ export interface RankingItem {
   pbrPercentile?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?:
+    | 'neutral_rerating'
+    | 'crowded_rerating'
+    | 'distribution_stress'
+    | 'stale_liquidity'
+    | 'neutral'
+    | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: RankingRiskFlag[];
 }
@@ -188,6 +194,37 @@ export interface SectorStocksParams {
   sortBy?: 'tradingValue' | 'changePercentage' | 'code' | 'per' | 'forwardPer' | 'forwardPOp' | 'pbr' | 'marketCap';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
+}
+
+export interface SectorStockItem {
+  basePrice?: number | null;
+  changeAmount?: number | null;
+  changePercentage?: number | null;
+  code: string;
+  companyName: string;
+  currentPrice: number;
+  forwardPer?: number | null;
+  lookbackDays?: number | null;
+  marketCap?: number | null;
+  marketCode: string;
+  pbr?: number | null;
+  per?: number | null;
+  rank: number;
+  sector33Name: string;
+  tradingValue?: number | null;
+  tradingValueAverage?: number | null;
+  volume: number;
+}
+
+export interface SectorStocksResponse {
+  lastUpdated: string;
+  lookbackDays: number;
+  markets: string[];
+  sector17Name?: string | null;
+  sector33Name?: string | null;
+  sortBy: string;
+  sortOrder: string;
+  stocks: SectorStockItem[];
 }
 
 // ===== FUNDAMENTAL RANKING TYPES =====

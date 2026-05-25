@@ -20,6 +20,7 @@ import type {
   ScreeningJobRequest,
   ScreeningJobResponse,
   SectorStocksParams,
+  SectorStocksResponse,
   ValueCompositeRankingParams,
   ValueCompositeRankingResponse,
   ValueCompositeScoreParams,
@@ -139,8 +140,8 @@ export class AnalyticsClient {
     );
   }
 
-  async getSectorStocks<T>(params: SectorStocksParams = {}): Promise<T> {
-    return this.request<T>('/api/analytics/sector-stocks', undefined, {
+  async getSectorStocks(params: SectorStocksParams = {}): Promise<SectorStocksResponse> {
+    return this.request<SectorStocksResponse>('/api/analytics/sector-stocks', undefined, {
       sector33Name: params.sector33Name,
       sector17Name: params.sector17Name,
       markets: params.markets,
