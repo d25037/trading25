@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { useMemo } from 'react';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
@@ -11,53 +12,9 @@ export interface BtSignalSpec {
   mode: 'entry' | 'exit';
 }
 
-interface BtSignalComputeRequest {
-  stock_code: string;
-  source: 'market';
-  timeframe: 'daily' | 'weekly' | 'monthly';
-  signals?: BtSignalSpec[];
-  strategy_name?: string;
-  start_date?: string;
-  end_date?: string;
-}
-
-interface SignalDiagnostics {
-  missing_required_data?: string[];
-  used_fields?: string[];
-  effective_period_type?: string | null;
-  warnings?: string[];
-}
-
-interface BtSignalResult {
-  label?: string | null;
-  mode?: 'entry' | 'exit' | null;
-  trigger_dates: string[];
-  count: number;
-  error?: string;
-  diagnostics?: SignalDiagnostics;
-}
-
-interface DataProvenance {
-  source_kind: 'market' | 'dataset';
-  market_snapshot_id?: string | null;
-  dataset_snapshot_id?: string | null;
-  reference_date?: string | null;
-  loaded_domains?: string[];
-  strategy_name?: string | null;
-  strategy_fingerprint?: string | null;
-  warnings?: string[];
-}
-
-interface BtSignalComputeResponse {
-  stock_code: string;
-  timeframe: string;
-  strategy_name?: string | null;
-  signals: Record<string, BtSignalResult>;
-  combined_entry?: BtSignalResult | null;
-  combined_exit?: BtSignalResult | null;
-  provenance: DataProvenance;
-  diagnostics?: SignalDiagnostics;
-}
+type BtSignalComputeRequest = components['schemas']['SignalComputeRequest'];
+type BtSignalComputeResponse = components['schemas']['SignalComputeResponse'];
+type BtSignalResult = components['schemas']['SignalResult'];
 
 export const btSignalKeys = {
   all: ['bt-signals'] as const,
