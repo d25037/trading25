@@ -10,6 +10,7 @@ import type {
   DatasetListItem,
   DatasetListResponse,
 } from '@/types/dataset';
+import { resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 
 export const datasetKeys = {
@@ -117,9 +118,7 @@ export function useDatasetJobStatus(jobId: string | null) {
     },
     enabled: !!jobId,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (status === 'running' || status === 'pending') return 2000;
-      return false;
+      return resolveActiveJobRefetchInterval(query.state.data?.status);
     },
     retry: (failureCount, error) => {
       if (error instanceof ApiError && error.status === 404) return false;

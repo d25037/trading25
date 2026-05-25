@@ -10,6 +10,7 @@ import type {
   LabSignalCategory,
   LabTargetScope,
 } from '@/types/backtest';
+import { isActiveJobStatus, resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 
 export const labKeys = {
@@ -156,9 +157,7 @@ export function useLabJobStatus(jobId: string | null, sseConnected = false) {
     enabled: !!jobId && !sseConnected,
     refetchInterval: (query) => {
       if (sseConnected) return false;
-      const status = query.state.data?.status;
-      if (status === 'running' || status === 'pending') return 2000;
-      return false;
+      return resolveActiveJobRefetchInterval(query.state.data?.status);
     },
     staleTime: 0,
   });
@@ -174,7 +173,7 @@ export function useLabJobs(limit = 50) {
     refetchInterval: (query) => {
       const jobs = query.state.data;
       if (!jobs) return false;
-      if (jobs.some((job) => job.status === 'pending' || job.status === 'running')) return 2000;
+      if (jobs.some((job) => isActiveJobStatus(job.status))) return 2000;
       return false;
     },
     staleTime: 10 * 1000,
