@@ -385,20 +385,12 @@ class RankingService:
         metric_key: str = _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY,
         forecast_above_recent_fy_actuals: bool = False,
         forecast_lookback_fy_count: int = 3,
-        # Backward compatibility for legacy caller
-        forecast_above_all_actuals: bool | None = None,
     ) -> MarketFundamentalRankingResponse:
         """最新の予想EPS / 最新の実績EPS 比率ランキングを取得"""
         if metric_key != _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY:
             raise ValueError(f"Unsupported metricKey: {metric_key}")
         if forecast_lookback_fy_count < 1:
             raise ValueError("forecast_lookback_fy_count must be >= 1")
-
-        if (
-            forecast_above_all_actuals is not None
-            and not forecast_above_recent_fy_actuals
-        ):
-            forecast_above_recent_fy_actuals = forecast_above_all_actuals
 
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
         date_row = self._reader.query_one(
