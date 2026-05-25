@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { useDeletePortfolioItem } from '@/hooks/usePortfolio';
 import type { PortfolioItemResponse } from '@/types/portfolio';
-import { formatCount } from '@/utils/formatters';
+import { formatCount, formatCurrency } from '@/utils/formatters';
 
 interface DeleteStockDialogProps {
   item: PortfolioItemResponse;
@@ -49,8 +49,8 @@ export function DeleteStockDialog({ item }: DeleteStockDialogProps) {
           <DialogDescription>
             Are you sure you want to remove {item.code} ({item.companyName}) from your portfolio?
             <span className="block mt-2 text-muted-foreground">
-              {formatCount(item.quantity)} shares at {item.purchasePrice.toLocaleString()} yen ={' '}
-              {totalValue.toLocaleString()} yen
+              {formatCount(item.quantity)} shares at {formatCurrency(item.purchasePrice)} yen ={' '}
+              {formatCurrency(totalValue)} yen
             </span>
           </DialogDescription>
         </DialogHeader>

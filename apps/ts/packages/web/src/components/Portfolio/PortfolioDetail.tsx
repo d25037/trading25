@@ -54,12 +54,12 @@ function StockRow({ item, performance, onNavigateToChart }: StockRowProps) {
         </button>
       </td>
       <td className="px-4 py-3 text-right tabular-nums">{formatCount(item.quantity)}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{item.purchasePrice.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{currentPrice.toLocaleString()}</td>
-      <td className="px-4 py-3 text-right tabular-nums">{marketValue.toLocaleString()}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(item.purchasePrice)}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(currentPrice)}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(marketValue)}</td>
       <td className={`px-4 py-3 text-right font-medium tabular-nums ${getPositiveNegativeColor(pnl)}`}>
         {pnl >= 0 ? '+' : ''}
-        {pnl.toLocaleString()}
+        {formatCurrency(pnl)}
       </td>
       <td className={`px-4 py-3 text-right tabular-nums ${getPositiveNegativeColor(returnRate)}`}>
         {formatRate(returnRate)}

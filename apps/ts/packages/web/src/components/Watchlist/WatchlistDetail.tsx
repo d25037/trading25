@@ -26,7 +26,7 @@ import {
 } from '@/hooks/useWatchlist';
 import type { WatchlistItemResponse, WatchlistStockPrice, WatchlistWithItemsResponse } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
-import { formatCount } from '@/utils/formatters';
+import { formatCount, formatCurrency, formatInteger } from '@/utils/formatters';
 
 function normalizeStockCode(value: string): string {
   return value.trim();
@@ -228,7 +228,7 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
           {item.companyName}
         </button>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{price ? price.close.toLocaleString() : '-'}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{price ? formatCurrency(price.close) : '-'}</td>
       <td
         className={`px-4 py-3 text-right tabular-nums ${price?.changePercent != null ? getPositiveNegativeColor(price.changePercent) : ''}`}
       >
@@ -236,7 +236,7 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
           ? `${price.changePercent >= 0 ? '+' : ''}${price.changePercent.toFixed(2)}%`
           : '-'}
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{price ? price.volume.toLocaleString() : '-'}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{price ? formatInteger(price.volume) : '-'}</td>
       <td className="px-4 py-3 text-sm text-muted-foreground">{item.memo ?? ''}</td>
       <td className="px-2 py-3">
         <Button

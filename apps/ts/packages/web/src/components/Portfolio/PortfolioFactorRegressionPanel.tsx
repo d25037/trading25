@@ -2,6 +2,7 @@ import type { ApiExcludedStock, ApiIndexMatch, ApiPortfolioWeight } from '@tradi
 import { AlertTriangle } from 'lucide-react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { usePortfolioFactorRegression } from '@/hooks/usePortfolioFactorRegression';
+import { formatCurrency } from '@/utils/formatters';
 
 interface PortfolioFactorRegressionPanelProps {
   portfolioId: number | null;
@@ -145,9 +146,7 @@ function WeightSummary({ weights, totalValue }: { weights: ApiPortfolioWeight[];
       <div className="border-t border-border/50 pt-1 mt-1">
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground">Total Value</span>
-          <span className="font-medium">
-            {isFiniteNumber(totalValue) ? `${totalValue.toLocaleString()} 円` : 'N/A'}
-          </span>
+          <span className="font-medium">{isFiniteNumber(totalValue) ? `${formatCurrency(totalValue)} 円` : 'N/A'}</span>
         </div>
       </div>
     </div>
