@@ -7,7 +7,6 @@ from typing import Any
 
 import pandas as pd
 
-from src.domains.analytics.fundamental_ranking import normalize_period_label
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
     normalize_equity_code,
@@ -17,8 +16,17 @@ from src.application.services.ranking_query_helpers import (
     stocks_canonical_cte,
 )
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
-from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+from src.domains.analytics.fundamental_ranking import (
+    StatementRow,
+    normalize_period_label,
+)
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.utils.pit_guard import filter_records_as_of
+from src.shared.utils.share_adjustment import (
+    ShareAdjustmentEvent,
+    ShareCountSnapshot,
+    resolve_latest_quarterly_share_snapshot,
+)
 
 FUNDAMENTAL_BASE_COLUMNS = (
     "s.code, s.company_name, s.market_code, s.sector_33_name, "
@@ -327,6 +335,27 @@ def adjusted_recent_actual_eps_max_by_code(
         code: max(values) if len(values) >= lookback_fy_count else None
         for code, values in values_by_code.items()
     }
+
+
+def resolve_baseline_share_snapshot(
+    rows: list[StatementRow],
+    *,
+    as_of_date: str | None = None,
+) -> ShareCountSnapshot | None:
+    eligible_rows = (
+        filter_records_as_of(
+            rows,
+            as_of_date=as_of_date,
+            date_getter=lambda row: row.disclosed_date,
+        )
+        if as_of_date is not None
+        else list(rows)
+    )
+    snapshots = [
+        (row.period_type, row.disclosed_date, row.shares_outstanding)
+        for row in eligible_rows
+    ]
+    return resolve_latest_quarterly_share_snapshot(snapshots)
 
 
 def load_fundamental_statement_rows(

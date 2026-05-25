@@ -38,12 +38,12 @@ from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
+    resolve_baseline_share_snapshot as _resolve_baseline_share_snapshot,
     resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
     table_exists as _table_exists_query,
 )
 from src.shared.utils.share_adjustment import (
     adjust_share_count_to_price_basis,
-    resolve_latest_quarterly_share_snapshot,
 )
 from src.domains.fundamentals import (
     FundamentalsCalculator,
@@ -879,7 +879,7 @@ class RankingService:
             through_date=price_basis_date,
             market_codes=query_market_codes,
         )
-        baseline_snapshot = self._resolve_baseline_share_snapshot(
+        baseline_snapshot = _resolve_baseline_share_snapshot(
             statements,
             as_of_date=target_date,
         )
@@ -971,22 +971,6 @@ class RankingService:
                 )
             )
         return candidates
-
-    def _resolve_baseline_share_snapshot(
-        self,
-        rows: list[_StatementRow],
-        *,
-        as_of_date: str | None = None,
-    ):
-        eligible_rows = self._fundamental_calculator._rows_as_of(
-            rows,
-            as_of_date=as_of_date,
-        )
-        snapshots = [
-            (row.period_type, row.disclosed_date, row.shares_outstanding)
-            for row in eligible_rows
-        ]
-        return resolve_latest_quarterly_share_snapshot(snapshots)
 
     def _resolve_value_composite_forecast_snapshot(
         self,
