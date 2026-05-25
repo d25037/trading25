@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { useMemo } from 'react';
 import { apiPost } from '@/lib/api-client';
 import type { ChartSettings } from '@/stores/chartStore';
@@ -17,33 +18,15 @@ import type {
 // ===== Types =====
 
 export interface BtIndicatorSpec {
-  type: string;
+  type: components['schemas']['IndicatorSpec']['type'];
   params: Record<string, number | string>;
 }
 
-interface BtIndicatorComputeRequest {
-  stock_code: string;
-  source: 'market';
-  timeframe: 'daily' | 'weekly' | 'monthly';
-  indicators: BtIndicatorSpec[];
-  benchmark_code?: string;
-  relative_options?: {
-    align_dates?: boolean;
-    handle_zero_division?: 'skip' | 'zero';
-  };
-}
+type BtIndicatorComputeRequest = components['schemas']['IndicatorComputeRequest'];
+type BtIndicatorComputeResponse = components['schemas']['IndicatorComputeResponse'];
+type IndicatorTransformResponse = Pick<BtIndicatorComputeResponse, 'indicators'>;
 
-interface BtIndicatorComputeResponse {
-  stock_code: string;
-  timeframe: string;
-  meta: { bars: number };
-  indicators: Record<string, BtIndicatorRecord[]>;
-}
-
-interface BtIndicatorRecord {
-  date: string;
-  [key: string]: string | number | null;
-}
+type BtIndicatorRecord = NonNullable<BtIndicatorComputeResponse['indicators']>[string][number];
 
 // ===== Query Key Factory =====
 
@@ -166,15 +149,19 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
 // Note: Type assertions (as number) are used here because apps/bt/ API is an internal service
 // with OpenAPI-defined contracts. Null checks are performed via .filter() before mapping.
 
+function getRecordDate(record: BtIndicatorRecord): string {
+  return typeof record.date === 'string' ? record.date : String(record.date ?? '');
+}
+
 function transformSingleValueRecords(records: BtIndicatorRecord[]): IndicatorValue[] {
-  return records.filter((r) => r.value != null).map((r) => ({ time: r.date, value: r.value as number }));
+  return records.filter((r) => r.value != null).map((r) => ({ time: getRecordDate(r), value: r.value as number }));
 }
 
 function transformMACDRecords(records: BtIndicatorRecord[]): MACDIndicatorData[] {
   return records
     .filter((r) => r.macd != null && r.signal != null && r.histogram != null)
     .map((r) => ({
-      time: r.date,
+      time: getRecordDate(r),
       macd: r.macd as number,
       signal: r.signal as number,
       histogram: r.histogram as number,
@@ -185,7 +172,7 @@ function transformPPORecords(records: BtIndicatorRecord[]): PPOIndicatorData[] {
   return records
     .filter((r) => r.ppo != null && r.signal != null && r.histogram != null)
     .map((r) => ({
-      time: r.date,
+      time: getRecordDate(r),
       ppo: r.ppo as number,
       signal: r.signal as number,
       histogram: r.histogram as number,
@@ -196,7 +183,7 @@ function transformBollingerRecords(records: BtIndicatorRecord[]): BollingerBands
   return records
     .filter((r) => r.upper != null && r.middle != null && r.lower != null)
     .map((r) => ({
-      time: r.date,
+      time: getRecordDate(r),
       upper: r.upper as number,
       middle: r.middle as number,
       lower: r.lower as number,
@@ -207,7 +194,7 @@ function transformVolumeComparisonRecords(records: BtIndicatorRecord[]): VolumeC
   return records
     .filter((r) => r.shortMA != null && r.longThresholdLower != null && r.longThresholdHigher != null)
     .map((r) => ({
-      time: r.date,
+      time: getRecordDate(r),
       shortMA: r.shortMA as number,
       longThresholdLower: r.longThresholdLower as number,
       longThresholdHigher: r.longThresholdHigher as number,
@@ -303,13 +290,13 @@ function transformIndicatorKey(key: string, records: BtIndicatorRecord[]): Indic
   return entry ? entry.transform(records, key) : null;
 }
 
-export function mapBtResponseToChartData(response: BtIndicatorComputeResponse): Omit<ChartData, 'candlestickData'> {
+export function mapBtResponseToChartData(response: IndicatorTransformResponse): Omit<ChartData, 'candlestickData'> {
   const indicators: Record<string, IndicatorData[]> = {};
   let bollingerBands: BollingerBandsData[] | undefined;
   let volumeComparison: VolumeComparisonData[] | undefined;
   let tradingValueMA: TradingValueMAData[] | undefined;
 
-  for (const [key, records] of Object.entries(response.indicators)) {
+  for (const [key, records] of Object.entries(response.indicators ?? {})) {
     const result = transformIndicatorKey(key, records);
     if (!result) continue;
 
@@ -361,10 +348,11 @@ export function useBtIndicators(
         source: 'market',
         timeframe,
         indicators: specs,
+        nan_handling: 'include',
+        output: 'indicators',
         ...(settings.relativeMode && {
           benchmark_code: 'topix',
           relative_options: {
-            align_dates: true,
             handle_zero_division: 'skip',
           },
         }),

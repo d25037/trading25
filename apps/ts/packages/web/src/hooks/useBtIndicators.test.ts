@@ -490,7 +490,7 @@ describe('useBtIndicators', () => {
         '/api/indicators/compute',
         expect.objectContaining({
           benchmark_code: 'topix',
-          relative_options: { align_dates: true, handle_zero_division: 'skip' },
+          relative_options: { handle_zero_division: 'skip' },
         })
       );
     });
@@ -515,6 +515,8 @@ describe('useBtIndicators', () => {
         source: 'market',
         timeframe: 'daily',
         indicators: [{ type: 'sma', params: { period: 20 } }],
+        nan_handling: 'include',
+        output: 'indicators',
       });
     });
   });
