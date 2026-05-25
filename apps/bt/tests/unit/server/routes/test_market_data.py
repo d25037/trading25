@@ -499,7 +499,7 @@ class TestGetStockOhlcv:
         assert resp.status_code == 404
 
     def test_response_shape(self, client_with_market_db):
-        """レスポンス形状が Hono 互換"""
+        """レスポンス形状が public API contract と一致"""
         resp = client_with_market_db.get("/api/market/stocks/7203/ohlcv")
         data = resp.json()
         record = data[0]
@@ -561,7 +561,7 @@ class TestGetTopix:
         assert len(data) == 2
 
     def test_response_shape(self, client_with_market_db):
-        """レスポンス形状が Hono 互換（volume なし）"""
+        """レスポンス形状が public API contract と一致（volume なし）"""
         resp = client_with_market_db.get("/api/market/topix")
         data = resp.json()
         record = data[0]
