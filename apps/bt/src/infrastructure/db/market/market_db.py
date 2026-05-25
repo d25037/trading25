@@ -279,6 +279,24 @@ class MarketDb:
         row = self._fetchone(f"SELECT COUNT(*) FROM {escaped}")
         return int(row[0] or 0) if row else 0
 
+    def _fetch_date_stats(self, table_name: str) -> tuple[int, int, str, str] | None:
+        if not self._table_exists(table_name):
+            return None
+        escaped = self._quote_identifier(table_name)
+        row = self._fetchone(
+            f"""
+            SELECT
+                COUNT(*),
+                COUNT(DISTINCT date),
+                MIN(date),
+                MAX(date)
+            FROM {escaped}
+            """
+        )
+        if row is None or row[2] is None:
+            return None
+        return int(row[0] or 0), int(row[1] or 0), str(row[2]), str(row[3])
+
     def _existing_table_names(self) -> set[str]:
         return {
             str(row[0])
@@ -2481,38 +2499,23 @@ class MarketDb:
 
     def get_topix_date_range(self) -> dict[str, Any] | None:
         """TOPIX 日付範囲 + 件数。"""
-        if not self._table_exists("topix_data"):
+        stats = self._fetch_date_stats("topix_data")
+        if stats is None:
             return None
-        row = self._fetchone(
-            "SELECT COUNT(date), MIN(date), MAX(date) FROM topix_data"
-        )
-        if row is None or row[1] is None:
-            return None
-        return {"count": int(row[0] or 0), "min": str(row[1]), "max": str(row[2])}
+        count, _date_count, min_date, max_date = stats
+        return {"count": count, "min": min_date, "max": max_date}
 
     def get_stock_data_date_range(self) -> dict[str, Any] | None:
         """stock_data 日付範囲 + 統計。"""
-        if not self._table_exists("stock_data"):
+        stats = self._fetch_date_stats("stock_data")
+        if stats is None:
             return None
-        row = self._fetchone(
-            """
-            SELECT
-                COUNT(*),
-                MIN(date),
-                MAX(date),
-                COUNT(DISTINCT date)
-            FROM stock_data
-            """
-        )
-        if row is None or row[1] is None:
-            return None
-        count = int(row[0] or 0)
-        date_count = int(row[3] or 0)
+        count, date_count, min_date, max_date = stats
         avg_per_day = count / date_count if date_count > 0 else 0.0
         return {
             "count": count,
-            "min": str(row[1]),
-            "max": str(row[2]),
+            "min": min_date,
+            "max": max_date,
             "dateCount": date_count,
             "averageStocksPerDay": round(avg_per_day, 1),
         }
@@ -2547,18 +2550,9 @@ class MarketDb:
                 "byCategory": by_category,
             }
 
-        row = self._fetchone(
-            """
-            SELECT
-                COUNT(*),
-                COUNT(DISTINCT date),
-                MIN(date),
-                MAX(date)
-            FROM indices_data
-            """
-        )
+        stats = self._fetch_date_stats("indices_data")
         by_category = self.get_index_master_category_counts()
-        if row is None or row[2] is None:
+        if stats is None:
             return {
                 "masterCount": master_count,
                 "dataCount": 0,
@@ -2566,38 +2560,31 @@ class MarketDb:
                 "dateRange": None,
                 "byCategory": by_category,
             }
+        count, date_count, min_date, max_date = stats
         return {
             "masterCount": master_count,
-            "dataCount": int(row[0] or 0),
-            "dateCount": int(row[1] or 0),
-            "dateRange": {"min": str(row[2]), "max": str(row[3])},
+            "dataCount": count,
+            "dateCount": date_count,
+            "dateRange": {"min": min_date, "max": max_date},
             "byCategory": by_category,
         }
 
     def get_options_225_data_range(self) -> dict[str, Any] | None:
         """options_225_data 統計。"""
-        if not self._table_exists("options_225_data"):
+        stats = self._fetch_date_stats("options_225_data")
+        if stats is None and not self._table_exists("options_225_data"):
             return None
-        row = self._fetchone(
-            """
-            SELECT
-                COUNT(*),
-                COUNT(DISTINCT date),
-                MIN(date),
-                MAX(date)
-            FROM options_225_data
-            """
-        )
-        if row is None or row[2] is None:
+        if stats is None:
             return {
                 "count": 0,
                 "dateCount": 0,
                 "dateRange": None,
             }
+        count, date_count, min_date, max_date = stats
         return {
-            "count": int(row[0] or 0),
-            "dateCount": int(row[1] or 0),
-            "dateRange": {"min": str(row[2]), "max": str(row[3])},
+            "count": count,
+            "dateCount": date_count,
+            "dateRange": {"min": min_date, "max": max_date},
         }
 
     def get_options_225_underlying_price_issue_dates(
