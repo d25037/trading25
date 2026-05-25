@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MockEventSource } from '@/test-utils/mockEventSource';
 import { useLabSSE } from './useLabSSE';
 
 vi.mock('@/utils/logger', () => ({
@@ -9,62 +10,9 @@ vi.mock('@/utils/logger', () => ({
   },
 }));
 
-// Mock EventSource
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
-  readyState = 0;
-  closed = false;
-  listeners: Record<string, Array<(event: { data: string }) => void>> = {};
-
-  constructor(url: string) {
-    this.url = url;
-    MockEventSource.instances.push(this);
-  }
-
-  close() {
-    this.closed = true;
-    this.readyState = 2;
-  }
-
-  simulateOpen() {
-    this.readyState = 1;
-    this.onopen?.();
-  }
-
-  simulateMessage(data: Record<string, unknown>) {
-    this.onmessage?.({ data: JSON.stringify(data) });
-  }
-
-  addEventListener(type: string, listener: (event: { data: string }) => void) {
-    if (!this.listeners[type]) this.listeners[type] = [];
-    this.listeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: { data: string }) => void) {
-    const list = this.listeners[type];
-    if (!list) return;
-    this.listeners[type] = list.filter((item) => item !== listener);
-  }
-
-  simulateNamedMessage(type: string, data: Record<string, unknown>) {
-    const event = { data: JSON.stringify(data) };
-    for (const listener of this.listeners[type] ?? []) {
-      listener(event);
-    }
-  }
-
-  simulateError() {
-    this.onerror?.();
-  }
-}
-
 describe('useLabSSE', () => {
   beforeEach(() => {
-    MockEventSource.instances = [];
+    MockEventSource.reset();
     vi.stubGlobal('EventSource', MockEventSource);
     vi.useFakeTimers();
   });

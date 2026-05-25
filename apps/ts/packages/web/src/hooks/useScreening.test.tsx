@@ -3,6 +3,7 @@ import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
+import { MockEventSource } from '@/test-utils/mockEventSource';
 import { logger } from '@/utils/logger';
 import {
   screeningKeys,
@@ -25,58 +26,6 @@ vi.mock('@/lib/analytics-client', () => ({
 vi.mock('@/utils/logger', () => ({
   logger: { debug: vi.fn(), error: vi.fn() },
 }));
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
-  closed = false;
-  listeners: Record<string, Array<(event: { data: string }) => void>> = {};
-
-  constructor(url: string) {
-    this.url = url;
-    MockEventSource.instances.push(this);
-  }
-
-  close() {
-    this.closed = true;
-  }
-
-  addEventListener(type: string, listener: (event: { data: string }) => void) {
-    if (!this.listeners[type]) {
-      this.listeners[type] = [];
-    }
-    this.listeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: { data: string }) => void) {
-    const entries = this.listeners[type];
-    if (!entries) {
-      return;
-    }
-    this.listeners[type] = entries.filter((entry) => entry !== listener);
-  }
-
-  simulateOpen() {
-    this.onopen?.();
-  }
-
-  simulateMessage(data: Record<string, unknown>) {
-    this.onmessage?.({ data: JSON.stringify(data) });
-  }
-
-  simulateNamedMessage(type: string, data: Record<string, unknown>) {
-    for (const listener of this.listeners[type] ?? []) {
-      listener({ data: JSON.stringify(data) });
-    }
-  }
-
-  simulateError() {
-    this.onerror?.();
-  }
-}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -308,7 +257,7 @@ describe('useScreeningJobStatus', () => {
 
 describe('useScreeningJobSSE', () => {
   beforeEach(() => {
-    MockEventSource.instances = [];
+    MockEventSource.reset();
     vi.stubGlobal('EventSource', MockEventSource);
     vi.useFakeTimers();
   });

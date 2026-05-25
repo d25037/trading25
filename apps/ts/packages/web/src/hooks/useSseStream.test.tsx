@@ -1,54 +1,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MockEventSource } from '@/test-utils/mockEventSource';
 import { useSseStream } from './useSseStream';
-
-class MockEventSource {
-  static instances: MockEventSource[] = [];
-  url: string;
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
-  closed = false;
-  listeners: Record<string, Array<(event: { data: string }) => void>> = {};
-
-  constructor(url: string) {
-    this.url = url;
-    MockEventSource.instances.push(this);
-  }
-
-  close() {
-    this.closed = true;
-  }
-
-  addEventListener(type: string, listener: (event: { data: string }) => void) {
-    if (!this.listeners[type]) {
-      this.listeners[type] = [];
-    }
-    this.listeners[type].push(listener);
-  }
-
-  simulateOpen() {
-    this.onopen?.();
-  }
-
-  simulateMessage(data: string) {
-    this.onmessage?.({ data });
-  }
-
-  simulateNamedMessage(type: string, data: string) {
-    for (const listener of this.listeners[type] ?? []) {
-      listener({ data });
-    }
-  }
-
-  simulateError() {
-    this.onerror?.();
-  }
-}
 
 describe('useSseStream', () => {
   beforeEach(() => {
-    MockEventSource.instances = [];
+    MockEventSource.reset();
     vi.stubGlobal('EventSource', MockEventSource);
     vi.useFakeTimers();
   });
