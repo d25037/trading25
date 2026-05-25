@@ -33,7 +33,7 @@ from src.application.services.ranking_collection_filters import (
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
-    adjusted_recent_actual_eps_max_by_code as _adjusted_recent_actual_eps_max_by_code_query,
+    build_adjusted_fundamental_ratio_candidates as _build_adjusted_fundamental_ratio_candidates,
     load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
@@ -333,7 +333,8 @@ class RankingService:
             or self._table_exists("statement_metrics_adjusted")
         )
         if can_use_adjusted_valuation:
-            ratio_candidates = self._build_adjusted_fundamental_ratio_candidates(
+            ratio_candidates = _build_adjusted_fundamental_ratio_candidates(
+                self._reader,
                 adjusted_valuation,
                 target_date=target_date,
                 market_codes=query_market_codes,
@@ -919,58 +920,6 @@ class RankingService:
         if _positive_ratio(price, forecast_snapshot.value) is None:
             return "forward_eps_missing"
         return "not_rankable"
-
-    def _build_adjusted_fundamental_ratio_candidates(
-        self,
-        adjusted_valuation: pd.DataFrame,
-        *,
-        target_date: str,
-        market_codes: list[str],
-        forecast_above_recent_fy_actuals: bool,
-        forecast_lookback_fy_count: int,
-    ) -> list[FundamentalItem]:
-        recent_actual_max_by_code: dict[str, float | None] = {}
-        if forecast_above_recent_fy_actuals:
-            recent_actual_max_by_code = _adjusted_recent_actual_eps_max_by_code_query(
-                self._reader,
-                target_date=target_date,
-                market_codes=market_codes,
-                lookback_fy_count=forecast_lookback_fy_count,
-            )
-
-        candidates: list[FundamentalItem] = []
-        for row in adjusted_valuation.to_dict(orient="records"):
-            eps = _finite_or_none(row.get("eps"))
-            forward_eps = _finite_or_none(row.get("forward_eps"))
-            ratio = _positive_ratio(forward_eps, eps)
-            if ratio is None:
-                continue
-            code = str(row["code"])
-            if forecast_above_recent_fy_actuals:
-                recent_max = recent_actual_max_by_code.get(code)
-                if recent_max is None or forward_eps is None or forward_eps <= recent_max:
-                    continue
-            source_raw = _str_or_none(row.get("forward_eps_source"))
-            source = source_raw if source_raw in {"revised", "fy"} else "fy"
-            candidates.append(
-                FundamentalItem(
-                    code=code,
-                    company_name=str(row["company_name"]),
-                    market_code=str(row["market_code"]),
-                    sector_33_name=str(row["sector_33_name"]),
-                    current_price=float(row["current_price"]),
-                    volume=float(row["volume"]),
-                    eps_value=round(ratio, 4),
-                    disclosed_date=(
-                        _str_or_none(row.get("forward_eps_disclosed_date"))
-                        or _str_or_none(row.get("statement_disclosed_date"))
-                        or target_date
-                    ),
-                    period_type="FY",
-                    source=cast(Literal["revised", "fy"], source),
-                )
-            )
-        return candidates
 
     def _resolve_value_composite_forecast_snapshot(
         self,

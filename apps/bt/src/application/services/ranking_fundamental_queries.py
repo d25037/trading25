@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -12,11 +12,13 @@ from src.application.services.ranking_query_helpers import (
     normalize_equity_code,
     normalized_code_sql,
     prefer_4digit_order_sql,
+    positive_ratio,
     stock_data_dedup_cte,
     stocks_canonical_cte,
 )
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
 from src.domains.analytics.fundamental_ranking import (
+    FundamentalItem,
     StatementRow,
     normalize_period_label,
 )
@@ -335,6 +337,59 @@ def adjusted_recent_actual_eps_max_by_code(
         code: max(values) if len(values) >= lookback_fy_count else None
         for code, values in values_by_code.items()
     }
+
+
+def build_adjusted_fundamental_ratio_candidates(
+    reader: MarketDbReader,
+    adjusted_valuation: pd.DataFrame,
+    *,
+    target_date: str,
+    market_codes: list[str],
+    forecast_above_recent_fy_actuals: bool,
+    forecast_lookback_fy_count: int,
+) -> list[FundamentalItem]:
+    recent_actual_max_by_code: dict[str, float | None] = {}
+    if forecast_above_recent_fy_actuals:
+        recent_actual_max_by_code = adjusted_recent_actual_eps_max_by_code(
+            reader,
+            target_date=target_date,
+            market_codes=market_codes,
+            lookback_fy_count=forecast_lookback_fy_count,
+        )
+
+    candidates: list[FundamentalItem] = []
+    for row in adjusted_valuation.to_dict(orient="records"):
+        eps = finite_or_none(row.get("eps"))
+        forward_eps = finite_or_none(row.get("forward_eps"))
+        ratio = positive_ratio(forward_eps, eps)
+        if ratio is None:
+            continue
+        code = str(row["code"])
+        if forecast_above_recent_fy_actuals:
+            recent_max = recent_actual_max_by_code.get(code)
+            if recent_max is None or forward_eps is None or forward_eps <= recent_max:
+                continue
+        source_raw = str_or_none(row.get("forward_eps_source"))
+        source: Literal["revised", "fy"] = "revised" if source_raw == "revised" else "fy"
+        candidates.append(
+            FundamentalItem(
+                code=code,
+                company_name=str(row["company_name"]),
+                market_code=str(row["market_code"]),
+                sector_33_name=str(row["sector_33_name"]),
+                current_price=float(row["current_price"]),
+                volume=float(row["volume"]),
+                eps_value=round(ratio, 4),
+                disclosed_date=(
+                    str_or_none(row.get("forward_eps_disclosed_date"))
+                    or str_or_none(row.get("statement_disclosed_date"))
+                    or target_date
+                ),
+                period_type="FY",
+                source=source,
+            )
+        )
+    return candidates
 
 
 def resolve_baseline_share_snapshot(
