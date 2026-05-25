@@ -21,11 +21,6 @@ function formatDate(dateString?: string): string {
   });
 }
 
-function actionLabel(status: JobStatus): string {
-  if (status === 'pending' || status === 'running') return 'Monitor';
-  return 'View';
-}
-
 function resolveVerificationLabel(job: LabJobResponse): string {
   const result = job.result_data;
   if (result && 'verification' in result && result.verification) {
@@ -85,7 +80,6 @@ export function LabJobHistoryTable({
       columns={columns}
       getJobId={(job) => job.job_id}
       getStatus={(job) => job.status as JobStatus}
-      getActionLabel={(job) => actionLabel(job.status)}
       onSelectJob={onSelectJob}
       onRefresh={onRefresh}
     />

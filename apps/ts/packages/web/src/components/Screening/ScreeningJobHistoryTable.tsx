@@ -26,11 +26,6 @@ function formatDate(dateString: string | null | undefined): string {
   });
 }
 
-function actionLabel(status: ScreeningJobResponse['status']): string {
-  if (status === 'pending' || status === 'running') return 'Monitor';
-  return 'View';
-}
-
 function truncateJobId(jobId: string): string {
   return jobId.length <= 8 ? jobId : `${jobId.slice(0, 8)}...`;
 }
@@ -100,7 +95,6 @@ export function ScreeningJobHistoryTable({
             columns={columns}
             getJobId={(job) => job.job_id}
             getStatus={(job) => job.status}
-            getActionLabel={(job) => actionLabel(job.status)}
             onSelectJob={onSelectJob}
           />
         </div>
