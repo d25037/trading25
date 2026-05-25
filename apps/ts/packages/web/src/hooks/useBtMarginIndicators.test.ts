@@ -52,6 +52,7 @@ describe('useBtMarginIndicators', () => {
     await waitFor(() => {
       expect(mockApiPost).toHaveBeenCalledWith('/api/indicators/margin', {
         stock_code: '7203',
+        source: 'market',
         indicators: ['margin_long_pressure', 'margin_flow_pressure', 'margin_turnover_days'],
         average_period: 15,
       });
