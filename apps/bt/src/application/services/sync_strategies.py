@@ -10,7 +10,7 @@ import asyncio
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, Awaitable, Callable, Iterable, Literal, NoReturn, Protocol, cast
+from typing import Any, Awaitable, Callable, Iterable, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -19,7 +19,6 @@ from src.application.services.jquants_bulk_service import (
     BulkFileInfo,
     BulkFetchPlan,
     BulkFetchResult,
-    JQuantsBulkService,
 )
 from src.application.services.listed_market_targets import (
     build_fundamentals_fetch_codes,
@@ -83,6 +82,22 @@ from src.application.services.sync_row_converters import (
     _normalize_iso_date_text,
     _parse_date,
     _to_iso_date_text,
+)
+from src.application.services.sync_fetch_planner import (
+    BulkFetchRequiredError,
+    _StageFetchDecision,
+    _emit_fetch_detail,
+    _emit_fetch_execution_progress,
+    _emit_fetch_strategy_progress,
+    _enforce_stock_bulk_plan_available,
+    _execute_bulk_fetch_stage,
+    _filter_bulk_plan_after_exclusive_anchor,
+    _get_bulk_service,
+    _log_sync_fetch_execution,
+    _plan_fetch_method,
+    _raise_stock_bulk_required_error,
+    _resolve_bulk_fallback_reason,
+    _summarize_exception,
 )
 
 
@@ -188,42 +203,6 @@ _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE = 4
 _STOCK_MASTER_REST_FALLBACK_MAX_ESTIMATED_CALLS = 12
 _MARGIN_REST_FALLBACK_MAX_ESTIMATED_CALLS = 250
 
-_FetchMethod = Literal["rest", "bulk"]
-
-
-@dataclass(frozen=True)
-class _StageFetchDecision:
-    method: _FetchMethod
-    planner_api_calls: int
-    estimated_rest_calls: int
-    estimated_bulk_calls: int | None
-    plan: BulkFetchPlan | None = None
-    reason: str = "unspecified"
-    reason_detail: str | None = None
-
-
-@dataclass(frozen=True)
-class _BulkFetchStageOutcome:
-    api_calls: int
-    bulk_result: BulkFetchResult | None
-    used_rest_fallback: bool
-    fallback_reason: str | None
-
-
-class BulkFetchRequiredError(RuntimeError):
-    """Raised when stock_data sync requires bulk but planner/execution cannot use it."""
-
-
-def _get_plan_hint(client: SyncClientLike) -> str:
-    return str(getattr(client, "plan", "")).strip().lower()
-
-
-def _get_bulk_service(ctx: SyncContext) -> BulkServiceLike:
-    if ctx.bulk_service is None:
-        ctx.bulk_service = JQuantsBulkService(ctx.client)
-    return ctx.bulk_service
-
-
 async def _get_paginated_rows_with_call_count(
     client: SyncClientLike,
     path: str,
@@ -252,145 +231,6 @@ def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, st
 
 def _estimate_stock_master_rest_calls(date_count: int) -> int:
     return max(date_count, 1) * _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE
-
-
-async def _plan_fetch_method(
-    ctx: SyncContext,
-    *,
-    stage: str,
-    endpoint: str,
-    estimated_rest_calls: int,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    exact_dates: list[str] | None = None,
-    min_rest_calls_to_probe_bulk: int = 3,
-    require_bulk: bool = False,
-    disable_future_bulk_on_probe_failure: bool = True,
-) -> _StageFetchDecision:
-    if ctx.bulk_probe_disabled:
-        plan_hint = _get_plan_hint(ctx.client)
-        logger.info(
-            "sync fetch strategy selected",
-            event="sync_fetch_strategy",
-            stage=stage,
-            endpoint=endpoint,
-            selected="rest",
-            reason="bulk_probe_disabled",
-            estimatedRestCalls=estimated_rest_calls,
-            estimatedBulkCalls=None,
-            plannerApiCalls=0,
-            planHint=plan_hint or None,
-            requireBulk=require_bulk,
-        )
-        return _StageFetchDecision(
-            method="rest",
-            planner_api_calls=0,
-            estimated_rest_calls=estimated_rest_calls,
-            estimated_bulk_calls=None,
-            plan=None,
-            reason="bulk_probe_disabled",
-            reason_detail=ctx.bulk_probe_failure_reason,
-        )
-
-    if not require_bulk and estimated_rest_calls < min_rest_calls_to_probe_bulk:
-        plan_hint = _get_plan_hint(ctx.client)
-        logger.info(
-            "sync fetch strategy selected",
-            event="sync_fetch_strategy",
-            stage=stage,
-            endpoint=endpoint,
-            selected="rest",
-            reason="rest_estimate_too_small",
-            estimatedRestCalls=estimated_rest_calls,
-            estimatedBulkCalls=None,
-            plannerApiCalls=0,
-            planHint=plan_hint or None,
-            requireBulk=require_bulk,
-        )
-        return _StageFetchDecision(
-            method="rest",
-            planner_api_calls=0,
-            estimated_rest_calls=estimated_rest_calls,
-            estimated_bulk_calls=None,
-            plan=None,
-            reason="rest_estimate_too_small",
-        )
-
-    bulk_service = _get_bulk_service(ctx)
-    plan_hint = _get_plan_hint(ctx.client)
-    try:
-        plan = await bulk_service.build_plan(
-            endpoint=endpoint,
-            date_from=date_from,
-            date_to=date_to,
-            exact_dates=exact_dates,
-        )
-    except Exception as e:
-        # free/unknown plan や一時障害で /bulk/list が失敗した場合は
-        # 同期ジョブ全体を止めず REST に戻す。stage によっては以降の
-        # bulk probe も無効化して同じ失敗の繰り返しを避ける。
-        probe_failure_reason = _summarize_exception(e)
-        if disable_future_bulk_on_probe_failure:
-            ctx.bulk_probe_disabled = True
-            ctx.bulk_probe_failure_reason = probe_failure_reason
-        logger.warning(
-            "sync bulk plan probe failed, falling back to REST for this job: {}",
-            e,
-        )
-        logger.info(
-            "sync fetch strategy selected",
-            event="sync_fetch_strategy",
-            stage=stage,
-            endpoint=endpoint,
-            selected="rest",
-            reason="bulk_probe_failed",
-            estimatedRestCalls=estimated_rest_calls,
-            estimatedBulkCalls=None,
-            plannerApiCalls=1,
-            planHint=plan_hint or None,
-            requireBulk=require_bulk,
-        )
-        return _StageFetchDecision(
-            method="rest",
-            planner_api_calls=1,
-            estimated_rest_calls=estimated_rest_calls,
-            estimated_bulk_calls=None,
-            plan=None,
-            reason="bulk_probe_failed",
-            reason_detail=probe_failure_reason,
-        )
-
-    if require_bulk:
-        selected: _FetchMethod = "bulk"
-        reason = "bulk_required"
-    else:
-        selected = "bulk" if plan.estimated_api_calls < estimated_rest_calls else "rest"
-        reason = "bulk_estimate_lower" if selected == "bulk" else "rest_estimate_lower_or_equal"
-
-    logger.info(
-        "sync fetch strategy selected",
-        event="sync_fetch_strategy",
-        stage=stage,
-        endpoint=endpoint,
-        selected=selected,
-        reason=reason,
-        estimatedRestCalls=estimated_rest_calls,
-        estimatedBulkCalls=plan.estimated_api_calls,
-        plannerApiCalls=plan.list_api_calls,
-        estimatedCacheHits=plan.estimated_cache_hits,
-        estimatedCacheMisses=plan.estimated_cache_misses,
-        selectedFiles=len(plan.files),
-        planHint=plan_hint or None,
-        requireBulk=require_bulk,
-    )
-    return _StageFetchDecision(
-        method=selected,
-        planner_api_calls=plan.list_api_calls,
-        estimated_rest_calls=estimated_rest_calls,
-        estimated_bulk_calls=plan.estimated_api_calls,
-        plan=plan,
-        reason=reason,
-    )
 
 
 async def _ingest_stock_bulk_batch(
@@ -531,54 +371,6 @@ def _is_incremental_cold_start(
     )
 
 
-def _log_sync_fetch_execution(
-    *,
-    stage: str,
-    endpoint: str,
-    decision: _StageFetchDecision,
-    executed: _FetchMethod,
-    actual_api_calls: int,
-    fallback: bool,
-    bulk_result: BulkFetchResult | None = None,
-) -> None:
-    cache_hit_rate: float | None = None
-    cache_hits = 0
-    cache_misses = 0
-    if bulk_result is not None:
-        cache_hits = bulk_result.cache_hits
-        cache_misses = bulk_result.cache_misses
-        total = cache_hits + cache_misses
-        cache_hit_rate = (cache_hits / total) if total > 0 else None
-
-    logger.info(
-        "sync fetch strategy execution",
-        event="sync_fetch_strategy",
-        stage=stage,
-        endpoint=endpoint,
-        selected=decision.method,
-        executed=executed,
-        fallbackUsed=fallback,
-        estimatedRestCalls=decision.estimated_rest_calls,
-        estimatedBulkCalls=decision.estimated_bulk_calls,
-        plannerApiCalls=decision.planner_api_calls,
-        actualApiCalls=actual_api_calls,
-        cacheHits=cache_hits,
-        cacheMisses=cache_misses,
-        cacheHitRate=cache_hit_rate,
-    )
-
-
-def _format_fetch_estimate(value: int | None) -> str:
-    return str(value) if value is not None else "n/a"
-
-
-def _summarize_exception(exc: Exception, *, limit: int = 200) -> str:
-    text = str(exc).replace("\n", " ").strip() or exc.__class__.__name__
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 3]}..."
-
-
 def _format_target_label(
     count: int,
     unit: str,
@@ -638,288 +430,6 @@ async def _save_frontier_code_cache(
         key,
         serialize_frontier_code_cache(frontier, codes),
     )
-
-
-def _describe_bulk_unavailable_reason(
-    *,
-    reason: str,
-    reason_detail: str | None = None,
-) -> str:
-    reason_map = {
-        "bulk_probe_disabled": "bulk probe is disabled after a previous probe failure",
-        "bulk_probe_failed": "bulk plan probe failed",
-        "rest_estimate_too_small": "rest estimate is below bulk probe threshold",
-        "rest_estimate_lower_or_equal": "planner selected REST based on API-call estimate",
-        "bulk_plan_missing": "bulk plan is missing",
-        "bulk_plan_empty": "bulk/list returned no matching files for requested dates",
-        "bulk_fetch_failed": "bulk fetch execution failed",
-    }
-    base = reason_map.get(reason, f"bulk unavailable ({reason})")
-    if not reason_detail:
-        return base
-    return f"{base}: {reason_detail}"
-
-
-def _raise_stock_bulk_required_error(
-    ctx: SyncContext,
-    *,
-    progress_stage: str,
-    current: int,
-    total: int,
-    endpoint: str,
-    reason: str,
-    reason_detail: str | None = None,
-) -> NoReturn:
-    detail = _describe_bulk_unavailable_reason(reason=reason, reason_detail=reason_detail)
-    message = (
-        f"Bulk fetch required for {endpoint} but unavailable ({detail}). "
-        "REST fallback is disabled for stock_data sync."
-    )
-    ctx.on_progress(progress_stage, current, total, message)
-    raise BulkFetchRequiredError(message)
-
-
-def _enforce_stock_bulk_plan_available(
-    ctx: SyncContext,
-    *,
-    decision: _StageFetchDecision,
-    endpoint: str,
-    progress_stage: str,
-    current: int,
-    total: int,
-    target_count: int,
-) -> None:
-    if not ctx.enforce_bulk_for_stock_data or target_count <= 0:
-        return
-
-    if decision.method != "bulk":
-        _raise_stock_bulk_required_error(
-            ctx,
-            progress_stage=progress_stage,
-            current=current,
-            total=total,
-            endpoint=endpoint,
-            reason=decision.reason,
-            reason_detail=decision.reason_detail,
-        )
-
-    if decision.plan is None:
-        _raise_stock_bulk_required_error(
-            ctx,
-            progress_stage=progress_stage,
-            current=current,
-            total=total,
-            endpoint=endpoint,
-            reason="bulk_plan_missing",
-        )
-
-    if len(decision.plan.files) == 0:
-        _raise_stock_bulk_required_error(
-            ctx,
-            progress_stage=progress_stage,
-            current=current,
-            total=total,
-            endpoint=endpoint,
-            reason="bulk_plan_empty",
-            reason_detail=f"targets={target_count} dates",
-        )
-
-
-def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
-    if plan is None:
-        return "bulk_plan_missing"
-    if len(plan.files) == 0:
-        return "bulk_plan_empty"
-    return "bulk_plan_unavailable"
-
-
-async def _execute_bulk_fetch_stage(
-    ctx: SyncContext,
-    *,
-    decision: _StageFetchDecision,
-    stage_name: str,
-    progress_stage: str,
-    current: int,
-    total: int,
-    endpoint: str,
-    target_label: str | None,
-    on_rows_batch: Callable[[list[dict[str, Any]], BulkFileInfo], Awaitable[None]],
-    fallback_log_message: str,
-) -> _BulkFetchStageOutcome:
-    if decision.method != "bulk":
-        return _BulkFetchStageOutcome(
-            api_calls=0,
-            bulk_result=None,
-            used_rest_fallback=False,
-            fallback_reason=None,
-        )
-
-    if decision.plan is None or len(decision.plan.files) == 0:
-        fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
-        logger.warning(fallback_log_message, fallback_reason)
-        return _BulkFetchStageOutcome(
-            api_calls=0,
-            bulk_result=None,
-            used_rest_fallback=True,
-            fallback_reason=fallback_reason,
-        )
-
-    try:
-        _emit_fetch_execution_progress(
-            ctx,
-            progress_stage=progress_stage,
-            current=current,
-            total=total,
-            endpoint=endpoint,
-            method="bulk",
-            target_label=target_label,
-        )
-        bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-            decision.plan,
-            on_rows_batch=on_rows_batch,
-            accumulate_rows=False,
-        )
-        _log_sync_fetch_execution(
-            stage=stage_name,
-            endpoint=endpoint,
-            decision=decision,
-            executed="bulk",
-            actual_api_calls=bulk_result.api_calls,
-            fallback=False,
-            bulk_result=bulk_result,
-        )
-        return _BulkFetchStageOutcome(
-            api_calls=bulk_result.api_calls,
-            bulk_result=bulk_result,
-            used_rest_fallback=False,
-            fallback_reason=None,
-        )
-    except Exception as e:
-        fallback_reason = _summarize_exception(e)
-        logger.warning(fallback_log_message, fallback_reason)
-        return _BulkFetchStageOutcome(
-            api_calls=0,
-            bulk_result=None,
-            used_rest_fallback=True,
-            fallback_reason=fallback_reason,
-        )
-
-
-def _filter_bulk_plan_after_exclusive_anchor(
-    plan: BulkFetchPlan,
-    *,
-    anchor: str | None,
-) -> tuple[BulkFetchPlan, int]:
-    """Drop bulk files whose inferred range cannot contain rows after anchor."""
-    anchor_date = _parse_date(anchor or "")
-    if anchor_date is None or not plan.files:
-        return plan, 0
-
-    files: list[BulkFileInfo] = []
-    skipped = 0
-    for file_info in plan.files:
-        if file_info.range_end is not None and file_info.range_end <= anchor_date:
-            skipped += 1
-            continue
-        files.append(file_info)
-
-    if skipped == 0:
-        return plan, 0
-    return replace(plan, files=files), skipped
-
-
-def _emit_fetch_strategy_progress(
-    ctx: SyncContext,
-    *,
-    progress_stage: str,
-    current: int,
-    total: int,
-    endpoint: str,
-    decision: _StageFetchDecision,
-    target_label: str | None = None,
-) -> None:
-    target_text = f", targets={target_label}" if target_label else ""
-    ctx.on_progress(
-        progress_stage,
-        current,
-        total,
-        (
-            f"Fetch strategy: {endpoint} -> {decision.method.upper()} "
-            f"(REST est={decision.estimated_rest_calls}, "
-            f"BULK est={_format_fetch_estimate(decision.estimated_bulk_calls)}{target_text})"
-        ),
-    )
-    _emit_fetch_detail(
-        ctx,
-        {
-            "eventType": "strategy",
-            "stage": progress_stage,
-            "endpoint": endpoint,
-            "method": decision.method,
-            "targetLabel": target_label,
-            "reason": decision.reason,
-            "reasonDetail": decision.reason_detail,
-            "estimatedRestCalls": decision.estimated_rest_calls,
-            "estimatedBulkCalls": decision.estimated_bulk_calls,
-            "plannerApiCalls": decision.planner_api_calls,
-            "fallback": False,
-            "fallbackReason": None,
-        },
-    )
-
-
-def _emit_fetch_execution_progress(
-    ctx: SyncContext,
-    *,
-    progress_stage: str,
-    current: int,
-    total: int,
-    endpoint: str,
-    method: _FetchMethod,
-    target_label: str | None = None,
-    fallback: bool = False,
-    fallback_reason: str | None = None,
-) -> None:
-    target_text = f", targets={target_label}" if target_label else ""
-    fallback_text = ""
-    if fallback:
-        fallback_text = (
-            f" (bulk fallback: {fallback_reason})"
-            if fallback_reason
-            else " (bulk fallback)"
-        )
-    ctx.on_progress(
-        progress_stage,
-        current,
-        total,
-        f"Fetching {endpoint} via {method.upper()}{fallback_text}{target_text}...",
-    )
-    _emit_fetch_detail(
-        ctx,
-        {
-            "eventType": "execution",
-            "stage": progress_stage,
-            "endpoint": endpoint,
-            "method": method,
-            "targetLabel": target_label,
-            "reason": None,
-            "reasonDetail": None,
-            "estimatedRestCalls": None,
-            "estimatedBulkCalls": None,
-            "plannerApiCalls": None,
-            "fallback": fallback,
-            "fallbackReason": fallback_reason,
-        },
-    )
-
-
-def _emit_fetch_detail(ctx: SyncContext, detail: dict[str, Any]) -> None:
-    if ctx.on_fetch_detail is None:
-        return
-    try:
-        ctx.on_fetch_detail(detail)
-    except Exception as e:  # noqa: BLE001 - fetch detail failures should not abort sync
-        logger.warning("Failed to emit sync fetch detail: {}", e)
 
 
 class IndicesOnlySyncStrategy:
