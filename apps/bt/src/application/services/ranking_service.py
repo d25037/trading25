@@ -17,16 +17,23 @@ from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
     build_market_filter as _build_market_filter,
-    build_stock_scope_filter as _build_stock_scope_filter,
     canonical_market_label as _canonical_market_label,
     equity_code_variants as _equity_code_variants,
-    limit_clause as _limit_clause,
     normalize_equity_code as _normalize_equity_code,
     normalized_code_sql as _normalized_code_sql,
     positive_ratio as _positive_ratio,
     prefer_4digit_order_sql as _prefer_4digit_order_sql,
     stock_data_dedup_cte as _stock_data_dedup_cte,
     stocks_canonical_cte as _stocks_canonical_cte,
+)
+from src.application.services.ranking_daily_queries import (
+    get_trading_date_before as _get_trading_date_before_query,
+    ranking_by_period_high as _ranking_by_period_high_query,
+    ranking_by_period_low as _ranking_by_period_low_query,
+    ranking_by_price_change as _ranking_by_price_change_query,
+    ranking_by_price_change_from_days as _ranking_by_price_change_from_days_query,
+    ranking_by_trading_value as _ranking_by_trading_value_query,
+    ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
 )
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
@@ -69,7 +76,6 @@ from src.application.services.ranking_valuation import (
 )
 from src.application.services.ranking_response_items import (
     build_fundamental_ranking_item,
-    build_ranking_item,
     build_value_composite_item,
     build_value_composite_score_response,
     finite_or_none as _finite_or_none,
@@ -115,7 +121,6 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-RANKING_BASE_COLUMNS = "s.code, s.company_name, s.market_code, s.sector_33_name"
 FUNDAMENTAL_BASE_COLUMNS = (
     "s.code, s.company_name, s.market_code, s.sector_33_name, "
     "sd.close as current_price, sd.volume"
@@ -2493,11 +2498,7 @@ class RankingService:
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         """N営業日前の取引日を取得"""
-        row = self._reader.query_one(
-            "SELECT DISTINCT date FROM stock_data WHERE date < ? ORDER BY date DESC LIMIT 1 OFFSET ?",
-            (date, offset),
-        )
-        return row["date"] if row else None
+        return _get_trading_date_before_query(self._reader, date, offset)
 
     def _ranking_by_trading_value(
         self,
@@ -2509,52 +2510,14 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """売買代金ランキング（単日）"""
-        market_clause, market_params = _build_stock_scope_filter(
+        return _ranking_by_trading_value_query(
+            self._reader,
+            date,
+            limit,
             market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
-        stocks_cte = _stocks_canonical_cte()
-        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-        prev_cte = _stock_data_dedup_cte("prev_daily", where_clause="date = ?")
-        limit_sql, limit_params = _limit_clause(limit)
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_daily_cte},
-            {prev_cte}
-            SELECT {RANKING_BASE_COLUMNS},
-                sd.close as current_price,
-                sd.volume,
-                sd.close * sd.volume as trading_value,
-                prev.close as previous_price,
-                (sd.close - prev.close) as change_amount,
-                CASE
-                    WHEN prev.close > 0 AND sd.close > 0
-                    THEN ((sd.close - prev.close) / prev.close * 100)
-                    ELSE NULL
-                END as change_percentage
-            FROM stock_daily sd
-            LEFT JOIN prev_daily prev
-                ON sd.normalized_code = prev.normalized_code
-            JOIN stocks_canonical s
-                ON s.normalized_code = sd.normalized_code
-            WHERE 1 = 1{market_clause}
-            ORDER BY trading_value DESC{limit_sql}
-        """
-        prev_date = self._get_trading_date_before(date, 0)
-        rows = self._reader.query(sql, (date, prev_date or "", *market_params, *limit_params))
-        return [
-            build_ranking_item(
-                row,
-                i + 1,
-                tradingValue=row["trading_value"],
-                previousPrice=row["previous_price"],
-                changeAmount=row["change_amount"],
-                changePercentage=row["change_percentage"],
-            )
-            for i, row in enumerate(rows)
-        ]
 
     def _ranking_by_trading_value_average(
         self,
@@ -2567,130 +2530,15 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """売買代金平均ランキング（N日平均）"""
-        start_date = self._get_trading_date_before(date, lookback_days - 1)
-        if not start_date:
-            return []
-        base_date = self._get_trading_date_before(date, lookback_days)
-        if not base_date:
-            return []
-
-        market_clause, market_params = _build_stock_scope_filter(
+        return _ranking_by_trading_value_average_query(
+            self._reader,
+            date,
+            lookback_days,
+            limit,
             market_codes,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
-        stocks_cte = _stocks_canonical_cte()
-        stock_window_cte = _stock_data_dedup_cte(
-            "stock_window",
-            where_clause="date >= ? AND date <= ?",
-        )
-        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
-        base_cte = _stock_data_dedup_cte("base_daily", where_clause="date = ?")
-        limit_sql, limit_params = _limit_clause(limit)
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_window_cte},
-            {curr_cte},
-            {base_cte}
-            SELECT {RANKING_BASE_COLUMNS},
-                curr.close as current_price,
-                SUM(sd.volume) as volume,
-                AVG(sd.close * sd.volume) as avg_trading_value,
-                base.close as base_price,
-                (curr.close - base.close) as change_amount,
-                CASE
-                    WHEN base.close > 0 AND curr.close > 0
-                    THEN ((curr.close - base.close) / base.close * 100)
-                    ELSE NULL
-                END as change_percentage
-            FROM stock_window sd
-            JOIN curr_daily curr
-                ON curr.normalized_code = sd.normalized_code
-            JOIN base_daily base
-                ON base.normalized_code = sd.normalized_code
-            JOIN stocks_canonical s
-                ON s.normalized_code = sd.normalized_code
-            WHERE 1 = 1{market_clause}
-            GROUP BY
-                s.code,
-                s.company_name,
-                s.market_code,
-                s.sector_33_name,
-                curr.close,
-                base.close
-            ORDER BY avg_trading_value DESC{limit_sql}
-        """
-        rows = self._reader.query(sql, (start_date, date, date, base_date, *market_params, *limit_params))
-        return [
-            build_ranking_item(
-                row,
-                i + 1,
-                tradingValueAverage=row["avg_trading_value"],
-                basePrice=row["base_price"],
-                changeAmount=row["change_amount"],
-                changePercentage=row["change_percentage"],
-                lookbackDays=lookback_days,
-            )
-            for i, row in enumerate(rows)
-        ]
-
-    def _ranking_by_price_change_against_base(
-        self,
-        date: str,
-        base_date: str,
-        limit: int,
-        market_codes: list[str],
-        order_dir: Literal["ASC", "DESC"],
-        *,
-        lookback_days: int | None = None,
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        market_clause, market_params = _build_stock_scope_filter(
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-        stocks_cte = _stocks_canonical_cte()
-        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
-        base_cte = _stock_data_dedup_cte("base_daily", where_clause="date = ?")
-        limit_sql, limit_params = _limit_clause(limit)
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {curr_cte},
-            {base_cte}
-            SELECT {RANKING_BASE_COLUMNS},
-                curr.close as current_price,
-                curr.volume,
-                base.close as base_price,
-                (curr.close - base.close) as change_amount,
-                ((curr.close - base.close) / base.close * 100) as change_percentage
-            FROM curr_daily curr
-            JOIN base_daily base
-                ON curr.normalized_code = base.normalized_code
-            JOIN stocks_canonical s
-                ON s.normalized_code = curr.normalized_code
-            WHERE 1 = 1
-                AND base.close > 0
-                AND curr.close > 0
-                AND curr.close != base.close{market_clause}
-            ORDER BY change_percentage {order_dir}{limit_sql}
-        """
-        rows = self._reader.query(sql, (date, base_date, *market_params, *limit_params))
-        return [
-            build_ranking_item(
-                row,
-                i + 1,
-                previousPrice=row["base_price"] if lookback_days is None else None,
-                basePrice=row["base_price"] if lookback_days is not None else None,
-                changeAmount=row["change_amount"],
-                changePercentage=row["change_percentage"],
-                lookbackDays=lookback_days,
-            )
-            for i, row in enumerate(rows)
-        ]
 
     def _ranking_by_price_change(
         self,
@@ -2703,13 +2551,9 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """騰落率ランキング（単日）"""
-        prev_date = self._get_trading_date_before(date, 0)
-        if not prev_date:
-            return []
-
-        return self._ranking_by_price_change_against_base(
+        return _ranking_by_price_change_query(
+            self._reader,
             date,
-            prev_date,
             limit,
             market_codes,
             order_dir,
@@ -2729,89 +2573,16 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """騰落率ランキング（N日前比較）"""
-        base_date = self._get_trading_date_before(date, lookback_days)
-        if not base_date:
-            return []
-
-        return self._ranking_by_price_change_against_base(
+        return _ranking_by_price_change_from_days_query(
+            self._reader,
             date,
-            base_date,
+            lookback_days,
             limit,
             market_codes,
             order_dir,
-            lookback_days=lookback_days,
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
-
-    def _ranking_by_period_extreme(
-        self,
-        date: str,
-        period_days: int,
-        limit: int,
-        market_codes: list[str],
-        *,
-        aggregate_expr: Literal["MAX(high)", "MIN(low)"],
-        comparison_operator: Literal[">=", "<="],
-        order_dir: Literal["ASC", "DESC"],
-        sector33_name: str | None = None,
-        sector17_name: str | None = None,
-    ) -> list[RankingItem]:
-        start_date = self._get_trading_date_before(date, period_days)
-        if not start_date:
-            return []
-
-        market_clause, market_params = _build_stock_scope_filter(
-            market_codes,
-            sector33_name=sector33_name,
-            sector17_name=sector17_name,
-        )
-        stocks_cte = _stocks_canonical_cte()
-        stock_window_cte = _stock_data_dedup_cte(
-            "stock_window",
-            where_clause="date > ? AND date < ?",
-        )
-        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
-        limit_sql, limit_params = _limit_clause(limit)
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_window_cte},
-            {curr_cte},
-            period_extreme AS (
-                SELECT normalized_code, {aggregate_expr} as period_extreme_price
-                FROM stock_window
-                GROUP BY normalized_code
-            )
-            SELECT {RANKING_BASE_COLUMNS},
-                curr.close as current_price,
-                curr.volume,
-                curr.close * curr.volume as trading_value,
-                pe.period_extreme_price as base_price,
-                (curr.close - pe.period_extreme_price) as change_amount,
-                ((curr.close - pe.period_extreme_price) / pe.period_extreme_price * 100) as change_percentage
-            FROM curr_daily curr
-            JOIN stocks_canonical s
-                ON s.normalized_code = curr.normalized_code
-            JOIN period_extreme pe
-                ON pe.normalized_code = curr.normalized_code
-            WHERE curr.close {comparison_operator} pe.period_extreme_price
-                AND pe.period_extreme_price > 0{market_clause}
-            ORDER BY change_percentage {order_dir}{limit_sql}
-        """
-        rows = self._reader.query(sql, (start_date, date, date, *market_params, *limit_params))
-        return [
-            build_ranking_item(
-                row,
-                i + 1,
-                tradingValue=row["trading_value"],
-                basePrice=row["base_price"],
-                changeAmount=row["change_amount"],
-                changePercentage=row["change_percentage"],
-                lookbackDays=period_days,
-            )
-            for i, row in enumerate(rows)
-        ]
 
     def _ranking_by_period_high(
         self,
@@ -2824,14 +2595,12 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """期間高値ランキング"""
-        return self._ranking_by_period_extreme(
+        return _ranking_by_period_high_query(
+            self._reader,
             date,
             period_days,
             limit,
             market_codes,
-            aggregate_expr="MAX(high)",
-            comparison_operator=">=",
-            order_dir="DESC",
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
@@ -2847,14 +2616,12 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """期間安値ランキング"""
-        return self._ranking_by_period_extreme(
+        return _ranking_by_period_low_query(
+            self._reader,
             date,
             period_days,
             limit,
             market_codes,
-            aggregate_expr="MIN(low)",
-            comparison_operator="<=",
-            order_dir="ASC",
             sector33_name=sector33_name,
             sector17_name=sector17_name,
         )
