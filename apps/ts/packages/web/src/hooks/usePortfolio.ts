@@ -1,17 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import type {
-  CreatePortfolioItemRequest,
-  CreatePortfolioRequest,
   DeleteResponse,
   ListPortfoliosResponse,
   PortfolioItemResponse,
   PortfolioSummaryResponse,
   PortfolioWithItemsResponse,
-  UpdatePortfolioItemRequest,
-  UpdatePortfolioRequest,
-} from '@/types/portfolio';
+} from '@trading25/contracts/types/api-response-types';
+import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
+
+type CreatePortfolioRequest = components['schemas']['PortfolioCreateRequest'];
+type UpdatePortfolioRequest = components['schemas']['PortfolioUpdateRequest'];
+type CreatePortfolioItemRequest = components['schemas']['PortfolioItemCreateRequest'];
+type UpdatePortfolioItemRequest = components['schemas']['PortfolioItemUpdateRequest'];
 
 // Fetch functions
 const fetchPortfolios = () => apiGet<ListPortfoliosResponse>('/api/portfolio');

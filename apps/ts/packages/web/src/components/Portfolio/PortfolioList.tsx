@@ -1,8 +1,8 @@
+import type { PortfolioSummaryResponse } from '@trading25/contracts/types/api-response-types';
 import { Briefcase, ChevronRight } from 'lucide-react';
 import { Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { cn } from '@/lib/utils';
-import type { PortfolioSummaryResponse } from '@/types/portfolio';
 import { formatCount } from '@/utils/formatters';
 import { CreatePortfolioDialog } from './CreatePortfolioDialog';
 

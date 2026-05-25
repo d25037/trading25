@@ -1,3 +1,4 @@
+import type { PortfolioItemResponse } from '@trading25/contracts/types/api-response-types';
 import { Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useDeletePortfolioItem } from '@/hooks/usePortfolio';
-import type { PortfolioItemResponse } from '@/types/portfolio';
 import { formatCount, formatCurrency } from '@/utils/formatters';
 
 interface DeleteStockDialogProps {

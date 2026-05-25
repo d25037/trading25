@@ -1,8 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { describe, expect, it, vi } from 'vitest';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
-import type { CreatePortfolioItemRequest, CreatePortfolioRequest, UpdatePortfolioRequest } from '@/types/portfolio';
 import {
   useAddPortfolioItem,
   useCreatePortfolio,
@@ -13,6 +13,10 @@ import {
   useUpdatePortfolio,
   useUpdatePortfolioItem,
 } from './usePortfolio';
+
+type CreatePortfolioRequest = components['schemas']['PortfolioCreateRequest'];
+type UpdatePortfolioRequest = components['schemas']['PortfolioUpdateRequest'];
+type CreatePortfolioItemRequest = components['schemas']['PortfolioItemCreateRequest'];
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),

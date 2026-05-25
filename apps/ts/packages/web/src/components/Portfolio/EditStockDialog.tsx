@@ -1,3 +1,4 @@
+import type { PortfolioItemResponse } from '@trading25/contracts/types/api-response-types';
 import { Loader2, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useUpdatePortfolioItem } from '@/hooks/usePortfolio';
-import type { PortfolioItemResponse } from '@/types/portfolio';
 import { type StockFormData, StockFormFields, validateStockForm } from './StockFormFields';
 
 const createFormDataFromItem = (item: PortfolioItemResponse): StockFormData => ({

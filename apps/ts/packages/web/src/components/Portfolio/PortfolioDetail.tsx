@@ -1,11 +1,11 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import { ArrowDown, ArrowUp, ArrowUpDown, Briefcase, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { CompactMetric, SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { type HoldingPerformance, usePortfolioPerformance } from '@/hooks/usePortfolioPerformance';
-import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@/types/portfolio';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 import { formatCount, formatCurrency, formatRate } from '@/utils/formatters';
 import { AddStockDialog } from './AddStockDialog';

@@ -1,3 +1,4 @@
+import type { PortfolioWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import { Loader2, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdatePortfolio } from '@/hooks/usePortfolio';
-import type { PortfolioWithItemsResponse } from '@/types/portfolio';
 
 interface EditPortfolioDialogProps {
   portfolio: PortfolioWithItemsResponse;

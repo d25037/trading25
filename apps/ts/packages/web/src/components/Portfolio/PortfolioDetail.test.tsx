@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import type { PortfolioWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PortfolioWithItemsResponse } from '@/types/portfolio';
 import { PortfolioDetail } from './PortfolioDetail';
 
 const mockNavigate = vi.fn();
