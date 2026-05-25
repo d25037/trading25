@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.domains.analytics.fundamental_ranking import normalize_period_label
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
     normalize_equity_code,
@@ -15,6 +16,7 @@ from src.application.services.ranking_query_helpers import (
     stock_data_dedup_cte,
     stocks_canonical_cte,
 )
+from src.application.services.ranking_response_items import finite_or_none, str_or_none
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
@@ -293,6 +295,38 @@ def load_adjusted_statement_metric_rows(
         ORDER BY s.code, m.disclosed_date DESC
     """
     return reader.query(sql, (date, date, *market_params))
+
+
+def adjusted_recent_actual_eps_max_by_code(
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+    market_codes: list[str],
+    lookback_fy_count: int,
+) -> dict[str, float | None]:
+    rows = load_adjusted_statement_metric_rows(reader, target_date, market_codes)
+    values_by_code: dict[str, list[float]] = {}
+    seen_by_code: dict[str, set[str]] = {}
+    for row in rows:
+        period_type = normalize_period_label(str_or_none(row["period_type"]))
+        if period_type != "FY":
+            continue
+        code = str(row["code"])
+        disclosed_date = str(row["disclosed_date"])
+        seen = seen_by_code.setdefault(code, set())
+        if disclosed_date in seen:
+            continue
+        eps = finite_or_none(row["adjusted_eps"])
+        if eps is None:
+            continue
+        seen.add(disclosed_date)
+        bucket = values_by_code.setdefault(code, [])
+        if len(bucket) < lookback_fy_count:
+            bucket.append(eps)
+    return {
+        code: max(values) if len(values) >= lookback_fy_count else None
+        for code, values in values_by_code.items()
+    }
 
 
 def load_fundamental_statement_rows(

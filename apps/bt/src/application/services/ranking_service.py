@@ -33,9 +33,9 @@ from src.application.services.ranking_collection_filters import (
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
+    adjusted_recent_actual_eps_max_by_code as _adjusted_recent_actual_eps_max_by_code_query,
     load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
-    load_adjusted_statement_metric_rows as _load_adjusted_statement_metric_rows_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
     resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
@@ -56,7 +56,6 @@ from src.domains.analytics.fundamental_ranking import (
     ForecastValue as _ForecastValue,
     StatementRow as _StatementRow,
     adjust_per_share_value as _adjust_per_share_value,
-    normalize_period_label as _normalize_period_label,
     to_nullable_float as _to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import (
@@ -934,7 +933,8 @@ class RankingService:
     ) -> list[FundamentalItem]:
         recent_actual_max_by_code: dict[str, float | None] = {}
         if forecast_above_recent_fy_actuals:
-            recent_actual_max_by_code = self._adjusted_recent_actual_eps_max_by_code(
+            recent_actual_max_by_code = _adjusted_recent_actual_eps_max_by_code_query(
+                self._reader,
                 target_date=target_date,
                 market_codes=market_codes,
                 lookback_fy_count=forecast_lookback_fy_count,
@@ -973,41 +973,6 @@ class RankingService:
                 )
             )
         return candidates
-
-    def _adjusted_recent_actual_eps_max_by_code(
-        self,
-        *,
-        target_date: str,
-        market_codes: list[str],
-        lookback_fy_count: int,
-    ) -> dict[str, float | None]:
-        rows = _load_adjusted_statement_metric_rows_query(
-            self._reader,
-            target_date,
-            market_codes,
-        )
-        values_by_code: dict[str, list[float]] = {}
-        seen_by_code: dict[str, set[str]] = {}
-        for row in rows:
-            period_type = _normalize_period_label(_str_or_none(row["period_type"]))
-            if period_type != "FY":
-                continue
-            code = str(row["code"])
-            disclosed_date = str(row["disclosed_date"])
-            seen = seen_by_code.setdefault(code, set())
-            if disclosed_date in seen:
-                continue
-            eps = _finite_or_none(row["adjusted_eps"])
-            if eps is None:
-                continue
-            seen.add(disclosed_date)
-            bucket = values_by_code.setdefault(code, [])
-            if len(bucket) < lookback_fy_count:
-                bucket.append(eps)
-        return {
-            code: max(values) if len(values) >= lookback_fy_count else None
-            for code, values in values_by_code.items()
-        }
 
     def _resolve_baseline_share_snapshot(
         self,
