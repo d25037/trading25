@@ -1,6 +1,6 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
-import { SegmentedTabs, SectionEyebrow, Surface } from '@/components/Layout/Workspace';
+import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import type {
   SignalAttributionSignalResult,
 } from '@/types/backtest';
 import { formatRate } from '@/utils/formatters';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 import { AttributionArtifactBrowser } from './AttributionArtifactBrowser';
 import { StrategySelector } from './StrategySelector';
 
@@ -69,10 +70,6 @@ function formatReturn(value: number | null | undefined): string {
 function parsePositiveInt(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function isActiveStatus(status: JobStatus | undefined): boolean {
-  return status === 'pending' || status === 'running';
 }
 
 function clampProgressPercentage(progress: number | null | undefined): number | null {
@@ -280,7 +277,7 @@ function AttributionJobCard({
   cancelErrorMessage: string | null;
   onCancel: (jobId: string) => void;
 }) {
-  const isActive = isActiveStatus(activeJob?.status);
+  const isActive = isActiveJobStatus(activeJob?.status);
   const progressPercent = clampProgressPercentage(activeJob?.progress);
   const progressValue = progressPercent == null ? undefined : Math.round(progressPercent);
   const progressLabel = progressPercent == null ? null : `${progressPercent.toFixed(1)}%`;
@@ -437,7 +434,7 @@ export function BacktestAttribution({ selectedStrategy, onSelectedStrategyChange
   );
 
   const activeJob = jobStatus.data ?? null;
-  const isRunning = runSignalAttribution.isPending || isActiveStatus(activeJob?.status);
+  const isRunning = runSignalAttribution.isPending || isActiveJobStatus(activeJob?.status);
   const runErrorMessage = runSignalAttribution.isError ? runSignalAttribution.error.message : null;
   const cancelErrorMessage = cancelSignalAttribution.isError ? cancelSignalAttribution.error.message : null;
   const resultErrorMessage = resultDetail.isError ? resultDetail.error.message : null;

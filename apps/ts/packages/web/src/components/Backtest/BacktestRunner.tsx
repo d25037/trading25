@@ -2,11 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
 import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
-import {
-  SectionEyebrow,
-  SectionHeading,
-  Surface,
-} from '@/components/Layout/Workspace';
+import { SectionEyebrow, SectionHeading, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import {
   backtestKeys,
@@ -24,6 +20,7 @@ import {
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { EnginePolicyMode } from '@/types/backtest';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
@@ -33,10 +30,6 @@ import { StrategySelector } from './StrategySelector';
 type RunBacktestMutation = ReturnType<typeof useRunBacktest>;
 type RunOptimizationMutation = ReturnType<typeof useRunOptimization>;
 type StrategyOptions = ComponentProps<typeof StrategySelector>['strategies'];
-
-function isRunningStatus(status: string | null | undefined): boolean {
-  return status === 'running' || status === 'pending';
-}
 
 function isBacktestTerminalStatus(status: string | null | undefined): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
@@ -106,7 +99,9 @@ function GridConfigSummary({
 }
 
 function InlineErrorBanner({ message }: { message: string }) {
-  return <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2 text-sm text-destructive">{message}</div>;
+  return (
+    <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2 text-sm text-destructive">{message}</div>
+  );
 }
 
 function WorkspaceEmptyState({ title, description }: { title: string; description: string }) {
@@ -297,8 +292,8 @@ function OptimizationWorkspacePanel({
               entries={gridParameterEntries}
             />
           </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-[var(--app-surface-muted)] px-4 py-5">
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-[var(--app-surface-muted)] px-4 py-5">
             <p className="text-sm text-muted-foreground">
               No optimization spec found. Configure it in Strategies &gt; Optimize.
             </p>
@@ -309,7 +304,9 @@ function OptimizationWorkspacePanel({
           <OptimizationJobProgressCard job={optimizationJobStatus} isLoading={isLoadingOptJob || isSubmitting} />
         ) : (
           <WorkspaceEmptyState
-            title={selectedStrategy ? 'No active optimization run' : 'Optimization stays idle until a strategy is selected'}
+            title={
+              selectedStrategy ? 'No active optimization run' : 'Optimization stays idle until a strategy is selected'
+            }
             description={
               selectedStrategy
                 ? 'Launch optimization from the right panel to monitor stage progress and final candidates here.'
@@ -481,8 +478,8 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
       verificationTopK: optimizationVerificationTopK,
     });
 
-  const isRunning = runBacktest.isPending || isRunningStatus(jobStatus?.status);
-  const isOptRunning = runOptimization.isPending || isRunningStatus(optimizationJobStatus?.status);
+  const isRunning = runBacktest.isPending || isActiveJobStatus(jobStatus?.status);
+  const isOptRunning = runOptimization.isPending || isActiveJobStatus(optimizationJobStatus?.status);
   const selectedStrategyShortName = selectedStrategy ? (selectedStrategy.split('/').pop() ?? selectedStrategy) : null;
   const cancelBacktestAction = activeJobId ? () => cancelBacktest.mutate(activeJobId) : undefined;
 
