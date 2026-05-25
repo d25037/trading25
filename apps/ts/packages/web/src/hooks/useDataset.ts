@@ -9,7 +9,7 @@ import type {
   DatasetJobResponse,
   DatasetListItem,
   DatasetListResponse,
-} from '@/types/dataset';
+} from '@trading25/contracts/types/api-response-types';
 import { resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 

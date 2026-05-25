@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
-import type { DatasetJobResponse } from '@/types/dataset';
+import type { DatasetJobResponse } from '@trading25/contracts/types/api-response-types';
 import { DatasetJobProgress } from './DatasetJobProgress';
 
 const mockInvalidateQueries = vi.fn();

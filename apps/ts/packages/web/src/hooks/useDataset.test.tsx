@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
-import type { DatasetCreateRequest } from '@/types/dataset';
+import type { DatasetCreateRequest } from '@trading25/contracts/types/api-response-types';
 import {
   datasetKeys,
   useCancelDatasetJob,

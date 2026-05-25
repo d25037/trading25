@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useDatasetInfo } from '@/hooks/useDataset';
-import type { DatasetInfoResponse } from '@/types/dataset';
+import type { DatasetInfoResponse } from '@trading25/contracts/types/api-response-types';
 import { formatBytes, formatCount } from '@/utils/formatters';
 
 interface DatasetInfoDialogProps {

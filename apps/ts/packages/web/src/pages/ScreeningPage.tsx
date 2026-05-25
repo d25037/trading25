@@ -31,7 +31,7 @@ import { formatMarketsLabel, unionMarkets } from '@/lib/marketUtils';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
-import { DATASET_PRESETS } from '@/types/dataset';
+import { DATASET_PRESETS } from '@trading25/contracts/types/api-response-types';
 import type {
   EntryDecidability,
   MarketScreeningResponse,

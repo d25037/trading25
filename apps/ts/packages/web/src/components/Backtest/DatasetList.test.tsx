@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DatasetListItem } from '@/types/dataset';
+import type { DatasetListItem } from '@trading25/contracts/types/api-response-types';
 import { DatasetList } from './DatasetList';
 
 const mockUseDatasets = vi.fn();

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDatasets } from '@/hooks/useDataset';
-import type { DatasetListItem } from '@/types/dataset';
+import type { DatasetListItem } from '@trading25/contracts/types/api-response-types';
 import { formatBytes } from '@/utils/formatters';
 import { DatasetDeleteDialog } from './DatasetDeleteDialog';
 import { DatasetInfoDialog } from './DatasetInfoDialog';
