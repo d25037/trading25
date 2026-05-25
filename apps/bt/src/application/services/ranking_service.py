@@ -71,12 +71,12 @@ from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
     apply_value_composite_profile as _apply_value_composite_profile_frame,
     build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
+    build_value_composite_score_frame_from_statement_rows as _build_value_composite_score_frame_from_statement_rows,
     build_value_composite_ranking_items as _build_value_composite_ranking_items,
     find_value_composite_score_item as _find_value_composite_score_item,
     find_value_composite_target_stock as _find_value_composite_target_stock,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
-    score_value_composite_records as _score_value_composite_records,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -88,7 +88,6 @@ from src.application.services.ranking_response_items import (
     str_or_none as _str_or_none,
 )
 from src.application.services.ranking_statement_selection import (
-    latest_actual_fy_disclosed_date,
     latest_value_bps_statement,
 )
 from src.application.services.ranking_statement_rows import (
@@ -759,86 +758,15 @@ class RankingService:
             market_codes=query_market_codes,
         )
 
-        raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
-        for row in statement_rows:
-            code = str(row["code"])
-            raw_statements_by_code.setdefault(code, []).append(row)
-
-        records: list[dict[str, Any]] = []
-        for stock in stock_rows:
-            code = str(stock["code"])
-            raw_statements = raw_statements_by_code.get(code, [])
-            if not raw_statements:
-                continue
-            price = _to_nullable_float(stock["current_price"])
-            volume = _to_nullable_float(stock["volume"])
-            if price is None or price <= 0:
-                continue
-
-            valuation_rows = (
-                raw_statements
-                if forward_eps_mode == "latest"
-                else [
-                    row
-                    for row in raw_statements
-                    if _normalize_period_label(row["type_of_current_period"]) == "FY"
-                ]
-            )
-            valuation_statements = [
-                market_statement_row_to_jquants_statement(row, code_fallback=code)
-                for row in valuation_rows
-            ]
-            valuation = self._valuation_calculator.calculate_latest_valuation(
-                valuation_statements,
-                close=price,
-                price_date=target_date,
-                prefer_consolidated=True,
-                share_adjustment_events=adjustment_events_by_code.get(code, []),
-                price_basis_date=price_basis_date,
-            )
-            if valuation is None:
-                continue
-
-            pbr = valuation.pbr
-            forward_per = valuation.forwardPer
-            forward_eps = valuation.forwardEps
-            market_cap_bil_jpy = (
-                valuation.marketCap / 1_000_000_000.0
-                if valuation.marketCap is not None
-                else None
-            )
-            bps = (
-                price / pbr
-                if pbr is not None and pbr > 0
-                else None
-            )
-
-            records.append(
-                {
-                    "code": code,
-                    "company_name": str(stock["company_name"]),
-                    "market_code": str(stock["market_code"]),
-                    "market": _canonical_market_label(str(stock["market_code"])),
-                    "sector_33_name": str(stock["sector_33_name"]),
-                    "current_price": price,
-                    "volume": volume if volume is not None else 0.0,
-                    "pbr": pbr,
-                    "forward_per": forward_per,
-                    "market_cap_bil_jpy": market_cap_bil_jpy,
-                    "bps": bps,
-                    "forward_eps": forward_eps,
-                    "latest_fy_disclosed_date": latest_actual_fy_disclosed_date(
-                        raw_statements,
-                        as_of_date=target_date,
-                    ),
-                    "forward_eps_disclosed_date": valuation.forwardEpsDisclosedDate,
-                    "forward_eps_source": valuation.forwardEpsSource,
-                }
-            )
-
-        return _score_value_composite_records(
-            records,
+        return _build_value_composite_score_frame_from_statement_rows(
+            stock_rows,
+            statement_rows,
+            target_date=target_date,
+            price_basis_date=price_basis_date,
+            adjustment_events_by_code=adjustment_events_by_code,
+            valuation_calculator=self._valuation_calculator,
             weights=weights,
+            forward_eps_mode=forward_eps_mode,
         )
 
     def _enrich_ranking_collections_with_valuation(
