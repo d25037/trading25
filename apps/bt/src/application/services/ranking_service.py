@@ -56,10 +56,10 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
-    VALUE_COMPOSITE_PROFILE_BY_ID as _VALUE_COMPOSITE_PROFILE_BY_ID,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
     normalize_value_composite_weights as _normalize_value_composite_weights,
+    resolve_value_composite_profile_and_score_method as _resolve_value_composite_profile_and_score_method,
     value_composite_ranking_score_policy as _value_composite_ranking_score_policy,
     value_composite_response_weights as _value_composite_response_weights,
     value_composite_score_policy as _value_composite_score_policy,
@@ -513,16 +513,12 @@ class RankingService:
     ) -> ValueCompositeRankingResponse:
         """Standard市場向けの小型バリュー複合スコアランキングを取得"""
 
-        profile = _VALUE_COMPOSITE_PROFILE_BY_ID.get(profile_id) if profile_id else None
-        resolved_score_method = (
-            profile.score_method
-            if profile is not None
-            else score_method or "standard_pbr_tilt"
+        profile, resolved_score_method = (
+            _resolve_value_composite_profile_and_score_method(
+                profile_id=profile_id,
+                score_method=score_method,
+            )
         )
-        if score_method is not None and score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
-            raise ValueError(f"Unsupported scoreMethod: {score_method}")
-        if resolved_score_method not in _VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
-            raise ValueError(f"Unsupported scoreMethod: {resolved_score_method}")
         if forward_eps_mode not in _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS:
             raise ValueError(f"Unsupported forwardEpsMode: {forward_eps_mode}")
         weights = _normalize_value_composite_weights(

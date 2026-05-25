@@ -54,6 +54,24 @@ def normalize_value_composite_weights(
     return {column: float(value) / weight_sum for column, value in weights.items()}
 
 
+def resolve_value_composite_profile_and_score_method(
+    *,
+    profile_id: ValueCompositeProfileId | None,
+    score_method: ValueCompositeScoreMethod | None,
+) -> tuple[ValueCompositeProfileSpec | None, ValueCompositeScoreMethod]:
+    profile = VALUE_COMPOSITE_PROFILE_BY_ID.get(profile_id) if profile_id else None
+    resolved_score_method = (
+        profile.score_method
+        if profile is not None
+        else score_method or "standard_pbr_tilt"
+    )
+    if score_method is not None and score_method not in VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
+        raise ValueError(f"Unsupported scoreMethod: {score_method}")
+    if resolved_score_method not in VALUE_COMPOSITE_WEIGHTS_BY_METHOD:
+        raise ValueError(f"Unsupported scoreMethod: {resolved_score_method}")
+    return profile, resolved_score_method
+
+
 VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
     "prime": "prime_size_tilt",
     "standard": "standard_pbr_tilt",

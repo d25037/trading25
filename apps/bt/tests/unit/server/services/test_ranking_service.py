@@ -32,6 +32,7 @@ from src.application.services.ranking_query_helpers import (
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
     normalize_value_composite_weights,
+    resolve_value_composite_profile_and_score_method,
     value_composite_ranking_score_policy,
     value_composite_response_weights,
     value_composite_score_policy,
@@ -2585,6 +2586,18 @@ class TestRankingHelperBranches:
         profile = VALUE_COMPOSITE_PROFILE_BY_ID["prime_size75_forward_per25"]
         assert profile.score_method == "prime_size75_forward_per25"
         assert profile.rebalance_months == 2
+        resolved_profile, score_method = resolve_value_composite_profile_and_score_method(
+            profile_id="standard_breakout_120d20",
+            score_method="equal_weight",
+        )
+        assert resolved_profile is VALUE_COMPOSITE_PROFILE_BY_ID["standard_breakout_120d20"]
+        assert score_method == "prime_size_tilt"
+
+        with pytest.raises(ValueError, match="Unsupported scoreMethod"):
+            resolve_value_composite_profile_and_score_method(
+                profile_id=None,
+                score_method="unknown",  # type: ignore[arg-type]
+            )
 
     def test_value_composite_config_formats_score_response_parts(self):
         weights = normalize_value_composite_weights(
