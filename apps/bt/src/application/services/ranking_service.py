@@ -539,22 +539,12 @@ class RankingService:
             weights=weights,
             forward_eps_mode=forward_eps_mode,
         )
-        if profile is not None and not scored.empty:
-            scored = self._append_value_composite_profile_metrics(
-                scored,
-                target_date=target_date,
-                profile=profile,
-            )
-            scored = self._apply_value_composite_profile(
-                scored,
-                profile,
-                apply_liquidity_filter=apply_liquidity_filter,
-            )
-            scored = scored.sort_values(
-                [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
-                ascending=[False, True],
-                kind="stable",
-            ).reset_index(drop=True)
+        scored = self._apply_value_composite_profile_if_requested(
+            scored,
+            target_date=target_date,
+            profile=profile,
+            apply_liquidity_filter=apply_liquidity_filter,
+        )
         items = self._build_value_composite_ranking_items(
             scored.head(limit),
             target_date=target_date,
@@ -620,6 +610,32 @@ class RankingService:
             if apply_liquidity_filter:
                 result = result[result["liquidity_eligible"]].copy()
         return result
+
+    def _apply_value_composite_profile_if_requested(
+        self,
+        scored: pd.DataFrame,
+        *,
+        target_date: str,
+        profile: _ValueCompositeProfileSpec | None,
+        apply_liquidity_filter: bool,
+    ) -> pd.DataFrame:
+        if profile is None or scored.empty:
+            return scored
+        scored = self._append_value_composite_profile_metrics(
+            scored,
+            target_date=target_date,
+            profile=profile,
+        )
+        scored = self._apply_value_composite_profile(
+            scored,
+            profile,
+            apply_liquidity_filter=apply_liquidity_filter,
+        )
+        return scored.sort_values(
+            [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+            ascending=[False, True],
+            kind="stable",
+        ).reset_index(drop=True)
 
     def get_value_composite_score(
         self,
