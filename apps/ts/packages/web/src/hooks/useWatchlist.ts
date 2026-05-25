@@ -1,17 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import type {
-  CreateWatchlistItemRequest,
-  CreateWatchlistRequest,
   ListWatchlistsResponse,
-  UpdateWatchlistRequest,
   WatchlistDeleteResponse,
   WatchlistItemResponse,
   WatchlistPricesResponse,
   WatchlistSummaryResponse,
   WatchlistWithItemsResponse,
-} from '@/types/watchlist';
+} from '@trading25/contracts/types/api-response-types';
+import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
+
+type CreateWatchlistRequest = components['schemas']['WatchlistCreateRequest'];
+type UpdateWatchlistRequest = components['schemas']['WatchlistUpdateRequest'];
+type CreateWatchlistItemRequest = components['schemas']['WatchlistItemCreateRequest'];
 
 // Fetch functions
 const fetchWatchlists = () => apiGet<ListWatchlistsResponse>('/api/watchlist');

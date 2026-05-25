@@ -1,4 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
+import type {
+  WatchlistItemResponse,
+  WatchlistStockPrice,
+  WatchlistWithItemsResponse,
+} from '@trading25/contracts/types/api-response-types';
 import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
@@ -24,7 +29,6 @@ import {
   useRemoveWatchlistItem,
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
-import type { WatchlistItemResponse, WatchlistStockPrice, WatchlistWithItemsResponse } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 import { formatCount, formatCurrency, formatInteger } from '@/utils/formatters';
 

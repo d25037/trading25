@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import type { WatchlistWithItemsResponse } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WatchlistWithItemsResponse } from '@/types/watchlist';
 import { WatchlistDetail } from './WatchlistDetail';
 
 const mockNavigate = vi.fn();

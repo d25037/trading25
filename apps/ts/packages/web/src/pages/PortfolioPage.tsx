@@ -1,3 +1,4 @@
+import type { WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
 import { Briefcase, Eye } from 'lucide-react';
 import { useCallback } from 'react';
 import {
@@ -14,7 +15,6 @@ import { usePortfolioRouteState } from '@/hooks/usePageRouteState';
 import { usePortfolios, usePortfolioWithItems } from '@/hooks/usePortfolio';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
 import type { PortfolioSummaryResponse } from '@/types/portfolio';
-import type { WatchlistSummaryResponse } from '@/types/watchlist';
 
 function PortfolioContent({
   portfolios,

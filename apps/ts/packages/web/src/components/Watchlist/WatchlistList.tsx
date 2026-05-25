@@ -1,3 +1,4 @@
+import type { WatchlistSummaryResponse } from '@trading25/contracts/types/api-response-types';
 import { ChevronRight, Eye, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
@@ -16,7 +17,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreateWatchlist } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
-import type { WatchlistSummaryResponse } from '@/types/watchlist';
 import { formatCount } from '@/utils/formatters';
 
 interface CreateWatchlistDialogProps {
