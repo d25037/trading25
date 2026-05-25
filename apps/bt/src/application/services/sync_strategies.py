@@ -51,6 +51,7 @@ from src.application.services.index_master_catalog import (
     build_index_master_seed_rows,
     get_index_catalog_codes,
 )
+from src.application.services import sync_fetch_planner
 from src.application.services.sync_row_converters import (
     build_target_date_set as _build_target_date_set,
     convert_index_master_rows as _convert_index_master_rows,
@@ -77,22 +78,6 @@ from src.application.services.sync_row_converters import (
     _normalize_iso_date_text,
     _parse_date,
     _to_iso_date_text,
-)
-from src.application.services.sync_fetch_planner import (
-    BulkFetchRequiredError,
-    _StageFetchDecision,
-    _emit_fetch_detail,
-    _emit_fetch_execution_progress,
-    _emit_fetch_strategy_progress,
-    _enforce_stock_bulk_plan_available,
-    _execute_bulk_fetch_stage,
-    _filter_bulk_plan_after_exclusive_anchor,
-    _get_bulk_service,
-    _log_sync_fetch_execution,
-    _plan_fetch_method,
-    _raise_stock_bulk_required_error,
-    _resolve_bulk_fallback_reason,
-    _summarize_exception,
 )
 from src.application.services.sync_publish_helpers import (
     _index_indices_rows,
@@ -476,14 +461,14 @@ class IndicesOnlySyncStrategy:
 
             # 2. 各指数のデータ取得
             ctx.on_progress("indices_data", 1, total_steps, f"Fetching data for {len(target_codes)} indices...")
-            decision = await _plan_fetch_method(
+            decision = await sync_fetch_planner._plan_fetch_method(
                 ctx,
                 stage="indices_data",
                 endpoint="/indices/bars/daily",
                 estimated_rest_calls=len(target_codes),
             )
             total_calls += decision.planner_api_calls
-            _emit_fetch_strategy_progress(
+            sync_fetch_planner._emit_fetch_strategy_progress(
                 ctx,
                 progress_stage="indices_data",
                 current=1,
@@ -509,7 +494,7 @@ class IndicesOnlySyncStrategy:
                         known_master_codes=known_master_codes,
                     )
 
-                bulk_outcome = await _execute_bulk_fetch_stage(
+                bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
                     ctx,
                     decision=decision,
                     stage_name="indices_data",
@@ -528,7 +513,7 @@ class IndicesOnlySyncStrategy:
                 bulk_fallback_reason = bulk_outcome.fallback_reason
 
             if decision.method == "rest" or used_rest_fallback:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="indices_data",
                     current=1,
@@ -572,7 +557,7 @@ class IndicesOnlySyncStrategy:
                     except Exception as e:
                         errors.append(f"Index {code}: {e}")
                         logger.warning(f"Index {code} sync error: {e}")
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage="indices_data",
                     endpoint="/indices/bars/daily",
                     decision=decision,
@@ -707,7 +692,7 @@ class InitialSyncStrategy:
             # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
             ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
             from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
-            decision = await _plan_fetch_method(
+            decision = await sync_fetch_planner._plan_fetch_method(
                 ctx,
                 stage="stock_data_initial",
                 endpoint="/equities/bars/daily",
@@ -718,7 +703,7 @@ class InitialSyncStrategy:
                 require_bulk=ctx.enforce_bulk_for_stock_data,
             )
             total_calls += decision.planner_api_calls
-            _emit_fetch_strategy_progress(
+            sync_fetch_planner._emit_fetch_strategy_progress(
                 ctx,
                 progress_stage="stock_data",
                 current=3,
@@ -728,7 +713,7 @@ class InitialSyncStrategy:
                 target_label=f"{len(trading_dates)} dates",
             )
 
-            _enforce_stock_bulk_plan_available(
+            sync_fetch_planner._enforce_stock_bulk_plan_available(
                 ctx,
                 decision=decision,
                 endpoint="/equities/bars/daily",
@@ -744,7 +729,7 @@ class InitialSyncStrategy:
             bulk_result: BulkFetchResult | None = None
             if decision.method == "bulk" and decision.plan is not None:
                 try:
-                    _emit_fetch_execution_progress(
+                    sync_fetch_planner._emit_fetch_execution_progress(
                         ctx,
                         progress_stage="stock_data",
                         current=3,
@@ -766,14 +751,14 @@ class InitialSyncStrategy:
                             target_dates=trading_date_set,
                         )
 
-                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                         decision.plan,
                         on_rows_batch=_consume_stock_bulk_rows,
                         accumulate_rows=False,
                     )
                     total_calls += bulk_result.api_calls
                     stage_api_calls += bulk_result.api_calls
-                    _log_sync_fetch_execution(
+                    sync_fetch_planner._log_sync_fetch_execution(
                         stage="stock_data_initial",
                         endpoint="/equities/bars/daily",
                         decision=decision,
@@ -784,24 +769,24 @@ class InitialSyncStrategy:
                     )
                 except Exception as e:
                     if ctx.enforce_bulk_for_stock_data and len(trading_dates) > 0:
-                        _raise_stock_bulk_required_error(
+                        sync_fetch_planner._raise_stock_bulk_required_error(
                             ctx,
                             progress_stage="stock_data",
                             current=3,
                             total=8,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
-                            reason_detail=_summarize_exception(e),
+                            reason_detail=sync_fetch_planner._summarize_exception(e),
                         )
                     used_rest_fallback = True
-                    stock_bulk_fallback_reason = _summarize_exception(e)
+                    stock_bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
                     logger.exception(
                         "Initial stock_data bulk fetch failed, falling back to REST: {}",
                         stock_bulk_fallback_reason,
                     )
 
             if decision.method == "rest" or used_rest_fallback:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="stock_data",
                     current=3,
@@ -855,7 +840,7 @@ class InitialSyncStrategy:
                         if consecutive_failures >= 5:
                             errors.append(f"Too many consecutive failures at {date}")
                             break
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage="stock_data_initial",
                     endpoint="/equities/bars/daily",
                     decision=decision,
@@ -936,7 +921,7 @@ class InitialSyncStrategy:
                 failedDates=failed_dates,
                 errors=errors,
             )
-        except BulkFetchRequiredError:
+        except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
@@ -1053,7 +1038,7 @@ class IncrementalSyncStrategy:
                 anchor=last_date,
             )
             from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
-            decision_stock_data = await _plan_fetch_method(
+            decision_stock_data = await sync_fetch_planner._plan_fetch_method(
                 ctx,
                 stage="stock_data_incremental",
                 endpoint="/equities/bars/daily",
@@ -1064,7 +1049,7 @@ class IncrementalSyncStrategy:
                 require_bulk=ctx.enforce_bulk_for_stock_data,
             )
             total_calls += decision_stock_data.planner_api_calls
-            _emit_fetch_strategy_progress(
+            sync_fetch_planner._emit_fetch_strategy_progress(
                 ctx,
                 progress_stage="stock_data",
                 current=2,
@@ -1074,7 +1059,7 @@ class IncrementalSyncStrategy:
                 target_label=f"{len(stock_target_dates)} dates",
             )
 
-            _enforce_stock_bulk_plan_available(
+            sync_fetch_planner._enforce_stock_bulk_plan_available(
                 ctx,
                 decision=decision_stock_data,
                 endpoint="/equities/bars/daily",
@@ -1090,7 +1075,7 @@ class IncrementalSyncStrategy:
             stock_bulk_result: BulkFetchResult | None = None
             if decision_stock_data.method == "bulk" and decision_stock_data.plan is not None:
                 try:
-                    _emit_fetch_execution_progress(
+                    sync_fetch_planner._emit_fetch_execution_progress(
                         ctx,
                         progress_stage="stock_data",
                         current=2,
@@ -1112,14 +1097,14 @@ class IncrementalSyncStrategy:
                             target_dates=new_date_set,
                         )
 
-                    stock_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    stock_bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                         decision_stock_data.plan,
                         on_rows_batch=_consume_incremental_stock_bulk_rows,
                         accumulate_rows=False,
                     )
                     total_calls += stock_bulk_result.api_calls
                     stock_stage_api_calls += stock_bulk_result.api_calls
-                    _log_sync_fetch_execution(
+                    sync_fetch_planner._log_sync_fetch_execution(
                         stage="stock_data_incremental",
                         endpoint="/equities/bars/daily",
                         decision=decision_stock_data,
@@ -1130,24 +1115,24 @@ class IncrementalSyncStrategy:
                     )
                 except Exception as e:
                     if ctx.enforce_bulk_for_stock_data and len(stock_target_dates) > 0:
-                        _raise_stock_bulk_required_error(
+                        sync_fetch_planner._raise_stock_bulk_required_error(
                             ctx,
                             progress_stage="stock_data",
                             current=2,
                             total=7,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
-                            reason_detail=_summarize_exception(e),
+                            reason_detail=sync_fetch_planner._summarize_exception(e),
                         )
                     used_stock_rest_fallback = True
-                    stock_bulk_fallback_reason = _summarize_exception(e)
+                    stock_bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
                     logger.exception(
                         "Incremental stock_data bulk fetch failed, falling back to REST: {}",
                         stock_bulk_fallback_reason,
                     )
 
             if decision_stock_data.method == "rest" or used_stock_rest_fallback:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="stock_data",
                     current=2,
@@ -1195,7 +1180,7 @@ class IncrementalSyncStrategy:
                         stocks_updated += batch.published_count
                     except Exception as e:
                         errors.append(f"Date {date}: {e}")
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage="stock_data_incremental",
                     endpoint="/equities/bars/daily",
                     decision=decision_stock_data,
@@ -1261,7 +1246,7 @@ class IncrementalSyncStrategy:
                 )
 
             all_code_has_anchor = all(latest_index_dates.get(_normalize_index_code(code)) for code in target_codes)
-            decision_indices = await _plan_fetch_method(
+            decision_indices = await sync_fetch_planner._plan_fetch_method(
                 ctx,
                 stage="indices_incremental",
                 endpoint="/indices/bars/daily",
@@ -1269,7 +1254,7 @@ class IncrementalSyncStrategy:
                 date_from=latest_index_date if all_code_has_anchor else None,
             )
             total_calls += decision_indices.planner_api_calls
-            _emit_fetch_strategy_progress(
+            sync_fetch_planner._emit_fetch_strategy_progress(
                 ctx,
                 progress_stage="indices",
                 current=3,
@@ -1303,7 +1288,7 @@ class IncrementalSyncStrategy:
                         fallback_date_set=fallback_date_set,
                     )
 
-                indices_bulk_outcome = await _execute_bulk_fetch_stage(
+                indices_bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
                     ctx,
                     decision=decision_indices,
                     stage_name="indices_incremental",
@@ -1322,7 +1307,7 @@ class IncrementalSyncStrategy:
                 indices_bulk_fallback_reason = indices_bulk_outcome.fallback_reason
 
             if decision_indices.method == "rest" or used_indices_rest_fallback:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="indices",
                     current=3,
@@ -1414,7 +1399,7 @@ class IncrementalSyncStrategy:
                     except Exception as e:
                         errors.append(f"Index date {index_date}: {e}")
                         logger.warning("Index date {} incremental sync error: {}", index_date, e)
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage="indices_incremental",
                     endpoint="/indices/bars/daily",
                     decision=decision_indices,
@@ -1515,7 +1500,7 @@ class IncrementalSyncStrategy:
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
                 errors=errors,
             )
-        except BulkFetchRequiredError:
+        except sync_fetch_planner.BulkFetchRequiredError:
             raise
         except Exception as e:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
@@ -1611,7 +1596,7 @@ async def _sync_options_225_dates(
         return {"api_calls": 0, "errors": [], "cancelled": False}
 
     from_date, to_date = _select_bulk_candidates_from_dates(target_dates)
-    decision = await _plan_fetch_method(
+    decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
         stage=stage_name,
         endpoint="/derivatives/bars/daily/options/225",
@@ -1622,7 +1607,7 @@ async def _sync_options_225_dates(
     )
     api_calls = decision.planner_api_calls
     errors: list[str] = []
-    _emit_fetch_strategy_progress(
+    sync_fetch_planner._emit_fetch_strategy_progress(
         ctx,
         progress_stage=progress_stage,
         current=progress_current,
@@ -1654,7 +1639,7 @@ async def _sync_options_225_dates(
             await _publish_options_225_rows(ctx, rows)
             await _publish_synthetic_nikkei_rows(ctx, rows)
 
-        bulk_outcome = await _execute_bulk_fetch_stage(
+        bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
             ctx,
             decision=decision,
             stage_name=stage_name,
@@ -1676,7 +1661,7 @@ async def _sync_options_225_dates(
         bulk_fallback_reason = None
 
     if decision.method == "rest" or used_rest_fallback:
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage=progress_stage,
             current=progress_current,
@@ -1717,7 +1702,7 @@ async def _sync_options_225_dates(
             except Exception as e:
                 errors.append(f"Options {target_date}: {e}")
                 logger.warning("Options date {} sync error: {}", target_date, e)
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/derivatives/bars/daily/options/225",
             decision=decision,
@@ -1781,14 +1766,14 @@ async def _sync_fundamentals_initial(
     bulk_result: BulkFetchResult | None = None
     empty_fetch_codes: set[str] = set()
 
-    decision = await _plan_fetch_method(
+    decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
         stage="fundamentals_initial",
         endpoint="/fins/summary",
         estimated_rest_calls=max(len(target_codes), 1),
     )
     api_calls += decision.planner_api_calls
-    _emit_fetch_strategy_progress(
+    sync_fetch_planner._emit_fetch_strategy_progress(
         ctx,
         progress_stage="fundamentals",
         current=progress_current,
@@ -1805,7 +1790,7 @@ async def _sync_fundamentals_initial(
 
     if decision.method == "bulk" and decision.plan is not None:
         try:
-            _emit_fetch_execution_progress(
+            sync_fetch_planner._emit_fetch_execution_progress(
                 ctx,
                 progress_stage="fundamentals",
                 current=progress_current,
@@ -1831,7 +1816,7 @@ async def _sync_fundamentals_initial(
                     allowed_codes=allowed_statement_codes,
                 )
 
-            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+            bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                 decision.plan,
                 on_rows_batch=_consume_initial_fundamentals_bulk_rows,
                 accumulate_rows=False,
@@ -1839,7 +1824,7 @@ async def _sync_fundamentals_initial(
             api_calls += bulk_result.api_calls
             stage_api_calls += bulk_result.api_calls
             bulk_succeeded = True
-            _log_sync_fetch_execution(
+            sync_fetch_planner._log_sync_fetch_execution(
                 stage="fundamentals_initial",
                 endpoint="/fins/summary",
                 decision=decision,
@@ -1852,7 +1837,7 @@ async def _sync_fundamentals_initial(
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
     if not bulk_succeeded:
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage="fundamentals",
             current=progress_current,
@@ -1906,7 +1891,7 @@ async def _sync_fundamentals_initial(
             except Exception as e:
                 failed_codes.append(code)
                 errors.append(f"Fundamentals code {code}: {e}")
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage="fundamentals_initial",
             endpoint="/fins/summary",
             decision=decision,
@@ -2014,7 +1999,7 @@ async def _sync_fundamentals_incremental(
     date_phase_bulk_result: BulkFetchResult | None = None
     if date_targets:
         normalized_target_dates = _build_target_date_set(date_targets)
-        decision = await _plan_fetch_method(
+        decision = await sync_fetch_planner._plan_fetch_method(
             ctx,
             stage="fundamentals_incremental_dates",
             endpoint="/fins/summary",
@@ -2022,7 +2007,7 @@ async def _sync_fundamentals_incremental(
             exact_dates=date_targets,
         )
         api_calls += decision.planner_api_calls
-        _emit_fetch_strategy_progress(
+        sync_fetch_planner._emit_fetch_strategy_progress(
             ctx,
             progress_stage="fundamentals",
             current=progress_current,
@@ -2034,7 +2019,7 @@ async def _sync_fundamentals_incremental(
 
         if decision.method == "bulk" and decision.plan is not None:
             try:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="fundamentals",
                     current=progress_current,
@@ -2057,7 +2042,7 @@ async def _sync_fundamentals_incremental(
                         published_dates=date_phase_disclosed_dates,
                     )
 
-                date_phase_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                date_phase_bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                     decision.plan,
                     on_rows_batch=_consume_incremental_fundamentals_bulk_rows,
                     accumulate_rows=False,
@@ -2066,7 +2051,7 @@ async def _sync_fundamentals_incremental(
                 date_phase_api_calls += date_phase_bulk_result.api_calls
                 bulk_dates_succeeded = True
                 dates_phase_completed = len(date_targets)
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage="fundamentals_incremental_dates",
                     endpoint="/fins/summary",
                     decision=decision,
@@ -2079,7 +2064,7 @@ async def _sync_fundamentals_incremental(
                 logger.warning("Incremental fundamentals bulk date fetch failed, falling back to REST: {}", e)
 
         if not bulk_dates_succeeded:
-            _emit_fetch_execution_progress(
+            sync_fetch_planner._emit_fetch_execution_progress(
                 ctx,
                 progress_stage="fundamentals",
                 current=progress_current,
@@ -2136,7 +2121,7 @@ async def _sync_fundamentals_incremental(
                     failed_dates.append(disclosed_date)
                     errors.append(f"Fundamentals date {disclosed_date}: {e}")
             dates_phase_completed = len(date_targets)
-            _log_sync_fetch_execution(
+            sync_fetch_planner._log_sync_fetch_execution(
                 stage="fundamentals_incremental_dates",
                 endpoint="/fins/summary",
                 decision=decision,
@@ -2170,7 +2155,7 @@ async def _sync_fundamentals_incremental(
     code_phase_api_calls = 0
 
     if code_targets:
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage="fundamentals",
             current=progress_current,
@@ -2227,10 +2212,10 @@ async def _sync_fundamentals_incremental(
             errors.append(f"Fundamentals code {code}: {e}")
 
     if code_targets:
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage="fundamentals_incremental_backfill",
             endpoint="/fins/summary",
-            decision=_StageFetchDecision(
+            decision=sync_fetch_planner._StageFetchDecision(
                 method="rest",
                 planner_api_calls=0,
                 estimated_rest_calls=len(code_targets),
@@ -2351,7 +2336,7 @@ async def _sync_margin_data(
         skipped_market=skipped_market_count,
     )
 
-    decision = await _plan_fetch_method(
+    decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
         stage=stage_name,
         endpoint="/markets/margin-interest",
@@ -2359,7 +2344,7 @@ async def _sync_margin_data(
         date_from=anchor,
     )
     api_calls += decision.planner_api_calls
-    _emit_fetch_strategy_progress(
+    sync_fetch_planner._emit_fetch_strategy_progress(
         ctx,
         progress_stage="margin",
         current=progress_current,
@@ -2381,7 +2366,7 @@ async def _sync_margin_data(
         effective_plan = decision.plan
         skipped_anchor_files = 0
         if effective_plan is not None:
-            effective_plan, skipped_anchor_files = _filter_bulk_plan_after_exclusive_anchor(
+            effective_plan, skipped_anchor_files = sync_fetch_planner._filter_bulk_plan_after_exclusive_anchor(
                 effective_plan,
                 anchor=anchor,
             )
@@ -2405,7 +2390,7 @@ async def _sync_margin_data(
                     f"{anchor}; skipping margin bulk fetch."
                 ),
             )
-            _emit_fetch_detail(
+            sync_fetch_planner._emit_fetch_detail(
                 ctx,
                 {
                     "eventType": "execution",
@@ -2422,7 +2407,7 @@ async def _sync_margin_data(
                     "fallbackReason": None,
                 },
             )
-            _log_sync_fetch_execution(
+            sync_fetch_planner._log_sync_fetch_execution(
                 stage=stage_name,
                 endpoint="/markets/margin-interest",
                 decision=decision,
@@ -2439,7 +2424,7 @@ async def _sync_margin_data(
             )
         elif effective_plan is None or len(effective_plan.files) == 0:
             used_rest_fallback = True
-            bulk_fallback_reason = _resolve_bulk_fallback_reason(effective_plan)
+            bulk_fallback_reason = sync_fetch_planner._resolve_bulk_fallback_reason(effective_plan)
             logger.warning(
                 "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
                 stage_name,
@@ -2447,7 +2432,7 @@ async def _sync_margin_data(
             )
         else:
             try:
-                _emit_fetch_execution_progress(
+                sync_fetch_planner._emit_fetch_execution_progress(
                     ctx,
                     progress_stage="margin",
                     current=progress_current,
@@ -2469,14 +2454,14 @@ async def _sync_margin_data(
                         min_date_exclusive=anchor,
                     )
 
-                bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                     effective_plan,
                     on_rows_batch=_consume_margin_bulk_rows,
                     accumulate_rows=False,
                 )
                 api_calls += bulk_result.api_calls
                 bulk_stage_api_calls += bulk_result.api_calls
-                _log_sync_fetch_execution(
+                sync_fetch_planner._log_sync_fetch_execution(
                     stage=stage_name,
                     endpoint="/markets/margin-interest",
                     decision=decision,
@@ -2487,7 +2472,7 @@ async def _sync_margin_data(
                 )
             except Exception as e:
                 used_rest_fallback = True
-                bulk_fallback_reason = _summarize_exception(e)
+                bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
                 logger.warning(
                     "{} bulk fetch failed, falling back to REST: {}",
                     stage_name,
@@ -2519,7 +2504,7 @@ async def _sync_margin_data(
             }
 
     if (decision.method == "rest" or used_rest_fallback) and rest_codes:
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage="margin",
             current=progress_current,
@@ -2570,7 +2555,7 @@ async def _sync_margin_data(
             except Exception as e:
                 errors.append(f"Margin code {code}: {e}")
 
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage=stage_name,
             endpoint="/markets/margin-interest",
             decision=decision,
@@ -2600,7 +2585,7 @@ async def _sync_margin_data(
         backfill_codes = []
 
     if backfill_codes:
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage="margin",
             current=progress_current,
@@ -2653,7 +2638,7 @@ async def _sync_margin_data(
             except Exception as e:
                 errors.append(f"Margin backfill code {code}: {e}")
 
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage=f"{stage_name}_backfill",
             endpoint="/markets/margin-interest",
             decision=decision,
@@ -2977,7 +2962,7 @@ async def _sync_daily_stock_master(
     latest_snapshot_date: str | None = None
     rest_target_dates = normalized_dates
 
-    decision = await _plan_fetch_method(
+    decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
         stage="stock_master_daily",
         endpoint="/equities/master",
@@ -2989,7 +2974,7 @@ async def _sync_daily_stock_master(
         disable_future_bulk_on_probe_failure=False,
     )
     api_calls += decision.planner_api_calls
-    _emit_fetch_strategy_progress(
+    sync_fetch_planner._emit_fetch_strategy_progress(
         ctx,
         progress_stage="stock_master_daily",
         current=progress_current,
@@ -3003,7 +2988,7 @@ async def _sync_daily_stock_master(
     rest_fallback_reason: str | None = None
     if decision.method == "bulk" and decision.plan is not None and decision.plan.files:
         try:
-            _emit_fetch_execution_progress(
+            sync_fetch_planner._emit_fetch_execution_progress(
                 ctx,
                 progress_stage="stock_master_daily",
                 current=progress_current,
@@ -3051,13 +3036,13 @@ async def _sync_daily_stock_master(
                         rows_to_upsert,
                     )
 
-            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+            bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
                 decision.plan,
                 on_rows_batch=_consume_stock_master_bulk_rows,
                 accumulate_rows=False,
             )
             api_calls += bulk_result.api_calls
-            _log_sync_fetch_execution(
+            sync_fetch_planner._log_sync_fetch_execution(
                 stage="stock_master_daily",
                 endpoint="/equities/master",
                 decision=decision,
@@ -3074,7 +3059,7 @@ async def _sync_daily_stock_master(
                 )
         except Exception as e:
             used_rest_fallback = True
-            rest_fallback_reason = _summarize_exception(e)
+            rest_fallback_reason = sync_fetch_planner._summarize_exception(e)
             rest_target_dates = normalized_dates
             logger.exception(
                 "stock master bulk fetch failed, falling back to REST: {}",
@@ -3082,7 +3067,7 @@ async def _sync_daily_stock_master(
             )
     elif decision.method == "bulk":
         used_rest_fallback = True
-        rest_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+        rest_fallback_reason = sync_fetch_planner._resolve_bulk_fallback_reason(decision.plan)
         rest_target_dates = normalized_dates
 
     if decision.method == "rest" or used_rest_fallback:
@@ -3105,7 +3090,7 @@ async def _sync_daily_stock_master(
                 message,
             )
             raise RuntimeError(message)
-        _emit_fetch_execution_progress(
+        sync_fetch_planner._emit_fetch_execution_progress(
             ctx,
             progress_stage="stock_master_daily",
             current=progress_current,
@@ -3159,7 +3144,7 @@ async def _sync_daily_stock_master(
                 latest_rows = rows
             elif snapshot_date == latest_snapshot_date:
                 latest_rows = rows
-        _log_sync_fetch_execution(
+        sync_fetch_planner._log_sync_fetch_execution(
             stage="stock_master_daily",
             endpoint="/equities/master",
             decision=decision,

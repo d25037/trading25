@@ -8,18 +8,24 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-import src.application.services.sync_strategies as sync_strategies_module
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
+from src.application.services.sync_fetch_planner import (
+    BulkFetchRequiredError,
+    _StageFetchDecision,
+    _enforce_stock_bulk_plan_available,
+    _execute_bulk_fetch_stage,
+    _get_bulk_service,
+    _plan_fetch_method,
+    _resolve_bulk_fallback_reason,
+)
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
-    BulkFetchRequiredError,
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
     RepairSyncStrategy,
     SyncContext,
-    _StageFetchDecision,
     _build_fallback_index_master_rows,
     _build_incremental_date_targets,
     _collect_unique_codes,
@@ -34,9 +40,7 @@ from src.application.services.sync_strategies import (
     _dedupe_preserve_order,
     _extract_dates_after,
     _extract_list_items,
-    _execute_bulk_fetch_stage,
     _fetch_fins_summary_by_code,
-    _get_bulk_service,
     _get_paginated_rows_with_call_count,
     _inspect_time_series,
     _is_date_after,
@@ -44,14 +48,11 @@ from src.application.services.sync_strategies import (
     _load_metadata_json_list,
     _normalize_date_list,
     _normalize_iso_date_text,
-    _plan_fetch_method,
     _parse_date,
     _publish_indices_rows,
     _publish_statement_rows,
     _publish_stock_data_rows,
     _publish_topix_rows,
-    _resolve_bulk_fallback_reason,
-    _enforce_stock_bulk_plan_available,
     _sync_daily_stock_master,
     _sync_margin_data,
     _to_iso_date_text,
@@ -2113,8 +2114,7 @@ async def test_incremental_sync_logs_margin_backfill_execution_separately(
         logged_stages.append((stage, endpoint, actual_api_calls))
 
     monkeypatch.setattr(
-        sync_strategies_module,
-        "_log_sync_fetch_execution",
+        "src.application.services.sync_fetch_planner._log_sync_fetch_execution",
         fake_log_sync_fetch_execution,
     )
 
@@ -2217,7 +2217,7 @@ async def test_sync_margin_data_bulk_success_backfills_missing_codes(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2300,7 +2300,7 @@ async def test_sync_margin_data_skips_bulk_fetch_when_selected_files_do_not_adva
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2365,7 +2365,7 @@ async def test_sync_margin_data_bulk_fallback_to_rest_collects_errors(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2416,7 +2416,7 @@ async def test_sync_margin_data_bulk_empty_plan_falls_back_to_rest(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2459,7 +2459,7 @@ async def test_sync_margin_data_bulk_missing_plan_falls_back_to_rest(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2526,7 +2526,7 @@ async def test_sync_margin_data_bulk_fallback_avoids_duplicate_rest_for_backfill
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2571,7 +2571,7 @@ async def test_sync_margin_data_returns_cancelled_when_rest_loop_is_cancelled(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2614,7 +2614,7 @@ async def test_sync_margin_data_refuses_large_rest_fallback(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2687,7 +2687,7 @@ async def test_sync_margin_data_skips_large_rest_backfill_after_bulk(
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -2812,11 +2812,11 @@ async def test_sync_margin_data_logs_backfill_execution_api_calls(
         logged_calls.append(kwargs)
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._log_sync_fetch_execution",
+        "src.application.services.sync_fetch_planner._log_sync_fetch_execution",
         _capture_log,
     )
 
@@ -2881,7 +2881,7 @@ async def test_sync_margin_data_persists_empty_cache_and_skips_same_frontier_ret
         )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._plan_fetch_method",
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
         _fake_plan_fetch_method,
     )
 
@@ -3479,7 +3479,7 @@ async def test_indices_only_sync_options_225_falls_back_to_rest_when_bulk_plan_i
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
 
     bulk_service = _FakeBulkService()
     ctx = _build_ctx(
@@ -3590,7 +3590,7 @@ async def test_incremental_sync_indices_bulk_result_matches_rest_discovery(
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
 
     bulk_ctx = _build_ctx(
         client=bulk_client,
@@ -3913,9 +3913,9 @@ async def test_indices_only_sync_uses_bulk_when_selected(
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._get_bulk_service",
+        "src.application.services.sync_fetch_planner._get_bulk_service",
         lambda _ctx: bulk_service,
     )
 
@@ -4106,9 +4106,9 @@ async def test_initial_sync_stock_data_uses_bulk_when_selected(
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._get_bulk_service",
+        "src.application.services.sync_fetch_planner._get_bulk_service",
         lambda _ctx: bulk_service,
     )
 
@@ -4163,9 +4163,9 @@ async def test_initial_sync_stock_data_bulk_failure_falls_back_to_rest(
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._get_bulk_service",
+        "src.application.services.sync_fetch_planner._get_bulk_service",
         lambda _ctx: bulk_service,
     )
 
@@ -4219,9 +4219,9 @@ async def test_initial_sync_stock_data_bulk_failure_raises_when_bulk_enforced(
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._get_bulk_service",
+        "src.application.services.sync_fetch_planner._get_bulk_service",
         lambda _ctx: bulk_service,
     )
 
@@ -4686,7 +4686,7 @@ async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_listed_market
             )
         return _rest_decision(estimated_rest_calls)
 
-    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr("src.application.services.sync_fetch_planner._plan_fetch_method", _plan_stub)
 
     ctx = _build_ctx(
         client=client,
