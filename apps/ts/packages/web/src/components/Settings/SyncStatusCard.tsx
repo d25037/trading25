@@ -3,6 +3,7 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface SyncStatusCardProps {
   job: SyncJobResponse | null | undefined;
@@ -87,7 +88,9 @@ function FetchInfoRow({ endpoint, method }: FetchProgressInfo) {
       {method && (
         <span className={`rounded-full px-2 py-0.5 font-medium ${getMethodBadgeClass(method)}`}>{method}</span>
       )}
-      {endpoint && <code className="rounded-md bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[11px]">{endpoint}</code>}
+      {endpoint && (
+        <code className="rounded-md bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[11px]">{endpoint}</code>
+      )}
     </div>
   );
 }
@@ -268,7 +271,7 @@ export function SyncStatusCard({
 }: SyncStatusCardProps) {
   if (!job) return null;
 
-  const isActive = job.status === 'pending' || job.status === 'running';
+  const isActive = isActiveJobStatus(job.status);
   const progress = job.progress;
   const parsedFetchInfo = progress ? parseFetchProgressInfo(progress.message) : { endpoint: null, method: null };
   const latestFetchDetail = fetchDetails?.latest;

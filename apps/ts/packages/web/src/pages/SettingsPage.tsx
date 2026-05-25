@@ -48,6 +48,7 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@/types/sync';
+import { isActiveJobStatus } from '@/utils/jobStatus';
 
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
@@ -213,7 +214,7 @@ function getRefreshCodesValidationError(codes: string[]): string | null {
 }
 
 function isSyncJobRunning(job: SyncJobStatusShape): boolean {
-  return job?.status === 'pending' || job?.status === 'running';
+  return isActiveJobStatus(job?.status);
 }
 
 interface SyncActionButtonProps {
@@ -857,11 +858,7 @@ function hasRepairTargets(targets: RepairTargets): boolean {
 }
 
 function sumRepairTargets(targets: RepairTargets): number {
-  return (
-    targets.missingListedMarketFundamentals +
-    targets.failedFundamentalsDates +
-    targets.failedFundamentalsCodes
-  );
+  return targets.missingListedMarketFundamentals + targets.failedFundamentalsDates + targets.failedFundamentalsCodes;
 }
 
 function SnapshotDetails({

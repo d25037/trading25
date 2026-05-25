@@ -15,7 +15,7 @@ import type {
   SyncFetchDetailsResponse,
   SyncJobResponse,
 } from '@/types/sync';
-import { isTerminalJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 
@@ -59,7 +59,6 @@ const SNAPSHOT_POLL_INTERVAL_RUNNING_MS = 2_000;
 const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
 const SNAPSHOT_STALE_TIME_RUNNING_MS = 0;
 const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
-const ACTIVE_SYNC_STATUSES = ['pending', 'running'] as const;
 const SYNC_SSE_EVENTS = ['snapshot', 'job', 'fetch-detail'] as const;
 
 // Fetch functions
@@ -133,7 +132,7 @@ function resolveSyncJobPollInterval(status: string | null | undefined, sseConnec
 }
 
 function resolveActiveSyncJobPollInterval(status: string | null | undefined): 1000 | 5000 {
-  return ACTIVE_SYNC_STATUSES.includes(status as (typeof ACTIVE_SYNC_STATUSES)[number]) ? 1000 : 5000;
+  return isActiveJobStatus(status) ? 1000 : 5000;
 }
 
 function getFetchDetailKey(detail: SyncFetchDetail): string {
