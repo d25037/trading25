@@ -155,3 +155,68 @@ def load_adjusted_daily_valuation_frame(
     """
     rows = reader.query(sql, (date, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
+
+
+def load_adjusted_statement_metric_rows(
+    reader: MarketDbReader,
+    date: str,
+    market_codes: list[str],
+) -> list[Mapping[str, Any]]:
+    if not table_exists(reader, "statement_metrics_adjusted"):
+        return []
+    market_clause, market_params = build_market_filter(market_codes)
+    stocks_cte = stocks_canonical_cte()
+    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
+    metrics_norm = normalized_code_sql("code")
+    metrics_order = prefer_4digit_order_sql("code")
+    sql = f"""
+        WITH
+        {stocks_cte},
+        {stock_daily_cte},
+        metrics_canonical AS (
+            SELECT
+                normalized_code,
+                disclosed_date,
+                period_type,
+                adjusted_eps,
+                adjusted_bps,
+                adjusted_forecast_eps,
+                basis_version
+            FROM (
+                SELECT
+                    {metrics_norm} AS normalized_code,
+                    disclosed_date,
+                    period_type,
+                    adjusted_eps,
+                    adjusted_bps,
+                    adjusted_forecast_eps,
+                    basis_version,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {metrics_norm}, disclosed_date
+                        ORDER BY
+                            price_basis_date DESC NULLS LAST,
+                            basis_version DESC,
+                            {metrics_order}
+                    ) AS rn
+                FROM statement_metrics_adjusted
+                WHERE disclosed_date <= ?
+            )
+            WHERE rn = 1
+        )
+        SELECT
+            s.code,
+            m.disclosed_date,
+            m.period_type,
+            m.adjusted_eps,
+            m.adjusted_bps,
+            m.adjusted_forecast_eps,
+            m.basis_version
+        FROM metrics_canonical m
+        JOIN stocks_canonical s
+            ON s.normalized_code = m.normalized_code
+        JOIN stock_daily sd
+            ON sd.normalized_code = m.normalized_code
+        WHERE 1 = 1{market_clause}
+        ORDER BY s.code, m.disclosed_date DESC
+    """
+    return reader.query(sql, (date, date, *market_params))

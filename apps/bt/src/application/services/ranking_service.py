@@ -35,6 +35,7 @@ from src.application.services.ranking_daily_queries import (
 )
 from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
+    load_adjusted_statement_metric_rows as _load_adjusted_statement_metric_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
     table_exists as _table_exists_query,
 )
@@ -1267,70 +1268,6 @@ class RankingService:
             return "forward_eps_missing"
         return "not_rankable"
 
-    def _load_adjusted_statement_metric_rows(
-        self,
-        date: str,
-        market_codes: list[str],
-    ) -> list[Mapping[str, Any]]:
-        if not self._table_exists("statement_metrics_adjusted"):
-            return []
-        market_clause, market_params = _build_market_filter(market_codes)
-        stocks_cte = _stocks_canonical_cte()
-        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-        metrics_norm = _normalized_code_sql("code")
-        metrics_order = _prefer_4digit_order_sql("code")
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_daily_cte},
-            metrics_canonical AS (
-                SELECT
-                    normalized_code,
-                    disclosed_date,
-                    period_type,
-                    adjusted_eps,
-                    adjusted_bps,
-                    adjusted_forecast_eps,
-                    basis_version
-                FROM (
-                    SELECT
-                        {metrics_norm} AS normalized_code,
-                        disclosed_date,
-                        period_type,
-                        adjusted_eps,
-                        adjusted_bps,
-                        adjusted_forecast_eps,
-                        basis_version,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {metrics_norm}, disclosed_date
-                            ORDER BY
-                                price_basis_date DESC NULLS LAST,
-                                basis_version DESC,
-                                {metrics_order}
-                        ) AS rn
-                    FROM statement_metrics_adjusted
-                    WHERE disclosed_date <= ?
-                )
-                WHERE rn = 1
-            )
-            SELECT
-                s.code,
-                m.disclosed_date,
-                m.period_type,
-                m.adjusted_eps,
-                m.adjusted_bps,
-                m.adjusted_forecast_eps,
-                m.basis_version
-            FROM metrics_canonical m
-            JOIN stocks_canonical s
-                ON s.normalized_code = m.normalized_code
-            JOIN stock_daily sd
-                ON sd.normalized_code = m.normalized_code
-            WHERE 1 = 1{market_clause}
-            ORDER BY s.code, m.disclosed_date DESC
-        """
-        return self._reader.query(sql, (date, date, *market_params))
-
     def _build_adjusted_fundamental_ratio_candidates(
         self,
         adjusted_valuation: pd.DataFrame,
@@ -1389,7 +1326,11 @@ class RankingService:
         market_codes: list[str],
         lookback_fy_count: int,
     ) -> dict[str, float | None]:
-        rows = self._load_adjusted_statement_metric_rows(target_date, market_codes)
+        rows = _load_adjusted_statement_metric_rows_query(
+            self._reader,
+            target_date,
+            market_codes,
+        )
         values_by_code: dict[str, list[float]] = {}
         seen_by_code: dict[str, set[str]] = {}
         for row in rows:
