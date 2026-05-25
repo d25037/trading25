@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { JobStatus } from '@/types/backtest';
 import { logger } from '@/utils/logger';
+import { type SseStreamControls, useSseStream } from './useSseStream';
 
 interface LabSSEState {
   progress: number | null;
@@ -12,6 +13,11 @@ interface LabSSEState {
 const MAX_RETRIES = 3;
 const TERMINAL_STATUSES: JobStatus[] = ['completed', 'failed', 'cancelled'];
 const STATUS_EVENTS: JobStatus[] = ['pending', 'running', 'completed', 'failed', 'cancelled'];
+const INITIAL_LAB_SSE_STATE: Omit<LabSSEState, 'isConnected'> = {
+  progress: null,
+  message: null,
+  status: null,
+};
 
 interface LabSSEPayload {
   status?: unknown;
@@ -24,96 +30,43 @@ function isJobStatus(value: unknown): value is JobStatus {
 }
 
 export function useLabSSE(jobId: string | null): LabSSEState {
-  const [state, setState] = useState<LabSSEState>({
-    progress: null,
-    message: null,
-    status: null,
-    isConnected: false,
-  });
-  const retryCountRef = useRef(0);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cleanup = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
+  const [eventState, setEventState] = useState(INITIAL_LAB_SSE_STATE);
+  const streamUrl = jobId ? `/api/lab/jobs/${encodeURIComponent(jobId)}/stream` : null;
 
   useEffect(() => {
     if (!jobId) {
-      cleanup();
-      setState({ progress: null, message: null, status: null, isConnected: false });
-      retryCountRef.current = 0;
-      return;
+      setEventState(INITIAL_LAB_SSE_STATE);
     }
+  }, [jobId]);
 
-    const connect = () => {
-      cleanup();
+  const handleStatusEvent = useCallback((rawData: string, controls: SseStreamControls) => {
+    try {
+      const data = JSON.parse(rawData) as LabSSEPayload;
+      if (!isJobStatus(data.status)) return;
 
-      const url = `/api/lab/jobs/${encodeURIComponent(jobId)}/stream`;
-      const es = new EventSource(url);
-      eventSourceRef.current = es;
+      const status = data.status;
+      setEventState({
+        progress: data.progress ?? null,
+        message: data.message ?? null,
+        status,
+      });
 
-      es.onopen = () => {
-        logger.debug('Lab SSE connected', { jobId });
-        retryCountRef.current = 0;
-        setState((prev) => ({ ...prev, isConnected: true }));
-      };
-
-      const handleStatusEvent = (rawData: string) => {
-        try {
-          const data = JSON.parse(rawData) as LabSSEPayload;
-          if (!isJobStatus(data.status)) return;
-
-          const status = data.status;
-          setState({
-            progress: data.progress ?? null,
-            message: data.message ?? null,
-            status,
-            isConnected: true,
-          });
-
-          if (TERMINAL_STATUSES.includes(status)) {
-            cleanup();
-            setState((prev) => ({ ...prev, isConnected: false }));
-          }
-        } catch (e) {
-          logger.error('Lab SSE parse error', { error: String(e) });
-        }
-      };
-      es.onmessage = (event) => {
-        handleStatusEvent(event.data);
-      };
-      for (const eventName of STATUS_EVENTS) {
-        es.addEventListener(eventName, (event) => {
-          handleStatusEvent((event as MessageEvent<string>).data);
-        });
+      if (TERMINAL_STATUSES.includes(status)) {
+        controls.close();
       }
+    } catch (e) {
+      logger.error('Lab SSE parse error', { error: String(e) });
+    }
+  }, []);
 
-      es.onerror = () => {
-        cleanup();
-        retryCountRef.current += 1;
+  const { isConnected } = useSseStream({
+    url: streamUrl,
+    eventNames: STATUS_EVENTS,
+    onMessage: handleStatusEvent,
+    onEvent: (_eventName, rawData, controls) => handleStatusEvent(rawData, controls),
+    maxRetries: MAX_RETRIES,
+    onMaxRetriesExceeded: () => logger.error('Lab SSE max retries exceeded', { jobId }),
+  });
 
-        if (retryCountRef.current <= MAX_RETRIES) {
-          logger.debug('Lab SSE reconnecting', { attempt: retryCountRef.current, jobId });
-          reconnectTimerRef.current = setTimeout(connect, 1000 * retryCountRef.current);
-        } else {
-          logger.error('Lab SSE max retries exceeded', { jobId });
-          setState((prev) => ({ ...prev, isConnected: false }));
-        }
-      };
-    };
-
-    connect();
-
-    return cleanup;
-  }, [jobId, cleanup]);
-
-  return state;
+  return { ...eventState, isConnected };
 }

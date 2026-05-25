@@ -1,6 +1,6 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { analyticsClient } from '@/lib/analytics-client';
 import type {
   MarketScreeningResponse,
@@ -9,6 +9,7 @@ import type {
   ScreeningParams,
 } from '@/types/screening';
 import { logger } from '@/utils/logger';
+import { type SseStreamControls, useSseStream } from './useSseStream';
 
 export const screeningKeys = {
   all: ['screening'] as const,
@@ -22,6 +23,7 @@ interface ScreeningJobSSEState {
 
 const MAX_SSE_RETRIES = 3;
 const TERMINAL_SCREENING_STATUSES: ScreeningJobResponse['status'][] = ['completed', 'failed', 'cancelled'];
+const SCREENING_SSE_EVENTS = ['snapshot', 'job'] as const;
 
 function isTerminalScreeningStatus(status: unknown): status is ScreeningJobResponse['status'] {
   return TERMINAL_SCREENING_STATUSES.includes(status as ScreeningJobResponse['status']);
@@ -73,17 +75,6 @@ function updateScreeningJobCache(queryClient: QueryClient, payload: ScreeningJob
   queryClient.setQueryData(screeningKeys.job(payload.job_id), payload);
 }
 
-function closeScreeningJobStream(
-  cleanup: () => void,
-  setIsConnected: (isConnected: boolean) => void,
-  disposed: boolean
-): void {
-  cleanup();
-  if (!disposed) {
-    setIsConnected(false);
-  }
-}
-
 export function useRunScreeningJob() {
   const queryClient = useQueryClient();
 
@@ -101,94 +92,31 @@ export function useRunScreeningJob() {
 
 export function useScreeningJobSSE(jobId: string | null): ScreeningJobSSEState {
   const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
+  const streamUrl = jobId ? `/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/stream` : null;
 
-  const cleanup = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
+  const handleJobEvent = useCallback(
+    (rawData: string, controls: SseStreamControls) => {
+      const payload = parseScreeningJobPayload(rawData, jobId);
+      if (!payload) {
+        return;
+      }
 
-  useEffect(() => {
-    if (!jobId) {
-      cleanup();
-      retryCountRef.current = 0;
-      setIsConnected(false);
-      return;
-    }
+      updateScreeningJobCache(queryClient, payload);
+      if (isTerminalScreeningStatus(payload.status)) {
+        controls.close();
+      }
+    },
+    [jobId, queryClient]
+  );
 
-    let disposed = false;
-    retryCountRef.current = 0;
-    setIsConnected(false);
-
-    const connect = () => {
-      cleanup();
-
-      const es = new EventSource(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/stream`);
-      eventSourceRef.current = es;
-
-      const handleJobEvent = (rawData: string) => {
-        const payload = parseScreeningJobPayload(rawData, jobId);
-        if (!payload) {
-          return;
-        }
-
-        updateScreeningJobCache(queryClient, payload);
-        if (isTerminalScreeningStatus(payload.status)) {
-          closeScreeningJobStream(cleanup, setIsConnected, disposed);
-        }
-      };
-
-      es.onopen = () => {
-        retryCountRef.current = 0;
-        if (!disposed) {
-          setIsConnected(true);
-        }
-      };
-
-      es.onmessage = (event) => {
-        handleJobEvent(event.data);
-      };
-      es.addEventListener('snapshot', (event) => {
-        handleJobEvent((event as MessageEvent<string>).data);
-      });
-      es.addEventListener('job', (event) => {
-        handleJobEvent((event as MessageEvent<string>).data);
-      });
-
-      es.onerror = () => {
-        cleanup();
-        if (!disposed) {
-          setIsConnected(false);
-        }
-        retryCountRef.current += 1;
-
-        if (retryCountRef.current > MAX_SSE_RETRIES) {
-          logger.error('Screening SSE max retries exceeded', { jobId });
-          return;
-        }
-
-        reconnectTimerRef.current = setTimeout(connect, retryCountRef.current * 1000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      disposed = true;
-      cleanup();
-    };
-  }, [cleanup, jobId, queryClient]);
-
-  return { isConnected };
+  return useSseStream({
+    url: streamUrl,
+    eventNames: SCREENING_SSE_EVENTS,
+    onMessage: handleJobEvent,
+    onEvent: (_eventName, rawData, controls) => handleJobEvent(rawData, controls),
+    maxRetries: MAX_SSE_RETRIES,
+    onMaxRetriesExceeded: () => logger.error('Screening SSE max retries exceeded', { jobId }),
+  });
 }
 
 export function useScreeningJobStatus(jobId: string | null, sseConnected = false) {
