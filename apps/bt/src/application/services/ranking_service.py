@@ -2513,14 +2513,6 @@ class RankingService:
         )
         return row["date"] if row else None
 
-    def _get_previous_trading_date(self, date: str) -> str | None:
-        """前営業日を取得"""
-        row = self._reader.query_one(
-            "SELECT DISTINCT date FROM stock_data WHERE date < ? ORDER BY date DESC LIMIT 1",
-            (date,),
-        )
-        return row["date"] if row else None
-
     def _load_index_performance(
         self,
         date: str,
@@ -2661,7 +2653,7 @@ class RankingService:
             WHERE 1 = 1{market_clause}
             ORDER BY trading_value DESC{limit_sql}
         """
-        prev_date = self._get_previous_trading_date(date)
+        prev_date = self._get_trading_date_before(date, 0)
         rows = self._reader.query(sql, (date, prev_date or "", *market_params, *limit_params))
         return [
             _row_to_item(
@@ -2765,7 +2757,7 @@ class RankingService:
         sector17_name: str | None = None,
     ) -> list[RankingItem]:
         """騰落率ランキング（単日）"""
-        prev_date = self._get_previous_trading_date(date)
+        prev_date = self._get_trading_date_before(date, 0)
         if not prev_date:
             return []
 
