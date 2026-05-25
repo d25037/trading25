@@ -1,8 +1,8 @@
+import type { ScreeningResultItem } from '@trading25/contracts/types/api-response-types';
 import { Loader2, TrendingUp } from 'lucide-react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
-import type { ScreeningResultItem } from '@/types/screening';
 import { formatDateShort } from '@/utils/formatters';
 
 interface ScreeningTableProps {

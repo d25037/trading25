@@ -1,10 +1,10 @@
 import { useId } from 'react';
+import type { EntryDecidability, ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatMarketsLabel } from '@/lib/marketUtils';
-import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
 import { formatDateTimeShort, formatShortId } from '@/utils/formatters';
 
 interface ScreeningJobHistoryTableProps {

@@ -1,3 +1,4 @@
+import type { EntryDecidability, ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, type MarketOption, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { canonicalizeMarkets, formatMarketsLabel } from '@/lib/marketUtils';
 import { cn } from '@/lib/utils';
-import type { EntryDecidability, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
+import type { ScreeningParams } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },

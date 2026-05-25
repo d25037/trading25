@@ -1,13 +1,9 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import type { MarketScreeningResponse, ScreeningJobRequest, ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { useCallback } from 'react';
 import { analyticsClient } from '@/lib/analytics-client';
-import type {
-  MarketScreeningResponse,
-  ScreeningJobRequest,
-  ScreeningJobResponse,
-  ScreeningParams,
-} from '@/types/screening';
+import type { ScreeningParams } from '@/types/screening';
 import { isTerminalJobStatus, resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';

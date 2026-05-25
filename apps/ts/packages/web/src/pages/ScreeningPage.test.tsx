@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import type { MarketScreeningResponse, ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
@@ -10,7 +11,6 @@ import {
   DEFAULT_RANKING_PARAMS,
   useScreeningStore,
 } from '@/stores/screeningStore';
-import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
 import { ScreeningPage } from './ScreeningPage';
 
 const mockNavigate = vi.fn();

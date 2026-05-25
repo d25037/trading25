@@ -1,8 +1,8 @@
+import type { ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
-import type { ScreeningJobResponse } from '@/types/screening';
 import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 

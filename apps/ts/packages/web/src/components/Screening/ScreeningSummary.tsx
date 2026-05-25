@@ -1,7 +1,7 @@
+import type { ScreeningSummary as Summary } from '@trading25/contracts/types/api-response-types';
 import { AlertTriangle, BarChart3, TrendingUp, Trophy } from 'lucide-react';
 import { SummaryMetrics } from '@/components/shared/SummaryMetrics';
 import { formatMarketsLabel } from '@/lib/marketUtils';
-import type { ScreeningSummary as Summary } from '@/types/screening';
 import { formatCount } from '@/utils/formatters';
 
 interface ScreeningSummaryProps {

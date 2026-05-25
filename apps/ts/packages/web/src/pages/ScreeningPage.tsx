@@ -1,5 +1,11 @@
 import { useNavigate } from '@tanstack/react-router';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import type {
+  EntryDecidability,
+  MarketScreeningResponse,
+  ScreeningJobResponse,
+  ScreeningResultItem,
+} from '@trading25/contracts/types/api-response-types';
 import { Filter } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -32,13 +38,7 @@ import type { ScreeningSubTab } from '@/stores/screeningStore';
 import { useScreeningStore } from '@/stores/screeningStore';
 import type { StrategyMetadata } from '@/types/backtest';
 import { DATASET_PRESETS } from '@trading25/contracts/types/api-response-types';
-import type {
-  EntryDecidability,
-  MarketScreeningResponse,
-  ScreeningJobResponse,
-  ScreeningParams,
-  ScreeningResultItem,
-} from '@/types/screening';
+import type { ScreeningParams } from '@/types/screening';
 import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 const subTabs = [

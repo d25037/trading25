@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import type { ScreeningSummary as Summary } from '@trading25/contracts/types/api-response-types';
 import { describe, expect, it } from 'vitest';
-import type { ScreeningSummary as Summary } from '@/types/screening';
 import { ScreeningSummary } from './ScreeningSummary';
 
 const mockSummary: Summary = {

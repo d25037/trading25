@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
+import type { ScreeningResultItem } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { ScreeningResultItem } from '@/types/screening';
 import { ScreeningTable } from './ScreeningTable';
 
 const mockResults: ScreeningResultItem[] = [

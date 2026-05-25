@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ScreeningJobResponse } from '@/types/screening';
 import { ScreeningJobProgress, ScreeningJobStatusInline } from './ScreeningJobProgress';
 
 function createJob(overrides: Partial<ScreeningJobResponse> = {}): ScreeningJobResponse {

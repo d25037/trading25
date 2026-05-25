@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { RankingParams } from '@/types/ranking';
-import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
+import type { ScreeningParams } from '@/types/screening';
 import { compareTimestampDesc } from '@/utils/dateComparators';
 
 export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening';
