@@ -22,7 +22,9 @@ from src.domains.analytics.fundamental_ranking import (
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.application.services.ranking_service import (
     RankingService,
-    _build_market_filter,
+)
+from src.application.services.ranking_query_helpers import (
+    build_market_filter,
 )
 
 
@@ -2541,7 +2543,7 @@ class _BadFloat:
 
 class TestRankingHelperBranches:
     def test_module_level_helpers_edge_cases(self):
-        assert _build_market_filter([]) == ("", [])
+        assert build_market_filter([]) == ("", [])
         assert _normalize_period_label(None) == ""
         assert _is_valid_share_count(None) is False
         assert _is_valid_share_count(0.0) is False
