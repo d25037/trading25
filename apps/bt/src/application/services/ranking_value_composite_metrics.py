@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
 from src.application.services.ranking_daily_queries import get_trading_date_before
 from src.application.services.ranking_query_helpers import (
     equity_code_variants,
@@ -84,6 +85,40 @@ def append_value_composite_profile_metrics(
         result[column] = normalized_codes.map(
             lambda code, column=column: profile_metrics.get(str(code), {}).get(column)
         )
+    return result
+
+
+def apply_value_composite_profile(
+    frame: pd.DataFrame,
+    profile: ValueCompositeProfileSpec,
+    *,
+    apply_liquidity_filter: bool,
+) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    base_score = pd.to_numeric(result[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce")
+    result["score_before_boost"] = base_score
+    result["breakout_boost"] = 0.0
+    if profile.breakout_window is not None and profile.breakout_lookback_sessions is not None:
+        days_column = f"days_since_new_high_{profile.breakout_window}d"
+        if days_column in result.columns and profile.breakout_score_boost is not None:
+            denominator = max(int(profile.breakout_lookback_sessions), 1)
+            days_since = pd.to_numeric(result[days_column], errors="coerce")
+            recency = (
+                (denominator - days_since.clip(lower=0, upper=denominator))
+                / denominator
+            ).fillna(0.0)
+            result["breakout_boost"] = recency * float(profile.breakout_score_boost)
+    result[VALUE_COMPOSITE_SCORE_COLUMN] = base_score + pd.to_numeric(
+        result["breakout_boost"],
+        errors="coerce",
+    ).fillna(0.0)
+    if profile.min_adv60_mil_jpy is not None:
+        adv60 = pd.to_numeric(result["avg_trading_value_60d_mil_jpy"], errors="coerce")
+        result["liquidity_eligible"] = adv60 >= float(profile.min_adv60_mil_jpy)
+        if apply_liquidity_filter:
+            result = result[result["liquidity_eligible"]].copy()
     return result
 
 

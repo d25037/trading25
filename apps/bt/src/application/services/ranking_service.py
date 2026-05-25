@@ -72,6 +72,7 @@ from src.application.services.ranking_value_composite_config import (
 from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
     append_value_composite_technical_metrics as _append_value_composite_technical_metrics_query,
+    apply_value_composite_profile as _apply_value_composite_profile_frame,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
 )
@@ -588,40 +589,6 @@ class RankingService:
             lastUpdated=_now_iso(),
         )
 
-    def _apply_value_composite_profile(
-        self,
-        frame: pd.DataFrame,
-        profile: _ValueCompositeProfileSpec,
-        *,
-        apply_liquidity_filter: bool,
-    ) -> pd.DataFrame:
-        if frame.empty:
-            return frame.copy()
-        result = frame.copy()
-        base_score = pd.to_numeric(result[VALUE_COMPOSITE_SCORE_COLUMN], errors="coerce")
-        result["score_before_boost"] = base_score
-        result["breakout_boost"] = 0.0
-        if profile.breakout_window is not None and profile.breakout_lookback_sessions is not None:
-            days_column = f"days_since_new_high_{profile.breakout_window}d"
-            if days_column in result.columns and profile.breakout_score_boost is not None:
-                denominator = max(int(profile.breakout_lookback_sessions), 1)
-                days_since = pd.to_numeric(result[days_column], errors="coerce")
-                recency = (
-                    (denominator - days_since.clip(lower=0, upper=denominator))
-                    / denominator
-                ).fillna(0.0)
-                result["breakout_boost"] = recency * float(profile.breakout_score_boost)
-        result[VALUE_COMPOSITE_SCORE_COLUMN] = base_score + pd.to_numeric(
-            result["breakout_boost"],
-            errors="coerce",
-        ).fillna(0.0)
-        if profile.min_adv60_mil_jpy is not None:
-            adv60 = pd.to_numeric(result["avg_trading_value_60d_mil_jpy"], errors="coerce")
-            result["liquidity_eligible"] = adv60 >= float(profile.min_adv60_mil_jpy)
-            if apply_liquidity_filter:
-                result = result[result["liquidity_eligible"]].copy()
-        return result
-
     def _apply_value_composite_profile_if_requested(
         self,
         scored: pd.DataFrame,
@@ -638,7 +605,7 @@ class RankingService:
             target_date=target_date,
             profile=profile,
         )
-        scored = self._apply_value_composite_profile(
+        scored = _apply_value_composite_profile_frame(
             scored,
             profile,
             apply_liquidity_filter=apply_liquidity_filter,
