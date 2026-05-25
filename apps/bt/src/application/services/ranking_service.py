@@ -6,7 +6,7 @@ DuckDB market data からランキングデータを取得するサービス。
 
 from __future__ import annotations
 
-from datetime import UTC, date as calendar_date, datetime, timedelta
+from datetime import UTC, datetime
 from collections.abc import Mapping
 from typing import Any, Literal, cast
 
@@ -26,6 +26,9 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_price_change_from_days as _ranking_by_price_change_from_days_query,
     ranking_by_trading_value as _ranking_by_trading_value_query,
     ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
+)
+from src.application.services.ranking_collection_filters import (
+    filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
 )
 from src.application.services.ranking_fundamental_queries import (
     load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
@@ -252,7 +255,7 @@ class RankingService:
                 query_market_codes=query_market_codes,
                 price_basis_date=price_basis_date,
             )
-            self._filter_ranking_collections_by_forward_eps_source_date(
+            _filter_ranking_collections_by_forward_eps_source_date(
                 ranking_collections,
                 target_date=target_date,
                 forward_eps_disclosed_within_days=forward_eps_disclosed_within_days,
@@ -813,48 +816,6 @@ class RankingService:
                 item.marketCap = _finite_or_none(row.get("market_cap"))
             enriched_codes.add(code)
         return enriched_codes
-
-    @staticmethod
-    def _filter_ranking_collections_by_forward_eps_source_date(
-        collections: tuple[list[RankingItem], ...],
-        *,
-        target_date: str,
-        forward_eps_disclosed_within_days: int,
-    ) -> None:
-        if forward_eps_disclosed_within_days <= 0:
-            return
-
-        try:
-            max_date = datetime.fromisoformat(target_date).date()
-        except ValueError:
-            return
-        min_date = max_date - timedelta(days=forward_eps_disclosed_within_days)
-
-        for collection in collections:
-            collection[:] = [
-                item
-                for item in collection
-                if RankingService._is_forward_eps_source_date_in_window(
-                    item.forwardEpsDisclosedDate,
-                    min_date=min_date,
-                    max_date=max_date,
-                )
-            ]
-
-    @staticmethod
-    def _is_forward_eps_source_date_in_window(
-        disclosed_date: str | None,
-        *,
-        min_date: calendar_date,
-        max_date: calendar_date,
-    ) -> bool:
-        if disclosed_date is None:
-            return False
-        try:
-            source_date = datetime.fromisoformat(disclosed_date).date()
-        except ValueError:
-            return False
-        return min_date <= source_date <= max_date
 
     @staticmethod
     def _limit_and_rerank_ranking_collections(
