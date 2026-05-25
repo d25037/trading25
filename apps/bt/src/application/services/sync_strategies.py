@@ -9,9 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Iterable, Protocol, cast
-from zoneinfo import ZoneInfo
 
 from loguru import logger
 
@@ -98,6 +97,16 @@ from src.application.services.sync_fetch_planner import (
     _raise_stock_bulk_required_error,
     _resolve_bulk_fallback_reason,
     _summarize_exception,
+)
+from src.application.services.sync_state_helpers import (
+    _build_incremental_date_targets,
+    _collect_unique_codes,
+    _dedupe_preserve_order as _dedupe_preserve_order,
+    _inspect_time_series,
+    _load_metadata_json_list,
+    _normalize_date_list,
+    _require_time_series_store,
+    _save_metadata_json_list,
 )
 
 
@@ -197,7 +206,6 @@ class SyncStrategy(Protocol):  # pragma: no cover
     def estimate_api_calls(self) -> int: ...
 
 
-_JST = ZoneInfo("Asia/Tokyo")
 _MAX_FINS_SUMMARY_PAGES = 2000
 _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE = 4
 _STOCK_MASTER_REST_FALLBACK_MAX_ESTIMATED_CALLS = 12
@@ -2813,119 +2821,6 @@ async def _fetch_margin_by_code(
     if last_error is None:
         raise RuntimeError(f"margin-interest code fetch failed for {code}")
     raise last_error
-
-def _load_metadata_json_list(market_db: SyncMarketDbLike, key: str) -> list[str]:
-    raw = market_db.get_sync_metadata(key)
-    if not raw:
-        return []
-    try:
-        loaded = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(loaded, list):
-        return []
-    return [str(v) for v in loaded if isinstance(v, str) or isinstance(v, int)]
-
-
-async def _save_metadata_json_list(
-    ctx: SyncContext,
-    key: str,
-    values: list[str],
-) -> None:
-    deduped = _dedupe_preserve_order(values)
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        key,
-        json.dumps(deduped, ensure_ascii=False),
-    )
-
-
-def _collect_unique_codes(values: list[str]) -> list[str]:
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        code = normalize_stock_code(str(value).strip())
-        if not code or code in seen:
-            continue
-        seen.add(code)
-        deduped.append(code)
-    return deduped
-
-
-def _dedupe_preserve_order(values: list[str]) -> list[str]:
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        normalized = str(value).strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return deduped
-
-
-def _normalize_date_list(values: list[str]) -> list[str]:
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        parsed = _parse_date(value)
-        if parsed is None:
-            continue
-        normalized = parsed.isoformat()
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        deduped.append(normalized)
-    return sorted(deduped, key=_date_sort_key)
-
-
-def _build_incremental_date_targets(anchor: str | None, retry_dates: list[str]) -> list[str]:
-    targets: list[str] = list(retry_dates)
-    seen = set(targets)
-
-    anchor_date = _parse_date(anchor) if anchor else None
-    today_jst = datetime.now(_JST).date()
-
-    if anchor_date is not None:
-        current = anchor_date + timedelta(days=1)
-        while current <= today_jst:
-            value = current.isoformat()
-            if value not in seen:
-                seen.add(value)
-                targets.append(value)
-            current += timedelta(days=1)
-
-    return targets
-
-
-def _require_time_series_store(ctx: SyncContext) -> SyncTimeSeriesStoreLike:
-    if ctx.time_series_store is None:
-        raise RuntimeError("DuckDB time-series store is required for sync strategy execution")
-    return ctx.time_series_store
-
-
-def _inspect_time_series(
-    ctx: SyncContext,
-    *,
-    missing_stock_dates_limit: int = 0,
-    missing_options_225_dates_limit: int = 0,
-    statement_non_null_columns: list[str] | None = None,
-) -> TimeSeriesInspection:
-    store = _require_time_series_store(ctx)
-    try:
-        inspection = store.inspect(
-            missing_stock_dates_limit=missing_stock_dates_limit,
-            missing_options_225_dates_limit=missing_options_225_dates_limit,
-            statement_non_null_columns=statement_non_null_columns,
-        )
-    except Exception as e:  # noqa: BLE001 - include backend error in sync failure
-        raise RuntimeError(f"DuckDB inspection failed during sync: {e}") from e
-    if inspection.source != "duckdb-parquet":
-        raise RuntimeError(
-            f"Unexpected time-series source during sync: {inspection.source}"
-        )
-    return inspection
-
 
 async def _resolve_incremental_options_date_targets(
     ctx: SyncContext,
