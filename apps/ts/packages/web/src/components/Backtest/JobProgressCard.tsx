@@ -1,7 +1,7 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatElapsedSeconds, formatPercentage } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
@@ -108,18 +108,7 @@ function StatusAlert({ job }: { job: BacktestJobResponse }) {
 
 export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobProgressCardProps) {
   const isActive = isActiveJobStatus(job?.status);
-
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!isActive || !job) return;
-    const startTime = job.started_at ?? job.created_at;
-    if (!startTime) return;
-    const start = new Date(startTime).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [isActive, job?.started_at, job?.created_at, job]);
+  const elapsed = useElapsedSeconds(isActive, job?.started_at ?? job?.created_at);
 
   if (!job && !isLoading) return null;
 

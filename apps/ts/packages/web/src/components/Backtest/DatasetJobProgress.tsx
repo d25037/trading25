@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { datasetKeys, useCancelDatasetJob, useDatasetJobStatus } from '@/hooks/useDataset';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { ApiError } from '@/lib/api-client';
 import { useBacktestStore } from '@/stores/backtestStore';
 import { formatElapsedSeconds } from '@/utils/formatters';
@@ -17,17 +18,8 @@ export function DatasetJobProgress() {
 
   const isActive = isActiveJobStatus(job?.status);
   const isTerminal = isTerminalJobStatus(job?.status);
-
-  const [elapsed, setElapsed] = useState(0);
   const startedAt = job?.startedAt;
-  useEffect(() => {
-    if (!isActive || !startedAt) return;
-    const start = new Date(startedAt).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [isActive, startedAt]);
+  const elapsed = useElapsedSeconds(isActive, startedAt);
 
   // Invalidate dataset list when job completes and auto-clear after delay
   useEffect(() => {

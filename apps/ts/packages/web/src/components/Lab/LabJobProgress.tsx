@@ -1,7 +1,7 @@
 import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { JobStatus } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
@@ -50,18 +50,7 @@ export function LabJobProgress({
   isCancelling,
 }: LabJobProgressProps) {
   const isActive = isActiveJobStatus(status);
-
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!isActive) return;
-    const startTime = startedAt ?? createdAt;
-    if (!startTime) return;
-    const start = new Date(startTime).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [isActive, startedAt, createdAt]);
+  const elapsed = useElapsedSeconds(isActive, startedAt ?? createdAt);
 
   if (!status) return null;
 

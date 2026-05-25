@@ -1,5 +1,5 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
-import { type ComponentProps, useEffect, useMemo, useState } from 'react';
+import { type ComponentProps, useMemo, useState } from 'react';
 import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import {
   useSignalAttributionResult,
   useStrategies,
 } from '@/hooks/useBacktest';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type {
   JobStatus,
@@ -276,19 +277,7 @@ function AttributionJobCard({
   const progressValue = progressPercent == null ? undefined : Math.round(progressPercent);
   const progressLabel = progressPercent == null ? null : `${progressPercent.toFixed(1)}%`;
   const startTime = activeJob?.started_at ?? activeJob?.created_at ?? null;
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    if (!isActive || !startTime) {
-      setElapsed(0);
-      return;
-    }
-    const start = new Date(startTime).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [isActive, startTime]);
+  const elapsed = useElapsedSeconds(isActive, startTime);
 
   if (!activeJob) {
     return null;

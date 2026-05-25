@@ -1,7 +1,7 @@
 import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { ScreeningJobResponse } from '@/types/screening';
 import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
@@ -44,21 +44,7 @@ export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps)
 export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: ScreeningJobProgressProps) {
   const startTime = job?.started_at ?? job?.created_at ?? null;
   const isActive = isActiveJobStatus(job?.status);
-
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!isActive || !startTime) {
-      setElapsed(0);
-      return;
-    }
-
-    const start = new Date(startTime).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-
-    update();
-    const timerId = setInterval(update, 1000);
-    return () => clearInterval(timerId);
-  }, [isActive, startTime]);
+  const elapsed = useElapsedSeconds(isActive, startTime);
 
   if (!job) return null;
 

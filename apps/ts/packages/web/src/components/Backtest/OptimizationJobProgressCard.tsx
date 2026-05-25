@@ -1,7 +1,7 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
+import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
@@ -115,18 +115,7 @@ function resolveStageLabel(job: OptimizationJobResponse): string | null {
 
 export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobProgressCardProps) {
   const isActive = isActiveJobStatus(job?.status);
-
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    if (!isActive || !job) return;
-    const startTime = job.started_at ?? job.created_at;
-    if (!startTime) return;
-    const start = new Date(startTime).getTime();
-    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [isActive, job?.started_at, job?.created_at, job]);
+  const elapsed = useElapsedSeconds(isActive, job?.started_at ?? job?.created_at);
 
   if (!job && !isLoading) return null;
 
