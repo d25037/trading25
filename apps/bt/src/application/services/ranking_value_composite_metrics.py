@@ -21,6 +21,9 @@ from src.domains.fundamentals import (
     market_statement_row_to_jquants_statement,
 )
 from src.application.services.ranking_daily_queries import get_trading_date_before
+from src.application.services.ranking_fundamental_queries import (
+    resolve_latest_stock_data_date,
+)
 from src.application.services.ranking_query_helpers import (
     canonical_market_label,
     equity_code_variants,
@@ -52,10 +55,7 @@ def resolve_value_composite_target_date(
 ) -> str:
     if date:
         return date
-    date_row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
-    if date_row is None or date_row["max_date"] is None:
-        raise ValueError("No trading data available in database")
-    return str(date_row["max_date"])
+    return resolve_latest_stock_data_date(reader)
 
 
 def resolve_value_composite_symbol_target_date(

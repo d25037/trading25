@@ -36,6 +36,7 @@ from src.application.services.ranking_fundamental_queries import (
     load_adjusted_statement_metric_rows as _load_adjusted_statement_metric_rows_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
+    resolve_latest_stock_data_date as _resolve_latest_stock_data_date_query,
     table_exists as _table_exists_query,
 )
 from src.shared.utils.share_adjustment import (
@@ -143,12 +144,6 @@ class RankingService:
     def _table_exists(self, table_name: str) -> bool:
         return _table_exists_query(self._reader, table_name)
 
-    def _resolve_stock_price_basis_date(self) -> str:
-        row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
-        if row is None or row["max_date"] is None:
-            raise ValueError("No trading data available in database")
-        return str(row["max_date"])
-
     def get_rankings(
         self,
         date: str | None = None,
@@ -169,7 +164,7 @@ class RankingService:
         if date:
             target_date = date
         else:
-            target_date = self._resolve_stock_price_basis_date()
+            target_date = _resolve_latest_stock_data_date_query(self._reader)
 
         apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
         apply_liquidity_state_filter = include_valuation and liquidity_state is not None
@@ -257,7 +252,7 @@ class RankingService:
         )
         ranking_collections = (trading_value, gainers, losers, period_high, period_low)
         if include_valuation:
-            price_basis_date = self._resolve_stock_price_basis_date()
+            price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
             self._enrich_ranking_collections_with_valuation(
                 ranking_collections,
                 target_date=target_date,
@@ -325,12 +320,7 @@ class RankingService:
             raise ValueError("forecast_lookback_fy_count must be >= 1")
 
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
-        date_row = self._reader.query_one(
-            "SELECT MAX(date) as max_date FROM stock_data"
-        )
-        if date_row is None or date_row["max_date"] is None:
-            raise ValueError("No trading data available in database")
-        target_date = date_row["max_date"]
+        target_date = _resolve_latest_stock_data_date_query(self._reader)
 
         stock_rows = _load_fundamental_stock_rows_query(
             self._reader,
@@ -644,7 +634,7 @@ class RankingService:
             target_date=target_date,
             query_market_codes=query_market_codes,
             forward_eps_mode=forward_eps_mode,
-            price_basis_date=self._resolve_stock_price_basis_date(),
+            price_basis_date=_resolve_latest_stock_data_date_query(self._reader),
         )
         return build_value_composite_score_response(
             date=target_date,
@@ -698,7 +688,7 @@ class RankingService:
             target_date,
             query_market_codes,
         )
-        price_basis_date = self._resolve_stock_price_basis_date()
+        price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
         adjustment_events_by_code = _load_adjustment_events_by_code_query(
             self._reader,
             through_date=price_basis_date,

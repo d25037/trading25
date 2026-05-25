@@ -37,6 +37,13 @@ def table_exists(reader: MarketDbReader, table_name: str) -> bool:
     return row is not None
 
 
+def resolve_latest_stock_data_date(reader: MarketDbReader) -> str:
+    row = reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+    if row is None or row["max_date"] is None:
+        raise ValueError("No trading data available in database")
+    return str(row["max_date"])
+
+
 def load_adjustment_events_by_code(
     reader: MarketDbReader,
     *,
