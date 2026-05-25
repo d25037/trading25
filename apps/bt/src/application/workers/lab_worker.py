@@ -45,6 +45,7 @@ from src.application.workers.job_runtime import (
     record_elapsed_job_duration,
     record_job_duration,
     terminal_worker_exit_code,
+    worker_cancel_reason,
     worker_lease_owner,
 )
 
@@ -107,14 +108,15 @@ async def _heartbeat_loop(
             return
         if job.cancel_requested_at is not None:
             duration_ms = duration_ms_for_loaded_job(job)
+            cancel_reason = worker_cancel_reason(job.cancel_reason)
             await manager.cancel_job(
                 job_id,
-                reason=job.cancel_reason or "controller_requested",
+                reason=cancel_reason,
             )
             await cancel_verification_children(
                 manager,
                 job_id,
-                reason=job.cancel_reason or "controller_requested",
+                reason=cancel_reason,
             )
             record_job_duration(job.job_type, JobStatus.CANCELLED.value, duration_ms)
             logger.info(

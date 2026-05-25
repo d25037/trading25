@@ -16,6 +16,7 @@ from src.shared.observability.metrics import metrics_recorder
 DEFAULT_HEARTBEAT_SECONDS = 5.0
 MIN_HEARTBEAT_SECONDS = 0.1
 WORKER_TIMED_OUT_ERROR = "worker_timed_out"
+CONTROLLER_REQUESTED_CANCEL_REASON = "controller_requested"
 
 
 class LoadedJobTiming(Protocol):
@@ -56,6 +57,10 @@ def worker_lease_owner(worker_name: str) -> str:
 
 def normalized_heartbeat_seconds(heartbeat_seconds: float) -> float:
     return max(heartbeat_seconds, MIN_HEARTBEAT_SECONDS)
+
+
+def worker_cancel_reason(cancel_reason: str | None) -> str:
+    return cancel_reason or CONTROLLER_REQUESTED_CANCEL_REASON
 
 
 def terminal_worker_exit_code(status: JobStatus, error: str | None) -> int | None:
