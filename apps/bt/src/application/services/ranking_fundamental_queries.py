@@ -220,3 +220,103 @@ def load_adjusted_statement_metric_rows(
         ORDER BY s.code, m.disclosed_date DESC
     """
     return reader.query(sql, (date, date, *market_params))
+
+
+def load_fundamental_statement_rows(
+    reader: MarketDbReader,
+    date: str,
+    market_codes: list[str],
+) -> list[Mapping[str, Any]]:
+    market_clause, market_params = build_market_filter(market_codes)
+    stocks_cte = stocks_canonical_cte()
+    stock_daily_cte = stock_data_dedup_cte("stock_daily", where_clause="date = ?")
+    statements_norm = normalized_code_sql("code")
+    statements_order = prefer_4digit_order_sql("code")
+    statement_columns = statement_table_columns(reader)
+    forecast_operating_profit_expr = optional_statement_double_expr(
+        "forecast_operating_profit",
+        statement_columns,
+    )
+    next_year_forecast_operating_profit_expr = optional_statement_double_expr(
+        "next_year_forecast_operating_profit",
+        statement_columns,
+    )
+    sql = f"""
+        WITH
+        {stocks_cte},
+        {stock_daily_cte},
+        statements_canonical AS (
+            SELECT
+                normalized_code,
+                disclosed_date,
+                type_of_current_period,
+                type_of_document,
+                earnings_per_share,
+                bps,
+                forecast_eps,
+                next_year_forecast_earnings_per_share,
+                operating_profit,
+                forecast_operating_profit,
+                next_year_forecast_operating_profit,
+                shares_outstanding,
+                treasury_shares
+            FROM (
+                SELECT
+                    {statements_norm} AS normalized_code,
+                    disclosed_date,
+                    type_of_current_period,
+                    type_of_document,
+                    earnings_per_share,
+                    bps,
+                    forecast_eps,
+                    next_year_forecast_earnings_per_share,
+                    operating_profit,
+                    {forecast_operating_profit_expr},
+                    {next_year_forecast_operating_profit_expr},
+                    shares_outstanding,
+                    treasury_shares,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {statements_norm}, disclosed_date
+                        ORDER BY {statements_order}
+                    ) AS rn
+                FROM statements
+            )
+            WHERE rn = 1
+        )
+        SELECT
+            s.code,
+            st.disclosed_date,
+            st.type_of_current_period,
+            st.type_of_document,
+            st.earnings_per_share,
+            st.bps,
+            st.forecast_eps,
+            st.next_year_forecast_earnings_per_share,
+            st.operating_profit,
+            st.forecast_operating_profit,
+            st.next_year_forecast_operating_profit,
+            st.shares_outstanding,
+            st.treasury_shares
+        FROM statements_canonical st
+        JOIN stocks_canonical s
+            ON s.normalized_code = st.normalized_code
+        JOIN stock_daily sd
+            ON sd.normalized_code = st.normalized_code
+        WHERE st.disclosed_date <= ?{market_clause}
+        ORDER BY s.code, st.disclosed_date DESC
+    """
+    return reader.query(sql, (date, date, *market_params))
+
+
+def statement_table_columns(reader: MarketDbReader) -> set[str]:
+    try:
+        rows = reader.query("SELECT name FROM pragma_table_info('statements')")
+    except Exception:  # noqa: BLE001 - main statement query will surface the real failure
+        return set()
+    return {str(row["name"]) for row in rows}
+
+
+def optional_statement_double_expr(column: str, columns: set[str]) -> str:
+    if column in columns:
+        return column
+    return f"CAST(NULL AS DOUBLE) AS {column}"

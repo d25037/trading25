@@ -22,8 +22,6 @@ from src.application.services.ranking_query_helpers import (
     normalized_code_sql as _normalized_code_sql,
     positive_ratio as _positive_ratio,
     prefer_4digit_order_sql as _prefer_4digit_order_sql,
-    stock_data_dedup_cte as _stock_data_dedup_cte,
-    stocks_canonical_cte as _stocks_canonical_cte,
 )
 from src.application.services.ranking_daily_queries import (
     ranking_by_period_high as _ranking_by_period_high_query,
@@ -36,6 +34,7 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_adjusted_statement_metric_rows as _load_adjusted_statement_metric_rows_query,
+    load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
     table_exists as _table_exists_query,
 )
@@ -435,8 +434,10 @@ class RankingService:
                 lastUpdated=_now_iso(),
             )
 
-        statement_rows = self._load_fundamental_statement_rows(
-            target_date, query_market_codes
+        statement_rows = _load_fundamental_statement_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
         )
 
         statements_by_code = statement_rows_by_code(statement_rows)
@@ -755,8 +756,10 @@ class RankingService:
             target_date,
             query_market_codes,
         )
-        statement_rows = self._load_fundamental_statement_rows(
-            target_date, query_market_codes
+        statement_rows = _load_fundamental_statement_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
         )
         price_basis_date = self._resolve_stock_price_basis_date()
         adjustment_events_by_code = self._load_adjustment_events_by_code(
@@ -798,8 +801,10 @@ class RankingService:
         if len(enriched_codes) == len(items_by_code):
             return
 
-        statement_rows = self._load_fundamental_statement_rows(
-            target_date, query_market_codes
+        statement_rows = _load_fundamental_statement_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
         )
         raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
         for row in statement_rows:
@@ -1210,8 +1215,10 @@ class RankingService:
             return "not_rankable"
 
         target_code = _normalize_equity_code(target_stock["code"])
-        statement_rows = self._load_fundamental_statement_rows(
-            target_date, query_market_codes
+        statement_rows = _load_fundamental_statement_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
         )
         raw_statements = [
             row
@@ -1353,104 +1360,6 @@ class RankingService:
             code: max(values) if len(values) >= lookback_fy_count else None
             for code, values in values_by_code.items()
         }
-
-    def _load_fundamental_statement_rows(
-        self,
-        date: str,
-        market_codes: list[str],
-    ) -> list[Mapping[str, Any]]:
-        market_clause, market_params = _build_market_filter(market_codes)
-        stocks_cte = _stocks_canonical_cte()
-        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-        statements_norm = _normalized_code_sql("code")
-        statements_order = _prefer_4digit_order_sql("code")
-        statement_columns = self._statement_table_columns()
-        forecast_operating_profit_expr = self._optional_statement_double_expr(
-            "forecast_operating_profit",
-            statement_columns,
-        )
-        next_year_forecast_operating_profit_expr = self._optional_statement_double_expr(
-            "next_year_forecast_operating_profit",
-            statement_columns,
-        )
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_daily_cte},
-            statements_canonical AS (
-                SELECT
-                    normalized_code,
-                    disclosed_date,
-                    type_of_current_period,
-                    type_of_document,
-                    earnings_per_share,
-                    bps,
-                    forecast_eps,
-                    next_year_forecast_earnings_per_share,
-                    operating_profit,
-                    forecast_operating_profit,
-                    next_year_forecast_operating_profit,
-                    shares_outstanding,
-                    treasury_shares
-                FROM (
-                    SELECT
-                        {statements_norm} AS normalized_code,
-                        disclosed_date,
-                        type_of_current_period,
-                        type_of_document,
-                        earnings_per_share,
-                        bps,
-                        forecast_eps,
-                        next_year_forecast_earnings_per_share,
-                        operating_profit,
-                        {forecast_operating_profit_expr},
-                        {next_year_forecast_operating_profit_expr},
-                        shares_outstanding,
-                        treasury_shares,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {statements_norm}, disclosed_date
-                            ORDER BY {statements_order}
-                        ) AS rn
-                    FROM statements
-                )
-                WHERE rn = 1
-            )
-            SELECT
-                s.code,
-                st.disclosed_date,
-                st.type_of_current_period,
-                st.type_of_document,
-                st.earnings_per_share,
-                st.bps,
-                st.forecast_eps,
-                st.next_year_forecast_earnings_per_share,
-                st.operating_profit,
-                st.forecast_operating_profit,
-                st.next_year_forecast_operating_profit,
-                st.shares_outstanding,
-                st.treasury_shares
-            FROM statements_canonical st
-            JOIN stocks_canonical s
-                ON s.normalized_code = st.normalized_code
-            JOIN stock_daily sd
-                ON sd.normalized_code = st.normalized_code
-            WHERE st.disclosed_date <= ?{market_clause}
-            ORDER BY s.code, st.disclosed_date DESC
-        """
-        return self._reader.query(sql, (date, date, *market_params))
-
-    def _statement_table_columns(self) -> set[str]:
-        try:
-            rows = self._reader.query("SELECT name FROM pragma_table_info('statements')")
-        except Exception:  # noqa: BLE001 - main statement query will surface the real failure
-            return set()
-        return {str(row["name"]) for row in rows}
-
-    @staticmethod
-    def _optional_statement_double_expr(column: str, columns: set[str]) -> str:
-        if column in columns:
-            return column
-        return f"CAST(NULL AS DOUBLE) AS {column}"
 
     def _resolve_baseline_share_snapshot(
         self,
