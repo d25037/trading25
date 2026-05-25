@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiMarginPressureIndicatorsResponse } from '@trading25/contracts/types/api-types';
+import type { MarginPressureIndicatorsResponse } from '@trading25/api-clients/analytics';
 import { analyticsClient } from '@/lib/analytics-client';
 
-function fetchMarginPressureIndicators(symbol: string, period: number): Promise<ApiMarginPressureIndicatorsResponse> {
-  return analyticsClient.getMarginPressureIndicators<ApiMarginPressureIndicatorsResponse>({
+function fetchMarginPressureIndicators(symbol: string, period: number): Promise<MarginPressureIndicatorsResponse> {
+  return analyticsClient.getMarginPressureIndicators({
     symbol,
     period,
   });

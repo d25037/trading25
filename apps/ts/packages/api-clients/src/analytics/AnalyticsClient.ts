@@ -8,7 +8,9 @@ import type {
   FundamentalRankingParams,
   FundamentalsParams,
   MarginPressureIndicatorsParams,
+  MarginPressureIndicatorsResponse,
   MarginVolumeRatioParams,
+  MarginVolumeRatioResponse,
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
@@ -119,14 +121,20 @@ export class AnalyticsClient {
     });
   }
 
-  async getMarginPressureIndicators<T>(params: MarginPressureIndicatorsParams): Promise<T> {
-    return this.request<T>(`/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-pressure`, undefined, {
-      period: params.period,
-    });
+  async getMarginPressureIndicators(params: MarginPressureIndicatorsParams): Promise<MarginPressureIndicatorsResponse> {
+    return this.request<MarginPressureIndicatorsResponse>(
+      `/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-pressure`,
+      undefined,
+      {
+        period: params.period,
+      }
+    );
   }
 
-  async getMarginVolumeRatio<T>(params: MarginVolumeRatioParams): Promise<T> {
-    return this.request<T>(`/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-ratio`);
+  async getMarginVolumeRatio(params: MarginVolumeRatioParams): Promise<MarginVolumeRatioResponse> {
+    return this.request<MarginVolumeRatioResponse>(
+      `/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-ratio`
+    );
   }
 
   async getCostStructureAnalysis(params: CostStructureAnalysisParams): Promise<CostStructureResponse> {

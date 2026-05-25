@@ -138,6 +138,56 @@ export interface MarginVolumeRatioParams {
   symbol: string;
 }
 
+export interface MarginVolumeRatioData {
+  date: string;
+  ratio: number;
+  weeklyAvgVolume: number;
+  marginVolume: number;
+}
+
+export interface MarginVolumeRatioResponse {
+  symbol: string;
+  longRatio: MarginVolumeRatioData[];
+  shortRatio: MarginVolumeRatioData[];
+  lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
+}
+
+export interface MarginLongPressureData {
+  date: string;
+  pressure: number;
+  longVol: number;
+  shortVol: number;
+  avgVolume: number;
+}
+
+export interface MarginFlowPressureData {
+  date: string;
+  flowPressure: number;
+  currentNetMargin: number;
+  previousNetMargin: number | null;
+  avgVolume: number;
+}
+
+export interface MarginTurnoverDaysData {
+  date: string;
+  turnoverDays: number;
+  longVol: number;
+  avgVolume: number;
+}
+
+export interface MarginPressureIndicatorsResponse {
+  symbol: string;
+  averagePeriod: number;
+  longPressure: MarginLongPressureData[];
+  flowPressure: MarginFlowPressureData[];
+  turnoverDays: MarginTurnoverDaysData[];
+  lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
+}
+
 export type CostStructureAnalysisPeriodType = '1Q' | '2Q' | '3Q' | '4Q' | 'FY';
 export type CostStructureAnalysisView = 'recent' | 'same_quarter' | 'fiscal_year_only' | 'all';
 
