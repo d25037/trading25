@@ -47,3 +47,14 @@ def is_forward_eps_source_date_in_window(
     except ValueError:
         return False
     return min_date <= source_date <= max_date
+
+
+def limit_and_rerank_ranking_collections(
+    collections: tuple[list[RankingItem], ...],
+    limit: int,
+) -> None:
+    for collection in collections:
+        if limit > 0:
+            del collection[limit:]
+        for rank, item in enumerate(collection, start=1):
+            item.rank = rank

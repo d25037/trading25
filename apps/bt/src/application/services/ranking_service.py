@@ -29,6 +29,7 @@ from src.application.services.ranking_daily_queries import (
 )
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
+    limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
     load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
@@ -270,9 +271,9 @@ class RankingService:
                     ranking_collections,
                     liquidity_state=liquidity_state,
                 )
-                self._limit_and_rerank_ranking_collections(ranking_collections, limit)
+                _limit_and_rerank_ranking_collections(ranking_collections, limit)
             else:
-                self._limit_and_rerank_ranking_collections(ranking_collections, limit)
+                _limit_and_rerank_ranking_collections(ranking_collections, limit)
                 self._enrich_ranking_collections_with_prime_liquidity(
                     ranking_collections,
                     target_date=target_date,
@@ -816,17 +817,6 @@ class RankingService:
                 item.marketCap = _finite_or_none(row.get("market_cap"))
             enriched_codes.add(code)
         return enriched_codes
-
-    @staticmethod
-    def _limit_and_rerank_ranking_collections(
-        collections: tuple[list[RankingItem], ...],
-        limit: int,
-    ) -> None:
-        for collection in collections:
-            if limit > 0:
-                del collection[limit:]
-            for rank, item in enumerate(collection, start=1):
-                item.rank = rank
 
     @staticmethod
     def _filter_ranking_collections_by_liquidity_state(
