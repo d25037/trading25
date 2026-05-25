@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
+import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface OptimizationJobProgressCardProps {
@@ -142,12 +143,6 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
   if (!job) return null;
 
-  const formatElapsed = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-  };
-
   const bestParamsText = stringifyParams(job.best_params);
   const worstParamsText = stringifyParams(job.worst_params);
   const stageLabel = resolveStageLabel(job);
@@ -161,7 +156,7 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
             <StatusLabel status={job.status} />
           </h3>
         </div>
-        {isActive ? <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span> : null}
+        {isActive ? <span className="text-sm text-muted-foreground">⏱ {formatElapsedSeconds(elapsed)}</span> : null}
       </div>
       <div className="mt-4">
         {isActive ? (

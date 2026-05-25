@@ -6,13 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { datasetKeys, useCancelDatasetJob, useDatasetJobStatus } from '@/hooks/useDataset';
 import { ApiError } from '@/lib/api-client';
 import { useBacktestStore } from '@/stores/backtestStore';
+import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
 
 export function DatasetJobProgress() {
   const { activeDatasetJobId, setActiveDatasetJobId } = useBacktestStore();
@@ -78,7 +73,7 @@ export function DatasetJobProgress() {
             <CardTitle className="text-lg capitalize">{job.status}</CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            {isActive && <span className="text-sm text-muted-foreground">{formatElapsed(elapsed)}</span>}
+            {isActive && <span className="text-sm text-muted-foreground">{formatElapsedSeconds(elapsed)}</span>}
             {isActive && (
               <Button variant="outline" size="sm" onClick={handleCancel} disabled={cancelJob.isPending}>
                 キャンセル

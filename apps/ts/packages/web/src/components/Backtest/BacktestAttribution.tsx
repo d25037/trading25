@@ -20,7 +20,7 @@ import type {
   SignalAttributionResult,
   SignalAttributionSignalResult,
 } from '@/types/backtest';
-import { formatRate } from '@/utils/formatters';
+import { formatElapsedSeconds, formatRate } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 import { AttributionArtifactBrowser } from './AttributionArtifactBrowser';
 import { StrategySelector } from './StrategySelector';
@@ -75,12 +75,6 @@ function parsePositiveInt(value: string, fallback: number): number {
 function clampProgressPercentage(progress: number | null | undefined): number | null {
   if (progress == null || !Number.isFinite(progress)) return null;
   return Math.min(100, Math.max(0, progress * 100));
-}
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function parseRunParameters(
@@ -310,7 +304,7 @@ function AttributionJobCard({
           </CardTitle>
           {isActive && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
+              <span className="text-xs text-muted-foreground">⏱ {formatElapsedSeconds(elapsed)}</span>
               <Button variant="ghost" size="sm" onClick={() => onCancel(activeJob.job_id)} disabled={cancelPending}>
                 Cancel
               </Button>

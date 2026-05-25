@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import type { ScreeningJobResponse } from '@/types/screening';
+import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface ScreeningJobProgressProps {
@@ -29,12 +30,6 @@ function StatusIcon({ status }: { status: ScreeningJobResponse['status'] }) {
     default:
       return null;
   }
-}
-
-function formatElapsedSeconds(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const sec = seconds % 60;
-  return `${minutes}:${String(sec).padStart(2, '0')}`;
 }
 
 export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps) {

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { JobStatus } from '@/types/backtest';
+import { formatElapsedSeconds } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface LabJobProgressProps {
@@ -64,12 +65,6 @@ export function LabJobProgress({
 
   if (!status) return null;
 
-  const formatElapsed = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${String(sec).padStart(2, '0')}`;
-  };
-
   const progressPercent = progress != null ? Math.round(progress * 100) : null;
   const stageLabel = resolveStageLabel(status, message);
 
@@ -83,7 +78,7 @@ export function LabJobProgress({
           </div>
           {isActive && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">{formatElapsed(elapsed)}</span>
+              <span className="text-sm text-muted-foreground">{formatElapsedSeconds(elapsed)}</span>
               {onCancel && (
                 <Button
                   variant="ghost"

@@ -169,6 +169,15 @@ export function formatBytes(bytes: number): string {
 }
 
 /**
+ * Format elapsed seconds as m:ss for compact job progress displays.
+ */
+export function formatElapsedSeconds(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+/**
  * Format market capitalization in Japanese units (兆/億/万).
  */
 export function formatMarketCap(value: number | null | undefined): string {

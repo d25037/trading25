@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
-import { formatPercentage } from '@/utils/formatters';
+import { formatElapsedSeconds, formatPercentage } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface JobProgressCardProps {
@@ -137,12 +137,6 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
   if (!job) return null;
 
   const completedResult = job.status === 'completed' ? job.result : null;
-  const formatElapsed = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
-  };
-
   return (
     <Surface className="mt-4 p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -154,7 +148,7 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
         </div>
         {isActive ? (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
+            <span className="text-sm text-muted-foreground">⏱ {formatElapsedSeconds(elapsed)}</span>
             {onCancel ? (
               <Button
                 variant="ghost"

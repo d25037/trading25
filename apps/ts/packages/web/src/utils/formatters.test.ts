@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatCurrency,
   formatDateShort,
+  formatElapsedSeconds,
   formatFundamentalValue,
   formatInteger,
   formatPercentage,
@@ -256,5 +257,14 @@ describe('formatBytes', () => {
 
   it('formats gigabytes', () => {
     expect(formatBytes(1_610_612_736)).toBe('1.50 GB');
+  });
+});
+
+describe('formatElapsedSeconds', () => {
+  it('formats elapsed seconds as m:ss', () => {
+    expect(formatElapsedSeconds(0)).toBe('0:00');
+    expect(formatElapsedSeconds(9)).toBe('0:09');
+    expect(formatElapsedSeconds(65)).toBe('1:05');
+    expect(formatElapsedSeconds(3600)).toBe('60:00');
   });
 });
