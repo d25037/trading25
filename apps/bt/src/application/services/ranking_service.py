@@ -30,6 +30,7 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
     filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
+    group_ranking_items_by_normalized_code as _group_ranking_items_by_normalized_code,
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
@@ -672,10 +673,7 @@ class RankingService:
         query_market_codes: list[str],
         price_basis_date: str,
     ) -> None:
-        items_by_code: dict[str, list[RankingItem]] = {}
-        for collection in collections:
-            for item in collection:
-                items_by_code.setdefault(_normalize_equity_code(item.code), []).append(item)
+        items_by_code = _group_ranking_items_by_normalized_code(collections)
         if not items_by_code:
             return
 
@@ -705,10 +703,7 @@ class RankingService:
         target_date: str,
         price_basis_date: str,
     ) -> None:
-        items_by_code: dict[str, list[RankingItem]] = {}
-        for collection in collections:
-            for item in collection:
-                items_by_code.setdefault(_normalize_equity_code(item.code), []).append(item)
+        items_by_code = _group_ranking_items_by_normalized_code(collections)
         if not items_by_code:
             return
 

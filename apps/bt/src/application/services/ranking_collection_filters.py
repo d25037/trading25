@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date as calendar_date, datetime, timedelta
 
+from src.application.services.ranking_query_helpers import normalize_equity_code
 from src.entrypoints.http.schemas.ranking import RankingItem, RankingStateFilter
 
 
@@ -58,6 +59,16 @@ def limit_and_rerank_ranking_collections(
             del collection[limit:]
         for rank, item in enumerate(collection, start=1):
             item.rank = rank
+
+
+def group_ranking_items_by_normalized_code(
+    collections: tuple[list[RankingItem], ...],
+) -> dict[str, list[RankingItem]]:
+    items_by_code: dict[str, list[RankingItem]] = {}
+    for collection in collections:
+        for item in collection:
+            items_by_code.setdefault(normalize_equity_code(item.code), []).append(item)
+    return items_by_code
 
 
 def filter_ranking_collections_by_liquidity_state(
