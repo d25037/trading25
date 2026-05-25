@@ -7,7 +7,7 @@ import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { type HoldingPerformance, usePortfolioPerformance } from '@/hooks/usePortfolioPerformance';
 import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@/types/portfolio';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
-import { formatCurrency, formatRate } from '@/utils/formatters';
+import { formatCount, formatCurrency, formatRate } from '@/utils/formatters';
 import { AddStockDialog } from './AddStockDialog';
 import { BenchmarkChart } from './BenchmarkChart';
 import { DeletePortfolioDialog } from './DeletePortfolioDialog';
@@ -53,7 +53,7 @@ function StockRow({ item, performance, onNavigateToChart }: StockRowProps) {
           {item.companyName}
         </button>
       </td>
-      <td className="px-4 py-3 text-right tabular-nums">{item.quantity.toLocaleString()}</td>
+      <td className="px-4 py-3 text-right tabular-nums">{formatCount(item.quantity)}</td>
       <td className="px-4 py-3 text-right tabular-nums">{item.purchasePrice.toLocaleString()}</td>
       <td className="px-4 py-3 text-right tabular-nums">{currentPrice.toLocaleString()}</td>
       <td className="px-4 py-3 text-right tabular-nums">{marketValue.toLocaleString()}</td>
@@ -145,7 +145,7 @@ function PortfolioHeader({ portfolio, currentValue, totalPnL, onPortfolioDeleted
           detail={totalPnL === 0 ? 'No open profit or loss yet' : 'Latest marked value'}
           tone={totalPnL > 0 ? 'success' : totalPnL < 0 ? 'danger' : 'neutral'}
         />
-        <CompactMetric label="Shares" value={shareCount.toLocaleString()} detail="Tracked quantity" />
+        <CompactMetric label="Shares" value={formatCount(shareCount)} detail="Tracked quantity" />
         <CompactMetric label="Created" value={portfolio.createdAt.slice(0, 10)} detail="Portfolio record" />
       </div>
     </Surface>

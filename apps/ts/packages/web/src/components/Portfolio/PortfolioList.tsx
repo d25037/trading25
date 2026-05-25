@@ -3,6 +3,7 @@ import { Surface } from '@/components/Layout/Workspace';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { cn } from '@/lib/utils';
 import type { PortfolioSummaryResponse } from '@/types/portfolio';
+import { formatCount } from '@/utils/formatters';
 import { CreatePortfolioDialog } from './CreatePortfolioDialog';
 
 interface PortfolioListProps {
@@ -62,10 +63,12 @@ function PortfolioListContent({
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold truncate">{portfolio.name}</h3>
-              {portfolio.description && <p className="mt-1 text-sm text-muted-foreground truncate">{portfolio.description}</p>}
+              {portfolio.description && (
+                <p className="mt-1 text-sm text-muted-foreground truncate">{portfolio.description}</p>
+              )}
               <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                <span>{portfolio.stockCount} stocks</span>
-                <span>{portfolio.totalShares.toLocaleString()} shares</span>
+                <span>{formatCount(portfolio.stockCount)} stocks</span>
+                <span>{formatCount(portfolio.totalShares)} shares</span>
               </div>
             </div>
             <ChevronRight

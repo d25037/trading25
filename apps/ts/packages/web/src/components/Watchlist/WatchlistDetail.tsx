@@ -26,6 +26,7 @@ import {
 } from '@/hooks/useWatchlist';
 import type { WatchlistItemResponse, WatchlistStockPrice, WatchlistWithItemsResponse } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
+import { formatCount } from '@/utils/formatters';
 
 function normalizeStockCode(value: string): string {
   return value.trim();
@@ -271,7 +272,7 @@ function WatchlistTable({
           eyebrow="Results"
           title="Tracked Stocks"
           description="Monitor live prices, daily change, and memo context in one table."
-          actions={<div className="text-sm text-muted-foreground">{items.length} names</div>}
+          actions={<div className="text-sm text-muted-foreground">{formatCount(items.length)} names</div>}
         />
       </div>
 
@@ -392,9 +393,9 @@ function WatchlistDetailContent({
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <CompactMetric label="Stocks" value={watchlist.items.length.toLocaleString()} detail="Tracked names" />
-          <CompactMetric label="Live Prices" value={priceMap.size.toLocaleString()} detail="Symbols with current data" />
-          <CompactMetric label="Memos" value={memoCount.toLocaleString()} detail="Names with notes" />
+          <CompactMetric label="Stocks" value={formatCount(watchlist.items.length)} detail="Tracked names" />
+          <CompactMetric label="Live Prices" value={formatCount(priceMap.size)} detail="Symbols with current data" />
+          <CompactMetric label="Memos" value={formatCount(memoCount)} detail="Names with notes" />
           <CompactMetric label="Created" value={watchlist.createdAt.slice(0, 10)} detail="Watchlist record" />
         </div>
       </Surface>

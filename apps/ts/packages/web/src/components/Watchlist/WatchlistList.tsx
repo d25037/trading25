@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { useCreateWatchlist } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
 import type { WatchlistSummaryResponse } from '@/types/watchlist';
+import { formatCount } from '@/utils/formatters';
 
 interface CreateWatchlistDialogProps {
   onSuccess?: (id: number) => void;
@@ -162,9 +163,11 @@ function WatchlistListContent({
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold truncate">{watchlist.name}</h3>
-              {watchlist.description && <p className="mt-1 text-sm text-muted-foreground truncate">{watchlist.description}</p>}
+              {watchlist.description && (
+                <p className="mt-1 text-sm text-muted-foreground truncate">{watchlist.description}</p>
+              )}
               <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
-                <span>{watchlist.stockCount} stocks</span>
+                <span>{formatCount(watchlist.stockCount)} stocks</span>
               </div>
             </div>
             <ChevronRight
