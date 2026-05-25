@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "vectorbt>=1.0.0",
     "pandas>=2.0.0",
-    "numpy>=2.4.5",
+    "numpy>=2.4.6",
     "lightgbm>=4.0.0",
     "typer>=0.25.1",
     "rich>=15.0.0",
@@ -51,7 +51,7 @@ dev = [
 research = [
 ]
 nautilus = [
-    "nautilus-trader>=1.226.0",
+    "nautilus-trader>=1.227.0",
 ]
 rust = [
     "vectorbt-rust>=1.0.0",
