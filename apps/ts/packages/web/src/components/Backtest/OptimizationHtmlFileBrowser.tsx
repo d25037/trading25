@@ -19,6 +19,7 @@ import {
   useRenameOptimizationHtmlFile,
 } from '@/hooks/useOptimization';
 import type { OptimizationHtmlFileInfo } from '@/types/backtest';
+import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatDateTimeLong } from '@/utils/formatters';
 import { ResultHtmlViewer } from './ResultHtmlViewer';
 
@@ -82,7 +83,7 @@ function resolveFilteredFiles(
 }
 
 function resolveSortedFiles(files: OptimizationHtmlFileInfo[]): OptimizationHtmlFileInfo[] {
-  return [...files].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+  return [...files].sort((left, right) => compareTimestampDesc(left.created_at, right.created_at));
 }
 
 function openHtmlInNewTab(decodedHtml: string): void {

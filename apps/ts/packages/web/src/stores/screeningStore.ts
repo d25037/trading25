@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningJobResponse, ScreeningParams } from '@/types/screening';
+import { compareTimestampDesc } from '@/utils/dateComparators';
 
 export type ScreeningSubTab = 'preOpenScreening' | 'inSessionScreening';
 
@@ -70,7 +71,7 @@ export const createInitialScreeningState = (): ScreeningStoreState => ({
 const MAX_SCREENING_JOB_HISTORY = 30;
 
 function sortByCreatedAtDesc(a: ScreeningJobResponse, b: ScreeningJobResponse): number {
-  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  return compareTimestampDesc(a.created_at, b.created_at);
 }
 
 export const useScreeningStore = create<ScreeningState>()(

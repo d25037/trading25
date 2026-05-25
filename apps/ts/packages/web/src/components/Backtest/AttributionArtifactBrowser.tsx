@@ -6,6 +6,7 @@ import { JsonTreeView } from '@/components/ui/json-tree-view';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAttributionArtifactContent, useAttributionArtifactFiles } from '@/hooks/useBacktest';
 import type { AttributionArtifactInfo } from '@/types/backtest';
+import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatBytes } from '@/utils/formatters';
 
 function formatDate(dateStr: string): string {
@@ -429,7 +430,7 @@ export function AttributionArtifactBrowser() {
   );
 
   const sortedFiles = useMemo(
-    () => [...filteredFiles].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    () => [...filteredFiles].sort((left, right) => compareTimestampDesc(left.created_at, right.created_at)),
     [filteredFiles]
   );
 

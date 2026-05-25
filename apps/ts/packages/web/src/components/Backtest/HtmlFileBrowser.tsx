@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDeleteHtmlFile, useHtmlFileContent, useHtmlFiles, useRenameHtmlFile } from '@/hooks/useBacktest';
 import type { HtmlFileInfo, HtmlFileMetrics } from '@/types/backtest';
+import { compareTimestampDesc } from '@/utils/dateComparators';
 import { formatDateTimeLong } from '@/utils/formatters';
 import { ResultHtmlViewer } from './ResultHtmlViewer';
 
@@ -122,7 +123,7 @@ function resolveFilteredFiles(files: HtmlFileInfo[] | undefined, searchQuery: st
 }
 
 function resolveSortedFiles(files: HtmlFileInfo[]): HtmlFileInfo[] {
-  return [...files].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+  return [...files].sort((left, right) => compareTimestampDesc(left.created_at, right.created_at));
 }
 
 function openHtmlInNewTab(decodedHtml: string): void {
