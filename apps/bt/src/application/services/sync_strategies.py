@@ -51,6 +51,7 @@ from src.application.services.index_master_catalog import (
     build_index_master_seed_rows,
     get_index_catalog_codes,
 )
+from src.application.services import sync_bulk_ingest_helpers
 from src.application.services import sync_fetch_planner
 from src.application.services.sync_row_converters import (
     build_target_date_set as _build_target_date_set,
@@ -58,7 +59,6 @@ from src.application.services.sync_row_converters import (
     convert_indices_data_rows as _convert_indices_data_rows,
     convert_margin_rows as _convert_margin_rows,
     convert_options_225_rows as _convert_options_225_rows,
-    convert_stock_bulk_rows as _convert_stock_bulk_rows,
     convert_stock_data_rows as _convert_stock_data_rows,
     convert_stock_rows as _convert_stock_rows,
     convert_topix_rows as _convert_topix_rows,
@@ -66,11 +66,8 @@ from src.application.services.sync_row_converters import (
     extract_list_items as _extract_list_items,
     group_stock_master_bulk_rows_by_date as _group_stock_master_bulk_rows_by_date,
     latest_date as _latest_date,
-    normalize_bulk_fins_rows as _normalize_bulk_fins_rows,
     normalize_bulk_indices_rows as _normalize_bulk_indices_rows,
-    normalize_bulk_margin_rows as _normalize_bulk_margin_rows,
     normalize_bulk_options_225_rows as _normalize_bulk_options_225_rows,
-    normalize_bulk_stock_rows as _normalize_bulk_stock_rows,
     to_jquants_date_param as _to_jquants_date_param,
     _date_sort_key,
     _is_date_after,
@@ -212,53 +209,6 @@ def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, st
 
 def _estimate_stock_master_rest_calls(date_count: int) -> int:
     return max(date_count, 1) * _STOCK_MASTER_REST_PAGES_PER_DATE_ESTIMATE
-
-
-async def _ingest_stock_bulk_batch(
-    ctx: SyncContext,
-    *,
-    batch_rows: list[dict[str, Any]],
-    target_dates: set[str] | None,
-) -> int:
-    normalized_rows = _normalize_bulk_stock_rows(batch_rows)
-    rows = _convert_stock_bulk_rows(normalized_rows, target_dates=target_dates)
-    if not rows:
-        return 0
-    return await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
-
-
-async def _ingest_fins_bulk_batch(
-    ctx: SyncContext,
-    *,
-    batch_rows: list[dict[str, Any]],
-    allowed_codes: set[str],
-    target_dates: set[str] | None = None,
-    published_dates: set[str] | None = None,
-) -> int:
-    rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(batch_rows))
-    if allowed_codes:
-        rows = [row for row in rows if row.get("code") in allowed_codes]
-    if target_dates is not None:
-        rows = [
-            row
-            for row in rows
-            if _normalize_iso_date_text(row.get("disclosed_date")) in target_dates
-        ]
-    rows = validate_rows_required_fields(
-        rows,
-        required_fields=("code", "disclosed_date"),
-        dedupe_keys=("code", "disclosed_date"),
-        stage="fundamentals",
-    )
-    if not rows:
-        return 0
-    if published_dates is not None:
-        published_dates.update(
-            normalized
-            for normalized in (_normalize_iso_date_text(row.get("disclosed_date")) for row in rows)
-            if normalized is not None
-        )
-    return await sync_publish_helpers._publish_statement_rows(ctx, rows)
 
 
 async def _ingest_indices_only_bulk_batch(
@@ -723,7 +673,7 @@ class InitialSyncStrategy:
                         _file_info: BulkFileInfo,
                     ) -> None:
                         nonlocal stocks_updated
-                        stocks_updated += await _ingest_stock_bulk_batch(
+                        stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
                             ctx,
                             batch_rows=batch_rows,
                             target_dates=trading_date_set,
@@ -1069,7 +1019,7 @@ class IncrementalSyncStrategy:
                         _file_info: BulkFileInfo,
                     ) -> None:
                         nonlocal stocks_updated
-                        stocks_updated += await _ingest_stock_bulk_batch(
+                        stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
                             ctx,
                             batch_rows=batch_rows,
                             target_dates=new_date_set,
@@ -1788,7 +1738,7 @@ async def _sync_fundamentals_initial(
                 _file_info: BulkFileInfo,
             ) -> None:
                 nonlocal updated
-                updated += await _ingest_fins_bulk_batch(
+                updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
                     ctx,
                     batch_rows=batch_rows,
                     allowed_codes=allowed_statement_codes,
@@ -2012,7 +1962,7 @@ async def _sync_fundamentals_incremental(
                     _file_info: BulkFileInfo,
                 ) -> None:
                     nonlocal updated
-                    updated += await _ingest_fins_bulk_batch(
+                    updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
                         ctx,
                         batch_rows=batch_rows,
                         allowed_codes=allowed_statement_codes,
@@ -2425,7 +2375,7 @@ async def _sync_margin_data(
                     _file_info: BulkFileInfo,
                 ) -> None:
                     nonlocal updated
-                    updated += await _ingest_margin_bulk_batch(
+                    updated += await sync_bulk_ingest_helpers._ingest_margin_bulk_batch(
                         ctx,
                         batch_rows=batch_rows,
                         target_codes=target_code_set,
@@ -3163,30 +3113,6 @@ async def _sync_daily_stock_master(
         "errors": errors,
         "cancelled": False,
     }
-
-
-async def _ingest_margin_bulk_batch(
-    ctx: SyncContext,
-    *,
-    batch_rows: list[dict[str, Any]],
-    target_codes: set[str] | None,
-    min_date_exclusive: str | None,
-) -> int:
-    normalized_rows = _normalize_bulk_margin_rows(batch_rows)
-    rows = validate_rows_required_fields(
-        _convert_margin_rows(
-            normalized_rows,
-            target_codes=target_codes,
-            min_date_exclusive=min_date_exclusive,
-        ),
-        required_fields=("code", "date"),
-        dedupe_keys=("code", "date"),
-        stage="margin_data",
-    )
-    if not rows:
-        return 0
-    return await sync_publish_helpers._publish_margin_rows(ctx, rows)
-
 
 def _build_fallback_index_master_rows(
     rows: list[dict[str, Any]],

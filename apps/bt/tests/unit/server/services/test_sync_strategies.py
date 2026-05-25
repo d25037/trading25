@@ -32,6 +32,9 @@ from src.application.services.sync_state_helpers import (
     _load_metadata_json_list,
     _normalize_date_list,
 )
+from src.application.services.sync_row_converters import (
+    convert_stock_bulk_rows as _convert_stock_bulk_rows,
+)
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
@@ -44,7 +47,6 @@ from src.application.services.sync_strategies import (
     _convert_margin_rows,
     _convert_index_master_rows,
     _convert_indices_data_rows,
-    _convert_stock_bulk_rows,
     _convert_stock_rows,
     _group_stock_master_bulk_rows_by_date,
     _date_sort_key,
