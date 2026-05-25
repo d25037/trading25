@@ -42,7 +42,6 @@ from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
     ForecastValue as _ForecastValue,
-    LatestFyRow as _LatestFyRow,
     StatementRow as _StatementRow,
     adjust_per_share_value as _adjust_per_share_value,
     normalize_period_label as _normalize_period_label,
@@ -447,29 +446,35 @@ class RankingService:
             if not statements:
                 continue
 
-            baseline_shares = self._resolve_baseline_shares(
+            baseline_shares = self._fundamental_calculator.resolve_baseline_shares(
                 statements,
                 as_of_date=target_date,
             )
-            actual_snapshot = self._resolve_latest_actual_snapshot(
-                statements,
-                baseline_shares,
-                as_of_date=target_date,
+            actual_snapshot = (
+                self._fundamental_calculator.resolve_latest_actual_snapshot(
+                    statements,
+                    baseline_shares,
+                    as_of_date=target_date,
+                )
             )
-            forecast_snapshot = self._resolve_latest_forecast_snapshot(
-                statements,
-                baseline_shares,
-                as_of_date=target_date,
+            forecast_snapshot = (
+                self._fundamental_calculator.resolve_latest_forecast_snapshot(
+                    statements,
+                    baseline_shares,
+                    as_of_date=target_date,
+                )
             )
 
             if forecast_above_recent_fy_actuals:
                 if forecast_snapshot is None:
                     continue
-                recent_max_actual_eps = self._resolve_recent_actual_eps_max(
-                    statements,
-                    baseline_shares,
-                    forecast_lookback_fy_count,
-                    as_of_date=target_date,
+                recent_max_actual_eps = (
+                    self._fundamental_calculator.resolve_recent_actual_eps_max(
+                        statements,
+                        baseline_shares,
+                        forecast_lookback_fy_count,
+                        as_of_date=target_date,
+                    )
                 )
                 if (
                     recent_max_actual_eps is None
@@ -477,13 +482,17 @@ class RankingService:
                 ):
                     continue
 
-            ratio_snapshot = self._resolve_latest_ratio_snapshot(
+            ratio_snapshot = self._fundamental_calculator.resolve_latest_ratio_snapshot(
                 actual_snapshot, forecast_snapshot
             )
 
             if ratio_snapshot is None:
                 continue
-            ratio_candidates.append(self._build_fundamental_item(stock, ratio_snapshot))
+            ratio_candidates.append(
+                self._fundamental_calculator.build_fundamental_item(
+                    stock, ratio_snapshot
+                )
+            )
 
         ratio_high = self._rank_fundamental_items(
             ratio_candidates, limit, descending=True
@@ -2409,17 +2418,6 @@ class RankingService:
             return column
         return f"CAST(NULL AS DOUBLE) AS {column}"
 
-    def _resolve_baseline_shares(
-        self,
-        rows: list[_StatementRow],
-        *,
-        as_of_date: str | None = None,
-    ) -> float | None:
-        return self._fundamental_calculator.resolve_baseline_shares(
-            rows,
-            as_of_date=as_of_date,
-        )
-
     def _resolve_baseline_share_snapshot(
         self,
         rows: list[_StatementRow],
@@ -2454,83 +2452,6 @@ class RankingService:
             allow_zero=allow_zero,
         )
 
-    def _resolve_latest_actual_snapshot(
-        self,
-        rows: list[_StatementRow],
-        baseline_shares: float | None,
-        *,
-        as_of_date: str | None = None,
-    ) -> _ForecastValue | None:
-        return self._fundamental_calculator.resolve_latest_actual_snapshot(
-            rows,
-            baseline_shares,
-            as_of_date=as_of_date,
-        )
-
-    def _resolve_recent_actual_eps_max(
-        self,
-        rows: list[_StatementRow],
-        baseline_shares: float | None,
-        lookback_fy_count: int,
-        *,
-        as_of_date: str | None = None,
-    ) -> float | None:
-        return self._fundamental_calculator.resolve_recent_actual_eps_max(
-            rows,
-            baseline_shares,
-            lookback_fy_count,
-            as_of_date=as_of_date,
-        )
-
-    def _resolve_latest_fy_row(
-        self,
-        rows: list[_StatementRow],
-        *,
-        as_of_date: str | None = None,
-    ) -> _LatestFyRow | None:
-        return self._fundamental_calculator.resolve_latest_fy_row(
-            rows,
-            as_of_date=as_of_date,
-        )
-
-    def _resolve_latest_fy_forecast_snapshot(
-        self,
-        fy_row: _LatestFyRow | None,
-        baseline_shares: float | None,
-    ) -> _ForecastValue | None:
-        return self._fundamental_calculator.resolve_latest_fy_forecast_snapshot(
-            fy_row,
-            baseline_shares,
-        )
-
-    def _resolve_latest_revised_forecast_snapshot(
-        self,
-        rows: list[_StatementRow],
-        baseline_shares: float | None,
-        fy_disclosed_date: str,
-        *,
-        as_of_date: str | None = None,
-    ) -> _ForecastValue | None:
-        return self._fundamental_calculator.resolve_latest_revised_forecast_snapshot(
-            rows,
-            baseline_shares,
-            fy_disclosed_date,
-            as_of_date=as_of_date,
-        )
-
-    def _resolve_latest_forecast_snapshot(
-        self,
-        rows: list[_StatementRow],
-        baseline_shares: float | None,
-        *,
-        as_of_date: str | None = None,
-    ) -> _ForecastValue | None:
-        return self._fundamental_calculator.resolve_latest_forecast_snapshot(
-            rows,
-            baseline_shares,
-            as_of_date=as_of_date,
-        )
-
     def _resolve_value_composite_forecast_snapshot(
         self,
         rows: list[_StatementRow],
@@ -2540,7 +2461,7 @@ class RankingService:
         as_of_date: str | None = None,
     ) -> _ForecastValue | None:
         if forward_eps_mode == "latest":
-            return self._resolve_latest_forecast_snapshot(
+            return self._fundamental_calculator.resolve_latest_forecast_snapshot(
                 rows,
                 baseline_shares,
                 as_of_date=as_of_date,
@@ -2548,24 +2469,10 @@ class RankingService:
         latest_fy = self._fundamental_calculator.resolve_latest_fy_row(
             rows, as_of_date=as_of_date
         )
-        return self._resolve_latest_fy_forecast_snapshot(latest_fy, baseline_shares)
-
-    def _resolve_latest_ratio_snapshot(
-        self,
-        actual_snapshot: _ForecastValue | None,
-        forecast_snapshot: _ForecastValue | None,
-    ) -> _ForecastValue | None:
-        return self._fundamental_calculator.resolve_latest_ratio_snapshot(
-            actual_snapshot,
-            forecast_snapshot,
+        return self._fundamental_calculator.resolve_latest_fy_forecast_snapshot(
+            latest_fy,
+            baseline_shares,
         )
-
-    def _build_fundamental_item(
-        self,
-        stock_row: Mapping[str, Any],
-        snapshot: _ForecastValue,
-    ) -> FundamentalItem:
-        return self._fundamental_calculator.build_fundamental_item(stock_row, snapshot)
 
     def _rank_fundamental_items(
         self,

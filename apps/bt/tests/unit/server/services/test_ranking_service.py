@@ -11,6 +11,7 @@ import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.domains.analytics.fundamental_ranking import (
+    FundamentalRankingCalculator,
     ForecastValue as _ForecastValue,
     LatestFyRow as _LatestFyRow,
     StatementRow as _StatementRow,
@@ -2718,15 +2719,16 @@ class TestRankingHelperBranches:
         assert grouped["67580"][0].period_type == "FY"
         assert grouped["67580"][0].type_of_document is None
 
-    def test_private_fundamental_helper_none_paths(self, service):
-        baseline_fallback = service._resolve_baseline_shares(
+    def test_fundamental_calculator_none_paths(self):
+        calculator = FundamentalRankingCalculator()
+        baseline_fallback = calculator.resolve_baseline_shares(
             [
                 _StatementRow("X", "2024-05-01", "FY", 100.0, None, 120.0, 200.0),
             ]
         )
         assert baseline_fallback == 200.0
 
-        baseline_none = service._resolve_baseline_shares(
+        baseline_none = calculator.resolve_baseline_shares(
             [
                 _StatementRow("X", "2024-05-01", "FY", 100.0, None, 120.0, None),
             ]
@@ -2734,7 +2736,7 @@ class TestRankingHelperBranches:
         assert baseline_none is None
 
         assert (
-            service._resolve_latest_actual_snapshot(
+            calculator.resolve_latest_actual_snapshot(
                 [_StatementRow("X", "2024-05-01", "FY", None, None, None, 100.0)],
                 baseline_shares=100.0,
             )
@@ -2742,18 +2744,18 @@ class TestRankingHelperBranches:
         )
 
         assert (
-            service._resolve_latest_fy_row(
+            calculator.resolve_latest_fy_row(
                 [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)]
             )
             is None
         )
 
         assert (
-            service._resolve_latest_fy_forecast_snapshot(None, baseline_shares=100.0)
+            calculator.resolve_latest_fy_forecast_snapshot(None, baseline_shares=100.0)
             is None
         )
         assert (
-            service._resolve_latest_fy_forecast_snapshot(
+            calculator.resolve_latest_fy_forecast_snapshot(
                 _LatestFyRow(
                     disclosed_date="2024-05-01",
                     period_type="FY",
@@ -2765,7 +2767,7 @@ class TestRankingHelperBranches:
             is None
         )
 
-        revised_none = service._resolve_latest_revised_forecast_snapshot(
+        revised_none = calculator.resolve_latest_revised_forecast_snapshot(
             [
                 _StatementRow("X", "2024-05-01", "FY", 100.0, 120.0, 120.0, 100.0),
                 _StatementRow("X", "2024-04-01", "1Q", None, 130.0, None, 100.0),
@@ -2776,14 +2778,14 @@ class TestRankingHelperBranches:
         assert revised_none is None
 
         assert (
-            service._resolve_latest_forecast_snapshot(
+            calculator.resolve_latest_forecast_snapshot(
                 [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)],
                 baseline_shares=100.0,
             )
             is None
         )
         assert (
-            service._resolve_recent_actual_eps_max(
+            calculator.resolve_recent_actual_eps_max(
                 [_StatementRow("X", "2024-05-01", "FY", None, None, None, 100.0)],
                 baseline_shares=100.0,
                 lookback_fy_count=1,
@@ -2791,7 +2793,7 @@ class TestRankingHelperBranches:
             is None
         )
         assert (
-            service._resolve_recent_actual_eps_max(
+            calculator.resolve_recent_actual_eps_max(
                 [
                     _StatementRow("X", "2023-05-01", "FY", 90.0, None, None, 100.0),
                     _StatementRow("X", "2024-05-01", "FY", 110.0, None, None, 100.0),
@@ -2801,7 +2803,7 @@ class TestRankingHelperBranches:
             )
             == 110.0
         )
-        assert service._resolve_latest_forecast_snapshot(
+        assert calculator.resolve_latest_forecast_snapshot(
             [
                 _StatementRow("X", "2024-01-10", "FY", 100.0, 120.0, 120.0, 100.0),
                 _StatementRow("X", "2024-01-18", "1Q", None, 140.0, None, 100.0),
@@ -2822,9 +2824,9 @@ class TestRankingHelperBranches:
             period_type="1Q",
             source="revised",
         )
-        assert service._resolve_latest_ratio_snapshot(None, forecast) is None
+        assert calculator.resolve_latest_ratio_snapshot(None, forecast) is None
         assert (
-            service._resolve_latest_ratio_snapshot(
+            calculator.resolve_latest_ratio_snapshot(
                 _ForecastValue(
                     value=0.0,
                     disclosed_date="2024-05-01",
