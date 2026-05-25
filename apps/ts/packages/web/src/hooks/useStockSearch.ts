@@ -1,27 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import { apiGet } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
-/**
- * Stock search result item from API
- */
-export interface StockSearchResultItem {
-  code: string;
-  companyName: string;
-  companyNameEnglish: string | null;
-  marketCode: string;
-  marketName: string;
-  sector33Name: string;
-}
-
-/**
- * Stock search response from API
- */
-interface StockSearchResponse {
-  query: string;
-  results: StockSearchResultItem[];
-  count: number;
-}
+export type StockSearchResultItem = components['schemas']['StockSearchResultItem'];
+type StockSearchResponse = components['schemas']['StockSearchResponse'];
 
 /**
  * Fetch stock search results from API
