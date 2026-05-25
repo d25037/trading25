@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pandas as pd
-
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
@@ -45,14 +43,10 @@ from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
 )
-from src.domains.analytics.value_composite_scoring import (
-    VALUE_COMPOSITE_SCORE_COLUMN,
-)
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
-    ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
     ensure_supported_value_composite_forward_eps_mode as _ensure_supported_value_composite_forward_eps_mode,
     normalize_value_composite_weights as _normalize_value_composite_weights,
     resolve_value_composite_profile_and_score_method as _resolve_value_composite_profile_and_score_method,
@@ -61,8 +55,7 @@ from src.application.services.ranking_value_composite_config import (
     value_composite_score_policy as _value_composite_score_policy,
 )
 from src.application.services.ranking_value_composite_metrics import (
-    append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
-    apply_value_composite_profile as _apply_value_composite_profile_frame,
+    apply_value_composite_profile_if_requested as _apply_value_composite_profile_if_requested,
     build_value_composite_ranking_items as _build_value_composite_ranking_items,
     find_value_composite_score_item as _find_value_composite_score_item,
     find_value_composite_target_stock as _find_value_composite_target_stock,
@@ -469,8 +462,9 @@ class RankingService:
             forward_eps_mode=forward_eps_mode,
             valuation_calculator=self._valuation_calculator,
         )
-        scored = self._apply_value_composite_profile_if_requested(
+        scored = _apply_value_composite_profile_if_requested(
             scored,
+            self._reader,
             target_date=target_date,
             profile=profile,
             apply_liquidity_filter=apply_liquidity_filter,
@@ -507,33 +501,6 @@ class RankingService:
             items=items,
             lastUpdated=_now_iso(),
         )
-
-    def _apply_value_composite_profile_if_requested(
-        self,
-        scored: pd.DataFrame,
-        *,
-        target_date: str,
-        profile: _ValueCompositeProfileSpec | None,
-        apply_liquidity_filter: bool,
-    ) -> pd.DataFrame:
-        if profile is None or scored.empty:
-            return scored
-        scored = _append_value_composite_profile_metrics_query(
-            scored,
-            self._reader,
-            target_date=target_date,
-            profile=profile,
-        )
-        scored = _apply_value_composite_profile_frame(
-            scored,
-            profile,
-            apply_liquidity_filter=apply_liquidity_filter,
-        )
-        return scored.sort_values(
-            [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
-            ascending=[False, True],
-            kind="stable",
-        ).reset_index(drop=True)
 
     def get_value_composite_score(
         self,

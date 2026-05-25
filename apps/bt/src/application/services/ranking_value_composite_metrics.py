@@ -317,6 +317,34 @@ def apply_value_composite_profile(
     return result
 
 
+def apply_value_composite_profile_if_requested(
+    scored: pd.DataFrame,
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+    profile: ValueCompositeProfileSpec | None,
+    apply_liquidity_filter: bool,
+) -> pd.DataFrame:
+    if profile is None or scored.empty:
+        return scored
+    scored = append_value_composite_profile_metrics(
+        scored,
+        reader,
+        target_date=target_date,
+        profile=profile,
+    )
+    scored = apply_value_composite_profile(
+        scored,
+        profile,
+        apply_liquidity_filter=apply_liquidity_filter,
+    )
+    return scored.sort_values(
+        [VALUE_COMPOSITE_SCORE_COLUMN, "code"],
+        ascending=[False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
 def build_value_composite_score_frame_from_adjusted(
     adjusted: pd.DataFrame,
     *,
