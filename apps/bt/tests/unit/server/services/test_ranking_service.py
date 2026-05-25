@@ -31,6 +31,9 @@ from src.application.services.ranking_query_helpers import (
 )
 from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_PROFILE_BY_ID,
+    normalize_value_composite_weights,
+    value_composite_response_weights,
+    value_composite_score_policy,
 )
 from src.application.services.ranking_liquidity import (
     classify_prime_liquidity_regime,
@@ -2580,6 +2583,25 @@ class TestRankingHelperBranches:
         profile = VALUE_COMPOSITE_PROFILE_BY_ID["prime_size75_forward_per25"]
         assert profile.score_method == "prime_size75_forward_per25"
         assert profile.rebalance_months == 2
+
+    def test_value_composite_config_formats_score_response_parts(self):
+        weights = normalize_value_composite_weights(
+            {
+                "small_market_cap_score": 2.0,
+                "low_pbr_score": 1.0,
+                "low_forward_per_score": 1.0,
+            }
+        )
+
+        assert value_composite_response_weights(weights) == {
+            "smallMarketCap": 0.5,
+            "lowPbr": 0.25,
+            "lowForwardPer": 0.25,
+        }
+        assert (
+            "forward EPS basis: latest revised forecast EPS"
+            in value_composite_score_policy("standard_pbr_tilt", "latest")
+        )
 
     def test_prime_valuation_percentiles_only_rank_prime_positive_values(self):
         frame = pd.DataFrame(

@@ -61,6 +61,8 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
     normalize_value_composite_weights as _normalize_value_composite_weights,
+    value_composite_response_weights as _value_composite_response_weights,
+    value_composite_score_policy as _value_composite_score_policy,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -729,15 +731,11 @@ class RankingService:
                 metricKey=_VALUE_COMPOSITE_METRIC_KEY,
                 scoreMethod=score_method,
                 forwardEpsMode=forward_eps_mode,
-                scorePolicy=(
-                    f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
-                    f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+                scorePolicy=_value_composite_score_policy(
+                    score_method,
+                    forward_eps_mode,
                 ),
-                weights={
-                    "smallMarketCap": weights["small_market_cap_score"],
-                    "lowPbr": weights["low_pbr_score"],
-                    "lowForwardPer": weights["low_forward_per_score"],
-                },
+                weights=_value_composite_response_weights(weights),
                 universeCount=universe_count,
                 scoreAvailable=True,
                 item=item,
@@ -760,15 +758,11 @@ class RankingService:
             metricKey=_VALUE_COMPOSITE_METRIC_KEY,
             scoreMethod=score_method,
             forwardEpsMode=forward_eps_mode,
-            scorePolicy=(
-                f"{_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
-                f"forward EPS basis: {_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+            scorePolicy=_value_composite_score_policy(
+                score_method,
+                forward_eps_mode,
             ),
-            weights={
-                "smallMarketCap": weights["small_market_cap_score"],
-                "lowPbr": weights["low_pbr_score"],
-                "lowForwardPer": weights["low_forward_per_score"],
-            },
+            weights=_value_composite_response_weights(weights),
             universeCount=universe_count,
             scoreAvailable=False,
             unsupportedReason=unsupported_reason,

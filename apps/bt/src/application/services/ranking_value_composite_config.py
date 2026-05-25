@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from src.domains.analytics.value_composite_scoring import (
@@ -98,6 +99,28 @@ VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str]
     "latest": "latest revised forecast EPS when available, otherwise FY forecast EPS",
     "fy": "latest FY forecast EPS only",
 }
+
+
+def value_composite_score_policy(
+    score_method: ValueCompositeScoreMethod,
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+) -> str:
+    return (
+        f"{VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD[score_method]}; "
+        f"forward EPS basis: {VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS[forward_eps_mode]}"
+    )
+
+
+def value_composite_response_weights(
+    weights: Mapping[str, float],
+) -> dict[str, float]:
+    return {
+        "smallMarketCap": weights["small_market_cap_score"],
+        "lowPbr": weights["low_pbr_score"],
+        "lowForwardPer": weights["low_forward_per_score"],
+    }
+
+
 SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
 OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
 PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
