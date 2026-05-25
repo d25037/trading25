@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { useDatasetInfo } from '@/hooks/useDataset';
 import type { DatasetInfoResponse } from '@/types/dataset';
-import { formatBytes } from '@/utils/formatters';
+import { formatBytes, formatCount } from '@/utils/formatters';
 
 interface DatasetInfoDialogProps {
   open: boolean;
@@ -28,13 +28,13 @@ function DataCoverageSection({ info }: { info: DatasetInfoResponse }) {
       <div className="grid grid-cols-2 gap-2">
         <div className="text-muted-foreground">Quotes</div>
         <div>
-          {coverage.stocksWithQuotes} / {coverage.totalStocks}
+          {formatCount(coverage.stocksWithQuotes)} / {formatCount(coverage.totalStocks)}
         </div>
         {info.stats.hasStatementsData && (
           <>
             <div className="text-muted-foreground">Statements</div>
             <div>
-              {coverage.stocksWithStatements} / {coverage.totalStocks}
+              {formatCount(coverage.stocksWithStatements)} / {formatCount(coverage.totalStocks)}
             </div>
           </>
         )}
@@ -42,7 +42,7 @@ function DataCoverageSection({ info }: { info: DatasetInfoResponse }) {
           <>
             <div className="text-muted-foreground">Margin</div>
             <div>
-              {coverage.stocksWithMargin} / {coverage.totalStocks}
+              {formatCount(coverage.stocksWithMargin)} / {formatCount(coverage.totalStocks)}
             </div>
           </>
         )}
@@ -126,9 +126,9 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
             <>
               <div className="text-muted-foreground">Stock count</div>
               <div>
-                {details.stockCountValidation.actual.toLocaleString()} /{' '}
+                {formatCount(details.stockCountValidation.actual)} /{' '}
                 {details.stockCountValidation.expected
-                  ? `${details.stockCountValidation.expected.min.toLocaleString()}-${details.stockCountValidation.expected.max.toLocaleString()}`
+                  ? `${formatCount(details.stockCountValidation.expected.min)}-${formatCount(details.stockCountValidation.expected.max)}`
                   : 'N/A'}
               </div>
             </>
@@ -142,7 +142,7 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
           {hasOrphanStocksCount && (
             <>
               <div className="text-muted-foreground">Stocks without quotes</div>
-              <div>{details?.orphanStocksCount?.toLocaleString() ?? 0}</div>
+              <div>{formatCount(details?.orphanStocksCount)}</div>
             </>
           )}
           {hasFkIntegrity && details?.fkIntegrity && (
@@ -242,9 +242,9 @@ export function DatasetInfoDialog({ open, onOpenChange, datasetName }: DatasetIn
               <h4 className="font-medium mb-2">統計情報</h4>
               <div className="grid grid-cols-2 gap-2">
                 <div className="text-muted-foreground">銘柄数</div>
-                <div>{info.stats.totalStocks.toLocaleString()}</div>
+                <div>{formatCount(info.stats.totalStocks)}</div>
                 <div className="text-muted-foreground">株価レコード数</div>
-                <div>{info.stats.totalQuotes.toLocaleString()}</div>
+                <div>{formatCount(info.stats.totalQuotes)}</div>
                 <div className="text-muted-foreground">日付範囲</div>
                 <div>
                   {info.stats.dateRange.from} ~ {info.stats.dateRange.to}

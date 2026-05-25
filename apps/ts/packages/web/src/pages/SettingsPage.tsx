@@ -1274,8 +1274,8 @@ function AdjustedMetricsMaterializeSection({
             </div>
             {result ? (
               <p className="mt-2 text-xs">
-                Statements {result.statementRows.toLocaleString()} / Daily valuation{' '}
-                {result.dailyValuationRows.toLocaleString()}
+                Statements {formatCount(result.statementRows)} / Daily valuation{' '}
+                {formatCount(result.dailyValuationRows)}
               </p>
             ) : null}
           </div>
