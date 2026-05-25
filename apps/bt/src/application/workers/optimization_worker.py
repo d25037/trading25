@@ -31,9 +31,12 @@ from src.domains.backtest.contracts import EnginePolicy, EnginePolicyMode
 from src.domains.optimization.engine import ParameterOptimizationEngine
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
-from src.application.workers.job_runtime import duration_ms_for_job, elapsed_ms_since
+from src.application.workers.job_runtime import (
+    duration_ms_for_job,
+    record_elapsed_job_duration,
+    record_job_duration,
+)
 from src.shared.config.settings import get_settings
-from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
 _TIMED_OUT_ERROR = "worker_timed_out"
@@ -118,7 +121,7 @@ async def _heartbeat_loop(
                 job_id,
                 reason="parent_job_timed_out",
             )
-            metrics_recorder.record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
+            record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"optimization worker timed out: {job_id}",
                 event="job_lifecycle",
@@ -144,7 +147,7 @@ async def _heartbeat_loop(
                 job_id,
                 reason=job.cancel_reason or "controller_requested",
             )
-            metrics_recorder.record_job_duration("optimization", JobStatus.CANCELLED.value, duration_ms)
+            record_job_duration("optimization", JobStatus.CANCELLED.value, duration_ms)
             logger.info(
                 f"optimization worker cancelled: {job_id}",
                 event="job_lifecycle",
@@ -284,8 +287,7 @@ async def run_optimization_worker(
             message="最適化完了",
             progress=1.0,
         )
-        duration_ms = elapsed_ms_since(started_at)
-        metrics_recorder.record_job_duration("optimization", JobStatus.COMPLETED.value, duration_ms)
+        duration_ms = record_elapsed_job_duration("optimization", JobStatus.COMPLETED.value, started_at=started_at)
         logger.info(
             f"optimization worker completed job: {job_id}",
             event="job_lifecycle",
@@ -303,8 +305,7 @@ async def run_optimization_worker(
             job_id,
             reason="parent_job_failed",
         )
-        duration_ms = elapsed_ms_since(started_at)
-        metrics_recorder.record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
+        duration_ms = record_elapsed_job_duration("optimization", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"optimization worker failed: {job_id}",
             event="job_lifecycle",

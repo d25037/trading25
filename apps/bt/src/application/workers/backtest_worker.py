@@ -22,9 +22,12 @@ from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
-from src.application.workers.job_runtime import duration_ms_for_job, elapsed_ms_since
+from src.application.workers.job_runtime import (
+    duration_ms_for_job,
+    record_elapsed_job_duration,
+    record_job_duration,
+)
 from src.shared.config.settings import get_settings
-from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
 _TIMED_OUT_ERROR = "worker_timed_out"
@@ -74,7 +77,7 @@ async def _heartbeat_loop(
                 message="バックテストがタイムアウトしました",
                 error=_TIMED_OUT_ERROR,
             )
-            metrics_recorder.record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
+            record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"backtest worker timed out: {job_id}",
                 event="job_lifecycle",
@@ -95,7 +98,7 @@ async def _heartbeat_loop(
                 job_id,
                 reason=job.cancel_reason or "controller_requested",
             )
-            metrics_recorder.record_job_duration("backtest", JobStatus.CANCELLED.value, duration_ms)
+            record_job_duration("backtest", JobStatus.CANCELLED.value, duration_ms)
             logger.info(
                 f"backtest worker cancelled: {job_id}",
                 event="job_lifecycle",
@@ -243,8 +246,7 @@ async def run_backtest_worker(
             message="バックテスト完了",
             progress=1.0,
         )
-        duration_ms = elapsed_ms_since(started_at)
-        metrics_recorder.record_job_duration("backtest", JobStatus.COMPLETED.value, duration_ms)
+        duration_ms = record_elapsed_job_duration("backtest", JobStatus.COMPLETED.value, started_at=started_at)
         logger.info(
             f"backtest worker completed job: {job_id}",
             event="job_lifecycle",
@@ -257,8 +259,7 @@ async def run_backtest_worker(
         )
         return 0
     except Exception as exc:
-        duration_ms = elapsed_ms_since(started_at)
-        metrics_recorder.record_job_duration("backtest", JobStatus.FAILED.value, duration_ms)
+        duration_ms = record_elapsed_job_duration("backtest", JobStatus.FAILED.value, started_at=started_at)
         logger.exception(
             f"backtest worker failed: {job_id}",
             event="job_lifecycle",

@@ -24,9 +24,8 @@ from src.application.services.screening_default_markets import (
 )
 from src.application.services.screening_service import ScreeningService
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
-from src.application.workers.job_runtime import elapsed_ms_since
+from src.application.workers.job_runtime import record_elapsed_job_duration
 from src.shared.observability.correlation import get_correlation_id
-from src.shared.observability.metrics import metrics_recorder
 
 
 def _read_positive_int_env(name: str, default: int) -> int:
@@ -44,9 +43,7 @@ def _read_positive_int_env(name: str, default: int) -> int:
 
 
 def _record_screening_job_duration(status: JobStatus, *, started_at: float) -> float:
-    elapsed_ms = elapsed_ms_since(started_at)
-    metrics_recorder.record_job_duration("screening", status.value, elapsed_ms)
-    return elapsed_ms
+    return record_elapsed_job_duration("screening", status.value, started_at=started_at)
 
 
 class ScreeningJobService:
