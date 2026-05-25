@@ -11,7 +11,6 @@ import {
   DEFAULT_RANKING_PARAMS,
   type ScreeningSubTab,
 } from '@/stores/screeningStore';
-import type { BacktestSubTab } from '@/types/backtest';
 import type {
   RankingDailyView,
   RankingLiquidityState,
@@ -22,6 +21,7 @@ import type {
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
+export type BacktestSubTab = 'runner' | 'results' | 'attribution' | 'strategies' | 'status' | 'dataset' | 'lab';
 export type PortfolioSubTab = 'portfolios' | 'watchlists';
 
 export interface SymbolWorkbenchRouteSearch {

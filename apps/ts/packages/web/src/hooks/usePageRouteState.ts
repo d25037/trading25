@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import type { LabType } from '@trading25/api-clients/backtest';
 import { useCallback } from 'react';
 import {
+  type BacktestSubTab,
   getRankingStateFromSearch,
   getScreeningStateFromSearch,
   type PortfolioSubTab,
@@ -26,7 +27,6 @@ import {
   symbolWorkbenchRoute,
 } from '@/router';
 import type { ScreeningSubTab } from '@/stores/screeningStore';
-import type { BacktestSubTab } from '@/types/backtest';
 import type { RankingDailyView, RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 

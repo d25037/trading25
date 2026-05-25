@@ -18,7 +18,7 @@ import {
   Surface,
 } from '@/components/Layout/Workspace';
 import { useBacktestRouteState } from '@/hooks/usePageRouteState';
-import type { BacktestSubTab } from '@/types/backtest';
+import type { BacktestSubTab } from '@/lib/routeSearch';
 
 const subTabs = [
   { value: 'runner' as BacktestSubTab, label: 'Runner', icon: Play },
@@ -52,7 +52,9 @@ export function BacktestPage() {
   } = useBacktestRouteState();
 
   const activeViewMeta = BACKTEST_VIEW_META[activeSubTab];
-  const selectedStrategyLabel = selectedStrategy ? (selectedStrategy.split('/').pop() ?? selectedStrategy) : 'None selected';
+  const selectedStrategyLabel = selectedStrategy
+    ? (selectedStrategy.split('/').pop() ?? selectedStrategy)
+    : 'None selected';
   const introMetaItems = [
     { label: 'View', value: activeViewMeta.label },
     { label: 'Strategy', value: selectedStrategyLabel },
