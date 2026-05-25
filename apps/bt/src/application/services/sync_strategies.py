@@ -34,11 +34,7 @@ from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
 from src.application.services.options_225 import (
-    OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
     OPTIONS_225_SYNTHETIC_INDEX_CODE,
-    OPTIONS_225_SYNTHETIC_INDEX_NAME,
-    OPTIONS_225_SYNTHETIC_INDEX_NAME_EN,
-    build_synthetic_underpx_index_rows,
 )
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
@@ -98,6 +94,21 @@ from src.application.services.sync_fetch_planner import (
     _resolve_bulk_fallback_reason,
     _summarize_exception,
 )
+from src.application.services.sync_publish_helpers import (
+    _index_indices_rows,
+    _index_margin_rows,
+    _index_options_225_rows,
+    _index_statement_rows,
+    _index_stock_data_rows,
+    _index_topix_rows,
+    _publish_indices_rows,
+    _publish_margin_rows,
+    _publish_options_225_rows,
+    _publish_statement_rows,
+    _publish_stock_data_rows,
+    _publish_synthetic_nikkei_rows,
+    _publish_topix_rows,
+)
 from src.application.services.sync_state_helpers import (
     _build_incremental_date_targets,
     _collect_unique_codes,
@@ -105,7 +116,6 @@ from src.application.services.sync_state_helpers import (
     _inspect_time_series,
     _load_metadata_json_list,
     _normalize_date_list,
-    _require_time_series_store,
     _save_metadata_json_list,
 )
 
@@ -2936,102 +2946,6 @@ async def _upsert_indices_rows_with_master_backfill(
             logger.warning(discovery_log, len(missing_master_rows))
 
     await _publish_indices_rows(ctx, rows)
-
-
-async def _publish_synthetic_nikkei_rows(
-    ctx: SyncContext,
-    rows: list[dict[str, Any]],
-) -> int:
-    synthetic_rows = build_synthetic_underpx_index_rows(rows)
-    if not synthetic_rows:
-        return 0
-
-    await asyncio.to_thread(
-        ctx.market_db.upsert_index_master,
-        [
-            {
-                "code": OPTIONS_225_SYNTHETIC_INDEX_CODE,
-                "name": OPTIONS_225_SYNTHETIC_INDEX_NAME,
-                "name_english": OPTIONS_225_SYNTHETIC_INDEX_NAME_EN,
-                "category": OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
-                "data_start_date": min(str(row["date"]) for row in synthetic_rows),
-                "created_at": datetime.now(UTC).isoformat(),
-            }
-        ],
-    )
-    return await _publish_indices_rows(ctx, synthetic_rows)
-
-
-async def _publish_topix_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_topix_data, rows)
-
-
-async def _publish_stock_data_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_stock_data, rows)
-
-
-async def _publish_indices_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_indices_data, rows)
-
-
-async def _publish_options_225_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_options_225_data, rows)
-
-
-async def _publish_margin_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_margin_data, rows)
-
-
-async def _publish_statement_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
-    if not rows:
-        return 0
-    store = _require_time_series_store(ctx)
-    return await asyncio.to_thread(store.publish_statements, rows)
-
-
-async def _index_topix_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_topix_data)
-
-
-async def _index_stock_data_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_stock_data)
-
-
-async def _index_indices_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_indices_data)
-
-
-async def _index_options_225_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_options_225_data)
-
-
-async def _index_margin_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_margin_data)
-
-
-async def _index_statement_rows(ctx: SyncContext) -> None:
-    store = _require_time_series_store(ctx)
-    await asyncio.to_thread(store.index_statements)
 
 
 async def _sync_daily_stock_master(
