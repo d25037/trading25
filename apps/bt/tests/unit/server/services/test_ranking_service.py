@@ -46,6 +46,7 @@ from src.application.services.ranking_response_items import (
     build_fundamental_ranking_item,
     build_ranking_item,
     build_value_composite_item,
+    build_value_composite_score_response,
 )
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
@@ -2712,6 +2713,29 @@ class TestRankingHelperBranches:
         assert item.epsValue == 1.25
         assert item.disclosedDate == "2024-01-18"
         assert item.source == "revised"
+
+    def test_build_value_composite_score_response_maps_stock_identity(self):
+        response = build_value_composite_score_response(
+            date="2024-01-19",
+            code="72030",
+            target_stock={
+                "code": "72030",
+                "company_name": "Toyota",
+                "market_code": "prime",
+            },
+            market="prime",
+            score_method="prime_size_tilt",
+            forward_eps_mode="latest",
+            score_available=False,
+            unsupported_reason="forward_eps_missing",
+            last_updated="2024-01-19T00:00:00+00:00",
+        )
+
+        assert response.code == "72030"
+        assert response.companyName == "Toyota"
+        assert response.marketCode == "prime"
+        assert response.scoreAvailable is False
+        assert response.unsupportedReason == "forward_eps_missing"
 
     def test_statement_selection_respects_as_of_and_positive_adjusted_bps(self):
         rows = [

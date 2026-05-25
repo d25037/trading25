@@ -15,6 +15,10 @@ from src.entrypoints.http.schemas.ranking import (
     FundamentalRankingItem,
     RankingItem,
     ValueCompositeRankingItem,
+    ValueCompositeScoreResponse,
+    ValueCompositeForwardEpsMode,
+    ValueCompositeScoreMethod,
+    ValueCompositeScoreUnavailableReason,
     ValueCompositeTechnicalMetrics,
 )
 
@@ -157,4 +161,43 @@ def build_value_composite_item(
                 row.get("close_to_prior_high_120d_pct")
             ),
         ),
+    )
+
+
+def build_value_composite_score_response(
+    *,
+    date: str,
+    code: str,
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+    score_available: bool,
+    last_updated: str,
+    target_stock: Mapping[str, Any] | None = None,
+    market: str | None = None,
+    score_method: ValueCompositeScoreMethod | None = None,
+    score_policy: str | None = None,
+    weights: Mapping[str, float] | None = None,
+    universe_count: int = 0,
+    item: ValueCompositeRankingItem | None = None,
+    unsupported_reason: ValueCompositeScoreUnavailableReason | None = None,
+) -> ValueCompositeScoreResponse:
+    stock_payload: dict[str, Any] = {"code": code}
+    if target_stock is not None:
+        stock_payload = {
+            "code": str(target_stock["code"]),
+            "companyName": str(target_stock["company_name"]),
+            "marketCode": str(target_stock["market_code"]),
+        }
+    return ValueCompositeScoreResponse(
+        date=date,
+        **stock_payload,
+        market=market,
+        scoreMethod=score_method,
+        forwardEpsMode=forward_eps_mode,
+        scorePolicy=score_policy,
+        weights=dict(weights or {}),
+        universeCount=universe_count,
+        scoreAvailable=score_available,
+        unsupportedReason=unsupported_reason,
+        item=item,
+        lastUpdated=last_updated,
     )

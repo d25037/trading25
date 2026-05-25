@@ -71,6 +71,7 @@ from src.application.services.ranking_response_items import (
     build_fundamental_ranking_item,
     build_ranking_item,
     build_value_composite_item,
+    build_value_composite_score_response,
     finite_or_none as _finite_or_none,
     int_or_none as _int_or_none,
     str_or_none as _str_or_none,
@@ -663,28 +664,27 @@ class RankingService:
         )
         last_updated = _now_iso()
         if target_stock is None:
-            return ValueCompositeScoreResponse(
+            return build_value_composite_score_response(
                 date=target_date,
                 code=code,
-                forwardEpsMode=forward_eps_mode,
-                scoreAvailable=False,
-                unsupportedReason="not_found",
-                lastUpdated=last_updated,
+                forward_eps_mode=forward_eps_mode,
+                score_available=False,
+                unsupported_reason="not_found",
+                last_updated=last_updated,
             )
 
         market = _canonical_market_label(str(target_stock["market_code"]))
         score_method = _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET.get(market)
         if score_method is None:
-            return ValueCompositeScoreResponse(
+            return build_value_composite_score_response(
                 date=target_date,
                 code=str(target_stock["code"]),
-                companyName=str(target_stock["company_name"]),
-                marketCode=str(target_stock["market_code"]),
+                target_stock=target_stock,
                 market=market,
-                forwardEpsMode=forward_eps_mode,
-                scoreAvailable=False,
-                unsupportedReason="unsupported_market",
-                lastUpdated=last_updated,
+                forward_eps_mode=forward_eps_mode,
+                score_available=False,
+                unsupported_reason="unsupported_market",
+                last_updated=last_updated,
             )
 
         weights = _normalize_value_composite_weights(
@@ -711,24 +711,22 @@ class RankingService:
                 cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
                 rank,
             )
-            return ValueCompositeScoreResponse(
+            return build_value_composite_score_response(
                 date=target_date,
                 code=str(target_stock["code"]),
-                companyName=str(target_stock["company_name"]),
-                marketCode=str(target_stock["market_code"]),
+                target_stock=target_stock,
                 market=market,
-                metricKey=_VALUE_COMPOSITE_METRIC_KEY,
-                scoreMethod=score_method,
-                forwardEpsMode=forward_eps_mode,
-                scorePolicy=_value_composite_score_policy(
+                score_method=score_method,
+                forward_eps_mode=forward_eps_mode,
+                score_policy=_value_composite_score_policy(
                     score_method,
                     forward_eps_mode,
                 ),
                 weights=_value_composite_response_weights(weights),
-                universeCount=universe_count,
-                scoreAvailable=True,
+                universe_count=universe_count,
+                score_available=True,
                 item=item,
-                lastUpdated=last_updated,
+                last_updated=last_updated,
             )
 
         unsupported_reason = self._resolve_value_composite_unavailable_reason(
@@ -738,24 +736,22 @@ class RankingService:
             forward_eps_mode=forward_eps_mode,
             price_basis_date=self._resolve_stock_price_basis_date(),
         )
-        return ValueCompositeScoreResponse(
+        return build_value_composite_score_response(
             date=target_date,
             code=str(target_stock["code"]),
-            companyName=str(target_stock["company_name"]),
-            marketCode=str(target_stock["market_code"]),
+            target_stock=target_stock,
             market=market,
-            metricKey=_VALUE_COMPOSITE_METRIC_KEY,
-            scoreMethod=score_method,
-            forwardEpsMode=forward_eps_mode,
-            scorePolicy=_value_composite_score_policy(
+            score_method=score_method,
+            forward_eps_mode=forward_eps_mode,
+            score_policy=_value_composite_score_policy(
                 score_method,
                 forward_eps_mode,
             ),
             weights=_value_composite_response_weights(weights),
-            universeCount=universe_count,
-            scoreAvailable=False,
-            unsupportedReason=unsupported_reason,
-            lastUpdated=last_updated,
+            universe_count=universe_count,
+            score_available=False,
+            unsupported_reason=unsupported_reason,
+            last_updated=last_updated,
         )
 
     # --- Private ranking methods ---
