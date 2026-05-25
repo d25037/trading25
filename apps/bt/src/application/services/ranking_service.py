@@ -73,11 +73,10 @@ from src.application.services.ranking_value_composite_config import (
 from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
     apply_value_composite_profile as _apply_value_composite_profile_frame,
-    build_value_composite_score_frame_from_adjusted as _build_value_composite_score_frame_from_adjusted,
-    build_value_composite_score_frame_from_statement_rows as _build_value_composite_score_frame_from_statement_rows,
     build_value_composite_ranking_items as _build_value_composite_ranking_items,
     find_value_composite_score_item as _find_value_composite_score_item,
     find_value_composite_target_stock as _find_value_composite_target_stock,
+    load_value_composite_scored_frame as _load_value_composite_scored_frame,
     resolve_value_composite_forecast_snapshot as _resolve_value_composite_forecast_snapshot,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
@@ -476,11 +475,13 @@ class RankingService:
             fallback=["standard"],
         )
         target_date = _resolve_value_composite_target_date_query(self._reader, date)
-        scored = self._load_value_composite_scored_frame(
+        scored = _load_value_composite_scored_frame(
+            self._reader,
             target_date=target_date,
             query_market_codes=query_market_codes,
             weights=weights,
             forward_eps_mode=forward_eps_mode,
+            valuation_calculator=self._valuation_calculator,
         )
         scored = self._apply_value_composite_profile_if_requested(
             scored,
@@ -605,11 +606,13 @@ class RankingService:
             _VALUE_COMPOSITE_WEIGHTS_BY_METHOD[score_method]
         )
         _, query_market_codes = resolve_market_codes(market, fallback=[market])
-        scored = self._load_value_composite_scored_frame(
+        scored = _load_value_composite_scored_frame(
+            self._reader,
             target_date=target_date,
             query_market_codes=query_market_codes,
             weights=weights,
             forward_eps_mode=forward_eps_mode,
+            valuation_calculator=self._valuation_calculator,
         )
         item, universe_count = _find_value_composite_score_item(
             scored,
@@ -662,56 +665,6 @@ class RankingService:
         )
 
     # --- Private ranking methods ---
-
-    def _load_value_composite_scored_frame(
-        self,
-        *,
-        target_date: str,
-        query_market_codes: list[str],
-        weights: Mapping[str, float],
-        forward_eps_mode: ValueCompositeForwardEpsMode,
-    ) -> pd.DataFrame:
-        if forward_eps_mode == "latest":
-            adjusted = _load_adjusted_daily_valuation_frame_query(
-                self._reader,
-                target_date,
-                query_market_codes,
-            )
-            if not adjusted.empty:
-                scored = _build_value_composite_score_frame_from_adjusted(
-                    adjusted,
-                    weights=weights,
-                )
-                if not scored.empty:
-                    return scored
-
-        stock_rows = _load_fundamental_stock_rows_query(
-            self._reader,
-            target_date,
-            query_market_codes,
-        )
-        statement_rows = _load_fundamental_statement_rows_query(
-            self._reader,
-            target_date,
-            query_market_codes,
-        )
-        price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
-        adjustment_events_by_code = _load_adjustment_events_by_code_query(
-            self._reader,
-            through_date=price_basis_date,
-            market_codes=query_market_codes,
-        )
-
-        return _build_value_composite_score_frame_from_statement_rows(
-            stock_rows,
-            statement_rows,
-            target_date=target_date,
-            price_basis_date=price_basis_date,
-            adjustment_events_by_code=adjustment_events_by_code,
-            valuation_calculator=self._valuation_calculator,
-            weights=weights,
-            forward_eps_mode=forward_eps_mode,
-        )
 
     def _enrich_ranking_collections_with_valuation(
         self,

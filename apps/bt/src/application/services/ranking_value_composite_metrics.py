@@ -25,6 +25,10 @@ from src.domains.fundamentals import (
 )
 from src.application.services.ranking_daily_queries import get_trading_date_before
 from src.application.services.ranking_fundamental_queries import (
+    load_adjustment_events_by_code,
+    load_adjusted_daily_valuation_frame,
+    load_fundamental_statement_rows,
+    load_fundamental_stock_rows,
     resolve_latest_stock_data_date,
 )
 from src.application.services.ranking_query_helpers import (
@@ -100,6 +104,58 @@ def resolve_value_composite_forecast_snapshot(
     return calculator.resolve_latest_fy_forecast_snapshot(
         latest_fy,
         baseline_shares,
+    )
+
+
+def load_value_composite_scored_frame(
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+    query_market_codes: list[str],
+    weights: Mapping[str, float],
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+    valuation_calculator: FundamentalsCalculator,
+) -> pd.DataFrame:
+    if forward_eps_mode == "latest":
+        adjusted = load_adjusted_daily_valuation_frame(
+            reader,
+            target_date,
+            query_market_codes,
+        )
+        if not adjusted.empty:
+            scored = build_value_composite_score_frame_from_adjusted(
+                adjusted,
+                weights=weights,
+            )
+            if not scored.empty:
+                return scored
+
+    stock_rows = load_fundamental_stock_rows(
+        reader,
+        target_date,
+        query_market_codes,
+    )
+    statement_rows = load_fundamental_statement_rows(
+        reader,
+        target_date,
+        query_market_codes,
+    )
+    price_basis_date = resolve_latest_stock_data_date(reader)
+    adjustment_events_by_code = load_adjustment_events_by_code(
+        reader,
+        through_date=price_basis_date,
+        market_codes=query_market_codes,
+    )
+
+    return build_value_composite_score_frame_from_statement_rows(
+        stock_rows,
+        statement_rows,
+        target_date=target_date,
+        price_basis_date=price_basis_date,
+        adjustment_events_by_code=adjustment_events_by_code,
+        valuation_calculator=valuation_calculator,
+        weights=weights,
+        forward_eps_mode=forward_eps_mode,
     )
 
 
