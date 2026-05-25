@@ -245,5 +245,5 @@ TOPIX regime は今回の配色には直接混ぜない。もし UI に入れる
 | domain module | `apps/bt/src/domains/analytics/ranking_color_evidence.py` |
 | prime bundle | `/tmp/trading25-research/market-behavior/ranking-color-evidence/20260522_ranking_color_evidence_prime_topix_regime_v7` |
 | liquidity color long trend follow-up bundle | `/private/tmp/trading25-research/market-behavior/ranking-color-evidence/20260523_ranking_color_liquidity_color_long_trend_prime_v2` |
-| high valuation size/liquidity follow-up bundle | `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/ranking-color-evidence/20260523_high_valuation_size_liquidity_prime_v1` |
+| high valuation size/liquidity follow-up bundle | `~/.local/share/trading25/research/market-behavior/ranking-color-evidence/20260523_high_valuation_size_liquidity_prime_v1` |
 | result tables | `ranking_color_evidence_df`, `per_relation_evidence_df`, `low_per_relation_evidence_df`, `low_per_relation_level_evidence_df`, `forward_per_pop_interaction_df`, `liquidity_regime_evidence_df`, `topix_regime_liquidity_value_evidence_df`, `liquidity_color_long_trend_evidence_df`, `high_valuation_size_liquidity_interaction_df`, `coverage_diagnostics_df`, `observation_sample_df` |
