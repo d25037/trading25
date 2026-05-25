@@ -34,7 +34,9 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
 )
 from src.application.services.ranking_fundamental_queries import (
+    load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
+    table_exists as _table_exists_query,
 )
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
@@ -139,16 +141,7 @@ class RankingService:
         self._valuation_calculator = FundamentalsCalculator()
 
     def _table_exists(self, table_name: str) -> bool:
-        row = self._reader.query_one(
-            """
-            SELECT 1 AS exists
-            FROM information_schema.tables
-            WHERE lower(table_name) = lower(?)
-            LIMIT 1
-            """,
-            (table_name,),
-        )
-        return row is not None
+        return _table_exists_query(self._reader, table_name)
 
     def _load_adjustment_events_by_code(
         self,
@@ -407,7 +400,8 @@ class RankingService:
             target_date,
             query_market_codes,
         )
-        adjusted_valuation = self._load_adjusted_daily_valuation_frame(
+        adjusted_valuation = _load_adjusted_daily_valuation_frame_query(
+            self._reader,
             target_date,
             query_market_codes,
         )
@@ -742,7 +736,8 @@ class RankingService:
         forward_eps_mode: ValueCompositeForwardEpsMode,
     ) -> pd.DataFrame:
         if forward_eps_mode == "latest":
-            adjusted = self._load_adjusted_daily_valuation_frame(
+            adjusted = _load_adjusted_daily_valuation_frame_query(
+                self._reader,
                 target_date,
                 query_market_codes,
             )
@@ -852,7 +847,8 @@ class RankingService:
         target_date: str,
         query_market_codes: list[str],
     ) -> set[str]:
-        valuation_frame = self._load_adjusted_daily_valuation_frame(
+        valuation_frame = _load_adjusted_daily_valuation_frame_query(
+            self._reader,
             target_date,
             query_market_codes,
         )
@@ -1270,106 +1266,6 @@ class RankingService:
         if _positive_ratio(price, forecast_snapshot.value) is None:
             return "forward_eps_missing"
         return "not_rankable"
-
-    def _load_adjusted_daily_valuation_frame(
-        self,
-        date: str,
-        market_codes: list[str],
-    ) -> pd.DataFrame:
-        if not self._table_exists("daily_valuation"):
-            return pd.DataFrame()
-        market_clause, market_params = _build_market_filter(market_codes)
-        stocks_cte = _stocks_canonical_cte()
-        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-        valuation_norm = _normalized_code_sql("code")
-        valuation_order = _prefer_4digit_order_sql("code")
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_daily_cte},
-            valuation_canonical AS (
-                SELECT
-                    normalized_code,
-                    date,
-                    price_basis_date,
-                    close,
-                    eps,
-                    bps,
-                    forward_eps,
-                    per,
-                    forward_per,
-                    p_op,
-                    forward_p_op,
-                    pbr,
-                    market_cap,
-                    free_float_market_cap,
-                    statement_disclosed_date,
-                    forward_eps_disclosed_date,
-                    forward_eps_source,
-                    basis_version
-                FROM (
-                    SELECT
-                        {valuation_norm} AS normalized_code,
-                        date,
-                        price_basis_date,
-                        close,
-                        eps,
-                        bps,
-                        forward_eps,
-                        per,
-                        forward_per,
-                        p_op,
-                        forward_p_op,
-                        pbr,
-                        market_cap,
-                        free_float_market_cap,
-                        statement_disclosed_date,
-                        forward_eps_disclosed_date,
-                        forward_eps_source,
-                        basis_version,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {valuation_norm}, date
-                            ORDER BY
-                                price_basis_date DESC NULLS LAST,
-                                basis_version DESC,
-                                {valuation_order}
-                        ) AS rn
-                    FROM daily_valuation
-                    WHERE date = ?
-                )
-                WHERE rn = 1
-            )
-            SELECT
-                s.code,
-                s.company_name,
-                s.market_code,
-                s.sector_33_name,
-                COALESCE(v.close, sd.close) AS current_price,
-                sd.volume,
-                v.eps,
-                v.bps,
-                v.forward_eps,
-                v.per,
-                v.forward_per,
-                v.p_op,
-                v.forward_p_op,
-                v.pbr,
-                v.market_cap,
-                v.free_float_market_cap,
-                v.statement_disclosed_date,
-                v.forward_eps_disclosed_date,
-                v.forward_eps_source,
-                v.price_basis_date,
-                v.basis_version
-            FROM valuation_canonical v
-            JOIN stocks_canonical s
-                ON s.normalized_code = v.normalized_code
-            JOIN stock_daily sd
-                ON sd.normalized_code = v.normalized_code
-            WHERE 1 = 1{market_clause}
-        """
-        rows = self._reader.query(sql, (date, date, *market_params))
-        return pd.DataFrame([dict(row.items()) for row in rows])
 
     def _load_adjusted_statement_metric_rows(
         self,
