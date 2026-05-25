@@ -53,6 +53,45 @@ def append_value_composite_profile_metrics(
     return result
 
 
+def append_value_composite_technical_metrics(
+    frame: pd.DataFrame,
+    reader: MarketDbReader,
+    *,
+    target_date: str,
+) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    technical_metrics = load_value_composite_technical_metrics(
+        reader,
+        target_date=target_date,
+        codes=[str(code) for code in result["code"].tolist()],
+    )
+    technical_columns = (
+        "technical_feature_date",
+        "breakout_feature_date",
+        "rebound_from_252d_low_pct",
+        "return_252d_pct",
+        "volatility_20d_pct",
+        "volatility_60d_pct",
+        "downside_volatility_60d_pct",
+        "avg_trading_value_60d_mil_jpy",
+        "avg_trading_value_60d_source_sessions",
+        "new_high_20d",
+        "days_since_new_high_20d",
+        "close_to_prior_high_20d_pct",
+        "new_high_120d",
+        "days_since_new_high_120d",
+        "close_to_prior_high_120d_pct",
+    )
+    normalized_codes = result["code"].map(normalize_equity_code)
+    for column in technical_columns:
+        result[column] = normalized_codes.map(
+            lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
+        )
+    return result
+
+
 def load_value_composite_technical_metrics(
     reader: MarketDbReader,
     *,

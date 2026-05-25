@@ -72,7 +72,7 @@ from src.application.services.ranking_value_composite_config import (
 )
 from src.application.services.ranking_value_composite_metrics import (
     append_value_composite_profile_metrics as _append_value_composite_profile_metrics_query,
-    load_value_composite_technical_metrics as _load_value_composite_technical_metrics_query,
+    append_value_composite_technical_metrics as _append_value_composite_technical_metrics_query,
 )
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
@@ -759,8 +759,9 @@ class RankingService:
         *,
         target_date: str,
     ) -> list[ValueCompositeRankingItem]:
-        scored = self._append_value_composite_technical_metrics(
+        scored = _append_value_composite_technical_metrics_query(
             scored,
+            self._reader,
             target_date=target_date,
         )
         return [
@@ -780,8 +781,9 @@ class RankingService:
             if _normalize_equity_code(row["code"]) != normalized_target_code:
                 continue
             row_payload: dict[str, Any] = {str(key): value for key, value in row.items()}
-            row_df = self._append_value_composite_technical_metrics(
+            row_df = _append_value_composite_technical_metrics_query(
                 pd.DataFrame.from_records([row_payload]),
+                self._reader,
                 target_date=target_date,
             )
             return (
@@ -1445,55 +1447,6 @@ class RankingService:
                 risk_flags=classify_risk_flags(recent_return_20d_pct),
             )
         return metrics_by_code
-
-    def _append_value_composite_technical_metrics(
-        self,
-        frame: pd.DataFrame,
-        *,
-        target_date: str,
-    ) -> pd.DataFrame:
-        if frame.empty:
-            return frame.copy()
-        result = frame.copy()
-        technical_metrics = self._load_value_composite_technical_metrics(
-            target_date=target_date,
-            codes=[str(code) for code in result["code"].tolist()],
-        )
-        technical_columns = (
-            "technical_feature_date",
-            "breakout_feature_date",
-            "rebound_from_252d_low_pct",
-            "return_252d_pct",
-            "volatility_20d_pct",
-            "volatility_60d_pct",
-            "downside_volatility_60d_pct",
-            "avg_trading_value_60d_mil_jpy",
-            "avg_trading_value_60d_source_sessions",
-            "new_high_20d",
-            "days_since_new_high_20d",
-            "close_to_prior_high_20d_pct",
-            "new_high_120d",
-            "days_since_new_high_120d",
-            "close_to_prior_high_120d_pct",
-        )
-        normalized_codes = result["code"].map(_normalize_equity_code)
-        for column in technical_columns:
-            result[column] = normalized_codes.map(
-                lambda code, column=column: technical_metrics.get(str(code), {}).get(column)
-            )
-        return result
-
-    def _load_value_composite_technical_metrics(
-        self,
-        *,
-        target_date: str,
-        codes: list[str],
-    ) -> dict[str, dict[str, Any]]:
-        return _load_value_composite_technical_metrics_query(
-            self._reader,
-            target_date=target_date,
-            codes=codes,
-        )
 
     def _resolve_value_composite_unavailable_reason(
         self,
