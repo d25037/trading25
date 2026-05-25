@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBytes,
+  formatCount,
   formatCurrency,
   formatDateRangeText,
   formatDateShort,
@@ -179,6 +180,18 @@ describe('formatInteger', () => {
 
   it('returns - for NaN', () => {
     expect(formatInteger(Number.NaN)).toBe('-');
+  });
+});
+
+describe('formatCount', () => {
+  it('formats counts with locale separators', () => {
+    expect(formatCount(1234)).toBe('1,234');
+  });
+
+  it('returns zero for missing or invalid counts', () => {
+    expect(formatCount(null)).toBe('0');
+    expect(formatCount(undefined)).toBe('0');
+    expect(formatCount(Number.NaN)).toBe('0');
   });
 });
 

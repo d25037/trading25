@@ -111,6 +111,14 @@ export function formatInteger(value: number): string {
 }
 
 /**
+ * Format optional count values with locale separators, treating missing counts as zero.
+ */
+export function formatCount(value: number | null | undefined): string {
+  const count = value ?? 0;
+  return (Number.isFinite(count) ? count : 0).toLocaleString('ja-JP', { maximumFractionDigits: 0 });
+}
+
+/**
  * Format date string to localized short format (MM/DD).
  */
 export function formatDateShort(dateStr: string): string {

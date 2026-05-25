@@ -48,7 +48,7 @@ import type {
   SyncJobResponse,
   SyncMode,
 } from '@/types/sync';
-import { formatBytes, formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
+import { formatBytes, formatCount, formatOptionalDateRange, formatOptionalTimestamp } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 const EMPTY_OPTIONS_225_STATS = {
@@ -329,12 +329,6 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
     return 'rounded-xl border border-border/70 bg-background/60 p-4';
   }
   return 'rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4';
-}
-
-const INTEGER_FORMATTER = new Intl.NumberFormat();
-
-function formatCount(value: number | null | undefined): string {
-  return INTEGER_FORMATTER.format(value ?? 0);
 }
 
 function formatPercentage(value: number | null | undefined): string {
