@@ -33,6 +33,9 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_trading_value as _ranking_by_trading_value_query,
     ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
 )
+from src.application.services.ranking_fundamental_queries import (
+    load_fundamental_stock_rows as _load_fundamental_stock_rows_query,
+)
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     adjust_free_float_shares_to_price_basis,
@@ -123,11 +126,6 @@ from src.entrypoints.http.schemas.ranking import (
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
-
-FUNDAMENTAL_BASE_COLUMNS = (
-    "s.code, s.company_name, s.market_code, s.sector_33_name, "
-    "sd.close as current_price, sd.volume"
-)
 
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
@@ -404,7 +402,11 @@ class RankingService:
             raise ValueError("No trading data available in database")
         target_date = date_row["max_date"]
 
-        stock_rows = self._load_fundamental_stock_rows(target_date, query_market_codes)
+        stock_rows = _load_fundamental_stock_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
+        )
         adjusted_valuation = self._load_adjusted_daily_valuation_frame(
             target_date,
             query_market_codes,
@@ -637,7 +639,11 @@ class RankingService:
             fallback=["prime", "standard", "growth"],
         )
         target_stock = _find_value_composite_target_stock(
-            self._load_fundamental_stock_rows(target_date, target_market_codes),
+            _load_fundamental_stock_rows_query(
+                self._reader,
+                target_date,
+                target_market_codes,
+            ),
             code,
         )
         last_updated = _now_iso()
@@ -748,7 +754,11 @@ class RankingService:
                 if not scored.empty:
                     return scored
 
-        stock_rows = self._load_fundamental_stock_rows(target_date, query_market_codes)
+        stock_rows = _load_fundamental_stock_rows_query(
+            self._reader,
+            target_date,
+            query_market_codes,
+        )
         statement_rows = self._load_fundamental_statement_rows(
             target_date, query_market_codes
         )
@@ -1260,26 +1270,6 @@ class RankingService:
         if _positive_ratio(price, forecast_snapshot.value) is None:
             return "forward_eps_missing"
         return "not_rankable"
-
-    def _load_fundamental_stock_rows(
-        self,
-        date: str,
-        market_codes: list[str],
-    ) -> list[Mapping[str, Any]]:
-        market_clause, market_params = _build_market_filter(market_codes)
-        stocks_cte = _stocks_canonical_cte()
-        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
-        sql = f"""
-            WITH
-            {stocks_cte},
-            {stock_daily_cte}
-            SELECT {FUNDAMENTAL_BASE_COLUMNS}
-            FROM stocks_canonical s
-            JOIN stock_daily sd
-                ON sd.normalized_code = s.normalized_code
-            WHERE 1 = 1{market_clause}
-        """
-        return self._reader.query(sql, (date, *market_params))
 
     def _load_adjusted_daily_valuation_frame(
         self,
