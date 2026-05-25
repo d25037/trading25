@@ -38,7 +38,13 @@ export interface RankingItem {
   pbrPercentile?: number | null;
   marketCap?: number | null;
   liquidityResidualZ?: number | null;
-  liquidityRegime?: 'neutral_rerating' | 'crowded_rerating' | 'distribution_stress' | 'stale_liquidity' | 'neutral' | null;
+  liquidityRegime?:
+    | 'neutral_rerating'
+    | 'crowded_rerating'
+    | 'distribution_stress'
+    | 'stale_liquidity'
+    | 'neutral'
+    | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: RankingRiskFlag[];
 }
@@ -641,6 +647,34 @@ export interface DeleteResponse {
 
 export type WatchlistDeleteResponse = DeleteResponse;
 
+export interface PortfolioCreateRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface PortfolioUpdateRequest {
+  name?: string | null;
+  description?: string | null;
+}
+
+export interface PortfolioItemCreateRequest {
+  code: string;
+  companyName: string;
+  quantity: number;
+  purchasePrice: number;
+  purchaseDate: string;
+  account?: string | null;
+  notes?: string | null;
+}
+
+export interface PortfolioItemUpdateRequest {
+  quantity?: number | null;
+  purchasePrice?: number | null;
+  purchaseDate?: string | null;
+  account?: string | null;
+  notes?: string | null;
+}
+
 export interface PortfolioResponse {
   id: number;
   name: string;
@@ -679,6 +713,22 @@ export interface PortfolioSummaryResponse {
 
 export interface ListPortfoliosResponse {
   portfolios: PortfolioSummaryResponse[];
+}
+
+export interface WatchlistCreateRequest {
+  name: string;
+  description?: string | null;
+}
+
+export interface WatchlistUpdateRequest {
+  name?: string | null;
+  description?: string | null;
+}
+
+export interface WatchlistItemCreateRequest {
+  code: string;
+  companyName: string;
+  memo?: string | null;
 }
 
 export interface WatchlistResponse {

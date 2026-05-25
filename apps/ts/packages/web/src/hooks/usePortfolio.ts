@@ -1,19 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import type {
   DeleteResponse,
   ListPortfoliosResponse,
+  PortfolioCreateRequest,
+  PortfolioItemCreateRequest,
   PortfolioItemResponse,
+  PortfolioItemUpdateRequest,
   PortfolioSummaryResponse,
+  PortfolioUpdateRequest,
   PortfolioWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
-
-type CreatePortfolioRequest = components['schemas']['PortfolioCreateRequest'];
-type UpdatePortfolioRequest = components['schemas']['PortfolioUpdateRequest'];
-type CreatePortfolioItemRequest = components['schemas']['PortfolioItemCreateRequest'];
-type UpdatePortfolioItemRequest = components['schemas']['PortfolioItemUpdateRequest'];
 
 // Fetch functions
 const fetchPortfolios = () => apiGet<ListPortfoliosResponse>('/api/portfolio');
@@ -21,17 +19,17 @@ const fetchPortfolios = () => apiGet<ListPortfoliosResponse>('/api/portfolio');
 const fetchPortfolioWithItems = (id: number) => apiGet<PortfolioWithItemsResponse>(`/api/portfolio/${id}`);
 
 // Mutation functions
-const createPortfolio = (data: CreatePortfolioRequest) => apiPost<PortfolioSummaryResponse>('/api/portfolio', data);
+const createPortfolio = (data: PortfolioCreateRequest) => apiPost<PortfolioSummaryResponse>('/api/portfolio', data);
 
-const updatePortfolio = (id: number, data: UpdatePortfolioRequest) =>
+const updatePortfolio = (id: number, data: PortfolioUpdateRequest) =>
   apiPut<PortfolioSummaryResponse>(`/api/portfolio/${id}`, data);
 
 const deletePortfolio = (id: number) => apiDelete<DeleteResponse>(`/api/portfolio/${id}`);
 
-const addPortfolioItem = (portfolioId: number, data: CreatePortfolioItemRequest) =>
+const addPortfolioItem = (portfolioId: number, data: PortfolioItemCreateRequest) =>
   apiPost<PortfolioItemResponse>(`/api/portfolio/${portfolioId}/items`, data);
 
-const updatePortfolioItem = (portfolioId: number, itemId: number, data: UpdatePortfolioItemRequest) =>
+const updatePortfolioItem = (portfolioId: number, itemId: number, data: PortfolioItemUpdateRequest) =>
   apiPut<PortfolioItemResponse>(`/api/portfolio/${portfolioId}/items/${itemId}`, data);
 
 const deletePortfolioItem = (portfolioId: number, itemId: number) =>
@@ -84,7 +82,7 @@ export function useCreatePortfolio() {
 export function useUpdatePortfolio() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpdatePortfolioRequest }) => updatePortfolio(id, data),
+    mutationFn: ({ id, data }: { id: number; data: PortfolioUpdateRequest }) => updatePortfolio(id, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['portfolios'] });
       queryClient.invalidateQueries({ queryKey: ['portfolio', variables.id] });
@@ -113,7 +111,7 @@ export function useDeletePortfolio() {
 export function useAddPortfolioItem() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ portfolioId, data }: { portfolioId: number; data: CreatePortfolioItemRequest }) =>
+    mutationFn: ({ portfolioId, data }: { portfolioId: number; data: PortfolioItemCreateRequest }) =>
       addPortfolioItem(portfolioId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['portfolios'] });
@@ -136,7 +134,7 @@ export function useUpdatePortfolioItem() {
     }: {
       portfolioId: number;
       itemId: number;
-      data: UpdatePortfolioItemRequest;
+      data: PortfolioItemUpdateRequest;
     }) => updatePortfolioItem(portfolioId, itemId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['portfolios'] });

@@ -3,20 +3,59 @@ import type {
   DeleteResponse,
   ListPortfoliosResponse,
   ListWatchlistsResponse,
+  PortfolioCreateRequest,
+  PortfolioItemCreateRequest,
   PortfolioItemResponse,
+  PortfolioItemUpdateRequest,
   PortfolioResponse,
   PortfolioSummaryResponse,
+  PortfolioUpdateRequest,
   PortfolioWithItemsResponse,
+  WatchlistCreateRequest,
   WatchlistDeleteResponse,
+  WatchlistItemCreateRequest,
   WatchlistItemResponse,
   WatchlistPricesResponse,
   WatchlistResponse,
   WatchlistStockPrice,
   WatchlistSummaryResponse,
+  WatchlistUpdateRequest,
   WatchlistWithItemsResponse,
 } from './api-response-types';
 
 describe('api-response-types portfolio/watchlist contracts', () => {
+  it('keeps portfolio request contracts aligned with web usage', () => {
+    const createPortfolio: PortfolioCreateRequest = {
+      name: 'core',
+      description: null,
+    };
+    const updatePortfolio: PortfolioUpdateRequest = {
+      name: 'core updated',
+      description: null,
+    };
+    const createItem: PortfolioItemCreateRequest = {
+      code: '7203',
+      companyName: 'Toyota',
+      quantity: 100,
+      purchasePrice: 3000,
+      purchaseDate: '2026-01-01',
+      account: null,
+      notes: null,
+    };
+    const updateItem: PortfolioItemUpdateRequest = {
+      quantity: 120,
+      purchasePrice: null,
+      purchaseDate: null,
+      account: null,
+      notes: null,
+    };
+
+    expect(createPortfolio.name).toBe('core');
+    expect(updatePortfolio.description).toBeNull();
+    expect(createItem.code).toBe('7203');
+    expect(updateItem.quantity).toBe(120);
+  });
+
   it('keeps portfolio response contracts aligned with web usage', () => {
     const summary: PortfolioSummaryResponse = {
       id: 1,
@@ -61,6 +100,19 @@ describe('api-response-types portfolio/watchlist contracts', () => {
   });
 
   it('keeps watchlist response contracts aligned with web usage', () => {
+    const createWatchlist: WatchlistCreateRequest = {
+      name: 'focus',
+      description: null,
+    };
+    const updateWatchlist: WatchlistUpdateRequest = {
+      name: 'focus updated',
+      description: null,
+    };
+    const createItem: WatchlistItemCreateRequest = {
+      code: '6758',
+      companyName: 'Sony',
+      memo: null,
+    };
     const deleteResponse: DeleteResponse = {
       success: true,
       message: 'ok',
@@ -112,6 +164,9 @@ describe('api-response-types portfolio/watchlist contracts', () => {
       watchlists: [summary],
     };
 
+    expect(createWatchlist.name).toBe('focus');
+    expect(updateWatchlist.description).toBeNull();
+    expect(createItem.code).toBe('6758');
     expect(watchlistDeleteResponse.success).toBe(true);
     expect(list.watchlists[0]?.stockCount).toBe(4);
     expect(detail.items[0]?.companyName).toBe('Sony');

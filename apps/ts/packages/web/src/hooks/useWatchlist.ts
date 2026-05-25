@@ -1,19 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
 import type {
   ListWatchlistsResponse,
+  WatchlistCreateRequest,
   WatchlistDeleteResponse,
+  WatchlistItemCreateRequest,
   WatchlistItemResponse,
   WatchlistPricesResponse,
   WatchlistSummaryResponse,
+  WatchlistUpdateRequest,
   WatchlistWithItemsResponse,
 } from '@trading25/contracts/types/api-response-types';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
-
-type CreateWatchlistRequest = components['schemas']['WatchlistCreateRequest'];
-type UpdateWatchlistRequest = components['schemas']['WatchlistUpdateRequest'];
-type CreateWatchlistItemRequest = components['schemas']['WatchlistItemCreateRequest'];
 
 // Fetch functions
 const fetchWatchlists = () => apiGet<ListWatchlistsResponse>('/api/watchlist');
@@ -23,14 +21,14 @@ const fetchWatchlistWithItems = (id: number) => apiGet<WatchlistWithItemsRespons
 const fetchWatchlistPrices = (id: number) => apiGet<WatchlistPricesResponse>(`/api/watchlist/${id}/prices`);
 
 // Mutation functions
-const createWatchlist = (data: CreateWatchlistRequest) => apiPost<WatchlistSummaryResponse>('/api/watchlist', data);
+const createWatchlist = (data: WatchlistCreateRequest) => apiPost<WatchlistSummaryResponse>('/api/watchlist', data);
 
-const updateWatchlist = (id: number, data: UpdateWatchlistRequest) =>
+const updateWatchlist = (id: number, data: WatchlistUpdateRequest) =>
   apiPut<WatchlistSummaryResponse>(`/api/watchlist/${id}`, data);
 
 const deleteWatchlist = (id: number) => apiDelete<WatchlistDeleteResponse>(`/api/watchlist/${id}`);
 
-const addWatchlistItem = (watchlistId: number, data: CreateWatchlistItemRequest) =>
+const addWatchlistItem = (watchlistId: number, data: WatchlistItemCreateRequest) =>
   apiPost<WatchlistItemResponse>(`/api/watchlist/${watchlistId}/items`, data);
 
 const removeWatchlistItem = (watchlistId: number, itemId: number) =>
@@ -99,7 +97,7 @@ export function useCreateWatchlist() {
 export function useUpdateWatchlist() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpdateWatchlistRequest }) => updateWatchlist(id, data),
+    mutationFn: ({ id, data }: { id: number; data: WatchlistUpdateRequest }) => updateWatchlist(id, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['watchlists'] });
       queryClient.invalidateQueries({ queryKey: ['watchlist', variables.id] });
@@ -128,7 +126,7 @@ export function useDeleteWatchlist() {
 export function useAddWatchlistItem() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ watchlistId, data }: { watchlistId: number; data: CreateWatchlistItemRequest }) =>
+    mutationFn: ({ watchlistId, data }: { watchlistId: number; data: WatchlistItemCreateRequest }) =>
       addWatchlistItem(watchlistId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['watchlists'] });

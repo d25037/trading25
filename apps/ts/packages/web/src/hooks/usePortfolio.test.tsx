@@ -1,5 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type {
+  PortfolioCreateRequest,
+  PortfolioItemCreateRequest,
+  PortfolioUpdateRequest,
+} from '@trading25/contracts/types/api-response-types';
 import { describe, expect, it, vi } from 'vitest';
 import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
@@ -13,10 +17,6 @@ import {
   useUpdatePortfolio,
   useUpdatePortfolioItem,
 } from './usePortfolio';
-
-type CreatePortfolioRequest = components['schemas']['PortfolioCreateRequest'];
-type UpdatePortfolioRequest = components['schemas']['PortfolioUpdateRequest'];
-type CreatePortfolioItemRequest = components['schemas']['PortfolioItemCreateRequest'];
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),
@@ -75,7 +75,7 @@ describe('usePortfolio hooks', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useCreatePortfolio(), { wrapper });
 
-    const request = { name: 'Growth' } as CreatePortfolioRequest;
+    const request = { name: 'Growth' } as PortfolioCreateRequest;
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -92,7 +92,7 @@ describe('usePortfolio hooks', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useUpdatePortfolio(), { wrapper });
 
-    const data: UpdatePortfolioRequest = { name: 'Updated' };
+    const data: PortfolioUpdateRequest = { name: 'Updated' };
 
     await act(async () => {
       await result.current.mutateAsync({ id: 1, data });
@@ -125,7 +125,7 @@ describe('usePortfolio hooks', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useAddPortfolioItem(), { wrapper });
 
-    const data: CreatePortfolioItemRequest = {
+    const data: PortfolioItemCreateRequest = {
       code: '7203',
       companyName: 'Toyota Motor',
       quantity: 100,
