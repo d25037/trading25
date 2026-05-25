@@ -1,5 +1,5 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import type {
   AdjustedMetricsMaterializeJobResponse,
@@ -16,6 +16,7 @@ import type {
   SyncJobResponse,
 } from '@/types/sync';
 import { logger } from '@/utils/logger';
+import { type SseStreamControls, useSseStream } from './useSseStream';
 
 export const syncKeys = {
   active: () => ['sync-job-active'] as const,
@@ -58,6 +59,7 @@ const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
 const SNAPSHOT_STALE_TIME_RUNNING_MS = 0;
 const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
 const TERMINAL_SYNC_STATUSES: SyncJobResponse['status'][] = ['completed', 'failed', 'cancelled'];
+const SYNC_SSE_EVENTS = ['snapshot', 'job', 'fetch-detail'] as const;
 
 // Fetch functions
 function startSync(request: StartSyncRequest): Promise<CreateSyncJobResponse> {
@@ -179,17 +181,6 @@ function parseSyncEventPayload<T>(rawData: string, eventName: string, jobId: str
   }
 }
 
-function closeSyncJobStream(
-  cleanup: () => void,
-  setIsConnected: (isConnected: boolean) => void,
-  disposed: boolean
-): void {
-  cleanup();
-  if (!disposed) {
-    setIsConnected(false);
-  }
-}
-
 function updateSnapshotCache(queryClient: QueryClient, payload: SyncSnapshotPayload): boolean {
   if (payload.job?.jobId) {
     queryClient.setQueryData(syncKeys.job(payload.job.jobId), payload.job);
@@ -251,110 +242,62 @@ export function useStartAdjustedMetricsMaterialize() {
 
 export function useSyncSSE(jobId: string | null): SyncSSEState {
   const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryCountRef = useRef(0);
+  const streamUrl = jobId ? `/api/db/sync/jobs/${encodeURIComponent(jobId)}/stream` : null;
 
-  const cleanup = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
+  const handleSnapshotEvent = useCallback(
+    (rawData: string, controls: SseStreamControls) => {
+      const payload = parseSyncEventPayload<SyncSnapshotPayload>(rawData, 'snapshot', jobId);
+      if (!payload) {
+        return;
+      }
+      if (updateSnapshotCache(queryClient, payload)) {
+        controls.close();
+      }
+    },
+    [jobId, queryClient]
+  );
 
-  useEffect(() => {
-    if (!jobId) {
-      cleanup();
-      retryCountRef.current = 0;
-      setIsConnected(false);
-      return;
-    }
+  const handleJobEvent = useCallback(
+    (rawData: string, controls: SseStreamControls) => {
+      const payload = parseSyncEventPayload<SyncJobResponse>(rawData, 'job event', jobId);
+      if (!payload) {
+        return;
+      }
+      if (updateJobCache(queryClient, payload)) {
+        controls.close();
+      }
+    },
+    [jobId, queryClient]
+  );
 
-    let disposed = false;
-    retryCountRef.current = 0;
-    setIsConnected(false);
+  const handleFetchDetailEvent = useCallback(
+    (rawData: string) => {
+      const payload = parseSyncEventPayload<SyncFetchDetailStreamPayload>(rawData, 'fetch-detail event', jobId);
+      if (!payload) {
+        return;
+      }
+      updateFetchDetailCache(queryClient, payload);
+    },
+    [jobId, queryClient]
+  );
 
-    const connect = () => {
-      cleanup();
-
-      const es = new EventSource(`/api/db/sync/jobs/${encodeURIComponent(jobId)}/stream`);
-      eventSourceRef.current = es;
-      const disconnect = () => {
-        closeSyncJobStream(cleanup, setIsConnected, disposed);
-      };
-
-      const handleSnapshotEvent = (rawData: string) => {
-        const payload = parseSyncEventPayload<SyncSnapshotPayload>(rawData, 'snapshot', jobId);
-        if (!payload) {
-          return;
-        }
-        if (updateSnapshotCache(queryClient, payload)) {
-          disconnect();
-        }
-      };
-
-      const handleJobEvent = (rawData: string) => {
-        const payload = parseSyncEventPayload<SyncJobResponse>(rawData, 'job event', jobId);
-        if (!payload) {
-          return;
-        }
-        if (updateJobCache(queryClient, payload)) {
-          disconnect();
-        }
-      };
-
-      const handleFetchDetailEvent = (rawData: string) => {
-        const payload = parseSyncEventPayload<SyncFetchDetailStreamPayload>(rawData, 'fetch-detail event', jobId);
-        if (!payload) {
-          return;
-        }
-        updateFetchDetailCache(queryClient, payload);
-      };
-
-      es.onopen = () => {
-        retryCountRef.current = 0;
-        if (!disposed) {
-          setIsConnected(true);
-        }
-      };
-
-      es.addEventListener('snapshot', (event) => {
-        handleSnapshotEvent((event as MessageEvent<string>).data);
-      });
-      es.addEventListener('job', (event) => {
-        handleJobEvent((event as MessageEvent<string>).data);
-      });
-      es.addEventListener('fetch-detail', (event) => {
-        handleFetchDetailEvent((event as MessageEvent<string>).data);
-      });
-
-      es.onerror = () => {
-        disconnect();
-        retryCountRef.current += 1;
-
-        if (retryCountRef.current > MAX_SSE_RETRIES) {
-          logger.error('Sync SSE max retries exceeded', { jobId });
-          return;
-        }
-
-        reconnectTimerRef.current = setTimeout(connect, retryCountRef.current * 1000);
-      };
-    };
-
-    connect();
-
-    return () => {
-      disposed = true;
-      cleanup();
-    };
-  }, [cleanup, jobId, queryClient]);
-
-  return { isConnected };
+  return useSseStream({
+    url: streamUrl,
+    eventNames: SYNC_SSE_EVENTS,
+    onEvent: (eventName, rawData, controls) => {
+      if (eventName === 'snapshot') {
+        handleSnapshotEvent(rawData, controls);
+        return;
+      }
+      if (eventName === 'job') {
+        handleJobEvent(rawData, controls);
+        return;
+      }
+      handleFetchDetailEvent(rawData);
+    },
+    maxRetries: MAX_SSE_RETRIES,
+    onMaxRetriesExceeded: () => logger.error('Sync SSE max retries exceeded', { jobId }),
+  });
 }
 
 export function useSyncJobStatus(jobId: string | null, sseConnected = false) {
