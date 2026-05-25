@@ -4,6 +4,7 @@
  * trading25-bt FastAPI サーバーと通信するクライアント
  */
 
+import { isActiveJobStatus } from '../base/job-status.js';
 import { HttpRequestError, requestJson } from '../base/http-client.js';
 import type {
   AttributionArtifactContentResponse,
@@ -105,10 +106,6 @@ function toBacktestApiError(error: unknown): never {
   throw error;
 }
 
-function isActiveJob(status: JobStatus): boolean {
-  return status === 'pending' || status === 'running';
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -153,7 +150,7 @@ export class BacktestClient {
     const pollInterval = options?.pollInterval ?? 2000;
 
     let job = initialJob;
-    while (isActiveJob(job.status)) {
+    while (isActiveJobStatus(job.status)) {
       await sleep(pollInterval);
       job = await fetchJob(job.job_id);
       options?.onProgress?.(job);

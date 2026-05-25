@@ -4,7 +4,9 @@
  * trading25-bt FastAPI サーバーとの通信用型定義
  */
 
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+import type { JobStatus } from '../base/job-status.js';
+
+export type { JobStatus };
 export type EngineFamily = 'vectorbt' | 'nautilus' | 'unknown';
 export type RunType =
   | 'backtest'

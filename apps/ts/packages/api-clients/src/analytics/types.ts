@@ -2,12 +2,14 @@
  * Analytics API Types
  */
 
+import type { JobStatus } from '../base/job-status.js';
+
 export interface AnalyticsClientConfig {
   baseUrl?: string;
   timeoutMs?: number;
 }
 
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type { JobStatus };
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type RankingRiskFlag = 'overheat';
 export type RankingLiquidityState =
