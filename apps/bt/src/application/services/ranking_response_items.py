@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
+    FundamentalRankingCalculator,
     to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
@@ -86,6 +87,24 @@ def build_fundamental_ranking_item(
         periodType=item.period_type,
         source=item.source,
     )
+
+
+def build_ranked_fundamental_items(
+    calculator: FundamentalRankingCalculator,
+    items: list[FundamentalItem],
+    limit: int,
+    *,
+    descending: bool,
+) -> list[FundamentalRankingItem]:
+    sorted_items = calculator.rank_fundamental_items(
+        items,
+        limit,
+        descending=descending,
+    )
+    return [
+        build_fundamental_ranking_item(item, index)
+        for index, item in enumerate(sorted_items, start=1)
+    ]
 
 
 def build_value_composite_item(

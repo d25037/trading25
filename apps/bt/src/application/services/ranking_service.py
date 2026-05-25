@@ -87,7 +87,7 @@ from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_response_items import (
-    build_fundamental_ranking_item,
+    build_ranked_fundamental_items as _build_ranked_fundamental_items,
     build_value_composite_score_response,
     finite_or_none as _finite_or_none,
     str_or_none as _str_or_none,
@@ -106,7 +106,6 @@ from src.application.services.ranking_liquidity import (
     load_prime_liquidity_metrics,
 )
 from src.entrypoints.http.schemas.ranking import (
-    FundamentalRankingItem,
     FundamentalRankings,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
@@ -341,11 +340,17 @@ class RankingService:
                 forecast_above_recent_fy_actuals=forecast_above_recent_fy_actuals,
                 forecast_lookback_fy_count=forecast_lookback_fy_count,
             )
-            ratio_high = self._rank_fundamental_items(
-                ratio_candidates, limit, descending=True
+            ratio_high = _build_ranked_fundamental_items(
+                self._fundamental_calculator,
+                ratio_candidates,
+                limit,
+                descending=True,
             )
-            ratio_low = self._rank_fundamental_items(
-                ratio_candidates, limit, descending=False
+            ratio_low = _build_ranked_fundamental_items(
+                self._fundamental_calculator,
+                ratio_candidates,
+                limit,
+                descending=False,
             )
             return MarketFundamentalRankingResponse(
                 date=target_date,
@@ -421,11 +426,17 @@ class RankingService:
                 )
             )
 
-        ratio_high = self._rank_fundamental_items(
-            ratio_candidates, limit, descending=True
+        ratio_high = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=True,
         )
-        ratio_low = self._rank_fundamental_items(
-            ratio_candidates, limit, descending=False
+        ratio_low = _build_ranked_fundamental_items(
+            self._fundamental_calculator,
+            ratio_candidates,
+            limit,
+            descending=False,
         )
 
         return MarketFundamentalRankingResponse(
@@ -942,20 +953,3 @@ class RankingService:
             latest_fy,
             baseline_shares,
         )
-
-    def _rank_fundamental_items(
-        self,
-        items: list[FundamentalItem],
-        limit: int,
-        *,
-        descending: bool,
-    ) -> list[FundamentalRankingItem]:
-        sorted_items = self._fundamental_calculator.rank_fundamental_items(
-            items,
-            limit,
-            descending=descending,
-        )
-        return [
-            build_fundamental_ranking_item(item, index)
-            for index, item in enumerate(sorted_items, start=1)
-        ]
