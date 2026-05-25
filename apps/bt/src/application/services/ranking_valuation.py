@@ -14,6 +14,9 @@ from src.application.services.ranking_fundamental_queries import (
     load_adjusted_daily_valuation_frame,
     load_fundamental_statement_rows,
 )
+from src.application.services.ranking_collection_filters import (
+    group_ranking_items_by_normalized_code,
+)
 from src.application.services.ranking_query_helpers import canonical_market_label
 from src.application.services.ranking_query_helpers import normalize_equity_code
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
@@ -112,6 +115,39 @@ def enrich_items_from_adjusted_daily_valuation(
             item.marketCap = finite_or_none(row.get("market_cap"))
         enriched_codes.add(code)
     return enriched_codes
+
+
+def enrich_ranking_collections_with_valuation(
+    reader: MarketDbReader,
+    calculator: FundamentalsCalculator,
+    collections: tuple[list[RankingItem], ...],
+    *,
+    target_date: str,
+    query_market_codes: list[str],
+    price_basis_date: str,
+) -> None:
+    items_by_code = group_ranking_items_by_normalized_code(collections)
+    if not items_by_code:
+        return
+
+    enriched_codes = enrich_items_from_adjusted_daily_valuation(
+        reader,
+        items_by_code,
+        target_date=target_date,
+        query_market_codes=query_market_codes,
+    )
+    if len(enriched_codes) == len(items_by_code):
+        return
+
+    enrich_items_from_statement_valuation(
+        reader,
+        calculator,
+        items_by_code,
+        enriched_codes,
+        target_date=target_date,
+        query_market_codes=query_market_codes,
+        price_basis_date=price_basis_date,
+    )
 
 
 def enrich_items_from_statement_valuation(

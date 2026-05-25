@@ -25,7 +25,6 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
     filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
-    group_ranking_items_by_normalized_code as _group_ranking_items_by_normalized_code,
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
@@ -65,8 +64,7 @@ from src.application.services.ranking_value_composite_metrics import (
     resolve_value_composite_unavailable_reason as _resolve_value_composite_unavailable_reason,
 )
 from src.application.services.ranking_valuation import (
-    enrich_items_from_adjusted_daily_valuation as _enrich_items_from_adjusted_daily_valuation,
-    enrich_items_from_statement_valuation as _enrich_items_from_statement_valuation,
+    enrich_ranking_collections_with_valuation as _enrich_ranking_collections_with_valuation,
 )
 from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
@@ -85,7 +83,6 @@ from src.entrypoints.http.schemas.ranking import (
     FundamentalRankings,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
-    RankingItem,
     RankingStateFilter,
     Rankings,
     ValueCompositeRankingResponse,
@@ -223,7 +220,9 @@ class RankingService:
         ranking_collections = (trading_value, gainers, losers, period_high, period_low)
         if include_valuation:
             price_basis_date = _resolve_latest_stock_data_date_query(self._reader)
-            self._enrich_ranking_collections_with_valuation(
+            _enrich_ranking_collections_with_valuation(
+                self._reader,
+                self._valuation_calculator,
                 ranking_collections,
                 target_date=target_date,
                 query_market_codes=query_market_codes,
@@ -617,37 +616,4 @@ class RankingService:
             score_available=False,
             unsupported_reason=unsupported_reason,
             last_updated=last_updated,
-        )
-
-    # --- Private ranking methods ---
-
-    def _enrich_ranking_collections_with_valuation(
-        self,
-        collections: tuple[list[RankingItem], ...],
-        *,
-        target_date: str,
-        query_market_codes: list[str],
-        price_basis_date: str,
-    ) -> None:
-        items_by_code = _group_ranking_items_by_normalized_code(collections)
-        if not items_by_code:
-            return
-
-        enriched_codes = _enrich_items_from_adjusted_daily_valuation(
-            self._reader,
-            items_by_code,
-            target_date=target_date,
-            query_market_codes=query_market_codes,
-        )
-        if len(enriched_codes) == len(items_by_code):
-            return
-
-        _enrich_items_from_statement_valuation(
-            self._reader,
-            self._valuation_calculator,
-            items_by_code,
-            enriched_codes,
-            target_date=target_date,
-            query_market_codes=query_market_codes,
-            price_basis_date=price_basis_date,
         )
