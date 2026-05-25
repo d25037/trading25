@@ -37,6 +37,9 @@ from src.application.services.ranking_liquidity import (
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
+from src.application.services.ranking_response_items import (
+    build_value_composite_item,
+)
 
 
 @pytest.fixture
@@ -2582,6 +2585,56 @@ class TestRankingHelperBranches:
         assert result.loc[1, "per_percentile"] == 1.0
         assert result.loc[2, "per_percentile"] is None
         assert result.loc[3, "per_percentile"] is None
+
+    def test_build_value_composite_item_normalizes_optional_fields(self):
+        item = build_value_composite_item(
+            {
+                "code": "7203",
+                "company_name": "Toyota",
+                "market_code": "prime",
+                "sector_33_name": "輸送用機器",
+                "current_price": 1000.0,
+                "volume": 12345.0,
+                "value_composite_score": 0.8,
+                "score_before_boost": 0.7,
+                "breakout_boost": 0.1,
+                "liquidity_eligible": 1,
+                "avg_trading_value_60d_mil_jpy": 250.0,
+                "low_pbr_score": 0.2,
+                "small_market_cap_score": 0.3,
+                "low_forward_per_score": 0.4,
+                "pbr": 1.2,
+                "forward_per": 10.0,
+                "market_cap_bil_jpy": 500.0,
+                "bps": float("nan"),
+                "forward_eps": 100.0,
+                "latest_fy_disclosed_date": "2024-01-10",
+                "forward_eps_disclosed_date": "2024-01-11",
+                "forward_eps_source": "unexpected",
+                "technical_feature_date": "2024-01-12",
+                "breakout_feature_date": "2024-01-13",
+                "rebound_from_252d_low_pct": 12.5,
+                "return_252d_pct": 20.0,
+                "volatility_20d_pct": 3.0,
+                "volatility_60d_pct": 5.0,
+                "downside_volatility_60d_pct": 4.0,
+                "avg_trading_value_60d_source_sessions": 60.0,
+                "new_high_20d": 0,
+                "days_since_new_high_20d": 2.0,
+                "close_to_prior_high_20d_pct": -1.0,
+                "new_high_120d": 1,
+                "days_since_new_high_120d": 0.0,
+                "close_to_prior_high_120d_pct": 0.0,
+            },
+            rank=3,
+        )
+
+        assert item.rank == 3
+        assert item.bps is None
+        assert item.forwardEpsSource is None
+        assert item.liquidityEligible is True
+        assert item.technicalMetrics.newHigh20d is False
+        assert item.technicalMetrics.newHigh120d is True
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None

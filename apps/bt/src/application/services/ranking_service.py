@@ -67,6 +67,13 @@ from src.application.services.ranking_value_composite_config import (
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
+from src.application.services.ranking_response_items import (
+    build_value_composite_item,
+    finite_or_none as _finite_or_none,
+    int_or_none as _int_or_none,
+    row_get as _row_get,
+    str_or_none as _str_or_none,
+)
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
     classify_prime_liquidity_regime,
@@ -82,9 +89,7 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     RankingStateFilter,
     Rankings,
-    ValueCompositeRankingItem,
     ValueCompositeRankingResponse,
-    ValueCompositeTechnicalMetrics,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeProfileId,
@@ -95,35 +100,6 @@ from src.entrypoints.http.schemas.ranking import (
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _finite_or_none(value: Any) -> float | None:
-    number = _to_nullable_float(value)
-    if number is None or not math.isfinite(number):
-        return None
-    return number
-
-
-def _int_or_none(value: Any) -> int | None:
-    number = _finite_or_none(value)
-    if number is None:
-        return None
-    return int(number)
-
-
-def _str_or_none(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    return str(value)
-
-
-def _row_get(row: Mapping[str, Any], key: str) -> Any:
-    try:
-        return row[key]
-    except KeyError:
-        return None
 
 
 def _normalize_value_composite_weights(
@@ -609,7 +585,7 @@ class RankingService:
         )
 
         items = [
-            self._build_value_composite_item(cast(Mapping[str, Any], row), rank)
+            build_value_composite_item(cast(Mapping[str, Any], row), rank)
             for rank, row in enumerate(scored.to_dict(orient="records"), start=1)
         ]
 
@@ -767,7 +743,7 @@ class RankingService:
                 pd.DataFrame.from_records([row_payload]),
                 target_date=target_date,
             )
-            item = self._build_value_composite_item(
+            item = build_value_composite_item(
                 cast(Mapping[str, Any], row_df.iloc[0].to_dict()),
                 rank,
             )
@@ -2706,86 +2682,6 @@ class RankingService:
         if not eligible:
             return None
         return str(max(eligible, key=lambda row: str(row["disclosed_date"]))["disclosed_date"])
-
-    def _build_value_composite_item(
-        self,
-        row: Mapping[str, Any],
-        rank: int,
-    ) -> ValueCompositeRankingItem:
-        raw_source = _str_or_none(row.get("forward_eps_source"))
-        source = raw_source if raw_source in {"revised", "fy"} else None
-        return ValueCompositeRankingItem(
-            rank=rank,
-            code=str(row["code"]),
-            companyName=str(row["company_name"]),
-            marketCode=str(row["market_code"]),
-            sector33Name=str(row["sector_33_name"]),
-            currentPrice=float(row["current_price"]),
-            volume=float(row["volume"]),
-            score=float(row[VALUE_COMPOSITE_SCORE_COLUMN]),
-            scoreBeforeBoost=_finite_or_none(row.get("score_before_boost")),
-            breakoutBoost=_finite_or_none(row.get("breakout_boost")),
-            liquidityEligible=(
-                bool(row.get("liquidity_eligible"))
-                if row.get("liquidity_eligible") is not None
-                else None
-            ),
-            avgTradingValue60dMilJpy=_finite_or_none(
-                row.get("avg_trading_value_60d_mil_jpy")
-            ),
-            lowPbrScore=float(row["low_pbr_score"]),
-            smallMarketCapScore=float(row["small_market_cap_score"]),
-            lowForwardPerScore=float(row["low_forward_per_score"]),
-            pbr=float(row["pbr"]),
-            forwardPer=float(row["forward_per"]),
-            marketCapBilJpy=float(row["market_cap_bil_jpy"]),
-            bps=_finite_or_none(row.get("bps")),
-            forwardEps=_finite_or_none(row.get("forward_eps")),
-            latestFyDisclosedDate=_str_or_none(row.get("latest_fy_disclosed_date")),
-            forwardEpsDisclosedDate=_str_or_none(row.get("forward_eps_disclosed_date")),
-            forwardEpsSource=cast(Literal["revised", "fy"] | None, source),
-            technicalMetrics=ValueCompositeTechnicalMetrics(
-                featureDate=_str_or_none(row.get("technical_feature_date")),
-                breakoutFeatureDate=_str_or_none(row.get("breakout_feature_date")),
-                reboundFrom252dLowPct=_finite_or_none(
-                    row.get("rebound_from_252d_low_pct")
-                ),
-                return252dPct=_finite_or_none(row.get("return_252d_pct")),
-                volatility20dPct=_finite_or_none(row.get("volatility_20d_pct")),
-                volatility60dPct=_finite_or_none(row.get("volatility_60d_pct")),
-                downsideVolatility60dPct=_finite_or_none(
-                    row.get("downside_volatility_60d_pct")
-                ),
-                avgTradingValue60dMilJpy=_finite_or_none(
-                    row.get("avg_trading_value_60d_mil_jpy")
-                ),
-                avgTradingValue60dSourceSessions=_int_or_none(
-                    row.get("avg_trading_value_60d_source_sessions")
-                ),
-                newHigh20d=(
-                    bool(row.get("new_high_20d"))
-                    if row.get("new_high_20d") is not None
-                    else None
-                ),
-                daysSinceNewHigh20d=_int_or_none(
-                    row.get("days_since_new_high_20d")
-                ),
-                closeToPriorHigh20dPct=_finite_or_none(
-                    row.get("close_to_prior_high_20d_pct")
-                ),
-                newHigh120d=(
-                    bool(row.get("new_high_120d"))
-                    if row.get("new_high_120d") is not None
-                    else None
-                ),
-                daysSinceNewHigh120d=_int_or_none(
-                    row.get("days_since_new_high_120d")
-                ),
-                closeToPriorHigh120dPct=_finite_or_none(
-                    row.get("close_to_prior_high_120d_pct")
-                ),
-            ),
-        )
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
         """N営業日前の取引日を取得"""
