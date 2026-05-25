@@ -94,15 +94,7 @@ from src.application.services.sync_publish_helpers import (
     _publish_synthetic_nikkei_rows,
     _publish_topix_rows,
 )
-from src.application.services.sync_state_helpers import (
-    _build_incremental_date_targets,
-    _collect_unique_codes,
-    _dedupe_preserve_order as _dedupe_preserve_order,
-    _inspect_time_series,
-    _load_metadata_json_list,
-    _normalize_date_list,
-    _save_metadata_json_list,
-)
+from src.application.services import sync_state_helpers
 
 
 class SyncClientLike(Protocol):  # pragma: no cover
@@ -876,7 +868,7 @@ class InitialSyncStrategy:
 
             # Step 7: 信用残データ
             ctx.on_progress("margin", 6, 8, "Fetching margin data...")
-            all_stock_codes = _collect_unique_codes(
+            all_stock_codes = sync_state_helpers._collect_unique_codes(
                 [str(row.get("code", "")) for row in stock_rows if row.get("code")]
             )
             margin_target_codes = extract_listed_market_codes(stock_rows)
@@ -959,7 +951,7 @@ class IncrementalSyncStrategy:
             # NOTE:
             # stock_data が一部日付で取りこぼされると topix_data より遅れる場合があるため、
             # 増分同期の基準日は stock_data の最新日を優先する。
-            inspection = _inspect_time_series(ctx)
+            inspection = sync_state_helpers._inspect_time_series(ctx)
             cold_start_bootstrap = _is_incremental_cold_start(inspection)
             last_topix_date = inspection.topix_max
             last_stock_date = inspection.stock_max
@@ -1456,7 +1448,7 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            all_stock_codes = _collect_unique_codes(
+            all_stock_codes = sync_state_helpers._collect_unique_codes(
                 [
                     str(row.get("code", ""))
                     for row in [*listed_market_target_rows, *stock_rows]
@@ -1939,7 +1931,7 @@ async def _sync_fundamentals_initial(
         empty_cache_frontier,
         next_empty_codes,
     )
-    await _save_metadata_json_list(
+    await sync_state_helpers._save_metadata_json_list(
         ctx,
         METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
         failed_codes,
@@ -1980,18 +1972,18 @@ async def _sync_fundamentals_incremental(
     target_groups = group_target_codes_by_canonical(target_map)
     issuer_alias_count = sum(1 for code, canonical in target_map.items() if canonical != code)
 
-    previous_failed_dates = _normalize_date_list(
-        _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
+    previous_failed_dates = sync_state_helpers._normalize_date_list(
+        sync_state_helpers._load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
     )
-    previous_failed_codes = _collect_unique_codes(
-        _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"])
+    previous_failed_codes = sync_state_helpers._collect_unique_codes(
+        sync_state_helpers._load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"])
     )
 
     anchor = (
         ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
         or _get_latest_statement_disclosed_date(ctx)
     )
-    date_targets = _build_incremental_date_targets(anchor, previous_failed_dates)
+    date_targets = sync_state_helpers._build_incremental_date_targets(anchor, previous_failed_dates)
     dates_phase_completed = 0
     date_phase_disclosed_dates: set[str] = set()
     bulk_dates_succeeded = False
@@ -2259,7 +2251,7 @@ async def _sync_fundamentals_incremental(
         if code in target_map and target_map[code] not in latest_statement_codes
     }
 
-    await _save_metadata_json_list(
+    await sync_state_helpers._save_metadata_json_list(
         ctx,
         METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
         failed_dates,
@@ -2270,7 +2262,7 @@ async def _sync_fundamentals_incremental(
         empty_cache_frontier,
         next_empty_codes,
     )
-    await _save_metadata_json_list(
+    await sync_state_helpers._save_metadata_json_list(
         ctx,
         METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
         failed_codes,
@@ -2301,7 +2293,7 @@ async def _sync_margin_data(
     updated = 0
     errors: list[str] = []
 
-    normalized_codes = _collect_unique_codes(target_codes)
+    normalized_codes = sync_state_helpers._collect_unique_codes(target_codes)
     if not normalized_codes:
         return {
             "api_calls": api_calls,
@@ -2676,7 +2668,7 @@ async def _sync_margin_data(
     await _index_margin_rows(ctx)
     next_empty_codes = set(current_empty_codes)
     next_empty_codes.update(empty_fetch_codes)
-    latest_margin_codes = set(_inspect_time_series(ctx).margin_codes)
+    latest_margin_codes = set(sync_state_helpers._inspect_time_series(ctx).margin_codes)
     next_empty_codes = {
         code for code in next_empty_codes
         if code not in latest_margin_codes
@@ -2833,7 +2825,7 @@ async def _resolve_incremental_options_date_targets(
             key=_date_sort_key,
         )
 
-    options_dates = _normalize_date_list(
+    options_dates = sync_state_helpers._normalize_date_list(
         [
             str(r["date"])
             for r in topix_rows
@@ -2843,11 +2835,11 @@ async def _resolve_incremental_options_date_targets(
     if inspection.missing_options_225_dates_count <= 0:
         return options_dates
 
-    missing_coverage = _inspect_time_series(
+    missing_coverage = sync_state_helpers._inspect_time_series(
         ctx,
         missing_options_225_dates_limit=inspection.missing_options_225_dates_count,
     )
-    return _normalize_date_list(options_dates + list(missing_coverage.missing_options_225_dates))
+    return sync_state_helpers._normalize_date_list(options_dates + list(missing_coverage.missing_options_225_dates))
 
 
 async def _resolve_incremental_stock_date_targets(
@@ -2856,8 +2848,8 @@ async def _resolve_incremental_stock_date_targets(
     topix_rows: list[dict[str, Any]],
     anchor: str | None,
 ) -> list[str]:
-    inspection = _inspect_time_series(ctx)
-    topix_dates = _normalize_date_list(
+    inspection = sync_state_helpers._inspect_time_series(ctx)
+    topix_dates = sync_state_helpers._normalize_date_list(
         [
             str(r["date"])
             for r in topix_rows
@@ -2867,20 +2859,20 @@ async def _resolve_incremental_stock_date_targets(
     if inspection.missing_stock_dates_count <= 0:
         return topix_dates
 
-    missing_coverage = _inspect_time_series(
+    missing_coverage = sync_state_helpers._inspect_time_series(
         ctx,
         missing_stock_dates_limit=inspection.missing_stock_dates_count,
     )
-    return _normalize_date_list(topix_dates + list(missing_coverage.missing_stock_dates))
+    return sync_state_helpers._normalize_date_list(topix_dates + list(missing_coverage.missing_stock_dates))
 
 
 def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:
-    inspection = _inspect_time_series(ctx)
+    inspection = sync_state_helpers._inspect_time_series(ctx)
     return inspection.latest_statement_disclosed_date
 
 
 def _get_statement_codes(ctx: SyncContext) -> set[str]:
-    inspection = _inspect_time_series(ctx)
+    inspection = sync_state_helpers._inspect_time_series(ctx)
     return set(inspection.statement_codes)
 
 

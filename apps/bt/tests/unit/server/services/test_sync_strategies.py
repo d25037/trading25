@@ -18,6 +18,14 @@ from src.application.services.sync_fetch_planner import (
     _plan_fetch_method,
     _resolve_bulk_fallback_reason,
 )
+from src.application.services.sync_state_helpers import (
+    _build_incremental_date_targets,
+    _collect_unique_codes,
+    _dedupe_preserve_order,
+    _inspect_time_series,
+    _load_metadata_json_list,
+    _normalize_date_list,
+)
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
@@ -27,8 +35,6 @@ from src.application.services.sync_strategies import (
     RepairSyncStrategy,
     SyncContext,
     _build_fallback_index_master_rows,
-    _build_incremental_date_targets,
-    _collect_unique_codes,
     _convert_margin_rows,
     _convert_index_master_rows,
     _convert_indices_data_rows,
@@ -37,16 +43,12 @@ from src.application.services.sync_strategies import (
     _group_stock_master_bulk_rows_by_date,
     _date_sort_key,
     _fetch_margin_by_code,
-    _dedupe_preserve_order,
     _extract_dates_after,
     _extract_list_items,
     _fetch_fins_summary_by_code,
     _get_paginated_rows_with_call_count,
-    _inspect_time_series,
     _is_date_after,
     _latest_date,
-    _load_metadata_json_list,
-    _normalize_date_list,
     _normalize_iso_date_text,
     _parse_date,
     _publish_indices_rows,
@@ -4580,7 +4582,7 @@ async def test_incremental_sync_fundamentals_date_and_missing_listed_market_back
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: ["2026-02-10"],
     )
 
@@ -4664,7 +4666,7 @@ async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_listed_market
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: ["2026-02-10"],
     )
 
@@ -4736,7 +4738,7 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -4796,7 +4798,7 @@ async def test_incremental_sync_fundamentals_code_backfill_does_not_advance_date
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -4844,7 +4846,7 @@ async def test_incremental_sync_fundamentals_alias_coverage_skips_preferred_shar
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -4886,7 +4888,7 @@ async def test_incremental_sync_fundamentals_persists_empty_cache_and_skips_same
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -4957,7 +4959,7 @@ async def test_incremental_sync_margin_filters_non_listed_market_backfill_target
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -5006,7 +5008,7 @@ async def test_repair_sync_backfills_fundamentals_without_stock_refresh(
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -5049,7 +5051,7 @@ async def test_repair_sync_stops_after_cancel_during_fundamentals(
     )
 
     monkeypatch.setattr(
-        "src.application.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_state_helpers._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -5105,7 +5107,7 @@ async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata
         captured["retry"] = retry_dates
         return []
 
-    monkeypatch.setattr("src.application.services.sync_strategies._build_incremental_date_targets", _capture)
+    monkeypatch.setattr("src.application.services.sync_state_helpers._build_incremental_date_targets", _capture)
 
     ctx = _build_ctx(
         client=client,
