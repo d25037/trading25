@@ -29,6 +29,7 @@ from src.application.services.ranking_daily_queries import (
 )
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
+    filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
@@ -267,7 +268,7 @@ class RankingService:
                     target_date=target_date,
                     price_basis_date=price_basis_date,
                 )
-                self._filter_ranking_collections_by_liquidity_state(
+                _filter_ranking_collections_by_liquidity_state(
                     ranking_collections,
                     liquidity_state=liquidity_state,
                 )
@@ -817,27 +818,6 @@ class RankingService:
                 item.marketCap = _finite_or_none(row.get("market_cap"))
             enriched_codes.add(code)
         return enriched_codes
-
-    @staticmethod
-    def _filter_ranking_collections_by_liquidity_state(
-        collections: tuple[list[RankingItem], ...],
-        *,
-        liquidity_state: RankingStateFilter | None,
-    ) -> None:
-        if liquidity_state is None:
-            return
-
-        for collection in collections:
-            if liquidity_state == "overheat":
-                collection[:] = [
-                    item for item in collection if liquidity_state in item.riskFlags
-                ]
-            else:
-                collection[:] = [
-                    item
-                    for item in collection
-                    if item.liquidityRegime == liquidity_state
-                ]
 
     def _enrich_ranking_collections_with_prime_liquidity(
         self,

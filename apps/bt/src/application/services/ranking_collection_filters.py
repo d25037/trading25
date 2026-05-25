@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date as calendar_date, datetime, timedelta
 
-from src.entrypoints.http.schemas.ranking import RankingItem
+from src.entrypoints.http.schemas.ranking import RankingItem, RankingStateFilter
 
 
 def filter_ranking_collections_by_forward_eps_source_date(
@@ -58,3 +58,22 @@ def limit_and_rerank_ranking_collections(
             del collection[limit:]
         for rank, item in enumerate(collection, start=1):
             item.rank = rank
+
+
+def filter_ranking_collections_by_liquidity_state(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    liquidity_state: RankingStateFilter | None,
+) -> None:
+    if liquidity_state is None:
+        return
+
+    for collection in collections:
+        if liquidity_state == "overheat":
+            collection[:] = [
+                item for item in collection if liquidity_state in item.riskFlags
+            ]
+        else:
+            collection[:] = [
+                item for item in collection if item.liquidityRegime == liquidity_state
+            ]
