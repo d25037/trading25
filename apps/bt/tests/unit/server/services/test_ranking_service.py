@@ -39,6 +39,7 @@ from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_response_items import (
+    build_ranking_item,
     build_value_composite_item,
 )
 from src.application.services.ranking_statement_selection import (
@@ -2644,6 +2645,26 @@ class TestRankingHelperBranches:
         assert item.liquidityEligible is True
         assert item.technicalMetrics.newHigh20d is False
         assert item.technicalMetrics.newHigh120d is True
+
+    def test_build_ranking_item_keeps_none_extra_as_default(self):
+        item = build_ranking_item(
+            {
+                "code": "7203",
+                "company_name": "Toyota",
+                "market_code": "prime",
+                "sector_33_name": "輸送用機器",
+                "current_price": 1000.0,
+                "volume": 12345.0,
+            },
+            rank=2,
+            tradingValue=12_345_000.0,
+            previousPrice=None,
+        )
+
+        assert item.rank == 2
+        assert item.tradingValue == 12_345_000.0
+        assert item.previousPrice is None
+        assert "previousPrice" not in item.model_fields_set
 
     def test_statement_selection_respects_as_of_and_positive_adjusted_bps(self):
         rows = [

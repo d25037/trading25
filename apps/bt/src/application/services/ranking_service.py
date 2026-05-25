@@ -65,6 +65,7 @@ from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_response_items import (
+    build_ranking_item,
     build_value_composite_item,
     finite_or_none as _finite_or_none,
     int_or_none as _int_or_none,
@@ -126,18 +127,6 @@ FUNDAMENTAL_BASE_COLUMNS = (
 
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
-def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
-    """DB行をRankingItemに変換"""
-    return RankingItem(
-        rank=rank,
-        code=row["code"],
-        companyName=row["company_name"],
-        marketCode=row["market_code"],
-        sector33Name=row["sector_33_name"],
-        currentPrice=row["current_price"],
-        volume=row["volume"],
-        **{k: v for k, v in extra.items() if v is not None},
-    )
 
 
 class RankingService:
@@ -2564,7 +2553,7 @@ class RankingService:
         prev_date = self._get_trading_date_before(date, 0)
         rows = self._reader.query(sql, (date, prev_date or "", *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 tradingValue=row["trading_value"],
@@ -2642,7 +2631,7 @@ class RankingService:
         """
         rows = self._reader.query(sql, (start_date, date, date, base_date, *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 tradingValueAverage=row["avg_trading_value"],
@@ -2702,7 +2691,7 @@ class RankingService:
         """
         rows = self._reader.query(sql, (date, prev_date, *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 previousPrice=row["previous_price"],
@@ -2761,7 +2750,7 @@ class RankingService:
         """
         rows = self._reader.query(sql, (date, base_date, *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 basePrice=row["base_price"],
@@ -2827,7 +2816,7 @@ class RankingService:
         """
         rows = self._reader.query(sql, (start_date, date, date, *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 tradingValue=row["trading_value"],
@@ -2894,7 +2883,7 @@ class RankingService:
         """
         rows = self._reader.query(sql, (start_date, date, date, *market_params, *limit_params))
         return [
-            _row_to_item(
+            build_ranking_item(
                 row,
                 i + 1,
                 tradingValue=row["trading_value"],

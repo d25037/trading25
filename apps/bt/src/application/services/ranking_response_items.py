@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 from src.domains.analytics.fundamental_ranking import to_nullable_float
 from src.domains.analytics.value_composite_scoring import VALUE_COMPOSITE_SCORE_COLUMN
 from src.entrypoints.http.schemas.ranking import (
+    RankingItem,
     ValueCompositeRankingItem,
     ValueCompositeTechnicalMetrics,
 )
@@ -41,6 +42,23 @@ def row_get(row: Mapping[str, Any], key: str) -> Any:
         return row[key]
     except KeyError:
         return None
+
+
+def build_ranking_item(
+    row: Mapping[str, Any],
+    rank: int,
+    **extra: Any,
+) -> RankingItem:
+    return RankingItem(
+        rank=rank,
+        code=row["code"],
+        companyName=row["company_name"],
+        marketCode=row["market_code"],
+        sector33Name=row["sector_33_name"],
+        currentPrice=row["current_price"],
+        volume=row["volume"],
+        **{key: value for key, value in extra.items() if value is not None},
+    )
 
 
 def build_value_composite_item(
