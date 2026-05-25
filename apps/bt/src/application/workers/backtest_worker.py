@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import socket
 from contextlib import suppress
@@ -25,6 +24,7 @@ from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
     external_worker_lifecycle_fields,
+    parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -315,10 +315,7 @@ def main() -> int:
     args = _parse_args()
     config_override: dict[str, Any] | None = None
     if args.config_override_json:
-        parsed = json.loads(args.config_override_json)
-        if not isinstance(parsed, dict):
-            raise ValueError("config override must be a JSON object")
-        config_override = parsed
+        config_override = parse_json_object_arg(args.config_override_json, label="config override")
     return asyncio.run(
         run_backtest_worker(
             args.job_id,

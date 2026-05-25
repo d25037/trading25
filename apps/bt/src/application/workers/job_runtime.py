@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from time import perf_counter
 from typing import Any
@@ -45,3 +46,10 @@ def external_worker_lifecycle_fields(
         "executionMode": "external_worker",
         **extra,
     }
+
+
+def parse_json_object_arg(raw: str, *, label: str) -> dict[str, Any]:
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return parsed

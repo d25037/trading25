@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import socket
 from contextlib import suppress
@@ -40,6 +39,7 @@ from src.domains.lab_agent.models import LabStructureMode, LabTargetScope
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
     external_worker_lifecycle_fields,
+    parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -480,9 +480,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    payload = json.loads(args.payload_json)
-    if not isinstance(payload, dict):
-        raise ValueError("payload must be a JSON object")
+    payload = parse_json_object_arg(args.payload_json, label="payload")
     return asyncio.run(
         run_lab_worker(
             args.job_id,

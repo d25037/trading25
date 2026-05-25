@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import socket
 from contextlib import suppress
@@ -34,6 +33,7 @@ from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     duration_ms_for_job,
     external_worker_lifecycle_fields,
+    parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
 )
@@ -348,10 +348,9 @@ def main() -> int:
     args = _parse_args()
     engine_policy = EnginePolicy()
     if args.engine_policy_json:
-        parsed = json.loads(args.engine_policy_json)
-        if not isinstance(parsed, dict):
-            raise ValueError("engine policy payload must be a JSON object")
-        engine_policy = EnginePolicy.model_validate(parsed)
+        engine_policy = EnginePolicy.model_validate(
+            parse_json_object_arg(args.engine_policy_json, label="engine policy payload")
+        )
     return asyncio.run(
         run_optimization_worker(
             args.job_id,
