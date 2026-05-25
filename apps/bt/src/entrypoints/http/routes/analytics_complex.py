@@ -15,8 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.routes.job_response_utils import (
-    build_job_execution_control,
-    build_run_metadata,
+    build_job_response_base,
 )
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
@@ -394,16 +393,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
     scope_label = _resolve_screening_job_scope_label(job, params)
 
     return ScreeningJobResponse(
-        job_id=job.job_id,
-        status=job.status,
-        progress=job.progress,
-        message=job.message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        error=job.error,
-        run_metadata=build_run_metadata(job),
-        execution_control=build_job_execution_control(job),
+        **build_job_response_base(job),
         entry_decidability=params.entry_decidability,
         markets=params.markets or "",
         scopeLabel=scope_label,
