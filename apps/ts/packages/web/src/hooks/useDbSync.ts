@@ -58,6 +58,7 @@ const SNAPSHOT_POLL_INTERVAL_RUNNING_MS = 2_000;
 const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
 const SNAPSHOT_STALE_TIME_RUNNING_MS = 0;
 const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
+const ACTIVE_SYNC_STATUSES = ['pending', 'running'] as const;
 const TERMINAL_SYNC_STATUSES: SyncJobResponse['status'][] = ['completed', 'failed', 'cancelled'];
 const SYNC_SSE_EVENTS = ['snapshot', 'job', 'fetch-detail'] as const;
 
@@ -129,6 +130,10 @@ function resolveSyncJobPollInterval(status: string | null | undefined, sseConnec
     return false;
   }
   return 1000;
+}
+
+function resolveActiveSyncJobPollInterval(status: string | null | undefined): 1000 | 5000 {
+  return ACTIVE_SYNC_STATUSES.includes(status as (typeof ACTIVE_SYNC_STATUSES)[number]) ? 1000 : 5000;
 }
 
 function getFetchDetailKey(detail: SyncFetchDetail): string {
@@ -362,11 +367,7 @@ export function useActiveSyncJob(enabled = true) {
     enabled,
     staleTime: 0,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (status === 'pending' || status === 'running') {
-        return 1000;
-      }
-      return 5000;
+      return resolveActiveSyncJobPollInterval(query.state.data?.status);
     },
   });
 }
@@ -378,11 +379,7 @@ export function useActiveAdjustedMetricsMaterializeJob(enabled = true) {
     enabled,
     staleTime: 0,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      if (status === 'pending' || status === 'running') {
-        return 1000;
-      }
-      return 5000;
+      return resolveActiveSyncJobPollInterval(query.state.data?.status);
     },
   });
 }
