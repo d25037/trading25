@@ -79,21 +79,7 @@ from src.application.services.sync_row_converters import (
     _parse_date,
     _to_iso_date_text,
 )
-from src.application.services.sync_publish_helpers import (
-    _index_indices_rows,
-    _index_margin_rows,
-    _index_options_225_rows,
-    _index_statement_rows,
-    _index_stock_data_rows,
-    _index_topix_rows,
-    _publish_indices_rows,
-    _publish_margin_rows,
-    _publish_options_225_rows,
-    _publish_statement_rows,
-    _publish_stock_data_rows,
-    _publish_synthetic_nikkei_rows,
-    _publish_topix_rows,
-)
+from src.application.services import sync_publish_helpers
 from src.application.services import sync_state_helpers
 
 
@@ -238,7 +224,7 @@ async def _ingest_stock_bulk_batch(
     rows = _convert_stock_bulk_rows(normalized_rows, target_dates=target_dates)
     if not rows:
         return 0
-    return await _publish_stock_data_rows(ctx, rows)
+    return await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
 
 
 async def _ingest_fins_bulk_batch(
@@ -272,7 +258,7 @@ async def _ingest_fins_bulk_batch(
             for normalized in (_normalize_iso_date_text(row.get("disclosed_date")) for row in rows)
             if normalized is not None
         )
-    return await _publish_statement_rows(ctx, rows)
+    return await sync_publish_helpers._publish_statement_rows(ctx, rows)
 
 
 async def _ingest_indices_only_bulk_batch(
@@ -560,7 +546,7 @@ class IndicesOnlySyncStrategy:
                 )
 
             if not self._include_options:
-                await _index_indices_rows(ctx)
+                await sync_publish_helpers._index_indices_rows(ctx)
                 return SyncResult(
                     success=len(errors) == 0,
                     totalApiCalls=total_calls,
@@ -632,8 +618,8 @@ class InitialSyncStrategy:
                     dedupe_keys=("date",),
                     stage="topix",
                 ),
-                publish=lambda rows: _publish_topix_rows(ctx, rows),
-                index=lambda _rows: _index_topix_rows(ctx),
+                publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
+                index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
             )
             total_calls += topix_calls
             topix_rows = topix_batch.rows
@@ -822,7 +808,7 @@ class InitialSyncStrategy:
                                 dedupe_keys=("code", "date"),
                                 stage="stock_data",
                             ),
-                            publish=lambda rows: _publish_stock_data_rows(ctx, rows),
+                            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
                         )
                         stocks_updated += batch.published_count
                         consecutive_failures = 0
@@ -842,7 +828,7 @@ class InitialSyncStrategy:
                     bulk_result=bulk_result,
                 )
 
-            await _index_stock_data_rows(ctx)
+            await sync_publish_helpers._index_stock_data_rows(ctx)
 
             # Step 5: 指数データ
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
@@ -989,8 +975,8 @@ class IncrementalSyncStrategy:
                     dedupe_keys=("date",),
                     stage="topix",
                 ),
-                publish=lambda rows: _publish_topix_rows(ctx, rows),
-                index=lambda _rows: _index_topix_rows(ctx),
+                publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
+                index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
             )
             total_calls += topix_calls
             topix_rows = topix_batch.rows
@@ -1167,7 +1153,7 @@ class IncrementalSyncStrategy:
                                 dedupe_keys=("code", "date"),
                                 stage="stock_data",
                             ),
-                            publish=lambda rows: _publish_stock_data_rows(ctx, rows),
+                            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
                         )
                         stocks_updated += batch.published_count
                     except Exception as e:
@@ -1182,7 +1168,7 @@ class IncrementalSyncStrategy:
                     bulk_result=stock_bulk_result,
                 )
 
-            await _index_stock_data_rows(ctx)
+            await sync_publish_helpers._index_stock_data_rows(ctx)
 
             # Step 4: 指数データ（増分）
             ctx.on_progress("indices", 3, 7, "Fetching incremental index data...")
@@ -1401,7 +1387,7 @@ class IncrementalSyncStrategy:
                     bulk_result=indices_bulk_result,
                 )
 
-            await _index_indices_rows(ctx)
+            await sync_publish_helpers._index_indices_rows(ctx)
 
             # Step 5: N225 options（増分 + 欠損履歴補完）
             options_new_dates = await _resolve_incremental_options_date_targets(
@@ -1628,8 +1614,8 @@ async def _sync_options_225_dates(
             )
             if not rows:
                 return
-            await _publish_options_225_rows(ctx, rows)
-            await _publish_synthetic_nikkei_rows(ctx, rows)
+            await sync_publish_helpers._publish_options_225_rows(ctx, rows)
+            await sync_publish_helpers._publish_synthetic_nikkei_rows(ctx, rows)
 
         bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
             ctx,
@@ -1689,8 +1675,8 @@ async def _sync_options_225_dates(
                     stage="options_225",
                 )
                 if rows:
-                    await _publish_options_225_rows(ctx, rows)
-                    await _publish_synthetic_nikkei_rows(ctx, rows)
+                    await sync_publish_helpers._publish_options_225_rows(ctx, rows)
+                    await sync_publish_helpers._publish_synthetic_nikkei_rows(ctx, rows)
             except Exception as e:
                 errors.append(f"Options {target_date}: {e}")
                 logger.warning("Options date {} sync error: {}", target_date, e)
@@ -1704,8 +1690,8 @@ async def _sync_options_225_dates(
             bulk_result=bulk_result,
         )
 
-    await _index_options_225_rows(ctx)
-    await _index_indices_rows(ctx)
+    await sync_publish_helpers._index_options_225_rows(ctx)
+    await sync_publish_helpers._index_indices_rows(ctx)
     return {"api_calls": api_calls, "errors": errors, "cancelled": False}
 
 
@@ -1877,7 +1863,7 @@ async def _sync_fundamentals_initial(
                 )
                 rows = [row for row in rows if row.get("code") in allowed_statement_codes]
                 if rows:
-                    updated += await _publish_statement_rows(ctx, rows)
+                    updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
                 else:
                     empty_fetch_codes.add(code)
             except Exception as e:
@@ -1893,7 +1879,7 @@ async def _sync_fundamentals_initial(
             bulk_result=bulk_result,
         )
 
-    await _index_statement_rows(ctx)
+    await sync_publish_helpers._index_statement_rows(ctx)
 
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
@@ -2108,7 +2094,7 @@ async def _sync_fundamentals_incremental(
                             )
                             if normalized is not None
                         )
-                        updated += await _publish_statement_rows(ctx, rows)
+                        updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
                 except Exception as e:
                     failed_dates.append(disclosed_date)
                     errors.append(f"Fundamentals date {disclosed_date}: {e}")
@@ -2196,7 +2182,7 @@ async def _sync_fundamentals_incremental(
                 stage="fundamentals",
             )
             if rows:
-                updated += await _publish_statement_rows(ctx, rows)
+                updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
             else:
                 empty_fetch_codes.add(code)
         except Exception as e:
@@ -2220,7 +2206,7 @@ async def _sync_fundamentals_incremental(
             bulk_result=None,
         )
 
-    await _index_statement_rows(ctx)
+    await sync_publish_helpers._index_statement_rows(ctx)
 
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
@@ -2543,7 +2529,7 @@ async def _sync_margin_data(
                     stage="margin_data",
                 )
                 if rows:
-                    updated += await _publish_margin_rows(ctx, rows)
+                    updated += await sync_publish_helpers._publish_margin_rows(ctx, rows)
             except Exception as e:
                 errors.append(f"Margin code {code}: {e}")
 
@@ -2624,7 +2610,7 @@ async def _sync_margin_data(
                     stage="margin_data",
                 )
                 if rows:
-                    updated += await _publish_margin_rows(ctx, rows)
+                    updated += await sync_publish_helpers._publish_margin_rows(ctx, rows)
                 else:
                     empty_fetch_codes.add(code)
             except Exception as e:
@@ -2665,7 +2651,7 @@ async def _sync_margin_data(
             "cancelled": False,
         }
 
-    await _index_margin_rows(ctx)
+    await sync_publish_helpers._index_margin_rows(ctx)
     next_empty_codes = set(current_empty_codes)
     next_empty_codes.update(empty_fetch_codes)
     latest_margin_codes = set(sync_state_helpers._inspect_time_series(ctx).margin_codes)
@@ -2922,7 +2908,7 @@ async def _upsert_indices_rows_with_master_backfill(
         if discovery_log:
             logger.warning(discovery_log, len(missing_master_rows))
 
-    await _publish_indices_rows(ctx, rows)
+    await sync_publish_helpers._publish_indices_rows(ctx, rows)
 
 
 async def _sync_daily_stock_master(
@@ -3199,7 +3185,7 @@ async def _ingest_margin_bulk_batch(
     )
     if not rows:
         return 0
-    return await _publish_margin_rows(ctx, rows)
+    return await sync_publish_helpers._publish_margin_rows(ctx, rows)
 
 
 def _build_fallback_index_master_rows(
