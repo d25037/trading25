@@ -31,16 +31,12 @@ from src.domains.backtest.contracts import EnginePolicy, EnginePolicyMode
 from src.domains.optimization.engine import ParameterOptimizationEngine
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.application.workers.job_runtime import duration_ms_for_job
 from src.shared.config.settings import get_settings
 from src.shared.observability.metrics import metrics_recorder
 
 _HEARTBEAT_SECONDS = 5.0
 _TIMED_OUT_ERROR = "worker_timed_out"
-
-
-def _duration_ms_for_job(now: datetime, *, started_at: datetime | None, created_at: datetime | None) -> float:
-    reference = started_at or created_at or now
-    return round(max((now - reference).total_seconds(), 0.0) * 1000, 2)
 
 
 def _execute_optimization_sync(strategy_name: str) -> dict[str, Any]:
@@ -110,7 +106,7 @@ async def _heartbeat_loop(
             return
         if job.timeout_at is not None and datetime.now() >= job.timeout_at:
             now = datetime.now()
-            duration_ms = _duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
+            duration_ms = duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
             await manager.update_job_status(
                 job_id,
                 JobStatus.FAILED,
@@ -138,7 +134,7 @@ async def _heartbeat_loop(
             return
         if job.cancel_requested_at is not None:
             now = datetime.now()
-            duration_ms = _duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
+            duration_ms = duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
             await manager.cancel_job(
                 job_id,
                 reason=job.cancel_reason or "controller_requested",
