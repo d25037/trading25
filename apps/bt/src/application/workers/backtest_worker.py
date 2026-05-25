@@ -23,7 +23,7 @@ from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.application.workers.job_runtime import (
     DEFAULT_HEARTBEAT_SECONDS,
     WORKER_TIMED_OUT_ERROR,
-    duration_ms_for_job,
+    duration_ms_for_loaded_job,
     external_worker_lifecycle_fields,
     normalized_heartbeat_seconds,
     parse_json_object_arg,
@@ -71,8 +71,7 @@ async def _heartbeat_loop(
         if job.status in TERMINAL_JOB_STATUSES:
             return
         if job.timeout_at is not None and datetime.now() >= job.timeout_at:
-            now = datetime.now()
-            duration_ms = duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
+            duration_ms = duration_ms_for_loaded_job(job)
             await manager.update_job_status(
                 job_id,
                 JobStatus.FAILED,
@@ -94,8 +93,7 @@ async def _heartbeat_loop(
             exit_on_cancel(124)
             return
         if job.cancel_requested_at is not None:
-            now = datetime.now()
-            duration_ms = duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
+            duration_ms = duration_ms_for_loaded_job(job)
             await manager.cancel_job(
                 job_id,
                 reason=job.cancel_reason or "controller_requested",

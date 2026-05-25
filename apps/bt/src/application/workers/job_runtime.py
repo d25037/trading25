@@ -7,7 +7,7 @@ import os
 import socket
 from datetime import datetime
 from time import perf_counter
-from typing import Any
+from typing import Any, Protocol
 
 from src.application.services.job_status import TERMINAL_JOB_STATUSES
 from src.entrypoints.http.schemas.common import JobStatus
@@ -18,9 +18,22 @@ MIN_HEARTBEAT_SECONDS = 0.1
 WORKER_TIMED_OUT_ERROR = "worker_timed_out"
 
 
+class LoadedJobTiming(Protocol):
+    @property
+    def started_at(self) -> datetime | None: ...
+
+    @property
+    def created_at(self) -> datetime | None: ...
+
+
 def duration_ms_for_job(now: datetime, *, started_at: datetime | None, created_at: datetime | None) -> float:
     reference = started_at or created_at or now
     return round(max((now - reference).total_seconds(), 0.0) * 1000, 2)
+
+
+def duration_ms_for_loaded_job(job: LoadedJobTiming, *, now: datetime | None = None) -> float:
+    resolved_now = now or datetime.now()
+    return duration_ms_for_job(resolved_now, started_at=job.started_at, created_at=job.created_at)
 
 
 def elapsed_ms_since(started_at: float) -> float:
