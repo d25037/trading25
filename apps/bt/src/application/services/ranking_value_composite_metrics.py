@@ -8,6 +8,9 @@ from typing import Any, cast
 import pandas as pd
 
 from src.domains.analytics.fundamental_ranking import (
+    ForecastValue,
+    FundamentalRankingCalculator,
+    StatementRow,
     normalize_period_label,
     to_nullable_float,
 )
@@ -77,6 +80,27 @@ def resolve_value_composite_symbol_target_date(
     if row is None or row["max_date"] is None:
         return target_date
     return str(row["max_date"])
+
+
+def resolve_value_composite_forecast_snapshot(
+    calculator: FundamentalRankingCalculator,
+    rows: list[StatementRow],
+    baseline_shares: float | None,
+    *,
+    forward_eps_mode: ValueCompositeForwardEpsMode,
+    as_of_date: str | None = None,
+) -> ForecastValue | None:
+    if forward_eps_mode == "latest":
+        return calculator.resolve_latest_forecast_snapshot(
+            rows,
+            baseline_shares,
+            as_of_date=as_of_date,
+        )
+    latest_fy = calculator.resolve_latest_fy_row(rows, as_of_date=as_of_date)
+    return calculator.resolve_latest_fy_forecast_snapshot(
+        latest_fy,
+        baseline_shares,
+    )
 
 
 def append_value_composite_profile_metrics(

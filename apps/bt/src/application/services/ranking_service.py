@@ -52,8 +52,6 @@ from src.domains.fundamentals import (
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
     FundamentalRankingCalculator,
-    ForecastValue as _ForecastValue,
-    StatementRow as _StatementRow,
     adjust_per_share_value as _adjust_per_share_value,
     to_nullable_float as _to_nullable_float,
 )
@@ -80,6 +78,7 @@ from src.application.services.ranking_value_composite_metrics import (
     build_value_composite_ranking_items as _build_value_composite_ranking_items,
     find_value_composite_score_item as _find_value_composite_score_item,
     find_value_composite_target_stock as _find_value_composite_target_stock,
+    resolve_value_composite_forecast_snapshot as _resolve_value_composite_forecast_snapshot,
     resolve_value_composite_symbol_target_date as _resolve_value_composite_symbol_target_date_query,
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
 )
@@ -905,7 +904,8 @@ class RankingService:
             ),
             through_date=price_basis_date,
         )
-        forecast_snapshot = self._resolve_value_composite_forecast_snapshot(
+        forecast_snapshot = _resolve_value_composite_forecast_snapshot(
+            self._fundamental_calculator,
             statements,
             baseline_shares,
             forward_eps_mode=forward_eps_mode,
@@ -931,25 +931,3 @@ class RankingService:
         if _positive_ratio(price, forecast_snapshot.value) is None:
             return "forward_eps_missing"
         return "not_rankable"
-
-    def _resolve_value_composite_forecast_snapshot(
-        self,
-        rows: list[_StatementRow],
-        baseline_shares: float | None,
-        *,
-        forward_eps_mode: ValueCompositeForwardEpsMode,
-        as_of_date: str | None = None,
-    ) -> _ForecastValue | None:
-        if forward_eps_mode == "latest":
-            return self._fundamental_calculator.resolve_latest_forecast_snapshot(
-                rows,
-                baseline_shares,
-                as_of_date=as_of_date,
-            )
-        latest_fy = self._fundamental_calculator.resolve_latest_fy_row(
-            rows, as_of_date=as_of_date
-        )
-        return self._fundamental_calculator.resolve_latest_fy_forecast_snapshot(
-            latest_fy,
-            baseline_shares,
-        )
