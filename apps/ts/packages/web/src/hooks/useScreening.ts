@@ -108,8 +108,7 @@ export function useScreeningJobSSE(jobId: string | null): ScreeningJobSSEState {
   return useSseStream({
     url: streamUrl,
     eventNames: SCREENING_SSE_EVENTS,
-    onMessage: handleJobEvent,
-    onEvent: (_eventName, rawData, controls) => handleJobEvent(rawData, controls),
+    onAnyMessage: handleJobEvent,
     maxRetries: MAX_SSE_RETRIES,
     onMaxRetriesExceeded: () => logger.error('Screening SSE max retries exceeded', { jobId }),
   });

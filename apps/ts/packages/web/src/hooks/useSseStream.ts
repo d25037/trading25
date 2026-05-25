@@ -10,6 +10,7 @@ export type SseNamedEventHandler = (eventName: string, rawData: string, controls
 export interface UseSseStreamOptions {
   url: string | null;
   eventNames?: readonly string[];
+  onAnyMessage?: SseMessageHandler;
   onMessage?: SseMessageHandler;
   onEvent?: SseNamedEventHandler;
   maxRetries?: number;
@@ -28,6 +29,7 @@ const EVENT_NAME_SEPARATOR = '\u0000';
 export function useSseStream({
   url,
   eventNames = [],
+  onAnyMessage,
   onMessage,
   onEvent,
   maxRetries = DEFAULT_MAX_RETRIES,
@@ -39,12 +41,14 @@ export function useSseStream({
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
   const handlersRef = useRef({
+    onAnyMessage,
     onMessage,
     onEvent,
     onMaxRetriesExceeded,
   });
 
   handlersRef.current = {
+    onAnyMessage,
     onMessage,
     onEvent,
     onMaxRetriesExceeded,
@@ -93,13 +97,20 @@ export function useSseStream({
 
       if (handlersRef.current.onMessage) {
         es.onmessage = (event) => {
+          handlersRef.current.onAnyMessage?.(event.data, controls);
           handlersRef.current.onMessage?.(event.data, controls);
+        };
+      } else if (handlersRef.current.onAnyMessage) {
+        es.onmessage = (event) => {
+          handlersRef.current.onAnyMessage?.(event.data, controls);
         };
       }
 
       for (const eventName of currentEventNames) {
         es.addEventListener(eventName, (event) => {
-          handlersRef.current.onEvent?.(eventName, (event as MessageEvent<string>).data, controls);
+          const rawData = (event as MessageEvent<string>).data;
+          handlersRef.current.onAnyMessage?.(rawData, controls);
+          handlersRef.current.onEvent?.(eventName, rawData, controls);
         });
       }
 

@@ -62,8 +62,7 @@ export function useLabSSE(jobId: string | null): LabSSEState {
   const { isConnected } = useSseStream({
     url: streamUrl,
     eventNames: STATUS_EVENTS,
-    onMessage: handleStatusEvent,
-    onEvent: (_eventName, rawData, controls) => handleStatusEvent(rawData, controls),
+    onAnyMessage: handleStatusEvent,
     maxRetries: MAX_RETRIES,
     onMaxRetriesExceeded: () => logger.error('Lab SSE max retries exceeded', { jobId }),
   });

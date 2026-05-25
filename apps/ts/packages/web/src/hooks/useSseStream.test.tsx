@@ -24,11 +24,13 @@ describe('useSseStream', () => {
 
   it('connects and dispatches default and named events', () => {
     const messages: string[] = [];
+    const anyMessages: string[] = [];
     const namedEvents: Array<[string, string]> = [];
     const { result } = renderHook(() =>
       useSseStream({
         url: '/api/jobs/job-1/stream',
         eventNames: ['snapshot', 'job'],
+        onAnyMessage: (rawData) => anyMessages.push(rawData),
         onMessage: (rawData) => messages.push(rawData),
         onEvent: (eventName, rawData) => namedEvents.push([eventName, rawData]),
       })
@@ -44,6 +46,7 @@ describe('useSseStream', () => {
     });
 
     expect(result.current.isConnected).toBe(true);
+    expect(anyMessages).toEqual(['default-payload', 'snapshot-payload', 'job-payload']);
     expect(messages).toEqual(['default-payload']);
     expect(namedEvents).toEqual([
       ['snapshot', 'snapshot-payload'],
