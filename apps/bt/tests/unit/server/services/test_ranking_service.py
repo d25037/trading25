@@ -5,6 +5,7 @@ Ranking Service Unit Tests
 from datetime import date as calendar_date, timedelta
 
 import duckdb
+import pandas as pd
 
 import pytest
 
@@ -32,6 +33,9 @@ from src.application.services.ranking_value_composite_config import (
 from src.application.services.ranking_liquidity import (
     classify_prime_liquidity_regime,
     classify_risk_flags,
+)
+from src.application.services.ranking_valuation import (
+    with_prime_valuation_percentiles,
 )
 
 
@@ -2561,6 +2565,23 @@ class TestRankingHelperBranches:
         profile = VALUE_COMPOSITE_PROFILE_BY_ID["prime_size75_forward_per25"]
         assert profile.score_method == "prime_size75_forward_per25"
         assert profile.rebalance_months == 2
+
+    def test_prime_valuation_percentiles_only_rank_prime_positive_values(self):
+        frame = pd.DataFrame(
+            [
+                {"code": "1000", "market_code": "prime", "per": 10.0},
+                {"code": "1001", "market_code": "prime", "per": 20.0},
+                {"code": "2000", "market_code": "standard", "per": 1.0},
+                {"code": "1002", "market_code": "prime", "per": -5.0},
+            ]
+        )
+
+        result = with_prime_valuation_percentiles(frame)
+
+        assert result.loc[0, "per_percentile"] == 0.0
+        assert result.loc[1, "per_percentile"] == 1.0
+        assert result.loc[2, "per_percentile"] is None
+        assert result.loc[3, "per_percentile"] is None
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None

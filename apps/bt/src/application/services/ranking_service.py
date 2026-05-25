@@ -56,7 +56,6 @@ from src.domains.analytics.value_composite_scoring import (
     build_value_composite_score_frame,
 )
 from src.application.services.ranking_value_composite_config import (
-    PRIME_VALUATION_PERCENTILE_COLUMNS as _PRIME_VALUATION_PERCENTILE_COLUMNS,
     VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
     VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
     VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
@@ -64,6 +63,9 @@ from src.application.services.ranking_value_composite_config import (
     VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD as _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD,
     VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
     ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
+)
+from src.application.services.ranking_valuation import (
+    with_prime_valuation_percentiles,
 )
 from src.application.services.ranking_liquidity import (
     PrimeLiquidityMetrics,
@@ -154,43 +156,6 @@ def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem
         volume=row["volume"],
         **{k: v for k, v in extra.items() if v is not None},
     )
-
-
-def _with_prime_valuation_percentiles(frame: pd.DataFrame) -> pd.DataFrame:
-    if frame.empty:
-        return frame
-    result = frame.copy()
-    for _, percentile_column in _PRIME_VALUATION_PERCENTILE_COLUMNS:
-        result[percentile_column] = None
-    if "market_code" not in result.columns:
-        return result
-
-    prime_mask = result["market_code"].map(
-        lambda value: _canonical_market_label(str(value)) == "prime"
-    )
-    if not bool(prime_mask.any()):
-        return result
-
-    for value_column, percentile_column in _PRIME_VALUATION_PERCENTILE_COLUMNS:
-        if value_column not in result.columns:
-            continue
-        values = pd.to_numeric(result.loc[prime_mask, value_column], errors="coerce")
-        valid_mask = values.map(
-            lambda value: pd.notna(value)
-            and math.isfinite(float(value))
-            and float(value) > 0
-        )
-        valid_values = values[valid_mask]
-        if valid_values.empty:
-            continue
-        if len(valid_values) == 1:
-            percentiles = pd.Series(0.0, index=valid_values.index)
-        else:
-            percentiles = (valid_values.rank(method="min") - 1.0) / (
-                len(valid_values) - 1.0
-            )
-        result.loc[percentiles.index, percentile_column] = percentiles.astype(float)
-    return result
 
 
 class RankingService:
@@ -1160,7 +1125,7 @@ class RankingService:
         )
         if valuation_frame.empty:
             return set()
-        valuation_frame = _with_prime_valuation_percentiles(valuation_frame)
+        valuation_frame = with_prime_valuation_percentiles(valuation_frame)
 
         enriched_codes: set[str] = set()
         for row in valuation_frame.to_dict("records"):
