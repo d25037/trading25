@@ -16,7 +16,6 @@ import pandas as pd
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
-    build_market_filter as _build_market_filter,
     canonical_market_label as _canonical_market_label,
     normalize_equity_code as _normalize_equity_code,
     normalized_code_sql as _normalized_code_sql,
@@ -32,6 +31,7 @@ from src.application.services.ranking_daily_queries import (
     ranking_by_trading_value_average as _ranking_by_trading_value_average_query,
 )
 from src.application.services.ranking_fundamental_queries import (
+    load_adjustment_events_by_code as _load_adjustment_events_by_code_query,
     load_adjusted_daily_valuation_frame as _load_adjusted_daily_valuation_frame_query,
     load_adjusted_statement_metric_rows as _load_adjusted_statement_metric_rows_query,
     load_fundamental_statement_rows as _load_fundamental_statement_rows_query,
@@ -142,69 +142,6 @@ class RankingService:
 
     def _table_exists(self, table_name: str) -> bool:
         return _table_exists_query(self._reader, table_name)
-
-    def _load_adjustment_events_by_code(
-        self,
-        *,
-        through_date: str,
-        market_codes: list[str],
-    ) -> dict[str, list[ShareAdjustmentEvent]]:
-        if not self._table_exists("stock_data_raw"):
-            return {}
-
-        market_clause, market_params = _build_market_filter(market_codes)
-        raw_normalized = _normalized_code_sql("raw.code")
-        stocks_normalized = _normalized_code_sql("s.code")
-        raw_prefer_4digit = _prefer_4digit_order_sql("raw.code")
-        stocks_prefer_4digit = _prefer_4digit_order_sql("s.code")
-        sql = f"""
-            WITH stocks_canonical AS (
-                SELECT code, normalized_code, market_code
-                FROM (
-                    SELECT
-                        code,
-                        market_code,
-                        {stocks_normalized} AS normalized_code,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {stocks_normalized}
-                            ORDER BY {stocks_prefer_4digit}
-                        ) AS rn
-                    FROM stocks s
-                )
-                WHERE rn = 1
-            ),
-            adjustment_canonical AS (
-                SELECT
-                    s.code,
-                    raw.date,
-                    raw.adjustment_factor,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY s.code, raw.date
-                        ORDER BY {raw_prefer_4digit}
-                    ) AS rn
-                FROM stock_data_raw raw
-                JOIN stocks_canonical s
-                    ON s.normalized_code = {raw_normalized}
-                WHERE raw.date <= ?
-                  AND raw.adjustment_factor IS NOT NULL
-                  AND raw.adjustment_factor != 1.0
-                  {market_clause}
-            )
-            SELECT code, date, adjustment_factor
-            FROM adjustment_canonical
-            WHERE rn = 1
-            ORDER BY code, date
-        """
-        grouped: dict[str, list[ShareAdjustmentEvent]] = {}
-        for row in self._reader.query(sql, (through_date, *market_params)):
-            code = _normalize_equity_code(row["code"])
-            grouped.setdefault(code, []).append(
-                ShareAdjustmentEvent(
-                    date=str(row["date"]),
-                    adjustment_factor=float(row["adjustment_factor"]),
-                )
-            )
-        return grouped
 
     def _resolve_stock_price_basis_date(self) -> str:
         row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
@@ -762,7 +699,8 @@ class RankingService:
             query_market_codes,
         )
         price_basis_date = self._resolve_stock_price_basis_date()
-        adjustment_events_by_code = self._load_adjustment_events_by_code(
+        adjustment_events_by_code = _load_adjustment_events_by_code_query(
+            self._reader,
             through_date=price_basis_date,
             market_codes=query_market_codes,
         )
@@ -812,7 +750,8 @@ class RankingService:
             if code in items_by_code and code not in enriched_codes:
                 raw_statements_by_code.setdefault(code, []).append(row)
 
-        adjustment_events_by_code = self._load_adjustment_events_by_code(
+        adjustment_events_by_code = _load_adjustment_events_by_code_query(
+            self._reader,
             through_date=price_basis_date,
             market_codes=query_market_codes,
         )
@@ -1016,7 +955,8 @@ class RankingService:
         statement_code = _normalized_code_sql("st.code")
         price_order = _prefer_4digit_order_sql("sd.code")
         statement_order = _prefer_4digit_order_sql("st.code")
-        adjustment_events_by_code = self._load_adjustment_events_by_code(
+        adjustment_events_by_code = _load_adjustment_events_by_code_query(
+            self._reader,
             through_date=price_basis_date,
             market_codes=prime_market_codes,
         )
@@ -1229,7 +1169,8 @@ class RankingService:
         if not statements:
             return "not_rankable"
 
-        adjustment_events_by_code = self._load_adjustment_events_by_code(
+        adjustment_events_by_code = _load_adjustment_events_by_code_query(
+            self._reader,
             through_date=price_basis_date,
             market_codes=query_market_codes,
         )

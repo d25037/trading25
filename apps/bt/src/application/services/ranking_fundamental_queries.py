@@ -9,11 +9,13 @@ import pandas as pd
 
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
+    normalize_equity_code,
     normalized_code_sql,
     prefer_4digit_order_sql,
     stock_data_dedup_cte,
     stocks_canonical_cte,
 )
+from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 FUNDAMENTAL_BASE_COLUMNS = (
@@ -33,6 +35,70 @@ def table_exists(reader: MarketDbReader, table_name: str) -> bool:
         (table_name,),
     )
     return row is not None
+
+
+def load_adjustment_events_by_code(
+    reader: MarketDbReader,
+    *,
+    through_date: str,
+    market_codes: list[str],
+) -> dict[str, list[ShareAdjustmentEvent]]:
+    if not table_exists(reader, "stock_data_raw"):
+        return {}
+
+    market_clause, market_params = build_market_filter(market_codes)
+    raw_normalized = normalized_code_sql("raw.code")
+    stocks_normalized = normalized_code_sql("s.code")
+    raw_prefer_4digit = prefer_4digit_order_sql("raw.code")
+    stocks_prefer_4digit = prefer_4digit_order_sql("s.code")
+    sql = f"""
+        WITH stocks_canonical AS (
+            SELECT code, normalized_code, market_code
+            FROM (
+                SELECT
+                    code,
+                    market_code,
+                    {stocks_normalized} AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {stocks_normalized}
+                        ORDER BY {stocks_prefer_4digit}
+                    ) AS rn
+                FROM stocks s
+            )
+            WHERE rn = 1
+        ),
+        adjustment_canonical AS (
+            SELECT
+                s.code,
+                raw.date,
+                raw.adjustment_factor,
+                ROW_NUMBER() OVER (
+                    PARTITION BY s.code, raw.date
+                    ORDER BY {raw_prefer_4digit}
+                ) AS rn
+            FROM stock_data_raw raw
+            JOIN stocks_canonical s
+                ON s.normalized_code = {raw_normalized}
+            WHERE raw.date <= ?
+              AND raw.adjustment_factor IS NOT NULL
+              AND raw.adjustment_factor != 1.0
+              {market_clause}
+        )
+        SELECT code, date, adjustment_factor
+        FROM adjustment_canonical
+        WHERE rn = 1
+        ORDER BY code, date
+    """
+    grouped: dict[str, list[ShareAdjustmentEvent]] = {}
+    for row in reader.query(sql, (through_date, *market_params)):
+        code = normalize_equity_code(row["code"])
+        grouped.setdefault(code, []).append(
+            ShareAdjustmentEvent(
+                date=str(row["date"]),
+                adjustment_factor=float(row["adjustment_factor"]),
+            )
+        )
+    return grouped
 
 
 def load_fundamental_stock_rows(
