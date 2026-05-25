@@ -24,7 +24,7 @@ from src.application.services.screening_default_markets import (
 )
 from src.application.services.screening_service import ScreeningService
 from src.application.services.strategy_dataset_metadata import format_market_scope_label
-from src.application.workers.job_runtime import record_elapsed_job_duration
+from src.application.workers.job_runtime import job_lifecycle_fields, record_elapsed_job_duration
 from src.shared.observability.correlation import get_correlation_id
 
 
@@ -195,12 +195,13 @@ class ScreeningJobService:
             elapsed_ms = _record_screening_job_duration(JobStatus.COMPLETED, started_at=started_at)
             logger.info(
                 f"Screening job completed: {job_id} ({elapsed_ms}ms)",
-                event="job_lifecycle",
-                jobType="screening",
-                jobId=job_id,
-                status=JobStatus.COMPLETED.value,
-                durationMs=elapsed_ms,
-                correlationId=get_correlation_id(),
+                **job_lifecycle_fields(
+                    "screening",
+                    job_id,
+                    JobStatus.COMPLETED.value,
+                    durationMs=elapsed_ms,
+                    correlationId=get_correlation_id(),
+                ),
             )
 
         except asyncio.CancelledError:
@@ -212,12 +213,13 @@ class ScreeningJobService:
             )
             logger.info(
                 f"Screening job cancelled: {job_id} ({elapsed_ms}ms)",
-                event="job_lifecycle",
-                jobType="screening",
-                jobId=job_id,
-                status=JobStatus.CANCELLED.value,
-                durationMs=elapsed_ms,
-                correlationId=get_correlation_id(),
+                **job_lifecycle_fields(
+                    "screening",
+                    job_id,
+                    JobStatus.CANCELLED.value,
+                    durationMs=elapsed_ms,
+                    correlationId=get_correlation_id(),
+                ),
             )
             raise
 
@@ -225,12 +227,13 @@ class ScreeningJobService:
             elapsed_ms = _record_screening_job_duration(JobStatus.FAILED, started_at=started_at)
             logger.exception(
                 f"Screening job failed: {job_id}",
-                event="job_lifecycle",
-                jobType="screening",
-                jobId=job_id,
-                status=JobStatus.FAILED.value,
-                durationMs=elapsed_ms,
-                correlationId=get_correlation_id(),
+                **job_lifecycle_fields(
+                    "screening",
+                    job_id,
+                    JobStatus.FAILED.value,
+                    durationMs=elapsed_ms,
+                    correlationId=get_correlation_id(),
+                ),
             )
             await self._manager.update_job_status(
                 job_id,

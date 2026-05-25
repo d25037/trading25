@@ -29,6 +29,21 @@ def record_elapsed_job_duration(job_type: str, status: str, *, started_at: float
     return duration_ms
 
 
+def job_lifecycle_fields(
+    job_type: str,
+    job_id: str,
+    status: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    return {
+        "event": "job_lifecycle",
+        "jobType": job_type,
+        "jobId": job_id,
+        "status": status,
+        **extra,
+    }
+
+
 def external_worker_lifecycle_fields(
     job_type: str,
     job_id: str,
@@ -37,15 +52,14 @@ def external_worker_lifecycle_fields(
     lease_owner: str,
     **extra: Any,
 ) -> dict[str, Any]:
-    return {
-        "event": "job_lifecycle",
-        "jobType": job_type,
-        "jobId": job_id,
-        "status": status,
-        "leaseOwner": lease_owner,
-        "executionMode": "external_worker",
+    return job_lifecycle_fields(
+        job_type,
+        job_id,
+        status,
+        leaseOwner=lease_owner,
+        executionMode="external_worker",
         **extra,
-    }
+    )
 
 
 def parse_json_object_arg(raw: str, *, label: str) -> dict[str, Any]:
