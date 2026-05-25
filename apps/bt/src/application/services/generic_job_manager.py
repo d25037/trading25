@@ -20,6 +20,9 @@ TData = TypeVar("TData")
 TProgress = TypeVar("TProgress")
 TResult = TypeVar("TResult")
 
+ACTIVE_GENERIC_JOB_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
+TERMINAL_GENERIC_JOB_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+
 
 @dataclass
 class JobInfo(Generic[TData, TProgress, TResult]):
@@ -47,7 +50,7 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
 
     def _get_inflight_job(self) -> JobInfo[TData, TProgress, TResult] | None:
         for job in self._jobs.values():
-            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+            if job.status in ACTIVE_GENERIC_JOB_STATUSES:
                 return job
             if job.task is not None and not job.task.done():
                 return job
@@ -77,13 +80,13 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
 
     def get_active_job(self) -> JobInfo[TData, TProgress, TResult] | None:
         for job in self._jobs.values():
-            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+            if job.status in ACTIVE_GENERIC_JOB_STATUSES:
                 return job
         return None
 
     def update_progress(self, job_id: str, progress: TProgress) -> None:
         job = self._jobs.get(job_id)
-        if job and job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        if job and job.status in ACTIVE_GENERIC_JOB_STATUSES:
             if job.status == JobStatus.PENDING:
                 job.status = JobStatus.RUNNING
                 job.started_at = datetime.now(UTC)
@@ -92,14 +95,14 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
 
     def complete_job(self, job_id: str, result: TResult) -> None:
         job = self._jobs.get(job_id)
-        if job and job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        if job and job.status in ACTIVE_GENERIC_JOB_STATUSES:
             job.status = JobStatus.COMPLETED
             job.result = result
             job.completed_at = datetime.now(UTC)
 
     def fail_job(self, job_id: str, error: str) -> None:
         job = self._jobs.get(job_id)
-        if job and job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        if job and job.status in ACTIVE_GENERIC_JOB_STATUSES:
             job.status = JobStatus.FAILED
             job.error = error
             job.completed_at = datetime.now(UTC)
@@ -109,7 +112,7 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         job = self._jobs.get(job_id)
         if job is None:
             return False
-        if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+        if job.status not in ACTIVE_GENERIC_JOB_STATUSES:
             return False
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now(UTC)
@@ -131,7 +134,7 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         """完了済みジョブを max_completed 超過分削除"""
         terminal = [
             j for j in self._jobs.values()
-            if j.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+            if j.status in TERMINAL_GENERIC_JOB_STATUSES
         ]
         terminal.sort(key=lambda j: j.completed_at or j.created_at)
         deleted = 0
@@ -144,5 +147,5 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
     async def shutdown(self) -> None:
         """アクティブジョブをキャンセル"""
         for job in list(self._jobs.values()):
-            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+            if job.status in ACTIVE_GENERIC_JOB_STATUSES:
                 await self.cancel_job(job.job_id)
