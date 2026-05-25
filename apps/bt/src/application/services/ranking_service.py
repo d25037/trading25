@@ -656,21 +656,10 @@ class RankingService:
             code,
             target_date,
         )
-        _, all_query_market_codes = resolve_market_codes(
-            "prime,standard,growth",
-            fallback=["prime", "standard", "growth"],
-        )
-        stock_rows = self._load_fundamental_stock_rows(
-            target_date, all_query_market_codes
-        )
         normalized_target_code = _normalize_equity_code(code)
-        target_stock = next(
-            (
-                row
-                for row in stock_rows
-                if _normalize_equity_code(row["code"]) == normalized_target_code
-            ),
-            None,
+        target_stock = self._load_value_composite_target_stock(
+            code,
+            target_date,
         )
         last_updated = _now_iso()
         if target_stock is None:
@@ -800,6 +789,21 @@ class RankingService:
         if row is None or row["max_date"] is None:
             return target_date
         return str(row["max_date"])
+
+    def _load_value_composite_target_stock(
+        self,
+        code: str,
+        target_date: str,
+    ) -> Mapping[str, Any] | None:
+        _, query_market_codes = resolve_market_codes(
+            "prime,standard,growth",
+            fallback=["prime", "standard", "growth"],
+        )
+        normalized_target_code = _normalize_equity_code(code)
+        for row in self._load_fundamental_stock_rows(target_date, query_market_codes):
+            if _normalize_equity_code(row["code"]) == normalized_target_code:
+                return row
+        return None
 
     def _load_value_composite_scored_frame(
         self,
