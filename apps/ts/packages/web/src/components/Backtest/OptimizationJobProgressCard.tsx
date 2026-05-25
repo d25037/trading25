@@ -5,7 +5,7 @@ import { VerificationSummarySection } from '@/components/VerificationSummarySect
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface OptimizationJobProgressCardProps {
   job: OptimizationJobResponse | null | undefined;

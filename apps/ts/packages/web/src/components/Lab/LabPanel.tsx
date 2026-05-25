@@ -14,7 +14,7 @@ import {
 import { useLabSSE } from '@/hooks/useLabSSE';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { LabType } from '@/types/backtest';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { LabEvolveForm } from './LabEvolveForm';
 import { LabGenerateForm } from './LabGenerateForm';
 import { LabImproveForm } from './LabImproveForm';

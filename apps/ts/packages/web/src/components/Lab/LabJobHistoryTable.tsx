@@ -1,7 +1,7 @@
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { JobStatus, LabJobResponse } from '@/types/backtest';
 import { formatDateTimeShort } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface LabJobHistoryTableProps {
   jobs: LabJobResponse[] | undefined;

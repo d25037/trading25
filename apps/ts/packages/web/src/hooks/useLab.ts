@@ -10,7 +10,7 @@ import type {
   LabSignalCategory,
   LabTargetScope,
 } from '@/types/backtest';
-import { isActiveJobStatus, resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
+import { isActiveJobStatus, resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 
 export const labKeys = {

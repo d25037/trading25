@@ -3,7 +3,7 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface SyncStatusCardProps {
   job: SyncJobResponse | null | undefined;

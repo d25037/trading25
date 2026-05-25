@@ -10,7 +10,7 @@ import type {
   DatasetListItem,
   DatasetListResponse,
 } from '@/types/dataset';
-import { resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
+import { resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 
 export const datasetKeys = {

@@ -39,7 +39,7 @@ import type {
   ScreeningParams,
   ScreeningResultItem,
 } from '@/types/screening';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 const subTabs = [
   { value: 'preOpenScreening' as ScreeningSubTab, label: 'Pre-Open Decidable', icon: Filter },

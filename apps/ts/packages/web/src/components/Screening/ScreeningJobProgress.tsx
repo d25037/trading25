@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { ScreeningJobResponse } from '@/types/screening';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface ScreeningJobProgressProps {
   job: ScreeningJobResponse | null;

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import type { JobStatus } from '@/types/backtest';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 interface LabJobProgressProps {
   status: JobStatus | null;

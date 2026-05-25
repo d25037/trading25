@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { isActiveJobStatus, isTerminalJobStatus, resolveActiveJobRefetchInterval } from './jobStatus';
+import { describe, expect, it } from 'bun:test';
+import { isActiveJobStatus, isTerminalJobStatus, resolveActiveJobRefetchInterval } from './job-status.js';
 
 describe('isActiveJobStatus', () => {
   it('matches pending and running statuses', () => {

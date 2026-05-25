@@ -8,7 +8,7 @@ import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { ApiError } from '@/lib/api-client';
 import { useBacktestStore } from '@/stores/backtestStore';
 import { formatElapsedSeconds } from '@/utils/formatters';
-import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 
 export function DatasetJobProgress() {
   const { activeDatasetJobId, setActiveDatasetJobId } = useBacktestStore();

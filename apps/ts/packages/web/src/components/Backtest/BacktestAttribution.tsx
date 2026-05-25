@@ -22,7 +22,7 @@ import type {
   SignalAttributionSignalResult,
 } from '@/types/backtest';
 import { formatElapsedSeconds, formatRate } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 import { AttributionArtifactBrowser } from './AttributionArtifactBrowser';
 import { StrategySelector } from './StrategySelector';
 

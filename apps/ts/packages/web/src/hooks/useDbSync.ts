@@ -15,7 +15,7 @@ import type {
   SyncFetchDetailsResponse,
   SyncJobResponse,
 } from '@/types/sync';
-import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 

@@ -55,7 +55,7 @@ import {
   formatOptionalTimestamp,
   formatRatioPercentage,
 } from '@/utils/formatters';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 const EMPTY_OPTIONS_225_STATS = {
   count: 0,

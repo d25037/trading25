@@ -20,7 +20,7 @@ import {
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { EnginePolicyMode } from '@/types/backtest';
-import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';

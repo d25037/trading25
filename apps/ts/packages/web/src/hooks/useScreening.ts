@@ -8,7 +8,7 @@ import type {
   ScreeningJobResponse,
   ScreeningParams,
 } from '@/types/screening';
-import { isTerminalJobStatus, resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
+import { isTerminalJobStatus, resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 import { type SseStreamControls, useSseStream } from './useSseStream';
 

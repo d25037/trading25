@@ -2,7 +2,7 @@ import { Ban, CheckCircle2, Clock, Loader2, RotateCw, XCircle } from 'lucide-rea
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus } from '@trading25/api-clients/base/job-status';
 
 export type JobHistoryStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | string;
 

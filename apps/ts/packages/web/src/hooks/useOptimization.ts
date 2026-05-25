@@ -15,7 +15,7 @@ import type {
   StrategyOptimizationSaveResponse,
   StrategyOptimizationStateResponse,
 } from '@/types/backtest';
-import { resolveActiveJobRefetchInterval } from '@/utils/jobStatus';
+import { resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { logger } from '@/utils/logger';
 
 // Query Keys
