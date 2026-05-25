@@ -3667,7 +3667,7 @@
         "type": "object"
       },
       "ErrorResponse": {
-        "description": "統一エラーレスポンス（Hono ErrorResponseSchema 互換）",
+        "description": "統一エラーレスポンス",
         "properties": {
           "correlationId": {
             "description": "リクエスト追跡用 UUID",

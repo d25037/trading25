@@ -1,7 +1,7 @@
 """
 Chart Response Schemas
 
-Hono hono-openapi-baseline.json と完全互換のレスポンススキーマ。
+Chart API レスポンススキーマ。
 """
 
 from __future__ import annotations

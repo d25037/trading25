@@ -44,9 +44,6 @@ if ! cmp -s "${tmp_openapi_norm}" "${tmp_snapshot_norm}"; then
   exit 1
 fi
 
-echo "[contract] Verify OpenAPI compatibility against frozen baseline"
-python3 "${repo_root}/scripts/verify-openapi-compat.py" --fastapi-file "${tmp_openapi}"
-
 echo "[contract] Regenerate TypeScript types from committed snapshot"
 (
   cd "${repo_root}/apps/ts"

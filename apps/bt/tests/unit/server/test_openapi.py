@@ -1,4 +1,4 @@
-"""OpenAPI スキーマ互換性テスト"""
+"""OpenAPI スキーマ契約テスト"""
 
 import pytest
 from fastapi import FastAPI
@@ -7,8 +7,7 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import _register_routes
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 
-# Hono baseline に存在する 10 operation tags
-HONO_OPERATION_TAGS = {
+REQUIRED_OPERATION_TAGS = {
     "Analytics",
     "Chart",
     "Database",
@@ -72,10 +71,10 @@ class TestOpenAPISchema:
         urls = [s["url"] for s in openapi_schema.get("servers", [])]
         assert "http://localhost:3002" in urls
 
-    def test_hono_operation_tags_defined(self, openapi_schema) -> None:
-        """Hono baseline の 10 operation tags が top-level tags に定義されていること"""
+    def test_required_operation_tags_defined(self, openapi_schema) -> None:
+        """公開 operation tags が top-level tags に定義されていること"""
         tag_names = {t["name"] for t in openapi_schema.get("tags", [])}
-        missing = HONO_OPERATION_TAGS - tag_names
+        missing = REQUIRED_OPERATION_TAGS - tag_names
         assert not missing, f"Missing tags: {missing}"
 
     def test_ohlcv_refs_are_stable_and_legacy_compatible(self, openapi_schema) -> None:

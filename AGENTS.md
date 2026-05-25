@@ -77,7 +77,6 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 - **命名規則**: `{domain}-{purpose}-v{N}.schema.json`
 - **現行追加契約**: `fundamentals-metrics-v2.schema.json`（fundamentals API 指標拡張、`bookToMarket` を削除）
 - **portfolio DB 契約 SoT**: `portfolio-db-schema-v2.json`（`jobs` テーブルを含む）
-- **アーカイブ**: `hono-openapi-baseline.json`（Phase 3 移行 baseline、参照用に保持）
 
 ## エラーレスポンス
 

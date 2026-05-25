@@ -4724,7 +4724,7 @@ export interface components {
         };
         /**
          * ErrorResponse
-         * @description 統一エラーレスポンス（Hono ErrorResponseSchema 互換）
+         * @description 統一エラーレスポンス
          */
         ErrorResponse: {
             /**

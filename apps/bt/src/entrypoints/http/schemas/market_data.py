@@ -1,7 +1,7 @@
 """
 Market Data Response Schemas
 
-Hono hono-openapi-baseline.json と完全互換のレスポンススキーマ。
+Market data レスポンススキーマ。
 """
 
 from __future__ import annotations

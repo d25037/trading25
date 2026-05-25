@@ -1,7 +1,7 @@
 """
 ROE Analytics Response Schemas
 
-Hono hono-openapi-baseline.json と完全互換の ROE 分析レスポンススキーマ。
+ROE 分析レスポンススキーマ。
 """
 
 from __future__ import annotations

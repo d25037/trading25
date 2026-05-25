@@ -1,7 +1,7 @@
 """
 Margin Analytics Response Schemas
 
-Hono hono-openapi-baseline.json と完全互換のマージン分析レスポンススキーマ。
+マージン分析レスポンススキーマ。
 """
 
 from __future__ import annotations

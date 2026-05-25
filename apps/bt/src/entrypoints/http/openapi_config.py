@@ -1,7 +1,7 @@
 """
 OpenAPI Configuration
 
-Hono baseline (contracts/hono-openapi-baseline.json) と互換の OpenAPI 設定を集中管理する。
+FastAPI OpenAPI 設定を集中管理する。
 ErrorResponse スキーマを全エンドポイントに共通注入する customize_openapi() も提供。
 """
 
@@ -10,9 +10,7 @@ from fastapi.openapi.utils import get_openapi
 
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
 
-# Hono baseline の 10 operation tags + bt 固有 8 タグ
 OPENAPI_TAGS: list[dict[str, str]] = [
-    # Hono 互換（operation tags 基準）
     {"name": "Health", "description": "Health check endpoints for service monitoring"},
     {"name": "JQuants Proxy", "description": "Layer 1 raw JQuants data for debugging and development"},
     {"name": "Moomoo OpenD", "description": "Read-only moomoo OpenD US market data for research"},
@@ -71,7 +69,7 @@ def _normalize_integral_floats(node):
 
 
 def _stabilize_schema_refs(schema: dict) -> None:
-    """ref名を legacy 互換へ寄せて、モジュール移設による差分ノイズを抑える。"""
+    """ref名を安定化し、モジュール移設による差分ノイズを抑える。"""
     components = schema.get("components", {})
     schemas: dict[str, dict] = components.get("schemas", {})
     if not schemas:
@@ -79,7 +77,7 @@ def _stabilize_schema_refs(schema: dict) -> None:
 
     rename_map: dict[str, str] = {}
 
-    # 旧 server 系プレフィックスに寄せる
+    # 過去に公開した server 系プレフィックスに寄せる
     for name in list(schemas.keys()):
         if name.startswith(_SCHEMA_PREFIX_NEW):
             rename_map[name] = name.replace(_SCHEMA_PREFIX_NEW, _SCHEMA_PREFIX_LEGACY, 1)

@@ -1,7 +1,7 @@
 """
 Unified Error Response Schema
 
-Hono ErrorResponseSchema と完全互換の統一エラーレスポンス定義。
+FastAPI 全エンドポイントで使う統一エラーレスポンス定義。
 """
 
 from typing import Literal
@@ -17,7 +17,7 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """統一エラーレスポンス（Hono ErrorResponseSchema 互換）"""
+    """統一エラーレスポンス"""
 
     status: Literal["error"] = Field(default="error", description="ステータス")
     error: str = Field(description="HTTP ステータステキスト（例: 'Not Found'）")
