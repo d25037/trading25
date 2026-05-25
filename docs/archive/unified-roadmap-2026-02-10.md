@@ -220,7 +220,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 0*
 
-- [x] OpenAPI 固定（Hono の openapi.json を `contracts/hono-openapi-baseline.json` として凍結）
+- [x] OpenAPI 固定（Hono の openapi.json を旧 `contracts/hono-openapi-baseline.json` として凍結。FastAPI 一本化後に baseline ファイルは削除済み）
 - [x] 既存 FastAPI エンドポイント vs Hono エンドポイント監査 — [`docs/archive/reports/phase2b-endpoint-audit.md`](./reports/phase2b-endpoint-audit.md)
 - [x] 例外レスポンスフォーマット統一（Hono 互換 6 フィールド + correlation ID ミドルウェア）
 - [x] FastAPI 側の既存エンドポイント一覧整理、競合パス明確化（重複: `/api/health` のみ）
@@ -235,7 +235,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 **成果物**:
 - [`contracts/README.md`](../../contracts/README.md) — ガバナンスルール・バージョニング方針・snapshot 方針
-- [`contracts/hono-openapi-baseline.json`](../../contracts/hono-openapi-baseline.json) — Hono OpenAPI 凍結ベースライン
+- 旧 `contracts/hono-openapi-baseline.json` — Hono OpenAPI 凍結ベースライン（FastAPI 一本化後に削除済み）
 - [`docs/archive/reports/phase2b-endpoint-audit.md`](./reports/phase2b-endpoint-audit.md) — エンドポイント監査レポート（Hono 90 + FastAPI 41）
 - 統一エラーレスポンス（Hono 互換 6 フィールド + correlation ID ミドルウェア）
 - ts-116 解消（OptimizationHtmlFile 型を bt OpenAPI に追加）
