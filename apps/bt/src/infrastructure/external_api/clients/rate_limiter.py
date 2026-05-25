@@ -2,7 +2,6 @@
 Async FIFO Rate Limiter
 
 JQuants API プランベースのレート制限を非同期で制御する。
-Hono BaseJQuantsClient.ts の RateLimitQueue と同等のロジック。
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ class RateLimiter:
 
     def __init__(self, plan: str = "free") -> None:
         rpm = self.PLAN_LIMITS.get(plan, 5)
-        # 10% safety margin (Hono 実装と同一)
+        # 10% safety margin
         self._interval: float = (60.0 / rpm) * 1.1
         self._lock = asyncio.Lock()
         self._last_request: float = 0.0

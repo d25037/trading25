@@ -2,7 +2,6 @@
 Chart Routes
 
 chart/indices, chart/stocks 系 5 ルート + analytics/sector-stocks 1 ルート。
-Hono chart ルートと互換。
 
 NOTE: /api/chart/stocks/search は /api/chart/stocks/{symbol} より先に登録。
 """

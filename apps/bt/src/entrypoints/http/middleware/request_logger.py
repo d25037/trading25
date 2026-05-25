@@ -1,7 +1,7 @@
 """
 Request Logger Middleware
 
-Hono の httpLogger と同等のリクエストロギングを提供する。
+FastAPI リクエストロギングを提供する。
 ログフォーマット: {method} {path} {status} {elapsed}ms
 構造化フィールド: correlationId, method, path, status, elapsed
 """

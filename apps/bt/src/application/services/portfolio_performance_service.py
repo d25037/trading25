@@ -2,7 +2,6 @@
 Portfolio Performance Service
 
 ポートフォリオの P&L 計算、ベンチマーク比較、時系列リターンを算出する。
-Hono portfolio/performance EP 互換。
 """
 
 from __future__ import annotations

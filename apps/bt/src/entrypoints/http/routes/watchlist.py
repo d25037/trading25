@@ -1,7 +1,7 @@
 """
 Watchlist API Routes
 
-Hono Watchlist API 互換の CRUD + Prices エンドポイント。
+Watchlist CRUD + Prices エンドポイント。
 Phase 3E-1: 7 CRUD EP, Phase 3E-2: 1 Prices EP
 """
 

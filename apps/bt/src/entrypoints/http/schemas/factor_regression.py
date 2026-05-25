@@ -1,7 +1,7 @@
 """
 Factor Regression Schemas
 
-Hono FactorRegressionResponse 互換のレスポンススキーマ。
+Factor Regression API のレスポンススキーマ。
 """
 
 from __future__ import annotations

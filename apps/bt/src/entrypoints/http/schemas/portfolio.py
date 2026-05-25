@@ -1,7 +1,7 @@
 """
 Portfolio Schemas
 
-Hono Portfolio API 互換のリクエスト/レスポンススキーマ。
+Portfolio API のリクエスト/レスポンススキーマ。
 """
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 Ranking Service
 
 DuckDB market data からランキングデータを取得するサービス。
-Hono MarketRankingService 互換。
 """
 
 from __future__ import annotations

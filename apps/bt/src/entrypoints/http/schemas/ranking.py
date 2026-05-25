@@ -1,7 +1,7 @@
 """
 Market Ranking Schemas
 
-Hono MarketRankingResponse 互換のレスポンススキーマ。
+Market Ranking API のレスポンススキーマ。
 """
 
 from __future__ import annotations

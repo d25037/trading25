@@ -2,7 +2,6 @@
 Watchlist Prices Service
 
 ウォッチリスト銘柄の最新価格と前日比を算出する。
-Hono watchlist/prices EP 互換。
 """
 
 from __future__ import annotations

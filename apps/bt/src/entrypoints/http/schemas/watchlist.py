@@ -1,7 +1,7 @@
 """
 Watchlist Schemas
 
-Hono Watchlist API 互換のリクエスト/レスポンススキーマ。
+Watchlist API のリクエスト/レスポンススキーマ。
 """
 
 from __future__ import annotations

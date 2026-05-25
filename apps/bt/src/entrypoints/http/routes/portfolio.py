@@ -1,7 +1,7 @@
 """
 Portfolio API Routes
 
-Hono Portfolio API 互換の CRUD + Performance エンドポイント。
+Portfolio CRUD + Performance エンドポイント。
 Phase 3E-1: 11 CRUD EP, Phase 3E-2: 1 Performance EP
 """
 

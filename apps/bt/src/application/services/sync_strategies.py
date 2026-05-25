@@ -2,7 +2,6 @@
 Sync Strategies
 
 DuckDB market data 同期のための 3 つの戦略。
-Hono sync-strategies.ts からの移植。
 """
 
 from __future__ import annotations

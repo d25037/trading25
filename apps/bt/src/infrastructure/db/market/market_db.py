@@ -20,7 +20,7 @@ import pandas as pd
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.utils.market_code_alias import expand_market_codes
 
-# Hono 互換 metadata キー
+# Market sync metadata keys
 METADATA_KEYS = {
     "INIT_COMPLETED": "init_completed",
     "LAST_SYNC_DATE": "last_sync_date",

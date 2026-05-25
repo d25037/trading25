@@ -4,8 +4,6 @@ Factor Regression Service
 2段階ファクター回帰分析サービス。
 Stage 1: 市場回帰（銘柄リターン vs TOPIX）
 Stage 2: 残差ファクターマッチング（残差 vs 各指数カテゴリ）
-
-Hono performFactorRegression / FactorRegressionService 互換。
 """
 
 from __future__ import annotations

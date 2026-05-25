@@ -2,7 +2,7 @@
 Dataset Data Schemas
 
 Dataset Data エンドポイント（15 EP）のレスポンススキーマ。
-camelCase フィールド名は Hono 互換。
+camelCase フィールド名は public API contract として維持する。
 """
 
 from __future__ import annotations

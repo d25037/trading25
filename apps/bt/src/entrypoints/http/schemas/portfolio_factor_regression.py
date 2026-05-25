@@ -1,7 +1,7 @@
 """
 Portfolio Factor Regression Schemas
 
-Hono Portfolio Factor Regression API 互換のレスポンススキーマ。
+Portfolio Factor Regression API のレスポンススキーマ。
 """
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 Market Data Routes
 
 DuckDB market time-series から株式・TOPIX データを提供する 4 エンドポイント。
-Hono /api/market/ ルートと互換。
 """
 
 from __future__ import annotations

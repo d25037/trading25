@@ -2,7 +2,6 @@
 JQuants Proxy Service
 
 JQuants API 生データの取得・変換ロジック。
-Hono の Layer 1 JQuants Proxy と同等の機能を提供する。
 """
 
 from __future__ import annotations

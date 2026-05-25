@@ -1,7 +1,7 @@
 """
 Dataset Presets
 
-Hono の 9 プリセットを Python 辞書で定義。
+Dataset snapshot 作成で使う標準プリセット定義。
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """
 JQuants Proxy Routes
 
-Hono Layer 1: JQuants Proxy API の移植。
+JQuants Proxy API。
 10 エンドポイント: auth/status, daily-quotes, minute-bars, indices,
                    listed-info, margin-interest, statements,
                    statements/raw, topix, options/225
@@ -90,7 +90,7 @@ async def get_indices(
     date: str | None = Query(None, description="Specific date (YYYY-MM-DD)"),
 ) -> ApiIndicesResponse:
     """指数データを取得"""
-    # Date range validation (Hono 互換)
+    # Date range validation
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="'from' date must be before or equal to 'to' date")
     service = _get_proxy_service(request)

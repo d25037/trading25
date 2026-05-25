@@ -3,8 +3,6 @@ Portfolio Factor Regression Service
 
 ポートフォリオ全体のファクター回帰分析。
 加重平均ポートフォリオリターンを算出し、市場回帰 → 残差ファクターマッチングを実行。
-
-Hono portfolio-factor-regression EP 互換。
 """
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 Market Data Service
 
 DuckDB market time-series から株式・TOPIX データを読み取るサービス。
-Hono market-data-service.ts と同等のロジック。
 """
 
 from __future__ import annotations

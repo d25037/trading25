@@ -1,7 +1,7 @@
 """
 Portfolio Performance Schemas
 
-Hono Portfolio Performance API 互換のレスポンススキーマ。
+Portfolio Performance API のレスポンススキーマ。
 """
 
 from __future__ import annotations
