@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { usePortfolioFactorRegression } from '@/hooks/usePortfolioFactorRegression';
 import { formatCurrency, formatRatioPercentage } from '@/utils/formatters';
+import { getBetaColor, getBetaInterpretation, getRSquaredColor } from '../Chart/factorRegressionDisplay';
 
 interface PortfolioFactorRegressionPanelProps {
   portfolioId: number | null;
@@ -39,34 +40,6 @@ function normalizeIndexMatch(match: ApiIndexMatch, index: number): NormalizedInd
   const rSquared = isFiniteNumber(raw.rSquared) ? raw.rSquared : null;
   const beta = isFiniteNumber(raw.beta) ? raw.beta : null;
   return { indexCode, indexName, rSquared, beta };
-}
-
-/**
- * Get color class for R-squared value
- */
-function getRSquaredColor(rSquared: number): string {
-  const pct = rSquared * 100;
-  if (pct >= 30) return 'text-green-500';
-  if (pct >= 10) return 'text-yellow-500';
-  return 'text-muted-foreground';
-}
-
-/**
- * Get color class for beta interpretation
- */
-function getBetaColor(beta: number): string {
-  if (beta > 1.2) return 'text-red-500';
-  if (beta > 0.8) return 'text-yellow-500';
-  return 'text-green-500';
-}
-
-/**
- * Get beta interpretation label
- */
-function getBetaInterpretation(beta: number): string {
-  if (beta > 1.2) return 'High sensitivity';
-  if (beta > 0.8) return 'Moderate sensitivity';
-  return 'Low sensitivity';
 }
 
 /**
