@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import socket
 from contextlib import suppress
 from datetime import datetime
 from time import perf_counter
@@ -27,6 +26,7 @@ from src.application.workers.job_runtime import (
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
+    worker_lease_owner,
 )
 from src.shared.config.settings import get_settings
 
@@ -142,7 +142,7 @@ async def run_backtest_worker(
         owns_portfolio_db = True
     resolved_runner = runner or BacktestRunner()
     resolved_nautilus_runner = nautilus_runner or NautilusVerificationRunner()
-    lease_owner = f"backtest-worker:{socket.gethostname()}:{os.getpid()}"
+    lease_owner = worker_lease_owner("backtest-worker")
 
     heartbeat_task: asyncio.Task[None] | None = None
     started_at = perf_counter()

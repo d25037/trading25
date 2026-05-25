@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import socket
 from contextlib import suppress
 from datetime import datetime
 from time import perf_counter
@@ -42,6 +41,7 @@ from src.application.workers.job_runtime import (
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
+    worker_lease_owner,
 )
 
 _HEARTBEAT_SECONDS = 5.0
@@ -322,7 +322,7 @@ async def run_lab_worker(
         resolved_manager.set_portfolio_db(portfolio_db)
         owns_portfolio_db = True
     resolved_service = service or LabService(manager=resolved_manager, max_workers=1)
-    lease_owner = f"lab-worker:{socket.gethostname()}:{os.getpid()}"
+    lease_owner = worker_lease_owner("lab-worker")
     heartbeat_task: asyncio.Task[None] | None = None
     started_at = perf_counter()
     try:

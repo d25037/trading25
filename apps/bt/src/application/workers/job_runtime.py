@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
 from datetime import datetime
 from time import perf_counter
 from typing import Any
@@ -27,6 +29,10 @@ def record_elapsed_job_duration(job_type: str, status: str, *, started_at: float
     duration_ms = elapsed_ms_since(started_at)
     record_job_duration(job_type, status, duration_ms)
     return duration_ms
+
+
+def worker_lease_owner(worker_name: str) -> str:
+    return f"{worker_name}:{socket.gethostname()}:{os.getpid()}"
 
 
 def job_lifecycle_fields(

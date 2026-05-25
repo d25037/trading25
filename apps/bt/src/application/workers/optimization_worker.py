@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import socket
 from contextlib import suppress
 from datetime import datetime
 from time import perf_counter
@@ -36,6 +35,7 @@ from src.application.workers.job_runtime import (
     parse_json_object_arg,
     record_elapsed_job_duration,
     record_job_duration,
+    worker_lease_owner,
 )
 from src.shared.config.settings import get_settings
 
@@ -189,7 +189,7 @@ async def run_optimization_worker(
         resolved_manager.set_portfolio_db(portfolio_db)
         owns_portfolio_db = True
 
-    lease_owner = f"optimization-worker:{socket.gethostname()}:{os.getpid()}"
+    lease_owner = worker_lease_owner("optimization-worker")
     heartbeat_task: asyncio.Task[None] | None = None
     started_at = perf_counter()
     resolved_engine_policy = engine_policy or EnginePolicy()
