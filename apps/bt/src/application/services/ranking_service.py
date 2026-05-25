@@ -108,9 +108,6 @@ class RankingService:
         self._fundamental_calculator = FundamentalRankingCalculator()
         self._valuation_calculator = FundamentalsCalculator()
 
-    def _table_exists(self, table_name: str) -> bool:
-        return _table_exists_query(self._reader, table_name)
-
     def get_rankings(
         self,
         date: str | None = None,
@@ -255,7 +252,7 @@ class RankingService:
                 )
         index_performance = load_index_performance(
             self._reader,
-            table_exists=self._table_exists,
+            table_exists=lambda table_name: _table_exists_query(self._reader, table_name),
             date=target_date,
             lookback_days=lookback_days,
         )
@@ -305,7 +302,7 @@ class RankingService:
         )
         can_use_adjusted_valuation = not adjusted_valuation.empty and (
             not forecast_above_recent_fy_actuals
-            or self._table_exists("statement_metrics_adjusted")
+            or _table_exists_query(self._reader, "statement_metrics_adjusted")
         )
         if can_use_adjusted_valuation:
             ratio_candidates = _build_adjusted_fundamental_ratio_candidates(
