@@ -26,6 +26,9 @@ from src.application.services.ranking_service import (
 from src.application.services.ranking_query_helpers import (
     build_market_filter,
 )
+from src.application.services.ranking_value_composite_config import (
+    VALUE_COMPOSITE_PROFILE_BY_ID,
+)
 
 
 @pytest.fixture
@@ -2549,6 +2552,11 @@ class TestRankingHelperBranches:
         assert _is_valid_share_count(0.0) is False
         assert _adjust_per_share_value(10.128, None, 100.0) == 10.13
         assert _to_nullable_float(_BadFloat()) is None
+
+    def test_value_composite_config_exports_profiles(self):
+        profile = VALUE_COMPOSITE_PROFILE_BY_ID["prime_size75_forward_per25"]
+        assert profile.score_method == "prime_size75_forward_per25"
+        assert profile.rebalance_months == 2
         assert _calculate_eps_ratio(float("nan"), 1.0) is None
         assert _calculate_eps_ratio(1.0, 0.0) is None
         assert _calculate_eps_ratio(1e308, 2e-12) is None

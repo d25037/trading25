@@ -52,13 +52,21 @@ from src.domains.analytics.fundamental_ranking import (
     to_nullable_float as _to_nullable_float,
 )
 from src.domains.analytics.value_composite_scoring import (
-    EQUAL_VALUE_COMPOSITE_WEIGHTS,
-    PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
-    PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
-    STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
     VALUE_COMPOSITE_SCORE_COLUMN,
     VALUE_COMPOSITE_REQUIRED_POSITIVE_COLUMNS,
     build_value_composite_score_frame,
+)
+from src.application.services.ranking_value_composite_config import (
+    OVERHEAT_RISK_FLAG,
+    PRIME_VALUATION_PERCENTILE_COLUMNS as _PRIME_VALUATION_PERCENTILE_COLUMNS,
+    SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
+    VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET as _VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET,
+    VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS as _VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS,
+    VALUE_COMPOSITE_METRIC_KEY as _VALUE_COMPOSITE_METRIC_KEY,
+    VALUE_COMPOSITE_PROFILE_BY_ID as _VALUE_COMPOSITE_PROFILE_BY_ID,
+    VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD as _VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD,
+    VALUE_COMPOSITE_WEIGHTS_BY_METHOD as _VALUE_COMPOSITE_WEIGHTS_BY_METHOD,
+    ValueCompositeProfileSpec as _ValueCompositeProfileSpec,
 )
 from src.entrypoints.http.schemas.ranking import (
     IndexPerformanceItem,
@@ -133,87 +141,6 @@ FUNDAMENTAL_BASE_COLUMNS = (
 
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
-_VALUE_COMPOSITE_METRIC_KEY = "standard_value_composite"
-_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX = (
-    "requires PBR > 0 and forward PER > 0"
-)
-
-
-@dataclass(frozen=True)
-class _ValueCompositeProfileSpec:
-    profile_id: ValueCompositeProfileId
-    label: str
-    score_method: ValueCompositeScoreMethod
-    rebalance_months: int
-    min_adv60_mil_jpy: float | None = None
-    breakout_window: int | None = None
-    breakout_lookback_sessions: int | None = None
-    breakout_score_boost: float | None = None
-
-
-_VALUE_COMPOSITE_WEIGHTS_BY_METHOD: dict[
-    ValueCompositeScoreMethod, dict[str, float]
-] = {
-    "standard_pbr_tilt": STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
-    "prime_size_tilt": PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
-    "prime_size75_forward_per25": PRIME_SIZE75_FORWARD_PER25_VALUE_COMPOSITE_WEIGHTS,
-    "equal_weight": EQUAL_VALUE_COMPOSITE_WEIGHTS,
-}
-_VALUE_COMPOSITE_AUTO_SCORE_METHOD_BY_MARKET: dict[str, ValueCompositeScoreMethod] = {
-    "prime": "prime_size_tilt",
-    "standard": "standard_pbr_tilt",
-}
-_VALUE_COMPOSITE_SCORE_POLICY_BY_METHOD: dict[ValueCompositeScoreMethod, str] = {
-    "standard_pbr_tilt": (
-        "Standard PBR tilt research weights: 35% small market cap + 40% low PBR + "
-        f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
-    ),
-    "prime_size_tilt": (
-        "Prime size tilt research weights: 46.5% small market cap + 5% low PBR + "
-        f"48.5% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
-    ),
-    "prime_size75_forward_per25": (
-        "Prime production candidate weights: 75% small market cap + 0% low PBR + "
-        f"25% low forward PER; {_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
-    ),
-    "equal_weight": (
-        "Equal weight across small market cap, low PBR, and low forward PER; "
-        f"{_VALUE_COMPOSITE_SCORE_POLICY_SUFFIX}"
-    ),
-}
-_VALUE_COMPOSITE_PROFILE_BY_ID: dict[ValueCompositeProfileId, _ValueCompositeProfileSpec] = {
-    "standard_breakout_120d20": _ValueCompositeProfileSpec(
-        profile_id="standard_breakout_120d20",
-        label="Standard value + 120d breakout boost",
-        score_method="prime_size_tilt",
-        rebalance_months=3,
-        min_adv60_mil_jpy=10.0,
-        breakout_window=120,
-        breakout_lookback_sessions=20,
-        breakout_score_boost=0.10,
-    ),
-    "prime_size75_forward_per25": _ValueCompositeProfileSpec(
-        profile_id="prime_size75_forward_per25",
-        label="Prime size75 / forward PER25",
-        score_method="prime_size75_forward_per25",
-        rebalance_months=2,
-        min_adv60_mil_jpy=10.0,
-    ),
-}
-_VALUE_COMPOSITE_FORWARD_EPS_MODE_LABELS: dict[ValueCompositeForwardEpsMode, str] = {
-    "latest": "latest revised forecast EPS when available, otherwise FY forecast EPS",
-    "fy": "latest FY forecast EPS only",
-}
-SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
-OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
-_PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("per", "per_percentile"),
-    ("forward_per", "forward_per_percentile"),
-    ("forward_p_op", "forward_p_op_percentile"),
-    ("pbr", "pbr_percentile"),
-)
-
-
 def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
     """DB行をRankingItemに変換"""
     return RankingItem(
