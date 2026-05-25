@@ -1,4 +1,4 @@
-import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
@@ -16,26 +16,10 @@ interface ScreeningJobStatusInlineProps {
   job: ScreeningJobResponse;
 }
 
-function StatusIcon({ status }: { status: ScreeningJobResponse['status'] }) {
-  switch (status) {
-    case 'pending':
-    case 'running':
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case 'failed':
-      return <XCircle className="h-4 w-4 text-red-500" />;
-    case 'cancelled':
-      return <Ban className="h-4 w-4 text-orange-500" />;
-    default:
-      return null;
-  }
-}
-
 export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps) {
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-border/70 bg-[var(--app-surface-muted)] px-3 py-2 text-sm">
-      <StatusIcon status={job.status} />
+      <JobStatusIcon status={job.status} size="sm" />
       <span className="font-medium">Screening Job: {job.status}</span>
     </div>
   );
@@ -57,7 +41,7 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
           <div className="space-y-1">
             <SectionEyebrow>Current Job</SectionEyebrow>
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <StatusIcon status={job.status} />
+              <JobStatusIcon status={job.status} size="sm" />
               <span>Screening Job: {job.status}</span>
             </div>
           </div>

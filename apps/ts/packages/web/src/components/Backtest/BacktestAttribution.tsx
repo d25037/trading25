@@ -1,5 +1,6 @@
-import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
+import { ChevronDown, GitBranch } from 'lucide-react';
 import { type ComponentProps, useMemo, useState } from 'react';
+import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { SectionEyebrow, SegmentedTabs, Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +17,6 @@ import {
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type {
-  JobStatus,
   SignalAttributionJobResponse,
   SignalAttributionResult,
   SignalAttributionSignalResult,
@@ -40,22 +40,6 @@ type ParsedRunParameters = {
   permutations: number;
   randomSeed: number | null;
 };
-
-function StatusIcon({ status }: { status: JobStatus }) {
-  switch (status) {
-    case 'pending':
-    case 'running':
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case 'cancelled':
-      return <Ban className="h-4 w-4 text-orange-500" />;
-    case 'failed':
-      return <XCircle className="h-4 w-4 text-red-500" />;
-    default:
-      return <AlertCircle className="h-4 w-4 text-yellow-500" />;
-  }
-}
 
 function formatSigned(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
@@ -288,7 +272,7 @@ function AttributionJobCard({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <StatusIcon status={activeJob.status} />
+            <JobStatusIcon status={activeJob.status} size="sm" showUnknown />
             <span className="capitalize">{activeJob.status}</span>
           </CardTitle>
           {isActive && (

@@ -1,4 +1,5 @@
-import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { XCircle } from 'lucide-react';
+import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
@@ -15,22 +16,6 @@ interface LabJobProgressProps {
   startedAt?: string | null;
   onCancel?: () => void;
   isCancelling?: boolean;
-}
-
-function ProgressStatusIcon({ status }: { status: JobStatus }) {
-  switch (status) {
-    case 'pending':
-    case 'running':
-      return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-5 w-5 text-green-500" />;
-    case 'failed':
-      return <XCircle className="h-5 w-5 text-red-500" />;
-    case 'cancelled':
-      return <Ban className="h-5 w-5 text-orange-500" />;
-    default:
-      return null;
-  }
 }
 
 function resolveStageLabel(status: JobStatus, message: string | null): string | null {
@@ -62,7 +47,7 @@ export function LabJobProgress({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ProgressStatusIcon status={status} />
+            <JobStatusIcon status={status} />
             <CardTitle className="text-lg capitalize">{status}</CardTitle>
           </div>
           {isActive && (

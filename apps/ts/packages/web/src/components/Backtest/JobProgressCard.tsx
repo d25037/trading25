@@ -1,4 +1,5 @@
-import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { Loader2, XCircle } from 'lucide-react';
+import { JobStatusIcon } from '@/components/Jobs/JobStatusIcon';
 import { Surface } from '@/components/Layout/Workspace';
 import { Button } from '@/components/ui/button';
 import { useElapsedSeconds } from '@/hooks/useElapsedSeconds';
@@ -15,22 +16,6 @@ interface JobProgressCardProps {
 
 function formatRatio(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-';
-}
-
-function StatusIcon({ status }: { status: JobStatus }) {
-  switch (status) {
-    case 'pending':
-    case 'running':
-      return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-5 w-5 text-green-500" />;
-    case 'failed':
-      return <XCircle className="h-5 w-5 text-red-500" />;
-    case 'cancelled':
-      return <Ban className="h-5 w-5 text-orange-500" />;
-    default:
-      return <AlertCircle className="h-5 w-5 text-yellow-500" />;
-  }
 }
 
 function StatusLabel({ status }: { status: JobStatus }) {
@@ -130,7 +115,7 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
     <Surface className="mt-4 p-4 sm:p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <StatusIcon status={job.status} />
+          <JobStatusIcon status={job.status} showUnknown />
           <h3 className="text-lg font-semibold tracking-tight text-foreground">
             <StatusLabel status={job.status} />
           </h3>
