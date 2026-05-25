@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from collections.abc import Mapping
-from typing import Any, Literal, cast
+from typing import Any
 
 import pandas as pd
 
@@ -82,13 +82,11 @@ from src.application.services.ranking_value_composite_metrics import (
     resolve_value_composite_target_date as _resolve_value_composite_target_date_query,
 )
 from src.application.services.ranking_valuation import (
-    with_prime_valuation_percentiles,
+    enrich_items_from_adjusted_daily_valuation as _enrich_items_from_adjusted_daily_valuation,
 )
 from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
     build_value_composite_score_response,
-    finite_or_none as _finite_or_none,
-    str_or_none as _str_or_none,
 )
 from src.application.services.ranking_statement_selection import (
     latest_value_bps_statement,
@@ -681,7 +679,8 @@ class RankingService:
         if not items_by_code:
             return
 
-        enriched_codes = self._enrich_items_from_adjusted_daily_valuation(
+        enriched_codes = _enrich_items_from_adjusted_daily_valuation(
+            self._reader,
             items_by_code,
             target_date=target_date,
             query_market_codes=query_market_codes,
@@ -734,52 +733,6 @@ class RankingService:
                 item.forwardEpsSource = valuation.forwardEpsSource
                 item.pbr = valuation.pbr
                 item.marketCap = valuation.marketCap
-
-    def _enrich_items_from_adjusted_daily_valuation(
-        self,
-        items_by_code: Mapping[str, list[RankingItem]],
-        *,
-        target_date: str,
-        query_market_codes: list[str],
-    ) -> set[str]:
-        valuation_frame = _load_adjusted_daily_valuation_frame_query(
-            self._reader,
-            target_date,
-            query_market_codes,
-        )
-        if valuation_frame.empty:
-            return set()
-        valuation_frame = with_prime_valuation_percentiles(valuation_frame)
-
-        enriched_codes: set[str] = set()
-        for row in valuation_frame.to_dict("records"):
-            code = _normalize_equity_code(row.get("code"))
-            items = items_by_code.get(code)
-            if not items:
-                continue
-            raw_source = _str_or_none(row.get("forward_eps_source"))
-            source = raw_source if raw_source in ("revised", "fy") else None
-            for item in items:
-                item.per = _finite_or_none(row.get("per"))
-                item.perPercentile = _finite_or_none(row.get("per_percentile"))
-                item.forwardPer = _finite_or_none(row.get("forward_per"))
-                item.forwardPerPercentile = _finite_or_none(
-                    row.get("forward_per_percentile")
-                )
-                item.pOp = _finite_or_none(row.get("p_op"))
-                item.forwardPOp = _finite_or_none(row.get("forward_p_op"))
-                item.forwardPOpPercentile = _finite_or_none(
-                    row.get("forward_p_op_percentile")
-                )
-                item.forwardEpsDisclosedDate = _str_or_none(
-                    row.get("forward_eps_disclosed_date")
-                )
-                item.forwardEpsSource = cast(Literal["revised", "fy"] | None, source)
-                item.pbr = _finite_or_none(row.get("pbr"))
-                item.pbrPercentile = _finite_or_none(row.get("pbr_percentile"))
-                item.marketCap = _finite_or_none(row.get("market_cap"))
-            enriched_codes.add(code)
-        return enriched_codes
 
     def _enrich_ranking_collections_with_prime_liquidity(
         self,
