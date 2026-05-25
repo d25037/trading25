@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { formatMarketsLabel } from '@/lib/marketUtils';
 import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
+import { formatDateTimeShort } from '@/utils/formatters';
 
 interface ScreeningJobHistoryTableProps {
   entryDecidability: EntryDecidability;
@@ -14,16 +15,6 @@ interface ScreeningJobHistoryTableProps {
   onShowHistoryChange: (showHistory: boolean) => void;
   selectedJobId?: string | null;
   onSelectJob: (job: ScreeningJobResponse) => void;
-}
-
-function formatDate(dateString: string | null | undefined): string {
-  if (!dateString) return '-';
-  return new Date(dateString).toLocaleString('ja-JP', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function truncateJobId(jobId: string): string {
@@ -65,7 +56,7 @@ export function ScreeningJobHistoryTable({
     {
       key: 'createdAt',
       header: 'Created',
-      render: (job) => <span className="text-sm">{formatDate(job.created_at)}</span>,
+      render: (job) => <span className="text-sm">{formatDateTimeShort(job.created_at)}</span>,
     },
   ];
 

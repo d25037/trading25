@@ -1,23 +1,12 @@
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
-import { formatPercentage } from '@/utils/formatters';
+import { formatDateTimeShort, formatPercentage } from '@/utils/formatters';
 
 interface JobsTableProps {
   jobs: BacktestJobResponse[] | undefined;
   isLoading: boolean;
   onSelectJob: (jobId: string) => void;
   selectedJobId?: string | null;
-}
-
-function formatDate(dateString: string | null | undefined): string {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleString('ja-JP', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function formatReturn(result: BacktestJobResponse['result']): string {
@@ -40,7 +29,7 @@ export function JobsTable({ jobs, isLoading, onSelectJob, selectedJobId }: JobsT
     {
       key: 'startedAt',
       header: 'Started',
-      render: (job) => <span className="text-sm">{formatDate(job.started_at)}</span>,
+      render: (job) => <span className="text-sm">{formatDateTimeShort(job.started_at)}</span>,
     },
     {
       key: 'totalReturn',

@@ -1,5 +1,6 @@
 import { type JobHistoryColumn, JobHistoryTable } from '@/components/Jobs/JobHistoryTable';
 import type { JobStatus, LabJobResponse } from '@/types/backtest';
+import { formatDateTimeShort } from '@/utils/formatters';
 import { isActiveJobStatus } from '@/utils/jobStatus';
 
 interface LabJobHistoryTableProps {
@@ -9,17 +10,6 @@ interface LabJobHistoryTableProps {
   selectedJobId?: string | null;
   onSelectJob: (job: LabJobResponse) => void;
   onRefresh: () => void;
-}
-
-function formatDate(dateString?: string): string {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleString('ja-JP', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function resolveVerificationLabel(job: LabJobResponse): string {
@@ -61,7 +51,7 @@ export function LabJobHistoryTable({
     {
       key: 'createdAt',
       header: 'Created',
-      render: (job) => <span className="text-sm">{formatDate(job.created_at)}</span>,
+      render: (job) => <span className="text-sm">{formatDateTimeShort(job.created_at)}</span>,
     },
     {
       key: 'verification',

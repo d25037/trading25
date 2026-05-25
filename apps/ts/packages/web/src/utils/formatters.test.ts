@@ -3,6 +3,7 @@ import {
   formatBytes,
   formatCurrency,
   formatDateShort,
+  formatDateTimeShort,
   formatElapsedSeconds,
   formatFundamentalValue,
   formatInteger,
@@ -179,6 +180,18 @@ describe('formatDateShort', () => {
   it('formats date as MM/DD', () => {
     const result = formatDateShort('2024-03-15');
     expect(result).toBe('03/15');
+  });
+});
+
+describe('formatDateTimeShort', () => {
+  it('formats timestamp as short date and time', () => {
+    expect(formatDateTimeShort('2024-03-15T09:30:00')).toContain('03/15');
+    expect(formatDateTimeShort('2024-03-15T09:30:00')).toContain('09:30');
+  });
+
+  it('returns - for missing timestamp', () => {
+    expect(formatDateTimeShort(null)).toBe('-');
+    expect(formatDateTimeShort(undefined)).toBe('-');
   });
 });
 
