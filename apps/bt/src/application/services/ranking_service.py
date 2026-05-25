@@ -47,7 +47,6 @@ from src.shared.utils.share_adjustment import (
 )
 from src.domains.fundamentals import (
     FundamentalsCalculator,
-    market_statement_row_to_jquants_statement,
 )
 from src.domains.analytics.fundamental_ranking import (
     FundamentalItem,
@@ -83,6 +82,7 @@ from src.application.services.ranking_value_composite_metrics import (
 )
 from src.application.services.ranking_valuation import (
     enrich_items_from_adjusted_daily_valuation as _enrich_items_from_adjusted_daily_valuation,
+    enrich_items_from_statement_valuation as _enrich_items_from_statement_valuation,
 )
 from src.application.services.ranking_response_items import (
     build_ranked_fundamental_items as _build_ranked_fundamental_items,
@@ -688,51 +688,15 @@ class RankingService:
         if len(enriched_codes) == len(items_by_code):
             return
 
-        statement_rows = _load_fundamental_statement_rows_query(
+        _enrich_items_from_statement_valuation(
             self._reader,
-            target_date,
-            query_market_codes,
+            self._valuation_calculator,
+            items_by_code,
+            enriched_codes,
+            target_date=target_date,
+            query_market_codes=query_market_codes,
+            price_basis_date=price_basis_date,
         )
-        raw_statements_by_code: dict[str, list[Mapping[str, Any]]] = {}
-        for row in statement_rows:
-            code = _normalize_equity_code(row["code"])
-            if code in items_by_code and code not in enriched_codes:
-                raw_statements_by_code.setdefault(code, []).append(row)
-
-        adjustment_events_by_code = _load_adjustment_events_by_code_query(
-            self._reader,
-            through_date=price_basis_date,
-            market_codes=query_market_codes,
-        )
-
-        for code, items in items_by_code.items():
-            raw_statements = raw_statements_by_code.get(code)
-            if not raw_statements:
-                continue
-            statements = [
-                market_statement_row_to_jquants_statement(row, code_fallback=code)
-                for row in raw_statements
-            ]
-            reference_item = items[0]
-            valuation = self._valuation_calculator.calculate_latest_valuation(
-                statements,
-                close=reference_item.currentPrice,
-                price_date=target_date,
-                prefer_consolidated=True,
-                share_adjustment_events=adjustment_events_by_code.get(code, []),
-                price_basis_date=price_basis_date,
-            )
-            if valuation is None:
-                continue
-            for item in items:
-                item.per = valuation.per
-                item.forwardPer = valuation.forwardPer
-                item.pOp = valuation.pOp
-                item.forwardPOp = valuation.forwardPOp
-                item.forwardEpsDisclosedDate = valuation.forwardEpsDisclosedDate
-                item.forwardEpsSource = valuation.forwardEpsSource
-                item.pbr = valuation.pbr
-                item.marketCap = valuation.marketCap
 
     def _enrich_ranking_collections_with_prime_liquidity(
         self,
