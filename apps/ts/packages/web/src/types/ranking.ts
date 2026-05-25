@@ -1,16 +1,6 @@
 /**
- * Ranking-related types for frontend
- * Re-exports from @trading25/contracts and adds frontend-specific types
+ * Ranking-related frontend route/filter params.
  */
-
-export type {
-  IndexPerformanceItem,
-  MarketRankingResponse,
-  RankingItem,
-  Rankings,
-  RankingType,
-  SortOrder,
-} from '@trading25/contracts/types/api-response-types';
 
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
@@ -35,7 +25,6 @@ export type RankingSortField =
   | 'adv60ToFreeFloatPct';
 export type RankingSortOrder = 'asc' | 'desc';
 
-// Frontend-specific types
 export interface RankingParams {
   date?: string;
   limit?: number;

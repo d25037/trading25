@@ -1,6 +1,6 @@
+import type { MarketRankingResponse } from '@trading25/contracts/types/api-response-types';
 import { Calendar, DollarSign, TrendingDown, TrendingUp } from 'lucide-react';
 import { SummaryMetrics } from '@/components/shared/SummaryMetrics';
-import type { MarketRankingResponse } from '@/types/ranking';
 
 interface RankingSummaryProps {
   data: MarketRankingResponse | undefined;

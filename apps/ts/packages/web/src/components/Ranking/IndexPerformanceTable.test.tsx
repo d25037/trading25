@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { IndexPerformanceItem } from '@trading25/contracts/types/api-response-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IndexPerformanceItem } from '@/types/ranking';
 import { IndexPerformanceTable } from './IndexPerformanceTable';
 
 function createItem(overrides: Partial<IndexPerformanceItem>): IndexPerformanceItem {

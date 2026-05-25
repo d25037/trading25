@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useMemo, useState } from 'react';
+import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import {
   type EquityRankingItem,
@@ -7,7 +8,6 @@ import {
   type EquitySortField,
   type EquitySortOrder,
 } from '@/components/Ranking/EquityRankingTable';
-import type { RankingItem } from '@/types/ranking';
 
 export interface RankingTableSortState {
   field: EquitySortField;

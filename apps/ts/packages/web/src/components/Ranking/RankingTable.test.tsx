@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RankingItem } from '@/types/ranking';
 import { RankingTable } from './RankingTable';
 
 const baseItem = {

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import type { MarketRankingResponse } from '@trading25/contracts/types/api-response-types';
 import { describe, expect, it } from 'vitest';
-import type { MarketRankingResponse } from '@/types/ranking';
 import { RankingSummary } from './RankingSummary';
 
 const baseItem = {

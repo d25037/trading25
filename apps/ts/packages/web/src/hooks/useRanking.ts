@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import type { MarketRankingResponse } from '@trading25/contracts/types/api-response-types';
 import { analyticsClient } from '@/lib/analytics-client';
-import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
+import type { RankingParams } from '@/types/ranking';
 import { logger } from '@/utils/logger';
 
 function fetchRanking(params: RankingParams): Promise<MarketRankingResponse> {

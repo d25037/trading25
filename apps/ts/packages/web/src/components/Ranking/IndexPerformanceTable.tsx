@@ -1,3 +1,4 @@
+import type { IndexPerformanceItem } from '@trading25/contracts/types/api-response-types';
 import { TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
@@ -5,7 +6,6 @@ import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { getIndexCategorySortOrder, INDEX_CATEGORY_LABELS } from '@/lib/indexCategories';
 import { cn } from '@/lib/utils';
-import type { IndexPerformanceItem } from '@/types/ranking';
 import { formatPercentage } from '@/utils/formatters';
 
 interface IndexPerformanceTableProps {
