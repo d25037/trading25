@@ -124,8 +124,6 @@ FUNDAMENTAL_BASE_COLUMNS = (
     "sd.close as current_price, sd.volume"
 )
 
-
-_QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
