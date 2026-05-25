@@ -20,7 +20,7 @@ import {
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
 import type { EnginePolicyMode } from '@/types/backtest';
-import { isActiveJobStatus } from '@/utils/jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus } from '@/utils/jobStatus';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
@@ -30,10 +30,6 @@ import { StrategySelector } from './StrategySelector';
 type RunBacktestMutation = ReturnType<typeof useRunBacktest>;
 type RunOptimizationMutation = ReturnType<typeof useRunOptimization>;
 type StrategyOptions = ComponentProps<typeof StrategySelector>['strategies'];
-
-function isBacktestTerminalStatus(status: string | null | undefined): boolean {
-  return status === 'completed' || status === 'failed' || status === 'cancelled';
-}
 
 function isOptimizationTerminalStatus(status: string | null | undefined): boolean {
   return status === 'completed' || status === 'failed';
@@ -117,7 +113,7 @@ function useInvalidateBacktestHtmlOnTerminalStatus(status: string | null | undef
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!isBacktestTerminalStatus(status)) return;
+    if (!isTerminalJobStatus(status)) return;
     queryClient.invalidateQueries({ queryKey: backtestKeys.htmlFiles() });
   }, [status, queryClient]);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isActiveJobStatus, resolveActiveJobRefetchInterval } from './jobStatus';
+import { isActiveJobStatus, isTerminalJobStatus, resolveActiveJobRefetchInterval } from './jobStatus';
 
 describe('isActiveJobStatus', () => {
   it('matches pending and running statuses', () => {
@@ -13,6 +13,21 @@ describe('isActiveJobStatus', () => {
     expect(isActiveJobStatus('cancelled')).toBe(false);
     expect(isActiveJobStatus(null)).toBe(false);
     expect(isActiveJobStatus(undefined)).toBe(false);
+  });
+});
+
+describe('isTerminalJobStatus', () => {
+  it('matches completed, failed, and cancelled statuses', () => {
+    expect(isTerminalJobStatus('completed')).toBe(true);
+    expect(isTerminalJobStatus('failed')).toBe(true);
+    expect(isTerminalJobStatus('cancelled')).toBe(true);
+  });
+
+  it('does not match active or missing statuses', () => {
+    expect(isTerminalJobStatus('pending')).toBe(false);
+    expect(isTerminalJobStatus('running')).toBe(false);
+    expect(isTerminalJobStatus(null)).toBe(false);
+    expect(isTerminalJobStatus(undefined)).toBe(false);
   });
 });
 
