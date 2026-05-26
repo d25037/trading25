@@ -132,6 +132,30 @@ def test_list_datasets_skips_missing_files_and_handles_optional_metadata(tmp_pat
     assert items[1].backend == "duckdb-parquet"
 
 
+def test_list_datasets_skips_snapshot_that_fails_reader_validation(tmp_path: Path) -> None:
+    for name in ["valid", "invalid"]:
+        snapshot_dir = tmp_path / name
+        snapshot_dir.mkdir()
+        (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+        (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
+
+    class ValidationErrorResolver(DummyResolver):
+        def resolve(self, name: str) -> object | None:
+            if name == "invalid":
+                raise RuntimeError("Dataset snapshot logical checksum mismatch")
+            return super().resolve(name)
+
+    resolver = ValidationErrorResolver(
+        base_dir=tmp_path,
+        names=["valid", "invalid"],
+        db_by_name={"valid": None},
+    )
+
+    items = dataset_service.list_datasets(cast(Any, resolver))
+
+    assert [item.name for item in items] == ["valid"]
+
+
 def test_list_datasets_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "snapshot"
     snapshot_dir.mkdir()

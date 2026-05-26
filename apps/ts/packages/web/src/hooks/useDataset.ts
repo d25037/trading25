@@ -27,6 +27,9 @@ type DatasetJobResultPayload = NonNullable<DatasetJobResponse['result']> & {
 type DatasetJobResponsePayload = Omit<DatasetJobResponse, 'result'> & {
   result?: DatasetJobResultPayload | null;
 };
+type DatasetQueryOptions = {
+  enabled?: boolean;
+};
 
 function normalizeDatasetListItem(value: DatasetListItem): DatasetListItem | null {
   if (value.backend !== 'duckdb-parquet') {
@@ -84,13 +87,14 @@ function cancelJob(jobId: string): Promise<CancelDatasetJobResponse> {
   return apiDelete<CancelDatasetJobResponse>(`/api/dataset/jobs/${encodeURIComponent(jobId)}`);
 }
 
-export function useDatasets() {
+export function useDatasets(options: DatasetQueryOptions = {}) {
   return useQuery({
     queryKey: datasetKeys.list(),
     queryFn: () => {
       logger.debug('Fetching datasets list');
       return fetchDatasets();
     },
+    enabled: options.enabled ?? true,
     staleTime: 30 * 1000,
   });
 }

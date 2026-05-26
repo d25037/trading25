@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -71,6 +72,21 @@ def _create_snapshot(tmp_path: Path) -> Path:
     writer.close()
     _write_manifest_v2(snapshot_dir)
     return snapshot_dir
+
+
+def _legacy_logical_checksum_without_adjusted_metric_counts(manifest: dict[str, Any]) -> str:
+    counts = {
+        key: value
+        for key, value in manifest["counts"].items()
+        if key not in {"statement_metrics_adjusted", "daily_valuation"}
+    }
+    payload = {
+        "counts": counts,
+        "coverage": manifest["coverage"],
+        "dateRange": manifest.get("dateRange"),
+    }
+    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _create_rich_snapshot(tmp_path: Path) -> Path:
@@ -226,6 +242,20 @@ def test_validate_dataset_snapshot_accepts_valid_bundle(tmp_path: Path) -> None:
 
     assert manifest.dataset.name == "sample"
     assert manifest.schemaVersion == 2
+
+
+def test_validate_dataset_snapshot_accepts_legacy_logical_checksum_when_new_counts_are_zero(
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = _create_snapshot(tmp_path)
+    manifest_path = snapshot_dir / "manifest.v2.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["checksums"]["logicalSha256"] = _legacy_logical_checksum_without_adjusted_metric_counts(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    validated = validate_dataset_snapshot(snapshot_dir)
+
+    assert validated.dataset.name == "sample"
 
 
 def test_dataset_snapshot_reader_reads_duckdb_bundle(tmp_path: Path) -> None:

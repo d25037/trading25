@@ -22,6 +22,12 @@ _ACTUAL_ONLY_COLUMNS = (
     "profit",
     "equity",
 )
+_LEGACY_ZERO_ONLY_LOGICAL_COUNT_FIELDS = frozenset(
+    {
+        "statement_metrics_adjusted",
+        "daily_valuation",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -169,6 +175,28 @@ def build_dataset_snapshot_logical_checksum(
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _build_legacy_logical_checksum_without_zero_only_counts(
+    *,
+    counts: DatasetSnapshotCounts,
+    coverage: DatasetSnapshotCoverage,
+    date_range: DatasetSnapshotDateRange | None,
+) -> str | None:
+    count_payload = counts.model_dump()
+    if any(count_payload[field] != 0 for field in _LEGACY_ZERO_ONLY_LOGICAL_COUNT_FIELDS):
+        return None
+    payload = {
+        "counts": {
+            key: value
+            for key, value in count_payload.items()
+            if key not in _LEGACY_ZERO_ONLY_LOGICAL_COUNT_FIELDS
+        },
+        "coverage": coverage.model_dump(),
+        "dateRange": date_range.model_dump() if date_range is not None else None,
+    }
+    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _connect_duckdb(duckdb_path: Path, *, read_only: bool) -> Any:
     duckdb = importlib.import_module("duckdb")
     return cast(Any, duckdb).connect(str(duckdb_path), read_only=read_only)
@@ -261,7 +289,15 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetSnapshotManife
         coverage=inspection.coverage,
         date_range=inspection.date_range,
     )
-    if logical_checksum != manifest.checksums.logicalSha256:
+    legacy_logical_checksum = _build_legacy_logical_checksum_without_zero_only_counts(
+        counts=inspection.counts,
+        coverage=inspection.coverage,
+        date_range=inspection.date_range,
+    )
+    if (
+        logical_checksum != manifest.checksums.logicalSha256
+        and legacy_logical_checksum != manifest.checksums.logicalSha256
+    ):
         raise RuntimeError("Dataset snapshot logical checksum mismatch")
 
     return manifest

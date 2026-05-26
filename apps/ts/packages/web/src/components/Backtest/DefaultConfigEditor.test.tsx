@@ -8,6 +8,9 @@ const mockRawMutate = vi.fn();
 const mockRawReset = vi.fn();
 const mockStructuredMutate = vi.fn();
 const mockStructuredReset = vi.fn();
+const mockDatasetHooks = vi.hoisted(() => ({
+  useDatasets: vi.fn(),
+}));
 
 const mockState = {
   context: {
@@ -168,9 +171,7 @@ vi.mock('@/hooks/useBacktest', () => ({
 }));
 
 vi.mock('@/hooks/useDataset', () => ({
-  useDatasets: () => ({
-    data: mockState.datasets,
-  }),
+  useDatasets: mockDatasetHooks.useDatasets,
 }));
 
 vi.mock('@/hooks/useIndices', () => ({
@@ -215,6 +216,15 @@ describe('DefaultConfigEditor', () => {
     mockState.structuredPending = false;
     mockState.rawError = null;
     mockState.structuredError = null;
+    mockDatasetHooks.useDatasets.mockImplementation(() => ({
+      data: mockState.datasets,
+    }));
+  });
+
+  it('does not enable dataset list fetching while the dialog is closed', () => {
+    render(<DefaultConfigEditor open={false} onOpenChange={vi.fn()} />);
+
+    expect(mockDatasetHooks.useDatasets).toHaveBeenCalledWith({ enabled: false });
   });
 
   it('renders loading state', () => {

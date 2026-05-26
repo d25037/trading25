@@ -12,6 +12,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol
 
+from loguru import logger
+
 from src.application.services.dataset_presets import get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.entrypoints.http.schemas.dataset import (
@@ -98,7 +100,8 @@ def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
                     backend=storage.backend,
                 )
             )
-        except OSError:
+        except Exception as exc:
+            logger.warning("Skipping invalid dataset snapshot during list: name={} error={}", name, exc)
             continue
     return items
 

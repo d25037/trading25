@@ -90,7 +90,7 @@ export function DefaultConfigEditor({ open, onOpenChange }: DefaultConfigEditorP
 
   const contextQuery = useDefaultConfigEditorContext(open);
   const referenceQuery = useStrategyEditorReference(open);
-  const { data: datasets } = useDatasets();
+  const { data: datasets } = useDatasets({ enabled: open });
   const { data: indices } = useIndicesList();
   const updateDefaultConfig = useUpdateDefaultConfig();
   const updateDefaultConfigStructured = useUpdateDefaultConfigStructured();
