@@ -16,7 +16,11 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
-from src.application.services.fundamentals_service import fundamentals_service
+from src.application.services.fundamentals_service import (
+    DailyValuationRequiredError,
+    fundamentals_service,
+)
+from src.entrypoints.http.error_utils import build_structured_http_exception
 
 router = APIRouter(prefix="/api/fundamentals", tags=["Fundamentals"])
 
@@ -49,11 +53,13 @@ Compute fundamental analysis metrics for a stock symbol.
 
 **Data Sources**:
 - Financial statements: local `market.duckdb`
-- Stock prices: local `market.duckdb`
+- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
+- `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.
 
 **Response includes**:
 - `data`: Array of fundamental data points sorted by date (descending)
-- `latestMetrics`: Latest metrics with daily valuation applied
+- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data
+- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`
 - `dailyValuation`: Daily PER/PBR time-series for charting
 """,
 )
@@ -82,6 +88,18 @@ async def compute_fundamentals(
     except APINotFoundError as e:
         logger.warning(f"Stock not found: {request.symbol}")
         raise HTTPException(status_code=404, detail=str(e))
+
+    except DailyValuationRequiredError as e:
+        logger.warning(f"daily_valuation missing for fundamentals: {request.symbol}")
+        raise build_structured_http_exception(
+            409,
+            (
+                "daily_valuation is required for fundamentals summary. "
+                "Run market DB sync or adjusted metrics materialization."
+            ),
+            reason=e.reason,
+            recovery=e.recovery,
+        ) from e
 
     except APIError as e:
         logger.error(f"API error computing fundamentals: {e}")

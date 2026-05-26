@@ -221,6 +221,9 @@ class DailyValuationDataPoint(BaseModel):
         None,
         description="Market cap at this date using free-float shares (JPY)",
     )
+    statementDisclosedDate: str | None = Field(
+        None, description="Disclosure date of the FY actual EPS/BPS source"
+    )
     forwardEps: float | None = Field(None, description="Forward EPS used for valuation")
     forwardEpsDisclosedDate: str | None = Field(
         None, description="Disclosure date of the forward EPS source"
@@ -298,6 +301,35 @@ class LiquidityProfile(BaseModel):
     windows: list[LiquidityProfileWindow] = Field(default_factory=list)
 
 
+class LatestMetricsSourceItem(BaseModel):
+    """Source metadata for one part of latestMetrics."""
+
+    table: Literal["daily_valuation", "statements"] = Field(
+        ..., description="Source table used for this latestMetrics part"
+    )
+    date: str | None = Field(None, description="Trading or period date of the source")
+    periodType: str | None = Field(None, description="Statement period type when applicable")
+    disclosedDate: str | None = Field(None, description="Statement disclosure date when applicable")
+    source: str | None = Field(None, description="Source classifier such as fy or revised")
+
+
+class LatestMetricsSource(BaseModel):
+    """Source metadata for composed latestMetrics summary values."""
+
+    actualPerShare: LatestMetricsSourceItem = Field(
+        ..., description="Source for EPS/BPS displayed in latestMetrics"
+    )
+    valuation: LatestMetricsSourceItem = Field(
+        ..., description="Source for PER/PBR/market-cap values"
+    )
+    forecast: LatestMetricsSourceItem | None = Field(
+        None, description="Source for forecast EPS and forward valuation values"
+    )
+    latestDisclosure: LatestMetricsSourceItem | None = Field(
+        None, description="Latest statement disclosure used for operating and cash-flow metrics"
+    )
+
+
 class FundamentalsComputeResponse(BaseModel):
     """Response for fundamentals computation."""
 
@@ -309,6 +341,9 @@ class FundamentalsComputeResponse(BaseModel):
     latestMetrics: FundamentalDataPoint | None = Field(
         None, description="Latest metrics with daily valuation"
     )
+    latestMetricsSource: LatestMetricsSource | None = Field(
+        None, description="Source tables and dates used to compose latestMetrics"
+    )
     dailyValuation: list[DailyValuationDataPoint] | None = Field(
         None, description="Daily PER/PBR time-series"
     )
@@ -317,10 +352,6 @@ class FundamentalsComputeResponse(BaseModel):
     )
     valuationBasisVersion: str | None = Field(
         None, description="Adjusted valuation materialization basis version"
-    )
-    adjustedMetricsSource: Literal["daily_valuation", "computed_fallback"] = Field(
-        default="computed_fallback",
-        description="Source used for valuation and adjusted per-share metrics",
     )
     liquidityProfile: LiquidityProfile | None = Field(
         None,

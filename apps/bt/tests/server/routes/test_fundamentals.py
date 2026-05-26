@@ -14,6 +14,7 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
 )
+from src.application.services.fundamentals_service import DailyValuationRequiredError
 
 
 def _build_mock_response(
@@ -191,6 +192,22 @@ class TestFundamentalsComputeEndpoint:
             )
 
             assert response.status_code == 404
+
+    def test_compute_daily_valuation_required(self, client: TestClient):
+        """daily_valuation SoT が未生成の場合は409"""
+        with patch(
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            side_effect=DailyValuationRequiredError("7203"),
+        ):
+            response = client.post(
+                "/api/fundamentals/compute",
+                json={"symbol": "7203"},
+            )
+
+            assert response.status_code == 409
+            data = response.json()
+            assert data["error"] == "Conflict"
+            assert "daily_valuation is required" in data["message"]
 
     def test_compute_api_error(self, client: TestClient):
         """APIエラー(500)"""

@@ -22,6 +22,8 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
+    LatestMetricsSource,
+    LatestMetricsSourceItem,
     LiquidityProfile,
     LiquidityProfileWindow,
 )
@@ -29,6 +31,20 @@ from src.infrastructure.external_api.jquants_client import JQuantsStatement, Sto
 from src.infrastructure.data_access.clients import DirectMarketClient
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
 from src.shared.utils.market_code_alias import normalize_market_scope
+
+
+class DailyValuationRequiredError(RuntimeError):
+    """Raised when fundamentals summary cannot be composed from daily_valuation SoT."""
+
+    reason = "daily_valuation_required"
+    recovery = "market_db_sync"
+
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+        super().__init__(
+            f"daily_valuation is required for fundamentals summary: {symbol}"
+        )
+
 
 class FundamentalsService:
     """Service for fundamentals API orchestration."""
@@ -297,6 +313,12 @@ class FundamentalsService:
                             row_obj.get("freeFloatMarketCap"),
                         )
                     ),
+                    statementDisclosedDate=self._normalize_optional_text(
+                        row_obj.get(
+                            "statement_disclosed_date",
+                            row_obj.get("statementDisclosedDate"),
+                        )
+                    ),
                     forwardEps=self._normalize_optional_float(
                         row_obj.get("forward_eps", row_obj.get("forwardEps"))
                     ),
@@ -420,13 +442,53 @@ class FundamentalsService:
                 "pbr": latest_daily.pbr,
                 "marketCap": latest_daily.marketCap,
                 "freeFloatMarketCap": latest_daily.freeFloatMarketCap,
-                "adjustedEps": latest_daily.eps
-                if latest_metrics.adjustedEps is None
-                else latest_metrics.adjustedEps,
-                "adjustedBps": latest_daily.bps
-                if latest_metrics.adjustedBps is None
-                else latest_metrics.adjustedBps,
+                "eps": latest_daily.eps,
+                "bps": latest_daily.bps,
+                "adjustedEps": latest_daily.eps,
+                "adjustedForecastEps": latest_daily.forwardEps,
+                "adjustedBps": latest_daily.bps,
+                "revisedForecastEps": latest_daily.forwardEps
+                if latest_daily.forwardEpsSource == "revised"
+                else None,
             }
+        )
+
+    @staticmethod
+    def _build_latest_metrics_source(
+        latest_metrics: DomainFundamentalDataPoint | None,
+        daily_valuation: list[DomainDailyValuationDataPoint],
+    ) -> LatestMetricsSource | None:
+        if latest_metrics is None or not daily_valuation:
+            return None
+        latest_daily = daily_valuation[-1]
+        forecast_source = (
+            LatestMetricsSourceItem(
+                table="daily_valuation",
+                date=latest_daily.date,
+                disclosedDate=latest_daily.forwardEpsDisclosedDate,
+                source=latest_daily.forwardEpsSource,
+            )
+            if latest_daily.forwardEps is not None
+            else None
+        )
+        return LatestMetricsSource(
+            actualPerShare=LatestMetricsSourceItem(
+                table="daily_valuation",
+                date=latest_daily.date,
+                periodType="FY",
+                disclosedDate=latest_daily.statementDisclosedDate,
+            ),
+            valuation=LatestMetricsSourceItem(
+                table="daily_valuation",
+                date=latest_daily.date,
+            ),
+            forecast=forecast_source,
+            latestDisclosure=LatestMetricsSourceItem(
+                table="statements",
+                date=latest_metrics.date,
+                periodType=latest_metrics.periodType,
+                disclosedDate=latest_metrics.disclosedDate,
+            ),
         )
 
     def _build_prime_liquidity_profile(
@@ -721,24 +783,13 @@ class FundamentalsService:
             request.symbol,
         )
 
-        adjusted_daily_valuation = self._get_adjusted_daily_valuation(request.symbol)
-        daily_valuation_source = (
-            "daily_valuation" if adjusted_daily_valuation else "computed_fallback"
-        )
-        daily_valuation = adjusted_daily_valuation or (
-            self._calculator._calculate_daily_valuation(
-                statements,
-                daily_prices,
-                request.prefer_consolidated,
-                share_adjustment_events=share_adjustment_events,
-            )
-        )
+        daily_valuation = self._get_adjusted_daily_valuation(request.symbol)
+        if not daily_valuation:
+            raise DailyValuationRequiredError(request.symbol)
         price_basis_date = (
             daily_valuation[-1].priceBasisDate
             if daily_valuation and daily_valuation[-1].priceBasisDate is not None
             else latest_price_date
-            if daily_valuation_source == "daily_valuation"
-            else None
         )
         valuation_basis_version = (
             daily_valuation[-1].basisVersion
@@ -772,7 +823,6 @@ class FundamentalsService:
                 dailyValuation=api_daily_valuation,
                 priceBasisDate=price_basis_date,
                 valuationBasisVersion=valuation_basis_version,
-                adjustedMetricsSource=daily_valuation_source,
                 liquidityProfile=liquidity_profile,
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -784,9 +834,7 @@ class FundamentalsService:
                     missing_required_data=["filtered_statements"],
                     used_fields=[
                         "statements",
-                        "daily_valuation"
-                        if daily_valuation_source == "daily_valuation"
-                        else "stock_data.close",
+                        "daily_valuation",
                     ],
                     effective_period_type=request.period_type,
                 ),
@@ -858,11 +906,10 @@ class FundamentalsService:
             latest_metrics,
             adjusted_statement_metrics,
         )
-        if daily_valuation_source == "daily_valuation":
-            latest_metrics = self._apply_latest_daily_valuation_fields(
-                latest_metrics,
-                daily_valuation,
-            )
+        latest_metrics = self._apply_latest_daily_valuation_fields(
+            latest_metrics,
+            daily_valuation,
+        )
         latest_metrics = self._calculator._apply_forecast_eps_above_recent_fy_actuals(
             latest_metrics,
             data,
@@ -880,6 +927,10 @@ class FundamentalsService:
             if latest_metrics is not None
             else None
         )
+        latest_metrics_source = self._build_latest_metrics_source(
+            latest_metrics,
+            daily_valuation,
+        )
         api_daily_valuation = (
             [self._to_api_daily_valuation_data_point(item) for item in daily_valuation]
             if daily_valuation
@@ -891,10 +942,10 @@ class FundamentalsService:
             companyName=stock_info.companyName if stock_info else None,
             data=api_data,
             latestMetrics=api_latest_metrics,
+            latestMetricsSource=latest_metrics_source,
             dailyValuation=api_daily_valuation,
             priceBasisDate=price_basis_date,
             valuationBasisVersion=valuation_basis_version,
-            adjustedMetricsSource=daily_valuation_source,
             liquidityProfile=liquidity_profile,
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
@@ -908,9 +959,7 @@ class FundamentalsService:
                     "statements.earnings_per_share",
                     "statements.forecast_eps",
                     "statements.equity",
-                    "daily_valuation"
-                    if daily_valuation_source == "daily_valuation"
-                    else "stock_data.close",
+                    "daily_valuation",
                 ],
                 effective_period_type=request.period_type,
             ),

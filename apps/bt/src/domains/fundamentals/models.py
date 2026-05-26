@@ -98,6 +98,7 @@ class DailyValuationDataPoint(BaseModel):
     pbr: float | None = None
     marketCap: float | None = None
     freeFloatMarketCap: float | None = None
+    statementDisclosedDate: str | None = None
     forwardEps: float | None = None
     forwardEpsDisclosedDate: str | None = None
     forwardEpsSource: Literal["revised", "fy"] | None = None

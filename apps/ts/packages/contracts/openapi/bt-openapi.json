@@ -2473,6 +2473,18 @@
             ],
             "description": "Adjusted price basis date for this valuation row",
             "title": "Pricebasisdate"
+          },
+          "statementDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Disclosure date of the FY actual EPS/BPS source",
+            "title": "Statementdiscloseddate"
           }
         },
         "required": [
@@ -4790,16 +4802,6 @@
       "FundamentalsComputeResponse": {
         "description": "Response for fundamentals computation.",
         "properties": {
-          "adjustedMetricsSource": {
-            "default": "computed_fallback",
-            "description": "Source used for valuation and adjusted per-share metrics",
-            "enum": [
-              "daily_valuation",
-              "computed_fallback"
-            ],
-            "title": "Adjustedmetricssource",
-            "type": "string"
-          },
           "companyName": {
             "anyOf": [
               {
@@ -4859,6 +4861,17 @@
               }
             ],
             "description": "Latest metrics with daily valuation"
+          },
+          "latestMetricsSource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestMetricsSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source tables and dates used to compose latestMetrics"
           },
           "liquidityProfile": {
             "anyOf": [
@@ -7328,6 +7341,114 @@
           "history"
         ],
         "title": "LabOptimizeResult",
+        "type": "object"
+      },
+      "LatestMetricsSource": {
+        "description": "Source metadata for composed latestMetrics summary values.",
+        "properties": {
+          "actualPerShare": {
+            "$ref": "#/components/schemas/LatestMetricsSourceItem",
+            "description": "Source for EPS/BPS displayed in latestMetrics"
+          },
+          "forecast": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestMetricsSourceItem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source for forecast EPS and forward valuation values"
+          },
+          "latestDisclosure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestMetricsSourceItem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest statement disclosure used for operating and cash-flow metrics"
+          },
+          "valuation": {
+            "$ref": "#/components/schemas/LatestMetricsSourceItem",
+            "description": "Source for PER/PBR/market-cap values"
+          }
+        },
+        "required": [
+          "actualPerShare",
+          "valuation"
+        ],
+        "title": "LatestMetricsSource",
+        "type": "object"
+      },
+      "LatestMetricsSourceItem": {
+        "description": "Source metadata for one part of latestMetrics.",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Trading or period date of the source",
+            "title": "Date"
+          },
+          "disclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Statement disclosure date when applicable",
+            "title": "Discloseddate"
+          },
+          "periodType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Statement period type when applicable",
+            "title": "Periodtype"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source classifier such as fy or revised",
+            "title": "Source"
+          },
+          "table": {
+            "description": "Source table used for this latestMetrics part",
+            "enum": [
+              "daily_valuation",
+              "statements"
+            ],
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "LatestMetricsSourceItem",
         "type": "object"
       },
       "LiquidityProfile": {
@@ -26458,7 +26579,7 @@
     },
     "/api/fundamentals/compute": {
       "post": {
-        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Stock prices: local `market.duckdb`\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Valuation/per-share summary: local `daily_valuation` in `market.duckdb`\n- `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data\n- `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`\n- `dailyValuation`: Daily PER/PBR time-series for charting",
         "operationId": "compute_fundamentals_api_fundamentals_compute_post",
         "requestBody": {
           "content": {

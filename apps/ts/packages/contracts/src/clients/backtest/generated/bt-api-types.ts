@@ -1496,11 +1496,13 @@ export interface paths {
          *
          *     **Data Sources**:
          *     - Financial statements: local `market.duckdb`
-         *     - Stock prices: local `market.duckdb`
+         *     - Valuation/per-share summary: local `daily_valuation` in `market.duckdb`
+         *     - `daily_valuation` is required; this endpoint returns 409 until adjusted metrics are materialized.
          *
          *     **Response includes**:
          *     - `data`: Array of fundamental data points sorted by date (descending)
-         *     - `latestMetrics`: Latest metrics with daily valuation applied
+         *     - `latestMetrics`: Summary metrics composed from `daily_valuation` and latest disclosure data
+         *     - `latestMetricsSource`: Source tables/dates used to compose `latestMetrics`
          *     - `dailyValuation`: Daily PER/PBR time-series for charting
          */
         post: operations["compute_fundamentals_api_fundamentals_compute_post"];
@@ -4102,6 +4104,11 @@ export interface components {
              * @description Adjusted price basis date for this valuation row
              */
             priceBasisDate?: string | null;
+            /**
+             * Statementdiscloseddate
+             * @description Disclosure date of the FY actual EPS/BPS source
+             */
+            statementDisclosedDate?: string | null;
         };
         /**
          * DataProvenance
@@ -5250,13 +5257,6 @@ export interface components {
          */
         FundamentalsComputeResponse: {
             /**
-             * Adjustedmetricssource
-             * @description Source used for valuation and adjusted per-share metrics
-             * @default computed_fallback
-             * @enum {string}
-             */
-            adjustedMetricsSource: "daily_valuation" | "computed_fallback";
-            /**
              * Companyname
              * @description Company name
              */
@@ -5285,6 +5285,8 @@ export interface components {
             lastUpdated: string;
             /** @description Latest metrics with daily valuation */
             latestMetrics?: components["schemas"]["FundamentalDataPoint"] | null;
+            /** @description Source tables and dates used to compose latestMetrics */
+            latestMetricsSource?: components["schemas"]["LatestMetricsSource"] | null;
             /** @description Prime-only free-float liquidity diagnostic for Symbol Workbench */
             liquidityProfile?: components["schemas"]["LiquidityProfile"] | null;
             /**
@@ -6623,6 +6625,52 @@ export interface components {
             total_trials: number;
             /** @description Verification summary for top-ranked candidates */
             verification?: components["schemas"]["VerificationSummary"] | null;
+        };
+        /**
+         * LatestMetricsSource
+         * @description Source metadata for composed latestMetrics summary values.
+         */
+        LatestMetricsSource: {
+            /** @description Source for EPS/BPS displayed in latestMetrics */
+            actualPerShare: components["schemas"]["LatestMetricsSourceItem"];
+            /** @description Source for forecast EPS and forward valuation values */
+            forecast?: components["schemas"]["LatestMetricsSourceItem"] | null;
+            /** @description Latest statement disclosure used for operating and cash-flow metrics */
+            latestDisclosure?: components["schemas"]["LatestMetricsSourceItem"] | null;
+            /** @description Source for PER/PBR/market-cap values */
+            valuation: components["schemas"]["LatestMetricsSourceItem"];
+        };
+        /**
+         * LatestMetricsSourceItem
+         * @description Source metadata for one part of latestMetrics.
+         */
+        LatestMetricsSourceItem: {
+            /**
+             * Date
+             * @description Trading or period date of the source
+             */
+            date?: string | null;
+            /**
+             * Discloseddate
+             * @description Statement disclosure date when applicable
+             */
+            disclosedDate?: string | null;
+            /**
+             * Periodtype
+             * @description Statement period type when applicable
+             */
+            periodType?: string | null;
+            /**
+             * Source
+             * @description Source classifier such as fy or revised
+             */
+            source?: string | null;
+            /**
+             * Table
+             * @description Source table used for this latestMetrics part
+             * @enum {string}
+             */
+            table: "daily_valuation" | "statements";
         };
         /**
          * LiquidityProfile

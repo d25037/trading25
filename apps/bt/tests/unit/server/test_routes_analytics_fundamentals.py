@@ -33,6 +33,7 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeResponse,
 )
 from src.entrypoints.http.routes import analytics_market
+from src.application.services.fundamentals_service import DailyValuationRequiredError
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +99,21 @@ class TestGetFundamentals:
         resp = client.get("/api/analytics/fundamentals/9999")
         assert resp.status_code == 404
         assert "9999" in resp.json()["message"]
+
+    @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
+    def test_daily_valuation_required_returns_409(
+        self, mock_service: MagicMock, client: TestClient
+    ) -> None:
+        mock_service.compute_fundamentals.side_effect = DailyValuationRequiredError("7203")
+
+        resp = client.get("/api/analytics/fundamentals/7203")
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["error"] == "Conflict"
+        assert "daily_valuation is required" in body["message"]
+        assert {"field": "reason", "message": "daily_valuation_required"} in body["details"]
+        assert {"field": "recovery", "message": "market_db_sync"} in body["details"]
 
     @patch("src.entrypoints.http.routes.analytics_market.fundamentals_service")
     def test_query_params(self, mock_service: MagicMock, client: TestClient) -> None:

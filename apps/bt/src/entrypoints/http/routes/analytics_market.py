@@ -13,7 +13,10 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from src.application.services.cost_structure_analysis_service import CostStructureAnalysisService
-from src.application.services.fundamentals_service import fundamentals_service
+from src.application.services.fundamentals_service import (
+    DailyValuationRequiredError,
+    fundamentals_service,
+)
 from src.application.services.margin_analytics_service import MarginAnalyticsService
 from src.application.services.roe_service import ROEService
 from src.entrypoints.http.schemas.analytics_margin import (
@@ -26,6 +29,7 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
+from src.entrypoints.http.error_utils import build_structured_http_exception
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
@@ -160,11 +164,22 @@ async def get_fundamentals(
         forecast_eps_lookback_fy_count=forecastEpsLookbackFyCount,
     )
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        _get_executor(),
-        fundamentals_service.compute_fundamentals,
-        req,
-    )
+    try:
+        result = await loop.run_in_executor(
+            _get_executor(),
+            fundamentals_service.compute_fundamentals,
+            req,
+        )
+    except DailyValuationRequiredError as exc:
+        raise build_structured_http_exception(
+            409,
+            (
+                "daily_valuation is required for fundamentals summary. "
+                "Run market DB sync or adjusted metrics materialization."
+            ),
+            reason=exc.reason,
+            recovery=exc.recovery,
+        ) from exc
     if not result.data:
         raise HTTPException(
             status_code=404,

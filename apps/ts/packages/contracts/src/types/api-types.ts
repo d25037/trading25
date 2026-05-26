@@ -163,8 +163,14 @@ export interface ApiDailyValuationDataPoint {
   date: string;
   /** Stock close price on this date (円) */
   close: number;
+  /** Adjusted actual FY EPS used for valuation (円) */
+  eps?: number | null;
+  /** Adjusted actual FY BPS used for valuation (円) */
+  bps?: number | null;
   /** Price to Earnings Ratio using FY EPS (倍) */
   per: number | null;
+  /** Forward EPS used for valuation (円) */
+  forwardEps?: number | null;
   /** Forward Price to Earnings Ratio (倍) */
   forwardPer?: number | null;
   /** Price to Operating Profit Ratio (倍) */
@@ -177,6 +183,27 @@ export interface ApiDailyValuationDataPoint {
   marketCap: number | null;
   /** Market capitalization using free-float shares (円) */
   freeFloatMarketCap?: number | null;
+  /** Disclosure date of the FY actual EPS/BPS source */
+  statementDisclosedDate?: string | null;
+  /** Disclosure date of the forward EPS source */
+  forwardEpsDisclosedDate?: string | null;
+  /** Forward EPS source classifier */
+  forwardEpsSource?: 'revised' | 'fy' | null;
+}
+
+export interface ApiLatestMetricsSourceItem {
+  table: 'daily_valuation' | 'statements';
+  date?: string | null;
+  periodType?: string | null;
+  disclosedDate?: string | null;
+  source?: string | null;
+}
+
+export interface ApiLatestMetricsSource {
+  actualPerShare: ApiLatestMetricsSourceItem;
+  valuation: ApiLatestMetricsSourceItem;
+  forecast?: ApiLatestMetricsSourceItem | null;
+  latestDisclosure?: ApiLatestMetricsSourceItem | null;
 }
 
 export interface ApiLiquidityProfileWindow {
@@ -349,14 +376,14 @@ export interface ApiFundamentalsResponse {
   data: ApiFundamentalDataPoint[];
   /** Most recent metrics (convenience field) */
   latestMetrics?: ApiFundamentalDataPoint;
+  /** Source tables and dates used to compose latestMetrics */
+  latestMetricsSource?: ApiLatestMetricsSource | null;
   /** Daily PER/PBR time series (calculated with daily close prices and FY EPS/BPS) */
   dailyValuation?: ApiDailyValuationDataPoint[];
   /** Adjusted price basis date used by daily valuation */
   priceBasisDate?: string | null;
   /** Adjusted valuation materialization basis version */
   valuationBasisVersion?: string | null;
-  /** Source used for valuation and adjusted per-share metrics */
-  adjustedMetricsSource?: 'daily_valuation' | 'computed_fallback';
   /** Prime-only free-float liquidity diagnostic for Symbol Workbench */
   liquidityProfile?: ApiLiquidityProfile | null;
   /** Rolling average period used for trading value to market cap ratio (days) */
