@@ -69,7 +69,7 @@ bun run workspace:build
 
 - `runtime keep`: `react`, `react-dom`, `@tanstack/react-query`, `@tanstack/react-router`, `zustand`, `lucide-react`, `lightweight-charts`, `@monaco-editor/react`, `monaco-editor`
 - `tooling keep`: `vite`, `vitest`, `@playwright/test`, `@biomejs/biome`, `typescript`, `bun-types`
-- `transitive pin`: root `overrides` の `@redocly/openapi-core`, `rollup`, `minimatch`, `flatted`, `monaco-editor`
+- `transitive pin`: root `overrides` の `@redocly/openapi-core`, `brace-expansion`, `dompurify`, `fast-uri`, `flatted`, `minimatch`, `monaco-editor`, `picomatch`, `rollup`, `ws`, `yaml`
 - `remove`: `@radix-ui/react-label`, `tsx`
 
 `zustand` は完全撤去ではなく縮小方針です。URL と相性の良い page selection state は TanStack Router search params を SoT にし、`zustand` は chart preset / panel visibility / active job tracking のような session-local state に限定します。
