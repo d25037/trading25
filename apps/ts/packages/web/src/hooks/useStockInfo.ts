@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type { StockInfoResponse } from '@trading25/contracts/types/api-response-types';
 import { ApiError, apiGet } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
-export type StockInfoResponse = components['schemas']['StockInfo'];
+export type { StockInfoResponse };
 
 export const stockInfoKeys = {
   detail: (symbol: string) => ['stock-info', symbol] as const,

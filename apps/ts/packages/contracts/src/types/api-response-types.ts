@@ -778,6 +778,37 @@ export interface WatchlistPricesResponse {
   prices: WatchlistStockPrice[];
 }
 
+// ===== STOCK LOOKUP TYPES =====
+
+export interface StockInfoResponse {
+  code: string;
+  companyName: string;
+  companyNameEnglish: string;
+  listedDate: string;
+  marketCode: string;
+  marketName: string;
+  scaleCategory: string;
+  sector17Code: string;
+  sector17Name: string;
+  sector33Code: string;
+  sector33Name: string;
+}
+
+export interface StockSearchResultItem {
+  code: string;
+  companyName: string;
+  companyNameEnglish?: string | null;
+  marketCode: string;
+  marketName: string;
+  sector33Name: string;
+}
+
+export interface StockSearchResponse {
+  count: number;
+  query: string;
+  results: StockSearchResultItem[];
+}
+
 export interface CancelDatasetJobResponse {
   success: boolean;
   jobId: string;

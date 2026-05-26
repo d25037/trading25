@@ -11,6 +11,9 @@ import type {
   PortfolioSummaryResponse,
   PortfolioUpdateRequest,
   PortfolioWithItemsResponse,
+  StockInfoResponse,
+  StockSearchResponse,
+  StockSearchResultItem,
   WatchlistCreateRequest,
   WatchlistDeleteResponse,
   WatchlistItemCreateRequest,
@@ -171,5 +174,39 @@ describe('api-response-types portfolio/watchlist contracts', () => {
     expect(list.watchlists[0]?.stockCount).toBe(4);
     expect(detail.items[0]?.companyName).toBe('Sony');
     expect(priceResponse.prices[0]?.changePercent).toBe(2.04);
+  });
+});
+
+describe('api-response-types stock lookup contracts', () => {
+  it('keeps stock info and search contracts aligned with web usage', () => {
+    const stockInfo: StockInfoResponse = {
+      code: '7203',
+      companyName: 'Toyota Motor',
+      companyNameEnglish: '',
+      listedDate: '',
+      marketCode: '0111',
+      marketName: 'Prime',
+      scaleCategory: '',
+      sector17Code: '',
+      sector17Name: 'Automobiles',
+      sector33Code: '',
+      sector33Name: 'Transportation Equipment',
+    };
+    const result: StockSearchResultItem = {
+      code: '7203',
+      companyName: 'Toyota Motor',
+      companyNameEnglish: null,
+      marketCode: '0111',
+      marketName: 'Prime',
+      sector33Name: 'Transportation Equipment',
+    };
+    const response: StockSearchResponse = {
+      count: 1,
+      query: 'toyota',
+      results: [result],
+    };
+
+    expect(stockInfo.code).toBe('7203');
+    expect(response.results[0]?.companyName).toBe('Toyota Motor');
   });
 });

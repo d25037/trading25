@@ -1,10 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type { StockSearchResponse, StockSearchResultItem } from '@trading25/contracts/types/api-response-types';
 import { apiGet } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
-export type StockSearchResultItem = components['schemas']['StockSearchResultItem'];
-type StockSearchResponse = components['schemas']['StockSearchResponse'];
+export type { StockSearchResultItem };
 
 /**
  * Fetch stock search results from API
