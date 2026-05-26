@@ -1,16 +1,27 @@
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type {
+  PublishedResearchSummaryContract,
+  ResearchCatalogItemContract,
+  ResearchCatalogResponseContract,
+  ResearchDecisionStatus,
+  ResearchDetailResponseContract,
+  ResearchHighlightContract,
+  ResearchHighlightTone,
+  ResearchLabelValueContract,
+  ResearchRunReferenceContract,
+  ResearchTableHighlightContract,
+} from '@trading25/contracts/types/api-response-types';
 
-export type ResearchHighlightTone = components['schemas']['ResearchHighlight']['tone'];
-export type ResearchDecisionStatus = components['schemas']['ResearchCatalogItem']['status'];
+export type { ResearchDecisionStatus, ResearchHighlightTone };
 
-export type ApiResearchLabelValue = components['schemas']['ResearchLabelValue'];
-export type ApiResearchHighlight = components['schemas']['ResearchHighlight'];
-export type ApiResearchTableHighlight = components['schemas']['ResearchTableHighlight'];
-export type ApiPublishedResearchSummary = components['schemas']['PublishedResearchSummary'];
-export type ApiResearchCatalogItem = components['schemas']['ResearchCatalogItem'];
-export type ApiResearchRunReference = components['schemas']['ResearchRunReference'];
-export type ApiResearchCatalogResponse = components['schemas']['ResearchCatalogResponse'];
-export type ApiResearchDetailResponse = components['schemas']['ResearchDetailResponse'];
+// API contract aliases stay tied to the stable contracts package; normalized UI models below stay web-local.
+export type ApiResearchLabelValue = ResearchLabelValueContract;
+export type ApiResearchHighlight = ResearchHighlightContract;
+export type ApiResearchTableHighlight = ResearchTableHighlightContract;
+export type ApiPublishedResearchSummary = PublishedResearchSummaryContract;
+export type ApiResearchCatalogItem = ResearchCatalogItemContract;
+export type ApiResearchRunReference = ResearchRunReferenceContract;
+export type ApiResearchCatalogResponse = ResearchCatalogResponseContract;
+export type ApiResearchDetailResponse = ResearchDetailResponseContract;
 
 export type ResearchLabelValue = ApiResearchLabelValue;
 
