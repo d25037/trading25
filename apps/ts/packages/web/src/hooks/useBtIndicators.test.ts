@@ -180,7 +180,11 @@ describe('buildIndicatorSpecs', () => {
   });
 
   it('should include recent_return for short and long periods when enabled', () => {
-    const settings = { ...baseSettings, showRecentReturnChart: true, recentReturn: { shortPeriod: 20, longPeriod: 60 } };
+    const settings = {
+      ...baseSettings,
+      showRecentReturnChart: true,
+      recentReturn: { shortPeriod: 20, longPeriod: 60 },
+    };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({ type: 'recent_return', params: { lookback_period: 20 } });
     expect(specs).toContainEqual({ type: 'recent_return', params: { lookback_period: 60 } });
