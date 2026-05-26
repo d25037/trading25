@@ -715,6 +715,70 @@ export interface ListPortfoliosResponse {
   portfolios: PortfolioSummaryResponse[];
 }
 
+export interface PortfolioPerformanceSummary {
+  currentValue: number;
+  returnRate: number;
+  totalCost: number;
+  totalPnL: number;
+}
+
+export interface PortfolioHoldingPerformance {
+  code: string;
+  companyName: string;
+  quantity: number;
+  purchasePrice: number;
+  purchaseDate: string;
+  currentPrice: number;
+  cost: number;
+  marketValue: number;
+  pnl: number;
+  returnRate: number;
+  weight: number;
+  account?: string | null;
+}
+
+export interface PortfolioPerformancePoint {
+  date: string;
+  dailyReturn: number;
+  cumulativeReturn: number;
+}
+
+export interface PortfolioPerformanceDateRange {
+  from: string;
+  to: string;
+}
+
+export interface PortfolioBenchmarkMetrics {
+  code: string;
+  name: string;
+  benchmarkReturn: number;
+  relativeReturn: number;
+  beta: number;
+  alpha: number;
+  correlation: number;
+  rSquared: number;
+}
+
+export interface PortfolioBenchmarkPoint {
+  date: string;
+  portfolioReturn: number;
+  benchmarkReturn: number;
+}
+
+export interface PortfolioPerformanceResponse {
+  portfolioId: number;
+  portfolioName: string;
+  portfolioDescription?: string | null;
+  dateRange?: PortfolioPerformanceDateRange | null;
+  dataPoints: number;
+  summary: PortfolioPerformanceSummary;
+  holdings: PortfolioHoldingPerformance[];
+  timeSeries: PortfolioPerformancePoint[];
+  benchmark?: PortfolioBenchmarkMetrics | null;
+  benchmarkTimeSeries?: PortfolioBenchmarkPoint[] | null;
+  warnings: string[];
+}
+
 export interface WatchlistCreateRequest {
   name: string;
   description?: string | null;

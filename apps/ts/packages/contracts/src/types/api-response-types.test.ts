@@ -3,10 +3,17 @@ import type {
   DeleteResponse,
   ListPortfoliosResponse,
   ListWatchlistsResponse,
+  PortfolioBenchmarkMetrics,
+  PortfolioBenchmarkPoint,
   PortfolioCreateRequest,
+  PortfolioHoldingPerformance,
   PortfolioItemCreateRequest,
   PortfolioItemResponse,
   PortfolioItemUpdateRequest,
+  PortfolioPerformanceDateRange,
+  PortfolioPerformancePoint,
+  PortfolioPerformanceResponse,
+  PortfolioPerformanceSummary,
   PortfolioResponse,
   PortfolioSummaryResponse,
   PortfolioUpdateRequest,
@@ -100,6 +107,69 @@ describe('api-response-types portfolio/watchlist contracts', () => {
 
     expect(list.portfolios[0]?.name).toBe('core');
     expect(detail.items[0]?.code).toBe('7203');
+  });
+
+  it('keeps portfolio performance contracts aligned with web usage', () => {
+    const summary: PortfolioPerformanceSummary = {
+      currentValue: 330000,
+      returnRate: 0.1,
+      totalCost: 300000,
+      totalPnL: 30000,
+    };
+    const holding: PortfolioHoldingPerformance = {
+      code: '7203',
+      companyName: 'Toyota',
+      quantity: 100,
+      purchasePrice: 3000,
+      purchaseDate: '2026-01-01',
+      currentPrice: 3300,
+      cost: 300000,
+      marketValue: 330000,
+      pnl: 30000,
+      returnRate: 0.1,
+      weight: 1,
+      account: null,
+    };
+    const point: PortfolioPerformancePoint = {
+      date: '2026-03-04',
+      dailyReturn: 0.01,
+      cumulativeReturn: 0.1,
+    };
+    const dateRange: PortfolioPerformanceDateRange = {
+      from: '2026-01-01',
+      to: '2026-03-04',
+    };
+    const benchmark: PortfolioBenchmarkMetrics = {
+      code: '0000',
+      name: 'TOPIX',
+      benchmarkReturn: 0.02,
+      relativeReturn: 0.08,
+      beta: 1,
+      alpha: 0.01,
+      correlation: 0.8,
+      rSquared: 0.64,
+    };
+    const benchmarkPoint: PortfolioBenchmarkPoint = {
+      date: '2026-03-04',
+      portfolioReturn: 0.1,
+      benchmarkReturn: 0.02,
+    };
+    const response: PortfolioPerformanceResponse = {
+      portfolioId: 1,
+      portfolioName: 'core',
+      dateRange,
+      dataPoints: 1,
+      summary,
+      holdings: [holding],
+      timeSeries: [point],
+      benchmark,
+      benchmarkTimeSeries: [benchmarkPoint],
+      warnings: [],
+    };
+
+    expect(response.summary.totalPnL).toBe(30000);
+    expect(response.holdings[0]?.code).toBe('7203');
+    expect(response.benchmark?.code).toBe('0000');
   });
 
   it('keeps watchlist response contracts aligned with web usage', () => {

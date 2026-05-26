@@ -1,13 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type {
+  PortfolioBenchmarkMetrics,
+  PortfolioBenchmarkPoint,
+  PortfolioHoldingPerformance,
+  PortfolioPerformancePoint,
+  PortfolioPerformanceResponse,
+  PortfolioPerformanceSummary,
+} from '@trading25/contracts/types/api-response-types';
 import { apiGet } from '@/lib/api-client';
 
-export type PortfolioSummary = components['schemas']['PerformanceSummary'];
-export type HoldingPerformance = components['schemas']['HoldingDetail'];
-export type PerformanceDataPoint = components['schemas']['TimeSeriesPoint'];
-export type BenchmarkMetrics = components['schemas']['BenchmarkResult'];
-export type BenchmarkDataPoint = components['schemas']['BenchmarkTimeSeriesPoint'];
-export type PortfolioPerformanceResponse = components['schemas']['PortfolioPerformanceResponse'];
+export type PortfolioSummary = PortfolioPerformanceSummary;
+export type HoldingPerformance = PortfolioHoldingPerformance;
+export type PerformanceDataPoint = PortfolioPerformancePoint;
+export type BenchmarkMetrics = PortfolioBenchmarkMetrics;
+export type BenchmarkDataPoint = PortfolioBenchmarkPoint;
+export type { PortfolioPerformanceResponse };
 
 function fetchPortfolioPerformance(
   portfolioId: number,
