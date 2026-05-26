@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { EnginePolicyMode } from '@trading25/api-clients/backtest';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { isActiveJobStatus, isTerminalJobStatus } from '@trading25/api-clients/base/job-status';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { type ComponentProps, useEffect, useMemo, useState } from 'react';
@@ -125,6 +126,17 @@ function useInvalidateOptimizationHtmlOnTerminalStatus(status: string | null | u
     if (!isOptimizationTerminalStatus(status)) return;
     queryClient.invalidateQueries({ queryKey: optimizationKeys.htmlFiles() });
   }, [status, queryClient]);
+}
+
+function isStaleJobError(error: unknown): boolean {
+  return error instanceof HttpRequestError && error.kind === 'http' && error.status === 404;
+}
+
+function useClearStaleJobId(jobId: string | null, error: unknown, setJobId: (jobId: string | null) => void): void {
+  useEffect(() => {
+    if (!jobId || !isStaleJobError(error)) return;
+    setJobId(null);
+  }, [error, jobId, setJobId]);
 }
 
 async function runBacktestForSelectedStrategy({
@@ -444,10 +456,14 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
   const { activeJobId, setActiveJobId, activeOptimizationJobId, setActiveOptimizationJobId } = useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const { data: strategyDetail } = useStrategy(selectedStrategy);
-  const { data: jobStatus, isLoading: isLoadingJob } = useJobStatus(activeJobId);
+  const { data: jobStatus, error: jobStatusError, isLoading: isLoadingJob } = useJobStatus(activeJobId);
   const runBacktest = useRunBacktest();
   const cancelBacktest = useCancelBacktest();
-  const { data: optimizationJobStatus, isLoading: isLoadingOptJob } = useOptimizationJobStatus(activeOptimizationJobId);
+  const {
+    data: optimizationJobStatus,
+    error: optimizationJobStatusError,
+    isLoading: isLoadingOptJob,
+  } = useOptimizationJobStatus(activeOptimizationJobId);
   const runOptimization = useRunOptimization();
   const { data: gridConfig } = useStrategyOptimization(selectedStrategy);
   const gridParameterEntries = useMemo(
@@ -457,6 +473,8 @@ export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: B
 
   useInvalidateBacktestHtmlOnTerminalStatus(jobStatus?.status);
   useInvalidateOptimizationHtmlOnTerminalStatus(optimizationJobStatus?.status);
+  useClearStaleJobId(activeJobId, jobStatusError, setActiveJobId);
+  useClearStaleJobId(activeOptimizationJobId, optimizationJobStatusError, setActiveOptimizationJobId);
 
   const handleRunBacktest = () =>
     runBacktestForSelectedStrategy({

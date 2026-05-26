@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BacktestRunner } from './BacktestRunner';
 
@@ -35,6 +36,7 @@ const mockHookState = {
   jobStatus: {
     data: null as { status?: string } | null,
     isLoading: false,
+    error: null as Error | null,
   },
   runBacktest: {
     isPending: false,
@@ -47,6 +49,7 @@ const mockHookState = {
   optimizationJobStatus: {
     data: null as { status?: string } | null,
     isLoading: false,
+    error: null as Error | null,
   },
   runOptimization: {
     isPending: false,
@@ -91,6 +94,7 @@ vi.mock('@/hooks/useBacktest', () => ({
   useJobStatus: () => ({
     data: mockHookState.jobStatus.data,
     isLoading: mockHookState.jobStatus.isLoading,
+    error: mockHookState.jobStatus.error,
   }),
   useRunBacktest: () => ({
     mutateAsync: mockRunBacktestMutateAsync,
@@ -111,6 +115,7 @@ vi.mock('@/hooks/useOptimization', () => ({
   useOptimizationJobStatus: () => ({
     data: mockHookState.optimizationJobStatus.data,
     isLoading: mockHookState.optimizationJobStatus.isLoading,
+    error: mockHookState.optimizationJobStatus.error,
   }),
   useRunOptimization: () => ({
     mutateAsync: mockRunOptimizationMutateAsync,
@@ -203,12 +208,14 @@ describe('BacktestRunner', () => {
     mockHookState.strategyDetail = null;
     mockHookState.jobStatus.data = null;
     mockHookState.jobStatus.isLoading = false;
+    mockHookState.jobStatus.error = null;
     mockHookState.runBacktest.isPending = false;
     mockHookState.runBacktest.isError = false;
     mockHookState.runBacktest.error = null;
     mockHookState.cancelBacktest.isPending = false;
     mockHookState.optimizationJobStatus.data = null;
     mockHookState.optimizationJobStatus.isLoading = false;
+    mockHookState.optimizationJobStatus.error = null;
     mockHookState.runOptimization.isPending = false;
     mockHookState.runOptimization.isError = false;
     mockHookState.runOptimization.error = null;
@@ -233,7 +240,9 @@ describe('BacktestRunner', () => {
     expect(screen.getByText('Alpha Strategy')).toBeInTheDocument();
     expect(screen.getByText('Category: production')).toBeInTheDocument();
     expect(screen.getByText('Alpha description')).toBeInTheDocument();
-    expect(screen.getAllByText('No optimization spec found. Configure it in Strategies > Optimize.').length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('No optimization spec found. Configure it in Strategies > Optimize.').length
+    ).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Run Optimization' })).toBeDisabled();
   });
 
@@ -303,6 +312,19 @@ describe('BacktestRunner', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['backtest', 'html-files'] });
   });
 
+  it('clears stale backtest job id when job status returns 404', async () => {
+    mockStore.activeJobId = 'stale-job';
+    mockHookState.jobStatus.error = new HttpRequestError('ジョブが見つかりません: stale-job', 'http', {
+      status: 404,
+    });
+
+    renderBacktestRunner();
+
+    await waitFor(() => {
+      expect(mockSetActiveJobId).toHaveBeenCalledWith(null);
+    });
+  });
+
   it('runs optimization with grid config and displays grid entry details', async () => {
     const user = userEvent.setup();
     mockHookState.gridConfig = {
@@ -354,5 +376,18 @@ describe('BacktestRunner', () => {
     expect(screen.getByText('strategy-disabled:true')).toBeInTheDocument();
     expect(screen.getByText('optimization failed')).toBeInTheDocument();
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['optimization', 'html-files'] });
+  });
+
+  it('clears stale optimization job id when optimization status returns 404', async () => {
+    mockStore.activeOptimizationJobId = 'stale-opt';
+    mockHookState.optimizationJobStatus.error = new HttpRequestError('ジョブが見つかりません: stale-opt', 'http', {
+      status: 404,
+    });
+
+    renderBacktestRunner();
+
+    await waitFor(() => {
+      expect(mockSetActiveOptimizationJobId).toHaveBeenCalledWith(null);
+    });
   });
 });

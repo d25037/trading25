@@ -14,6 +14,7 @@ import type {
   StrategyOptimizationSaveResponse,
   StrategyOptimizationStateResponse,
 } from '@trading25/api-clients/backtest';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { resolveActiveJobRefetchInterval } from '@trading25/api-clients/base/job-status';
 import { backtestClient } from '@/lib/backtest-client';
 import { logger } from '@/utils/logger';
@@ -115,6 +116,10 @@ export function useOptimizationJobStatus(jobId: string | null) {
     enabled: !!jobId,
     refetchInterval: (query) => {
       return resolveActiveJobRefetchInterval(query.state.data?.status);
+    },
+    retry: (failureCount, error) => {
+      if (error instanceof HttpRequestError && error.kind === 'http' && error.status === 404) return false;
+      return failureCount < 2;
     },
     staleTime: 0,
   });

@@ -9,7 +9,8 @@ import type {
   StrategyUpdateRequest,
   StrategyValidationRequest,
 } from '@trading25/api-clients/backtest';
-import { describe, expect, it, vi } from 'vitest';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { backtestClient } from '@/lib/backtest-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import {
@@ -89,6 +90,10 @@ const createWrapper = () => {
     wrapper: createQueryWrapper(queryClient),
   };
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('backtestKeys', () => {
   it('generates correct query keys', () => {
@@ -219,6 +224,42 @@ describe('useJobStatus', () => {
       expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
       expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
     }
+  });
+
+  it('does not retry when job status returns 404', async () => {
+    vi.mocked(backtestClient.getJobStatus).mockRejectedValue(
+      new HttpRequestError('not found', 'http', { status: 404 })
+    );
+
+    const { queryClient, wrapper } = createWrapper();
+    queryClient.setDefaultOptions({
+      queries: {
+        retryDelay: 0,
+      },
+    });
+
+    const { result } = renderHook(() => useJobStatus('missing-job'), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(backtestClient.getJobStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries job status up to two times for non-404 errors', async () => {
+    vi.mocked(backtestClient.getJobStatus).mockRejectedValue(
+      new HttpRequestError('server error', 'http', { status: 500 })
+    );
+
+    const { queryClient, wrapper } = createWrapper();
+    queryClient.setDefaultOptions({
+      queries: {
+        retryDelay: 0,
+      },
+    });
+
+    const { result } = renderHook(() => useJobStatus('job-500'), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(backtestClient.getJobStatus).toHaveBeenCalledTimes(3);
   });
 });
 

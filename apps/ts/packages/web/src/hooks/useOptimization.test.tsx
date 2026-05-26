@@ -4,7 +4,8 @@ import type {
   StrategyOptimizationSaveRequest,
   StrategyOptimizationStateResponse,
 } from '@trading25/api-clients/backtest';
-import { describe, expect, it, vi } from 'vitest';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { backtestClient } from '@/lib/backtest-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import { logger } from '@/utils/logger';
@@ -53,6 +54,10 @@ const createWrapper = () => {
     wrapper: createQueryWrapper(queryClient),
   };
 };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function createOptimizationState(
   overrides: Partial<StrategyOptimizationStateResponse> = {}
@@ -137,6 +142,42 @@ describe('optimization job hooks', () => {
       expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
       expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
     }
+  });
+
+  it('does not retry when optimization job status returns 404', async () => {
+    vi.mocked(backtestClient.getOptimizationJobStatus).mockRejectedValue(
+      new HttpRequestError('not found', 'http', { status: 404 })
+    );
+
+    const { queryClient, wrapper } = createWrapper();
+    queryClient.setDefaultOptions({
+      queries: {
+        retryDelay: 0,
+      },
+    });
+
+    const { result } = renderHook(() => useOptimizationJobStatus('missing-opt'), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries optimization job status up to two times for non-404 errors', async () => {
+    vi.mocked(backtestClient.getOptimizationJobStatus).mockRejectedValue(
+      new HttpRequestError('server error', 'http', { status: 500 })
+    );
+
+    const { queryClient, wrapper } = createWrapper();
+    queryClient.setDefaultOptions({
+      queries: {
+        retryDelay: 0,
+      },
+    });
+
+    const { result } = renderHook(() => useOptimizationJobStatus('opt-500'), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledTimes(3);
   });
 
   it('throws when optimization job status queryFn runs without a job id', async () => {
