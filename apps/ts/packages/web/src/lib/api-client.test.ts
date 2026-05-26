@@ -70,11 +70,13 @@ describe('API methods', () => {
   });
 
   function mockFetch(status: number, body: unknown, ok?: boolean) {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
     const response = {
       ok: ok ?? (status >= 200 && status < 300),
       status,
       statusText: status === 200 ? 'OK' : 'Error',
       json: vi.fn().mockResolvedValue(body),
+      text: vi.fn().mockResolvedValue(text),
     } as unknown as Response;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
     return response;
