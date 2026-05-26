@@ -195,6 +195,10 @@ describe('RankingTable', () => {
     expect(screen.getAllByText('Crowded Rerating')[3]).toHaveClass('text-yellow-800');
     expect(screen.getByText('Prime 20d excess evidence')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '流動性Z' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '状態' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Med ADV60/FF' })).not.toBeInTheDocument();
+    expect(screen.queryByText('8.00%')).not.toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
     expect(screen.getByText('8.00x')).toHaveClass('text-sky-600');
     expect(screen.getByText('11.00x')).toHaveClass('text-yellow-600');

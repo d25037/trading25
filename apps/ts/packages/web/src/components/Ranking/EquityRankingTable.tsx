@@ -137,11 +137,6 @@ function formatSignedNumber(value: number | null | undefined): string {
   return `${sign}${value.toFixed(2)}`;
 }
 
-function formatPercent(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-';
-  return `${value.toFixed(2)}%`;
-}
-
 function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): string {
   if (value === 'neutral_rerating') return 'Neutral Rerating';
   if (value === 'crowded_rerating') return 'Crowded Rerating';
@@ -490,7 +485,6 @@ function EquityCard<T extends EquityRankingItem>({
               value={formatSignedNumber(item.liquidityResidualZ)}
               valueClassName={getEvidenceTierClass(getLiquidityEvidenceTier(item))}
             />
-            <Metric label="Med ADV60/FF" value={formatPercent(item.adv60ToFreeFloatPct)} />
           </>
         ) : null}
       </div>
@@ -694,11 +688,6 @@ function LiquidityHeaders<T extends EquityRankingItem>({
         </SortHeader>
       </th>
       <th className="w-24 px-2 py-1.5 text-center">状態</th>
-      <th className="w-24 px-2 py-1.5 text-right">
-        <SortHeader field="adv60ToFreeFloatPct" sortState={sortState} align="right">
-          Med ADV60/FF
-        </SortHeader>
-      </th>
     </>
   );
 }
@@ -819,7 +808,6 @@ function DesktopEquityRow<T extends EquityRankingItem>({
           <td className="px-2 py-1.5 text-center">
             <LiquidityStateChips item={item} />
           </td>
-          <td className="px-2 py-1.5 text-right tabular-nums">{formatPercent(item.adv60ToFreeFloatPct)}</td>
         </>
       ) : null}
       <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
