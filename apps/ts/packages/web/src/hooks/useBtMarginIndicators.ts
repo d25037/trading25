@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type { MarginIndicatorRequest, MarginIndicatorResponse } from '@trading25/contracts/types/api-response-types';
 import { useMemo } from 'react';
 import { apiPost } from '@/lib/api-client';
 import type { MarginPressureIndicatorsResponse } from '@/types/chart';
 
 // ===== Types =====
 
-type BtMarginRequest = components['schemas']['MarginIndicatorRequest'];
-type BtMarginResponse = components['schemas']['MarginIndicatorResponse'];
+type BtMarginRequest = MarginIndicatorRequest;
+type BtMarginResponse = MarginIndicatorResponse;
 type BtMarginRecord = BtMarginResponse['indicators'][string][number];
 
 // ===== Query Keys =====

@@ -1,5 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type {
+  IndicatorComputeRequest,
+  IndicatorComputeResponse,
+  IndicatorSpec,
+} from '@trading25/contracts/types/api-response-types';
 import { useMemo } from 'react';
 import { apiPost } from '@/lib/api-client';
 import type { ChartSettings } from '@/stores/chartStore';
@@ -18,12 +22,12 @@ import type {
 // ===== Types =====
 
 export interface BtIndicatorSpec {
-  type: components['schemas']['IndicatorSpec']['type'];
+  type: IndicatorSpec['type'];
   params: Record<string, number | string>;
 }
 
-type BtIndicatorComputeRequest = components['schemas']['IndicatorComputeRequest'];
-type BtIndicatorComputeResponse = components['schemas']['IndicatorComputeResponse'];
+type BtIndicatorComputeRequest = IndicatorComputeRequest;
+type BtIndicatorComputeResponse = IndicatorComputeResponse;
 type IndicatorTransformResponse = Pick<BtIndicatorComputeResponse, 'indicators'>;
 
 type BtIndicatorRecord = NonNullable<BtIndicatorComputeResponse['indicators']>[string][number];

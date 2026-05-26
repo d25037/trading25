@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import type { SignalDefinition } from '@trading25/api-clients/backtest';
-import type { components } from '@trading25/contracts/clients/backtest/generated/bt-api-types';
+import type {
+  SignalComputeRequest,
+  SignalComputeResponse,
+  SignalResult,
+} from '@trading25/contracts/types/api-response-types';
 import { useMemo } from 'react';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
@@ -12,9 +16,9 @@ export interface BtSignalSpec {
   mode: 'entry' | 'exit';
 }
 
-type BtSignalComputeRequest = components['schemas']['SignalComputeRequest'];
-type BtSignalComputeResponse = components['schemas']['SignalComputeResponse'];
-type BtSignalResult = components['schemas']['SignalResult'];
+type BtSignalComputeRequest = SignalComputeRequest;
+type BtSignalComputeResponse = SignalComputeResponse;
+type BtSignalResult = SignalResult;
 
 export const btSignalKeys = {
   all: ['bt-signals'] as const,

@@ -4,7 +4,36 @@
  * Single source of truth for API response types shared between packages/web and packages/api-clients.
  */
 
+import type { components as BtApiComponents } from '../clients/backtest/generated/bt-api-types';
 import type { DataProvenance, ResponseDiagnostics } from './api-types';
+
+type BtApiSchemas = BtApiComponents['schemas'];
+
+// ===== BT SIGNAL / INDICATOR CONTRACT TYPES =====
+
+export type IndicatorSpec = BtApiSchemas['IndicatorSpec'];
+export type IndicatorComputeRequest = BtApiSchemas['IndicatorComputeRequest'];
+export type IndicatorComputeResponse = BtApiSchemas['IndicatorComputeResponse'];
+export type MarginIndicatorRequest = BtApiSchemas['MarginIndicatorRequest'];
+export type MarginIndicatorResponse = BtApiSchemas['MarginIndicatorResponse'];
+export type SignalSpec = BtApiSchemas['SignalSpec'];
+export type SignalResult = BtApiSchemas['SignalResult'];
+export type SignalComputeRequest = BtApiSchemas['SignalComputeRequest'];
+export type SignalComputeResponse = BtApiSchemas['SignalComputeResponse'];
+
+// ===== RESEARCH API CONTRACT TYPES =====
+
+export type ResearchHighlightTone = BtApiSchemas['ResearchHighlight']['tone'];
+export type ResearchDecisionStatus = BtApiSchemas['ResearchCatalogItem']['status'];
+export type ResearchLabelValueContract = BtApiSchemas['ResearchLabelValue'];
+export type ResearchHighlightContract = BtApiSchemas['ResearchHighlight'];
+export type ResearchTableHighlightContract = BtApiSchemas['ResearchTableHighlight'];
+export type PublishedReadoutSectionContract = BtApiSchemas['PublishedReadoutSection'];
+export type PublishedResearchSummaryContract = BtApiSchemas['PublishedResearchSummary'];
+export type ResearchCatalogItemContract = BtApiSchemas['ResearchCatalogItem'];
+export type ResearchRunReferenceContract = BtApiSchemas['ResearchRunReference'];
+export type ResearchCatalogResponseContract = BtApiSchemas['ResearchCatalogResponse'];
+export type ResearchDetailResponseContract = BtApiSchemas['ResearchDetailResponse'];
 
 // ===== RANKING TYPES =====
 
