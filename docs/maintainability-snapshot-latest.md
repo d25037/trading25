@@ -18,16 +18,16 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 919 |
-| functions/blocks | 8932 |
-| total lines | 309730 |
-| code lines | 247414 |
+| files | 921 |
+| functions/blocks | 8939 |
+| total lines | 309859 |
+| code lines | 247518 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 658 | 262860 | 217702 |
+| python | 660 | 262989 | 217806 |
 | tsx | 138 | 31081 | 16766 |
 | typescript | 123 | 15789 | 12946 |
 
@@ -46,12 +46,12 @@ Measured tracked source under:
 
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
-| apps/bt/src/infrastructure/db/market/market_db.py | 2191 | 1358 | 59 | 279 | 2 | 6430 |
 | apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py | 2023 | 1857 | 407 | 166 | 4 | 5926 |
 | apps/bt/src/application/services/sync_strategies.py | 1757 | 1567 | 376 | 178 | 5 | 5784 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1909 | 1573 | 124 | 221 | 3 | 5758 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2051 | 1686 | 220 | 197 | 3 | 5727 |
 | apps/bt/src/domains/fundamentals/calculator.py | 1336 | 1214 | 98 | 241 | 3 | 5681 |
+| apps/bt/src/infrastructure/db/market/market_db.py | 1710 | 1205 | 46 | 238 | 2 | 5539 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | 1891 | 1657 | 255 | 174 | 6 | 5464 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | 1900 | 1605 | 240 | 176 | 3 | 5328 |
 | apps/bt/src/domains/analytics/accumulation_flow_followthrough.py | 2058 | 1834 | 185 | 163 | 4 | 5183 |

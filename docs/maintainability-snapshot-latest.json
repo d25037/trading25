@@ -20,16 +20,16 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 919,
-    "functions": 8932,
-    "total_lines": 309730,
-    "code_lines": 247414
+    "files": 921,
+    "functions": 8939,
+    "total_lines": 309859,
+    "code_lines": 247518
   },
   "languages": {
     "python": {
-      "files": 658,
-      "total_lines": 262860,
-      "code_lines": 217702
+      "files": 660,
+      "total_lines": 262989,
+      "code_lines": 217806
     },
     "tsx": {
       "files": 138,
@@ -54,17 +54,6 @@
     "branch_50_plus": 2
   },
   "top_files": [
-    {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 2191,
-      "code_lines": 1358,
-      "branch_score": 279,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 59,
-      "hotspot_score": 6430
-    },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
       "language": "python",
@@ -119,6 +108,17 @@
       "function_count": 75,
       "max_function_lines": 98,
       "hotspot_score": 5681
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
+      "language": "python",
+      "total_lines": 1710,
+      "code_lines": 1205,
+      "branch_score": 238,
+      "max_nesting": 2,
+      "function_count": 87,
+      "max_function_lines": 46,
+      "hotspot_score": 5539
     },
     {
       "path": "apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py",
@@ -584,17 +584,6 @@
   ],
   "branch_hotspots": [
     {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 2191,
-      "code_lines": 1358,
-      "branch_score": 279,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 59,
-      "hotspot_score": 6430
-    },
-    {
       "path": "apps/bt/src/domains/fundamentals/calculator.py",
       "language": "python",
       "total_lines": 1336,
@@ -604,6 +593,17 @@
       "function_count": 75,
       "max_function_lines": 98,
       "hotspot_score": 5681
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
+      "language": "python",
+      "total_lines": 1710,
+      "code_lines": 1205,
+      "branch_score": 238,
+      "max_nesting": 2,
+      "function_count": 87,
+      "max_function_lines": 46,
+      "hotspot_score": 5539
     },
     {
       "path": "apps/ts/packages/web/src/pages/SymbolWorkbenchPage.tsx",
