@@ -1,4 +1,4 @@
-"""Stock daily bulk fetch helper for market sync strategies."""
+"""Stock daily fetch helpers for market sync strategies."""
 
 from __future__ import annotations
 
@@ -7,9 +7,12 @@ from typing import Any
 
 from loguru import logger
 
-from src.application.services import sync_bulk_ingest_helpers, sync_fetch_planner
+from src.application.services import sync_bulk_ingest_helpers, sync_fetch_planner, sync_publish_helpers
+from src.application.services.ingestion_pipeline import run_ingestion_batch, validate_rows_required_fields
 from src.application.services.jquants_bulk_service import BulkFetchResult, BulkFileInfo
+from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_row_converters import build_target_date_set
+from src.application.services.sync_row_converters import convert_stock_data_rows as _convert_stock_data_rows
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,19 @@ class StockDataBulkFetchOutcome:
     bulk_result: BulkFetchResult | None = None
     used_rest_fallback: bool = False
     fallback_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class StockDataRestDateOutcome:
+    api_calls: int
+    stocks_updated: int
+
+
+class StockDataRestDateIngestionError(RuntimeError):
+    def __init__(self, original: Exception, *, api_calls: int) -> None:
+        super().__init__(str(original))
+        self.api_calls = api_calls
+        self.original = original
 
 
 async def execute_stock_data_bulk_fetch(
@@ -95,3 +111,35 @@ async def execute_stock_data_bulk_fetch(
             used_rest_fallback=True,
             fallback_reason=fallback_reason,
         )
+
+
+async def execute_stock_data_rest_date(ctx: Any, *, date: str) -> StockDataRestDateOutcome:
+    payload, page_calls = await get_paginated_rows_with_call_count(
+        ctx.client,
+        "/equities/bars/daily",
+        params={"date": date},
+    )
+
+    async def _prefetched_stock_rows() -> list[dict[str, Any]]:
+        return payload
+
+    try:
+        batch = await run_ingestion_batch(
+            stage="stock_data",
+            fetch=_prefetched_stock_rows,
+            normalize=_convert_stock_data_rows,
+            validate=lambda rows: validate_rows_required_fields(
+                rows,
+                required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+                dedupe_keys=("code", "date"),
+                stage="stock_data",
+            ),
+            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
+        )
+    except Exception as exc:
+        raise StockDataRestDateIngestionError(exc, api_calls=page_calls) from exc
+
+    return StockDataRestDateOutcome(
+        api_calls=page_calls,
+        stocks_updated=batch.published_count,
+    )

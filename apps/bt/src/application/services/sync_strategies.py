@@ -57,7 +57,6 @@ from src.application.services.sync_row_converters import (
     convert_index_master_rows,
     convert_indices_data_rows as _convert_indices_data_rows,
     convert_margin_rows as _convert_margin_rows,
-    convert_stock_data_rows as _convert_stock_data_rows,
     convert_stock_rows,
     convert_topix_rows as _convert_topix_rows,
     extract_dates_after as _extract_dates_after,
@@ -87,7 +86,11 @@ from src.application.services.sync_margin_data import (
 from src.application.services.sync_stock_master import (
     sync_daily_stock_master,
 )
-from src.application.services.sync_stock_data_fetch import execute_stock_data_bulk_fetch
+from src.application.services.sync_stock_data_fetch import (
+    StockDataRestDateIngestionError,
+    execute_stock_data_bulk_fetch,
+    execute_stock_data_rest_date,
+)
 from src.application.services.sync_options_225_data import (
     resolve_incremental_options_date_targets as _resolve_incremental_options_date_targets,
     sync_options_225_dates as _sync_options_225_dates,
@@ -658,31 +661,19 @@ async def _sync_initial_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
             )
         try:
-            payload, page_calls = await get_paginated_rows_with_call_count(
-                ctx.client,
-                "/equities/bars/daily",
-                params={"date": date},
-            )
-            api_calls += page_calls
-            stage_api_calls += page_calls
-
-            async def _prefetched_stock_rows() -> list[dict[str, Any]]:
-                return payload
-
-            batch = await run_ingestion_batch(
-                stage="stock_data",
-                fetch=_prefetched_stock_rows,
-                normalize=_convert_stock_data_rows,
-                validate=lambda rows: validate_rows_required_fields(
-                    rows,
-                    required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                    dedupe_keys=("code", "date"),
-                    stage="stock_data",
-                ),
-                publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
-            )
-            stocks_updated += batch.published_count
+            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            api_calls += outcome.api_calls
+            stage_api_calls += outcome.api_calls
+            stocks_updated += outcome.stocks_updated
             consecutive_failures = 0
+        except StockDataRestDateIngestionError as e:
+            api_calls += e.api_calls
+            stage_api_calls += e.api_calls
+            failed_dates.append(date)
+            consecutive_failures += 1
+            if consecutive_failures >= 5:
+                errors.append(f"Too many consecutive failures at {date}")
+                break
         except Exception:
             failed_dates.append(date)
             consecutive_failures += 1
@@ -978,29 +969,12 @@ async def _sync_incremental_stock_data_rest(
                 f"Fetching /equities/bars/daily via REST: {index}/{len(stock_target_dates)} dates...",
             )
         try:
-            payload, page_calls = await get_paginated_rows_with_call_count(
-                ctx.client,
-                "/equities/bars/daily",
-                params={"date": date},
-            )
-            api_calls += page_calls
-
-            async def _prefetched_new_date_rows() -> list[dict[str, Any]]:
-                return payload
-
-            batch = await run_ingestion_batch(
-                stage="stock_data",
-                fetch=_prefetched_new_date_rows,
-                normalize=_convert_stock_data_rows,
-                validate=lambda rows: validate_rows_required_fields(
-                    rows,
-                    required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                    dedupe_keys=("code", "date"),
-                    stage="stock_data",
-                ),
-                publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
-            )
-            stocks_updated += batch.published_count
+            outcome = await execute_stock_data_rest_date(ctx, date=date)
+            api_calls += outcome.api_calls
+            stocks_updated += outcome.stocks_updated
+        except StockDataRestDateIngestionError as e:
+            api_calls += e.api_calls
+            errors.append(f"Date {date}: {e}")
         except Exception as e:
             errors.append(f"Date {date}: {e}")
     sync_fetch_planner._log_sync_fetch_execution(

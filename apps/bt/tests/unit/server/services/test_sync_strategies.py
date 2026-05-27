@@ -37,6 +37,10 @@ from src.application.services.sync_row_converters import (
     group_stock_master_bulk_rows_by_date,
 )
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
+from src.application.services.sync_stock_data_fetch import (
+    StockDataRestDateIngestionError,
+    execute_stock_data_rest_date,
+)
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
@@ -1126,6 +1130,28 @@ async def test_execute_bulk_fetch_stage_runs_bulk_and_reports_api_calls() -> Non
     assert any("via BULK" in message for message in progress_messages)
     assert fetch_details[-1]["eventType"] == "execution"
     assert fetch_details[-1]["method"] == "bulk"
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_rest_date_preserves_api_calls_on_publish_failure() -> None:
+    class FailingStockDataStore(DummyTimeSeriesStore):
+        def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+            del rows
+            raise RuntimeError("publish failed")
+
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=["2026-02-10"])
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        time_series_store=FailingStockDataStore(market_db),
+    )
+
+    with pytest.raises(StockDataRestDateIngestionError) as exc_info:
+        await execute_stock_data_rest_date(ctx, date="2026-02-10")
+
+    assert exc_info.value.api_calls == 1
+    assert str(exc_info.value) == "publish failed"
 
 
 @pytest.mark.asyncio
