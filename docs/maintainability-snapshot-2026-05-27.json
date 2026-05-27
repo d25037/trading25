@@ -20,37 +20,37 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 928,
-    "functions": 9035,
-    "total_lines": 311326,
-    "code_lines": 248978
+    "files": 935,
+    "functions": 9090,
+    "total_lines": 312476,
+    "code_lines": 249911
   },
   "languages": {
     "python": {
-      "files": 663,
-      "total_lines": 264326,
-      "code_lines": 219148
+      "files": 669,
+      "total_lines": 265429,
+      "code_lines": 220012
     },
     "tsx": {
       "files": 142,
-      "total_lines": 31211,
-      "code_lines": 16884
+      "total_lines": 30961,
+      "code_lines": 16689
     },
     "typescript": {
-      "files": 123,
-      "total_lines": 15789,
-      "code_lines": 12946
+      "files": 124,
+      "total_lines": 16086,
+      "code_lines": 13210
     }
   },
   "file_buckets": {
-    "critical_1000_plus": 83,
-    "high_800_plus": 136,
+    "critical_1000_plus": 84,
+    "high_800_plus": 135,
     "warn_500_plus": 200
   },
   "function_buckets": {
-    "critical_180_plus": 39,
-    "high_120_plus": 170,
-    "warn_80_plus": 485,
+    "critical_180_plus": 37,
+    "high_120_plus": 168,
+    "warn_80_plus": 484,
     "branch_50_plus": 2
   },
   "top_files": [
@@ -86,17 +86,6 @@
       "function_count": 33,
       "max_function_lines": 255,
       "hotspot_score": 5464
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 1955,
-      "code_lines": 1762,
-      "branch_score": 182,
-      "max_nesting": 5,
-      "function_count": 78,
-      "max_function_lines": 169,
-      "hotspot_score": 5430
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
@@ -198,17 +187,6 @@
       "hotspot_score": 4467
     },
     {
-      "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
-      "language": "tsx",
-      "total_lines": 810,
-      "code_lines": 567,
-      "branch_score": 207,
-      "max_nesting": 5,
-      "function_count": 26,
-      "max_function_lines": 88,
-      "hotspot_score": 4442
-    },
-    {
       "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
       "language": "python",
       "total_lines": 1270,
@@ -229,17 +207,6 @@
       "function_count": 55,
       "max_function_lines": 166,
       "hotspot_score": 4370
-    },
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1096,
-      "code_lines": 990,
-      "branch_score": 180,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 4359
     },
     {
       "path": "apps/bt/src/domains/analytics/recent_return_threshold_forward_response.py",
@@ -328,6 +295,39 @@
       "function_count": 37,
       "max_function_lines": 109,
       "hotspot_score": 4009
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/annual_forward_per_regime_decomposition.py",
+      "language": "python",
+      "total_lines": 1360,
+      "code_lines": 1285,
+      "branch_score": 129,
+      "max_nesting": 6,
+      "function_count": 29,
+      "max_function_lines": 142,
+      "hotspot_score": 3943
+    },
+    {
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1045,
+      "code_lines": 941,
+      "branch_score": 158,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 3914
+    },
+    {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1517,
+      "code_lines": 1355,
+      "branch_score": 117,
+      "max_nesting": 5,
+      "function_count": 72,
+      "max_function_lines": 169,
+      "hotspot_score": 3853
     }
   ],
   "top_functions": [
@@ -340,16 +340,6 @@
       "lines": 287,
       "branch_score": 17,
       "max_nesting": 2
-    },
-    {
-      "path": "apps/bt/src/domains/strategy/core/mixins/backtest_executor_mixin.py",
-      "name": "run_multi_backtest",
-      "language": "python",
-      "start_line": 478,
-      "end_line": 850,
-      "lines": 285,
-      "branch_score": 46,
-      "max_nesting": 4
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_fixed_committee_overlay.py",
@@ -380,16 +370,6 @@
       "lines": 245,
       "branch_score": 8,
       "max_nesting": 2
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_stock_master.py",
-      "name": "sync_daily_stock_master",
-      "language": "python",
-      "start_line": 58,
-      "end_line": 309,
-      "lines": 244,
-      "branch_score": 32,
-      "max_nesting": 5
     },
     {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
@@ -580,6 +560,26 @@
       "lines": 192,
       "branch_score": 30,
       "max_nesting": 5
+    },
+    {
+      "path": "apps/bt/src/application/services/sync_fundamentals_data.py",
+      "name": "sync_fundamentals_initial",
+      "language": "python",
+      "start_line": 91,
+      "end_line": 288,
+      "lines": 190,
+      "branch_score": 25,
+      "max_nesting": 4
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix500_positive_eps_missing_forecast_cfo_positive_deep_dive.py",
+      "name": "run_topix500_positive_eps_missing_forecast_cfo_positive_deep_dive",
+      "language": "python",
+      "start_line": 584,
+      "end_line": 776,
+      "lines": 189,
+      "branch_score": 10,
+      "max_nesting": 1
     }
   ],
   "branch_hotspots": [
@@ -593,17 +593,6 @@
       "function_count": 60,
       "max_function_lines": 124,
       "hotspot_score": 5758
-    },
-    {
-      "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
-      "language": "tsx",
-      "total_lines": 810,
-      "code_lines": 567,
-      "branch_score": 207,
-      "max_nesting": 5,
-      "function_count": 26,
-      "max_function_lines": 88,
-      "hotspot_score": 4442
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py",
@@ -628,17 +617,6 @@
       "hotspot_score": 4137
     },
     {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 1955,
-      "code_lines": 1762,
-      "branch_score": 182,
-      "max_nesting": 5,
-      "function_count": 78,
-      "max_function_lines": 169,
-      "hotspot_score": 5430
-    },
-    {
       "path": "apps/bt/src/application/services/research_catalog_service.py",
       "language": "python",
       "total_lines": 995,
@@ -648,17 +626,6 @@
       "function_count": 46,
       "max_function_lines": 68,
       "hotspot_score": 4173
-    },
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1096,
-      "code_lines": 990,
-      "branch_score": 180,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 4359
     },
     {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
@@ -747,6 +714,39 @@
       "function_count": 37,
       "max_function_lines": 109,
       "hotspot_score": 4009
+    },
+    {
+      "path": "apps/ts/packages/api-clients/src/analytics/types.ts",
+      "language": "typescript",
+      "total_lines": 625,
+      "code_lines": 553,
+      "branch_score": 159,
+      "max_nesting": 2,
+      "function_count": 0,
+      "max_function_lines": 0,
+      "hotspot_score": 3465
+    },
+    {
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1045,
+      "code_lines": 941,
+      "branch_score": 158,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 3914
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py",
+      "language": "python",
+      "total_lines": 1585,
+      "code_lines": 1507,
+      "branch_score": 157,
+      "max_nesting": 7,
+      "function_count": 33,
+      "max_function_lines": 214,
+      "hotspot_score": 4910
     }
   ],
   "nesting_hotspots": [

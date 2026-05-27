@@ -475,46 +475,20 @@ class BacktestExecutorMixin:
         self.combined_portfolio = portfolio
         return portfolio
 
-    def run_multi_backtest(
-        self: "StrategyProtocol",
-        allocation_pct: Optional[float] = None,
-    ) -> Tuple[ExecutionPortfolioProtocol, Optional[pd.DataFrame]]:
-        """
-        複数銘柄・Relative Modeのバックテストを実行
-
-        Args:
-            allocation_pct: 配分率上書き（Noneの場合は均等配分）
-
-        Returns:
-            Tuple[ExecutionPortfolioProtocol, Optional[pd.DataFrame]]:
-                - ポートフォリオオブジェクト
-                - エントリーシグナルDataFrame（統合ポートフォリオの場合のみ、個別ポートフォリオの場合はNone）
-        """
-        if allocation_pct is None:
-            # 新規の第1段階実行時は以前のキャッシュを無効化
-            self._clear_grouped_portfolio_inputs_cache()
-
-        # パラメータ設定
-        use_group_by = self.group_by
-
-        # データ読み込み（Relative Modeかどうかで分岐）
-        multi_data_dict = None
-        relative_data_dict = None
-        execution_data_dict = None
-
-        # Relative Mode判定とロギング
+    def _log_multi_backtest_start(self: "StrategyProtocol", *, use_group_by: bool) -> None:
         mode_info = []
         if self.relative_mode:
             mode_info.append("Relative Mode")
         mode_str = " + ".join(mode_info) if mode_info else "Standard"
-
         self._log(f"{self.__class__.__name__} {mode_str} 実行開始", "info")
         self._log(
             f"銘柄数: {len(self.stock_codes)}, Group By: {use_group_by}",
             "debug",
         )
 
-        # セクターデータ（シグナル用・一度だけロード）
+    def _load_multi_backtest_signal_dependencies(
+        self: "StrategyProtocol",
+    ) -> tuple[Any, dict[str, str] | None]:
         sector_data = None
         stock_sector_mapping = None
 
@@ -550,7 +524,6 @@ class BacktestExecutorMixin:
                     "warning",
                 )
 
-        # ベンチマークデータ依存シグナルが有効な場合はベンチマークデータをロード
         if self._should_load_benchmark():
             self._log(
                 "ベンチマークデータ依存シグナル有効 - ベンチマークデータロード開始",
@@ -574,18 +547,25 @@ class BacktestExecutorMixin:
                     "warning",
                 )
 
-        # データ読み込み
+        return sector_data, stock_sector_mapping
+
+    def _load_multi_backtest_price_data(
+        self: "StrategyProtocol",
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
         if self.relative_mode:
-            # Relative Mode: 相対価格データ（シグナル用）と実際価格データ（実行用）を分離
             relative_data_dict, execution_data_dict = self.load_relative_data()
             self._log(
                 "Relative Mode - シグナル用相対データと実行用実データを準備完了", "info"
             )
-        else:
-            # Standard Mode: 通常のマルチアセットデータ
-            multi_data_dict = self.load_multi_data()
+            return None, relative_data_dict, execution_data_dict
+        return self.load_multi_data(), None, None
 
-        # 🔧 データ同期: ロード成功した銘柄のみに絞り込み
+    def _filter_stock_codes_to_loaded_data(
+        self: "StrategyProtocol",
+        *,
+        multi_data_dict: dict[str, Any] | None,
+        execution_data_dict: dict[str, Any] | None,
+    ) -> None:
         if self.relative_mode and execution_data_dict is not None:
             loaded_codes = set(execution_data_dict.keys())
         elif multi_data_dict is not None:
@@ -601,11 +581,307 @@ class BacktestExecutorMixin:
                 f"⚠️ {len(missing_codes)}銘柄のデータが見つかりません: {sorted(missing_codes)[:10]}{'...' if len(missing_codes) > 10 else ''}",
                 "warning",
             )
-            # stock_codesを実際にロードできた銘柄に更新
             self.stock_codes = [code for code in self.stock_codes if code in loaded_codes]
 
         if not self.stock_codes:
             raise ValueError("有効な銘柄データがありません。データセットを確認してください。")
+
+    def _build_grouped_signal_frames(
+        self: "StrategyProtocol",
+        data_dict: Dict[str, pd.DataFrame],
+        entries_dict: Dict[str, pd.Series],
+        exits_dict: Dict[str, pd.Series],
+    ) -> GroupedPortfolioInputs:
+        open_data = pd.DataFrame(
+            {
+                stock_code: data["Open"]
+                for stock_code, data in data_dict.items()
+            }
+        )
+        close_data = pd.DataFrame(
+            {
+                stock_code: data["Close"]
+                for stock_code, data in data_dict.items()
+            }
+        )
+
+        # pandas 2.2.0+ FutureWarning回避のため、オプション設定を使用
+        with pd.option_context("future.no_silent_downcasting", True):
+            all_entries = (
+                pd.DataFrame(entries_dict)
+                .fillna(False)
+                .infer_objects(copy=False)
+                .astype(bool)
+            )
+            all_exits = (
+                pd.DataFrame(exits_dict)
+                .fillna(False)
+                .infer_objects(copy=False)
+                .astype(bool)
+            )
+
+        close_data = close_data.astype(float)
+        all_entries = self._apply_dynamic_universe_entry_gate(all_entries)
+        return open_data, close_data, all_entries, all_exits
+
+    def _log_grouped_signal_summary(
+        self: "StrategyProtocol",
+        *,
+        close_data: pd.DataFrame,
+        all_entries: pd.DataFrame,
+        all_exits: pd.DataFrame,
+    ) -> None:
+        total_entries = all_entries.sum().sum()
+        total_exits = all_exits.sum().sum()
+        self._log(
+            f"データ統合完了 - Close: {close_data.shape}, Entries: {all_entries.shape}, Exits: {all_exits.shape}",
+            "debug",
+        )
+        self._log(
+            f"🚀 統合シグナル統計 - 全買いシグナル: {total_entries}件, 全売りシグナル: {total_exits}件",
+            "info",
+        )
+
+        entries_per_stock = all_entries.sum()
+        active_stocks = (entries_per_stock > 0).sum()
+        self._log(
+            f"📈 アクティブ銘柄数: {active_stocks}/{len(self.stock_codes)}銘柄",
+            "info",
+        )
+
+    def _apply_grouped_position_limit(
+        self: "StrategyProtocol",
+        all_entries: pd.DataFrame,
+        all_exits: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        if not self.max_concurrent_positions:
+            return all_entries, all_exits
+        limited_entries = self._limit_entries_per_day(
+            all_entries, self.max_concurrent_positions
+        )
+        if self._uses_round_trip_execution():
+            return limited_entries, self._build_empty_exit_frame(limited_entries)
+        return limited_entries, all_exits
+
+    def _create_grouped_portfolio_from_signals(
+        self: "StrategyProtocol",
+        data_dict: Dict[str, pd.DataFrame],
+        entries_dict: Dict[str, pd.Series],
+        exits_dict: Dict[str, pd.Series],
+        allocation_pct: Optional[float],
+    ) -> Tuple[ExecutionPortfolioProtocol, pd.DataFrame]:
+        try:
+            open_data, close_data, all_entries, all_exits = self._build_grouped_signal_frames(
+                data_dict,
+                entries_dict,
+                exits_dict,
+            )
+            self._log_grouped_signal_summary(
+                close_data=close_data,
+                all_entries=all_entries,
+                all_exits=all_exits,
+            )
+            all_entries, all_exits = self._apply_grouped_position_limit(all_entries, all_exits)
+
+            self._set_grouped_portfolio_inputs_cache(
+                open_data=open_data,
+                close_data=close_data,
+                all_entries=all_entries,
+                all_exits=all_exits,
+            )
+
+            portfolio = self._create_grouped_portfolio(
+                open_data=open_data,
+                close_data=close_data,
+                all_entries=all_entries,
+                all_exits=all_exits,
+                allocation_pct=allocation_pct,
+            )
+
+            self.combined_portfolio = portfolio
+            self._log("統合ポートフォリオ作成完了", "info")
+            return portfolio, all_entries
+        except Exception as e:
+            self._log(f"ポートフォリオ作成エラー: {e}", "error")
+            raise RuntimeError(f"Failed to create portfolio: {e}")
+
+    def _resolve_stock_sector_name(
+        self: "StrategyProtocol",
+        stock_code: str,
+        stock_sector_mapping: dict[str, str] | None,
+    ) -> str | None:
+        if stock_sector_mapping and stock_code in stock_sector_mapping:
+            return stock_sector_mapping[stock_code]
+        return None
+
+    def _optional_daily_frame(
+        self: "StrategyProtocol",
+        stock_payload: dict[str, Any],
+        key: str,
+        *,
+        enabled: bool,
+    ) -> pd.DataFrame | None:
+        if not enabled or key not in stock_payload:
+            return None
+        return cast(pd.DataFrame, stock_payload[key])
+
+    def _generate_relative_mode_stock_signals(
+        self: "StrategyProtocol",
+        stock_code: str,
+        *,
+        relative_data_dict: dict[str, Any],
+        execution_data_dict: dict[str, Any],
+        sector_data: Any,
+        stock_sector_name: str | None,
+    ) -> tuple[pd.DataFrame, pd.Series, pd.Series] | None:
+        relative_stock_data = relative_data_dict.get(stock_code)
+        execution_stock_data = execution_data_dict.get(stock_code)
+        if relative_stock_data is None or execution_stock_data is None:
+            self._log(
+                f"{stock_code}: Relative Mode データが不足しているためスキップします",
+                "warning",
+            )
+            return None
+
+        signal_data = cast(pd.DataFrame, relative_stock_data["daily"])
+        execution_data = cast(pd.DataFrame, execution_stock_data["daily"])
+        signals = self.generate_multi_signals(
+            stock_code,
+            signal_data,
+            margin_data=self._optional_daily_frame(
+                execution_stock_data,
+                "margin_daily",
+                enabled=self.include_margin_data,
+            ),
+            statements_data=self._optional_daily_frame(
+                execution_stock_data,
+                "statements_daily",
+                enabled=self.include_statements_data,
+            ),
+            execution_data=execution_data,
+            sector_data=sector_data,
+            stock_sector_name=stock_sector_name,
+            universe_multi_data=execution_data_dict,
+            universe_member_codes=self.stock_codes,
+        )
+        self._log(
+            f"{stock_code} (Relative): 相対データでシグナル生成, 実データで実行（β値・売買代金は実価格使用）",
+            "debug",
+        )
+        return execution_data, signals.entries, signals.exits
+
+    def _generate_standard_mode_stock_signals(
+        self: "StrategyProtocol",
+        stock_code: str,
+        *,
+        multi_data_dict: dict[str, Any],
+        sector_data: Any,
+        stock_sector_name: str | None,
+    ) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+        stock_payload = multi_data_dict[stock_code]
+        stock_data = cast(pd.DataFrame, stock_payload["daily"])
+        signals = self.generate_multi_signals(
+            stock_code,
+            stock_data,
+            margin_data=self._optional_daily_frame(
+                stock_payload,
+                "margin_daily",
+                enabled=self.include_margin_data,
+            ),
+            statements_data=self._optional_daily_frame(
+                stock_payload,
+                "statements_daily",
+                enabled=self.include_statements_data,
+            ),
+            sector_data=sector_data,
+            stock_sector_name=stock_sector_name,
+            universe_multi_data=multi_data_dict,
+            universe_member_codes=self.stock_codes,
+        )
+        return stock_data, signals.entries, signals.exits
+
+    def _build_stock_signals_for_multi_backtest(
+        self: "StrategyProtocol",
+        stock_code: str,
+        *,
+        multi_data_dict: dict[str, Any] | None,
+        relative_data_dict: dict[str, Any] | None,
+        execution_data_dict: dict[str, Any] | None,
+        sector_data: Any,
+        stock_sector_mapping: dict[str, str] | None,
+    ) -> tuple[pd.DataFrame, pd.Series, pd.Series] | None:
+        stock_sector_name = self._resolve_stock_sector_name(stock_code, stock_sector_mapping)
+        if self.relative_mode and relative_data_dict is not None and execution_data_dict is not None:
+            return self._generate_relative_mode_stock_signals(
+                stock_code,
+                relative_data_dict=relative_data_dict,
+                execution_data_dict=execution_data_dict,
+                sector_data=sector_data,
+                stock_sector_name=stock_sector_name,
+            )
+        if multi_data_dict is None:
+            raise ValueError("Data loading failed - no valid data source available")
+        return self._generate_standard_mode_stock_signals(
+            stock_code,
+            multi_data_dict=multi_data_dict,
+            sector_data=sector_data,
+            stock_sector_name=stock_sector_name,
+        )
+
+    def _log_stock_signal_summary(
+        self: "StrategyProtocol",
+        stock_code: str,
+        *,
+        stock_data: pd.DataFrame,
+        entries: pd.Series,
+        exits: pd.Series,
+    ) -> None:
+        entries_count = entries.sum()
+        exits_count = exits.sum()
+        data_length = len(stock_data)
+
+        self._log(
+            f"{stock_code}: 買い{entries_count}件, 売り{exits_count}件 (データ{data_length}日分)",
+            "info",
+        )
+
+        if entries_count == 0:
+            self._log(f"⚠️  {stock_code}: 買いシグナルが1件もありません", "warning")
+        elif entries_count < 5:
+            self._log(
+                f"📊 {stock_code}: 買いシグナルが少数({entries_count}件)です",
+                "info",
+            )
+
+    def run_multi_backtest(
+        self: "StrategyProtocol",
+        allocation_pct: Optional[float] = None,
+    ) -> Tuple[ExecutionPortfolioProtocol, Optional[pd.DataFrame]]:
+        """
+        複数銘柄・Relative Modeのバックテストを実行
+
+        Args:
+            allocation_pct: 配分率上書き（Noneの場合は均等配分）
+
+        Returns:
+            Tuple[ExecutionPortfolioProtocol, Optional[pd.DataFrame]]:
+                - ポートフォリオオブジェクト
+                - エントリーシグナルDataFrame（統合ポートフォリオの場合のみ、個別ポートフォリオの場合はNone）
+        """
+        if allocation_pct is None:
+            # 新規の第1段階実行時は以前のキャッシュを無効化
+            self._clear_grouped_portfolio_inputs_cache()
+
+        # パラメータ設定
+        use_group_by = self.group_by
+
+        self._log_multi_backtest_start(use_group_by=use_group_by)
+        sector_data, stock_sector_mapping = self._load_multi_backtest_signal_dependencies()
+        multi_data_dict, relative_data_dict, execution_data_dict = self._load_multi_backtest_price_data()
+        self._filter_stock_codes_to_loaded_data(
+            multi_data_dict=multi_data_dict,
+            execution_data_dict=execution_data_dict,
+        )
 
         # 各銘柄のデータとシグナルを統合
         data_dict = {}
@@ -613,112 +889,17 @@ class BacktestExecutorMixin:
         exits_dict = {}
 
         for stock_code in self.stock_codes:
-            # セクターシグナル用: 当該銘柄のセクター名を取得
-            stock_sector_name = None
-            if stock_sector_mapping and stock_code in stock_sector_mapping:
-                stock_sector_name = stock_sector_mapping[stock_code]
-
-            if (
-                self.relative_mode
-                and relative_data_dict is not None
-                and execution_data_dict is not None
-            ):
-                relative_stock_data = relative_data_dict.get(stock_code)
-                execution_stock_data = execution_data_dict.get(stock_code)
-                if relative_stock_data is None or execution_stock_data is None:
-                    self._log(
-                        f"{stock_code}: Relative Mode データが不足しているためスキップします",
-                        "warning",
-                    )
-                    continue
-
-                # Relative Mode: 相対価格データでシグナル生成、実際の価格データでポートフォリオ実行
-                signal_data = cast(
-                    pd.DataFrame,
-                    relative_stock_data["daily"],
-                )  # シグナル用相対データ
-                execution_data = cast(
-                    pd.DataFrame,
-                    execution_stock_data["daily"],
-                )  # 実行用実データ
-
-                # margin_dataを取得（利用可能な場合）
-                margin_data = None
-                if (
-                    self.include_margin_data
-                    and "margin_daily" in execution_stock_data
-                ):
-                    margin_data = cast(
-                        pd.DataFrame,
-                        execution_stock_data["margin_daily"],
-                    )
-
-                # statements_dataの取得
-                statements_data = None
-                if (
-                    self.include_statements_data
-                    and "statements_daily" in execution_stock_data
-                ):
-                    statements_data = cast(
-                        pd.DataFrame,
-                        execution_stock_data["statements_daily"],
-                    )
-
-                # 相対価格データでシグナル生成（実価格データも渡す）
-                signals = self.generate_multi_signals(
-                    stock_code,
-                    signal_data,
-                    margin_data=margin_data,
-                    statements_data=statements_data,
-                    execution_data=execution_data,  # 実価格データを渡す（β値・売買代金シグナル用）
-                    sector_data=sector_data,
-                    stock_sector_name=stock_sector_name,
-                    universe_multi_data=execution_data_dict,
-                    universe_member_codes=self.stock_codes,
-                )
-                entries, exits = signals.entries, signals.exits
-
-                # 実際の価格データをポートフォリオ実行用に設定
-                stock_data = execution_data
-
-                self._log(
-                    f"{stock_code} (Relative): 相対データでシグナル生成, 実データで実行（β値・売買代金は実価格使用）",
-                    "debug",
-                )
-
-            elif multi_data_dict is not None:
-                # 通常のシングルTF処理
-                stock_data = multi_data_dict[stock_code]["daily"]
-
-                # margin_dataを取得（利用可能な場合）
-                margin_data = None
-                if (
-                    self.include_margin_data
-                    and "margin_daily" in multi_data_dict[stock_code]
-                ):
-                    margin_data = multi_data_dict[stock_code]["margin_daily"]
-
-                # statements_dataの取得
-                statements_data = None
-                if (
-                    self.include_statements_data
-                    and "statements_daily" in multi_data_dict[stock_code]
-                ):
-                    statements_data = multi_data_dict[stock_code]["statements_daily"]
-
-                signals = self.generate_multi_signals(
-                    stock_code,
-                    stock_data,
-                    margin_data=margin_data,
-                    statements_data=statements_data,
-                    sector_data=sector_data,
-                    stock_sector_name=stock_sector_name,
-                    universe_multi_data=multi_data_dict,
-                    universe_member_codes=self.stock_codes,
-                )
-                entries, exits = signals.entries, signals.exits
-            else:
-                raise ValueError("Data loading failed - no valid data source available")
+            stock_signal_result = self._build_stock_signals_for_multi_backtest(
+                stock_code,
+                multi_data_dict=multi_data_dict,
+                relative_data_dict=relative_data_dict,
+                execution_data_dict=execution_data_dict,
+                sector_data=sector_data,
+                stock_sector_mapping=stock_sector_mapping,
+            )
+            if stock_signal_result is None:
+                continue
+            stock_data, entries, exits = stock_signal_result
 
             if self._uses_round_trip_execution():
                 entries, exits = self._prepare_round_trip_signals(
@@ -730,115 +911,20 @@ class BacktestExecutorMixin:
             data_dict[stock_code] = stock_data
             entries_dict[stock_code] = entries
             exits_dict[stock_code] = exits
-
-            # 🔍 DEBUG: 各銘柄のシグナル生成状況を詳細出力
-            entries_count = entries.sum()
-            exits_count = exits.sum()
-            data_length = len(stock_data)
-
-            self._log(
-                f"{stock_code}: 買い{entries_count}件, 売り{exits_count}件 (データ{data_length}日分)",
-                "info",
+            self._log_stock_signal_summary(
+                stock_code,
+                stock_data=stock_data,
+                entries=entries,
+                exits=exits,
             )
 
-            # さらに詳細なデバッグ情報
-            if entries_count == 0:
-                self._log(f"⚠️  {stock_code}: 買いシグナルが1件もありません", "warning")
-            elif entries_count < 5:
-                self._log(
-                    f"📊 {stock_code}: 買いシグナルが少数({entries_count}件)です",
-                    "info",
-                )
-
         if use_group_by:
-            # 統合ポートフォリオの場合
-            # VectorBTネイティブ統合ポートフォリオ作成
-            try:
-                open_data = pd.DataFrame(
-                    {
-                        stock_code: data["Open"]
-                        for stock_code, data in data_dict.items()
-                    }
-                )
-                close_data = pd.DataFrame(
-                    {
-                        stock_code: data["Close"]
-                        for stock_code, data in data_dict.items()
-                    }
-                )
-
-                # エントリー・エグジットシグナル統合
-                # pandas 2.2.0+ FutureWarning回避のため、オプション設定を使用
-                with pd.option_context("future.no_silent_downcasting", True):
-                    all_entries = (
-                        pd.DataFrame(entries_dict)
-                        .fillna(False)
-                        .infer_objects(copy=False)
-                        .astype(bool)
-                    )
-                    all_exits = (
-                        pd.DataFrame(exits_dict)
-                        .fillna(False)
-                        .infer_objects(copy=False)
-                        .astype(bool)
-                    )
-
-                # データ型確認とクリーニング
-                close_data = close_data.astype(float)
-                all_entries = self._apply_dynamic_universe_entry_gate(all_entries)
-
-                # 🔍 DEBUG: 統合後のシグナル統計
-                total_entries = all_entries.sum().sum()
-                total_exits = all_exits.sum().sum()
-
-                self._log(
-                    f"データ統合完了 - Close: {close_data.shape}, Entries: {all_entries.shape}, Exits: {all_exits.shape}",
-                    "debug",
-                )
-                self._log(
-                    f"🚀 統合シグナル統計 - 全買いシグナル: {total_entries}件, 全売りシグナル: {total_exits}件",
-                    "info",
-                )
-
-                # 各銘柄ごとのシグナル数もチェック
-                entries_per_stock = all_entries.sum()
-                active_stocks = (entries_per_stock > 0).sum()
-                self._log(
-                    f"📈 アクティブ銘柄数: {active_stocks}/{len(self.stock_codes)}銘柄",
-                    "info",
-                )
-
-                # 同時保有ポジション数の上限（簡易: 日次のエントリー数を制限）
-                if self.max_concurrent_positions:
-                    all_entries = self._limit_entries_per_day(
-                        all_entries, self.max_concurrent_positions
-                    )
-                    if self._uses_round_trip_execution():
-                        all_exits = self._build_empty_exit_frame(all_entries)
-
-                self._set_grouped_portfolio_inputs_cache(
-                    open_data=open_data,
-                    close_data=close_data,
-                    all_entries=all_entries,
-                    all_exits=all_exits,
-                )
-
-                portfolio = self._create_grouped_portfolio(
-                    open_data=open_data,
-                    close_data=close_data,
-                    all_entries=all_entries,
-                    all_exits=all_exits,
-                    allocation_pct=allocation_pct,
-                )
-
-                self.combined_portfolio = portfolio
-                self._log("統合ポートフォリオ作成完了", "info")
-
-                # ポートフォリオとエントリーシグナルDataFrameを返却
-                return portfolio, all_entries
-            except Exception as e:
-                self._log(f"ポートフォリオ作成エラー: {e}", "error")
-                raise RuntimeError(f"Failed to create portfolio: {e}")
+            return self._create_grouped_portfolio_from_signals(
+                data_dict,
+                entries_dict,
+                exits_dict,
+                allocation_pct,
+            )
         else:
             self._clear_grouped_portfolio_inputs_cache()
             # 個別ポートフォリオの場合（ピラミッディングは未実装）
