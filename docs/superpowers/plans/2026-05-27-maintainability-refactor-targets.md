@@ -128,6 +128,17 @@ The scope was intentionally narrowed to Data Plane risk reduction: market DuckDB
 | functions/blocks branch score >= 50 | 3 | 2 | <= 2 |
 | files >= 1000 lines | 85 | 84 | secondary |
 
+Phase 5 completed on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The scope was sync-orchestration risk reduction: stock-master daily sync and index-master placeholder backfill were moved out of `sync_strategies.py` while preserving the existing import names for tests and callers. The sync-specific target was met; the repo-wide top hotspot target was not forced because the top file became a research runner.
+
+| metric | phase 4 actual | phase 5 actual | phase 5 target |
+| --- | ---: | ---: | ---: |
+| repo top hotspot file score | 7,056 | 6,938 | <= 6,500 |
+| `sync_strategies.py` hotspot score | 7,056 | 5,784 | <= 6,200 |
+| `_sync_daily_stock_master` code lines in `sync_strategies.py` | 244 | moved out | moved out |
+| `IncrementalSyncStrategy.execute` code lines | 376 | 376 | unchanged or lower |
+| functions/blocks branch score >= 50 | 2 | 2 | <= 2 |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:

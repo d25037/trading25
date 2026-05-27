@@ -18,16 +18,16 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 911 |
-| functions/blocks | 8924 |
-| total lines | 309604 |
-| code lines | 247341 |
+| files | 913 |
+| functions/blocks | 8926 |
+| total lines | 309679 |
+| code lines | 247402 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 650 | 262734 | 217629 |
+| python | 652 | 262809 | 217690 |
 | tsx | 138 | 31081 | 16766 |
 | typescript | 123 | 15789 | 12946 |
 
@@ -46,12 +46,12 @@ Measured tracked source under:
 
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
-| apps/bt/src/application/services/sync_strategies.py | 2060 | 1849 | 376 | 233 | 5 | 7056 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2373 | 1990 | 220 | 246 | 4 | 6938 |
 | apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py | 2329 | 2140 | 407 | 192 | 4 | 6677 |
 | apps/bt/src/infrastructure/db/market/market_db.py | 2191 | 1358 | 59 | 279 | 2 | 6430 |
 | apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py | 1862 | 1744 | 235 | 223 | 4 | 6323 |
 | apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 2051 | 1705 | 124 | 245 | 3 | 6322 |
+| apps/bt/src/application/services/sync_strategies.py | 1757 | 1567 | 376 | 178 | 5 | 5784 |
 | apps/bt/src/domains/fundamentals/calculator.py | 1336 | 1214 | 98 | 241 | 3 | 5681 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | 1891 | 1657 | 255 | 174 | 6 | 5464 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | 1900 | 1605 | 240 | 176 | 3 | 5328 |
@@ -79,7 +79,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_fixed_committee_overlay.py | run_topix100_top1_open_to_open_5d_fixed_committee_overlay_research | 257 | 19 | 2 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | run_volume_ratio_future_return_regime_research | 255 | 29 | 3 |
 | apps/bt/src/domains/analytics/nt_ratio_change_topix_close_stock_overnight_distribution.py | run_nt_ratio_change_topix_close_stock_overnight_distribution | 245 | 8 | 2 |
-| apps/bt/src/application/services/sync_strategies.py | _sync_daily_stock_master | 244 | 32 | 5 |
+| apps/bt/src/application/services/sync_stock_master.py | sync_daily_stock_master | 244 | 32 | 5 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | _build_event_ledger | 240 | 29 | 3 |
 
 ## Interpretation Rules

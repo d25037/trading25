@@ -20,16 +20,16 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 911,
-    "functions": 8924,
-    "total_lines": 309604,
-    "code_lines": 247341
+    "files": 913,
+    "functions": 8926,
+    "total_lines": 309679,
+    "code_lines": 247402
   },
   "languages": {
     "python": {
-      "files": 650,
-      "total_lines": 262734,
-      "code_lines": 217629
+      "files": 652,
+      "total_lines": 262809,
+      "code_lines": 217690
     },
     "tsx": {
       "files": 138,
@@ -54,17 +54,6 @@
     "branch_50_plus": 2
   },
   "top_files": [
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 2060,
-      "code_lines": 1849,
-      "branch_score": 233,
-      "max_nesting": 5,
-      "function_count": 73,
-      "max_function_lines": 376,
-      "hotspot_score": 7056
-    },
     {
       "path": "apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py",
       "language": "python",
@@ -119,6 +108,17 @@
       "function_count": 65,
       "max_function_lines": 124,
       "hotspot_score": 6322
+    },
+    {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1757,
+      "code_lines": 1567,
+      "branch_score": 178,
+      "max_nesting": 5,
+      "function_count": 68,
+      "max_function_lines": 376,
+      "hotspot_score": 5784
     },
     {
       "path": "apps/bt/src/domains/fundamentals/calculator.py",
@@ -355,8 +355,8 @@
       "path": "apps/bt/src/application/services/sync_strategies.py",
       "name": "execute",
       "language": "python",
-      "start_line": 1034,
-      "end_line": 1456,
+      "start_line": 1039,
+      "end_line": 1461,
       "lines": 376,
       "branch_score": 49,
       "max_nesting": 5
@@ -405,8 +405,8 @@
       "path": "apps/bt/src/application/services/sync_strategies.py",
       "name": "execute",
       "language": "python",
-      "start_line": 504,
-      "end_line": 822,
+      "start_line": 509,
+      "end_line": 827,
       "lines": 288,
       "branch_score": 30,
       "max_nesting": 5
@@ -462,11 +462,11 @@
       "max_nesting": 2
     },
     {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "name": "_sync_daily_stock_master",
+      "path": "apps/bt/src/application/services/sync_stock_master.py",
+      "name": "sync_daily_stock_master",
       "language": "python",
-      "start_line": 1776,
-      "end_line": 2027,
+      "start_line": 58,
+      "end_line": 309,
       "lines": 244,
       "branch_score": 32,
       "max_nesting": 5
@@ -628,17 +628,6 @@
       "hotspot_score": 5681
     },
     {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 2060,
-      "code_lines": 1849,
-      "branch_score": 233,
-      "max_nesting": 5,
-      "function_count": 73,
-      "max_function_lines": 376,
-      "hotspot_score": 7056
-    },
-    {
       "path": "apps/ts/packages/web/src/pages/SymbolWorkbenchPage.tsx",
       "language": "tsx",
       "total_lines": 1486,
@@ -714,6 +703,17 @@
       "function_count": 46,
       "max_function_lines": 68,
       "hotspot_score": 4173
+    },
+    {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1757,
+      "code_lines": 1567,
+      "branch_score": 178,
+      "max_nesting": 5,
+      "function_count": 68,
+      "max_function_lines": 376,
+      "hotspot_score": 5784
     },
     {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
