@@ -21,15 +21,15 @@
   },
   "totals": {
     "files": 926,
-    "functions": 8990,
-    "total_lines": 310725,
-    "code_lines": 248318
+    "functions": 9008,
+    "total_lines": 310903,
+    "code_lines": 248567
   },
   "languages": {
     "python": {
       "files": 661,
-      "total_lines": 263725,
-      "code_lines": 218488
+      "total_lines": 263903,
+      "code_lines": 218737
     },
     "tsx": {
       "files": 142,
@@ -43,14 +43,14 @@
     }
   },
   "file_buckets": {
-    "critical_1000_plus": 82,
+    "critical_1000_plus": 83,
     "high_800_plus": 136,
     "warn_500_plus": 200
   },
   "function_buckets": {
-    "critical_180_plus": 42,
+    "critical_180_plus": 40,
     "high_120_plus": 171,
-    "warn_80_plus": 482,
+    "warn_80_plus": 484,
     "branch_50_plus": 2
   },
   "top_files": [
@@ -75,17 +75,6 @@
       "function_count": 49,
       "max_function_lines": 220,
       "hotspot_score": 5727
-    },
-    {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 1710,
-      "code_lines": 1205,
-      "branch_score": 238,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 46,
-      "hotspot_score": 5539
     },
     {
       "path": "apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py",
@@ -308,6 +297,17 @@
       "hotspot_score": 4173
     },
     {
+      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
+      "language": "python",
+      "total_lines": 1400,
+      "code_lines": 1011,
+      "branch_score": 171,
+      "max_nesting": 2,
+      "function_count": 87,
+      "max_function_lines": 43,
+      "hotspot_score": 4139
+    },
+    {
       "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
       "language": "typescript",
       "total_lines": 974,
@@ -332,16 +332,6 @@
   ],
   "top_functions": [
     {
-      "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_shock_confirmation_vote_overlay.py",
-      "name": "run_topix_downside_return_standard_deviation_shock_confirmation_vote_overlay_research",
-      "language": "python",
-      "start_line": 198,
-      "end_line": 544,
-      "lines": 338,
-      "branch_score": 20,
-      "max_nesting": 2
-    },
-    {
       "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_trend_breadth_overlay.py",
       "name": "run_topix_downside_return_standard_deviation_trend_breadth_overlay_research",
       "language": "python",
@@ -349,16 +339,6 @@
       "end_line": 501,
       "lines": 313,
       "branch_score": 18,
-      "max_nesting": 2
-    },
-    {
-      "path": "apps/bt/src/application/services/db_validation_service.py",
-      "name": "validate_market_db",
-      "language": "python",
-      "start_line": 314,
-      "end_line": 635,
-      "lines": 312,
-      "branch_score": 11,
       "max_nesting": 2
     },
     {
@@ -580,20 +560,29 @@
       "lines": 198,
       "branch_score": 2,
       "max_nesting": 1
+    },
+    {
+      "path": "apps/bt/src/application/services/fundamentals_service.py",
+      "name": "compute_fundamentals",
+      "language": "python",
+      "start_line": 751,
+      "end_line": 966,
+      "lines": 197,
+      "branch_score": 18,
+      "max_nesting": 1
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close.py",
+      "name": "_run_sma_ratio_rank_future_close_research",
+      "language": "python",
+      "start_line": 344,
+      "end_line": 548,
+      "lines": 195,
+      "branch_score": 10,
+      "max_nesting": 1
     }
   ],
   "branch_hotspots": [
-    {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 1710,
-      "code_lines": 1205,
-      "branch_score": 238,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 46,
-      "hotspot_score": 5539
-    },
     {
       "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
       "language": "python",
@@ -703,6 +692,17 @@
       "function_count": 41,
       "max_function_lines": 64,
       "hotspot_score": 3741
+    },
+    {
+      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
+      "language": "python",
+      "total_lines": 1400,
+      "code_lines": 1011,
+      "branch_score": 171,
+      "max_nesting": 2,
+      "function_count": 87,
+      "max_function_lines": 43,
+      "hotspot_score": 4139
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",

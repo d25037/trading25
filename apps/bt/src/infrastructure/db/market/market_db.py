@@ -17,7 +17,6 @@ from typing import Any, cast
 
 import pandas as pd
 
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.infrastructure.db.market.market_schema import (
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
@@ -29,6 +28,8 @@ from src.infrastructure.db.market.market_schema import (
     STOCK_MASTER_DAILY_RELATION as _STOCK_MASTER_DAILY_RELATION,
     ensure_market_schema,
 )
+from src.infrastructure.db.market import stock_master_queries as _stock_master_queries
+from src.infrastructure.db.market import time_series_writers as _time_series_writers
 from src.infrastructure.db.market.valuation_queries import (
     get_adjusted_metrics_snapshot as _get_adjusted_metrics_snapshot,
     get_adjusted_statement_metrics as _get_adjusted_statement_metrics,
@@ -259,17 +260,19 @@ class MarketDb:
 
     def get_latest_trading_date(self) -> str | None:
         """topix_data の最新取引日を取得。"""
-        if not self._table_exists("topix_data"):
-            return None
-        row = self._fetchone("SELECT MAX(date) FROM topix_data")
-        return str(row[0]) if row and row[0] is not None else None
+        return _stock_master_queries.get_latest_table_date(
+            self._table_exists,
+            self._fetchone,
+            table_name="topix_data",
+        )
 
     def get_latest_stock_data_date(self) -> str | None:
         """stock_data の最新取引日を取得。"""
-        if not self._table_exists("stock_data"):
-            return None
-        row = self._fetchone("SELECT MAX(date) FROM stock_data")
-        return str(row[0]) if row and row[0] is not None else None
+        return _stock_master_queries.get_latest_table_date(
+            self._table_exists,
+            self._fetchone,
+            table_name="stock_data",
+        )
 
     def get_adjusted_statement_metrics(
         self,
@@ -317,66 +320,35 @@ class MarketDb:
         end_date: str | None = None,
     ) -> list[str]:
         """topix_data の取引日一覧を取得。"""
-        if not self._table_exists("topix_data"):
-            return []
-        sql = "SELECT date FROM topix_data"
-        params: list[Any] = []
-        conditions: list[str] = []
-        if start_date:
-            conditions.append("date >= ?")
-            params.append(start_date)
-        if end_date:
-            conditions.append("date <= ?")
-            params.append(end_date)
-        if conditions:
-            sql += " WHERE " + " AND ".join(conditions)
-        sql += " ORDER BY date"
-        rows = self._fetchall(sql, params)
-        return [str(row[0]) for row in rows if row and row[0]]
+        return _stock_master_queries.get_topix_dates(
+            self._table_exists,
+            self._fetchall,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
     def get_latest_stock_master_date(self) -> str | None:
         """stock_master_daily の最新スナップショット日を取得。"""
-        if not self._table_exists("stock_master_daily"):
-            return None
-        row = self._fetchone("SELECT MAX(date) FROM stock_master_daily")
-        return str(row[0]) if row and row[0] is not None else None
+        return _stock_master_queries.get_latest_table_date(
+            self._table_exists,
+            self._fetchone,
+            table_name="stock_master_daily",
+        )
 
     def get_missing_stock_master_dates(self, *, limit: int | None = 20) -> list[str]:
         """TOPIX 取引日のうち daily master が存在しない日付を取得。"""
-        if not self._table_exists("topix_data") or not self._table_exists("stock_master_daily"):
-            return []
-        sql = """
-            SELECT t.date
-            FROM topix_data t
-            LEFT JOIN stock_master_daily m ON m.date = t.date
-            GROUP BY t.date
-            HAVING COUNT(m.code) = 0
-            ORDER BY t.date
-        """
-        params: list[Any] = []
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(max(limit, 0))
-        rows = self._fetchall(sql, params)
-        return [str(row[0]) for row in rows if row and row[0]]
+        return _stock_master_queries.get_missing_stock_master_dates(
+            self._table_exists,
+            self._fetchall,
+            limit=limit,
+        )
 
     def get_missing_stock_master_dates_count(self) -> int:
         """TOPIX 取引日のうち daily master が存在しない日付数。"""
-        if not self._table_exists("topix_data") or not self._table_exists("stock_master_daily"):
-            return 0
-        row = self._fetchone(
-            """
-            SELECT COUNT(*)
-            FROM (
-                SELECT t.date
-                FROM topix_data t
-                LEFT JOIN stock_master_daily m ON m.date = t.date
-                GROUP BY t.date
-                HAVING COUNT(m.code) = 0
-            ) missing
-            """
+        return _stock_master_queries.get_missing_stock_master_dates_count(
+            self._table_exists,
+            self._fetchone,
         )
-        return int(row[0] or 0) if row else 0
 
     def get_stock_master_rows_for_date(
         self,
@@ -386,47 +358,13 @@ class MarketDb:
         scale_categories: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """指定日の PIT 銘柄マスタ行を取得。latest fallback はしない。"""
-        if not self._table_exists("stock_master_daily"):
-            return []
-        conditions = ["date = ?"]
-        params: list[Any] = [as_of_date]
-        if market_codes:
-            placeholders = ", ".join("?" for _ in market_codes)
-            conditions.append(f"market_code IN ({placeholders})")
-            params.extend(market_codes)
-        if scale_categories:
-            placeholders = ", ".join("?" for _ in scale_categories)
-            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
-            params.extend(scale_categories)
-        rows = self._fetchall(
-            f"""
-            SELECT
-                date, code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date
-            FROM stock_master_daily
-            WHERE {' AND '.join(conditions)}
-            ORDER BY code
-            """,
-            params,
+        return _stock_master_queries.get_stock_master_rows_for_date(
+            self._table_exists,
+            self._fetchall,
+            as_of_date,
+            market_codes=market_codes,
+            scale_categories=scale_categories,
         )
-        return [
-            {
-                "date": row[0],
-                "code": row[1],
-                "company_name": row[2],
-                "company_name_english": row[3],
-                "market_code": row[4],
-                "market_name": row[5],
-                "sector_17_code": row[6],
-                "sector_17_name": row[7],
-                "sector_33_code": row[8],
-                "sector_33_name": row[9],
-                "scale_category": row[10],
-                "listed_date": row[11],
-            }
-            for row in rows
-        ]
 
     def get_stock_master_codes_for_date(
         self,
@@ -437,32 +375,14 @@ class MarketDb:
         exclude_scale_categories: list[str] | None = None,
     ) -> list[str]:
         """指定日の PIT 銘柄コードだけを取得。latest fallback はしない。"""
-        if not self._table_exists("stock_master_daily"):
-            return []
-        conditions = ["date = ?"]
-        params: list[Any] = [as_of_date]
-        if market_codes:
-            placeholders = ", ".join("?" for _ in market_codes)
-            conditions.append(f"market_code IN ({placeholders})")
-            params.extend(market_codes)
-        if scale_categories:
-            placeholders = ", ".join("?" for _ in scale_categories)
-            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
-            params.extend(scale_categories)
-        if exclude_scale_categories:
-            placeholders = ", ".join("?" for _ in exclude_scale_categories)
-            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
-            params.extend(exclude_scale_categories)
-        rows = self._fetchall(
-            f"""
-            SELECT code
-            FROM stock_master_daily
-            WHERE {' AND '.join(conditions)}
-            ORDER BY code
-            """,
-            params,
+        return _stock_master_queries.get_stock_master_codes_for_date(
+            self._table_exists,
+            self._fetchall,
+            as_of_date,
+            market_codes=market_codes,
+            scale_categories=scale_categories,
+            exclude_scale_categories=exclude_scale_categories,
         )
-        return [code for row in rows if row and (code := normalize_stock_code(row[0]))]
 
     def get_stock_master_codes_for_date_range(
         self,
@@ -474,32 +394,15 @@ class MarketDb:
         exclude_scale_categories: list[str] | None = None,
     ) -> list[str]:
         """指定期間内に条件を満たした PIT 銘柄コードの superset を取得する。"""
-        if not self._table_exists("stock_master_daily"):
-            return []
-        conditions = ["date BETWEEN ? AND ?"]
-        params: list[Any] = [start_date, end_date]
-        if market_codes:
-            placeholders = ", ".join("?" for _ in market_codes)
-            conditions.append(f"market_code IN ({placeholders})")
-            params.extend(market_codes)
-        if scale_categories:
-            placeholders = ", ".join("?" for _ in scale_categories)
-            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
-            params.extend(scale_categories)
-        if exclude_scale_categories:
-            placeholders = ", ".join("?" for _ in exclude_scale_categories)
-            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
-            params.extend(exclude_scale_categories)
-        rows = self._fetchall(
-            f"""
-            SELECT DISTINCT code
-            FROM stock_master_daily
-            WHERE {' AND '.join(conditions)}
-            ORDER BY code
-            """,
-            params,
+        return _stock_master_queries.get_stock_master_codes_for_date_range(
+            self._table_exists,
+            self._fetchall,
+            start_date,
+            end_date,
+            market_codes=market_codes,
+            scale_categories=scale_categories,
+            exclude_scale_categories=exclude_scale_categories,
         )
-        return [code for row in rows if row and (code := normalize_stock_code(row[0]))]
 
     def get_stock_master_code_dates_for_date_range(
         self,
@@ -512,55 +415,25 @@ class MarketDb:
         exclude_scale_categories: list[str] | None = None,
     ) -> list[tuple[str, str]]:
         """指定期間内に universe 条件を満たした (date, code) を取得する。"""
-        if not self._table_exists("stock_master_daily"):
-            return []
-        conditions = ["date BETWEEN ? AND ?"]
-        params: list[Any] = [start_date, end_date]
-        if codes:
-            placeholders = ", ".join("?" for _ in codes)
-            conditions.append(f"code IN ({placeholders})")
-            params.extend(codes)
-        if market_codes:
-            placeholders = ", ".join("?" for _ in market_codes)
-            conditions.append(f"market_code IN ({placeholders})")
-            params.extend(market_codes)
-        if scale_categories:
-            placeholders = ", ".join("?" for _ in scale_categories)
-            conditions.append(f"coalesce(scale_category, '') IN ({placeholders})")
-            params.extend(scale_categories)
-        if exclude_scale_categories:
-            placeholders = ", ".join("?" for _ in exclude_scale_categories)
-            conditions.append(f"coalesce(scale_category, '') NOT IN ({placeholders})")
-            params.extend(exclude_scale_categories)
-        rows = self._fetchall(
-            f"""
-            SELECT date, code
-            FROM stock_master_daily
-            WHERE {' AND '.join(conditions)}
-            ORDER BY date, code
-            """,
-            params,
+        return _stock_master_queries.get_stock_master_code_dates_for_date_range(
+            self._table_exists,
+            self._fetchall,
+            start_date,
+            end_date,
+            codes=codes,
+            market_codes=market_codes,
+            scale_categories=scale_categories,
+            exclude_scale_categories=exclude_scale_categories,
         )
-        return [
-            (str(row[0]), code)
-            for row in rows
-            if row and (code := normalize_stock_code(row[1]))
-        ]
 
     def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]:
         """指定日の指数 membership code set。latest fallback はしない。"""
-        if not self._table_exists("index_membership_daily"):
-            return set()
-        rows = self._fetchall(
-            """
-            SELECT code
-            FROM index_membership_daily
-            WHERE date = ? AND index_code = ?
-            ORDER BY code
-            """,
-            [as_of_date, index_code],
+        return _stock_master_queries.get_index_membership_codes(
+            self._table_exists,
+            self._fetchall,
+            as_of_date,
+            index_code,
         )
-        return {code for row in rows if row and (code := normalize_stock_code(row[0]))}
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""
@@ -1092,218 +965,35 @@ class MarketDb:
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("time"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("volume"),
-                row.get("turnover_value"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO stock_data_minute_raw (
-                code, date, time, open, high, low, close, volume, turnover_value, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code, date, time) DO UPDATE
-            SET open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                volume = excluded.volume,
-                turnover_value = excluded.turnover_value,
-                created_at = excluded.created_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _time_series_writers.upsert_stock_minute_data(self._executemany, rows)
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
         """topix_data テーブルに upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO topix_data (date, open, high, low, close, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT (date) DO UPDATE
-            SET open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                created_at = excluded.created_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _time_series_writers.upsert_topix_data(self._executemany, rows)
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
         """indices_data テーブルに upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("sector_name"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO indices_data (code, date, open, high, low, close, sector_name, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code, date) DO UPDATE
-            SET open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                sector_name = excluded.sector_name,
-                created_at = excluded.created_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _time_series_writers.upsert_indices_data(self._executemany, rows)
 
     def upsert_options_225_data(self, rows: list[dict[str, Any]]) -> int:
         """options_225_data テーブルに upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("whole_day_open"),
-                row.get("whole_day_high"),
-                row.get("whole_day_low"),
-                row.get("whole_day_close"),
-                row.get("night_session_open"),
-                row.get("night_session_high"),
-                row.get("night_session_low"),
-                row.get("night_session_close"),
-                row.get("day_session_open"),
-                row.get("day_session_high"),
-                row.get("day_session_low"),
-                row.get("day_session_close"),
-                row.get("volume"),
-                row.get("open_interest"),
-                row.get("turnover_value"),
-                row.get("contract_month"),
-                row.get("strike_price"),
-                row.get("only_auction_volume"),
-                row.get("emergency_margin_trigger_division"),
-                row.get("put_call_division"),
-                row.get("last_trading_day"),
-                row.get("special_quotation_day"),
-                row.get("settlement_price"),
-                row.get("theoretical_price"),
-                row.get("base_volatility"),
-                row.get("underlying_price"),
-                row.get("implied_volatility"),
-                row.get("interest_rate"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO options_225_data (
-                code, date, whole_day_open, whole_day_high, whole_day_low, whole_day_close,
-                night_session_open, night_session_high, night_session_low, night_session_close,
-                day_session_open, day_session_high, day_session_low, day_session_close,
-                volume, open_interest, turnover_value, contract_month, strike_price,
-                only_auction_volume, emergency_margin_trigger_division, put_call_division,
-                last_trading_day, special_quotation_day, settlement_price, theoretical_price,
-                base_volatility, underlying_price, implied_volatility, interest_rate, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code, date) DO UPDATE
-            SET whole_day_open = excluded.whole_day_open,
-                whole_day_high = excluded.whole_day_high,
-                whole_day_low = excluded.whole_day_low,
-                whole_day_close = excluded.whole_day_close,
-                night_session_open = excluded.night_session_open,
-                night_session_high = excluded.night_session_high,
-                night_session_low = excluded.night_session_low,
-                night_session_close = excluded.night_session_close,
-                day_session_open = excluded.day_session_open,
-                day_session_high = excluded.day_session_high,
-                day_session_low = excluded.day_session_low,
-                day_session_close = excluded.day_session_close,
-                volume = excluded.volume,
-                open_interest = excluded.open_interest,
-                turnover_value = excluded.turnover_value,
-                contract_month = excluded.contract_month,
-                strike_price = excluded.strike_price,
-                only_auction_volume = excluded.only_auction_volume,
-                emergency_margin_trigger_division = excluded.emergency_margin_trigger_division,
-                put_call_division = excluded.put_call_division,
-                last_trading_day = excluded.last_trading_day,
-                special_quotation_day = excluded.special_quotation_day,
-                settlement_price = excluded.settlement_price,
-                theoretical_price = excluded.theoretical_price,
-                base_volatility = excluded.base_volatility,
-                underlying_price = excluded.underlying_price,
-                implied_volatility = excluded.implied_volatility,
-                interest_rate = excluded.interest_rate,
-                created_at = excluded.created_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _time_series_writers.upsert_options_225_data(self._executemany, rows)
 
     def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
         """margin_data テーブルに upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("long_margin_volume"),
-                row.get("short_margin_volume"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO margin_data (code, date, long_margin_volume, short_margin_volume)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (code, date) DO UPDATE
-            SET long_margin_volume = excluded.long_margin_volume,
-                short_margin_volume = excluded.short_margin_volume
-            """,
-            params,
-        )
-        return len(rows)
+        return _time_series_writers.upsert_margin_data(self._executemany, rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
         """statements テーブルに upsert（非NULL優先マージ）。"""
