@@ -1,15 +1,11 @@
 import type {
   AuthoringFieldSchema,
-  SignalDefinition,
-  SignalFieldDefinition,
   StrategyEditorReferenceResponse,
   StrategyValidationResponse,
 } from '@trading25/api-clients/backtest';
 import { AlertCircle, CheckCircle2, Eye, FileCode2, Loader2, PencilLine, Sparkles } from 'lucide-react';
 import { type ReactNode, useCallback, useId, useMemo } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
-import { ReferenceSelectFieldCard } from '@/components/Backtest/ReferenceSelectFieldCard';
-import { buildDefaultSignalParams, SignalFieldInputs } from '@/components/Backtest/SignalFieldInputs';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,8 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   useSignalReference,
   useStrategyEditorContext,
@@ -33,22 +27,15 @@ import {
 import { useDatasetInfo, useDatasets } from '@/hooks/useDataset';
 import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
-import { buildVisualAdvancedOnlyPaths, deriveFundamentalParentFieldNames } from './authoringDocumentUtils';
-import {
-  addFundamentalSignalConfig,
-  asStringArray,
-  buildDefaultFundamentalConfig as buildDefaultFundamentalConfigFromFields,
-  buildSignalOptions,
-  getValueAtPath,
-  hasValueAtPath,
-  isPlainObject,
-  normalizeSignalSection,
-  removeFundamentalChildConfig,
-  updateFundamentalChildConfig,
-  updateFundamentalParentConfig,
-  updateRegularSignalConfig,
-} from './authoringUtils';
+import { buildVisualAdvancedOnlyPaths } from './authoringDocumentUtils';
+import { getValueAtPath, hasValueAtPath, isPlainObject, normalizeSignalSection } from './authoringUtils';
 import { SignalReferencePanel } from './SignalReferencePanel';
+import { useStrategyEditorSharedConfigFields } from './StrategyEditorSharedConfig';
+import {
+  executionSemanticsLabels,
+  type SignalSectionKey,
+  useStrategyEditorSignalRenderer,
+} from './StrategyEditorSignals';
 import { type EditorTab, useStrategyEditorDraft, type VisualSectionKey } from './useStrategyEditorDraft';
 
 interface StrategyEditorProps {
@@ -58,8 +45,6 @@ interface StrategyEditorProps {
   onSuccess?: () => void;
 }
 
-type SignalSectionKey = 'entry_filter_params' | 'exit_trigger_params';
-
 const VISUAL_TOP_LEVEL_KEYS = new Set([
   'display_name',
   'description',
@@ -67,15 +52,6 @@ const VISUAL_TOP_LEVEL_KEYS = new Set([
   'entry_filter_params',
   'exit_trigger_params',
 ]);
-
-const FUNDAMENTAL_PARENT_FIELD_FALLBACK = ['enabled', 'period_type', 'use_adjusted'];
-
-const executionSemanticsLabels: Record<string, string> = {
-  standard: 'Standard',
-  next_session_round_trip: 'Next Session Round Trip',
-  current_session_round_trip: 'Current Session Round Trip',
-  overnight_round_trip: 'Overnight Round Trip',
-};
 
 const timingLabels: Record<string, string> = {
   prior_session_close: 'Prior Close',
@@ -85,18 +61,6 @@ const timingLabels: Record<string, string> = {
   current_session: 'Current Session',
   next_session: 'Next Session',
 };
-
-function isReferenceSelectField(path: string) {
-  return path === 'universe_preset' || path === 'dataset_snapshot' || path === 'benchmark_table';
-}
-
-function getReferenceSelectCopy(path: string) {
-  return path === 'universe_preset'
-    ? { chooserLabel: 'Choose universe preset', placeholderLabel: 'Select a universe preset' }
-    : path === 'dataset_snapshot'
-      ? { chooserLabel: 'Choose archived dataset snapshot', placeholderLabel: 'Select a dataset snapshot' }
-      : { chooserLabel: 'Choose available benchmark', placeholderLabel: 'Select a benchmark' };
-}
 
 function formatTimingLabel(value: string) {
   return timingLabels[value] ?? value;
@@ -412,465 +376,6 @@ function PreviewPanel({
   );
 }
 
-function SignalCard({
-  definition,
-  signalConfig,
-  disabled,
-  onToggleEnabled,
-  onFieldChange,
-  onRemove,
-}: {
-  definition: SignalDefinition;
-  signalConfig: Record<string, unknown>;
-  disabled?: boolean;
-  onToggleEnabled: (enabled: boolean) => void;
-  onFieldChange: (field: SignalFieldDefinition, value: unknown) => void;
-  onRemove: () => void;
-}) {
-  const enabledId = useId();
-  const enabled = Boolean(
-    signalConfig.enabled ?? definition.fields.find((field) => field.name === 'enabled')?.default ?? true
-  );
-
-  return (
-    <Card className="border-border/60">
-      <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-base">{definition.name}</CardTitle>
-            <CardDescription>{definition.summary ?? definition.description}</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor={enabledId} className="text-xs text-muted-foreground">
-              Enabled
-            </Label>
-            <input
-              id={enabledId}
-              type="checkbox"
-              aria-label={`${definition.name} enabled`}
-              checked={enabled}
-              disabled={disabled}
-              onChange={(event) => onToggleEnabled(event.target.checked)}
-            />
-          </div>
-        </div>
-        {definition.when_to_use && definition.when_to_use.length > 0 ? (
-          <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-            {definition.when_to_use.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        ) : null}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <SignalFieldInputs
-          fields={definition.fields}
-          values={signalConfig}
-          excludeFields={['enabled']}
-          disabled={disabled}
-          onFieldChange={onFieldChange}
-        />
-
-        {definition.data_requirements.length > 0 ? (
-          <div className="text-xs text-muted-foreground">
-            Data requirements: {definition.data_requirements.join(', ')}
-          </div>
-        ) : null}
-
-        {definition.pitfalls && definition.pitfalls.length > 0 ? (
-          <div className="rounded-md bg-amber-500/5 p-3 text-xs text-amber-800">{definition.pitfalls.join(' ')}</div>
-        ) : null}
-
-        <div className="flex justify-end">
-          <Button
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={onRemove}
-            disabled={disabled}
-          >
-            Remove
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function buildSignalParentFieldSchema(field: SignalFieldDefinition): AuthoringFieldSchema {
-  return {
-    path: field.name,
-    section: 'shared_config',
-    label: field.label ?? field.name,
-    group: null,
-    type: field.type === 'select' ? 'select' : field.type,
-    widget:
-      field.type === 'boolean'
-        ? 'switch'
-        : field.type === 'select'
-          ? 'select'
-          : field.type === 'number'
-            ? 'number'
-            : 'text',
-    description: field.description,
-    summary: null,
-    default: field.default,
-    options: field.options ?? [],
-    constraints: field.constraints,
-    placeholder: field.placeholder ?? null,
-    unit: field.unit ?? null,
-    examples: [],
-    required: false,
-    advanced_only: false,
-  };
-}
-
-function StockCodesFieldCard({
-  field,
-  value,
-  overridden,
-  onModeChange,
-  onChange,
-  onReset,
-}: {
-  field: AuthoringFieldSchema;
-  value: unknown;
-  overridden: boolean;
-  onModeChange: (mode: 'all' | 'custom') => void;
-  onChange: (value: string) => void;
-  onReset: () => void;
-}) {
-  const stockCodes = asStringArray(value);
-  const customCodes = stockCodes.filter((code) => code !== 'all');
-  const stockCodeMode = stockCodes.includes('all') ? 'all' : 'custom';
-
-  return (
-    <Card key={field.path} className="border-border/60">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{field.label}</CardTitle>
-        <CardDescription>{field.summary ?? field.description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Button variant={stockCodeMode === 'all' ? 'default' : 'outline'} onClick={() => onModeChange('all')}>
-            All
-          </Button>
-          <Button variant={stockCodeMode === 'custom' ? 'default' : 'outline'} onClick={() => onModeChange('custom')}>
-            Custom
-          </Button>
-          <Button variant="outline" onClick={onReset} disabled={!overridden}>
-            Reset
-          </Button>
-        </div>
-        {stockCodeMode === 'custom' ? (
-          <Textarea
-            value={customCodes.join('\n')}
-            placeholder="7203\n6758\n9984"
-            onChange={(event) => onChange(event.target.value)}
-          />
-        ) : (
-          <div className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
-            Entire PIT universe is selected.
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function NativeSelectField({
-  label,
-  ariaLabel,
-  placeholder,
-  disabled,
-  optionGroups,
-  options,
-  onSelect,
-}: {
-  label: string;
-  ariaLabel: string;
-  placeholder: string;
-  disabled?: boolean;
-  optionGroups?: Array<{ key: string; label: string; options: Array<{ value: string; label: string }> }>;
-  options?: Array<{ value: string; label: string }>;
-  onSelect: (value: string) => void;
-}) {
-  const selectId = useId();
-
-  return (
-    <div className="min-w-64">
-      <Label htmlFor={selectId} className="mb-1 block text-xs font-medium text-muted-foreground">
-        {label}
-      </Label>
-      <select
-        id={selectId}
-        aria-label={ariaLabel}
-        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-        defaultValue=""
-        disabled={disabled}
-        onChange={(event) => {
-          const selectedValue = event.target.value;
-          if (!selectedValue) {
-            return;
-          }
-          onSelect(selectedValue);
-          event.currentTarget.value = '';
-        }}
-      >
-        <option value="">{placeholder}</option>
-        {optionGroups?.map((group) => (
-          <optgroup key={group.key} label={group.label}>
-            {group.options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-        {options?.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function FundamentalParentSettingsGrid({
-  sectionKey,
-  fields,
-  values,
-  onChange,
-}: {
-  sectionKey: SignalSectionKey;
-  fields: SignalFieldDefinition[];
-  values: Record<string, unknown>;
-  onChange: (field: SignalFieldDefinition, value: unknown) => void;
-}) {
-  return (
-    <div className="grid gap-3 lg:grid-cols-3">
-      {fields.map((field) => (
-        <MetadataFieldControl
-          key={`${sectionKey}.fundamental.${field.name}`}
-          field={buildSignalParentFieldSchema(field)}
-          value={values[field.name] ?? field.default}
-          onChange={(value) => onChange(field, value)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function StrategyEditorSignalSection({
-  sectionKey,
-  title,
-  draftConfig,
-  definitionsByType,
-  buildSelectableSignalOptions,
-  fundamentalParentFieldNames,
-  fundamentalDefinitionsByType,
-  fundamentalDefinitions,
-  exitSectionDisabled,
-  currentExecutionMode,
-  exitSignals,
-  updateDraftAtPath,
-  addRegularSignal,
-  updateRegularSignalField,
-  removeRegularSignal,
-  addFundamentalSignal,
-  fundamentalParentFields,
-  updateFundamentalParentField,
-  updateFundamentalChildField,
-  removeFundamentalChild,
-}: {
-  sectionKey: SignalSectionKey;
-  title: string;
-  draftConfig: Record<string, unknown>;
-  definitionsByType: Map<string, SignalDefinition>;
-  buildSelectableSignalOptions: (sectionKey: SignalSectionKey) => ReturnType<typeof buildSignalOptions>;
-  fundamentalParentFieldNames: string[];
-  fundamentalDefinitionsByType: Map<string, SignalDefinition>;
-  fundamentalDefinitions: SignalDefinition[];
-  exitSectionDisabled: boolean;
-  currentExecutionMode: string;
-  exitSignals: Record<string, unknown>;
-  updateDraftAtPath: (path: string, value: unknown) => void;
-  addRegularSignal: (sectionKey: SignalSectionKey, signalType: string) => void;
-  updateRegularSignalField: (
-    sectionKey: SignalSectionKey,
-    signalType: string,
-    field: SignalFieldDefinition,
-    value: unknown
-  ) => void;
-  removeRegularSignal: (sectionKey: SignalSectionKey, signalType: string) => void;
-  addFundamentalSignal: (sectionKey: SignalSectionKey, childKey: string) => void;
-  fundamentalParentFields: SignalFieldDefinition[];
-  updateFundamentalParentField: (sectionKey: SignalSectionKey, field: SignalFieldDefinition, value: unknown) => void;
-  updateFundamentalChildField: (
-    sectionKey: SignalSectionKey,
-    childKey: string,
-    field: SignalFieldDefinition,
-    value: unknown
-  ) => void;
-  removeFundamentalChild: (sectionKey: SignalSectionKey, childKey: string) => void;
-}) {
-  const section = normalizeSignalSection(draftConfig[sectionKey]);
-  const regularSignalEntries = Object.entries(section).filter(
-    ([signalKey, signalValue]) =>
-      signalKey !== 'fundamental' && definitionsByType.has(signalKey) && isPlainObject(signalValue)
-  );
-  const availableOptions = buildSelectableSignalOptions(sectionKey);
-  const fundamentalSection = normalizeSignalSection(section.fundamental);
-  const configuredFundamentalChildren = Object.keys(fundamentalSection).filter(
-    (key) => !fundamentalParentFieldNames.includes(key) && fundamentalDefinitionsByType.has(key)
-  );
-  const availableFundamentalSignals = fundamentalDefinitions.filter(
-    (definition) =>
-      !configuredFundamentalChildren.includes(definition.signal_type) &&
-      (sectionKey === 'entry_filter_params' || !definition.exit_disabled)
-  );
-  const sectionDisabled = sectionKey === 'exit_trigger_params' && exitSectionDisabled;
-
-  return (
-    <Card className="border-border/60">
-      <CardHeader className="pb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-lg">{title}</CardTitle>
-            <CardDescription>
-              {sectionKey === 'entry_filter_params'
-                ? 'Add signals from grouped categories and edit them visually.'
-                : 'Exit signals are available only in standard execution mode.'}
-            </CardDescription>
-          </div>
-          <NativeSelectField
-            label="Add signal"
-            ariaLabel={`Add ${title}`}
-            placeholder="Select a signal…"
-            disabled={sectionDisabled}
-            optionGroups={availableOptions.map(({ category, signals }) => ({
-              key: category.key,
-              label: category.label,
-              options: signals.map((definition) => ({
-                value: definition.signal_type,
-                label: definition.name,
-              })),
-            }))}
-            onSelect={(signalType) => addRegularSignal(sectionKey, signalType)}
-          />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {sectionDisabled ? (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800">
-            Execution policy <strong>{executionSemanticsLabels[currentExecutionMode] ?? currentExecutionMode}</strong>{' '}
-            disables exit triggers. Save an empty object for <code>exit_trigger_params</code> or clear it now.
-            {Object.keys(exitSignals).length > 0 ? (
-              <div className="mt-3">
-                <Button variant="outline" onClick={() => updateDraftAtPath('exit_trigger_params', {})}>
-                  Clear Exit Config
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {regularSignalEntries.map(([signalKey, signalValue]) => {
-          const definition = definitionsByType.get(signalKey);
-          if (!definition || !isPlainObject(signalValue)) return null;
-          return (
-            <SignalCard
-              key={signalKey}
-              definition={definition}
-              signalConfig={signalValue}
-              disabled={sectionDisabled}
-              onToggleEnabled={(enabled) =>
-                updateRegularSignalField(
-                  sectionKey,
-                  signalKey,
-                  { name: 'enabled', type: 'boolean', description: '' },
-                  enabled
-                )
-              }
-              onFieldChange={(field, value) => updateRegularSignalField(sectionKey, signalKey, field, value)}
-              onRemove={() => removeRegularSignal(sectionKey, signalKey)}
-            />
-          );
-        })}
-
-        <Card className="border-dashed border-border/60">
-          <CardHeader className="pb-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <CardTitle className="text-base">Fundamental Signals</CardTitle>
-                <CardDescription>Parent settings are shared. Child cards control individual factors.</CardDescription>
-              </div>
-              <NativeSelectField
-                label="Add fundamental factor"
-                ariaLabel={`Add ${title} fundamental signal`}
-                placeholder="Select a factor…"
-                disabled={sectionDisabled || availableFundamentalSignals.length === 0}
-                options={availableFundamentalSignals.map((definition) => ({
-                  value: definition.signal_type,
-                  label: definition.name,
-                }))}
-                onSelect={(childKey) => addFundamentalSignal(sectionKey, childKey)}
-              />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {Object.keys(fundamentalSection).length > 0 ? (
-              <>
-                <FundamentalParentSettingsGrid
-                  sectionKey={sectionKey}
-                  fields={fundamentalParentFields}
-                  values={fundamentalSection}
-                  onChange={(field, value) => updateFundamentalParentField(sectionKey, field, value)}
-                />
-
-                {configuredFundamentalChildren.map((childKey) => {
-                  const definition = fundamentalDefinitionsByType.get(childKey);
-                  const childConfig = normalizeSignalSection(fundamentalSection[childKey]);
-                  if (!definition) return null;
-
-                  return (
-                    <SignalCard
-                      key={`${sectionKey}.fundamental.${childKey}`}
-                      definition={definition}
-                      signalConfig={childConfig}
-                      disabled={sectionDisabled}
-                      onToggleEnabled={(enabled) =>
-                        updateFundamentalChildField(
-                          sectionKey,
-                          childKey,
-                          { name: 'enabled', type: 'boolean', description: '' },
-                          enabled
-                        )
-                      }
-                      onFieldChange={(field, value) => updateFundamentalChildField(sectionKey, childKey, field, value)}
-                      onRemove={() => removeFundamentalChild(sectionKey, childKey)}
-                    />
-                  );
-                })}
-              </>
-            ) : (
-              <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
-                No fundamental filters configured in this section.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {regularSignalEntries.length === 0 && Object.keys(fundamentalSection).length === 0 ? (
-          <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
-            No signals configured yet. Add a signal from the dropdown above.
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
 interface StrategyEditorDialogBodyProps {
   open: boolean;
   activeTab: EditorTab;
@@ -1163,124 +668,6 @@ function StrategyEditorDialogBody({
   );
 }
 
-interface SharedFieldRenderContext {
-  contextReady: boolean;
-  rawSharedConfig: Record<string, unknown>;
-  defaultSharedConfig: Record<string, unknown>;
-  benchmarkOptionValues: string[];
-  datasetSnapshotOptionValues: string[];
-  universePresetOptionValues: string[];
-  handleStockCodesModeChange: (mode: 'all' | 'custom') => void;
-  removeDraftPath: (path: string) => void;
-  updateDraftAtPath: (path: string, value: unknown) => void;
-  updateSharedConfigField: (field: AuthoringFieldSchema, value: unknown) => void;
-}
-
-function getSharedFieldOptionValues(context: SharedFieldRenderContext, path: string) {
-  if (path === 'universe_preset') {
-    return context.universePresetOptionValues;
-  }
-  if (path === 'dataset_snapshot') {
-    return context.datasetSnapshotOptionValues;
-  }
-  if (path === 'benchmark_table') {
-    return context.benchmarkOptionValues;
-  }
-  return undefined;
-}
-
-function renderStockCodesSharedField(
-  field: AuthoringFieldSchema,
-  value: unknown,
-  overridden: boolean,
-  context: SharedFieldRenderContext
-) {
-  return (
-    <StockCodesFieldCard
-      field={field}
-      value={value}
-      overridden={overridden}
-      onModeChange={context.handleStockCodesModeChange}
-      onChange={(nextValue) =>
-        context.updateDraftAtPath(
-          'shared_config.stock_codes',
-          nextValue
-            .split(/[\n,]/)
-            .map((item) => item.trim())
-            .filter((item) => item.length > 0)
-        )
-      }
-      onReset={() => context.removeDraftPath('shared_config.stock_codes')}
-    />
-  );
-}
-
-function renderReferenceSharedField(
-  field: AuthoringFieldSchema,
-  value: unknown,
-  overridden: boolean,
-  optionValues: string[],
-  context: SharedFieldRenderContext
-) {
-  const copy = getReferenceSelectCopy(field.path);
-  return (
-    <ReferenceSelectFieldCard
-      field={field}
-      value={value}
-      effectiveValue={value}
-      overridden={overridden}
-      optionValues={optionValues}
-      chooserLabel={copy.chooserLabel}
-      placeholderLabel={copy.placeholderLabel}
-      onChange={(nextValue) => context.updateSharedConfigField(field, nextValue)}
-      onReset={() => context.removeDraftPath(`shared_config.${field.path}`)}
-    />
-  );
-}
-
-function renderSharedFieldControl(field: AuthoringFieldSchema, context: SharedFieldRenderContext) {
-  if (!context.contextReady) return null;
-
-  const overridden = hasValueAtPath(context.rawSharedConfig, field.path);
-  const value = overridden
-    ? getValueAtPath(context.rawSharedConfig, field.path)
-    : getValueAtPath(context.defaultSharedConfig, field.path);
-  const optionValues = getSharedFieldOptionValues(context, field.path);
-
-  if (field.path === 'stock_codes') {
-    return renderStockCodesSharedField(field, value, overridden, context);
-  }
-
-  if (isReferenceSelectField(field.path)) {
-    return renderReferenceSharedField(field, value, overridden, optionValues ?? [], context);
-  }
-
-  return (
-    <MetadataFieldControl
-      key={field.path}
-      field={field}
-      value={value}
-      effectiveValue={value}
-      overridden={overridden}
-      optionValues={optionValues}
-      onChange={(nextValue) => context.updateSharedConfigField(field, nextValue)}
-      onReset={() => context.removeDraftPath(`shared_config.${field.path}`)}
-    />
-  );
-}
-
-function resolveDatasetSnapshotName(
-  rawSharedConfig: Record<string, unknown>,
-  defaultSharedConfig: Record<string, unknown>
-): string | null {
-  const explicitDataset = getValueAtPath(rawSharedConfig, 'dataset_snapshot');
-  if (typeof explicitDataset === 'string') {
-    return explicitDataset;
-  }
-  const defaultDataset = getValueAtPath(defaultSharedConfig, 'dataset_snapshot');
-  return typeof defaultDataset === 'string' ? defaultDataset : null;
-}
-
 function resolveStrategyEditorLoading(...states: boolean[]) {
   return states.some(Boolean);
 }
@@ -1327,27 +714,6 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   const definitions = signalReferenceQuery.data?.signals ?? [];
   const categories = signalReferenceQuery.data?.categories ?? [];
 
-  const definitionsByType = useMemo(
-    () => new Map(definitions.map((definition) => [definition.signal_type, definition])),
-    [definitions]
-  );
-  const regularDefinitions = useMemo(
-    () => definitions.filter((definition) => !definition.key.startsWith('fundamental_')),
-    [definitions]
-  );
-  const fundamentalDefinitions = useMemo(
-    () => definitions.filter((definition) => definition.key.startsWith('fundamental_')),
-    [definitions]
-  );
-  const fundamentalDefinitionsByType = useMemo(
-    () => new Map(fundamentalDefinitions.map((definition) => [definition.signal_type, definition])),
-    [fundamentalDefinitions]
-  );
-  const fundamentalParentFieldNames = useMemo(
-    () => deriveFundamentalParentFieldNames(fundamentalDefinitions, FUNDAMENTAL_PARENT_FIELD_FALLBACK),
-    [fundamentalDefinitions]
-  );
-
   const reference = referenceQuery.data;
   const context = strategyContextQuery.data;
   const defaultSharedConfig = useMemo(
@@ -1364,13 +730,16 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   );
 
   const rawSharedConfig = normalizeSignalSection(draftConfig.shared_config);
-  const exitSignals = normalizeSignalSection(draftConfig.exit_trigger_params);
-  const currentExecutionMode = String(
-    hasValueAtPath(rawSharedConfig, 'execution_policy.mode')
-      ? getValueAtPath(rawSharedConfig, 'execution_policy.mode')
-      : (getValueAtPath(defaultSharedConfig, 'execution_policy.mode') ?? 'standard')
-  );
-  const exitSectionDisabled = currentExecutionMode !== 'standard';
+  const { definitionsByType, fundamentalDefinitionsByType, fundamentalParentFieldNames, renderSignalSection } =
+    useStrategyEditorSignalRenderer({
+      categories,
+      defaultSharedConfig,
+      definitions,
+      draftConfig,
+      rawSharedConfig,
+      removeDraftPath,
+      updateDraftAtPath,
+    });
 
   const visualAdvancedOnlyPaths = useMemo(
     () =>
@@ -1384,47 +753,15 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [definitionsByType, draftConfig, fundamentalDefinitionsByType, fundamentalParentFieldNames]
   );
 
-  const universePresetOptionValues = useMemo(() => {
-    const values = new Set<string>();
-    const inheritedValue = hasValueAtPath(rawSharedConfig, 'universe_preset')
-      ? getValueAtPath(rawSharedConfig, 'universe_preset')
-      : getValueAtPath(defaultSharedConfig, 'universe_preset');
-    if (typeof inheritedValue === 'string' && inheritedValue.length > 0) {
-      values.add(inheritedValue);
-    }
-    for (const preset of ['prime', 'standard', 'growth', 'topix100', 'primeExTopix500']) {
-      values.add(preset);
-    }
-    return Array.from(values);
-  }, [defaultSharedConfig, rawSharedConfig]);
-
-  const datasetSnapshotOptionValues = useMemo(() => {
-    const values = new Set<string>();
-    const inheritedValue = hasValueAtPath(rawSharedConfig, 'dataset_snapshot')
-      ? getValueAtPath(rawSharedConfig, 'dataset_snapshot')
-      : getValueAtPath(defaultSharedConfig, 'dataset_snapshot');
-    if (typeof inheritedValue === 'string' && inheritedValue.length > 0) {
-      values.add(inheritedValue);
-    }
-    for (const dataset of datasets ?? []) {
-      values.add(dataset.name);
-    }
-    return Array.from(values);
-  }, [datasets, defaultSharedConfig, rawSharedConfig]);
-
-  const benchmarkOptionValues = useMemo(() => {
-    const values = new Set<string>();
-    const inheritedValue = hasValueAtPath(rawSharedConfig, 'benchmark_table')
-      ? getValueAtPath(rawSharedConfig, 'benchmark_table')
-      : getValueAtPath(defaultSharedConfig, 'benchmark_table');
-    if (typeof inheritedValue === 'string' && inheritedValue.length > 0) {
-      values.add(inheritedValue);
-    }
-    for (const item of indices?.indices ?? []) {
-      values.add(item.code);
-    }
-    return Array.from(values);
-  }, [defaultSharedConfig, indices?.indices, rawSharedConfig]);
+  const { datasetSnapshotName, renderSharedField } = useStrategyEditorSharedConfigFields({
+    contextReady: Boolean(context),
+    datasets,
+    defaultSharedConfig,
+    indices,
+    rawSharedConfig,
+    removeDraftPath,
+    updateDraftAtPath,
+  });
 
   const visualSections = useMemo(() => {
     const sections: Array<{ key: VisualSectionKey; label: string; description: string }> = [
@@ -1472,212 +809,13 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [setActiveVisualSection, visualSectionIdPrefix]
   );
 
-  const updateSharedConfigField = useCallback(
-    (field: AuthoringFieldSchema, value: unknown) => {
-      updateDraftAtPath(`shared_config.${field.path}`, value);
-    },
-    [updateDraftAtPath]
-  );
-
-  const handleStockCodesModeChange = useCallback(
-    (mode: 'all' | 'custom') => {
-      if (mode === 'all') {
-        updateDraftAtPath('shared_config.stock_codes', ['all']);
-        return;
-      }
-      const current = asStringArray(getValueAtPath(rawSharedConfig, 'stock_codes'));
-      const customCodes = current.filter((code) => code !== 'all');
-      updateDraftAtPath('shared_config.stock_codes', customCodes.length > 0 ? customCodes : []);
-    },
-    [rawSharedConfig, updateDraftAtPath]
-  );
-
-  const buildSelectableSignalOptions = useCallback(
-    (sectionKey: SignalSectionKey) => {
-      return buildSignalOptions(
-        normalizeSignalSection(draftConfig[sectionKey]),
-        categories,
-        regularDefinitions,
-        sectionKey
-      );
-    },
-    [categories, draftConfig, regularDefinitions]
-  );
-
-  const addRegularSignal = useCallback(
-    (sectionKey: SignalSectionKey, signalType: string) => {
-      const definition = definitionsByType.get(signalType);
-      if (!definition) return;
-      updateDraftAtPath(`${sectionKey}.${signalType}`, buildDefaultSignalParams(definition));
-    },
-    [definitionsByType, updateDraftAtPath]
-  );
-
-  const updateRegularSignalField = useCallback(
-    (sectionKey: SignalSectionKey, signalType: string, field: SignalFieldDefinition, value: unknown) => {
-      const nextSignal = updateRegularSignalConfig(
-        normalizeSignalSection(draftConfig[sectionKey]),
-        signalType,
-        field,
-        value
-      );
-      updateDraftAtPath(`${sectionKey}.${signalType}`, nextSignal);
-    },
-    [draftConfig, updateDraftAtPath]
-  );
-
-  const removeRegularSignal = useCallback(
-    (sectionKey: SignalSectionKey, signalType: string) => {
-      removeDraftPath(`${sectionKey}.${signalType}`);
-    },
-    [removeDraftPath]
-  );
-
-  const fundamentalParentFields = useMemo(() => {
-    const firstDefinition = fundamentalDefinitions[0];
-    if (!firstDefinition) return [];
-    return firstDefinition.fields.filter((field) => fundamentalParentFieldNames.includes(field.name));
-  }, [fundamentalDefinitions, fundamentalParentFieldNames]);
-
-  const buildDefaultFundamentalConfig = useCallback(() => {
-    return buildDefaultFundamentalConfigFromFields(fundamentalParentFields);
-  }, [fundamentalParentFields]);
-
-  const addFundamentalSignal = useCallback(
-    (sectionKey: SignalSectionKey, childKey: string) => {
-      const definition = fundamentalDefinitionsByType.get(childKey);
-      if (!definition) return;
-
-      const currentFundamental = normalizeSignalSection(normalizeSignalSection(draftConfig[sectionKey]).fundamental);
-      const nextFundamental = addFundamentalSignalConfig(
-        currentFundamental,
-        childKey,
-        definition,
-        fundamentalParentFieldNames,
-        buildDefaultFundamentalConfig()
-      );
-      updateDraftAtPath(`${sectionKey}.fundamental`, nextFundamental);
-    },
-    [
-      buildDefaultFundamentalConfig,
-      draftConfig,
-      fundamentalDefinitionsByType,
-      fundamentalParentFieldNames,
-      updateDraftAtPath,
-    ]
-  );
-
-  const updateFundamentalParentField = useCallback(
-    (sectionKey: SignalSectionKey, field: SignalFieldDefinition, value: unknown) => {
-      const currentFundamental = normalizeSignalSection(normalizeSignalSection(draftConfig[sectionKey]).fundamental);
-      const nextFundamental = updateFundamentalParentConfig(
-        currentFundamental,
-        field,
-        value,
-        buildDefaultFundamentalConfig()
-      );
-      updateDraftAtPath(`${sectionKey}.fundamental`, nextFundamental);
-    },
-    [buildDefaultFundamentalConfig, draftConfig, updateDraftAtPath]
-  );
-
-  const updateFundamentalChildField = useCallback(
-    (sectionKey: SignalSectionKey, childKey: string, field: SignalFieldDefinition, value: unknown) => {
-      const currentFundamental = normalizeSignalSection(normalizeSignalSection(draftConfig[sectionKey]).fundamental);
-      const nextFundamental = updateFundamentalChildConfig(
-        currentFundamental,
-        childKey,
-        field,
-        value,
-        buildDefaultFundamentalConfig()
-      );
-      updateDraftAtPath(`${sectionKey}.fundamental`, nextFundamental);
-    },
-    [buildDefaultFundamentalConfig, draftConfig, updateDraftAtPath]
-  );
-
-  const removeFundamentalChild = useCallback(
-    (sectionKey: SignalSectionKey, childKey: string) => {
-      const currentFundamental = normalizeSignalSection(normalizeSignalSection(draftConfig[sectionKey]).fundamental);
-      const { nextFundamental, shouldRemoveSection } = removeFundamentalChildConfig(
-        currentFundamental,
-        childKey,
-        fundamentalParentFieldNames
-      );
-
-      if (shouldRemoveSection) {
-        removeDraftPath(`${sectionKey}.fundamental`);
-        return;
-      }
-
-      updateDraftAtPath(`${sectionKey}.fundamental`, nextFundamental);
-    },
-    [draftConfig, fundamentalParentFieldNames, removeDraftPath, updateDraftAtPath]
-  );
-
   const isLoading = resolveStrategyEditorLoading(
     strategyContextQuery.isLoading,
     referenceQuery.isLoading,
     signalReferenceQuery.isLoading
   );
   const strategyCategory = context?.category ?? 'unknown';
-  const datasetSnapshotName = resolveDatasetSnapshotName(rawSharedConfig, defaultSharedConfig);
   const datasetInfo = useDatasetInfo(open ? datasetSnapshotName : null);
-
-  const renderSharedField = useCallback(
-    (field: AuthoringFieldSchema) =>
-      renderSharedFieldControl(field, {
-        contextReady: Boolean(context),
-        rawSharedConfig,
-        defaultSharedConfig,
-        benchmarkOptionValues,
-        datasetSnapshotOptionValues,
-        universePresetOptionValues,
-        handleStockCodesModeChange,
-        removeDraftPath,
-        updateDraftAtPath,
-        updateSharedConfigField,
-      }),
-    [
-      benchmarkOptionValues,
-      context,
-      datasetSnapshotOptionValues,
-      defaultSharedConfig,
-      handleStockCodesModeChange,
-      rawSharedConfig,
-      removeDraftPath,
-      universePresetOptionValues,
-      updateDraftAtPath,
-      updateSharedConfigField,
-    ]
-  );
-
-  const renderSignalSection = (sectionKey: SignalSectionKey, title: string) => {
-    return (
-      <StrategyEditorSignalSection
-        sectionKey={sectionKey}
-        title={title}
-        draftConfig={draftConfig}
-        definitionsByType={definitionsByType}
-        buildSelectableSignalOptions={buildSelectableSignalOptions}
-        fundamentalParentFieldNames={fundamentalParentFieldNames}
-        fundamentalDefinitionsByType={fundamentalDefinitionsByType}
-        fundamentalDefinitions={fundamentalDefinitions}
-        exitSectionDisabled={exitSectionDisabled}
-        currentExecutionMode={currentExecutionMode}
-        exitSignals={exitSignals}
-        updateDraftAtPath={updateDraftAtPath}
-        addRegularSignal={addRegularSignal}
-        updateRegularSignalField={updateRegularSignalField}
-        removeRegularSignal={removeRegularSignal}
-        addFundamentalSignal={addFundamentalSignal}
-        fundamentalParentFields={fundamentalParentFields}
-        updateFundamentalParentField={updateFundamentalParentField}
-        updateFundamentalChildField={updateFundamentalChildField}
-        removeFundamentalChild={removeFundamentalChild}
-      />
-    );
-  };
 
   return (
     <StrategyEditorDialogBody

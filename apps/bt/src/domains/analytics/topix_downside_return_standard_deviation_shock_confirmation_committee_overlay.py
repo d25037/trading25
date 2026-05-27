@@ -213,6 +213,49 @@ class _CommitteeOverlayParameters:
     committee_candidate_count: int
 
 
+@dataclass(frozen=True)
+class _CommitteeOverlaySourceFrames:
+    source_mode: SourceMode
+    source_detail: str
+    available_start_date: str | None
+    available_end_date: str | None
+    breadth_available_start_date: str | None
+    breadth_available_end_date: str | None
+    market_frame_df: pd.DataFrame
+    breadth_daily_df: pd.DataFrame
+    signal_base_df: pd.DataFrame
+    baseline_daily_df: pd.DataFrame
+    baseline_metrics_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _CommitteeOverlayCandidateFrames:
+    single_candidate_metrics_df: pd.DataFrame
+    single_candidate_comparison_df: pd.DataFrame
+    committee_candidate_metrics_df: pd.DataFrame
+    committee_candidate_comparison_df: pd.DataFrame
+    committee_member_map_df: pd.DataFrame
+    single_return_series_by_id: dict[str, pd.Series]
+    committee_return_series_by_id: dict[str, pd.Series]
+
+
+@dataclass(frozen=True)
+class _CommitteeOverlayWalkforwardFrames:
+    single_rank_stability_df: pd.DataFrame
+    committee_rank_stability_df: pd.DataFrame
+    walkforward_single_fold_candidate_rank_df: pd.DataFrame
+    walkforward_single_rank_diagnostics_df: pd.DataFrame
+    walkforward_single_top1_df: pd.DataFrame
+    walkforward_single_top1_summary_df: pd.DataFrame
+    walkforward_single_selection_frequency_df: pd.DataFrame
+    walkforward_committee_fold_candidate_rank_df: pd.DataFrame
+    walkforward_committee_rank_diagnostics_df: pd.DataFrame
+    walkforward_committee_top1_df: pd.DataFrame
+    walkforward_committee_top1_summary_df: pd.DataFrame
+    walkforward_committee_selection_frequency_df: pd.DataFrame
+    space_comparison_summary_df: pd.DataFrame
+
+
 def _resolve_committee_overlay_parameters(
     *,
     downside_return_standard_deviation_window_days: int,
@@ -321,6 +364,428 @@ def _resolve_committee_overlay_parameters(
     )
 
 
+def _build_committee_overlay_source_frames(
+    db_path: str,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    downside_return_standard_deviation_window_days: int,
+    min_constituents_per_day: int,
+    validation_ratio: float,
+    resolved: _CommitteeOverlayParameters,
+) -> _CommitteeOverlaySourceFrames:
+    with _open_analysis_connection(db_path) as ctx:
+        source_mode = ctx.source_mode
+        source_detail = ctx.source_detail
+        available_start_date, available_end_date = _fetch_date_range(
+            ctx.connection,
+            table_name="topix_data",
+        )
+        topix_daily_df = _query_topix_daily_frame(
+            ctx.connection,
+            start_date=start_date,
+            end_date=end_date,
+            future_horizons=(1,),
+        )
+        breadth_history_df = _query_topix100_stock_history(
+            ctx.connection,
+            end_date=end_date,
+        )
+
+    if breadth_history_df.empty:
+        raise ValueError("No TOPIX100 breadth history was available")
+    breadth_history_df = breadth_history_df.copy()
+    breadth_history_df["date"] = breadth_history_df["date"].astype(str)
+    if start_date is not None:
+        breadth_history_df = breadth_history_df[breadth_history_df["date"] >= start_date].copy()
+    if end_date is not None:
+        breadth_history_df = breadth_history_df[breadth_history_df["date"] <= end_date].copy()
+    if breadth_history_df.empty:
+        raise ValueError("No TOPIX100 breadth rows remained after date filters")
+
+    breadth_available_start_date = str(breadth_history_df["date"].min())
+    breadth_available_end_date = str(breadth_history_df["date"].max())
+    market_frame_df = _build_topix_trend_feature_df(_prepare_topix_market_frame(topix_daily_df))
+    breadth_daily_df = _build_topix100_breadth_daily_df(
+        breadth_history_df,
+        min_constituents_per_day=min_constituents_per_day,
+    )
+    signal_base_df = _build_common_signal_frame_with_regimes(
+        market_frame_df,
+        breadth_daily_df=breadth_daily_df,
+        max_downside_return_standard_deviation_window_days=(
+            downside_return_standard_deviation_window_days
+        ),
+        max_downside_return_standard_deviation_mean_window_days=max(
+            resolved.mean_window_days
+        ),
+        validation_ratio=validation_ratio,
+    )
+    baseline_daily_df = _build_baseline_daily_df(signal_base_df)
+    baseline_metrics_df = _build_baseline_metrics_df(baseline_daily_df)
+    return _CommitteeOverlaySourceFrames(
+        source_mode=cast(SourceMode, source_mode),
+        source_detail=str(source_detail),
+        available_start_date=available_start_date,
+        available_end_date=available_end_date,
+        breadth_available_start_date=breadth_available_start_date,
+        breadth_available_end_date=breadth_available_end_date,
+        market_frame_df=market_frame_df,
+        breadth_daily_df=breadth_daily_df,
+        signal_base_df=signal_base_df,
+        baseline_daily_df=baseline_daily_df,
+        baseline_metrics_df=baseline_metrics_df,
+    )
+
+
+def _build_committee_overlay_candidate_frames(
+    *,
+    market_frame_df: pd.DataFrame,
+    signal_base_df: pd.DataFrame,
+    baseline_daily_df: pd.DataFrame,
+    downside_return_standard_deviation_window_days: int,
+    fixed_breadth_vote_threshold: int,
+    fixed_confirmation_mode: str,
+    resolved: _CommitteeOverlayParameters,
+) -> _CommitteeOverlayCandidateFrames:
+    single_metric_rows: list[dict[str, Any]] = []
+    committee_metric_rows: list[dict[str, Any]] = []
+    committee_member_map_rows: list[dict[str, Any]] = []
+    single_return_series_by_id: dict[str, pd.Series] = {}
+    committee_return_series_by_id: dict[str, pd.Series] = {}
+    signal_frame_cache: dict[int, pd.DataFrame] = {}
+    committee_mean_spec = ",".join(str(value) for value in resolved.mean_window_days)
+    committee_high_spec = ",".join(f"{value:.2f}" for value in resolved.high_thresholds)
+
+    for low_threshold in resolved.low_thresholds:
+        for trend_vote_threshold in resolved.trend_vote_thresholds:
+            member_ids, member_daily_dfs = _build_committee_overlay_member_candidates(
+                market_frame_df=market_frame_df,
+                signal_base_df=signal_base_df,
+                baseline_daily_df=baseline_daily_df,
+                downside_return_standard_deviation_window_days=(
+                    downside_return_standard_deviation_window_days
+                ),
+                low_threshold=low_threshold,
+                trend_vote_threshold=trend_vote_threshold,
+                fixed_breadth_vote_threshold=fixed_breadth_vote_threshold,
+                fixed_confirmation_mode=fixed_confirmation_mode,
+                resolved=resolved,
+                signal_frame_cache=signal_frame_cache,
+                single_metric_rows=single_metric_rows,
+                single_return_series_by_id=single_return_series_by_id,
+            )
+            committee_id = _build_committee_id(
+                low_threshold=low_threshold,
+                trend_vote_threshold=trend_vote_threshold,
+                breadth_vote_threshold=fixed_breadth_vote_threshold,
+                confirmation_mode=fixed_confirmation_mode,
+                reduced_exposure_ratio=resolved.reduced_exposure_ratio,
+                mean_window_days=resolved.mean_window_days,
+                high_thresholds=resolved.high_thresholds,
+            )
+            committee_daily_df = _build_committee_daily_df(
+                committee_id=committee_id,
+                member_daily_dfs=member_daily_dfs,
+            )
+            committee_return_series_by_id[committee_id] = pd.Series(
+                committee_daily_df["strategy_return"].astype(float).to_numpy(),
+                index=committee_daily_df["realized_date"].astype(str),
+            )
+            committee_metric_rows.extend(
+                _build_metric_rows(
+                    committee_daily_df,
+                    baseline_daily_df=baseline_daily_df,
+                    parameter_payload={
+                        "downside_return_standard_deviation_window_days": (
+                            downside_return_standard_deviation_window_days
+                        ),
+                        "committee_mean_window_days": committee_mean_spec,
+                        "committee_high_thresholds": committee_high_spec,
+                        "low_annualized_downside_return_standard_deviation_threshold": (
+                            low_threshold
+                        ),
+                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
+                        "trend_vote_threshold": trend_vote_threshold,
+                        "breadth_vote_threshold": fixed_breadth_vote_threshold,
+                        "confirmation_mode": fixed_confirmation_mode,
+                        "committee_member_count": len(member_ids),
+                        "committee_weighting": "equal_weight_member_returns",
+                    },
+                )
+            )
+            committee_member_map_rows.extend(
+                _build_committee_member_map_rows(
+                    committee_id=committee_id,
+                    member_ids=member_ids,
+                    low_threshold=low_threshold,
+                    trend_vote_threshold=trend_vote_threshold,
+                    fixed_breadth_vote_threshold=fixed_breadth_vote_threshold,
+                    fixed_confirmation_mode=fixed_confirmation_mode,
+                    resolved=resolved,
+                )
+            )
+
+    single_candidate_metrics_df = pd.DataFrame(single_metric_rows).sort_values(
+        ["sample_split", "sharpe_ratio_improvement", "sharpe_ratio", "candidate_id"],
+        ascending=[True, False, False, True],
+        ignore_index=True,
+    )
+    committee_candidate_metrics_df = pd.DataFrame(committee_metric_rows).sort_values(
+        ["sample_split", "sharpe_ratio_improvement", "sharpe_ratio", "candidate_id"],
+        ascending=[True, False, False, True],
+        ignore_index=True,
+    )
+    single_candidate_comparison_df = _build_comparison_df(
+        single_candidate_metrics_df,
+        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
+    )
+    committee_candidate_comparison_df = _build_comparison_df(
+        committee_candidate_metrics_df,
+        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
+    )
+    committee_member_map_df = pd.DataFrame(committee_member_map_rows).sort_values(
+        [
+            "trend_vote_threshold",
+            "low_annualized_downside_return_standard_deviation_threshold",
+            "committee_id",
+            "downside_return_standard_deviation_mean_window_days",
+            "high_annualized_downside_return_standard_deviation_threshold",
+        ],
+        ascending=[True, True, True, True, True],
+        ignore_index=True,
+    )
+    return _CommitteeOverlayCandidateFrames(
+        single_candidate_metrics_df=single_candidate_metrics_df,
+        single_candidate_comparison_df=single_candidate_comparison_df,
+        committee_candidate_metrics_df=committee_candidate_metrics_df,
+        committee_candidate_comparison_df=committee_candidate_comparison_df,
+        committee_member_map_df=committee_member_map_df,
+        single_return_series_by_id=single_return_series_by_id,
+        committee_return_series_by_id=committee_return_series_by_id,
+    )
+
+
+def _build_committee_overlay_member_candidates(
+    *,
+    market_frame_df: pd.DataFrame,
+    signal_base_df: pd.DataFrame,
+    baseline_daily_df: pd.DataFrame,
+    downside_return_standard_deviation_window_days: int,
+    low_threshold: float,
+    trend_vote_threshold: int,
+    fixed_breadth_vote_threshold: int,
+    fixed_confirmation_mode: str,
+    resolved: _CommitteeOverlayParameters,
+    signal_frame_cache: dict[int, pd.DataFrame],
+    single_metric_rows: list[dict[str, Any]],
+    single_return_series_by_id: dict[str, pd.Series],
+) -> tuple[list[str], list[pd.DataFrame]]:
+    member_ids: list[str] = []
+    member_daily_dfs: list[pd.DataFrame] = []
+    for mean_window_days in resolved.mean_window_days:
+        if mean_window_days not in signal_frame_cache:
+            signal_frame_cache[mean_window_days] = (
+                _build_candidate_signal_frame_on_common_base(
+                    market_frame_df,
+                    signal_base_df=signal_base_df,
+                    stddev_window_days=downside_return_standard_deviation_window_days,
+                    mean_window_days=mean_window_days,
+                )
+            )
+        candidate_signal_df = signal_frame_cache[mean_window_days]
+        for high_threshold in resolved.high_thresholds:
+            candidate_id = _build_candidate_id(
+                stddev_window_days=downside_return_standard_deviation_window_days,
+                mean_window_days=mean_window_days,
+                high_threshold=high_threshold,
+                low_threshold=low_threshold,
+                reduced_exposure_ratio=resolved.reduced_exposure_ratio,
+                trend_vote_threshold=trend_vote_threshold,
+                breadth_vote_threshold=fixed_breadth_vote_threshold,
+                confirmation_mode=fixed_confirmation_mode,
+            )
+            candidate_daily_df = _simulate_candidate_daily_df_with_family_votes(
+                candidate_id=candidate_id,
+                candidate_signal_df=candidate_signal_df,
+                high_annualized_downside_return_standard_deviation_threshold=(
+                    high_threshold
+                ),
+                low_annualized_downside_return_standard_deviation_threshold=(
+                    low_threshold
+                ),
+                reduced_exposure_ratio=resolved.reduced_exposure_ratio,
+                trend_family_rules=resolved.trend_family_rules,
+                breadth_family_rules=resolved.breadth_family_rules,
+                trend_vote_threshold=trend_vote_threshold,
+                breadth_vote_threshold=fixed_breadth_vote_threshold,
+                confirmation_mode=fixed_confirmation_mode,
+            )
+            member_daily_dfs.append(candidate_daily_df)
+            member_ids.append(candidate_id)
+            single_return_series_by_id[candidate_id] = pd.Series(
+                candidate_daily_df["strategy_return"].astype(float).to_numpy(),
+                index=candidate_daily_df["realized_date"].astype(str),
+            )
+            single_metric_rows.extend(
+                _build_metric_rows(
+                    candidate_daily_df,
+                    baseline_daily_df=baseline_daily_df,
+                    parameter_payload={
+                        "downside_return_standard_deviation_window_days": (
+                            downside_return_standard_deviation_window_days
+                        ),
+                        "downside_return_standard_deviation_mean_window_days": (
+                            mean_window_days
+                        ),
+                        "high_annualized_downside_return_standard_deviation_threshold": (
+                            high_threshold
+                        ),
+                        "low_annualized_downside_return_standard_deviation_threshold": (
+                            low_threshold
+                        ),
+                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
+                        "trend_vote_threshold": trend_vote_threshold,
+                        "breadth_vote_threshold": fixed_breadth_vote_threshold,
+                        "confirmation_mode": fixed_confirmation_mode,
+                    },
+                )
+            )
+    return member_ids, member_daily_dfs
+
+
+def _build_committee_member_map_rows(
+    *,
+    committee_id: str,
+    member_ids: list[str],
+    low_threshold: float,
+    trend_vote_threshold: int,
+    fixed_breadth_vote_threshold: int,
+    fixed_confirmation_mode: str,
+    resolved: _CommitteeOverlayParameters,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for member_candidate_id in member_ids:
+        member_row = _parse_member_candidate_id(
+            member_candidate_id,
+            mean_window_days=resolved.mean_window_days,
+            high_thresholds=resolved.high_thresholds,
+        )
+        rows.append(
+            {
+                "committee_id": committee_id,
+                "member_candidate_id": member_candidate_id,
+                "low_annualized_downside_return_standard_deviation_threshold": (
+                    low_threshold
+                ),
+                "trend_vote_threshold": trend_vote_threshold,
+                "breadth_vote_threshold": fixed_breadth_vote_threshold,
+                "confirmation_mode": fixed_confirmation_mode,
+                "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
+                **member_row,
+            }
+        )
+    return rows
+
+
+def _build_committee_overlay_walkforward_frames(
+    *,
+    baseline_daily_df: pd.DataFrame,
+    baseline_metrics_df: pd.DataFrame,
+    candidates: _CommitteeOverlayCandidateFrames,
+    rank_top_ks: tuple[int, ...],
+    discovery_window_days: int,
+    validation_window_days: int,
+    step_window_days: int,
+) -> _CommitteeOverlayWalkforwardFrames:
+    single_rank_stability_df = _build_rank_stability_df(
+        candidates.single_candidate_comparison_df,
+        top_ks=rank_top_ks,
+    )
+    committee_rank_stability_df = _build_rank_stability_df(
+        candidates.committee_candidate_comparison_df,
+        top_ks=rank_top_ks,
+    )
+    (
+        walkforward_single_fold_candidate_rank_df,
+        walkforward_single_rank_diagnostics_df,
+        walkforward_single_top1_df,
+    ) = _build_walkforward_top1_outputs_generic(
+        baseline_daily_df=baseline_daily_df,
+        candidate_comparison_df=candidates.single_candidate_comparison_df,
+        candidate_return_series_by_id=candidates.single_return_series_by_id,
+        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
+        rank_top_ks=rank_top_ks,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+    )
+    walkforward_single_top1_summary_df = _build_walkforward_top1_summary_df(
+        walkforward_single_top1_df
+    )
+    walkforward_single_selection_frequency_df = _build_top1_selection_frequency_df_generic(
+        walkforward_top1_df=walkforward_single_top1_df,
+        candidate_comparison_df=candidates.single_candidate_comparison_df,
+        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
+        fold_count=int(walkforward_single_rank_diagnostics_df["fold_count"].iloc[0]),
+    )
+    (
+        walkforward_committee_fold_candidate_rank_df,
+        walkforward_committee_rank_diagnostics_df,
+        walkforward_committee_top1_df,
+    ) = _build_walkforward_top1_outputs_generic(
+        baseline_daily_df=baseline_daily_df,
+        candidate_comparison_df=candidates.committee_candidate_comparison_df,
+        candidate_return_series_by_id=candidates.committee_return_series_by_id,
+        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
+        rank_top_ks=rank_top_ks,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+    )
+    walkforward_committee_top1_summary_df = _build_walkforward_top1_summary_df(
+        walkforward_committee_top1_df
+    )
+    walkforward_committee_selection_frequency_df = _build_top1_selection_frequency_df_generic(
+        walkforward_top1_df=walkforward_committee_top1_df,
+        candidate_comparison_df=candidates.committee_candidate_comparison_df,
+        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
+        fold_count=int(walkforward_committee_rank_diagnostics_df["fold_count"].iloc[0]),
+    )
+    space_comparison_summary_df = _build_space_comparison_summary_df(
+        baseline_metrics_df=baseline_metrics_df,
+        single_candidate_comparison_df=candidates.single_candidate_comparison_df,
+        committee_candidate_comparison_df=candidates.committee_candidate_comparison_df,
+        single_rank_stability_df=single_rank_stability_df,
+        committee_rank_stability_df=committee_rank_stability_df,
+        walkforward_single_rank_diagnostics_df=walkforward_single_rank_diagnostics_df,
+        walkforward_single_top1_summary_df=walkforward_single_top1_summary_df,
+        walkforward_committee_rank_diagnostics_df=walkforward_committee_rank_diagnostics_df,
+        walkforward_committee_top1_summary_df=walkforward_committee_top1_summary_df,
+    )
+    return _CommitteeOverlayWalkforwardFrames(
+        single_rank_stability_df=single_rank_stability_df,
+        committee_rank_stability_df=committee_rank_stability_df,
+        walkforward_single_fold_candidate_rank_df=walkforward_single_fold_candidate_rank_df,
+        walkforward_single_rank_diagnostics_df=walkforward_single_rank_diagnostics_df,
+        walkforward_single_top1_df=walkforward_single_top1_df,
+        walkforward_single_top1_summary_df=walkforward_single_top1_summary_df,
+        walkforward_single_selection_frequency_df=walkforward_single_selection_frequency_df,
+        walkforward_committee_fold_candidate_rank_df=(
+            walkforward_committee_fold_candidate_rank_df
+        ),
+        walkforward_committee_rank_diagnostics_df=(
+            walkforward_committee_rank_diagnostics_df
+        ),
+        walkforward_committee_top1_df=walkforward_committee_top1_df,
+        walkforward_committee_top1_summary_df=walkforward_committee_top1_summary_df,
+        walkforward_committee_selection_frequency_df=(
+            walkforward_committee_selection_frequency_df
+        ),
+        space_comparison_summary_df=space_comparison_summary_df,
+    )
+
+
 def run_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_research(
     db_path: str,
     *,
@@ -362,316 +827,56 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
         step_window_days=step_window_days,
     )
 
-    with _open_analysis_connection(db_path) as ctx:
-        source_mode = ctx.source_mode
-        source_detail = ctx.source_detail
-        available_start_date, available_end_date = _fetch_date_range(
-            ctx.connection,
-            table_name="topix_data",
-        )
-        topix_daily_df = _query_topix_daily_frame(
-            ctx.connection,
-            start_date=start_date,
-            end_date=end_date,
-            future_horizons=(1,),
-        )
-        breadth_history_df = _query_topix100_stock_history(
-            ctx.connection,
-            end_date=end_date,
-        )
-
-    if breadth_history_df.empty:
-        raise ValueError("No TOPIX100 breadth history was available")
-    breadth_history_df = breadth_history_df.copy()
-    breadth_history_df["date"] = breadth_history_df["date"].astype(str)
-    if start_date is not None:
-        breadth_history_df = breadth_history_df[breadth_history_df["date"] >= start_date].copy()
-    if end_date is not None:
-        breadth_history_df = breadth_history_df[breadth_history_df["date"] <= end_date].copy()
-    if breadth_history_df.empty:
-        raise ValueError("No TOPIX100 breadth rows remained after date filters")
-
-    breadth_available_start_date = str(breadth_history_df["date"].min())
-    breadth_available_end_date = str(breadth_history_df["date"].max())
-
-    market_frame_df = _build_topix_trend_feature_df(_prepare_topix_market_frame(topix_daily_df))
-    breadth_daily_df = _build_topix100_breadth_daily_df(
-        breadth_history_df,
-        min_constituents_per_day=min_constituents_per_day,
-    )
-    signal_base_df = _build_common_signal_frame_with_regimes(
-        market_frame_df,
-        breadth_daily_df=breadth_daily_df,
-        max_downside_return_standard_deviation_window_days=(
+    source = _build_committee_overlay_source_frames(
+        db_path,
+        start_date=start_date,
+        end_date=end_date,
+        downside_return_standard_deviation_window_days=(
             downside_return_standard_deviation_window_days
         ),
-        max_downside_return_standard_deviation_mean_window_days=max(
-            resolved.mean_window_days
-        ),
+        min_constituents_per_day=min_constituents_per_day,
         validation_ratio=validation_ratio,
+        resolved=resolved,
     )
-    baseline_daily_df = _build_baseline_daily_df(signal_base_df)
-    baseline_metrics_df = _build_baseline_metrics_df(baseline_daily_df)
-
-    single_metric_rows: list[dict[str, Any]] = []
-    committee_metric_rows: list[dict[str, Any]] = []
-    committee_member_map_rows: list[dict[str, Any]] = []
-    single_return_series_by_id: dict[str, pd.Series] = {}
-    committee_return_series_by_id: dict[str, pd.Series] = {}
-    member_daily_by_id: dict[str, pd.DataFrame] = {}
-    signal_frame_cache: dict[int, pd.DataFrame] = {}
-    committee_mean_spec = ",".join(str(value) for value in resolved.mean_window_days)
-    committee_high_spec = ",".join(f"{value:.2f}" for value in resolved.high_thresholds)
-
-    for low_threshold in resolved.low_thresholds:
-        for trend_vote_threshold in resolved.trend_vote_thresholds:
-            member_ids: list[str] = []
-            member_daily_dfs: list[pd.DataFrame] = []
-            for mean_window_days in resolved.mean_window_days:
-                if mean_window_days not in signal_frame_cache:
-                    signal_frame_cache[mean_window_days] = (
-                        _build_candidate_signal_frame_on_common_base(
-                            market_frame_df,
-                            signal_base_df=signal_base_df,
-                            stddev_window_days=downside_return_standard_deviation_window_days,
-                            mean_window_days=mean_window_days,
-                        )
-                    )
-                candidate_signal_df = signal_frame_cache[mean_window_days]
-                for high_threshold in resolved.high_thresholds:
-                    candidate_id = _build_candidate_id(
-                        stddev_window_days=downside_return_standard_deviation_window_days,
-                        mean_window_days=mean_window_days,
-                        high_threshold=high_threshold,
-                        low_threshold=low_threshold,
-                        reduced_exposure_ratio=resolved.reduced_exposure_ratio,
-                        trend_vote_threshold=trend_vote_threshold,
-                        breadth_vote_threshold=fixed_breadth_vote_threshold,
-                        confirmation_mode=fixed_confirmation_mode,
-                    )
-                    candidate_daily_df = _simulate_candidate_daily_df_with_family_votes(
-                        candidate_id=candidate_id,
-                        candidate_signal_df=candidate_signal_df,
-                        high_annualized_downside_return_standard_deviation_threshold=(
-                            high_threshold
-                        ),
-                        low_annualized_downside_return_standard_deviation_threshold=(
-                            low_threshold
-                        ),
-                        reduced_exposure_ratio=resolved.reduced_exposure_ratio,
-                        trend_family_rules=resolved.trend_family_rules,
-                        breadth_family_rules=resolved.breadth_family_rules,
-                        trend_vote_threshold=trend_vote_threshold,
-                        breadth_vote_threshold=fixed_breadth_vote_threshold,
-                        confirmation_mode=fixed_confirmation_mode,
-                    )
-                    member_daily_by_id[candidate_id] = candidate_daily_df
-                    member_daily_dfs.append(candidate_daily_df)
-                    member_ids.append(candidate_id)
-                    single_return_series_by_id[candidate_id] = pd.Series(
-                        candidate_daily_df["strategy_return"].astype(float).to_numpy(),
-                        index=candidate_daily_df["realized_date"].astype(str),
-                    )
-                    single_metric_rows.extend(
-                        _build_metric_rows(
-                            candidate_daily_df,
-                            baseline_daily_df=baseline_daily_df,
-                            parameter_payload={
-                                "downside_return_standard_deviation_window_days": (
-                                    downside_return_standard_deviation_window_days
-                                ),
-                                "downside_return_standard_deviation_mean_window_days": (
-                                    mean_window_days
-                                ),
-                                "high_annualized_downside_return_standard_deviation_threshold": (
-                                    high_threshold
-                                ),
-                                "low_annualized_downside_return_standard_deviation_threshold": (
-                                    low_threshold
-                                ),
-                                "reduced_exposure_ratio": (
-                                    resolved.reduced_exposure_ratio
-                                ),
-                                "trend_vote_threshold": trend_vote_threshold,
-                                "breadth_vote_threshold": fixed_breadth_vote_threshold,
-                                "confirmation_mode": fixed_confirmation_mode,
-                            },
-                        )
-                    )
-            committee_id = _build_committee_id(
-                low_threshold=low_threshold,
-                trend_vote_threshold=trend_vote_threshold,
-                breadth_vote_threshold=fixed_breadth_vote_threshold,
-                confirmation_mode=fixed_confirmation_mode,
-                reduced_exposure_ratio=resolved.reduced_exposure_ratio,
-                mean_window_days=resolved.mean_window_days,
-                high_thresholds=resolved.high_thresholds,
-            )
-            committee_daily_df = _build_committee_daily_df(
-                committee_id=committee_id,
-                member_daily_dfs=member_daily_dfs,
-            )
-            committee_return_series_by_id[committee_id] = pd.Series(
-                committee_daily_df["strategy_return"].astype(float).to_numpy(),
-                index=committee_daily_df["realized_date"].astype(str),
-            )
-            committee_metric_rows.extend(
-                _build_metric_rows(
-                    committee_daily_df,
-                    baseline_daily_df=baseline_daily_df,
-                    parameter_payload={
-                        "downside_return_standard_deviation_window_days": (
-                            downside_return_standard_deviation_window_days
-                        ),
-                        "committee_mean_window_days": committee_mean_spec,
-                        "committee_high_thresholds": committee_high_spec,
-                        "low_annualized_downside_return_standard_deviation_threshold": (
-                            low_threshold
-                        ),
-                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
-                        "trend_vote_threshold": trend_vote_threshold,
-                        "breadth_vote_threshold": fixed_breadth_vote_threshold,
-                        "confirmation_mode": fixed_confirmation_mode,
-                        "committee_member_count": len(member_ids),
-                        "committee_weighting": "equal_weight_member_returns",
-                    },
-                )
-            )
-            for member_candidate_id in member_ids:
-                member_row = _parse_member_candidate_id(
-                    member_candidate_id,
-                    mean_window_days=resolved.mean_window_days,
-                    high_thresholds=resolved.high_thresholds,
-                )
-                committee_member_map_rows.append(
-                    {
-                        "committee_id": committee_id,
-                        "member_candidate_id": member_candidate_id,
-                        "low_annualized_downside_return_standard_deviation_threshold": (
-                            low_threshold
-                        ),
-                        "trend_vote_threshold": trend_vote_threshold,
-                        "breadth_vote_threshold": fixed_breadth_vote_threshold,
-                        "confirmation_mode": fixed_confirmation_mode,
-                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
-                        **member_row,
-                    }
-                )
-
-    single_candidate_metrics_df = pd.DataFrame(single_metric_rows).sort_values(
-        ["sample_split", "sharpe_ratio_improvement", "sharpe_ratio", "candidate_id"],
-        ascending=[True, False, False, True],
-        ignore_index=True,
+    candidates = _build_committee_overlay_candidate_frames(
+        market_frame_df=source.market_frame_df,
+        signal_base_df=source.signal_base_df,
+        baseline_daily_df=source.baseline_daily_df,
+        downside_return_standard_deviation_window_days=(
+            downside_return_standard_deviation_window_days
+        ),
+        fixed_breadth_vote_threshold=fixed_breadth_vote_threshold,
+        fixed_confirmation_mode=fixed_confirmation_mode,
+        resolved=resolved,
     )
-    committee_candidate_metrics_df = pd.DataFrame(committee_metric_rows).sort_values(
-        ["sample_split", "sharpe_ratio_improvement", "sharpe_ratio", "candidate_id"],
-        ascending=[True, False, False, True],
-        ignore_index=True,
-    )
-    single_candidate_comparison_df = _build_comparison_df(
-        single_candidate_metrics_df,
-        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
-    )
-    committee_candidate_comparison_df = _build_comparison_df(
-        committee_candidate_metrics_df,
-        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
-    )
-    committee_member_map_df = pd.DataFrame(committee_member_map_rows).sort_values(
-        [
-            "trend_vote_threshold",
-            "low_annualized_downside_return_standard_deviation_threshold",
-            "committee_id",
-            "downside_return_standard_deviation_mean_window_days",
-            "high_annualized_downside_return_standard_deviation_threshold",
-        ],
-        ascending=[True, True, True, True, True],
-        ignore_index=True,
-    )
-
-    single_rank_stability_df = _build_rank_stability_df(
-        single_candidate_comparison_df,
-        top_ks=resolved.rank_top_ks,
-    )
-    committee_rank_stability_df = _build_rank_stability_df(
-        committee_candidate_comparison_df,
-        top_ks=resolved.rank_top_ks,
-    )
-    (
-        walkforward_single_fold_candidate_rank_df,
-        walkforward_single_rank_diagnostics_df,
-        walkforward_single_top1_df,
-    ) = _build_walkforward_top1_outputs_generic(
-        baseline_daily_df=baseline_daily_df,
-        candidate_comparison_df=single_candidate_comparison_df,
-        candidate_return_series_by_id=single_return_series_by_id,
-        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
+    walkforward = _build_committee_overlay_walkforward_frames(
+        baseline_daily_df=source.baseline_daily_df,
+        baseline_metrics_df=source.baseline_metrics_df,
+        candidates=candidates,
         rank_top_ks=resolved.rank_top_ks,
         discovery_window_days=discovery_window_days,
         validation_window_days=validation_window_days,
         step_window_days=step_window_days,
-    )
-    walkforward_single_top1_summary_df = _build_walkforward_top1_summary_df(
-        walkforward_single_top1_df
-    )
-    walkforward_single_selection_frequency_df = _build_top1_selection_frequency_df_generic(
-        walkforward_top1_df=walkforward_single_top1_df,
-        candidate_comparison_df=single_candidate_comparison_df,
-        parameter_columns=_SINGLE_PARAMETER_COLUMNS,
-        fold_count=int(walkforward_single_rank_diagnostics_df["fold_count"].iloc[0]),
-    )
-    (
-        walkforward_committee_fold_candidate_rank_df,
-        walkforward_committee_rank_diagnostics_df,
-        walkforward_committee_top1_df,
-    ) = _build_walkforward_top1_outputs_generic(
-        baseline_daily_df=baseline_daily_df,
-        candidate_comparison_df=committee_candidate_comparison_df,
-        candidate_return_series_by_id=committee_return_series_by_id,
-        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
-        rank_top_ks=resolved.rank_top_ks,
-        discovery_window_days=discovery_window_days,
-        validation_window_days=validation_window_days,
-        step_window_days=step_window_days,
-    )
-    walkforward_committee_top1_summary_df = _build_walkforward_top1_summary_df(
-        walkforward_committee_top1_df
-    )
-    walkforward_committee_selection_frequency_df = _build_top1_selection_frequency_df_generic(
-        walkforward_top1_df=walkforward_committee_top1_df,
-        candidate_comparison_df=committee_candidate_comparison_df,
-        parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
-        fold_count=int(walkforward_committee_rank_diagnostics_df["fold_count"].iloc[0]),
-    )
-    space_comparison_summary_df = _build_space_comparison_summary_df(
-        baseline_metrics_df=baseline_metrics_df,
-        single_candidate_comparison_df=single_candidate_comparison_df,
-        committee_candidate_comparison_df=committee_candidate_comparison_df,
-        single_rank_stability_df=single_rank_stability_df,
-        committee_rank_stability_df=committee_rank_stability_df,
-        walkforward_single_rank_diagnostics_df=walkforward_single_rank_diagnostics_df,
-        walkforward_single_top1_summary_df=walkforward_single_top1_summary_df,
-        walkforward_committee_rank_diagnostics_df=walkforward_committee_rank_diagnostics_df,
-        walkforward_committee_top1_summary_df=walkforward_committee_top1_summary_df,
     )
     market_frame_df = _annotate_market_frame_with_split_labels(
-        market_frame_df,
-        signal_base_df=signal_base_df,
+        source.market_frame_df,
+        signal_base_df=source.signal_base_df,
     )
     analysis_start_date = (
-        str(signal_base_df["realized_date"].iloc[0]) if not signal_base_df.empty else None
+        str(source.signal_base_df["realized_date"].iloc[0]) if not source.signal_base_df.empty else None
     )
     analysis_end_date = (
-        str(signal_base_df["realized_date"].iloc[-1]) if not signal_base_df.empty else None
+        str(source.signal_base_df["realized_date"].iloc[-1]) if not source.signal_base_df.empty else None
     )
 
     return TopixDownsideReturnStandardDeviationShockConfirmationCommitteeOverlayResearchResult(
         db_path=db_path,
-        source_mode=cast(SourceMode, source_mode),
-        source_detail=str(source_detail),
-        available_start_date=available_start_date,
-        available_end_date=available_end_date,
-        breadth_available_start_date=breadth_available_start_date,
-        breadth_available_end_date=breadth_available_end_date,
+        source_mode=source.source_mode,
+        source_detail=source.source_detail,
+        available_start_date=source.available_start_date,
+        available_end_date=source.available_end_date,
+        breadth_available_start_date=source.breadth_available_start_date,
+        breadth_available_end_date=source.breadth_available_end_date,
         analysis_start_date=analysis_start_date,
         analysis_end_date=analysis_end_date,
         validation_ratio=validation_ratio,
@@ -699,32 +904,40 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
         single_candidate_count=resolved.single_candidate_count,
         committee_candidate_count=resolved.committee_candidate_count,
         topix_daily_df=market_frame_df,
-        breadth_daily_df=breadth_daily_df,
-        baseline_metrics_df=baseline_metrics_df,
-        single_candidate_metrics_df=single_candidate_metrics_df,
-        single_candidate_comparison_df=single_candidate_comparison_df,
-        committee_candidate_metrics_df=committee_candidate_metrics_df,
-        committee_candidate_comparison_df=committee_candidate_comparison_df,
-        committee_member_map_df=committee_member_map_df,
-        single_rank_stability_df=single_rank_stability_df,
-        committee_rank_stability_df=committee_rank_stability_df,
-        walkforward_single_fold_candidate_rank_df=walkforward_single_fold_candidate_rank_df,
-        walkforward_single_rank_diagnostics_df=walkforward_single_rank_diagnostics_df,
-        walkforward_single_top1_df=walkforward_single_top1_df,
-        walkforward_single_top1_summary_df=walkforward_single_top1_summary_df,
-        walkforward_single_selection_frequency_df=walkforward_single_selection_frequency_df,
+        breadth_daily_df=source.breadth_daily_df,
+        baseline_metrics_df=source.baseline_metrics_df,
+        single_candidate_metrics_df=candidates.single_candidate_metrics_df,
+        single_candidate_comparison_df=candidates.single_candidate_comparison_df,
+        committee_candidate_metrics_df=candidates.committee_candidate_metrics_df,
+        committee_candidate_comparison_df=candidates.committee_candidate_comparison_df,
+        committee_member_map_df=candidates.committee_member_map_df,
+        single_rank_stability_df=walkforward.single_rank_stability_df,
+        committee_rank_stability_df=walkforward.committee_rank_stability_df,
+        walkforward_single_fold_candidate_rank_df=(
+            walkforward.walkforward_single_fold_candidate_rank_df
+        ),
+        walkforward_single_rank_diagnostics_df=(
+            walkforward.walkforward_single_rank_diagnostics_df
+        ),
+        walkforward_single_top1_df=walkforward.walkforward_single_top1_df,
+        walkforward_single_top1_summary_df=walkforward.walkforward_single_top1_summary_df,
+        walkforward_single_selection_frequency_df=(
+            walkforward.walkforward_single_selection_frequency_df
+        ),
         walkforward_committee_fold_candidate_rank_df=(
-            walkforward_committee_fold_candidate_rank_df
+            walkforward.walkforward_committee_fold_candidate_rank_df
         ),
         walkforward_committee_rank_diagnostics_df=(
-            walkforward_committee_rank_diagnostics_df
+            walkforward.walkforward_committee_rank_diagnostics_df
         ),
-        walkforward_committee_top1_df=walkforward_committee_top1_df,
-        walkforward_committee_top1_summary_df=walkforward_committee_top1_summary_df,
+        walkforward_committee_top1_df=walkforward.walkforward_committee_top1_df,
+        walkforward_committee_top1_summary_df=(
+            walkforward.walkforward_committee_top1_summary_df
+        ),
         walkforward_committee_selection_frequency_df=(
-            walkforward_committee_selection_frequency_df
+            walkforward.walkforward_committee_selection_frequency_df
         ),
-        space_comparison_summary_df=space_comparison_summary_df,
+        space_comparison_summary_df=walkforward.space_comparison_summary_df,
     )
 
 

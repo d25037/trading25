@@ -20,21 +20,21 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 921,
-    "functions": 8939,
-    "total_lines": 309859,
-    "code_lines": 247518
+    "files": 926,
+    "functions": 8990,
+    "total_lines": 310725,
+    "code_lines": 248318
   },
   "languages": {
     "python": {
-      "files": 660,
-      "total_lines": 262989,
-      "code_lines": 217806
+      "files": 661,
+      "total_lines": 263725,
+      "code_lines": 218488
     },
     "tsx": {
-      "files": 138,
-      "total_lines": 31081,
-      "code_lines": 16766
+      "files": 142,
+      "total_lines": 31211,
+      "code_lines": 16884
     },
     "typescript": {
       "files": 123,
@@ -43,39 +43,17 @@
     }
   },
   "file_buckets": {
-    "critical_1000_plus": 84,
-    "high_800_plus": 137,
-    "warn_500_plus": 199
+    "critical_1000_plus": 82,
+    "high_800_plus": 136,
+    "warn_500_plus": 200
   },
   "function_buckets": {
-    "critical_180_plus": 47,
-    "high_120_plus": 170,
-    "warn_80_plus": 473,
+    "critical_180_plus": 42,
+    "high_120_plus": 171,
+    "warn_80_plus": 482,
     "branch_50_plus": 2
   },
   "top_files": [
-    {
-      "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
-      "language": "python",
-      "total_lines": 2023,
-      "code_lines": 1857,
-      "branch_score": 166,
-      "max_nesting": 4,
-      "function_count": 40,
-      "max_function_lines": 407,
-      "hotspot_score": 5926
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 1757,
-      "code_lines": 1567,
-      "branch_score": 178,
-      "max_nesting": 5,
-      "function_count": 68,
-      "max_function_lines": 376,
-      "hotspot_score": 5784
-    },
     {
       "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
       "language": "python",
@@ -97,17 +75,6 @@
       "function_count": 49,
       "max_function_lines": 220,
       "hotspot_score": 5727
-    },
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1336,
-      "code_lines": 1214,
-      "branch_score": 241,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 5681
     },
     {
       "path": "apps/bt/src/infrastructure/db/market/market_db.py",
@@ -132,6 +99,28 @@
       "hotspot_score": 5464
     },
     {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1955,
+      "code_lines": 1762,
+      "branch_score": 182,
+      "max_nesting": 5,
+      "function_count": 78,
+      "max_function_lines": 169,
+      "hotspot_score": 5430
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
+      "language": "python",
+      "total_lines": 2207,
+      "code_lines": 2027,
+      "branch_score": 169,
+      "max_nesting": 4,
+      "function_count": 49,
+      "max_function_lines": 149,
+      "hotspot_score": 5376
+    },
+    {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
       "language": "python",
       "total_lines": 1900,
@@ -154,26 +143,15 @@
       "hotspot_score": 5183
     },
     {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
-      "language": "tsx",
-      "total_lines": 1716,
-      "code_lines": 987,
-      "branch_score": 185,
-      "max_nesting": 7,
-      "function_count": 31,
-      "max_function_lines": 301,
-      "hotspot_score": 5155
-    },
-    {
-      "path": "apps/ts/packages/web/src/pages/SymbolWorkbenchPage.tsx",
-      "language": "tsx",
-      "total_lines": 1486,
-      "code_lines": 804,
-      "branch_score": 226,
-      "max_nesting": 7,
-      "function_count": 50,
-      "max_function_lines": 89,
-      "hotspot_score": 5074
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1189,
+      "code_lines": 1073,
+      "branch_score": 210,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 4982
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py",
@@ -319,48 +297,40 @@
       "hotspot_score": 4255
     },
     {
-      "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_shock_confirmation_committee_overlay.py",
+      "path": "apps/bt/src/application/services/research_catalog_service.py",
       "language": "python",
-      "total_lines": 1647,
-      "code_lines": 1564,
-      "branch_score": 91,
-      "max_nesting": 4,
-      "function_count": 18,
-      "max_function_lines": 396,
-      "hotspot_score": 4250
+      "total_lines": 995,
+      "code_lines": 858,
+      "branch_score": 180,
+      "max_nesting": 3,
+      "function_count": 46,
+      "max_function_lines": 68,
+      "hotspot_score": 4173
+    },
+    {
+      "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
+      "language": "typescript",
+      "total_lines": 974,
+      "code_lines": 818,
+      "branch_score": 183,
+      "max_nesting": 1,
+      "function_count": 0,
+      "max_function_lines": 0,
+      "hotspot_score": 4137
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix100_price_vs_sma_rank_future_close.py",
+      "language": "python",
+      "total_lines": 1488,
+      "code_lines": 1370,
+      "branch_score": 129,
+      "max_nesting": 6,
+      "function_count": 31,
+      "max_function_lines": 141,
+      "hotspot_score": 4025
     }
   ],
   "top_functions": [
-    {
-      "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
-      "name": "_run_walkforward_research",
-      "language": "python",
-      "start_line": 1355,
-      "end_line": 1781,
-      "lines": 407,
-      "branch_score": 28,
-      "max_nesting": 4
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_shock_confirmation_committee_overlay.py",
-      "name": "run_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_research",
-      "language": "python",
-      "start_line": 324,
-      "end_line": 728,
-      "lines": 396,
-      "branch_score": 14,
-      "max_nesting": 4
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "name": "execute",
-      "language": "python",
-      "start_line": 1039,
-      "end_line": 1461,
-      "lines": 376,
-      "branch_score": 49,
-      "max_nesting": 5
-    },
     {
       "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_shock_confirmation_vote_overlay.py",
       "name": "run_topix_downside_return_standard_deviation_shock_confirmation_vote_overlay_research",
@@ -390,26 +360,6 @@
       "lines": 312,
       "branch_score": 11,
       "max_nesting": 2
-    },
-    {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
-      "name": "export",
-      "language": "tsx",
-      "start_line": 1288,
-      "end_line": 1716,
-      "lines": 301,
-      "branch_score": 48,
-      "max_nesting": 4
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "name": "execute",
-      "language": "python",
-      "start_line": 509,
-      "end_line": 827,
-      "lines": 288,
-      "branch_score": 30,
-      "max_nesting": 5
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_duplicate_policy_analysis.py",
@@ -580,20 +530,59 @@
       "lines": 205,
       "branch_score": 55,
       "max_nesting": 7
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py",
+      "name": "run_standard_missing_forecast_cfo_non_positive_deep_dive",
+      "language": "python",
+      "start_line": 1262,
+      "end_line": 1471,
+      "lines": 205,
+      "branch_score": 13,
+      "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_exposure_timing.py",
+      "name": "run_topix_downside_return_standard_deviation_exposure_timing_research",
+      "language": "python",
+      "start_line": 111,
+      "end_line": 318,
+      "lines": 200,
+      "branch_score": 11,
+      "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix_return_standard_deviation_exposure_timing.py",
+      "name": "run_topix_return_standard_deviation_exposure_timing_research",
+      "language": "python",
+      "start_line": 111,
+      "end_line": 318,
+      "lines": 200,
+      "branch_score": 11,
+      "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix100_price_to_sma50_decile_partitions.py",
+      "name": "_build_candidate_low_volume_hypothesis",
+      "language": "python",
+      "start_line": 622,
+      "end_line": 823,
+      "lines": 199,
+      "branch_score": 20,
+      "max_nesting": 5
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/topix100_second_bar_volume_drop_performance.py",
+      "name": "_build_interval_summary_row",
+      "language": "python",
+      "start_line": 675,
+      "end_line": 873,
+      "lines": 198,
+      "branch_score": 2,
+      "max_nesting": 1
     }
   ],
   "branch_hotspots": [
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1336,
-      "code_lines": 1214,
-      "branch_score": 241,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 5681
-    },
     {
       "path": "apps/bt/src/infrastructure/db/market/market_db.py",
       "language": "python",
@@ -606,17 +595,6 @@
       "hotspot_score": 5539
     },
     {
-      "path": "apps/ts/packages/web/src/pages/SymbolWorkbenchPage.tsx",
-      "language": "tsx",
-      "total_lines": 1486,
-      "code_lines": 804,
-      "branch_score": 226,
-      "max_nesting": 7,
-      "function_count": 50,
-      "max_function_lines": 89,
-      "hotspot_score": 5074
-    },
-    {
       "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
       "language": "python",
       "total_lines": 1909,
@@ -626,6 +604,17 @@
       "function_count": 60,
       "max_function_lines": 124,
       "hotspot_score": 5758
+    },
+    {
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1189,
+      "code_lines": 1073,
+      "branch_score": 210,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 4982
     },
     {
       "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
@@ -650,17 +639,6 @@
       "hotspot_score": 5727
     },
     {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
-      "language": "tsx",
-      "total_lines": 1716,
-      "code_lines": 987,
-      "branch_score": 185,
-      "max_nesting": 7,
-      "function_count": 31,
-      "max_function_lines": 301,
-      "hotspot_score": 5155
-    },
-    {
       "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
       "language": "typescript",
       "total_lines": 974,
@@ -672,6 +650,17 @@
       "hotspot_score": 4137
     },
     {
+      "path": "apps/bt/src/application/services/sync_strategies.py",
+      "language": "python",
+      "total_lines": 1955,
+      "code_lines": 1762,
+      "branch_score": 182,
+      "max_nesting": 5,
+      "function_count": 78,
+      "max_function_lines": 169,
+      "hotspot_score": 5430
+    },
+    {
       "path": "apps/bt/src/application/services/research_catalog_service.py",
       "language": "python",
       "total_lines": 995,
@@ -681,17 +670,6 @@
       "function_count": 46,
       "max_function_lines": 68,
       "hotspot_score": 4173
-    },
-    {
-      "path": "apps/bt/src/application/services/sync_strategies.py",
-      "language": "python",
-      "total_lines": 1757,
-      "code_lines": 1567,
-      "branch_score": 178,
-      "max_nesting": 5,
-      "function_count": 68,
-      "max_function_lines": 376,
-      "hotspot_score": 5784
     },
     {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
@@ -729,13 +707,13 @@
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
       "language": "python",
-      "total_lines": 2023,
-      "code_lines": 1857,
-      "branch_score": 166,
+      "total_lines": 2207,
+      "code_lines": 2027,
+      "branch_score": 169,
       "max_nesting": 4,
-      "function_count": 40,
-      "max_function_lines": 407,
-      "hotspot_score": 5926
+      "function_count": 49,
+      "max_function_lines": 149,
+      "hotspot_score": 5376
     },
     {
       "path": "apps/bt/src/domains/analytics/accumulation_flow_followthrough.py",
@@ -747,6 +725,28 @@
       "function_count": 48,
       "max_function_lines": 185,
       "hotspot_score": 5183
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/pre_disclosure_flow_volatility.py",
+      "language": "python",
+      "total_lines": 1423,
+      "code_lines": 1187,
+      "branch_score": 163,
+      "max_nesting": 3,
+      "function_count": 48,
+      "max_function_lines": 115,
+      "hotspot_score": 4301
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py",
+      "language": "python",
+      "total_lines": 1534,
+      "code_lines": 1403,
+      "branch_score": 160,
+      "max_nesting": 5,
+      "function_count": 45,
+      "max_function_lines": 205,
+      "hotspot_score": 4783
     }
   ],
   "nesting_hotspots": [
@@ -797,13 +797,13 @@
     {
       "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
       "language": "tsx",
-      "total_lines": 1716,
-      "code_lines": 987,
-      "branch_score": 185,
+      "total_lines": 854,
+      "code_lines": 459,
+      "branch_score": 87,
       "max_nesting": 7,
-      "function_count": 31,
-      "max_function_lines": 301,
-      "hotspot_score": 5155
+      "function_count": 14,
+      "max_function_lines": 126,
+      "hotspot_score": 2338
     },
     {
       "path": "apps/ts/packages/web/src/components/Chart/ChartControls.tsx",
@@ -848,17 +848,6 @@
       "function_count": 30,
       "max_function_lines": 69,
       "hotspot_score": 3521
-    },
-    {
-      "path": "apps/ts/packages/web/src/pages/SymbolWorkbenchPage.tsx",
-      "language": "tsx",
-      "total_lines": 1486,
-      "code_lines": 804,
-      "branch_score": 226,
-      "max_nesting": 7,
-      "function_count": 50,
-      "max_function_lines": 89,
-      "hotspot_score": 5074
     },
     {
       "path": "apps/ts/packages/web/src/test-dom-matchers.ts",
@@ -914,6 +903,17 @@
       "function_count": 28,
       "max_function_lines": 99,
       "hotspot_score": 3374
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/annual_value_periodic_rebalance.py",
+      "language": "python",
+      "total_lines": 1385,
+      "code_lines": 1311,
+      "branch_score": 150,
+      "max_nesting": 6,
+      "function_count": 27,
+      "max_function_lines": 182,
+      "hotspot_score": 4467
     }
   ],
   "target_metrics": {

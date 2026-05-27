@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Literal
 
 import pandas as pd
 
@@ -27,7 +26,15 @@ from .models import (
     FYDataPoint,
     FundamentalDataPoint,
 )
-from .valuation_primitives import market_cap_from_price_and_shares, valuation_ratio
+from .daily_valuation import (
+    calculate_daily_valuation as _calculate_daily_valuation_impl,
+    find_applicable_fy as _find_applicable_fy_impl,
+    get_applicable_fy_data as _get_applicable_fy_data_impl,
+    has_valid_valuation_metrics as _has_valid_valuation_metrics_impl,
+    resolve_forward_eps_for_daily_valuation as _resolve_forward_eps_for_daily_valuation_impl,
+    resolve_forward_operating_profit_for_daily_valuation as _resolve_forward_operating_profit_for_daily_valuation_impl,
+)
+from .valuation_primitives import valuation_ratio
 
 
 class FundamentalsCalculator:
@@ -781,90 +788,14 @@ class FundamentalsCalculator:
         share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
         price_basis_date: str | None = None,
     ) -> list[DailyValuationDataPoint]:
-        if not daily_prices:
-            return []
-
-        baseline_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
-        treasury_snapshot = self._resolve_latest_treasury_share_snapshot_from_latest_quarter(statements)
-        adjustment_events = share_adjustment_events or []
-
-        result: list[DailyValuationDataPoint] = []
-        sorted_dates = sorted(daily_prices.keys())
-        effective_price_basis_date = price_basis_date or sorted_dates[-1]
-        for date_str in sorted_dates:
-            close = daily_prices[date_str]
-            baseline_shares = self._adjust_snapshot_shares_to_price_basis(
-                baseline_snapshot,
-                adjustment_events,
-                through_date=effective_price_basis_date,
-            )
-            baseline_treasury_shares = self._adjust_snapshot_shares_to_price_basis(
-                treasury_snapshot,
-                adjustment_events,
-                through_date=effective_price_basis_date,
-                allow_zero=True,
-            )
-            fy_data_points = self._get_applicable_fy_data(
-                statements, prefer_consolidated, baseline_shares
-            )
-            if not fy_data_points:
-                continue
-            applicable_fy = self._find_applicable_fy(fy_data_points, date_str)
-            if applicable_fy is None:
-                continue
-
-            forward_eps, forward_eps_disclosed_date, forward_eps_source = (
-                self._resolve_forward_eps_for_daily_valuation(
-                    statements,
-                    applicable_fy,
-                    prefer_consolidated,
-                    baseline_shares,
-                    date_str,
-                )
-            )
-            per = self._round_or_none(valuation_ratio(close, applicable_fy.eps))
-            forward_per = self._round_or_none(valuation_ratio(close, forward_eps))
-            pbr = self._round_or_none(valuation_ratio(close, applicable_fy.bps))
-            market_cap = self._round_or_none(
-                market_cap_from_price_and_shares(close, baseline_shares)
-            )
-            forward_operating_profit = (
-                self._resolve_forward_operating_profit_for_daily_valuation(
-                    statements,
-                    applicable_fy,
-                    prefer_consolidated,
-                    date_str,
-                )
-            )
-            p_op = self._round_or_none(
-                valuation_ratio(market_cap, applicable_fy.operating_profit)
-            )
-            forward_p_op = self._round_or_none(
-                valuation_ratio(market_cap, forward_operating_profit)
-            )
-            free_float_market_cap = None
-            if baseline_shares is not None:
-                free_float_market_cap = self._round_or_none(
-                    calc_market_cap_scalar(close, baseline_shares, baseline_treasury_shares)
-                )
-
-            result.append(
-                DailyValuationDataPoint(
-                    date=date_str,
-                    close=close,
-                    per=per,
-                    forwardPer=forward_per,
-                    pOp=p_op,
-                    forwardPOp=forward_p_op,
-                    pbr=pbr,
-                    marketCap=market_cap,
-                    freeFloatMarketCap=free_float_market_cap,
-                    forwardEps=forward_eps,
-                    forwardEpsDisclosedDate=forward_eps_disclosed_date,
-                    forwardEpsSource=forward_eps_source,
-                )
-            )
-        return result
+        return _calculate_daily_valuation_impl(
+            self,
+            statements,
+            daily_prices,
+            prefer_consolidated,
+            share_adjustment_events=share_adjustment_events,
+            price_basis_date=price_basis_date,
+        )
 
     def _get_applicable_fy_data(
         self,
@@ -872,57 +803,12 @@ class FundamentalsCalculator:
         prefer_consolidated: bool,
         baseline_shares: float | None,
     ) -> list[FYDataPoint]:
-        fy_data: list[FYDataPoint] = []
-        for stmt in statements:
-            if not self._is_actual_fy_statement(stmt):
-                continue
-            eps = self._calculate_eps(stmt, prefer_consolidated)
-            bps = self._calculate_bps(stmt, prefer_consolidated)
-            operating_profit = self._get_operating_profit(stmt, prefer_consolidated)
-            forecast_eps, _ = self._get_forecast_eps(stmt, eps, prefer_consolidated)
-            forecast_operating_profit, _ = self._get_forecast_operating_profit(
-                stmt,
-                operating_profit,
-                prefer_consolidated,
-            )
-            adjusted_eps = self._compute_adjusted_value(eps, stmt.ShOutFY, baseline_shares)
-            adjusted_bps = self._compute_adjusted_value(bps, stmt.ShOutFY, baseline_shares)
-            adjusted_forecast_eps = self._compute_adjusted_value(
-                forecast_eps,
-                stmt.ShOutFY,
-                baseline_shares,
-            )
-            display_eps = adjusted_eps if adjusted_eps is not None else eps
-            display_bps = adjusted_bps if adjusted_bps is not None else bps
-            display_forecast_eps = (
-                adjusted_forecast_eps
-                if adjusted_forecast_eps is not None
-                else self._round_or_none(forecast_eps)
-            )
-            if not self._has_valid_valuation_metrics(display_eps, display_bps):
-                continue
-            fy_data.append(
-                FYDataPoint(
-                    disclosed_date=stmt.DiscDate,
-                    eps=display_eps,
-                    bps=display_bps,
-                    operating_profit=operating_profit,
-                    forward_eps=display_forecast_eps,
-                    forward_operating_profit=forecast_operating_profit,
-                    forward_eps_disclosed_date=(
-                        stmt.DiscDate if display_forecast_eps is not None else None
-                    ),
-                    forward_eps_source="fy" if display_forecast_eps is not None else None,
-                )
-            )
-
-        fy_data.sort(key=lambda x: x.disclosed_date)
-        return fy_data
+        return _get_applicable_fy_data_impl(
+            self, statements, prefer_consolidated, baseline_shares
+        )
 
     def _has_valid_valuation_metrics(self, eps: float | None, bps: float | None) -> bool:
-        eps_valid = eps is not None and eps > 0
-        bps_valid = bps is not None and bps > 0
-        return eps_valid or bps_valid
+        return _has_valid_valuation_metrics_impl(eps, bps)
 
     def _resolve_forward_eps_for_daily_valuation(
         self,
@@ -931,35 +817,14 @@ class FundamentalsCalculator:
         prefer_consolidated: bool,
         baseline_shares: float | None,
         date_str: str,
-    ) -> tuple[float | None, str | None, Literal["revised", "fy"] | None]:
-        quarterly_statements = [
-            stmt
-            for stmt in statements
-            if normalize_period_type(stmt.CurPerType) in {"1Q", "2Q", "3Q"}
-            and applicable_fy.disclosed_date < stmt.DiscDate <= date_str
-        ]
-        quarterly_statements.sort(key=lambda stmt: stmt.DiscDate, reverse=True)
-        for stmt in quarterly_statements:
-            forecast_eps = stmt.FEPS if prefer_consolidated else stmt.FNCEPS
-            if forecast_eps is None:
-                continue
-            adjusted_forecast_eps = self._compute_adjusted_value(
-                forecast_eps,
-                stmt.ShOutFY,
-                baseline_shares,
-            )
-            return (
-                adjusted_forecast_eps
-                if adjusted_forecast_eps is not None
-                else self._round_or_none(forecast_eps),
-                stmt.DiscDate,
-                "revised",
-            )
-
-        return (
-            applicable_fy.forward_eps,
-            applicable_fy.forward_eps_disclosed_date,
-            applicable_fy.forward_eps_source,
+    ) -> tuple[float | None, str | None, str | None]:
+        return _resolve_forward_eps_for_daily_valuation_impl(
+            self,
+            statements,
+            applicable_fy,
+            prefer_consolidated,
+            baseline_shares,
+            date_str,
         )
 
     def _resolve_forward_operating_profit_for_daily_valuation(
@@ -969,28 +834,16 @@ class FundamentalsCalculator:
         prefer_consolidated: bool,
         date_str: str,
     ) -> float | None:
-        if not prefer_consolidated:
-            return None
-        quarterly_statements = [
-            stmt
-            for stmt in statements
-            if normalize_period_type(stmt.CurPerType) in {"1Q", "2Q", "3Q"}
-            and applicable_fy.disclosed_date < stmt.DiscDate <= date_str
-        ]
-        quarterly_statements.sort(key=lambda stmt: stmt.DiscDate, reverse=True)
-        for stmt in quarterly_statements:
-            if stmt.FOP is not None:
-                return stmt.FOP
-        return applicable_fy.forward_operating_profit
+        return _resolve_forward_operating_profit_for_daily_valuation_impl(
+            self,
+            statements,
+            applicable_fy,
+            prefer_consolidated,
+            date_str,
+        )
 
     def _find_applicable_fy(self, fy_data_points: list[FYDataPoint], date_str: str) -> FYDataPoint | None:
-        applicable_fy: FYDataPoint | None = None
-        for fy in fy_data_points:
-            if fy.disclosed_date <= date_str:
-                applicable_fy = fy
-            else:
-                break
-        return applicable_fy
+        return _find_applicable_fy_impl(fy_data_points, date_str)
 
     def _find_latest_with_actual_data(self, data: list[FundamentalDataPoint]) -> FundamentalDataPoint | None:
         for d in data:

@@ -123,6 +123,34 @@ class Topix100SmaRatioLightgbmResearchResult:
     diagnostic_error_message: str | None
 
 
+@dataclass(frozen=True)
+class _WalkforwardBaselineSplitContext:
+    selected_feature_df: pd.DataFrame
+    selected_composite_df: pd.DataFrame
+    selected_lookup: dict[str, dict[str, Any]]
+    composite_panel_lookup: dict[str, pd.DataFrame]
+    scheduled_train_date_count: int
+    scheduled_test_date_count: int
+
+
+@dataclass(frozen=True)
+class _WalkforwardHorizonResult:
+    coverage_record: dict[str, Any]
+    lightgbm_panel_df: pd.DataFrame | None
+    feature_importance_records: list[dict[str, Any]]
+    baseline_panel_df: pd.DataFrame | None
+
+
+@dataclass(frozen=True)
+class _WalkforwardFrameCollections:
+    coverage_records: list[dict[str, Any]]
+    baseline_selected_feature_frames: list[pd.DataFrame]
+    baseline_selected_composite_frames: list[pd.DataFrame]
+    baseline_ranked_frames: list[pd.DataFrame]
+    lightgbm_ranked_frames: list[pd.DataFrame]
+    feature_importance_records: list[dict[str, Any]]
+
+
 TOPIX100_SMA_RATIO_LIGHTGBM_RESEARCH_EXPERIMENT_ID = (
     "market-behavior/topix100-sma-ratio-lightgbm"
 )
@@ -1352,40 +1380,15 @@ def _summarize_walkforward_feature_importance(
     return summary_df
 
 
-def _run_walkforward_research(
+def _build_walkforward_split_config_df(
     base_result: Topix100SmaRatioRankFutureCloseResearchResult,
     *,
-    ranker_cls: type[Any],
-    feature_columns: tuple[str, ...],
+    splits: list[WalkForwardSplit],
     train_window: int,
     test_window: int,
     step: int,
-) -> Topix100SmaRatioLightgbmWalkforwardResearchResult:
-    unique_dates = pd.DatetimeIndex(base_result.event_panel_df["date"].unique())
-    splits = generate_walkforward_splits(
-        unique_dates,
-        train_window=train_window,
-        test_window=test_window,
-        step=step,
-    )
-    if not splits:
-        raise Topix100SmaRatioLightgbmResearchError(
-            "Walk-forward LightGBM research requires enough valid dates to build at "
-            f"least one split with train_window={train_window}, "
-            f"test_window={test_window}, step={step}."
-        )
-
-    training_frames_by_horizon = {
-        horizon_key: _build_training_frame(base_result.event_panel_df, horizon_key=horizon_key)
-        for horizon_key in HORIZON_ORDER
-    }
-    for horizon_key, scored_df in training_frames_by_horizon.items():
-        if scored_df.empty:
-            raise Topix100SmaRatioLightgbmResearchError(
-                f"LightGBM research found no rows with {horizon_key} targets."
-            )
-
-    split_config_df = pd.DataFrame.from_records(
+) -> pd.DataFrame:
+    return pd.DataFrame.from_records(
         [
             {
                 "analysis_start_date": base_result.analysis_start_date,
@@ -1401,323 +1404,318 @@ def _run_walkforward_research(
         ]
     )
 
-    coverage_records: list[dict[str, Any]] = []
-    baseline_selected_feature_frames: list[pd.DataFrame] = []
-    baseline_selected_composite_frames: list[pd.DataFrame] = []
-    baseline_ranked_frames: list[pd.DataFrame] = []
-    lightgbm_ranked_frames: list[pd.DataFrame] = []
-    feature_importance_records: list[dict[str, Any]] = []
 
-    for split_index, split in enumerate(splits, start=1):
-        split_ranked_panel_df = _filter_df_by_date_range(
-            base_result.ranked_panel_df,
-            start_date=split.train_start,
-            end_date=split.test_end,
-        )
-        train_ranked_panel_df = _filter_df_by_date_range(
-            split_ranked_panel_df,
-            start_date=split.train_start,
-            end_date=split.train_end,
-        )
-        baseline_train_analysis = _analyze_ranked_panel(train_ranked_panel_df)
-        _, baseline_selected_feature_df = _build_train_only_feature_selection(
+def _build_walkforward_training_frames(
+    event_panel_df: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    training_frames_by_horizon = {
+        horizon_key: _build_training_frame(event_panel_df, horizon_key=horizon_key)
+        for horizon_key in HORIZON_ORDER
+    }
+    for horizon_key, scored_df in training_frames_by_horizon.items():
+        if scored_df.empty:
+            raise Topix100SmaRatioLightgbmResearchError(
+                f"LightGBM research found no rows with {horizon_key} targets."
+            )
+    return training_frames_by_horizon
+
+
+def _build_walkforward_baseline_split_context(
+    base_result: Topix100SmaRatioRankFutureCloseResearchResult,
+    *,
+    split_index: int,
+    split: WalkForwardSplit,
+) -> _WalkforwardBaselineSplitContext:
+    split_ranked_panel_df = _filter_df_by_date_range(
+        base_result.ranked_panel_df,
+        start_date=split.train_start,
+        end_date=split.test_end,
+    )
+    train_ranked_panel_df = _filter_df_by_date_range(
+        split_ranked_panel_df,
+        start_date=split.train_start,
+        end_date=split.train_end,
+    )
+    baseline_train_analysis = _analyze_ranked_panel(train_ranked_panel_df)
+    _, selected_feature_df = _build_train_only_feature_selection(
+        split_index=split_index,
+        split=split,
+        train_analysis=baseline_train_analysis,
+    )
+    split_event_panel_df = _filter_df_by_date_range(
+        base_result.event_panel_df,
+        start_date=split.train_start,
+        end_date=split.test_end,
+    )
+    _, selected_composite_df, composite_panel_lookup = (
+        _build_train_only_composite_candidates(
+            split_event_panel_df,
             split_index=split_index,
             split=split,
-            train_analysis=baseline_train_analysis,
+            selected_feature_df=selected_feature_df,
         )
-        if not baseline_selected_feature_df.empty:
-            baseline_selected_feature_frames.append(baseline_selected_feature_df)
-
-        split_event_panel_df = _filter_df_by_date_range(
-            base_result.event_panel_df,
-            start_date=split.train_start,
-            end_date=split.test_end,
-        )
-        _, baseline_selected_composite_df, composite_panel_lookup = (
-            _build_train_only_composite_candidates(
-                split_event_panel_df,
-                split_index=split_index,
-                split=split,
-                selected_feature_df=baseline_selected_feature_df,
-            )
-        )
-        if not baseline_selected_composite_df.empty:
-            baseline_selected_composite_frames.append(baseline_selected_composite_df)
-
-        baseline_selected_lookup = {
-            str(row["selected_horizon_key"]): row
-            for row in baseline_selected_composite_df.to_dict(orient="records")
-        }
-        split_scheduled_train_dates = int(
-            base_result.event_panel_df[
-                (base_result.event_panel_df["date"] >= split.train_start)
-                & (base_result.event_panel_df["date"] <= split.train_end)
-            ]["date"].nunique()
-        )
-        split_scheduled_test_dates = int(
-            base_result.event_panel_df[
-                (base_result.event_panel_df["date"] >= split.test_start)
-                & (base_result.event_panel_df["date"] <= split.test_end)
-            ]["date"].nunique()
-        )
-
-        for horizon_key in HORIZON_ORDER:
-            scored_df = training_frames_by_horizon[horizon_key]
-            training_df = _filter_df_by_date_range(
-                scored_df,
-                start_date=split.train_start,
-                end_date=split.train_end,
-            ).sort_values(["date", "code"])
-            test_df = _filter_df_by_date_range(
-                scored_df,
-                start_date=split.test_start,
-                end_date=split.test_end,
-            ).sort_values(["date", "code"])
-            train_groups = _build_query_groups(training_df)
-            baseline_selected_row = baseline_selected_lookup.get(horizon_key)
-            baseline_test_row_count = 0
-            baseline_test_date_count = 0
-            if baseline_selected_row is not None:
-                composite_name = str(baseline_selected_row["ranking_feature"])
-                composite_ranked_panel_df = composite_panel_lookup.get(composite_name)
-                if composite_ranked_panel_df is not None:
-                    baseline_test_panel_df = _filter_df_by_date_range(
-                        composite_ranked_panel_df,
-                        start_date=split.test_start,
-                        end_date=split.test_end,
-                    )
-                    baseline_test_panel_df = baseline_test_panel_df.dropna(
-                        subset=[f"{horizon_key}_return"]
-                    ).copy()
-                    baseline_test_row_count = int(len(baseline_test_panel_df))
-                    baseline_test_date_count = int(
-                        baseline_test_panel_df["date"].nunique()
-                    )
-
-            coverage_record = {
-                "split_index": split_index,
-                "selected_horizon_key": horizon_key,
-                "train_start": split.train_start,
-                "train_end": split.train_end,
-                "test_start": split.test_start,
-                "test_end": split.test_end,
-                "scheduled_train_date_count": split_scheduled_train_dates,
-                "scheduled_test_date_count": split_scheduled_test_dates,
-                "lightgbm_train_row_count": int(len(training_df)),
-                "lightgbm_train_date_count": int(training_df["date"].nunique()),
-                "lightgbm_train_query_count": int(len(train_groups)),
-                "lightgbm_test_row_count": int(len(test_df)),
-                "lightgbm_test_date_count": int(test_df["date"].nunique()),
-                "baseline_selection_available": baseline_selected_row is not None,
-                "baseline_test_row_count": baseline_test_row_count,
-                "baseline_test_date_count": baseline_test_date_count,
-                "is_valid_split": bool(
-                    not training_df.empty and not test_df.empty and baseline_selected_row is not None
-                ),
-            }
-            coverage_records.append(coverage_record)
-
-            if training_df.empty or test_df.empty:
-                continue
-
-            ranker = ranker_cls(**_build_model_params())
-            ranker.fit(
-                training_df[list(feature_columns)],
-                training_df["target_relevance"],
-                group=train_groups,
-            )
-
-            predictions = pd.Series(
-                ranker.predict(test_df[list(feature_columns)]),
-                index=test_df.index,
-                name="ranking_value",
-            )
-            lightgbm_panel_df = _build_scored_ranked_panel(
-                test_df,
-                ranking_feature=_walkforward_lightgbm_ranking_feature(horizon_key),
-                ranking_feature_label=_walkforward_lightgbm_ranking_feature_label(
-                    horizon_key
-                ),
-                predictions=predictions,
-            )
-            lightgbm_panel_df = _assign_feature_deciles(
-                lightgbm_panel_df,
-                known_feature_order=_walkforward_lightgbm_feature_order(),
-            )
-            lightgbm_panel_df["selected_horizon_key"] = horizon_key
-            lightgbm_panel_df["split_index"] = split_index
-            lightgbm_panel_df["train_start"] = split.train_start
-            lightgbm_panel_df["train_end"] = split.train_end
-            lightgbm_panel_df["test_start"] = split.test_start
-            lightgbm_panel_df["test_end"] = split.test_end
-            lightgbm_ranked_frames.append(lightgbm_panel_df)
-
-            importance_values = pd.Series(
-                getattr(ranker, "feature_importances_", []),
-                dtype=float,
-            )
-            if len(importance_values) != len(feature_columns):
-                raise Topix100SmaRatioLightgbmResearchError(
-                    "LightGBM research received unexpected feature importance output."
-                )
-            importance_df = pd.DataFrame(
-                {
-                    "split_index": split_index,
-                    "train_start": split.train_start,
-                    "train_end": split.train_end,
-                    "test_start": split.test_start,
-                    "test_end": split.test_end,
-                    "selected_horizon_key": horizon_key,
-                    "ranking_feature": _walkforward_lightgbm_ranking_feature(
-                        horizon_key
-                    ),
-                    "ranking_feature_label": _walkforward_lightgbm_ranking_feature_label(
-                        horizon_key
-                    ),
-                    "feature_name": feature_columns,
-                    "feature_label": [
-                        RANKING_FEATURE_LABEL_MAP[cast(Any, feature_name)]
-                        for feature_name in feature_columns
-                    ],
-                    "importance_gain": importance_values.to_numpy(),
-                }
-            )
-            importance_df = importance_df.sort_values(
-                ["importance_gain", "feature_name"],
-                ascending=[False, True],
-                kind="stable",
-            ).reset_index(drop=True)
-            importance_df["importance_rank"] = range(1, len(importance_df) + 1)
-            feature_importance_records.extend(_records_from_frame(importance_df))
-
-            if baseline_selected_row is None:
-                continue
-
-            composite_name = str(baseline_selected_row["ranking_feature"])
-            composite_ranked_panel_df = composite_panel_lookup.get(composite_name)
-            if composite_ranked_panel_df is None:
-                continue
-            baseline_test_panel_df = _filter_df_by_date_range(
-                composite_ranked_panel_df,
-                start_date=split.test_start,
-                end_date=split.test_end,
-            )
-            baseline_test_panel_df = baseline_test_panel_df.dropna(
-                subset=[f"{horizon_key}_return"]
-            ).copy()
-            if baseline_test_panel_df.empty:
-                continue
-            baseline_test_panel_df["selected_ranking_feature"] = (
-                baseline_test_panel_df["ranking_feature"].astype(str)
-            )
-            baseline_test_panel_df["selected_ranking_feature_label"] = (
-                baseline_test_panel_df["ranking_feature_label"].astype(str)
-            )
-            baseline_test_panel_df["ranking_feature"] = _walkforward_baseline_ranking_feature(
-                horizon_key
-            )
-            baseline_test_panel_df["ranking_feature_label"] = (
-                _walkforward_baseline_ranking_feature_label(horizon_key)
-            )
-            baseline_test_panel_df["selected_horizon_key"] = horizon_key
-            baseline_test_panel_df["split_index"] = split_index
-            baseline_test_panel_df["train_start"] = split.train_start
-            baseline_test_panel_df["train_end"] = split.train_end
-            baseline_test_panel_df["test_start"] = split.test_start
-            baseline_test_panel_df["test_end"] = split.test_end
-            for metadata_column in (
-                "price_feature",
-                "price_feature_label",
-                "price_direction",
-                "volume_feature",
-                "volume_feature_label",
-                "volume_direction",
-                "score_method",
-            ):
-                baseline_test_panel_df[metadata_column] = baseline_selected_row[
-                    metadata_column
-                ]
-            baseline_ranked_frames.append(baseline_test_panel_df)
-
-    split_coverage_df = pd.DataFrame.from_records(coverage_records)
-    if split_coverage_df.empty:
-        raise Topix100SmaRatioLightgbmResearchError(
-            "Walk-forward LightGBM research could not build split coverage rows."
-        )
-    split_coverage_df["selected_horizon_key"] = pd.Categorical(
-        split_coverage_df["selected_horizon_key"],
-        categories=list(HORIZON_ORDER),
-        ordered=True,
     )
-    split_coverage_df = split_coverage_df.sort_values(
-        ["selected_horizon_key", "split_index"],
-        kind="stable",
-    ).reset_index(drop=True)
-    split_coverage_df["selected_horizon_key"] = split_coverage_df[
-        "selected_horizon_key"
-    ].astype(str)
+    selected_lookup: dict[str, dict[str, Any]] = {
+        str(row["selected_horizon_key"]): row
+        for row in _records_from_frame(selected_composite_df)
+    }
+    scheduled_train_date_count = int(
+        base_result.event_panel_df[
+            (base_result.event_panel_df["date"] >= split.train_start)
+            & (base_result.event_panel_df["date"] <= split.train_end)
+        ]["date"].nunique()
+    )
+    scheduled_test_date_count = int(
+        base_result.event_panel_df[
+            (base_result.event_panel_df["date"] >= split.test_start)
+            & (base_result.event_panel_df["date"] <= split.test_end)
+        ]["date"].nunique()
+    )
+    return _WalkforwardBaselineSplitContext(
+        selected_feature_df=selected_feature_df,
+        selected_composite_df=selected_composite_df,
+        selected_lookup=selected_lookup,
+        composite_panel_lookup=composite_panel_lookup,
+        scheduled_train_date_count=scheduled_train_date_count,
+        scheduled_test_date_count=scheduled_test_date_count,
+    )
 
-    if not lightgbm_ranked_frames:
-        raise Topix100SmaRatioLightgbmResearchError(
-            "Walk-forward LightGBM research produced no test-window predictions."
-        )
-    if not baseline_ranked_frames:
-        raise Topix100SmaRatioLightgbmResearchError(
-            "Walk-forward baseline comparison produced no selected test-window rows."
-        )
 
-    lightgbm_ranked_panel_df = _core_sort_frame(
-        pd.concat(lightgbm_ranked_frames, ignore_index=True),
+def _build_walkforward_baseline_test_panel(
+    *,
+    baseline_selected_row: dict[str, Any] | None,
+    composite_panel_lookup: dict[str, pd.DataFrame],
+    horizon_key: str,
+    split: WalkForwardSplit,
+) -> pd.DataFrame:
+    if baseline_selected_row is None:
+        return pd.DataFrame()
+    composite_name = str(baseline_selected_row["ranking_feature"])
+    composite_ranked_panel_df = composite_panel_lookup.get(composite_name)
+    if composite_ranked_panel_df is None:
+        return pd.DataFrame()
+    baseline_test_panel_df = _filter_df_by_date_range(
+        composite_ranked_panel_df,
+        start_date=split.test_start,
+        end_date=split.test_end,
+    )
+    return baseline_test_panel_df.dropna(subset=[f"{horizon_key}_return"]).copy()
+
+
+def _build_walkforward_lightgbm_outputs(
+    *,
+    ranker_cls: type[Any],
+    feature_columns: tuple[str, ...],
+    training_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    horizon_key: str,
+    split_index: int,
+    split: WalkForwardSplit,
+    train_groups: list[int],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    ranker = ranker_cls(**_build_model_params())
+    ranker.fit(
+        training_df[list(feature_columns)],
+        training_df["target_relevance"],
+        group=train_groups,
+    )
+
+    predictions = pd.Series(
+        ranker.predict(test_df[list(feature_columns)]),
+        index=test_df.index,
+        name="ranking_value",
+    )
+    lightgbm_panel_df = _build_scored_ranked_panel(
+        test_df,
+        ranking_feature=_walkforward_lightgbm_ranking_feature(horizon_key),
+        ranking_feature_label=_walkforward_lightgbm_ranking_feature_label(
+            horizon_key
+        ),
+        predictions=predictions,
+    )
+    lightgbm_panel_df = _assign_feature_deciles(
+        lightgbm_panel_df,
         known_feature_order=_walkforward_lightgbm_feature_order(),
     )
-    baseline_ranked_panel_df = _core_sort_frame(
-        pd.concat(baseline_ranked_frames, ignore_index=True),
-        known_feature_order=_walkforward_feature_order(),
+    lightgbm_panel_df["selected_horizon_key"] = horizon_key
+    lightgbm_panel_df["split_index"] = split_index
+    lightgbm_panel_df["train_start"] = split.train_start
+    lightgbm_panel_df["train_end"] = split.train_end
+    lightgbm_panel_df["test_start"] = split.test_start
+    lightgbm_panel_df["test_end"] = split.test_end
+
+    importance_values = pd.Series(
+        getattr(ranker, "feature_importances_", []),
+        dtype=float,
     )
-    _validate_no_overlapping_oos_rows(
-        lightgbm_ranked_panel_df,
-        model_name="lightgbm",
+    if len(importance_values) != len(feature_columns):
+        raise Topix100SmaRatioLightgbmResearchError(
+            "LightGBM research received unexpected feature importance output."
+        )
+    importance_df = pd.DataFrame(
+        {
+            "split_index": split_index,
+            "train_start": split.train_start,
+            "train_end": split.train_end,
+            "test_start": split.test_start,
+            "test_end": split.test_end,
+            "selected_horizon_key": horizon_key,
+            "ranking_feature": _walkforward_lightgbm_ranking_feature(horizon_key),
+            "ranking_feature_label": _walkforward_lightgbm_ranking_feature_label(
+                horizon_key
+            ),
+            "feature_name": feature_columns,
+            "feature_label": [
+                RANKING_FEATURE_LABEL_MAP[cast(Any, feature_name)]
+                for feature_name in feature_columns
+            ],
+            "importance_gain": importance_values.to_numpy(),
+        }
     )
-    _validate_no_overlapping_oos_rows(
-        baseline_ranked_panel_df,
-        model_name="baseline",
+    importance_df = importance_df.sort_values(
+        ["importance_gain", "feature_name"],
+        ascending=[False, True],
+        kind="stable",
+    ).reset_index(drop=True)
+    importance_df["importance_rank"] = range(1, len(importance_df) + 1)
+    return lightgbm_panel_df, _records_from_frame(importance_df)
+
+
+def _decorate_walkforward_baseline_panel(
+    *,
+    baseline_test_panel_df: pd.DataFrame,
+    baseline_selected_row: dict[str, Any],
+    horizon_key: str,
+    split_index: int,
+    split: WalkForwardSplit,
+) -> pd.DataFrame:
+    baseline_test_panel_df["selected_ranking_feature"] = (
+        baseline_test_panel_df["ranking_feature"].astype(str)
+    )
+    baseline_test_panel_df["selected_ranking_feature_label"] = (
+        baseline_test_panel_df["ranking_feature_label"].astype(str)
+    )
+    baseline_test_panel_df["ranking_feature"] = _walkforward_baseline_ranking_feature(
+        horizon_key
+    )
+    baseline_test_panel_df["ranking_feature_label"] = (
+        _walkforward_baseline_ranking_feature_label(horizon_key)
+    )
+    baseline_test_panel_df["selected_horizon_key"] = horizon_key
+    baseline_test_panel_df["split_index"] = split_index
+    baseline_test_panel_df["train_start"] = split.train_start
+    baseline_test_panel_df["train_end"] = split.train_end
+    baseline_test_panel_df["test_start"] = split.test_start
+    baseline_test_panel_df["test_end"] = split.test_end
+    for metadata_column in (
+        "price_feature",
+        "price_feature_label",
+        "price_direction",
+        "volume_feature",
+        "volume_feature_label",
+        "volume_direction",
+        "score_method",
+    ):
+        baseline_test_panel_df[metadata_column] = baseline_selected_row[
+            metadata_column
+        ]
+    return baseline_test_panel_df
+
+
+def _run_walkforward_horizon(
+    *,
+    training_frames_by_horizon: dict[str, pd.DataFrame],
+    baseline_context: _WalkforwardBaselineSplitContext,
+    ranker_cls: type[Any],
+    feature_columns: tuple[str, ...],
+    horizon_key: str,
+    split_index: int,
+    split: WalkForwardSplit,
+) -> _WalkforwardHorizonResult:
+    scored_df = training_frames_by_horizon[horizon_key]
+    training_df = _filter_df_by_date_range(
+        scored_df,
+        start_date=split.train_start,
+        end_date=split.train_end,
+    ).sort_values(["date", "code"])
+    test_df = _filter_df_by_date_range(
+        scored_df,
+        start_date=split.test_start,
+        end_date=split.test_end,
+    ).sort_values(["date", "code"])
+    train_groups = _build_query_groups(training_df)
+    baseline_selected_row = baseline_context.selected_lookup.get(horizon_key)
+    baseline_test_panel_df = _build_walkforward_baseline_test_panel(
+        baseline_selected_row=baseline_selected_row,
+        composite_panel_lookup=baseline_context.composite_panel_lookup,
+        horizon_key=horizon_key,
+        split=split,
+    )
+    coverage_record = {
+        "split_index": split_index,
+        "selected_horizon_key": horizon_key,
+        "train_start": split.train_start,
+        "train_end": split.train_end,
+        "test_start": split.test_start,
+        "test_end": split.test_end,
+        "scheduled_train_date_count": baseline_context.scheduled_train_date_count,
+        "scheduled_test_date_count": baseline_context.scheduled_test_date_count,
+        "lightgbm_train_row_count": int(len(training_df)),
+        "lightgbm_train_date_count": int(training_df["date"].nunique()),
+        "lightgbm_train_query_count": int(len(train_groups)),
+        "lightgbm_test_row_count": int(len(test_df)),
+        "lightgbm_test_date_count": int(test_df["date"].nunique()),
+        "baseline_selection_available": baseline_selected_row is not None,
+        "baseline_test_row_count": int(len(baseline_test_panel_df)),
+        "baseline_test_date_count": int(baseline_test_panel_df["date"].nunique())
+        if not baseline_test_panel_df.empty
+        else 0,
+        "is_valid_split": bool(
+            not training_df.empty
+            and not test_df.empty
+            and baseline_selected_row is not None
+        ),
+    }
+    if training_df.empty or test_df.empty:
+        return _WalkforwardHorizonResult(
+            coverage_record=coverage_record,
+            lightgbm_panel_df=None,
+            feature_importance_records=[],
+            baseline_panel_df=None,
+        )
+
+    lightgbm_panel_df, feature_importance_records = _build_walkforward_lightgbm_outputs(
+        ranker_cls=ranker_cls,
+        feature_columns=feature_columns,
+        training_df=training_df,
+        test_df=test_df,
+        horizon_key=horizon_key,
+        split_index=split_index,
+        split=split,
+        train_groups=train_groups,
+    )
+    baseline_panel_df: pd.DataFrame | None = None
+    if baseline_selected_row is not None and not baseline_test_panel_df.empty:
+        baseline_panel_df = _decorate_walkforward_baseline_panel(
+            baseline_test_panel_df=baseline_test_panel_df,
+            baseline_selected_row=baseline_selected_row,
+            horizon_key=horizon_key,
+            split_index=split_index,
+            split=split,
+        )
+    return _WalkforwardHorizonResult(
+        coverage_record=coverage_record,
+        lightgbm_panel_df=lightgbm_panel_df,
+        feature_importance_records=feature_importance_records,
+        baseline_panel_df=baseline_panel_df,
     )
 
-    lightgbm_analysis = _analyze_ranked_panel(lightgbm_ranked_panel_df)
-    baseline_analysis = _analyze_ranked_panel(baseline_ranked_panel_df)
-    feature_importance_split_df = pd.DataFrame.from_records(feature_importance_records)
-    if not feature_importance_split_df.empty:
-        feature_importance_split_df["selected_horizon_key"] = pd.Categorical(
-            feature_importance_split_df["selected_horizon_key"],
-            categories=list(HORIZON_ORDER),
-            ordered=True,
-        )
-        feature_importance_split_df = feature_importance_split_df.sort_values(
-            ["selected_horizon_key", "split_index", "importance_rank"],
-            kind="stable",
-        ).reset_index(drop=True)
-        feature_importance_split_df["selected_horizon_key"] = (
-            feature_importance_split_df["selected_horizon_key"].astype(str)
-        )
-    feature_importance_df = _summarize_walkforward_feature_importance(
-        feature_importance_split_df
-    )
-    split_spread_df = _build_walkforward_split_spread_df(
-        baseline_ranked_panel_df=baseline_ranked_panel_df,
-        lightgbm_ranked_panel_df=lightgbm_ranked_panel_df,
-    )
-    exploratory_gate_df, overall_gate_status = _build_walkforward_gate_df(
-        lightgbm_analysis=lightgbm_analysis,
-        split_spread_df=split_spread_df,
-    )
-    comparison_summary_df = _build_walkforward_comparison_summary_df(
-        baseline_analysis=baseline_analysis,
-        lightgbm_analysis=lightgbm_analysis,
-        split_spread_df=split_spread_df,
-        exploratory_gate_df=exploratory_gate_df,
-    )
-    selected_model_df = _summarize_walkforward_models(split_coverage_df)
 
+def _sort_walkforward_baseline_selected_frames(
+    *,
+    baseline_selected_feature_frames: list[pd.DataFrame],
+    baseline_selected_composite_frames: list[pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     baseline_selected_feature_df = (
         pd.concat(baseline_selected_feature_frames, ignore_index=True)
         if baseline_selected_feature_frames
@@ -1754,7 +1752,103 @@ def _run_walkforward_research(
         baseline_selected_composite_df["selected_horizon_key"] = (
             baseline_selected_composite_df["selected_horizon_key"].astype(str)
         )
+    return baseline_selected_feature_df, baseline_selected_composite_df
 
+
+def _build_walkforward_result_from_collections(
+    *,
+    train_window: int,
+    test_window: int,
+    step: int,
+    split_config_df: pd.DataFrame,
+    collections: _WalkforwardFrameCollections,
+) -> Topix100SmaRatioLightgbmWalkforwardResearchResult:
+    split_coverage_df = pd.DataFrame.from_records(collections.coverage_records)
+    if split_coverage_df.empty:
+        raise Topix100SmaRatioLightgbmResearchError(
+            "Walk-forward LightGBM research could not build split coverage rows."
+        )
+    split_coverage_df["selected_horizon_key"] = pd.Categorical(
+        split_coverage_df["selected_horizon_key"],
+        categories=list(HORIZON_ORDER),
+        ordered=True,
+    )
+    split_coverage_df = split_coverage_df.sort_values(
+        ["selected_horizon_key", "split_index"],
+        kind="stable",
+    ).reset_index(drop=True)
+    split_coverage_df["selected_horizon_key"] = split_coverage_df[
+        "selected_horizon_key"
+    ].astype(str)
+
+    if not collections.lightgbm_ranked_frames:
+        raise Topix100SmaRatioLightgbmResearchError(
+            "Walk-forward LightGBM research produced no test-window predictions."
+        )
+    if not collections.baseline_ranked_frames:
+        raise Topix100SmaRatioLightgbmResearchError(
+            "Walk-forward baseline comparison produced no selected test-window rows."
+        )
+
+    lightgbm_ranked_panel_df = _core_sort_frame(
+        pd.concat(collections.lightgbm_ranked_frames, ignore_index=True),
+        known_feature_order=_walkforward_lightgbm_feature_order(),
+    )
+    baseline_ranked_panel_df = _core_sort_frame(
+        pd.concat(collections.baseline_ranked_frames, ignore_index=True),
+        known_feature_order=_walkforward_feature_order(),
+    )
+    _validate_no_overlapping_oos_rows(
+        lightgbm_ranked_panel_df,
+        model_name="lightgbm",
+    )
+    _validate_no_overlapping_oos_rows(
+        baseline_ranked_panel_df,
+        model_name="baseline",
+    )
+
+    lightgbm_analysis = _analyze_ranked_panel(lightgbm_ranked_panel_df)
+    baseline_analysis = _analyze_ranked_panel(baseline_ranked_panel_df)
+    feature_importance_split_df = pd.DataFrame.from_records(
+        collections.feature_importance_records
+    )
+    if not feature_importance_split_df.empty:
+        feature_importance_split_df["selected_horizon_key"] = pd.Categorical(
+            feature_importance_split_df["selected_horizon_key"],
+            categories=list(HORIZON_ORDER),
+            ordered=True,
+        )
+        feature_importance_split_df = feature_importance_split_df.sort_values(
+            ["selected_horizon_key", "split_index", "importance_rank"],
+            kind="stable",
+        ).reset_index(drop=True)
+        feature_importance_split_df["selected_horizon_key"] = (
+            feature_importance_split_df["selected_horizon_key"].astype(str)
+        )
+    feature_importance_df = _summarize_walkforward_feature_importance(
+        feature_importance_split_df
+    )
+    split_spread_df = _build_walkforward_split_spread_df(
+        baseline_ranked_panel_df=baseline_ranked_panel_df,
+        lightgbm_ranked_panel_df=lightgbm_ranked_panel_df,
+    )
+    exploratory_gate_df, overall_gate_status = _build_walkforward_gate_df(
+        lightgbm_analysis=lightgbm_analysis,
+        split_spread_df=split_spread_df,
+    )
+    comparison_summary_df = _build_walkforward_comparison_summary_df(
+        baseline_analysis=baseline_analysis,
+        lightgbm_analysis=lightgbm_analysis,
+        split_spread_df=split_spread_df,
+        exploratory_gate_df=exploratory_gate_df,
+    )
+    selected_model_df = _summarize_walkforward_models(split_coverage_df)
+    baseline_selected_feature_df, baseline_selected_composite_df = (
+        _sort_walkforward_baseline_selected_frames(
+            baseline_selected_feature_frames=collections.baseline_selected_feature_frames,
+            baseline_selected_composite_frames=collections.baseline_selected_composite_frames,
+        )
+    )
     return Topix100SmaRatioLightgbmWalkforwardResearchResult(
         train_window=train_window,
         test_window=test_window,
@@ -1778,6 +1872,96 @@ def _run_walkforward_research(
         global_significance_df=lightgbm_analysis["global_significance_df"],
         pairwise_significance_df=lightgbm_analysis["pairwise_significance_df"],
         exploratory_gate_df=exploratory_gate_df,
+    )
+
+
+def _run_walkforward_research(
+    base_result: Topix100SmaRatioRankFutureCloseResearchResult,
+    *,
+    ranker_cls: type[Any],
+    feature_columns: tuple[str, ...],
+    train_window: int,
+    test_window: int,
+    step: int,
+) -> Topix100SmaRatioLightgbmWalkforwardResearchResult:
+    unique_dates = pd.DatetimeIndex(base_result.event_panel_df["date"].unique())
+    splits = generate_walkforward_splits(
+        unique_dates,
+        train_window=train_window,
+        test_window=test_window,
+        step=step,
+    )
+    if not splits:
+        raise Topix100SmaRatioLightgbmResearchError(
+            "Walk-forward LightGBM research requires enough valid dates to build at "
+            f"least one split with train_window={train_window}, "
+            f"test_window={test_window}, step={step}."
+        )
+
+    training_frames_by_horizon = _build_walkforward_training_frames(
+        base_result.event_panel_df
+    )
+    split_config_df = _build_walkforward_split_config_df(
+        base_result,
+        splits=splits,
+        train_window=train_window,
+        test_window=test_window,
+        step=step,
+    )
+    collections = _WalkforwardFrameCollections(
+        coverage_records=[],
+        baseline_selected_feature_frames=[],
+        baseline_selected_composite_frames=[],
+        baseline_ranked_frames=[],
+        lightgbm_ranked_frames=[],
+        feature_importance_records=[],
+    )
+
+    for split_index, split in enumerate(splits, start=1):
+        baseline_context = _build_walkforward_baseline_split_context(
+            base_result,
+            split_index=split_index,
+            split=split,
+        )
+        if not baseline_context.selected_feature_df.empty:
+            collections.baseline_selected_feature_frames.append(
+                baseline_context.selected_feature_df
+            )
+        if not baseline_context.selected_composite_df.empty:
+            collections.baseline_selected_composite_frames.append(
+                baseline_context.selected_composite_df
+            )
+
+        for horizon_key in HORIZON_ORDER:
+            horizon_result = _run_walkforward_horizon(
+                training_frames_by_horizon=training_frames_by_horizon,
+                baseline_context=baseline_context,
+                ranker_cls=ranker_cls,
+                feature_columns=feature_columns,
+                horizon_key=horizon_key,
+                split_index=split_index,
+                split=split,
+            )
+            collections.coverage_records.append(horizon_result.coverage_record)
+            if horizon_result.lightgbm_panel_df is not None:
+                collections.lightgbm_ranked_frames.append(
+                    horizon_result.lightgbm_panel_df
+                )
+            if horizon_result.feature_importance_records:
+                collections.feature_importance_records.extend(
+                    horizon_result.feature_importance_records
+                )
+            if horizon_result.baseline_panel_df is not None:
+                collections.baseline_ranked_frames.append(
+                    horizon_result.baseline_panel_df
+                )
+
+    return _build_walkforward_result_from_collections(
+        train_window=train_window,
+        test_window=test_window,
+        step=step,
+        split_config_df=split_config_df,
+        collections=collections,
     )
 
 

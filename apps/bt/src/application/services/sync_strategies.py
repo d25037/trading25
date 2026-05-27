@@ -197,6 +197,13 @@ class SyncStrategy(Protocol):  # pragma: no cover
     def estimate_api_calls(self) -> int: ...
 
 
+@dataclass(frozen=True)
+class _SyncStageOutcome:
+    api_calls: int
+    errors: list[str]
+    cancelled: bool = False
+
+
 async def _get_paginated_rows_with_call_count(
     client: SyncClientLike,
     path: str,
@@ -499,6 +506,346 @@ class IndicesOnlySyncStrategy:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
 
 
+async def _sync_initial_topix_stage(ctx: SyncContext) -> tuple[list[dict[str, Any]], int]:
+    topix_data_raw, topix_calls = await _get_paginated_rows_with_call_count(
+        ctx.client,
+        "/indices/bars/daily/topix",
+    )
+
+    async def _prefetched_topix_rows() -> list[dict[str, Any]]:
+        return topix_data_raw
+
+    topix_batch = await run_ingestion_batch(
+        stage="topix",
+        fetch=_prefetched_topix_rows,
+        normalize=_convert_topix_rows,
+        validate=lambda rows: validate_rows_required_fields(
+            rows,
+            required_fields=("date", "open", "high", "low", "close"),
+            dedupe_keys=("date",),
+            stage="topix",
+        ),
+        publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
+        index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
+    )
+    return topix_batch.rows, topix_calls
+
+
+async def _sync_initial_stock_master_stage(
+    ctx: SyncContext,
+    *,
+    trading_dates: list[str],
+) -> dict[str, Any]:
+    master_sync = await _sync_daily_stock_master(
+        ctx,
+        target_dates=trading_dates,
+        progress_current=1,
+        progress_total=8,
+    )
+    return {
+        "api_calls": master_sync["api_calls"],
+        "stock_rows": master_sync["latest_rows"],
+        "errors": master_sync["errors"],
+        "cancelled": master_sync["cancelled"],
+    }
+
+
+async def _sync_initial_fundamentals_stage(
+    ctx: SyncContext,
+    *,
+    stock_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    fundamentals_target_rows = _extract_listed_market_target_rows(stock_rows)
+    if not fundamentals_target_rows:
+        fundamentals_target_rows = await asyncio.to_thread(
+            ctx.market_db.get_fundamentals_target_stock_rows
+        )
+
+    fundamentals_sync = await _sync_fundamentals_initial(
+        ctx,
+        fundamentals_target_rows,
+        progress_current=2,
+        progress_total=8,
+    )
+    return {
+        "api_calls": fundamentals_sync["api_calls"],
+        "updated": fundamentals_sync["updated"],
+        "dates_processed": fundamentals_sync["dates_processed"],
+        "errors": fundamentals_sync["errors"],
+        "cancelled": fundamentals_sync["cancelled"],
+    }
+
+
+async def _sync_initial_stock_data_stage(
+    ctx: SyncContext,
+    *,
+    trading_dates: list[str],
+) -> dict[str, Any]:
+    api_calls = 0
+    stocks_updated = 0
+    failed_dates: list[str] = []
+    errors: list[str] = []
+    from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
+    decision = await sync_fetch_planner._plan_fetch_method(
+        ctx,
+        stage="stock_data_initial",
+        endpoint="/equities/bars/daily",
+        estimated_rest_calls=max(len(trading_dates), 1),
+        date_from=from_date,
+        date_to=to_date,
+        exact_dates=trading_dates,
+        require_bulk=ctx.enforce_bulk_for_stock_data,
+    )
+    api_calls += decision.planner_api_calls
+    sync_fetch_planner._emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        endpoint="/equities/bars/daily",
+        decision=decision,
+        target_label=f"{len(trading_dates)} dates",
+    )
+    sync_fetch_planner._enforce_stock_bulk_plan_available(
+        ctx,
+        decision=decision,
+        endpoint="/equities/bars/daily",
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        target_count=len(trading_dates),
+    )
+
+    used_rest_fallback = False
+    stock_bulk_fallback_reason: str | None = None
+    stage_api_calls = 0
+    bulk_result: BulkFetchResult | None = None
+    if decision.method == "bulk" and decision.plan is not None:
+        try:
+            sync_fetch_planner._emit_fetch_execution_progress(
+                ctx,
+                progress_stage="stock_data",
+                current=3,
+                total=8,
+                endpoint="/equities/bars/daily",
+                method="bulk",
+                target_label=f"{len(trading_dates)} dates",
+            )
+            trading_date_set = _build_target_date_set(trading_dates)
+
+            async def _consume_stock_bulk_rows(
+                batch_rows: list[dict[str, Any]],
+                _file_info: BulkFileInfo,
+            ) -> None:
+                nonlocal stocks_updated
+                stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
+                    ctx,
+                    batch_rows=batch_rows,
+                    target_dates=trading_date_set,
+                )
+
+            bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
+                decision.plan,
+                on_rows_batch=_consume_stock_bulk_rows,
+                accumulate_rows=False,
+            )
+            api_calls += bulk_result.api_calls
+            stage_api_calls += bulk_result.api_calls
+            sync_fetch_planner._log_sync_fetch_execution(
+                stage="stock_data_initial",
+                endpoint="/equities/bars/daily",
+                decision=decision,
+                executed="bulk",
+                actual_api_calls=stage_api_calls,
+                fallback=False,
+                bulk_result=bulk_result,
+            )
+        except Exception as e:
+            if ctx.enforce_bulk_for_stock_data and len(trading_dates) > 0:
+                sync_fetch_planner._raise_stock_bulk_required_error(
+                    ctx,
+                    progress_stage="stock_data",
+                    current=3,
+                    total=8,
+                    endpoint="/equities/bars/daily",
+                    reason="bulk_fetch_failed",
+                    reason_detail=sync_fetch_planner._summarize_exception(e),
+                )
+            used_rest_fallback = True
+            stock_bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
+            logger.exception(
+                "Initial stock_data bulk fetch failed, falling back to REST: {}",
+                stock_bulk_fallback_reason,
+            )
+
+    if decision.method == "rest" or used_rest_fallback:
+        rest_result = await _sync_initial_stock_data_rest(
+            ctx,
+            trading_dates=trading_dates,
+            decision=decision,
+            used_rest_fallback=used_rest_fallback,
+            fallback_reason=stock_bulk_fallback_reason,
+            bulk_result=bulk_result,
+        )
+        api_calls += rest_result["api_calls"]
+        stocks_updated += rest_result["stocks_updated"]
+        failed_dates.extend(rest_result["failed_dates"])
+        errors.extend(rest_result["errors"])
+        stage_api_calls += rest_result["api_calls"]
+        if rest_result["cancelled"]:
+            return {
+                "api_calls": api_calls,
+                "stocks_updated": stocks_updated,
+                "failed_dates": failed_dates,
+                "errors": errors,
+                "cancelled": True,
+            }
+
+    await sync_publish_helpers._index_stock_data_rows(ctx)
+    return {
+        "api_calls": api_calls,
+        "stocks_updated": stocks_updated,
+        "failed_dates": failed_dates,
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _sync_initial_stock_data_rest(
+    ctx: SyncContext,
+    *,
+    trading_dates: list[str],
+    decision: Any,
+    used_rest_fallback: bool,
+    fallback_reason: str | None,
+    bulk_result: BulkFetchResult | None,
+) -> dict[str, Any]:
+    api_calls = 0
+    stocks_updated = 0
+    failed_dates: list[str] = []
+    errors: list[str] = []
+    stage_api_calls = 0
+    sync_fetch_planner._emit_fetch_execution_progress(
+        ctx,
+        progress_stage="stock_data",
+        current=3,
+        total=8,
+        endpoint="/equities/bars/daily",
+        method="rest",
+        target_label=f"{len(trading_dates)} dates",
+        fallback=used_rest_fallback,
+        fallback_reason=fallback_reason,
+    )
+    consecutive_failures = 0
+    for i, date in enumerate(trading_dates):
+        if ctx.cancelled.is_set():
+            return {
+                "api_calls": api_calls,
+                "stocks_updated": stocks_updated,
+                "failed_dates": failed_dates,
+                "errors": errors,
+                "cancelled": True,
+            }
+        if i % 50 == 0:
+            ctx.on_progress(
+                "stock_data",
+                3,
+                8,
+                f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
+            )
+        try:
+            payload, page_calls = await _get_paginated_rows_with_call_count(
+                ctx.client,
+                "/equities/bars/daily",
+                params={"date": date},
+            )
+            api_calls += page_calls
+            stage_api_calls += page_calls
+
+            async def _prefetched_stock_rows() -> list[dict[str, Any]]:
+                return payload
+
+            batch = await run_ingestion_batch(
+                stage="stock_data",
+                fetch=_prefetched_stock_rows,
+                normalize=_convert_stock_data_rows,
+                validate=lambda rows: validate_rows_required_fields(
+                    rows,
+                    required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+                    dedupe_keys=("code", "date"),
+                    stage="stock_data",
+                ),
+                publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
+            )
+            stocks_updated += batch.published_count
+            consecutive_failures = 0
+        except Exception:
+            failed_dates.append(date)
+            consecutive_failures += 1
+            if consecutive_failures >= 5:
+                errors.append(f"Too many consecutive failures at {date}")
+                break
+    sync_fetch_planner._log_sync_fetch_execution(
+        stage="stock_data_initial",
+        endpoint="/equities/bars/daily",
+        decision=decision,
+        executed="rest",
+        actual_api_calls=stage_api_calls,
+        fallback=used_rest_fallback,
+        bulk_result=bulk_result,
+    )
+    return {
+        "api_calls": api_calls,
+        "stocks_updated": stocks_updated,
+        "failed_dates": failed_dates,
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _sync_initial_margin_stage(
+    ctx: SyncContext,
+    *,
+    stock_rows: list[dict[str, Any]],
+    topix_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    all_stock_codes = sync_state_helpers._collect_unique_codes(
+        [str(row.get("code", "")) for row in stock_rows if row.get("code")]
+    )
+    margin_target_codes = extract_listed_market_codes(stock_rows)
+    margin_frontier = (
+        _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
+        or ctx.market_db.get_latest_trading_date()
+        or ctx.market_db.get_latest_stock_data_date()
+        or ctx.market_db.get_latest_margin_date()
+    )
+    margin_sync = await _sync_margin_data(
+        ctx,
+        margin_target_codes,
+        progress_current=6,
+        progress_total=8,
+        stage_name="margin_initial",
+        trading_frontier=margin_frontier,
+        skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
+    )
+    return {
+        "api_calls": margin_sync["api_calls"],
+        "errors": margin_sync["errors"],
+        "cancelled": margin_sync["cancelled"],
+    }
+
+
+async def _finalize_initial_sync_metadata(ctx: SyncContext, *, failed_dates: list[str]) -> None:
+    now_iso = datetime.now(UTC).isoformat()
+    await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["INIT_COMPLETED"], "true")
+    await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        METADATA_KEYS["FAILED_DATES"],
+        json.dumps(failed_dates) if failed_dates else "[]",
+    )
+
+
 class InitialSyncStrategy:
     """初回同期: TOPIX + 全銘柄 + 株価データ + 指数データ"""
 
@@ -517,71 +864,28 @@ class InitialSyncStrategy:
         stock_rows: list[dict[str, Any]] = []
 
         try:
-            # Step 1: TOPIX
             ctx.on_progress("topix", 0, 8, "Fetching TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-            topix_data_raw, topix_calls = await _get_paginated_rows_with_call_count(
-                ctx.client,
-                "/indices/bars/daily/topix",
-            )
-
-            async def _prefetched_topix_rows() -> list[dict[str, Any]]:
-                return topix_data_raw
-
-            topix_batch = await run_ingestion_batch(
-                stage="topix",
-                fetch=_prefetched_topix_rows,
-                normalize=_convert_topix_rows,
-                validate=lambda rows: validate_rows_required_fields(
-                    rows,
-                    required_fields=("date", "open", "high", "low", "close"),
-                    dedupe_keys=("date",),
-                    stage="topix",
-                ),
-                publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
-                index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
-            )
+            topix_rows, topix_calls = await _sync_initial_topix_stage(ctx)
             total_calls += topix_calls
-            topix_rows = topix_batch.rows
             dates_processed = len(topix_rows)
 
-            # Step 2: 日次銘柄マスタ（TOPIX 取引日ベース）
             ctx.on_progress("stock_master_daily", 1, 8, "Fetching daily stock master data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
             trading_dates = sorted({r["date"] for r in topix_rows})
-            master_sync = await _sync_daily_stock_master(
-                ctx,
-                target_dates=trading_dates,
-                progress_current=1,
-                progress_total=8,
-            )
+            master_sync = await _sync_initial_stock_master_stage(ctx, trading_dates=trading_dates)
             total_calls += master_sync["api_calls"]
-            stock_rows = master_sync["latest_rows"]
+            stock_rows = master_sync["stock_rows"]
             errors.extend(master_sync["errors"])
             if master_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 3: listed markets fundamentals（初回: code指定フル取得）
             ctx.on_progress("fundamentals", 2, 8, "Fetching listed-market fundamentals (full)...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-            fundamentals_target_rows = _extract_listed_market_target_rows(stock_rows)
-            if not fundamentals_target_rows:
-                fundamentals_target_rows = await asyncio.to_thread(
-                    ctx.market_db.get_fundamentals_target_stock_rows
-                )
-
-            fundamentals_sync = await _sync_fundamentals_initial(
-                ctx,
-                fundamentals_target_rows,
-                progress_current=2,
-                progress_total=8,
-            )
+            fundamentals_sync = await _sync_initial_fundamentals_stage(ctx, stock_rows=stock_rows)
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
             fundamentals_dates_processed += fundamentals_sync["dates_processed"]
@@ -589,177 +893,21 @@ class InitialSyncStrategy:
             if fundamentals_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
             ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
-            from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
-            decision = await sync_fetch_planner._plan_fetch_method(
-                ctx,
-                stage="stock_data_initial",
-                endpoint="/equities/bars/daily",
-                estimated_rest_calls=max(len(trading_dates), 1),
-                date_from=from_date,
-                date_to=to_date,
-                exact_dates=trading_dates,
-                require_bulk=ctx.enforce_bulk_for_stock_data,
-            )
-            total_calls += decision.planner_api_calls
-            sync_fetch_planner._emit_fetch_strategy_progress(
-                ctx,
-                progress_stage="stock_data",
-                current=3,
-                total=8,
-                endpoint="/equities/bars/daily",
-                decision=decision,
-                target_label=f"{len(trading_dates)} dates",
-            )
+            stock_sync = await _sync_initial_stock_data_stage(ctx, trading_dates=trading_dates)
+            total_calls += stock_sync["api_calls"]
+            stocks_updated += stock_sync["stocks_updated"]
+            failed_dates.extend(stock_sync["failed_dates"])
+            errors.extend(stock_sync["errors"])
+            if stock_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            sync_fetch_planner._enforce_stock_bulk_plan_available(
-                ctx,
-                decision=decision,
-                endpoint="/equities/bars/daily",
-                progress_stage="stock_data",
-                current=3,
-                total=8,
-                target_count=len(trading_dates),
-            )
-
-            used_rest_fallback = False
-            stock_bulk_fallback_reason: str | None = None
-            stage_api_calls = 0
-            bulk_result: BulkFetchResult | None = None
-            if decision.method == "bulk" and decision.plan is not None:
-                try:
-                    sync_fetch_planner._emit_fetch_execution_progress(
-                        ctx,
-                        progress_stage="stock_data",
-                        current=3,
-                        total=8,
-                        endpoint="/equities/bars/daily",
-                        method="bulk",
-                        target_label=f"{len(trading_dates)} dates",
-                    )
-                    trading_date_set = _build_target_date_set(trading_dates)
-
-                    async def _consume_stock_bulk_rows(
-                        batch_rows: list[dict[str, Any]],
-                        _file_info: BulkFileInfo,
-                    ) -> None:
-                        nonlocal stocks_updated
-                        stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
-                            ctx,
-                            batch_rows=batch_rows,
-                            target_dates=trading_date_set,
-                        )
-
-                    bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
-                        decision.plan,
-                        on_rows_batch=_consume_stock_bulk_rows,
-                        accumulate_rows=False,
-                    )
-                    total_calls += bulk_result.api_calls
-                    stage_api_calls += bulk_result.api_calls
-                    sync_fetch_planner._log_sync_fetch_execution(
-                        stage="stock_data_initial",
-                        endpoint="/equities/bars/daily",
-                        decision=decision,
-                        executed="bulk",
-                        actual_api_calls=stage_api_calls,
-                        fallback=False,
-                        bulk_result=bulk_result,
-                    )
-                except Exception as e:
-                    if ctx.enforce_bulk_for_stock_data and len(trading_dates) > 0:
-                        sync_fetch_planner._raise_stock_bulk_required_error(
-                            ctx,
-                            progress_stage="stock_data",
-                            current=3,
-                            total=8,
-                            endpoint="/equities/bars/daily",
-                            reason="bulk_fetch_failed",
-                            reason_detail=sync_fetch_planner._summarize_exception(e),
-                        )
-                    used_rest_fallback = True
-                    stock_bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
-                    logger.exception(
-                        "Initial stock_data bulk fetch failed, falling back to REST: {}",
-                        stock_bulk_fallback_reason,
-                    )
-
-            if decision.method == "rest" or used_rest_fallback:
-                sync_fetch_planner._emit_fetch_execution_progress(
-                    ctx,
-                    progress_stage="stock_data",
-                    current=3,
-                    total=8,
-                    endpoint="/equities/bars/daily",
-                    method="rest",
-                    target_label=f"{len(trading_dates)} dates",
-                    fallback=used_rest_fallback,
-                    fallback_reason=stock_bulk_fallback_reason,
-                )
-                consecutive_failures = 0
-                for i, date in enumerate(trading_dates):
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                    if i % 50 == 0:
-                        ctx.on_progress(
-                            "stock_data",
-                            3,
-                            8,
-                            f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
-                        )
-                    try:
-                        payload, page_calls = await _get_paginated_rows_with_call_count(
-                            ctx.client,
-                            "/equities/bars/daily",
-                            params={"date": date},
-                        )
-                        total_calls += page_calls
-                        stage_api_calls += page_calls
-
-                        async def _prefetched_stock_rows() -> list[dict[str, Any]]:
-                            return payload
-
-                        batch = await run_ingestion_batch(
-                            stage="stock_data",
-                            fetch=_prefetched_stock_rows,
-                            normalize=_convert_stock_data_rows,
-                            validate=lambda rows: validate_rows_required_fields(
-                                rows,
-                                required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                                dedupe_keys=("code", "date"),
-                                stage="stock_data",
-                            ),
-                            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
-                        )
-                        stocks_updated += batch.published_count
-                        consecutive_failures = 0
-                    except Exception:
-                        failed_dates.append(date)
-                        consecutive_failures += 1
-                        if consecutive_failures >= 5:
-                            errors.append(f"Too many consecutive failures at {date}")
-                            break
-                sync_fetch_planner._log_sync_fetch_execution(
-                    stage="stock_data_initial",
-                    endpoint="/equities/bars/daily",
-                    decision=decision,
-                    executed="rest",
-                    actual_api_calls=stage_api_calls,
-                    fallback=used_rest_fallback,
-                    bulk_result=bulk_result,
-                )
-
-            await sync_publish_helpers._index_stock_data_rows(ctx)
-
-            # Step 5: 指数データ
             ctx.on_progress("indices", 4, 8, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy(include_options=False)
             indices_result = await indices_strategy.execute(ctx)
             total_calls += indices_result.totalApiCalls
             errors.extend(indices_result.errors)
 
-            # Step 6: N225 options data
             ctx.on_progress("options_225", 5, 8, f"Fetching N225 options for {len(trading_dates)} dates...")
             options_sync = await _sync_options_225_dates(
                 ctx,
@@ -774,41 +922,15 @@ class InitialSyncStrategy:
             if bool(options_sync["cancelled"]):
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 7: 信用残データ
             ctx.on_progress("margin", 6, 8, "Fetching margin data...")
-            all_stock_codes = sync_state_helpers._collect_unique_codes(
-                [str(row.get("code", "")) for row in stock_rows if row.get("code")]
-            )
-            margin_target_codes = extract_listed_market_codes(stock_rows)
-            margin_frontier = (
-                _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
-                or ctx.market_db.get_latest_trading_date()
-                or ctx.market_db.get_latest_stock_data_date()
-                or ctx.market_db.get_latest_margin_date()
-            )
-            margin_sync = await _sync_margin_data(
-                ctx,
-                margin_target_codes,
-                progress_current=6,
-                progress_total=8,
-                stage_name="margin_initial",
-                trading_frontier=margin_frontier,
-                skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
-            )
+            margin_sync = await _sync_initial_margin_stage(ctx, stock_rows=stock_rows, topix_rows=topix_rows)
             total_calls += margin_sync["api_calls"]
             errors.extend(margin_sync["errors"])
             if margin_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 8: メタデータ更新
             ctx.on_progress("finalize", 7, 8, "Finalizing sync...")
-            now_iso = datetime.now(UTC).isoformat()
-            await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["INIT_COMPLETED"], "true")
-            await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
-            if failed_dates:
-                await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], json.dumps(failed_dates))
-            else:
-                await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], "[]")
+            await _finalize_initial_sync_metadata(ctx, failed_dates=failed_dates)
 
             ctx.on_progress("complete", 8, 8, "Sync complete!")
             return SyncResult(
@@ -1030,6 +1152,309 @@ async def _sync_incremental_stock_data_rest(
     return {"api_calls": api_calls, "stocks_updated": stocks_updated, "errors": errors, "cancelled": False}
 
 
+async def _sync_incremental_indices_stage(
+    ctx: SyncContext,
+    *,
+    inspection: TimeSeriesInspection,
+    topix_rows: list[dict[str, Any]],
+    last_date: str | None,
+    progress_current: int = 3,
+    progress_total: int = 7,
+) -> _SyncStageOutcome:
+    ctx.on_progress(
+        "indices",
+        progress_current,
+        progress_total,
+        "Fetching incremental index data...",
+    )
+    if ctx.cancelled.is_set():
+        return _SyncStageOutcome(api_calls=0, errors=[], cancelled=True)
+
+    api_calls = 0
+    errors: list[str] = []
+    known_master_codes = await _seed_index_master_from_catalog(ctx)
+    raw_latest_index_dates = dict(inspection.latest_indices_dates)
+    latest_index_dates = {
+        _normalize_index_code(code): value
+        for code, value in raw_latest_index_dates.items()
+        if _normalize_index_code(code)
+    }
+    target_codes = sorted(
+        _jquants_index_fetch_codes(
+            get_index_catalog_codes()
+            | set(latest_index_dates.keys())
+            | known_master_codes
+        )
+    )
+    target_code_set = set(target_codes)
+
+    latest_index_date = _latest_date(list(latest_index_dates.values()))
+    fallback_dates = _extract_dates_after(
+        topix_rows,
+        latest_index_date,
+        include_anchor=True,
+    )
+    if latest_index_date and last_date and _is_date_after(last_date, latest_index_date):
+        topix_for_indices, topix_for_indices_calls = await _get_paginated_rows_with_call_count(
+            ctx.client,
+            "/indices/bars/daily/topix",
+            params={"from": _to_jquants_date_param(latest_index_date)},
+        )
+        api_calls += topix_for_indices_calls
+        topix_dates = [
+            {"date": d.get("Date", "")}
+            for d in topix_for_indices
+            if d.get("Date")
+        ]
+        fallback_dates = sorted(
+            set(fallback_dates)
+            | set(_extract_dates_after(topix_dates, latest_index_date, include_anchor=True)),
+            key=_date_sort_key,
+        )
+
+    all_code_has_anchor = all(
+        latest_index_dates.get(_normalize_index_code(code))
+        for code in target_codes
+    )
+    decision_indices = await sync_fetch_planner._plan_fetch_method(
+        ctx,
+        stage="indices_incremental",
+        endpoint="/indices/bars/daily",
+        estimated_rest_calls=max(len(target_codes) + len(fallback_dates), 1),
+        date_from=latest_index_date if all_code_has_anchor else None,
+    )
+    api_calls += decision_indices.planner_api_calls
+    target_label = f"{len(target_codes)} codes + {len(fallback_dates)} dates"
+    sync_fetch_planner._emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="indices",
+        current=progress_current,
+        total=progress_total,
+        endpoint="/indices/bars/daily",
+        decision=decision_indices,
+        target_label=target_label,
+    )
+
+    used_indices_rest_fallback = False
+    indices_bulk_fallback_reason: str | None = None
+    indices_stage_api_calls = 0
+    indices_bulk_result: BulkFetchResult | None = None
+    if decision_indices.method == "bulk":
+        fallback_date_set = {
+            normalized
+            for normalized in (_to_iso_date_text(value) for value in fallback_dates)
+            if normalized is not None
+        }
+
+        async def _consume_incremental_indices_bulk_rows(
+            batch_rows: list[dict[str, Any]],
+            _file_info: BulkFileInfo,
+        ) -> None:
+            await _ingest_incremental_indices_bulk_batch(
+                ctx,
+                batch_rows=batch_rows,
+                target_code_set=target_code_set,
+                known_master_codes=known_master_codes,
+                latest_index_dates=latest_index_dates,
+                fallback_date_set=fallback_date_set,
+            )
+
+        indices_bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
+            ctx,
+            decision=decision_indices,
+            stage_name="indices_incremental",
+            progress_stage="indices",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/indices/bars/daily",
+            target_label=target_label,
+            on_rows_batch=_consume_incremental_indices_bulk_rows,
+            fallback_log_message="Incremental indices bulk fetch unavailable, falling back to REST: {}",
+        )
+        api_calls += indices_bulk_outcome.api_calls
+        indices_stage_api_calls += indices_bulk_outcome.api_calls
+        indices_bulk_result = indices_bulk_outcome.bulk_result
+        used_indices_rest_fallback = indices_bulk_outcome.used_rest_fallback
+        indices_bulk_fallback_reason = indices_bulk_outcome.fallback_reason
+
+    if decision_indices.method == "rest" or used_indices_rest_fallback:
+        sync_fetch_planner._emit_fetch_execution_progress(
+            ctx,
+            progress_stage="indices",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/indices/bars/daily",
+            method="rest",
+            target_label=target_label,
+            fallback=used_indices_rest_fallback,
+            fallback_reason=indices_bulk_fallback_reason,
+        )
+        rest_outcome = await _sync_incremental_indices_rest(
+            ctx,
+            target_codes=target_codes,
+            fallback_dates=fallback_dates,
+            latest_index_dates=latest_index_dates,
+            known_master_codes=known_master_codes,
+            progress_current=progress_current,
+            progress_total=progress_total,
+        )
+        api_calls += rest_outcome.api_calls
+        indices_stage_api_calls += rest_outcome.api_calls
+        errors.extend(rest_outcome.errors)
+        if rest_outcome.cancelled:
+            return _SyncStageOutcome(api_calls=api_calls, errors=errors, cancelled=True)
+        sync_fetch_planner._log_sync_fetch_execution(
+            stage="indices_incremental",
+            endpoint="/indices/bars/daily",
+            decision=decision_indices,
+            executed="rest",
+            actual_api_calls=indices_stage_api_calls,
+            fallback=used_indices_rest_fallback,
+            bulk_result=indices_bulk_result,
+        )
+
+    await sync_publish_helpers._index_indices_rows(ctx)
+    return _SyncStageOutcome(api_calls=api_calls, errors=errors)
+
+
+async def _sync_incremental_indices_rest(
+    ctx: SyncContext,
+    *,
+    target_codes: list[str],
+    fallback_dates: list[str],
+    latest_index_dates: dict[str, str],
+    known_master_codes: set[str],
+    progress_current: int,
+    progress_total: int,
+) -> _SyncStageOutcome:
+    api_calls = 0
+    errors: list[str] = []
+    for code_idx, code in enumerate(target_codes, start=1):
+        if ctx.cancelled.is_set():
+            return _SyncStageOutcome(api_calls=api_calls, errors=errors, cancelled=True)
+        if code_idx > 1 and code_idx % 50 == 0:
+            ctx.on_progress(
+                "indices",
+                progress_current,
+                progress_total,
+                f"Fetching /indices/bars/daily via REST: {code_idx}/{len(target_codes)} codes...",
+            )
+
+        params: dict[str, Any] = {"code": code}
+        normalized_code = _normalize_index_code(code)
+        last_index_date = latest_index_dates.get(normalized_code)
+        if last_index_date:
+            params["from"] = _to_jquants_date_param(last_index_date)
+
+        try:
+            data, page_calls = await _get_paginated_rows_with_call_count(
+                ctx.client,
+                "/indices/bars/daily",
+                params=params,
+            )
+            api_calls += page_calls
+            rows = validate_rows_required_fields(
+                _convert_indices_data_rows(data, code),
+                required_fields=("code", "date"),
+                dedupe_keys=("code", "date"),
+                stage="indices_data",
+            )
+            if last_index_date:
+                rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
+            if rows:
+                await _upsert_indices_rows_with_master_backfill(
+                    ctx,
+                    rows,
+                    known_master_codes,
+                    discovery_log="Inserted {} discovered index master rows while syncing by code.",
+                )
+        except Exception as e:
+            errors.append(f"Index {code}: {e}")
+            logger.warning(f"Index {code} incremental sync error: {e}")
+
+    for date_idx, index_date in enumerate(fallback_dates, start=1):
+        if ctx.cancelled.is_set():
+            return _SyncStageOutcome(api_calls=api_calls, errors=errors, cancelled=True)
+        if date_idx > 1 and date_idx % 50 == 0:
+            ctx.on_progress(
+                "indices",
+                progress_current,
+                progress_total,
+                f"Fetching /indices/bars/daily via REST: {date_idx}/{len(fallback_dates)} dates...",
+            )
+
+        try:
+            data, page_calls = await _get_paginated_rows_with_call_count(
+                ctx.client,
+                "/indices/bars/daily",
+                params={"date": _to_jquants_date_param(index_date)},
+            )
+            api_calls += page_calls
+            rows = validate_rows_required_fields(
+                _convert_indices_data_rows(data, None),
+                required_fields=("code", "date"),
+                dedupe_keys=("code", "date"),
+                stage="indices_data",
+            )
+            if rows:
+                await _upsert_indices_rows_with_master_backfill(
+                    ctx,
+                    rows,
+                    known_master_codes,
+                    discovery_log="Inserted {} discovered index master rows while syncing by date.",
+                )
+        except Exception as e:
+            errors.append(f"Index date {index_date}: {e}")
+            logger.warning("Index date {} incremental sync error: {}", index_date, e)
+    return _SyncStageOutcome(api_calls=api_calls, errors=errors)
+
+
+async def _sync_incremental_margin_stage(
+    ctx: SyncContext,
+    *,
+    inspection: TimeSeriesInspection,
+    listed_market_target_rows: list[dict[str, str]],
+    stock_rows: list[dict[str, Any]],
+    topix_rows: list[dict[str, Any]],
+    progress_current: int = 6,
+    progress_total: int = 7,
+) -> _SyncStageOutcome:
+    ctx.on_progress("margin", progress_current, progress_total, "Fetching incremental margin data...")
+    if ctx.cancelled.is_set():
+        return _SyncStageOutcome(api_calls=0, errors=[], cancelled=True)
+
+    all_stock_codes = sync_state_helpers._collect_unique_codes(
+        [
+            str(row.get("code", ""))
+            for row in [*listed_market_target_rows, *stock_rows]
+            if row.get("code")
+        ]
+    )
+    margin_target_codes = extract_listed_market_codes(listed_market_target_rows)
+    margin_frontier = (
+        _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
+        or inspection.topix_max
+        or inspection.stock_max
+        or inspection.margin_max
+    )
+    margin_sync = await _sync_margin_data(
+        ctx,
+        margin_target_codes,
+        progress_current=progress_current,
+        progress_total=progress_total,
+        stage_name="margin_incremental",
+        anchor=inspection.margin_max,
+        existing_margin_codes=set(inspection.margin_codes),
+        trading_frontier=margin_frontier,
+        skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
+    )
+    return _SyncStageOutcome(
+        api_calls=margin_sync["api_calls"],
+        errors=margin_sync["errors"],
+        cancelled=margin_sync["cancelled"],
+    )
+
+
 class IncrementalSyncStrategy:
     """増分同期: 最終同期日以降のデータのみ取得"""
 
@@ -1147,224 +1572,18 @@ class IncrementalSyncStrategy:
             if stock_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 4: 指数データ（増分）
-            ctx.on_progress("indices", 3, 7, "Fetching incremental index data...")
-            if ctx.cancelled.is_set():
+            indices_sync = await _sync_incremental_indices_stage(
+                ctx,
+                inspection=inspection,
+                topix_rows=topix_rows,
+                last_date=last_date,
+                progress_current=3,
+                progress_total=7,
+            )
+            total_calls += indices_sync.api_calls
+            errors.extend(indices_sync.errors)
+            if indices_sync.cancelled:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-            known_master_codes = await _seed_index_master_from_catalog(ctx)
-            raw_latest_index_dates = dict(inspection.latest_indices_dates)
-            latest_index_dates = {
-                _normalize_index_code(code): value
-                for code, value in raw_latest_index_dates.items()
-                if _normalize_index_code(code)
-            }
-            target_codes = sorted(
-                _jquants_index_fetch_codes(
-                    get_index_catalog_codes()
-                    | set(latest_index_dates.keys())
-                    | known_master_codes
-                )
-            )
-            target_code_set = set(target_codes)
-
-            # code 指定同期の補完として、日付指定で新規コードを探索する。
-            latest_index_date = _latest_date(list(latest_index_dates.values()))
-            fallback_dates = _extract_dates_after(
-                topix_rows,
-                latest_index_date,
-                include_anchor=True,
-            )
-
-            # indices_data が遅れている場合、topix を indices 側アンカーで再取得して候補日を補完する。
-            if (
-                latest_index_date
-                and last_date
-                and _is_date_after(last_date, latest_index_date)
-            ):
-                topix_for_indices, topix_for_indices_calls = await _get_paginated_rows_with_call_count(
-                    ctx.client,
-                    "/indices/bars/daily/topix",
-                    params={"from": _to_jquants_date_param(latest_index_date)},
-                )
-                total_calls += topix_for_indices_calls
-                topix_dates = [
-                    {"date": d.get("Date", "")}
-                    for d in topix_for_indices
-                    if d.get("Date")
-                ]
-                fallback_dates = sorted(
-                    set(fallback_dates) | set(
-                        _extract_dates_after(topix_dates, latest_index_date, include_anchor=True)
-                    ),
-                    key=_date_sort_key,
-                )
-
-            all_code_has_anchor = all(latest_index_dates.get(_normalize_index_code(code)) for code in target_codes)
-            decision_indices = await sync_fetch_planner._plan_fetch_method(
-                ctx,
-                stage="indices_incremental",
-                endpoint="/indices/bars/daily",
-                estimated_rest_calls=max(len(target_codes) + len(fallback_dates), 1),
-                date_from=latest_index_date if all_code_has_anchor else None,
-            )
-            total_calls += decision_indices.planner_api_calls
-            sync_fetch_planner._emit_fetch_strategy_progress(
-                ctx,
-                progress_stage="indices",
-                current=3,
-                total=7,
-                endpoint="/indices/bars/daily",
-                decision=decision_indices,
-                target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
-            )
-
-            used_indices_rest_fallback = False
-            indices_bulk_fallback_reason: str | None = None
-            indices_stage_api_calls = 0
-            indices_bulk_result: BulkFetchResult | None = None
-            if decision_indices.method == "bulk":
-                fallback_date_set = {
-                    normalized
-                    for normalized in (_to_iso_date_text(value) for value in fallback_dates)
-                    if normalized is not None
-                }
-
-                async def _consume_incremental_indices_bulk_rows(
-                    batch_rows: list[dict[str, Any]],
-                    _file_info: BulkFileInfo,
-                ) -> None:
-                    await _ingest_incremental_indices_bulk_batch(
-                        ctx,
-                        batch_rows=batch_rows,
-                        target_code_set=target_code_set,
-                        known_master_codes=known_master_codes,
-                        latest_index_dates=latest_index_dates,
-                        fallback_date_set=fallback_date_set,
-                    )
-
-                indices_bulk_outcome = await sync_fetch_planner._execute_bulk_fetch_stage(
-                    ctx,
-                    decision=decision_indices,
-                    stage_name="indices_incremental",
-                    progress_stage="indices",
-                    current=3,
-                    total=7,
-                    endpoint="/indices/bars/daily",
-                    target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
-                    on_rows_batch=_consume_incremental_indices_bulk_rows,
-                    fallback_log_message="Incremental indices bulk fetch unavailable, falling back to REST: {}",
-                )
-                total_calls += indices_bulk_outcome.api_calls
-                indices_stage_api_calls += indices_bulk_outcome.api_calls
-                indices_bulk_result = indices_bulk_outcome.bulk_result
-                used_indices_rest_fallback = indices_bulk_outcome.used_rest_fallback
-                indices_bulk_fallback_reason = indices_bulk_outcome.fallback_reason
-
-            if decision_indices.method == "rest" or used_indices_rest_fallback:
-                sync_fetch_planner._emit_fetch_execution_progress(
-                    ctx,
-                    progress_stage="indices",
-                    current=3,
-                    total=7,
-                    endpoint="/indices/bars/daily",
-                    method="rest",
-                    target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
-                    fallback=used_indices_rest_fallback,
-                    fallback_reason=indices_bulk_fallback_reason,
-                )
-                for code_idx, code in enumerate(target_codes, start=1):
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                    if code_idx > 1 and code_idx % 50 == 0:
-                        ctx.on_progress(
-                            "indices",
-                            3,
-                            7,
-                            f"Fetching /indices/bars/daily via REST: {code_idx}/{len(target_codes)} codes...",
-                        )
-
-                    params: dict[str, Any] = {"code": code}
-                    normalized_code = _normalize_index_code(code)
-                    last_index_date = latest_index_dates.get(normalized_code)
-                    if last_index_date:
-                        params["from"] = _to_jquants_date_param(last_index_date)
-
-                    try:
-                        data, page_calls = await _get_paginated_rows_with_call_count(
-                            ctx.client,
-                            "/indices/bars/daily",
-                            params=params,
-                        )
-                        total_calls += page_calls
-                        indices_stage_api_calls += page_calls
-
-                        rows = validate_rows_required_fields(
-                            _convert_indices_data_rows(data, code),
-                            required_fields=("code", "date"),
-                            dedupe_keys=("code", "date"),
-                            stage="indices_data",
-                        )
-                        if last_index_date:
-                            rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
-
-                        if rows:
-                            await _upsert_indices_rows_with_master_backfill(
-                                ctx,
-                                rows,
-                                known_master_codes,
-                                discovery_log="Inserted {} discovered index master rows while syncing by code.",
-                            )
-                    except Exception as e:
-                        errors.append(f"Index {code}: {e}")
-                        logger.warning(f"Index {code} incremental sync error: {e}")
-
-                for date_idx, index_date in enumerate(fallback_dates, start=1):
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                    if date_idx > 1 and date_idx % 50 == 0:
-                        ctx.on_progress(
-                            "indices",
-                            3,
-                            7,
-                            f"Fetching /indices/bars/daily via REST: {date_idx}/{len(fallback_dates)} dates...",
-                        )
-
-                    try:
-                        data, page_calls = await _get_paginated_rows_with_call_count(
-                            ctx.client,
-                            "/indices/bars/daily",
-                            params={"date": _to_jquants_date_param(index_date)},
-                        )
-                        total_calls += page_calls
-                        indices_stage_api_calls += page_calls
-                        rows = validate_rows_required_fields(
-                            _convert_indices_data_rows(data, None),
-                            required_fields=("code", "date"),
-                            dedupe_keys=("code", "date"),
-                            stage="indices_data",
-                        )
-                        if rows:
-                            await _upsert_indices_rows_with_master_backfill(
-                                ctx,
-                                rows,
-                                known_master_codes,
-                                discovery_log="Inserted {} discovered index master rows while syncing by date.",
-                            )
-                    except Exception as e:
-                        errors.append(f"Index date {index_date}: {e}")
-                        logger.warning("Index date {} incremental sync error: {}", index_date, e)
-                sync_fetch_planner._log_sync_fetch_execution(
-                    stage="indices_incremental",
-                    endpoint="/indices/bars/daily",
-                    decision=decision_indices,
-                    executed="rest",
-                    actual_api_calls=indices_stage_api_calls,
-                    fallback=used_indices_rest_fallback,
-                    bulk_result=indices_bulk_result,
-                )
-
-            await sync_publish_helpers._index_indices_rows(ctx)
 
             # Step 5: N225 options（増分 + 欠損履歴補完）
             options_new_dates = await _resolve_incremental_options_date_targets(
@@ -1406,39 +1625,18 @@ class IncrementalSyncStrategy:
             if fundamentals_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 7: 信用残データ（増分 + 欠損コードバックフィル）
-            ctx.on_progress("margin", 6, 7, "Fetching incremental margin data...")
-            if ctx.cancelled.is_set():
-                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-            all_stock_codes = sync_state_helpers._collect_unique_codes(
-                [
-                    str(row.get("code", ""))
-                    for row in [*listed_market_target_rows, *stock_rows]
-                    if row.get("code")
-                ]
-            )
-            margin_target_codes = extract_listed_market_codes(listed_market_target_rows)
-            margin_frontier = (
-                _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
-                or inspection.topix_max
-                or inspection.stock_max
-                or inspection.margin_max
-            )
-            margin_sync = await _sync_margin_data(
+            margin_sync = await _sync_incremental_margin_stage(
                 ctx,
-                margin_target_codes,
+                inspection=inspection,
+                listed_market_target_rows=listed_market_target_rows,
+                stock_rows=stock_rows,
+                topix_rows=topix_rows,
                 progress_current=6,
                 progress_total=7,
-                stage_name="margin_incremental",
-                anchor=inspection.margin_max,
-                existing_margin_codes=set(inspection.margin_codes),
-                trading_frontier=margin_frontier,
-                skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
             )
-            total_calls += margin_sync["api_calls"]
-            errors.extend(margin_sync["errors"])
-            if margin_sync["cancelled"]:
+            total_calls += margin_sync.api_calls
+            errors.extend(margin_sync.errors)
+            if margin_sync.cancelled:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # メタデータ更新
