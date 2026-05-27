@@ -104,6 +104,18 @@ The efficient scope is `db_validation_service.validate_market_db`, `StrategyEdit
 | top hotspot max function/block code lines | 443 | <= 407 |
 | top hotspot file score | 7,231 | <= 7,115 |
 
+Phase 3 completed on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The high-signal targets were met: top hotspot moved from `SettingsPage.tsx` to `market_db.py`, top max block dropped to 407, and branch-score hotspots dropped to 3. Count targets for large physical files and 120/180-line functions were not forced because doing so would require widening into unrelated analytics modules or a broader StrategyEditor/DialogBody physical split; that work belongs in later dedicated phases.
+
+| metric | phase 2 actual | phase 3 actual | phase 3 target |
+| --- | ---: | ---: | ---: |
+| files >= 1000 lines | 85 | 85 | <= 83 |
+| functions/blocks >= 180 effective code lines | 48 | 49 | <= 46 |
+| functions/blocks >= 120 effective code lines | 169 | 171 | <= 160 |
+| functions/blocks branch score >= 50 | 5 | 3 | <= 3 |
+| top hotspot max function/block code lines | 443 | 407 | <= 407 |
+| top hotspot file score | 7,231 | 7,115 | <= 7,115 |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:

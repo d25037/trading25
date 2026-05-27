@@ -20,51 +20,40 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 905,
-    "functions": 8856,
-    "total_lines": 308150,
-    "code_lines": 245972
+    "files": 909,
+    "functions": 8906,
+    "total_lines": 309359,
+    "code_lines": 247115
   },
   "languages": {
     "python": {
-      "files": 646,
-      "total_lines": 261476,
-      "code_lines": 216455
+      "files": 648,
+      "total_lines": 262489,
+      "code_lines": 217403
     },
     "tsx": {
-      "files": 137,
-      "total_lines": 31128,
-      "code_lines": 16792
+      "files": 138,
+      "total_lines": 31081,
+      "code_lines": 16766
     },
     "typescript": {
-      "files": 122,
-      "total_lines": 15546,
-      "code_lines": 12725
+      "files": 123,
+      "total_lines": 15789,
+      "code_lines": 12946
     }
   },
   "file_buckets": {
     "critical_1000_plus": 85,
-    "high_800_plus": 136,
-    "warn_500_plus": 196
+    "high_800_plus": 137,
+    "warn_500_plus": 198
   },
   "function_buckets": {
-    "critical_180_plus": 48,
-    "high_120_plus": 169,
-    "warn_80_plus": 467,
-    "branch_50_plus": 5
+    "critical_180_plus": 49,
+    "high_120_plus": 171,
+    "warn_80_plus": 474,
+    "branch_50_plus": 3
   },
   "top_files": [
-    {
-      "path": "apps/ts/packages/web/src/pages/SettingsPage.tsx",
-      "language": "tsx",
-      "total_lines": 1853,
-      "code_lines": 1067,
-      "branch_score": 328,
-      "max_nesting": 5,
-      "function_count": 46,
-      "max_function_lines": 125,
-      "hotspot_score": 7231
-    },
     {
       "path": "apps/bt/src/infrastructure/db/market/market_db.py",
       "language": "python",
@@ -132,17 +121,6 @@
       "hotspot_score": 6322
     },
     {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
-      "language": "tsx",
-      "total_lines": 1806,
-      "code_lines": 1048,
-      "branch_score": 208,
-      "max_nesting": 7,
-      "function_count": 22,
-      "max_function_lines": 420,
-      "hotspot_score": 5987
-    },
-    {
       "path": "apps/bt/src/domains/fundamentals/calculator.py",
       "language": "python",
       "total_lines": 1336,
@@ -185,6 +163,17 @@
       "function_count": 48,
       "max_function_lines": 185,
       "hotspot_score": 5183
+    },
+    {
+      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
+      "language": "tsx",
+      "total_lines": 1716,
+      "code_lines": 987,
+      "branch_score": 185,
+      "max_nesting": 7,
+      "function_count": 31,
+      "max_function_lines": 301,
+      "hotspot_score": 5155
     },
     {
       "path": "apps/bt/src/application/services/dataset_builder_service.py",
@@ -275,6 +264,17 @@
       "hotspot_score": 4467
     },
     {
+      "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
+      "language": "tsx",
+      "total_lines": 810,
+      "code_lines": 567,
+      "branch_score": 207,
+      "max_nesting": 5,
+      "function_count": 26,
+      "max_function_lines": 88,
+      "hotspot_score": 4442
+    },
+    {
       "path": "apps/bt/src/application/services/screening_service.py",
       "language": "python",
       "total_lines": 1362,
@@ -331,26 +331,6 @@
     }
   ],
   "top_functions": [
-    {
-      "path": "apps/bt/src/application/services/db_validation_service.py",
-      "name": "validate_market_db",
-      "language": "python",
-      "start_line": 139,
-      "end_line": 597,
-      "lines": 443,
-      "branch_score": 57,
-      "max_nesting": 2
-    },
-    {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
-      "name": "export",
-      "language": "tsx",
-      "start_line": 1175,
-      "end_line": 1806,
-      "lines": 420,
-      "branch_score": 82,
-      "max_nesting": 5
-    },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
       "name": "_run_walkforward_research",
@@ -410,6 +390,26 @@
       "lines": 313,
       "branch_score": 18,
       "max_nesting": 2
+    },
+    {
+      "path": "apps/bt/src/application/services/db_validation_service.py",
+      "name": "validate_market_db",
+      "language": "python",
+      "start_line": 314,
+      "end_line": 635,
+      "lines": 312,
+      "branch_score": 11,
+      "max_nesting": 2
+    },
+    {
+      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
+      "name": "export",
+      "language": "tsx",
+      "start_line": 1288,
+      "end_line": 1716,
+      "lines": 301,
+      "branch_score": 48,
+      "max_nesting": 4
     },
     {
       "path": "apps/bt/src/application/services/sync_strategies.py",
@@ -584,17 +584,6 @@
   ],
   "branch_hotspots": [
     {
-      "path": "apps/ts/packages/web/src/pages/SettingsPage.tsx",
-      "language": "tsx",
-      "total_lines": 1853,
-      "code_lines": 1067,
-      "branch_score": 328,
-      "max_nesting": 5,
-      "function_count": 46,
-      "max_function_lines": 125,
-      "hotspot_score": 7231
-    },
-    {
       "path": "apps/bt/src/infrastructure/db/market/market_db.py",
       "language": "python",
       "total_lines": 2802,
@@ -672,15 +661,15 @@
       "hotspot_score": 6323
     },
     {
-      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
+      "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
       "language": "tsx",
-      "total_lines": 1806,
-      "code_lines": 1048,
-      "branch_score": 208,
-      "max_nesting": 7,
-      "function_count": 22,
-      "max_function_lines": 420,
-      "hotspot_score": 5987
+      "total_lines": 810,
+      "code_lines": 567,
+      "branch_score": 207,
+      "max_nesting": 5,
+      "function_count": 26,
+      "max_function_lines": 88,
+      "hotspot_score": 4442
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
@@ -692,6 +681,17 @@
       "function_count": 48,
       "max_function_lines": 407,
       "hotspot_score": 6677
+    },
+    {
+      "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
+      "language": "tsx",
+      "total_lines": 1716,
+      "code_lines": 987,
+      "branch_score": 185,
+      "max_nesting": 7,
+      "function_count": 31,
+      "max_function_lines": 301,
+      "hotspot_score": 5155
     },
     {
       "path": "apps/bt/src/application/services/dataset_builder_service.py",
@@ -797,13 +797,13 @@
     {
       "path": "apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx",
       "language": "tsx",
-      "total_lines": 1806,
-      "code_lines": 1048,
-      "branch_score": 208,
+      "total_lines": 1716,
+      "code_lines": 987,
+      "branch_score": 185,
       "max_nesting": 7,
-      "function_count": 22,
-      "max_function_lines": 420,
-      "hotspot_score": 5987
+      "function_count": 31,
+      "max_function_lines": 301,
+      "hotspot_score": 5155
     },
     {
       "path": "apps/ts/packages/web/src/components/Chart/ChartControls.tsx",
