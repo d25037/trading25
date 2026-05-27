@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 import shutil
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -23,15 +23,23 @@ from typing import Any, Protocol
 from loguru import logger
 
 from src.shared.utils.market_code_alias import expand_market_codes
+from src.application.services.dataset_builder_copy_stages import (
+    DatasetBuildCancelled as _DatasetBuildCancelled,
+    copy_indices_stage as _copy_indices_stage,
+    copy_margin_stage as _copy_margin_stage,
+    copy_statements_stage as _copy_statements_stage,
+    copy_stock_data_stage as _copy_stock_data_stage,
+    copy_topix_stage as _copy_topix_stage,
+    _normalize_index_code,
+)
 from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.index_master_catalog import get_index_catalog_codes
-from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
-    StockDataCopyResult,
+    StockDataCopyResult as _StockDataCopyResult,
     duckdb_path_for_path,
     parquet_dir_for_path,
     snapshot_dir_for_path,
@@ -65,11 +73,15 @@ class DatasetResult:
     outputPath: str = ""
 
 
+StockDataCopyResult = _StockDataCopyResult
+
+__all__ = ["StockDataCopyResult"]
+
+
 # Module-level manager instance
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
 _TOTAL_STAGES = 7
 _BATCH_COPY_SIZE = 200
-_WARNING_SAMPLE_SIZE = 5
 _STATEMENT_COLUMNS: tuple[str, ...] = (
     "code",
     "disclosed_date",
@@ -366,264 +378,77 @@ async def _build_dataset(
             await writer_worker.close()
             writer_worker = _DatasetWriterWorker(snapshot_path)
 
-        # Step 3: 株価データ取得
-        stock_data_started = perf_counter()
-        progress(
-            "stock_data",
-            2,
-            _TOTAL_STAGES,
-            f"Copying stock price data from market.duckdb in batches ({len(filtered)} targets)...",
+        processed = await _copy_stock_data_stage(
+            job=job,
+            filtered=filtered,
+            market_reader=market_reader,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            direct_copy_enabled=direct_copy_enabled,
+            copy_mode=copy_mode,
+            warnings=warnings,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+            load_stock_data_batch=_load_market_stock_data_batch,
+            batch_size=_BATCH_COPY_SIZE,
         )
-        processed = 0
-        empty_ohlcv_codes: list[str] = []
-        incomplete_ohlcv_codes: list[tuple[str, int, int]] = []
-        for batch in _chunked(filtered, _BATCH_COPY_SIZE):
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-
-            batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-            if direct_copy_enabled and source_duckdb_path is not None:
-                copy_result = await writer_worker.call(
-                    "copy_stock_data_from_source",
-                    source_duckdb_path=source_duckdb_path,
-                    normalized_codes=batch_codes,
-                )
-                _collect_stock_copy_warnings(
-                    batch_codes=batch_codes,
-                    copy_result=copy_result,
-                    empty_ohlcv_codes=empty_ohlcv_codes,
-                    incomplete_ohlcv_codes=incomplete_ohlcv_codes,
-                )
-            else:
-                batch_data = await _load_market_stock_data_batch(market_reader, batch_codes)
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-
-                rows_to_write: list[dict[str, Any]] = []
-                for stock in batch:
-                    code4 = normalize_stock_code(stock.get("Code", ""))
-                    data = batch_data.get(code4, [])
-                    rows: list[dict[str, Any]] = []
-                    skipped_rows = 0
-                    for quote in data:
-                        if not isinstance(quote, dict):
-                            skipped_rows += 1
-                            continue
-                        created_at = quote.get("created_at")
-                        row = build_stock_data_row(
-                            quote,
-                            normalized_code=code4,
-                            created_at=str(created_at) if created_at is not None else None,
-                        )
-                        if row is None:
-                            skipped_rows += 1
-                            continue
-                        rows.append(row)
-                    if skipped_rows > 0:
-                        incomplete_ohlcv_codes.append((code4, skipped_rows, len(data)))
-                    if rows:
-                        rows_to_write.extend(rows)
-                    else:
-                        empty_ohlcv_codes.append(code4)
-                if rows_to_write:
-                    await writer_worker.call("upsert_stock_data", rows_to_write)
-            processed += len(batch)
-            progress(
-                "stock_data",
-                2,
-                _TOTAL_STAGES,
-                f"Stock data from market.duckdb: {processed}/{len(filtered)}",
-            )
-
-        if empty_ohlcv_codes:
-            warnings.append(
-                "No valid OHLCV rows for "
-                f"{len(empty_ohlcv_codes)} stocks "
-                f"(sample: {_sample_text(empty_ohlcv_codes)})"
-            )
-        if incomplete_ohlcv_codes:
-            warning_samples = [
-                f"{code}({skipped}/{total})"
-                for code, skipped, total in incomplete_ohlcv_codes[:_WARNING_SAMPLE_SIZE]
-            ]
-            warnings.append(
-                "Skipped incomplete OHLCV rows for "
-                f"{len(incomplete_ohlcv_codes)} stocks "
-                f"(sample: {', '.join(warning_samples)})"
-            )
-        log_stage_elapsed(
-            "stock_data",
-            stock_data_started,
-            mode=copy_mode,
-            target_count=len(filtered),
+        await _copy_topix_stage(
+            job=job,
+            include_topix=preset.include_topix,
+            processed=processed,
+            market_reader=market_reader,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            direct_copy_enabled=direct_copy_enabled,
+            copy_mode=copy_mode,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+            load_topix_data=_load_market_topix_data,
         )
-
-        # Step 4: TOPIX
-        if preset.include_topix:
-            topix_started = perf_counter()
-            progress(
-                "topix",
-                3,
-                _TOTAL_STAGES,
-                "Copying TOPIX data from market.duckdb...",
-            )
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            inserted_rows = 0
-            if direct_copy_enabled and source_duckdb_path is not None:
-                inserted_rows = await writer_worker.call(
-                    "copy_topix_data_from_source",
-                    source_duckdb_path=source_duckdb_path,
-                )
-            else:
-                topix_rows = await _load_market_topix_data(market_reader)
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                if topix_rows:
-                    inserted_rows = len(topix_rows)
-                    await writer_worker.call("upsert_topix_data", topix_rows)
-            log_stage_elapsed(
-                "topix",
-                topix_started,
-                mode=copy_mode,
-                inserted_rows=inserted_rows,
-            )
-
-        # Step 5: セクター指数
-        if preset.include_sector_indices:
-            indices_started = perf_counter()
-            target_index_codes = sorted(
-                code for code in get_index_catalog_codes() if _is_sector_index_code(code)
-            )
-            progress(
-                "indices",
-                4,
-                _TOTAL_STAGES,
-                f"Copying sector index data from market.duckdb in one batch ({len(target_index_codes)} targets)...",
-            )
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            inserted_rows = 0
-            if direct_copy_enabled and source_duckdb_path is not None:
-                inserted_rows = await writer_worker.call(
-                    "copy_indices_data_from_source",
-                    source_duckdb_path=source_duckdb_path,
-                    normalized_codes=target_index_codes,
-                )
-            else:
-                index_rows = await _load_market_index_data_batch(market_reader, target_index_codes)
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                rows_to_write = [
-                    row
-                    for code in target_index_codes
-                    for row in index_rows.get(_normalize_index_code(code), [])
-                ]
-                if rows_to_write:
-                    inserted_rows = len(rows_to_write)
-                    await writer_worker.call("upsert_indices_data", rows_to_write)
-            log_stage_elapsed(
-                "indices",
-                indices_started,
-                mode=copy_mode,
-                target_count=len(target_index_codes),
-                inserted_rows=inserted_rows,
-            )
-
-        # Step 6: 財務諸表
-        if preset.include_statements:
-            statements_started = perf_counter()
-            progress(
-                "statements",
-                5,
-                _TOTAL_STAGES,
-                f"Copying financial statements from market.duckdb in batches ({len(filtered)} targets)...",
-            )
-            statements_processed = 0
-            for batch in _chunked(filtered, _BATCH_COPY_SIZE):
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-                if direct_copy_enabled and source_duckdb_path is not None:
-                    await writer_worker.call(
-                        "copy_statements_from_source",
-                        source_duckdb_path=source_duckdb_path,
-                        normalized_codes=batch_codes,
-                    )
-                    await writer_worker.call(
-                        "copy_adjusted_metrics_from_source",
-                        source_duckdb_path=source_duckdb_path,
-                        normalized_codes=batch_codes,
-                    )
-                else:
-                    statement_rows = await _load_market_statements_batch(market_reader, batch_codes)
-                    if job.cancelled.is_set():
-                        return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                    rows_to_write = [
-                        row
-                        for stock in batch
-                        for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-                    ]
-                    if rows_to_write:
-                        await writer_worker.call("upsert_statements", rows_to_write)
-                statements_processed += len(batch)
-                progress(
-                    "statements",
-                    5,
-                    _TOTAL_STAGES,
-                    f"Financial statements from market.duckdb: {statements_processed}/{len(filtered)}",
-                )
-            log_stage_elapsed(
-                "statements",
-                statements_started,
-                mode=copy_mode,
-                target_count=len(filtered),
-            )
-
-        # Step 7: 信用取引
-        if preset.include_margin:
-            margin_started = perf_counter()
-            progress(
-                "margin",
-                6,
-                _TOTAL_STAGES,
-                f"Copying margin data from market.duckdb in batches ({len(filtered)} targets)...",
-            )
-            margin_processed = 0
-            for batch in _chunked(filtered, _BATCH_COPY_SIZE):
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-                if direct_copy_enabled and source_duckdb_path is not None:
-                    await writer_worker.call(
-                        "copy_margin_data_from_source",
-                        source_duckdb_path=source_duckdb_path,
-                        normalized_codes=batch_codes,
-                    )
-                else:
-                    margin_rows = await _load_market_margin_data_batch(market_reader, batch_codes)
-                    if job.cancelled.is_set():
-                        return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                    rows_to_write = [
-                        row
-                        for stock in batch
-                        for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-                    ]
-                    if rows_to_write:
-                        await writer_worker.call("upsert_margin_data", rows_to_write)
-                margin_processed += len(batch)
-                progress(
-                    "margin",
-                    6,
-                    _TOTAL_STAGES,
-                    f"Margin data from market.duckdb: {margin_processed}/{len(filtered)}",
-                )
-            log_stage_elapsed(
-                "margin",
-                margin_started,
-                mode=copy_mode,
-                target_count=len(filtered),
-            )
+        await _copy_indices_stage(
+            job=job,
+            include_sector_indices=preset.include_sector_indices,
+            processed=processed,
+            market_reader=market_reader,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            direct_copy_enabled=direct_copy_enabled,
+            copy_mode=copy_mode,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+            load_index_data_batch=_load_market_index_data_batch,
+            index_catalog_codes=get_index_catalog_codes,
+        )
+        await _copy_statements_stage(
+            job=job,
+            include_statements=preset.include_statements,
+            filtered=filtered,
+            processed=processed,
+            market_reader=market_reader,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            direct_copy_enabled=direct_copy_enabled,
+            copy_mode=copy_mode,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+            load_statements_batch=_load_market_statements_batch,
+            batch_size=_BATCH_COPY_SIZE,
+        )
+        await _copy_margin_stage(
+            job=job,
+            include_margin=preset.include_margin,
+            filtered=filtered,
+            processed=processed,
+            market_reader=market_reader,
+            writer_worker=writer_worker,
+            source_duckdb_path=source_duckdb_path,
+            direct_copy_enabled=direct_copy_enabled,
+            copy_mode=copy_mode,
+            progress=progress,
+            log_stage_elapsed=log_stage_elapsed,
+            load_margin_batch=_load_market_margin_data_batch,
+            batch_size=_BATCH_COPY_SIZE,
+        )
 
         await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
         await writer_worker.call("set_dataset_info", "manifest_schema_version", "2")
@@ -634,6 +459,12 @@ async def _build_dataset(
             warnings=warnings,
             errors=errors,
             outputPath=str(snapshot_dir),
+        )
+    except _DatasetBuildCancelled as exc:
+        return DatasetResult(
+            success=False,
+            processedStocks=exc.processed_stocks,
+            errors=["Cancelled"],
         )
     finally:
         await writer_worker.close()
@@ -658,56 +489,6 @@ async def _build_dataset(
     )
     progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
     return success_result
-
-
-def _sample_text(values: list[str]) -> str:
-    sample = values[:_WARNING_SAMPLE_SIZE]
-    suffix = ", ..." if len(values) > _WARNING_SAMPLE_SIZE else ""
-    return ", ".join(sample) + suffix
-
-
-def _collect_stock_copy_warnings(
-    *,
-    batch_codes: Sequence[str],
-    copy_result: StockDataCopyResult,
-    empty_ohlcv_codes: list[str],
-    incomplete_ohlcv_codes: list[tuple[str, int, int]],
-) -> None:
-    for code in batch_codes:
-        stats = copy_result.code_stats.get(code)
-        if stats is None:
-            empty_ohlcv_codes.append(code)
-            continue
-        if stats.skipped_rows > 0:
-            incomplete_ohlcv_codes.append((code, stats.skipped_rows, stats.total_rows))
-        if stats.valid_rows == 0:
-            empty_ohlcv_codes.append(code)
-
-
-def _normalize_index_code(value: Any) -> str:
-    text = str(value).strip() if value is not None else ""
-    if not text:
-        return ""
-    if text.isdigit() and len(text) < 4:
-        return text.zfill(4)
-    return text.upper()
-
-
-def _is_sector_index_code(code: str) -> bool:
-    normalized = _normalize_index_code(code)
-    try:
-        value = int(normalized, 16)
-    except ValueError:
-        return False
-    return (
-        int("0040", 16) <= value <= int("0060", 16)
-        or int("0080", 16) <= value <= int("0090", 16)
-    )
-
-
-def _chunked(values: Sequence[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
-    for index in range(0, len(values), size):
-        yield list(values[index : index + size])
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:

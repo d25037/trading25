@@ -116,6 +116,18 @@ The high-signal targets were met: top hotspot moved from `SettingsPage.tsx` to `
 | top hotspot max function/block code lines | 443 | 407 | <= 407 |
 | top hotspot file score | 7,231 | 7,115 | <= 7,115 |
 
+Phase 4 completed on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The scope was intentionally narrowed to Data Plane risk reduction: market DuckDB schema/setup was moved out of `market_db.py`, and dataset snapshot copy stages were moved out of `_build_dataset`. Data Plane-specific targets were met; the repo-wide top hotspot target was not forced because the top file became `sync_strategies.py`, which should be handled as a separate sync-orchestration phase.
+
+| metric | phase 3 actual | phase 4 actual | phase 4 target |
+| --- | ---: | ---: | ---: |
+| repo top hotspot file score | 7,115 | 7,056 | <= 6,500 |
+| `market_db.py` hotspot score | 7,115 | 6,430 | <= 6,500 |
+| `dataset_builder_service.py` max block code lines | 347 | 178 | <= 260 |
+| `dataset_builder_service.py` branch score | 184 | 120 | <= 150 |
+| functions/blocks branch score >= 50 | 3 | 2 | <= 2 |
+| files >= 1000 lines | 85 | 84 | secondary |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:
