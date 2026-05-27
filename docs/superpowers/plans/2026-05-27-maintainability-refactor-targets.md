@@ -92,6 +92,18 @@ The snapshot script now also excludes test/spec files and counts TSX file/block 
 
 Remaining high-value follow-up candidates are `db_validation_service.validate_market_db`, `StrategyEditor.tsx`, and `market_db.py`. Do not broaden the sync refactor in the next slice unless a failing test or user-visible sync behavior requires it; the current sync split has reached a safer pause point.
 
+Phase 3 is planned in `docs/superpowers/plans/2026-05-27-maintainability-phase3.md`.
+The efficient scope is `db_validation_service.validate_market_db`, `StrategyEditor.tsx`, and `SettingsPage.tsx`: all three are high-impact hotspots with direct tests. `market_db.py` remains deferred because its current hotspot score comes from broad persistence surface area rather than one oversized function; it should be handled in a DB-focused phase.
+
+| metric | phase 2 actual | phase 3 target |
+| --- | ---: | ---: |
+| files >= 1000 lines | 85 | <= 83 |
+| functions/blocks >= 180 effective code lines | 48 | <= 46 |
+| functions/blocks >= 120 effective code lines | 169 | <= 160 |
+| functions/blocks branch score >= 50 | 5 | <= 3 |
+| top hotspot max function/block code lines | 443 | <= 407 |
+| top hotspot file score | 7,231 | <= 7,115 |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:
