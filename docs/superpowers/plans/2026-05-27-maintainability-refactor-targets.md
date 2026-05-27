@@ -139,6 +139,19 @@ The scope was sync-orchestration risk reduction: stock-master daily sync and ind
 | `IncrementalSyncStrategy.execute` code lines | 376 | 376 | unchanged or lower |
 | functions/blocks branch score >= 50 | 2 | 2 | <= 2 |
 
+Phase 6 completed on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The scope was research-runner output-surface reduction: annual first-open/last-close portfolio/report builders and TOPIX100 SMA-ratio LightGBM report payload builders were moved into focused modules. Research semantics, PIT/as-of feature construction, bundle IDs, and LightGBM walk-forward training remained unchanged. The Phase 6 file-level targets were met; the top max function remains `_run_walkforward_research` by design and should be handled only in a later model-workflow phase with stronger characterization.
+
+| metric | phase 5 actual | phase 6 actual | phase 6 target |
+| --- | ---: | ---: | ---: |
+| repo top hotspot file score | 6,938 | 6,430 | <= 6,500 |
+| `annual_first_open_last_close_fundamental_panel.py` hotspot score | 6,938 | 5,727 | <= 6,350 |
+| `topix100_sma_ratio_rank_future_close_lightgbm.py` hotspot score | 6,677 | 5,926 | <= 6,500 |
+| `annual_first_open_last_close_fundamental_panel.py` code lines | 1,990 | 1,686 | <= 1,750 |
+| `topix100_sma_ratio_rank_future_close_lightgbm.py` code lines | 2,140 | 1,857 | <= 2,000 |
+| functions/blocks branch score >= 50 | 2 | 2 | <= 2 |
+| top max function/block code lines | 407 | 407 | unchanged or lower |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:
