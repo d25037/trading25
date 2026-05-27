@@ -78,6 +78,20 @@ The snapshot script now counts Python function/block length as effective code li
 | top hotspot max function/block code lines | 955 | 632 | <= 650 |
 | top hotspot file score | 10,973 | 9,212 | <= 9,500 |
 
+Phase 2 achieved on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The snapshot script now also excludes test/spec files and counts TSX file/block size as logic-bearing lines so JSX layout does not dominate the spaghetti-code signal. The main code slice moved fundamentals sync orchestration out of `sync_strategies.py`, split margin sync stages, extracted OpenAPI schema stabilization subroutines, and trimmed the largest research runner's parameter normalization block.
+
+| metric | phase 1 actual | phase 2 actual |
+| --- | ---: | ---: |
+| files >= 1000 lines | 88 | 85 |
+| functions/blocks >= 180 effective code lines | 57 | 48 |
+| functions/blocks >= 120 effective code lines | 198 | 169 |
+| functions/blocks branch score >= 50 | 7 | 5 |
+| top hotspot max function/block code lines | 632 | 443 |
+| top hotspot file score | 9,212 | 7,231 |
+
+Remaining high-value follow-up candidates are `db_validation_service.validate_market_db`, `StrategyEditor.tsx`, and `market_db.py`. Do not broaden the sync refactor in the next slice unless a failing test or user-visible sync behavior requires it; the current sync split has reached a safer pause point.
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:

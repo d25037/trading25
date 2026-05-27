@@ -38,6 +38,14 @@ EXCLUDED_PATH_PARTS = {
     "dist",
     "build",
 }
+EXCLUDED_SUFFIXES = (
+    ".test.py",
+    ".test.ts",
+    ".test.tsx",
+    ".spec.py",
+    ".spec.ts",
+    ".spec.tsx",
+)
 COMMENT_PREFIXES = {
     ".py": ("#",),
     ".ts": ("//",),
@@ -124,6 +132,8 @@ def is_source_file(repo_root: Path, path: Path, roots: tuple[str, ...]) -> bool:
     relative = path.relative_to(repo_root).as_posix()
     if path.suffix not in SOURCE_EXTENSIONS:
         return False
+    if path.name.endswith(EXCLUDED_SUFFIXES):
+        return False
     if any(part in EXCLUDED_PATH_PARTS for part in path.parts):
         return False
     return any(relative.startswith(root) for root in roots)
@@ -138,6 +148,11 @@ def language_for(path: Path) -> str:
 
 
 def count_code_lines(path: Path, lines: list[str]) -> int:
+    if path.suffix == ".py":
+        return len(python_effective_code_lines("\n".join(lines)))
+    if path.suffix == ".tsx":
+        return tsx_logic_line_count(lines)
+
     prefixes = COMMENT_PREFIXES.get(path.suffix, ())
     in_block_comment = False
     count = 0
@@ -267,6 +282,27 @@ def ts_max_brace_depth(lines: list[str]) -> int:
     return max_depth
 
 
+def is_tsx_layout_only_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    if stripped in {"(", ")", ");", "{", "}", "};", "<>", "</>"}:
+        return True
+    if stripped.startswith(("<", "</")) and not any(token in stripped for token in ("=>", "?", "&&", "||")):
+        return True
+    if re.match(r"^[A-Za-z][A-Za-z0-9_-]*=", stripped):
+        return True
+    return False
+
+
+def tsx_logic_line_count(lines: list[str]) -> int:
+    return sum(1 for line in lines if not is_tsx_layout_only_line(line) and not line.strip().startswith("//"))
+
+
+def tsx_logic_text(lines: list[str]) -> str:
+    return "\n".join(line for line in lines if not is_tsx_layout_only_line(line) and not line.strip().startswith("//"))
+
+
 def collect_ts_functions(relative: str, lines: list[str]) -> list[FunctionMetric]:
     metrics: list[FunctionMetric] = []
     index = 0
@@ -299,6 +335,8 @@ def collect_ts_functions(relative: str, lines: list[str]) -> list[FunctionMetric
                 break
             end_index += 1
         block = lines[start_index : end_index + 1]
+        line_count = tsx_logic_line_count(block) if relative.endswith(".tsx") else end_index - start_index + 1
+        branch_text = tsx_logic_text(block) if relative.endswith(".tsx") else "\n".join(block)
         metrics.append(
             FunctionMetric(
                 path=relative,
@@ -306,8 +344,8 @@ def collect_ts_functions(relative: str, lines: list[str]) -> list[FunctionMetric
                 language="typescript" if relative.endswith(".ts") else "tsx",
                 start_line=start_index + 1,
                 end_line=end_index + 1,
-                lines=end_index - start_index + 1,
-                branch_score=branch_score_for_text("\n".join(block)),
+                lines=line_count,
+                branch_score=branch_score_for_text(branch_text),
                 max_nesting=ts_max_brace_depth(block),
             )
         )
@@ -342,7 +380,7 @@ def collect_metrics(repo_root: Path, roots: tuple[str, ...]) -> tuple[list[FileM
         else:
             file_functions = collect_ts_functions(relative, lines)
             max_nesting = ts_max_brace_depth(lines)
-            branch_score = branch_score_for_text(text)
+            branch_score = branch_score_for_text(tsx_logic_text(lines) if path.suffix == ".tsx" else text)
         functions.extend(file_functions)
         max_function_lines = max((metric.lines for metric in file_functions), default=0)
         code_lines = count_code_lines(path, lines)
@@ -427,8 +465,9 @@ def make_snapshot(repo_root: Path, roots: tuple[str, ...]) -> Snapshot:
         notes=[
             "Python function metrics use ast.FunctionDef spans and AST branch nodes.",
             "Python function line counts are effective code lines; multi-line SQL, Markdown, and string payloads are not counted as executable code.",
+            "TSX function and code-line metrics count logic-bearing lines and avoid JSX-only layout inflation.",
             "TypeScript/TSX function metrics are heuristic because this script has no TypeScript parser dependency.",
-            "Generated contracts and docs are excluded; the scope is maintainable production/tool source.",
+            "Generated contracts, test files, and docs are excluded; the scope is maintainable production/tool source.",
         ],
     )
 

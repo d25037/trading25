@@ -20,14 +20,8 @@ from src.application.services.jquants_bulk_service import (
     BulkFetchResult,
 )
 from src.application.services.listed_market_targets import (
-    build_fundamentals_fetch_codes,
-    build_fundamentals_target_map,
     extract_listed_market_codes,
-    group_target_codes_by_canonical,
     is_listed_market_code,
-    normalize_frontier_date,
-    resolve_frontier_cache_codes,
-    serialize_frontier_code_cache,
 )
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
@@ -40,7 +34,6 @@ from src.infrastructure.db.market.query_helpers import (
     normalize_stock_code,
 )
 from src.entrypoints.http.schemas.db import SyncResult
-from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 from src.application.services.ingestion_pipeline import (
     run_ingestion_batch,
     validate_rows_required_fields,
@@ -77,7 +70,10 @@ from src.application.services.sync_row_converters import (
 from src.application.services import sync_publish_helpers
 from src.application.services.sync_fins_fetch import (
     _fetch_fins_summary_by_code,
-    _fetch_fins_summary_paginated,
+)
+from src.application.services.sync_fundamentals_data import (
+    sync_fundamentals_incremental as _sync_fundamentals_incremental,
+    sync_fundamentals_initial as _sync_fundamentals_initial,
 )
 from src.application.services.sync_margin_data import (
     _fetch_margin_by_code,
@@ -313,24 +309,6 @@ def _is_incremental_cold_start(
     )
 
 
-def _format_target_label(
-    count: int,
-    unit: str,
-    *,
-    skipped_empty: int = 0,
-    skipped_market: int = 0,
-    issuer_alias: int = 0,
-) -> str:
-    parts = [f"{count} {unit}"]
-    if skipped_market > 0:
-        parts.append(f"skipped_market={skipped_market}")
-    if skipped_empty > 0:
-        parts.append(f"skipped_empty={skipped_empty}")
-    if issuer_alias > 0:
-        parts.append(f"issuer_alias={issuer_alias}")
-    return ", ".join(parts)
-
-
 def _extract_listed_market_target_rows(
     stock_rows: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
@@ -351,28 +329,6 @@ def _extract_listed_market_target_rows(
             }
         )
     return deduped
-
-
-def _load_frontier_code_cache(
-    market_db: SyncMarketDbLike,
-    key: str,
-    frontier: str | None,
-) -> set[str]:
-    return resolve_frontier_cache_codes(market_db.get_sync_metadata(key), frontier)
-
-
-async def _save_frontier_code_cache(
-    ctx: SyncContext,
-    key: str,
-    frontier: str | None,
-    codes: set[str] | list[str],
-) -> None:
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        key,
-        serialize_frontier_code_cache(frontier, codes),
-    )
-
 
 class IndicesOnlySyncStrategy:
     """指数同期: 指数マスタ + 指数データ + optional N225 options sync."""
@@ -866,6 +822,209 @@ class InitialSyncStrategy:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
 
 
+async def _sync_incremental_stock_data_stage(
+    ctx: SyncContext,
+    *,
+    topix_rows: list[dict[str, Any]],
+    anchor: str | None,
+) -> dict[str, Any]:
+    api_calls = 0
+    stocks_updated = 0
+    errors: list[str] = []
+    stock_target_dates = await _resolve_incremental_stock_date_targets(ctx, topix_rows=topix_rows, anchor=anchor)
+    from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
+    decision = await sync_fetch_planner._plan_fetch_method(
+        ctx,
+        stage="stock_data_incremental",
+        endpoint="/equities/bars/daily",
+        estimated_rest_calls=max(len(stock_target_dates), 1),
+        date_from=from_date_new,
+        date_to=to_date_new,
+        exact_dates=stock_target_dates,
+        require_bulk=ctx.enforce_bulk_for_stock_data,
+    )
+    api_calls += decision.planner_api_calls
+    sync_fetch_planner._emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="stock_data",
+        current=2,
+        total=7,
+        endpoint="/equities/bars/daily",
+        decision=decision,
+        target_label=f"{len(stock_target_dates)} dates",
+    )
+    sync_fetch_planner._enforce_stock_bulk_plan_available(
+        ctx,
+        decision=decision,
+        endpoint="/equities/bars/daily",
+        progress_stage="stock_data",
+        current=2,
+        total=7,
+        target_count=len(stock_target_dates),
+    )
+
+    used_rest_fallback = False
+    bulk_fallback_reason: str | None = None
+    stage_api_calls = 0
+    bulk_result: BulkFetchResult | None = None
+    if decision.method == "bulk" and decision.plan is not None:
+        try:
+            sync_fetch_planner._emit_fetch_execution_progress(
+                ctx,
+                progress_stage="stock_data",
+                current=2,
+                total=7,
+                endpoint="/equities/bars/daily",
+                method="bulk",
+                target_label=f"{len(stock_target_dates)} dates",
+            )
+            new_date_set = _build_target_date_set(stock_target_dates)
+
+            async def _consume_incremental_stock_bulk_rows(
+                batch_rows: list[dict[str, Any]],
+                _file_info: BulkFileInfo,
+            ) -> None:
+                nonlocal stocks_updated
+                stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
+                    ctx,
+                    batch_rows=batch_rows,
+                    target_dates=new_date_set,
+                )
+
+            bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
+                decision.plan,
+                on_rows_batch=_consume_incremental_stock_bulk_rows,
+                accumulate_rows=False,
+            )
+            api_calls += bulk_result.api_calls
+            stage_api_calls += bulk_result.api_calls
+            sync_fetch_planner._log_sync_fetch_execution(
+                stage="stock_data_incremental",
+                endpoint="/equities/bars/daily",
+                decision=decision,
+                executed="bulk",
+                actual_api_calls=stage_api_calls,
+                fallback=False,
+                bulk_result=bulk_result,
+            )
+        except Exception as e:
+            if ctx.enforce_bulk_for_stock_data and len(stock_target_dates) > 0:
+                sync_fetch_planner._raise_stock_bulk_required_error(
+                    ctx,
+                    progress_stage="stock_data",
+                    current=2,
+                    total=7,
+                    endpoint="/equities/bars/daily",
+                    reason="bulk_fetch_failed",
+                    reason_detail=sync_fetch_planner._summarize_exception(e),
+                )
+            used_rest_fallback = True
+            bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
+            logger.exception("Incremental stock_data bulk fetch failed, falling back to REST: {}", bulk_fallback_reason)
+
+    if decision.method == "rest" or used_rest_fallback:
+        rest_result = await _sync_incremental_stock_data_rest(
+            ctx,
+            stock_target_dates=stock_target_dates,
+            decision=decision,
+            used_rest_fallback=used_rest_fallback,
+            fallback_reason=bulk_fallback_reason,
+            bulk_result=bulk_result,
+        )
+        api_calls += rest_result["api_calls"]
+        stocks_updated += rest_result["stocks_updated"]
+        errors.extend(rest_result["errors"])
+        stage_api_calls += rest_result["api_calls"]
+        if rest_result["cancelled"]:
+            return {
+                "api_calls": api_calls,
+                "stocks_updated": stocks_updated,
+                "stock_target_dates": stock_target_dates,
+                "errors": errors,
+                "cancelled": True,
+            }
+
+    await sync_publish_helpers._index_stock_data_rows(ctx)
+    return {
+        "api_calls": api_calls,
+        "stocks_updated": stocks_updated,
+        "stock_target_dates": stock_target_dates,
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _sync_incremental_stock_data_rest(
+    ctx: SyncContext,
+    *,
+    stock_target_dates: list[str],
+    decision: Any,
+    used_rest_fallback: bool,
+    fallback_reason: str | None,
+    bulk_result: BulkFetchResult | None,
+) -> dict[str, Any]:
+    api_calls = 0
+    stocks_updated = 0
+    errors: list[str] = []
+    sync_fetch_planner._emit_fetch_execution_progress(
+        ctx,
+        progress_stage="stock_data",
+        current=2,
+        total=7,
+        endpoint="/equities/bars/daily",
+        method="rest",
+        target_label=f"{len(stock_target_dates)} dates",
+        fallback=used_rest_fallback,
+        fallback_reason=fallback_reason,
+    )
+    for index, date in enumerate(stock_target_dates, start=1):
+        if ctx.cancelled.is_set():
+            return {"api_calls": api_calls, "stocks_updated": stocks_updated, "errors": errors, "cancelled": True}
+        if index > 1 and index % 50 == 0:
+            ctx.on_progress(
+                "stock_data",
+                2,
+                7,
+                f"Fetching /equities/bars/daily via REST: {index}/{len(stock_target_dates)} dates...",
+            )
+        try:
+            payload, page_calls = await _get_paginated_rows_with_call_count(
+                ctx.client,
+                "/equities/bars/daily",
+                params={"date": date},
+            )
+            api_calls += page_calls
+
+            async def _prefetched_new_date_rows() -> list[dict[str, Any]]:
+                return payload
+
+            batch = await run_ingestion_batch(
+                stage="stock_data",
+                fetch=_prefetched_new_date_rows,
+                normalize=_convert_stock_data_rows,
+                validate=lambda rows: validate_rows_required_fields(
+                    rows,
+                    required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+                    dedupe_keys=("code", "date"),
+                    stage="stock_data",
+                ),
+                publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
+            )
+            stocks_updated += batch.published_count
+        except Exception as e:
+            errors.append(f"Date {date}: {e}")
+    sync_fetch_planner._log_sync_fetch_execution(
+        stage="stock_data_incremental",
+        endpoint="/equities/bars/daily",
+        decision=decision,
+        executed="rest",
+        actual_api_calls=api_calls,
+        fallback=used_rest_fallback,
+        bulk_result=bulk_result,
+    )
+    return {"api_calls": api_calls, "stocks_updated": stocks_updated, "errors": errors, "cancelled": False}
+
+
 class IncrementalSyncStrategy:
     """増分同期: 最終同期日以降のデータのみ取得"""
 
@@ -971,165 +1130,17 @@ class IncrementalSyncStrategy:
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
-            stock_target_dates = await _resolve_incremental_stock_date_targets(
+            stock_sync = await _sync_incremental_stock_data_stage(
                 ctx,
                 topix_rows=topix_rows,
                 anchor=last_date,
             )
-            from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
-            decision_stock_data = await sync_fetch_planner._plan_fetch_method(
-                ctx,
-                stage="stock_data_incremental",
-                endpoint="/equities/bars/daily",
-                estimated_rest_calls=max(len(stock_target_dates), 1),
-                date_from=from_date_new,
-                date_to=to_date_new,
-                exact_dates=stock_target_dates,
-                require_bulk=ctx.enforce_bulk_for_stock_data,
-            )
-            total_calls += decision_stock_data.planner_api_calls
-            sync_fetch_planner._emit_fetch_strategy_progress(
-                ctx,
-                progress_stage="stock_data",
-                current=2,
-                total=7,
-                endpoint="/equities/bars/daily",
-                decision=decision_stock_data,
-                target_label=f"{len(stock_target_dates)} dates",
-            )
-
-            sync_fetch_planner._enforce_stock_bulk_plan_available(
-                ctx,
-                decision=decision_stock_data,
-                endpoint="/equities/bars/daily",
-                progress_stage="stock_data",
-                current=2,
-                total=7,
-                target_count=len(stock_target_dates),
-            )
-
-            used_stock_rest_fallback = False
-            stock_bulk_fallback_reason: str | None = None
-            stock_stage_api_calls = 0
-            stock_bulk_result: BulkFetchResult | None = None
-            if decision_stock_data.method == "bulk" and decision_stock_data.plan is not None:
-                try:
-                    sync_fetch_planner._emit_fetch_execution_progress(
-                        ctx,
-                        progress_stage="stock_data",
-                        current=2,
-                        total=7,
-                        endpoint="/equities/bars/daily",
-                        method="bulk",
-                        target_label=f"{len(stock_target_dates)} dates",
-                    )
-                    new_date_set = _build_target_date_set(stock_target_dates)
-
-                    async def _consume_incremental_stock_bulk_rows(
-                        batch_rows: list[dict[str, Any]],
-                        _file_info: BulkFileInfo,
-                    ) -> None:
-                        nonlocal stocks_updated
-                        stocks_updated += await sync_bulk_ingest_helpers._ingest_stock_bulk_batch(
-                            ctx,
-                            batch_rows=batch_rows,
-                            target_dates=new_date_set,
-                        )
-
-                    stock_bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
-                        decision_stock_data.plan,
-                        on_rows_batch=_consume_incremental_stock_bulk_rows,
-                        accumulate_rows=False,
-                    )
-                    total_calls += stock_bulk_result.api_calls
-                    stock_stage_api_calls += stock_bulk_result.api_calls
-                    sync_fetch_planner._log_sync_fetch_execution(
-                        stage="stock_data_incremental",
-                        endpoint="/equities/bars/daily",
-                        decision=decision_stock_data,
-                        executed="bulk",
-                        actual_api_calls=stock_stage_api_calls,
-                        fallback=False,
-                        bulk_result=stock_bulk_result,
-                    )
-                except Exception as e:
-                    if ctx.enforce_bulk_for_stock_data and len(stock_target_dates) > 0:
-                        sync_fetch_planner._raise_stock_bulk_required_error(
-                            ctx,
-                            progress_stage="stock_data",
-                            current=2,
-                            total=7,
-                            endpoint="/equities/bars/daily",
-                            reason="bulk_fetch_failed",
-                            reason_detail=sync_fetch_planner._summarize_exception(e),
-                        )
-                    used_stock_rest_fallback = True
-                    stock_bulk_fallback_reason = sync_fetch_planner._summarize_exception(e)
-                    logger.exception(
-                        "Incremental stock_data bulk fetch failed, falling back to REST: {}",
-                        stock_bulk_fallback_reason,
-                    )
-
-            if decision_stock_data.method == "rest" or used_stock_rest_fallback:
-                sync_fetch_planner._emit_fetch_execution_progress(
-                    ctx,
-                    progress_stage="stock_data",
-                    current=2,
-                    total=7,
-                    endpoint="/equities/bars/daily",
-                    method="rest",
-                    target_label=f"{len(stock_target_dates)} dates",
-                    fallback=used_stock_rest_fallback,
-                    fallback_reason=stock_bulk_fallback_reason,
-                )
-                for i, date in enumerate(stock_target_dates, start=1):
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                    if i > 1 and i % 50 == 0:
-                        ctx.on_progress(
-                            "stock_data",
-                            2,
-                            7,
-                            f"Fetching /equities/bars/daily via REST: {i}/{len(stock_target_dates)} dates...",
-                        )
-                    try:
-                        payload, page_calls = await _get_paginated_rows_with_call_count(
-                            ctx.client,
-                            "/equities/bars/daily",
-                            params={"date": date},
-                        )
-                        total_calls += page_calls
-                        stock_stage_api_calls += page_calls
-
-                        async def _prefetched_new_date_rows() -> list[dict[str, Any]]:
-                            return payload
-
-                        batch = await run_ingestion_batch(
-                            stage="stock_data",
-                            fetch=_prefetched_new_date_rows,
-                            normalize=_convert_stock_data_rows,
-                            validate=lambda rows: validate_rows_required_fields(
-                                rows,
-                                required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                                dedupe_keys=("code", "date"),
-                                stage="stock_data",
-                            ),
-                            publish=lambda rows: sync_publish_helpers._publish_stock_data_rows(ctx, rows),
-                        )
-                        stocks_updated += batch.published_count
-                    except Exception as e:
-                        errors.append(f"Date {date}: {e}")
-                sync_fetch_planner._log_sync_fetch_execution(
-                    stage="stock_data_incremental",
-                    endpoint="/equities/bars/daily",
-                    decision=decision_stock_data,
-                    executed="rest",
-                    actual_api_calls=stock_stage_api_calls,
-                    fallback=used_stock_rest_fallback,
-                    bulk_result=stock_bulk_result,
-                )
-
-            await sync_publish_helpers._index_stock_data_rows(ctx)
+            total_calls += stock_sync["api_calls"]
+            stocks_updated += stock_sync["stocks_updated"]
+            stock_target_dates = cast(list[str], stock_sync["stock_target_dates"])
+            errors.extend(cast(list[str], stock_sync["errors"]))
+            if stock_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # Step 4: 指数データ（増分）
             ctx.on_progress("indices", 3, 7, "Fetching incremental index data...")
@@ -1656,576 +1667,6 @@ async def _sync_options_225_dates(
     return {"api_calls": api_calls, "errors": errors, "cancelled": False}
 
 
-async def _sync_fundamentals_initial(
-    ctx: SyncContext,
-    target_rows: list[dict[str, Any]],
-    *,
-    progress_current: int = 2,
-    progress_total: int = 6,
-) -> dict[str, Any]:
-    """fundamentals 対象市場を code 指定でフル同期"""
-    api_calls = 0
-    updated = 0
-    failed_codes: list[str] = []
-    errors: list[str] = []
-    target_map = build_fundamentals_target_map(target_rows)
-    if not target_map:
-        return {
-            "api_calls": api_calls,
-            "updated": updated,
-            "dates_processed": 0,
-            "errors": errors,
-            "cancelled": False,
-        }
-    allowed_statement_codes = set(target_map) | set(target_map.values())
-    target_groups = group_target_codes_by_canonical(target_map)
-    statement_codes = _get_statement_codes(ctx)
-    current_frontier = normalize_frontier_date(
-        ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
-        or _get_latest_statement_disclosed_date(ctx)
-    )
-    current_empty_codes = _load_frontier_code_cache(
-        ctx.market_db,
-        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
-        current_frontier,
-    )
-    target_codes = build_fundamentals_fetch_codes(
-        target_map,
-        statement_codes,
-        empty_skipped_codes=current_empty_codes,
-    )
-    skipped_empty_exact_codes = {
-        code
-        for code, canonical in target_map.items()
-        if canonical not in statement_codes and code in current_empty_codes
-    }
-    issuer_alias_count = sum(1 for code, canonical in target_map.items() if canonical != code)
-    bulk_succeeded = False
-    stage_api_calls = 0
-    bulk_result: BulkFetchResult | None = None
-    empty_fetch_codes: set[str] = set()
-
-    decision = await sync_fetch_planner._plan_fetch_method(
-        ctx,
-        stage="fundamentals_initial",
-        endpoint="/fins/summary",
-        estimated_rest_calls=max(len(target_codes), 1),
-    )
-    api_calls += decision.planner_api_calls
-    sync_fetch_planner._emit_fetch_strategy_progress(
-        ctx,
-        progress_stage="fundamentals",
-        current=progress_current,
-        total=progress_total,
-        endpoint="/fins/summary",
-        decision=decision,
-        target_label=_format_target_label(
-            len(target_codes),
-            "listed-market fetch codes",
-            skipped_empty=len(skipped_empty_exact_codes),
-            issuer_alias=issuer_alias_count,
-        ),
-    )
-
-    if decision.method == "bulk" and decision.plan is not None:
-        try:
-            sync_fetch_planner._emit_fetch_execution_progress(
-                ctx,
-                progress_stage="fundamentals",
-                current=progress_current,
-                total=progress_total,
-                endpoint="/fins/summary",
-                method="bulk",
-                target_label=_format_target_label(
-                    len(target_codes),
-                    "listed-market fetch codes",
-                    skipped_empty=len(skipped_empty_exact_codes),
-                    issuer_alias=issuer_alias_count,
-                ),
-            )
-
-            async def _consume_initial_fundamentals_bulk_rows(
-                batch_rows: list[dict[str, Any]],
-                _file_info: BulkFileInfo,
-            ) -> None:
-                nonlocal updated
-                updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
-                    ctx,
-                    batch_rows=batch_rows,
-                    allowed_codes=allowed_statement_codes,
-                )
-
-            bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
-                decision.plan,
-                on_rows_batch=_consume_initial_fundamentals_bulk_rows,
-                accumulate_rows=False,
-            )
-            api_calls += bulk_result.api_calls
-            stage_api_calls += bulk_result.api_calls
-            bulk_succeeded = True
-            sync_fetch_planner._log_sync_fetch_execution(
-                stage="fundamentals_initial",
-                endpoint="/fins/summary",
-                decision=decision,
-                executed="bulk",
-                actual_api_calls=stage_api_calls,
-                fallback=False,
-                bulk_result=bulk_result,
-            )
-        except Exception as e:
-            logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
-
-    if not bulk_succeeded:
-        sync_fetch_planner._emit_fetch_execution_progress(
-            ctx,
-            progress_stage="fundamentals",
-            current=progress_current,
-            total=progress_total,
-            endpoint="/fins/summary",
-            method="rest",
-            target_label=_format_target_label(
-                len(target_codes),
-                "listed-market fetch codes",
-                skipped_empty=len(skipped_empty_exact_codes),
-                issuer_alias=issuer_alias_count,
-            ),
-            fallback=decision.method == "bulk",
-        )
-        for idx, code in enumerate(target_codes):
-            if ctx.cancelled.is_set():
-                return {
-                    "api_calls": api_calls,
-                    "updated": updated,
-                    "dates_processed": 0,
-                    "errors": errors,
-                    "cancelled": True,
-                }
-
-            if idx > 0 and idx % 100 == 0:
-                ctx.on_progress(
-                    "fundamentals",
-                    progress_current,
-                    progress_total,
-                    f"Fetching /fins/summary via REST: {idx}/{len(target_codes)} codes...",
-                )
-
-            try:
-                data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
-                api_calls += page_calls
-                stage_api_calls += page_calls
-                if not data:
-                    empty_fetch_codes.add(code)
-                    continue
-                rows = validate_rows_required_fields(
-                    convert_fins_summary_rows(data, default_code=code),
-                    required_fields=("code", "disclosed_date"),
-                    dedupe_keys=("code", "disclosed_date"),
-                    stage="fundamentals",
-                )
-                rows = [row for row in rows if row.get("code") in allowed_statement_codes]
-                if rows:
-                    updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
-                else:
-                    empty_fetch_codes.add(code)
-            except Exception as e:
-                failed_codes.append(code)
-                errors.append(f"Fundamentals code {code}: {e}")
-        sync_fetch_planner._log_sync_fetch_execution(
-            stage="fundamentals_initial",
-            endpoint="/fins/summary",
-            decision=decision,
-            executed="rest",
-            actual_api_calls=stage_api_calls,
-            fallback=decision.method == "bulk",
-            bulk_result=bulk_result,
-        )
-
-    await sync_publish_helpers._index_statement_rows(ctx)
-
-    latest_disclosed = _get_latest_statement_disclosed_date(ctx)
-    normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
-    now_iso = datetime.now(UTC).isoformat()
-
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        METADATA_KEYS["FUNDAMENTALS_LAST_SYNC_DATE"],
-        now_iso,
-    )
-    if latest_disclosed:
-        await asyncio.to_thread(
-            ctx.market_db.set_sync_metadata,
-            METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
-            latest_disclosed,
-        )
-    empty_cache_frontier = normalized_latest_disclosed or current_frontier
-    next_empty_codes = set(current_empty_codes) if empty_cache_frontier == current_frontier else set()
-    for fetch_code in empty_fetch_codes:
-        next_empty_codes.update(target_groups.get(fetch_code, ()))
-    latest_statement_codes = _get_statement_codes(ctx)
-    next_empty_codes = {
-        code
-        for code in next_empty_codes
-        if code in target_map and target_map[code] not in latest_statement_codes
-    }
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
-        "[]",
-    )
-    await _save_frontier_code_cache(
-        ctx,
-        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
-        empty_cache_frontier,
-        next_empty_codes,
-    )
-    await sync_state_helpers._save_metadata_json_list(
-        ctx,
-        METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
-        failed_codes,
-    )
-
-    return {
-        "api_calls": api_calls,
-        "updated": updated,
-        "dates_processed": 0,
-        "errors": errors,
-        "cancelled": False,
-    }
-
-
-async def _sync_fundamentals_incremental(
-    ctx: SyncContext,
-    target_rows: list[dict[str, Any]],
-    *,
-    progress_current: int = 4,
-    progress_total: int = 5,
-) -> dict[str, Any]:
-    """date 指定増分 + 欠損 listed-market 補完"""
-    api_calls = 0
-    updated = 0
-    errors: list[str] = []
-    failed_dates: list[str] = []
-    failed_codes: list[str] = []
-    target_map = build_fundamentals_target_map(target_rows)
-    if not target_map:
-        return {
-            "api_calls": api_calls,
-            "updated": updated,
-            "dates_processed": 0,
-            "errors": errors,
-            "cancelled": False,
-        }
-    allowed_statement_codes = set(target_map) | set(target_map.values())
-    target_groups = group_target_codes_by_canonical(target_map)
-    issuer_alias_count = sum(1 for code, canonical in target_map.items() if canonical != code)
-
-    previous_failed_dates = sync_state_helpers._normalize_date_list(
-        sync_state_helpers._load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
-    )
-    previous_failed_codes = sync_state_helpers._collect_unique_codes(
-        sync_state_helpers._load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"])
-    )
-
-    anchor = (
-        ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
-        or _get_latest_statement_disclosed_date(ctx)
-    )
-    date_targets = sync_state_helpers._build_incremental_date_targets(anchor, previous_failed_dates)
-    dates_phase_completed = 0
-    date_phase_disclosed_dates: set[str] = set()
-    bulk_dates_succeeded = False
-    date_phase_api_calls = 0
-    date_phase_bulk_result: BulkFetchResult | None = None
-    if date_targets:
-        normalized_target_dates = _build_target_date_set(date_targets)
-        decision = await sync_fetch_planner._plan_fetch_method(
-            ctx,
-            stage="fundamentals_incremental_dates",
-            endpoint="/fins/summary",
-            estimated_rest_calls=max(len(date_targets), 1),
-            exact_dates=date_targets,
-        )
-        api_calls += decision.planner_api_calls
-        sync_fetch_planner._emit_fetch_strategy_progress(
-            ctx,
-            progress_stage="fundamentals",
-            current=progress_current,
-            total=progress_total,
-            endpoint="/fins/summary",
-            decision=decision,
-            target_label=f"{len(date_targets)} dates",
-        )
-
-        if decision.method == "bulk" and decision.plan is not None:
-            try:
-                sync_fetch_planner._emit_fetch_execution_progress(
-                    ctx,
-                    progress_stage="fundamentals",
-                    current=progress_current,
-                    total=progress_total,
-                    endpoint="/fins/summary",
-                    method="bulk",
-                    target_label=f"{len(date_targets)} dates",
-                )
-
-                async def _consume_incremental_fundamentals_bulk_rows(
-                    batch_rows: list[dict[str, Any]],
-                    _file_info: BulkFileInfo,
-                ) -> None:
-                    nonlocal updated
-                    updated += await sync_bulk_ingest_helpers._ingest_fins_bulk_batch(
-                        ctx,
-                        batch_rows=batch_rows,
-                        allowed_codes=allowed_statement_codes,
-                        target_dates=normalized_target_dates,
-                        published_dates=date_phase_disclosed_dates,
-                    )
-
-                date_phase_bulk_result = await sync_fetch_planner._get_bulk_service(ctx).fetch_with_plan(
-                    decision.plan,
-                    on_rows_batch=_consume_incremental_fundamentals_bulk_rows,
-                    accumulate_rows=False,
-                )
-                api_calls += date_phase_bulk_result.api_calls
-                date_phase_api_calls += date_phase_bulk_result.api_calls
-                bulk_dates_succeeded = True
-                dates_phase_completed = len(date_targets)
-                sync_fetch_planner._log_sync_fetch_execution(
-                    stage="fundamentals_incremental_dates",
-                    endpoint="/fins/summary",
-                    decision=decision,
-                    executed="bulk",
-                    actual_api_calls=date_phase_api_calls,
-                    fallback=False,
-                    bulk_result=date_phase_bulk_result,
-                )
-            except Exception as e:
-                logger.warning("Incremental fundamentals bulk date fetch failed, falling back to REST: {}", e)
-
-        if not bulk_dates_succeeded:
-            sync_fetch_planner._emit_fetch_execution_progress(
-                ctx,
-                progress_stage="fundamentals",
-                current=progress_current,
-                total=progress_total,
-                endpoint="/fins/summary",
-                method="rest",
-                target_label=f"{len(date_targets)} dates",
-                fallback=decision.method == "bulk",
-            )
-            for idx, disclosed_date in enumerate(date_targets):
-                if ctx.cancelled.is_set():
-                    return {
-                        "api_calls": api_calls,
-                        "updated": updated,
-                        "dates_processed": idx,
-                        "errors": errors,
-                        "cancelled": True,
-                    }
-
-                if idx > 0 and idx % 30 == 0:
-                    ctx.on_progress(
-                        "fundamentals",
-                        progress_current,
-                        progress_total,
-                        f"Fetching /fins/summary via REST: {idx}/{len(date_targets)} dates...",
-                    )
-
-                try:
-                    data, page_calls = await _fetch_fins_summary_paginated(
-                        ctx.client,
-                        {"date": _to_jquants_date_param(disclosed_date)},
-                    )
-                    api_calls += page_calls
-                    date_phase_api_calls += page_calls
-                    rows = convert_fins_summary_rows(data)
-                    rows = [row for row in rows if row.get("code") in allowed_statement_codes]
-                    rows = validate_rows_required_fields(
-                        rows,
-                        required_fields=("code", "disclosed_date"),
-                        dedupe_keys=("code", "disclosed_date"),
-                        stage="fundamentals",
-                    )
-                    if rows:
-                        date_phase_disclosed_dates.update(
-                            normalized
-                            for normalized in (
-                                _normalize_iso_date_text(row.get("disclosed_date"))
-                                for row in rows
-                            )
-                            if normalized is not None
-                        )
-                        updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
-                except Exception as e:
-                    failed_dates.append(disclosed_date)
-                    errors.append(f"Fundamentals date {disclosed_date}: {e}")
-            dates_phase_completed = len(date_targets)
-            sync_fetch_planner._log_sync_fetch_execution(
-                stage="fundamentals_incremental_dates",
-                endpoint="/fins/summary",
-                decision=decision,
-                executed="rest",
-                actual_api_calls=date_phase_api_calls,
-                fallback=decision.method == "bulk",
-                bulk_result=date_phase_bulk_result,
-            )
-
-    current_frontier = normalize_frontier_date(
-        _get_latest_statement_disclosed_date(ctx) or anchor
-    )
-    current_empty_codes = _load_frontier_code_cache(
-        ctx.market_db,
-        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
-        current_frontier,
-    )
-    statement_codes = _get_statement_codes(ctx)
-    skipped_empty_exact_codes = {
-        code
-        for code, canonical in target_map.items()
-        if canonical not in statement_codes and code in current_empty_codes
-    }
-    code_targets = build_fundamentals_fetch_codes(
-        target_map,
-        statement_codes,
-        previous_failed_codes=previous_failed_codes,
-        empty_skipped_codes=current_empty_codes,
-    )
-    empty_fetch_codes: set[str] = set()
-    code_phase_api_calls = 0
-
-    if code_targets:
-        sync_fetch_planner._emit_fetch_execution_progress(
-            ctx,
-            progress_stage="fundamentals",
-            current=progress_current,
-            total=progress_total,
-            endpoint="/fins/summary",
-            method="rest",
-            target_label=_format_target_label(
-                len(code_targets),
-                "backfill codes",
-                skipped_empty=len(skipped_empty_exact_codes),
-                issuer_alias=issuer_alias_count,
-            ),
-        )
-
-    for idx, code in enumerate(code_targets):
-        if ctx.cancelled.is_set():
-            return {
-                "api_calls": api_calls,
-                "updated": updated,
-                "dates_processed": dates_phase_completed,
-                "errors": errors,
-                "cancelled": True,
-            }
-
-        if idx > 0 and idx % 100 == 0:
-            ctx.on_progress(
-                "fundamentals",
-                progress_current,
-                progress_total,
-                f"Fetching /fins/summary via REST: {idx}/{len(code_targets)} backfill codes...",
-            )
-
-        try:
-            data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
-            api_calls += page_calls
-            code_phase_api_calls += page_calls
-            if not data:
-                empty_fetch_codes.add(code)
-                continue
-            rows = convert_fins_summary_rows(data, default_code=code)
-            rows = [row for row in rows if row.get("code") in allowed_statement_codes]
-            rows = validate_rows_required_fields(
-                rows,
-                required_fields=("code", "disclosed_date"),
-                dedupe_keys=("code", "disclosed_date"),
-                stage="fundamentals",
-            )
-            if rows:
-                updated += await sync_publish_helpers._publish_statement_rows(ctx, rows)
-            else:
-                empty_fetch_codes.add(code)
-        except Exception as e:
-            failed_codes.append(code)
-            errors.append(f"Fundamentals code {code}: {e}")
-
-    if code_targets:
-        sync_fetch_planner._log_sync_fetch_execution(
-            stage="fundamentals_incremental_backfill",
-            endpoint="/fins/summary",
-            decision=sync_fetch_planner._StageFetchDecision(
-                method="rest",
-                planner_api_calls=0,
-                estimated_rest_calls=len(code_targets),
-                estimated_bulk_calls=None,
-                reason="code_backfill",
-            ),
-            executed="rest",
-            actual_api_calls=code_phase_api_calls,
-            fallback=False,
-            bulk_result=None,
-        )
-
-    await sync_publish_helpers._index_statement_rows(ctx)
-
-    latest_disclosed = _get_latest_statement_disclosed_date(ctx)
-    normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
-    date_phase_frontier = _latest_date(list(date_phase_disclosed_dates))
-    now_iso = datetime.now(UTC).isoformat()
-    await asyncio.to_thread(
-        ctx.market_db.set_sync_metadata,
-        METADATA_KEYS["FUNDAMENTALS_LAST_SYNC_DATE"],
-        now_iso,
-    )
-    metadata_frontier = date_phase_frontier
-    if metadata_frontier is None and anchor is None:
-        metadata_frontier = normalized_latest_disclosed
-    if metadata_frontier:
-        await asyncio.to_thread(
-            ctx.market_db.set_sync_metadata,
-            METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
-            metadata_frontier,
-        )
-    empty_cache_frontier = metadata_frontier or normalized_latest_disclosed or current_frontier
-    next_empty_codes = set(current_empty_codes) if empty_cache_frontier == current_frontier else set()
-    for fetch_code in empty_fetch_codes:
-        next_empty_codes.update(target_groups.get(fetch_code, ()))
-    latest_statement_codes = _get_statement_codes(ctx)
-    next_empty_codes = {
-        code
-        for code in next_empty_codes
-        if code in target_map and target_map[code] not in latest_statement_codes
-    }
-
-    await sync_state_helpers._save_metadata_json_list(
-        ctx,
-        METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
-        failed_dates,
-    )
-    await _save_frontier_code_cache(
-        ctx,
-        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
-        empty_cache_frontier,
-        next_empty_codes,
-    )
-    await sync_state_helpers._save_metadata_json_list(
-        ctx,
-        METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
-        failed_codes,
-    )
-
-    return {
-        "api_calls": api_calls,
-        "updated": updated,
-        "dates_processed": dates_phase_completed,
-        "errors": errors,
-        "cancelled": False,
-    }
-
-
-
-
 async def _resolve_incremental_options_date_targets(
     ctx: SyncContext,
     *,
@@ -2281,16 +1722,6 @@ async def _resolve_incremental_stock_date_targets(
         missing_stock_dates_limit=inspection.missing_stock_dates_count,
     )
     return sync_state_helpers._normalize_date_list(topix_dates + list(missing_coverage.missing_stock_dates))
-
-
-def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:
-    inspection = sync_state_helpers._inspect_time_series(ctx)
-    return inspection.latest_statement_disclosed_date
-
-
-def _get_statement_codes(ctx: SyncContext) -> set[str]:
-    inspection = sync_state_helpers._inspect_time_series(ctx)
-    return set(inspection.statement_codes)
 
 
 def get_strategy(resolved_mode: str) -> SyncStrategy:

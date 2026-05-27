@@ -68,60 +68,33 @@ def _normalize_integral_floats(node):
     return node
 
 
-def _stabilize_schema_refs(schema: dict) -> None:
-    """ref名を安定化し、モジュール移設による差分ノイズを抑える。"""
-    components = schema.get("components", {})
-    schemas: dict[str, dict] = components.get("schemas", {})
-    if not schemas:
-        return
+def _rewrite_refs(node, ref_map: dict[str, str]) -> None:
+    if isinstance(node, dict):
+        for key, value in list(node.items()):
+            if key == "$ref" and isinstance(value, str):
+                node[key] = ref_map.get(value, value)
+            else:
+                _rewrite_refs(value, ref_map)
+    elif isinstance(node, list):
+        for value in node:
+            _rewrite_refs(value, ref_map)
 
-    rename_map: dict[str, str] = {}
 
-    # 過去に公開した server 系プレフィックスに寄せる
-    for name in list(schemas.keys()):
-        if name.startswith(_SCHEMA_PREFIX_NEW):
-            rename_map[name] = name.replace(_SCHEMA_PREFIX_NEW, _SCHEMA_PREFIX_LEGACY, 1)
+def _is_min_max_date_range(candidate: dict | None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    props = candidate.get("properties", {})
+    return isinstance(props, dict) and "min" in props and "max" in props
 
-    # schema keys rename
-    for old_name, new_name in sorted(rename_map.items(), key=lambda x: len(x[0]), reverse=True):
-        if old_name not in schemas:
-            continue
-        value = schemas.pop(old_name)
-        if new_name not in schemas:
-            schemas[new_name] = value
 
-    # $ref rename
-    ref_map = {
-        f"#/components/schemas/{old}": f"#/components/schemas/{new}"
-        for old, new in rename_map.items()
-    }
+def _is_from_to_date_range(candidate: dict | None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    props = candidate.get("properties", {})
+    return isinstance(props, dict) and "from" in props and "to" in props
 
-    def _rewrite_refs(node) -> None:
-        if isinstance(node, dict):
-            for key, value in list(node.items()):
-                if key == "$ref" and isinstance(value, str):
-                    node[key] = ref_map.get(value, value)
-                else:
-                    _rewrite_refs(value)
-        elif isinstance(node, list):
-            for value in node:
-                _rewrite_refs(value)
 
-    _rewrite_refs(schema)
-
-    # DateRange 名称衝突を historical naming に合わせる
-    def _is_min_max_date_range(candidate: dict | None) -> bool:
-        if not isinstance(candidate, dict):
-            return False
-        props = candidate.get("properties", {})
-        return isinstance(props, dict) and "min" in props and "max" in props
-
-    def _is_from_to_date_range(candidate: dict | None) -> bool:
-        if not isinstance(candidate, dict):
-            return False
-        props = candidate.get("properties", {})
-        return isinstance(props, dict) and "from" in props and "to" in props
-
+def _stabilize_date_range_refs(schemas: dict[str, dict]) -> None:
     plain_date_range = schemas.get("DateRange")
     dataset_date_range_schema: dict | None = None
     db_date_range_schema: dict | None = None
@@ -167,10 +140,7 @@ def _stabilize_schema_refs(schema: dict) -> None:
 
     factor_response = schemas.get("FactorRegressionResponse")
     if isinstance(factor_response, dict):
-        date_range_ref = (
-            factor_response.get("properties", {})
-            .get("dateRange", {})
-        )
+        date_range_ref = factor_response.get("properties", {}).get("dateRange", {})
         if isinstance(date_range_ref, dict) and date_range_ref.get("$ref") == "#/components/schemas/DateRange":
             date_range_ref["$ref"] = f"#/components/schemas/{_LEGACY_FACTOR_DATE_RANGE}"
 
@@ -223,14 +193,12 @@ def _stabilize_schema_refs(schema: dict) -> None:
     # 7) PortfolioFactorRegressionResponse の dateRange は専用 key を参照
     portfolio_factor_response = schemas.get("PortfolioFactorRegressionResponse")
     if isinstance(portfolio_factor_response, dict):
-        date_range_ref = (
-            portfolio_factor_response.get("properties", {})
-            .get("dateRange", {})
-        )
+        date_range_ref = portfolio_factor_response.get("properties", {}).get("dateRange", {})
         if isinstance(date_range_ref, dict) and date_range_ref.get("$ref") == "#/components/schemas/DateRange":
             date_range_ref["$ref"] = f"#/components/schemas/{_LEGACY_PORTFOLIO_FACTOR_DATE_RANGE}"
 
-    # IndexMatch 名称衝突を historical naming に合わせる
+
+def _stabilize_index_match_refs(schemas: dict[str, dict]) -> None:
     # factor_regression 側は legacy key、portfolio_factor_regression 側は plain IndexMatch を維持する
     plain_index_match = schemas.get("IndexMatch")
     if isinstance(plain_index_match, dict):
@@ -244,44 +212,39 @@ def _stabilize_schema_refs(schema: dict) -> None:
     factor_response = schemas.get("FactorRegressionResponse")
     if isinstance(factor_response, dict):
         for key in ("topixStyleMatches", "sector33Matches", "sector17Matches"):
-            items = (
-                factor_response.get("properties", {})
-                .get(key, {})
-                .get("items")
-            )
+            items = factor_response.get("properties", {}).get(key, {}).get("items")
             if isinstance(items, dict) and items.get("$ref") == "#/components/schemas/IndexMatch":
                 items["$ref"] = f"#/components/schemas/{_LEGACY_FACTOR_INDEX_MATCH}"
 
     portfolio_factor_response = schemas.get("PortfolioFactorRegressionResponse")
     if isinstance(portfolio_factor_response, dict):
         for key in ("topixStyleMatches", "sector33Matches", "sector17Matches"):
-            items = (
-                portfolio_factor_response.get("properties", {})
-                .get(key, {})
-                .get("items")
-            )
+            items = portfolio_factor_response.get("properties", {}).get(key, {}).get("items")
             if isinstance(items, dict) and items.get("$ref") == f"#/components/schemas/{_LEGACY_PORTFOLIO_FACTOR_INDEX_MATCH}":
                 items["$ref"] = "#/components/schemas/IndexMatch"
 
-    # OHLCVRecord 名称衝突を固定（dataset_data は plain、indicators は legacy key）
-    def _is_dataset_ohlcv(candidate: dict | None) -> bool:
-        if not isinstance(candidate, dict):
-            return False
-        props = candidate.get("properties", {})
-        if not isinstance(props, dict):
-            return False
-        volume_type = props.get("volume", {}).get("type")
-        return candidate.get("description") is None and volume_type == "integer"
 
-    def _is_indicators_ohlcv(candidate: dict | None) -> bool:
-        if not isinstance(candidate, dict):
-            return False
-        props = candidate.get("properties", {})
-        if not isinstance(props, dict):
-            return False
-        volume_type = props.get("volume", {}).get("type")
-        return candidate.get("description") == "OHLCVレコード" and volume_type == "number"
+def _is_dataset_ohlcv(candidate: dict | None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    props = candidate.get("properties", {})
+    if not isinstance(props, dict):
+        return False
+    volume_type = props.get("volume", {}).get("type")
+    return candidate.get("description") is None and volume_type == "integer"
 
+
+def _is_indicators_ohlcv(candidate: dict | None) -> bool:
+    if not isinstance(candidate, dict):
+        return False
+    props = candidate.get("properties", {})
+    if not isinstance(props, dict):
+        return False
+    volume_type = props.get("volume", {}).get("type")
+    return candidate.get("description") == "OHLCVレコード" and volume_type == "number"
+
+
+def _stabilize_ohlcv_refs(schema: dict, schemas: dict[str, dict]) -> None:
     dataset_ohlcv_schema: dict | None = None
     indicators_ohlcv_schema: dict | None = None
 
@@ -300,42 +263,56 @@ def _stabilize_schema_refs(schema: dict) -> None:
 
     dataset_ohlcv_response = schemas.get("DatasetOHLCVResponse")
     if isinstance(dataset_ohlcv_response, dict):
-        data_items = (
-            dataset_ohlcv_response.get("properties", {})
-            .get("data", {})
-            .get("items")
-        )
+        data_items = dataset_ohlcv_response.get("properties", {}).get("data", {}).get("items")
         if isinstance(data_items, dict):
             data_items["$ref"] = "#/components/schemas/OHLCVRecord"
 
     for response_name in ("OHLCVResponse", "OHLCVResampleResponse"):
         ohlcv_response = schemas.get(response_name)
         if isinstance(ohlcv_response, dict):
-            data_items = (
-                ohlcv_response.get("properties", {})
-                .get("data", {})
-                .get("items")
-            )
+            data_items = ohlcv_response.get("properties", {}).get("data", {}).get("items")
             if isinstance(data_items, dict):
                 data_items["$ref"] = f"#/components/schemas/{_LEGACY_INDICATORS_OHLCV_SCHEMA}"
 
     # Path-level dataset_data refs も plain OHLCVRecord に正規化する
     dataset_data_ref = f"#/components/schemas/{_LEGACY_DATASET_DATA_OHLCV_SCHEMA}"
-
-    def _rewrite_dataset_data_ohlcv_refs(node) -> None:
-        if isinstance(node, dict):
-            for key, value in list(node.items()):
-                if key == "$ref" and value == dataset_data_ref:
-                    node[key] = "#/components/schemas/OHLCVRecord"
-                else:
-                    _rewrite_dataset_data_ohlcv_refs(value)
-        elif isinstance(node, list):
-            for value in node:
-                _rewrite_dataset_data_ohlcv_refs(value)
-
-    _rewrite_dataset_data_ohlcv_refs(schema.get("paths", {}))
+    _rewrite_refs(schema.get("paths", {}), {dataset_data_ref: "#/components/schemas/OHLCVRecord"})
 
     schemas.pop(_LEGACY_DATASET_DATA_OHLCV_SCHEMA, None)
+
+
+def _stabilize_schema_refs(schema: dict) -> None:
+    """ref名を安定化し、モジュール移設による差分ノイズを抑える。"""
+    components = schema.get("components", {})
+    schemas: dict[str, dict] = components.get("schemas", {})
+    if not schemas:
+        return
+
+    rename_map: dict[str, str] = {}
+
+    # 過去に公開した server 系プレフィックスに寄せる
+    for name in list(schemas.keys()):
+        if name.startswith(_SCHEMA_PREFIX_NEW):
+            rename_map[name] = name.replace(_SCHEMA_PREFIX_NEW, _SCHEMA_PREFIX_LEGACY, 1)
+
+    # schema keys rename
+    for old_name, new_name in sorted(rename_map.items(), key=lambda x: len(x[0]), reverse=True):
+        if old_name not in schemas:
+            continue
+        value = schemas.pop(old_name)
+        if new_name not in schemas:
+            schemas[new_name] = value
+
+    # $ref rename
+    ref_map = {
+        f"#/components/schemas/{old}": f"#/components/schemas/{new}"
+        for old, new in rename_map.items()
+    }
+
+    _rewrite_refs(schema, ref_map)
+    _stabilize_date_range_refs(schemas)
+    _stabilize_index_match_refs(schemas)
+    _stabilize_ohlcv_refs(schema, schemas)
 
 
 def get_openapi_config() -> dict:

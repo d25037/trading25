@@ -199,28 +199,39 @@ class TopixDownsideReturnStandardDeviationShockConfirmationCommitteeOverlayResea
     space_comparison_summary_df: pd.DataFrame
 
 
-def run_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_research(
-    db_path: str,
+@dataclass(frozen=True)
+class _CommitteeOverlayParameters:
+    mean_window_days: tuple[int, ...]
+    high_thresholds: tuple[float, ...]
+    low_thresholds: tuple[float, ...]
+    trend_family_rules: tuple[str, ...]
+    breadth_family_rules: tuple[str, ...]
+    trend_vote_thresholds: tuple[int, ...]
+    rank_top_ks: tuple[int, ...]
+    reduced_exposure_ratio: float
+    single_candidate_count: int
+    committee_candidate_count: int
+
+
+def _resolve_committee_overlay_parameters(
     *,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    downside_return_standard_deviation_window_days: int = DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_WINDOW_DAYS,
-    committee_mean_window_days: Sequence[int] | None = None,
-    committee_high_thresholds: Sequence[float] | None = None,
-    low_thresholds: Sequence[float] | None = None,
-    trend_family_rules: Sequence[str] | None = None,
-    breadth_family_rules: Sequence[str] | None = None,
-    trend_vote_thresholds: Sequence[int] | None = None,
-    fixed_breadth_vote_threshold: int = DEFAULT_FIXED_BREADTH_VOTE_THRESHOLD,
-    fixed_confirmation_mode: str = DEFAULT_FIXED_CONFIRMATION_MODE,
-    fixed_reduced_exposure_ratio: float = DEFAULT_FIXED_REDUCED_EXPOSURE_RATIO,
-    min_constituents_per_day: int = DEFAULT_MIN_CONSTITUENTS_PER_DAY,
-    validation_ratio: float = DEFAULT_VALIDATION_RATIO,
-    rank_top_ks: Sequence[int] | None = None,
-    discovery_window_days: int = DEFAULT_DISCOVERY_WINDOW_DAYS,
-    validation_window_days: int = DEFAULT_VALIDATION_WINDOW_DAYS,
-    step_window_days: int = DEFAULT_STEP_WINDOW_DAYS,
-) -> TopixDownsideReturnStandardDeviationShockConfirmationCommitteeOverlayResearchResult:
+    downside_return_standard_deviation_window_days: int,
+    committee_mean_window_days: Sequence[int] | None,
+    committee_high_thresholds: Sequence[float] | None,
+    low_thresholds: Sequence[float] | None,
+    trend_family_rules: Sequence[str] | None,
+    breadth_family_rules: Sequence[str] | None,
+    trend_vote_thresholds: Sequence[int] | None,
+    rank_top_ks: Sequence[int] | None,
+    fixed_confirmation_mode: str,
+    fixed_breadth_vote_threshold: int,
+    fixed_reduced_exposure_ratio: float,
+    validation_ratio: float,
+    min_constituents_per_day: int,
+    discovery_window_days: int,
+    validation_window_days: int,
+    step_window_days: int,
+) -> _CommitteeOverlayParameters:
     if downside_return_standard_deviation_window_days <= 0:
         raise ValueError("downside_return_standard_deviation_window_days must be positive")
     resolved_mean_window_days = _normalize_positive_int_sequence(
@@ -280,9 +291,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
     if fixed_breadth_vote_threshold <= 0:
         raise ValueError("fixed_breadth_vote_threshold must be positive")
     if fixed_breadth_vote_threshold > len(resolved_breadth_family_rules):
-        raise ValueError(
-            "fixed_breadth_vote_threshold must not exceed the breadth family size"
-        )
+        raise ValueError("fixed_breadth_vote_threshold must not exceed the breadth family size")
     if max(resolved_trend_vote_thresholds) > len(resolved_trend_family_rules):
         raise ValueError("trend_vote_thresholds must not exceed the trend family size")
 
@@ -297,6 +306,61 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
     )
     if max(resolved_rank_top_ks) > committee_candidate_count:
         raise ValueError("rank_top_ks must not exceed the committee candidate count")
+
+    return _CommitteeOverlayParameters(
+        mean_window_days=resolved_mean_window_days,
+        high_thresholds=resolved_high_thresholds,
+        low_thresholds=resolved_low_thresholds,
+        trend_family_rules=resolved_trend_family_rules,
+        breadth_family_rules=resolved_breadth_family_rules,
+        trend_vote_thresholds=resolved_trend_vote_thresholds,
+        rank_top_ks=resolved_rank_top_ks,
+        reduced_exposure_ratio=resolved_reduced_exposure_ratio,
+        single_candidate_count=single_candidate_count,
+        committee_candidate_count=committee_candidate_count,
+    )
+
+
+def run_topix_downside_return_standard_deviation_shock_confirmation_committee_overlay_research(
+    db_path: str,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    downside_return_standard_deviation_window_days: int = DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_WINDOW_DAYS,
+    committee_mean_window_days: Sequence[int] | None = None,
+    committee_high_thresholds: Sequence[float] | None = None,
+    low_thresholds: Sequence[float] | None = None,
+    trend_family_rules: Sequence[str] | None = None,
+    breadth_family_rules: Sequence[str] | None = None,
+    trend_vote_thresholds: Sequence[int] | None = None,
+    fixed_breadth_vote_threshold: int = DEFAULT_FIXED_BREADTH_VOTE_THRESHOLD,
+    fixed_confirmation_mode: str = DEFAULT_FIXED_CONFIRMATION_MODE,
+    fixed_reduced_exposure_ratio: float = DEFAULT_FIXED_REDUCED_EXPOSURE_RATIO,
+    min_constituents_per_day: int = DEFAULT_MIN_CONSTITUENTS_PER_DAY,
+    validation_ratio: float = DEFAULT_VALIDATION_RATIO,
+    rank_top_ks: Sequence[int] | None = None,
+    discovery_window_days: int = DEFAULT_DISCOVERY_WINDOW_DAYS,
+    validation_window_days: int = DEFAULT_VALIDATION_WINDOW_DAYS,
+    step_window_days: int = DEFAULT_STEP_WINDOW_DAYS,
+) -> TopixDownsideReturnStandardDeviationShockConfirmationCommitteeOverlayResearchResult:
+    resolved = _resolve_committee_overlay_parameters(
+        downside_return_standard_deviation_window_days=downside_return_standard_deviation_window_days,
+        committee_mean_window_days=committee_mean_window_days,
+        committee_high_thresholds=committee_high_thresholds,
+        low_thresholds=low_thresholds,
+        trend_family_rules=trend_family_rules,
+        breadth_family_rules=breadth_family_rules,
+        trend_vote_thresholds=trend_vote_thresholds,
+        rank_top_ks=rank_top_ks,
+        fixed_confirmation_mode=fixed_confirmation_mode,
+        fixed_breadth_vote_threshold=fixed_breadth_vote_threshold,
+        fixed_reduced_exposure_ratio=fixed_reduced_exposure_ratio,
+        validation_ratio=validation_ratio,
+        min_constituents_per_day=min_constituents_per_day,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+    )
 
     with _open_analysis_connection(db_path) as ctx:
         source_mode = ctx.source_mode
@@ -342,7 +406,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
             downside_return_standard_deviation_window_days
         ),
         max_downside_return_standard_deviation_mean_window_days=max(
-            resolved_mean_window_days
+            resolved.mean_window_days
         ),
         validation_ratio=validation_ratio,
     )
@@ -356,14 +420,14 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
     committee_return_series_by_id: dict[str, pd.Series] = {}
     member_daily_by_id: dict[str, pd.DataFrame] = {}
     signal_frame_cache: dict[int, pd.DataFrame] = {}
-    committee_mean_spec = ",".join(str(value) for value in resolved_mean_window_days)
-    committee_high_spec = ",".join(f"{value:.2f}" for value in resolved_high_thresholds)
+    committee_mean_spec = ",".join(str(value) for value in resolved.mean_window_days)
+    committee_high_spec = ",".join(f"{value:.2f}" for value in resolved.high_thresholds)
 
-    for low_threshold in resolved_low_thresholds:
-        for trend_vote_threshold in resolved_trend_vote_thresholds:
+    for low_threshold in resolved.low_thresholds:
+        for trend_vote_threshold in resolved.trend_vote_thresholds:
             member_ids: list[str] = []
             member_daily_dfs: list[pd.DataFrame] = []
-            for mean_window_days in resolved_mean_window_days:
+            for mean_window_days in resolved.mean_window_days:
                 if mean_window_days not in signal_frame_cache:
                     signal_frame_cache[mean_window_days] = (
                         _build_candidate_signal_frame_on_common_base(
@@ -374,13 +438,13 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                         )
                     )
                 candidate_signal_df = signal_frame_cache[mean_window_days]
-                for high_threshold in resolved_high_thresholds:
+                for high_threshold in resolved.high_thresholds:
                     candidate_id = _build_candidate_id(
                         stddev_window_days=downside_return_standard_deviation_window_days,
                         mean_window_days=mean_window_days,
                         high_threshold=high_threshold,
                         low_threshold=low_threshold,
-                        reduced_exposure_ratio=resolved_reduced_exposure_ratio,
+                        reduced_exposure_ratio=resolved.reduced_exposure_ratio,
                         trend_vote_threshold=trend_vote_threshold,
                         breadth_vote_threshold=fixed_breadth_vote_threshold,
                         confirmation_mode=fixed_confirmation_mode,
@@ -394,9 +458,9 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                         low_annualized_downside_return_standard_deviation_threshold=(
                             low_threshold
                         ),
-                        reduced_exposure_ratio=resolved_reduced_exposure_ratio,
-                        trend_family_rules=resolved_trend_family_rules,
-                        breadth_family_rules=resolved_breadth_family_rules,
+                        reduced_exposure_ratio=resolved.reduced_exposure_ratio,
+                        trend_family_rules=resolved.trend_family_rules,
+                        breadth_family_rules=resolved.breadth_family_rules,
                         trend_vote_threshold=trend_vote_threshold,
                         breadth_vote_threshold=fixed_breadth_vote_threshold,
                         confirmation_mode=fixed_confirmation_mode,
@@ -426,7 +490,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                                     low_threshold
                                 ),
                                 "reduced_exposure_ratio": (
-                                    resolved_reduced_exposure_ratio
+                                    resolved.reduced_exposure_ratio
                                 ),
                                 "trend_vote_threshold": trend_vote_threshold,
                                 "breadth_vote_threshold": fixed_breadth_vote_threshold,
@@ -439,9 +503,9 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                 trend_vote_threshold=trend_vote_threshold,
                 breadth_vote_threshold=fixed_breadth_vote_threshold,
                 confirmation_mode=fixed_confirmation_mode,
-                reduced_exposure_ratio=resolved_reduced_exposure_ratio,
-                mean_window_days=resolved_mean_window_days,
-                high_thresholds=resolved_high_thresholds,
+                reduced_exposure_ratio=resolved.reduced_exposure_ratio,
+                mean_window_days=resolved.mean_window_days,
+                high_thresholds=resolved.high_thresholds,
             )
             committee_daily_df = _build_committee_daily_df(
                 committee_id=committee_id,
@@ -464,7 +528,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                         "low_annualized_downside_return_standard_deviation_threshold": (
                             low_threshold
                         ),
-                        "reduced_exposure_ratio": resolved_reduced_exposure_ratio,
+                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
                         "trend_vote_threshold": trend_vote_threshold,
                         "breadth_vote_threshold": fixed_breadth_vote_threshold,
                         "confirmation_mode": fixed_confirmation_mode,
@@ -476,8 +540,8 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
             for member_candidate_id in member_ids:
                 member_row = _parse_member_candidate_id(
                     member_candidate_id,
-                    mean_window_days=resolved_mean_window_days,
-                    high_thresholds=resolved_high_thresholds,
+                    mean_window_days=resolved.mean_window_days,
+                    high_thresholds=resolved.high_thresholds,
                 )
                 committee_member_map_rows.append(
                     {
@@ -489,7 +553,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
                         "trend_vote_threshold": trend_vote_threshold,
                         "breadth_vote_threshold": fixed_breadth_vote_threshold,
                         "confirmation_mode": fixed_confirmation_mode,
-                        "reduced_exposure_ratio": resolved_reduced_exposure_ratio,
+                        "reduced_exposure_ratio": resolved.reduced_exposure_ratio,
                         **member_row,
                     }
                 )
@@ -526,11 +590,11 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
 
     single_rank_stability_df = _build_rank_stability_df(
         single_candidate_comparison_df,
-        top_ks=resolved_rank_top_ks,
+        top_ks=resolved.rank_top_ks,
     )
     committee_rank_stability_df = _build_rank_stability_df(
         committee_candidate_comparison_df,
-        top_ks=resolved_rank_top_ks,
+        top_ks=resolved.rank_top_ks,
     )
     (
         walkforward_single_fold_candidate_rank_df,
@@ -541,7 +605,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
         candidate_comparison_df=single_candidate_comparison_df,
         candidate_return_series_by_id=single_return_series_by_id,
         parameter_columns=_SINGLE_PARAMETER_COLUMNS,
-        rank_top_ks=resolved_rank_top_ks,
+        rank_top_ks=resolved.rank_top_ks,
         discovery_window_days=discovery_window_days,
         validation_window_days=validation_window_days,
         step_window_days=step_window_days,
@@ -564,7 +628,7 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
         candidate_comparison_df=committee_candidate_comparison_df,
         candidate_return_series_by_id=committee_return_series_by_id,
         parameter_columns=_COMMITTEE_PARAMETER_COLUMNS,
-        rank_top_ks=resolved_rank_top_ks,
+        rank_top_ks=resolved.rank_top_ks,
         discovery_window_days=discovery_window_days,
         validation_window_days=validation_window_days,
         step_window_days=step_window_days,
@@ -618,22 +682,22 @@ def run_topix_downside_return_standard_deviation_shock_confirmation_committee_ov
         downside_return_standard_deviation_window_days=(
             downside_return_standard_deviation_window_days
         ),
-        committee_mean_window_days=resolved_mean_window_days,
-        committee_high_thresholds=resolved_high_thresholds,
-        low_thresholds=resolved_low_thresholds,
-        trend_family_rules=resolved_trend_family_rules,
-        breadth_family_rules=resolved_breadth_family_rules,
-        trend_vote_thresholds=resolved_trend_vote_thresholds,
+        committee_mean_window_days=resolved.mean_window_days,
+        committee_high_thresholds=resolved.high_thresholds,
+        low_thresholds=resolved.low_thresholds,
+        trend_family_rules=resolved.trend_family_rules,
+        breadth_family_rules=resolved.breadth_family_rules,
+        trend_vote_thresholds=resolved.trend_vote_thresholds,
         fixed_breadth_vote_threshold=fixed_breadth_vote_threshold,
         fixed_confirmation_mode=fixed_confirmation_mode,
-        fixed_reduced_exposure_ratio=resolved_reduced_exposure_ratio,
+        fixed_reduced_exposure_ratio=resolved.reduced_exposure_ratio,
         committee_weighting="equal_weight_member_returns",
-        rank_top_ks=resolved_rank_top_ks,
+        rank_top_ks=resolved.rank_top_ks,
         discovery_window_days=discovery_window_days,
         validation_window_days=validation_window_days,
         step_window_days=step_window_days,
-        single_candidate_count=single_candidate_count,
-        committee_candidate_count=committee_candidate_count,
+        single_candidate_count=resolved.single_candidate_count,
+        committee_candidate_count=resolved.committee_candidate_count,
         topix_daily_df=market_frame_df,
         breadth_daily_df=breadth_daily_df,
         baseline_metrics_df=baseline_metrics_df,
