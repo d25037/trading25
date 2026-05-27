@@ -37,6 +37,12 @@ from src.domains.analytics.topix_close_return_streaks import (
     _normalize_positive_int_sequence,
     _query_topix_daily_frame,
 )
+from src.domains.analytics.topix_streak_extreme_mode_helpers import (
+    format_int_sequence as _format_int_sequence,
+    format_return as _format_return,
+    lookup_mode_forward_row as _lookup_mode_forward_row,
+    select_best_window_streaks as _select_best_window_streaks,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
     _fetch_date_range,
@@ -687,27 +693,6 @@ def _build_window_score_df(
     return window_score_df
 
 
-def _select_best_window_streaks(window_score_df: pd.DataFrame) -> int:
-    candidates_df = window_score_df[
-        (window_score_df["sample_split"] == "discovery")
-        & window_score_df["selection_eligible"]
-        & window_score_df["selection_score"].notna()
-    ].copy()
-    if candidates_df.empty:
-        raise ValueError("No eligible discovery windows were available for selection")
-    candidates_df = candidates_df.sort_values(
-        [
-            "selection_score",
-            "directional_consistency",
-            "balance_ratio",
-            "window_streaks",
-        ],
-        ascending=[False, False, False, True],
-        kind="stable",
-    )
-    return int(candidates_df.iloc[0]["window_streaks"])
-
-
 def _build_window_comparison_df(
     segment_summary_df: pd.DataFrame,
     *,
@@ -994,28 +979,3 @@ def _build_published_summary_payload(
             },
         ],
     }
-
-
-def _lookup_mode_forward_row(
-    summary_df: pd.DataFrame,
-    *,
-    mode: str,
-) -> pd.Series | None:
-    mode_df = summary_df[summary_df["mode"] == mode]
-    if mode_df.empty:
-        return None
-    return mode_df.iloc[0]
-
-
-def _format_int_sequence(values: Sequence[int]) -> str:
-    if not values:
-        return ""
-    if len(values) > 10:
-        return f"{values[0]}..{values[-1]} ({len(values)} values)"
-    return ",".join(str(value) for value in values)
-
-
-def _format_return(value: float) -> str:
-    if pd.isna(value):
-        return "n/a"
-    return f"{value * 100:+.2f}%"

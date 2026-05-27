@@ -21,6 +21,11 @@ from src.domains.backtest.contracts import CanonicalExecutionMetrics, EngineFami
 from src.domains.backtest.core.artifacts import BacktestArtifactWriter
 from src.domains.backtest.core.report_renderer import BacktestReportPathPlanner
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
+from src.domains.backtest.nautilus_metrics import (
+    annualized_sharpe_ratio as _annualized_sharpe_ratio,
+    annualized_sortino_ratio as _annualized_sortino_ratio,
+    profit_factor as _profit_factor,
+)
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
 from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
 from src.shared.models.config import SharedConfig
@@ -668,39 +673,6 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
         summary_metrics=summary_metrics,
         diagnostics=diagnostics,
     )
-
-
-def _annualized_sharpe_ratio(returns: pd.Series) -> float | None:
-    non_null = returns.dropna()
-    if non_null.empty:
-        return 0.0
-    std = float(non_null.std(ddof=0))
-    if std <= 0.0:
-        return 0.0
-    return float((non_null.mean() / std) * math.sqrt(252.0))
-
-
-def _annualized_sortino_ratio(returns: pd.Series) -> float | None:
-    non_null = returns.dropna()
-    if non_null.empty:
-        return None
-    downside = non_null[non_null < 0.0]
-    downside_std = float(downside.std(ddof=0)) if not downside.empty else 0.0
-    if downside_std <= 0.0:
-        return None
-    return float((non_null.mean() / downside_std) * math.sqrt(252.0))
-
-
-def _profit_factor(trade_records: list[dict[str, Any]]) -> float | None:
-    gross_profit = sum(float(record["pnl"]) for record in trade_records if float(record["pnl"]) > 0.0)
-    gross_loss = abs(
-        sum(float(record["pnl"]) for record in trade_records if float(record["pnl"]) < 0.0)
-    )
-    if gross_profit <= 0.0 and gross_loss <= 0.0:
-        return None
-    if gross_loss <= 0.0:
-        return None
-    return gross_profit / gross_loss
 
 
 def _build_bars_dataframe(

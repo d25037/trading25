@@ -2,6 +2,7 @@ import type {
   AuthoringFieldSchema,
   SignalDefinition,
   SignalFieldDefinition,
+  StrategyEditorReferenceResponse,
   StrategyValidationResponse,
 } from '@trading25/api-clients/backtest';
 import { AlertCircle, CheckCircle2, Eye, FileCode2, Loader2, PencilLine, Sparkles } from 'lucide-react';
@@ -669,7 +670,508 @@ function FundamentalParentSettingsGrid({
   );
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this dialog coordinates YAML round-trip, backend validation, and visual editor state in one place.
+function StrategyEditorSignalSection({
+  sectionKey,
+  title,
+  draftConfig,
+  definitionsByType,
+  buildSelectableSignalOptions,
+  fundamentalParentFieldNames,
+  fundamentalDefinitionsByType,
+  fundamentalDefinitions,
+  exitSectionDisabled,
+  currentExecutionMode,
+  exitSignals,
+  updateDraftAtPath,
+  addRegularSignal,
+  updateRegularSignalField,
+  removeRegularSignal,
+  addFundamentalSignal,
+  fundamentalParentFields,
+  updateFundamentalParentField,
+  updateFundamentalChildField,
+  removeFundamentalChild,
+}: {
+  sectionKey: SignalSectionKey;
+  title: string;
+  draftConfig: Record<string, unknown>;
+  definitionsByType: Map<string, SignalDefinition>;
+  buildSelectableSignalOptions: (sectionKey: SignalSectionKey) => ReturnType<typeof buildSignalOptions>;
+  fundamentalParentFieldNames: string[];
+  fundamentalDefinitionsByType: Map<string, SignalDefinition>;
+  fundamentalDefinitions: SignalDefinition[];
+  exitSectionDisabled: boolean;
+  currentExecutionMode: string;
+  exitSignals: Record<string, unknown>;
+  updateDraftAtPath: (path: string, value: unknown) => void;
+  addRegularSignal: (sectionKey: SignalSectionKey, signalType: string) => void;
+  updateRegularSignalField: (
+    sectionKey: SignalSectionKey,
+    signalType: string,
+    field: SignalFieldDefinition,
+    value: unknown
+  ) => void;
+  removeRegularSignal: (sectionKey: SignalSectionKey, signalType: string) => void;
+  addFundamentalSignal: (sectionKey: SignalSectionKey, childKey: string) => void;
+  fundamentalParentFields: SignalFieldDefinition[];
+  updateFundamentalParentField: (sectionKey: SignalSectionKey, field: SignalFieldDefinition, value: unknown) => void;
+  updateFundamentalChildField: (
+    sectionKey: SignalSectionKey,
+    childKey: string,
+    field: SignalFieldDefinition,
+    value: unknown
+  ) => void;
+  removeFundamentalChild: (sectionKey: SignalSectionKey, childKey: string) => void;
+}) {
+  const section = normalizeSignalSection(draftConfig[sectionKey]);
+  const regularSignalEntries = Object.entries(section).filter(
+    ([signalKey, signalValue]) =>
+      signalKey !== 'fundamental' && definitionsByType.has(signalKey) && isPlainObject(signalValue)
+  );
+  const availableOptions = buildSelectableSignalOptions(sectionKey);
+  const fundamentalSection = normalizeSignalSection(section.fundamental);
+  const configuredFundamentalChildren = Object.keys(fundamentalSection).filter(
+    (key) => !fundamentalParentFieldNames.includes(key) && fundamentalDefinitionsByType.has(key)
+  );
+  const availableFundamentalSignals = fundamentalDefinitions.filter(
+    (definition) =>
+      !configuredFundamentalChildren.includes(definition.signal_type) &&
+      (sectionKey === 'entry_filter_params' || !definition.exit_disabled)
+  );
+  const sectionDisabled = sectionKey === 'exit_trigger_params' && exitSectionDisabled;
+
+  return (
+    <Card className="border-border/60">
+      <CardHeader className="pb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="text-lg">{title}</CardTitle>
+            <CardDescription>
+              {sectionKey === 'entry_filter_params'
+                ? 'Add signals from grouped categories and edit them visually.'
+                : 'Exit signals are available only in standard execution mode.'}
+            </CardDescription>
+          </div>
+          <NativeSelectField
+            label="Add signal"
+            ariaLabel={`Add ${title}`}
+            placeholder="Select a signal…"
+            disabled={sectionDisabled}
+            optionGroups={availableOptions.map(({ category, signals }) => ({
+              key: category.key,
+              label: category.label,
+              options: signals.map((definition) => ({
+                value: definition.signal_type,
+                label: definition.name,
+              })),
+            }))}
+            onSelect={(signalType) => addRegularSignal(sectionKey, signalType)}
+          />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {sectionDisabled ? (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800">
+            Execution policy <strong>{executionSemanticsLabels[currentExecutionMode] ?? currentExecutionMode}</strong>{' '}
+            disables exit triggers. Save an empty object for <code>exit_trigger_params</code> or clear it now.
+            {Object.keys(exitSignals).length > 0 ? (
+              <div className="mt-3">
+                <Button variant="outline" onClick={() => updateDraftAtPath('exit_trigger_params', {})}>
+                  Clear Exit Config
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {regularSignalEntries.map(([signalKey, signalValue]) => {
+          const definition = definitionsByType.get(signalKey);
+          if (!definition || !isPlainObject(signalValue)) return null;
+          return (
+            <SignalCard
+              key={signalKey}
+              definition={definition}
+              signalConfig={signalValue}
+              disabled={sectionDisabled}
+              onToggleEnabled={(enabled) =>
+                updateRegularSignalField(
+                  sectionKey,
+                  signalKey,
+                  { name: 'enabled', type: 'boolean', description: '' },
+                  enabled
+                )
+              }
+              onFieldChange={(field, value) => updateRegularSignalField(sectionKey, signalKey, field, value)}
+              onRemove={() => removeRegularSignal(sectionKey, signalKey)}
+            />
+          );
+        })}
+
+        <Card className="border-dashed border-border/60">
+          <CardHeader className="pb-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <CardTitle className="text-base">Fundamental Signals</CardTitle>
+                <CardDescription>Parent settings are shared. Child cards control individual factors.</CardDescription>
+              </div>
+              <NativeSelectField
+                label="Add fundamental factor"
+                ariaLabel={`Add ${title} fundamental signal`}
+                placeholder="Select a factor…"
+                disabled={sectionDisabled || availableFundamentalSignals.length === 0}
+                options={availableFundamentalSignals.map((definition) => ({
+                  value: definition.signal_type,
+                  label: definition.name,
+                }))}
+                onSelect={(childKey) => addFundamentalSignal(sectionKey, childKey)}
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {Object.keys(fundamentalSection).length > 0 ? (
+              <>
+                <FundamentalParentSettingsGrid
+                  sectionKey={sectionKey}
+                  fields={fundamentalParentFields}
+                  values={fundamentalSection}
+                  onChange={(field, value) => updateFundamentalParentField(sectionKey, field, value)}
+                />
+
+                {configuredFundamentalChildren.map((childKey) => {
+                  const definition = fundamentalDefinitionsByType.get(childKey);
+                  const childConfig = normalizeSignalSection(fundamentalSection[childKey]);
+                  if (!definition) return null;
+
+                  return (
+                    <SignalCard
+                      key={`${sectionKey}.fundamental.${childKey}`}
+                      definition={definition}
+                      signalConfig={childConfig}
+                      disabled={sectionDisabled}
+                      onToggleEnabled={(enabled) =>
+                        updateFundamentalChildField(
+                          sectionKey,
+                          childKey,
+                          { name: 'enabled', type: 'boolean', description: '' },
+                          enabled
+                        )
+                      }
+                      onFieldChange={(field, value) => updateFundamentalChildField(sectionKey, childKey, field, value)}
+                      onRemove={() => removeFundamentalChild(sectionKey, childKey)}
+                    />
+                  );
+                })}
+              </>
+            ) : (
+              <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
+                No fundamental filters configured in this section.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {regularSignalEntries.length === 0 && Object.keys(fundamentalSection).length === 0 ? (
+          <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
+            No signals configured yet. Add a signal from the dropdown above.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface StrategyEditorDialogBodyProps {
+  open: boolean;
+  activeTab: EditorTab;
+  activeVisualSection: VisualSectionKey;
+  draftConfig: Record<string, unknown>;
+  effectiveExecution: Record<string, unknown>;
+  handleCopySnippet: (snippet: string) => void;
+  handleOpenChange: (nextOpen: boolean) => void;
+  handleSave: () => void;
+  handleTabChange: (tab: EditorTab) => void;
+  handleYamlChange: (value: string) => void;
+  isLoading: boolean;
+  parseError: string | null;
+  previewDirty: boolean;
+  reference?: StrategyEditorReferenceResponse;
+  renderSharedField: (field: AuthoringFieldSchema) => ReactNode;
+  renderSignalSection: (sectionKey: SignalSectionKey, title: string) => ReactNode;
+  removeDraftPath: (path: string) => void;
+  runBackendValidation: (switchToPreview?: boolean) => Promise<StrategyValidationResponse | null>;
+  scrollToVisualSection: (sectionKey: VisualSectionKey) => void;
+  strategyCategory: string;
+  updateDraftAtPath: (path: string, value: unknown) => void;
+  updateErrorMessage: string | null;
+  updatePending: boolean;
+  validatePending: boolean;
+  validationResult: StrategyValidationResponse | null;
+  visualAdvancedOnlyPaths: string[];
+  visualSectionIdPrefix: string;
+  visualSections: Array<{ key: VisualSectionKey; label: string; description: string }>;
+  yamlContent: string;
+  datasetInfo: { data?: { name: string; storage: { backend: string } } | null };
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this view component centralizes the tabbed dialog layout while state orchestration stays in StrategyEditor.
+function StrategyEditorDialogBody({
+  open,
+  activeTab,
+  activeVisualSection,
+  draftConfig,
+  effectiveExecution,
+  handleCopySnippet,
+  handleOpenChange,
+  handleSave,
+  handleTabChange,
+  handleYamlChange,
+  isLoading,
+  parseError,
+  previewDirty,
+  reference,
+  renderSharedField,
+  renderSignalSection,
+  removeDraftPath,
+  runBackendValidation,
+  scrollToVisualSection,
+  strategyCategory,
+  updateDraftAtPath,
+  updateErrorMessage,
+  updatePending,
+  validatePending,
+  validationResult,
+  visualAdvancedOnlyPaths,
+  visualSectionIdPrefix,
+  visualSections,
+  yamlContent,
+  datasetInfo,
+}: StrategyEditorDialogBodyProps) {
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-7xl max-h-[92vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            Strategy Editor
+          </DialogTitle>
+          <DialogDescription>
+            Visual authoring is the default. Raw YAML remains available for advanced edits and unknown fields.
+            <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{strategyCategory}</span>
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex h-[640px] items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-4 py-2">
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Strategy editor tabs">
+              <EditorTabButton
+                active={activeTab === 'visual'}
+                icon={<PencilLine className="h-4 w-4" />}
+                label="Visual"
+                onClick={() => handleTabChange('visual')}
+              />
+              <EditorTabButton
+                active={activeTab === 'advanced'}
+                icon={<FileCode2 className="h-4 w-4" />}
+                label="Advanced YAML"
+                onClick={() => handleTabChange('advanced')}
+              />
+              <EditorTabButton
+                active={activeTab === 'preview'}
+                icon={<Eye className="h-4 w-4" />}
+                label="Preview"
+                onClick={() => handleTabChange('preview')}
+              />
+            </div>
+
+            {activeTab === 'visual' ? (
+              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <aside className="lg:min-h-0">
+                  <Card className="border-border/60 lg:sticky lg:top-0">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Sections</CardTitle>
+                      <CardDescription>
+                        Jump between strategy metadata, shared config, and signal blocks.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-2">
+                      {visualSections.map((section) => (
+                        <VisualSectionButton
+                          key={section.key}
+                          active={activeVisualSection === section.key}
+                          label={section.label}
+                          description={section.description}
+                          onClick={() => scrollToVisualSection(section.key)}
+                        />
+                      ))}
+                    </CardContent>
+                  </Card>
+                </aside>
+
+                <div className="min-h-0 overflow-y-auto pr-1">
+                  <div className="space-y-4">
+                    <section id={`${visualSectionIdPrefix}-basics`} className="scroll-mt-4">
+                      <Card className="border-border/60">
+                        <CardHeader>
+                          <CardTitle className="text-lg">Basics</CardTitle>
+                          <CardDescription>Strategy metadata shown in the catalog and detail views.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 lg:grid-cols-2">
+                          {(reference?.basics ?? []).map((field) => (
+                            <MetadataFieldControl
+                              key={field.path}
+                              field={field}
+                              value={getValueAtPath(draftConfig, field.path)}
+                              overridden={hasValueAtPath(draftConfig, field.path) ? true : undefined}
+                              onChange={(value) => updateDraftAtPath(field.path, value)}
+                              onReset={() => removeDraftPath(field.path)}
+                            />
+                          ))}
+                        </CardContent>
+                      </Card>
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-shared_config`} className="scroll-mt-4">
+                      <Card className="border-border/60">
+                        <CardHeader>
+                          <CardTitle className="text-lg">Shared Config</CardTitle>
+                          <CardDescription>
+                            Visual controls are driven by backend metadata. Reset removes the local override rather than
+                            copying the default.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                          {datasetInfo.data ? (
+                            <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+                              Dataset <strong>{datasetInfo.data.name}</strong> loaded from{' '}
+                              {datasetInfo.data.storage.backend}.
+                            </div>
+                          ) : null}
+
+                          {(reference?.shared_config_groups ?? []).map((group) => {
+                            const groupFields = (reference?.shared_config_fields ?? []).filter(
+                              (field) => field.group === group.key
+                            );
+                            if (groupFields.length === 0) return null;
+                            return (
+                              <div key={group.key} className="space-y-3">
+                                <div>
+                                  <h3 className="text-sm font-semibold">{group.label}</h3>
+                                  {group.description ? (
+                                    <p className="text-sm text-muted-foreground">{group.description}</p>
+                                  ) : null}
+                                </div>
+                                <div className="grid gap-3 lg:grid-cols-2">{groupFields.map(renderSharedField)}</div>
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-entry_filter`} className="scroll-mt-4">
+                      {renderSignalSection('entry_filter_params', 'Entry Signals')}
+                    </section>
+
+                    <section id={`${visualSectionIdPrefix}-exit_trigger`} className="scroll-mt-4">
+                      {renderSignalSection('exit_trigger_params', 'Exit Signals')}
+                    </section>
+
+                    {visualAdvancedOnlyPaths.length > 0 ? (
+                      <section id={`${visualSectionIdPrefix}-advanced_only`} className="scroll-mt-4">
+                        <Card className="border-dashed border-border/60">
+                          <CardHeader>
+                            <CardTitle className="text-base">Advanced-only Content</CardTitle>
+                            <CardDescription>
+                              These paths are preserved on save but can only be edited in the Advanced YAML tab in v1.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                              {visualAdvancedOnlyPaths.map((path) => (
+                                <li key={path}>{path}</li>
+                              ))}
+                            </ul>
+                          </CardContent>
+                        </Card>
+                      </section>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'advanced' ? (
+              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2 min-h-0">
+                  <MonacoYamlEditor value={yamlContent} onChange={handleYamlChange} height="620px" />
+                  {parseError ? (
+                    <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                      {parseError}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="min-h-0 overflow-hidden rounded-lg border">
+                  <SignalReferencePanel onCopySnippet={handleCopySnippet} />
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === 'preview' ? (
+              <PreviewPanel
+                parseError={parseError}
+                validationResult={validationResult}
+                updateErrorMessage={updateErrorMessage}
+                previewDirty={previewDirty}
+                isRefreshing={validatePending}
+                onRefresh={() => {
+                  void runBackendValidation(false);
+                }}
+                effectiveExecution={effectiveExecution}
+              />
+            ) : null}
+          </div>
+        )}
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void runBackendValidation(true);
+            }}
+            disabled={validatePending || updatePending}
+          >
+            {validatePending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Validating...
+              </>
+            ) : (
+              'Validate'
+            )}
+          </Button>
+          <Button onClick={handleSave} disabled={validatePending || updatePending || isLoading}>
+            {updatePending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const [activeTab, setActiveTab] = useState<EditorTab>('visual');
   const [activeVisualSection, setActiveVisualSection] = useState<VisualSectionKey>('basics');
@@ -1241,387 +1743,64 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   };
 
   const renderSignalSection = (sectionKey: SignalSectionKey, title: string) => {
-    const section = normalizeSignalSection(draftConfig[sectionKey]);
-    const regularSignalEntries = Object.entries(section).filter(
-      ([signalKey, signalValue]) =>
-        signalKey !== 'fundamental' && definitionsByType.has(signalKey) && isPlainObject(signalValue)
-    );
-    const availableOptions = buildSelectableSignalOptions(sectionKey);
-    const fundamentalSection = normalizeSignalSection(section.fundamental);
-    const configuredFundamentalChildren = Object.keys(fundamentalSection).filter(
-      (key) => !fundamentalParentFieldNames.includes(key) && fundamentalDefinitionsByType.has(key)
-    );
-    const availableFundamentalSignals = fundamentalDefinitions.filter(
-      (definition) =>
-        !configuredFundamentalChildren.includes(definition.signal_type) &&
-        (sectionKey === 'entry_filter_params' || !definition.exit_disabled)
-    );
-    const sectionDisabled = sectionKey === 'exit_trigger_params' && exitSectionDisabled;
-
     return (
-      <Card className="border-border/60">
-        <CardHeader className="pb-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <CardTitle className="text-lg">{title}</CardTitle>
-              <CardDescription>
-                {sectionKey === 'entry_filter_params'
-                  ? 'Add signals from grouped categories and edit them visually.'
-                  : 'Exit signals are available only in standard execution mode.'}
-              </CardDescription>
-            </div>
-            <NativeSelectField
-              label="Add signal"
-              ariaLabel={`Add ${title}`}
-              placeholder="Select a signal…"
-              disabled={sectionDisabled}
-              optionGroups={availableOptions.map(({ category, signals }) => ({
-                key: category.key,
-                label: category.label,
-                options: signals.map((definition) => ({
-                  value: definition.signal_type,
-                  label: definition.name,
-                })),
-              }))}
-              onSelect={(signalType) => addRegularSignal(sectionKey, signalType)}
-            />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {sectionDisabled ? (
-            <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-800">
-              Execution policy <strong>{executionSemanticsLabels[currentExecutionMode] ?? currentExecutionMode}</strong>{' '}
-              disables exit triggers. Save an empty object for <code>exit_trigger_params</code> or clear it now.
-              {Object.keys(exitSignals).length > 0 ? (
-                <div className="mt-3">
-                  <Button variant="outline" onClick={() => updateDraftAtPath('exit_trigger_params', {})}>
-                    Clear Exit Config
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {regularSignalEntries.map(([signalKey, signalValue]) => {
-            const definition = definitionsByType.get(signalKey);
-            if (!definition || !isPlainObject(signalValue)) return null;
-            return (
-              <SignalCard
-                key={signalKey}
-                definition={definition}
-                signalConfig={signalValue}
-                disabled={sectionDisabled}
-                onToggleEnabled={(enabled) =>
-                  updateRegularSignalField(
-                    sectionKey,
-                    signalKey,
-                    { name: 'enabled', type: 'boolean', description: '' },
-                    enabled
-                  )
-                }
-                onFieldChange={(field, value) => updateRegularSignalField(sectionKey, signalKey, field, value)}
-                onRemove={() => removeRegularSignal(sectionKey, signalKey)}
-              />
-            );
-          })}
-
-          <Card className="border-dashed border-border/60">
-            <CardHeader className="pb-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <CardTitle className="text-base">Fundamental Signals</CardTitle>
-                  <CardDescription>Parent settings are shared. Child cards control individual factors.</CardDescription>
-                </div>
-                <NativeSelectField
-                  label="Add fundamental factor"
-                  ariaLabel={`Add ${title} fundamental signal`}
-                  placeholder="Select a factor…"
-                  disabled={sectionDisabled || availableFundamentalSignals.length === 0}
-                  options={availableFundamentalSignals.map((definition) => ({
-                    value: definition.signal_type,
-                    label: definition.name,
-                  }))}
-                  onSelect={(childKey) => addFundamentalSignal(sectionKey, childKey)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {Object.keys(fundamentalSection).length > 0 ? (
-                <>
-                  <FundamentalParentSettingsGrid
-                    sectionKey={sectionKey}
-                    fields={fundamentalParentFields}
-                    values={fundamentalSection}
-                    onChange={(field, value) => updateFundamentalParentField(sectionKey, field, value)}
-                  />
-
-                  {configuredFundamentalChildren.map((childKey) => {
-                    const definition = fundamentalDefinitionsByType.get(childKey);
-                    const childConfig = normalizeSignalSection(fundamentalSection[childKey]);
-                    if (!definition) return null;
-
-                    return (
-                      <SignalCard
-                        key={`${sectionKey}.fundamental.${childKey}`}
-                        definition={definition}
-                        signalConfig={childConfig}
-                        disabled={sectionDisabled}
-                        onToggleEnabled={(enabled) =>
-                          updateFundamentalChildField(
-                            sectionKey,
-                            childKey,
-                            { name: 'enabled', type: 'boolean', description: '' },
-                            enabled
-                          )
-                        }
-                        onFieldChange={(field, value) =>
-                          updateFundamentalChildField(sectionKey, childKey, field, value)
-                        }
-                        onRemove={() => removeFundamentalChild(sectionKey, childKey)}
-                      />
-                    );
-                  })}
-                </>
-              ) : (
-                <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
-                  No fundamental filters configured in this section.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {regularSignalEntries.length === 0 && Object.keys(fundamentalSection).length === 0 ? (
-            <div className="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
-              No signals configured yet. Add a signal from the dropdown above.
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+      <StrategyEditorSignalSection
+        sectionKey={sectionKey}
+        title={title}
+        draftConfig={draftConfig}
+        definitionsByType={definitionsByType}
+        buildSelectableSignalOptions={buildSelectableSignalOptions}
+        fundamentalParentFieldNames={fundamentalParentFieldNames}
+        fundamentalDefinitionsByType={fundamentalDefinitionsByType}
+        fundamentalDefinitions={fundamentalDefinitions}
+        exitSectionDisabled={exitSectionDisabled}
+        currentExecutionMode={currentExecutionMode}
+        exitSignals={exitSignals}
+        updateDraftAtPath={updateDraftAtPath}
+        addRegularSignal={addRegularSignal}
+        updateRegularSignalField={updateRegularSignalField}
+        removeRegularSignal={removeRegularSignal}
+        addFundamentalSignal={addFundamentalSignal}
+        fundamentalParentFields={fundamentalParentFields}
+        updateFundamentalParentField={updateFundamentalParentField}
+        updateFundamentalChildField={updateFundamentalChildField}
+        removeFundamentalChild={removeFundamentalChild}
+      />
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-7xl max-h-[92vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5" />
-            Strategy Editor
-          </DialogTitle>
-          <DialogDescription>
-            Visual authoring is the default. Raw YAML remains available for advanced edits and unknown fields.
-            <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{strategyCategory}</span>
-          </DialogDescription>
-        </DialogHeader>
-
-        {isLoading ? (
-          <div className="flex h-[640px] items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-4 py-2">
-            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Strategy editor tabs">
-              <EditorTabButton
-                active={activeTab === 'visual'}
-                icon={<PencilLine className="h-4 w-4" />}
-                label="Visual"
-                onClick={() => handleTabChange('visual')}
-              />
-              <EditorTabButton
-                active={activeTab === 'advanced'}
-                icon={<FileCode2 className="h-4 w-4" />}
-                label="Advanced YAML"
-                onClick={() => handleTabChange('advanced')}
-              />
-              <EditorTabButton
-                active={activeTab === 'preview'}
-                icon={<Eye className="h-4 w-4" />}
-                label="Preview"
-                onClick={() => handleTabChange('preview')}
-              />
-            </div>
-
-            {activeTab === 'visual' ? (
-              <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-                <aside className="lg:min-h-0">
-                  <Card className="border-border/60 lg:sticky lg:top-0">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Sections</CardTitle>
-                      <CardDescription>
-                        Jump between strategy metadata, shared config, and signal blocks.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-2">
-                      {visualSections.map((section) => (
-                        <VisualSectionButton
-                          key={section.key}
-                          active={activeVisualSection === section.key}
-                          label={section.label}
-                          description={section.description}
-                          onClick={() => scrollToVisualSection(section.key)}
-                        />
-                      ))}
-                    </CardContent>
-                  </Card>
-                </aside>
-
-                <div className="min-h-0 overflow-y-auto pr-1">
-                  <div className="space-y-4">
-                    <section id={`${visualSectionIdPrefix}-basics`} className="scroll-mt-4">
-                      <Card className="border-border/60">
-                        <CardHeader>
-                          <CardTitle className="text-lg">Basics</CardTitle>
-                          <CardDescription>Strategy metadata shown in the catalog and detail views.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 lg:grid-cols-2">
-                          {(reference?.basics ?? []).map((field) => (
-                            <MetadataFieldControl
-                              key={field.path}
-                              field={field}
-                              value={getValueAtPath(draftConfig, field.path)}
-                              overridden={hasValueAtPath(draftConfig, field.path) ? true : undefined}
-                              onChange={(value) => updateDraftAtPath(field.path, value)}
-                              onReset={() => removeDraftPath(field.path)}
-                            />
-                          ))}
-                        </CardContent>
-                      </Card>
-                    </section>
-
-                    <section id={`${visualSectionIdPrefix}-shared_config`} className="scroll-mt-4">
-                      <Card className="border-border/60">
-                        <CardHeader>
-                          <CardTitle className="text-lg">Shared Config</CardTitle>
-                          <CardDescription>
-                            Visual controls are driven by backend metadata. Reset removes the local override rather than
-                            copying the default.
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                          {datasetInfo.data ? (
-                            <div className="rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-                              Dataset <strong>{datasetInfo.data.name}</strong> loaded from{' '}
-                              {datasetInfo.data.storage.backend}.
-                            </div>
-                          ) : null}
-
-                          {(reference?.shared_config_groups ?? []).map((group) => {
-                            const groupFields = (reference?.shared_config_fields ?? []).filter(
-                              (field) => field.group === group.key
-                            );
-                            if (groupFields.length === 0) return null;
-                            return (
-                              <div key={group.key} className="space-y-3">
-                                <div>
-                                  <h3 className="text-sm font-semibold">{group.label}</h3>
-                                  {group.description ? (
-                                    <p className="text-sm text-muted-foreground">{group.description}</p>
-                                  ) : null}
-                                </div>
-                                <div className="grid gap-3 lg:grid-cols-2">{groupFields.map(renderSharedField)}</div>
-                              </div>
-                            );
-                          })}
-                        </CardContent>
-                      </Card>
-                    </section>
-
-                    <section id={`${visualSectionIdPrefix}-entry_filter`} className="scroll-mt-4">
-                      {renderSignalSection('entry_filter_params', 'Entry Signals')}
-                    </section>
-
-                    <section id={`${visualSectionIdPrefix}-exit_trigger`} className="scroll-mt-4">
-                      {renderSignalSection('exit_trigger_params', 'Exit Signals')}
-                    </section>
-
-                    {visualAdvancedOnlyPaths.length > 0 ? (
-                      <section id={`${visualSectionIdPrefix}-advanced_only`} className="scroll-mt-4">
-                        <Card className="border-dashed border-border/60">
-                          <CardHeader>
-                            <CardTitle className="text-base">Advanced-only Content</CardTitle>
-                            <CardDescription>
-                              These paths are preserved on save but can only be edited in the Advanced YAML tab in v1.
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                              {visualAdvancedOnlyPaths.map((path) => (
-                                <li key={path}>{path}</li>
-                              ))}
-                            </ul>
-                          </CardContent>
-                        </Card>
-                      </section>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {activeTab === 'advanced' ? (
-              <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="lg:col-span-2 min-h-0">
-                  <MonacoYamlEditor value={yamlContent} onChange={handleYamlChange} height="620px" />
-                  {parseError ? (
-                    <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
-                      {parseError}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="min-h-0 overflow-hidden rounded-lg border">
-                  <SignalReferencePanel onCopySnippet={handleCopySnippet} />
-                </div>
-              </div>
-            ) : null}
-
-            {activeTab === 'preview' ? (
-              <PreviewPanel
-                parseError={parseError}
-                validationResult={validationResult}
-                updateErrorMessage={updateErrorMessage}
-                previewDirty={previewDirty}
-                isRefreshing={validateStrategy.isPending}
-                onRefresh={() => {
-                  void runBackendValidation(false);
-                }}
-                effectiveExecution={effectiveExecution}
-              />
-            ) : null}
-          </div>
-        )}
-
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void runBackendValidation(true);
-            }}
-            disabled={validateStrategy.isPending || updateStrategy.isPending}
-          >
-            {validateStrategy.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Validating...
-              </>
-            ) : (
-              'Validate'
-            )}
-          </Button>
-          <Button onClick={handleSave} disabled={validateStrategy.isPending || updateStrategy.isPending || isLoading}>
-            {updateStrategy.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save'
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <StrategyEditorDialogBody
+      open={open}
+      activeTab={activeTab}
+      activeVisualSection={activeVisualSection}
+      draftConfig={draftConfig}
+      effectiveExecution={effectiveExecution}
+      handleCopySnippet={handleCopySnippet}
+      handleOpenChange={handleOpenChange}
+      handleSave={handleSave}
+      handleTabChange={handleTabChange}
+      handleYamlChange={handleYamlChange}
+      isLoading={isLoading}
+      parseError={parseError}
+      previewDirty={previewDirty}
+      reference={reference}
+      renderSharedField={renderSharedField}
+      renderSignalSection={renderSignalSection}
+      removeDraftPath={removeDraftPath}
+      runBackendValidation={runBackendValidation}
+      scrollToVisualSection={scrollToVisualSection}
+      strategyCategory={strategyCategory}
+      updateDraftAtPath={updateDraftAtPath}
+      updateErrorMessage={updateErrorMessage}
+      updatePending={updateStrategy.isPending}
+      validatePending={validateStrategy.isPending}
+      validationResult={validationResult}
+      visualAdvancedOnlyPaths={visualAdvancedOnlyPaths}
+      visualSectionIdPrefix={visualSectionIdPrefix}
+      visualSections={visualSections}
+      yamlContent={yamlContent}
+      datasetInfo={datasetInfo}
+    />
   );
 }

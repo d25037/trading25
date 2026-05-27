@@ -6,7 +6,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import duckdb
 import numpy as np
@@ -33,6 +33,11 @@ from src.domains.analytics.research_bundle import (
     get_research_bundle_dir,
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
+)
+from src.domains.analytics.turtle_like_momentum_formatters import (
+    float_or_nan as _float_or_nan,
+    format_int as _format_int,
+    format_number as _format_number,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
 
@@ -858,32 +863,6 @@ def run_turtle_like_momentum_research(
         portfolio_daily_df=portfolio_daily_df,
         portfolio_summary_df=portfolio_summary_df,
     )
-
-
-def _float_or_nan(value: object) -> float:
-    try:
-        number = float(cast(float, value))
-    except (TypeError, ValueError):
-        return float("nan")
-    return number if math.isfinite(number) else float("nan")
-
-
-def _format_int(value: object) -> str:
-    try:
-        number = int(float(cast(float, value)))
-    except (TypeError, ValueError):
-        return "-"
-    return f"{number:,}"
-
-
-def _format_number(value: object, *, digits: int = 2, suffix: str = "") -> str:
-    try:
-        number = float(cast(float, value))
-    except (TypeError, ValueError):
-        return "-"
-    if pd.isna(number):
-        return "-"
-    return f"{number:.{digits}f}{suffix}"
 
 
 def _build_research_bundle_summary_markdown(result: TurtleLikeMomentumResearchResult) -> str:

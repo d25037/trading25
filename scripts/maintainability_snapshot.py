@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import json
 import re
 import subprocess
+import tokenize
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
@@ -198,18 +200,44 @@ def python_max_nesting(node: ast.AST) -> int:
     return visit(node, 0)
 
 
+def python_effective_code_lines(text: str) -> set[int]:
+    """Return code-bearing lines, excluding multi-line literal payloads."""
+    effective_lines: set[int] = set()
+    ignored_tokens = {
+        tokenize.COMMENT,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+        tokenize.ENDMARKER,
+        tokenize.ENCODING,
+    }
+    try:
+        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        for token in tokens:
+            if token.type in ignored_tokens:
+                continue
+            if token.type == tokenize.STRING and token.start[0] != token.end[0]:
+                continue
+            effective_lines.add(token.start[0])
+    except tokenize.TokenError:
+        return set(range(1, len(text.splitlines()) + 1))
+    return effective_lines
+
+
 def collect_python_functions(path: Path, relative: str, text: str) -> list[FunctionMetric]:
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return []
+    effective_lines = python_effective_code_lines(text)
     metrics: list[FunctionMetric] = []
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if node.end_lineno is None:
             continue
-        lines = node.end_lineno - node.lineno + 1
+        lines = sum(1 for line_number in range(node.lineno, node.end_lineno + 1) if line_number in effective_lines)
         metrics.append(
             FunctionMetric(
                 path=relative,
@@ -249,10 +277,16 @@ def collect_ts_functions(relative: str, lines: list[str]) -> list[FunctionMetric
             continue
         name_match = re.search(r"(?:function\s+|(?:const|let|var)\s+|^|\s)([A-Za-z0-9_]+)", line)
         name = name_match.group(1) if name_match else "<anonymous>"
+        body_start = index
+        if re.match(r"^\s*(?:export\s+)?(?:async\s+)?function\s+\w+\(\{\s*$", line):
+            for probe_index in range(index + 1, len(lines)):
+                if re.match(r"^\s*}\)\s*\{\s*$", lines[probe_index]):
+                    body_start = probe_index
+                    break
         depth = 0
         started = False
         start_index = index
-        end_index = index
+        end_index = body_start
         while end_index < len(lines):
             stripped = re.sub(r"//.*", "", lines[end_index])
             for char in stripped:
@@ -392,6 +426,7 @@ def make_snapshot(repo_root: Path, roots: tuple[str, ...]) -> Snapshot:
         target_metrics=target_metrics(file_buckets, function_buckets),
         notes=[
             "Python function metrics use ast.FunctionDef spans and AST branch nodes.",
+            "Python function line counts are effective code lines; multi-line SQL, Markdown, and string payloads are not counted as executable code.",
             "TypeScript/TSX function metrics are heuristic because this script has no TypeScript parser dependency.",
             "Generated contracts and docs are excluded; the scope is maintainable production/tool source.",
         ],
@@ -510,7 +545,7 @@ def render_markdown(snapshot: Snapshot) -> str:
                     "path",
                     "lines",
                     "code",
-                    "max block",
+                    "max block code lines",
                     "branch score",
                     "nesting",
                     "hotspot score",
@@ -520,7 +555,7 @@ def render_markdown(snapshot: Snapshot) -> str:
             "",
             "## Top Function/Block Hotspots",
             "",
-            markdown_table(["path", "name", "lines", "branch score", "nesting"], top_function_rows),
+            markdown_table(["path", "name", "code lines", "branch score", "nesting"], top_function_rows),
             "",
             "## Interpretation Rules",
             "",

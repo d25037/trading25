@@ -13,6 +13,9 @@ import duckdb
 import numpy as np
 import pandas as pd
 
+from src.domains.analytics.annual_value_breakout_periodic_rebalance import (
+    get_annual_value_breakout_periodic_rebalance_latest_bundle_path,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
@@ -26,9 +29,6 @@ from src.domains.analytics.research_bundle import (
 from src.domains.strategy.indicators import compute_risk_adjusted_return, compute_rsi
 
 VALUE_BREAKOUT_OVERHEAT_FILTER_EXPERIMENT_ID = "market-behavior/value-breakout-overheat-filter"
-ANNUAL_VALUE_BREAKOUT_PERIODIC_REBALANCE_EXPERIMENT_ID = (
-    "market-behavior/annual-value-breakout-periodic-rebalance"
-)
 DEFAULT_MARKET_SCOPE = "standard"
 DEFAULT_SCORE_METHOD = "prime_size_tilt"
 DEFAULT_LIQUIDITY_SCENARIO = "adv10m"
@@ -976,16 +976,6 @@ def get_value_breakout_overheat_filter_bundle_path_for_run_id(
     return get_research_bundle_dir(
         VALUE_BREAKOUT_OVERHEAT_FILTER_EXPERIMENT_ID,
         run_id,
-        output_root=output_root,
-    )
-
-
-def get_annual_value_breakout_periodic_rebalance_latest_bundle_path(
-    *,
-    output_root: str | Path | None = None,
-) -> Path | None:
-    return find_latest_research_bundle_path(
-        ANNUAL_VALUE_BREAKOUT_PERIODIC_REBALANCE_EXPERIMENT_ID,
         output_root=output_root,
     )
 

@@ -26,6 +26,12 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.domains.analytics.topix_close_return_streaks_helpers import (
+    format_int_sequence as _format_int_sequence,
+    format_return as _format_return,
+    select_extreme_future_row as _select_extreme_future_row,
+    select_mode_bucket_summary as _select_mode_bucket_summary,
+)
 from src.domains.analytics.topix_close_stock_overnight_distribution import (
     SourceMode,
     _date_where_clause,
@@ -711,18 +717,6 @@ def _compute_directional_rate(values: pd.Series, *, mode: str) -> float:
     return float((values == 0).mean())
 
 
-def _format_return(value: float) -> str:
-    if pd.isna(value):
-        return "n/a"
-    return f"{value * 100:+.2f}%"
-
-
-def _format_int_sequence(values: Sequence[int]) -> str:
-    if not values:
-        return ""
-    return ",".join(str(value) for value in values)
-
-
 def _build_research_bundle_summary_markdown(
     result: TopixCloseReturnStreaksResearchResult,
 ) -> str:
@@ -975,37 +969,3 @@ def _build_published_summary_payload(
             },
         ],
     }
-
-
-def _select_mode_bucket_summary(
-    summary_df: pd.DataFrame,
-    *,
-    mode: str,
-    bucket_column: str,
-) -> pd.Series | None:
-    mode_df = summary_df[summary_df["mode"] == mode].copy()
-    if mode_df.empty:
-        return None
-    mode_df = mode_df.sort_values(
-        [bucket_column],
-        ascending=[True],
-        kind="stable",
-    )
-    return mode_df.iloc[0]
-
-
-def _select_extreme_future_row(
-    summary_df: pd.DataFrame,
-    *,
-    mode: str,
-    largest: bool,
-) -> pd.Series | None:
-    mode_df = summary_df[summary_df["mode"] == mode].copy()
-    if mode_df.empty:
-        return None
-    mode_df = mode_df.sort_values(
-        ["mean_future_return", "sample_count", "segment_length_bucket"],
-        ascending=[not largest, False, True],
-        kind="stable",
-    )
-    return mode_df.iloc[0]

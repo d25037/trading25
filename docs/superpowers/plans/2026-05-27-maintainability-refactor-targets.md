@@ -67,6 +67,17 @@ Phase 1 targets, intended for 4-6 small commits:
 | top hotspot max function/block lines | 955 | <= 650 |
 | top hotspot file score | 10,973 | <= 9,500 |
 
+Phase 1 achieved on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The snapshot script now counts Python function/block length as effective code lines, excluding multi-line SQL, Markdown, and string payloads that otherwise produced false positives; physical file size remains unchanged.
+
+| metric | baseline | phase 1 actual | phase 1 target |
+| --- | ---: | ---: | ---: |
+| files >= 1000 lines | 94 | 88 | <= 88 |
+| functions/blocks >= 180 effective code lines | 90 | 57 | <= 80 |
+| functions/blocks >= 120 effective code lines | 265 | 198 | <= 240 |
+| top hotspot max function/block code lines | 955 | 632 | <= 650 |
+| top hotspot file score | 10,973 | 9,212 | <= 9,500 |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:
