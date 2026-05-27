@@ -18,16 +18,16 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 916 |
-| functions/blocks | 8930 |
-| total lines | 309755 |
-| code lines | 247458 |
+| files | 919 |
+| functions/blocks | 8932 |
+| total lines | 309730 |
+| code lines | 247414 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 655 | 262885 | 217746 |
+| python | 658 | 262860 | 217702 |
 | tsx | 138 | 31081 | 16766 |
 | typescript | 123 | 15789 | 12946 |
 
@@ -38,8 +38,8 @@ Measured tracked source under:
 | files >= 1000 lines | 84 | 10 |
 | files >= 800 lines | 137 | 25 |
 | files >= 500 lines | 199 | 75 |
-| functions >= 180 lines | 48 | 5 |
-| functions >= 120 lines | 171 | 25 |
+| functions >= 180 lines | 47 | 5 |
+| functions >= 120 lines | 170 | 25 |
 | functions branch score >= 50 | 2 | 0 |
 
 ## Top File Hotspots
@@ -47,10 +47,9 @@ Measured tracked source under:
 | path | lines | code | max block code lines | branch score | nesting | hotspot score |
 | --- | --- | --- | --- | --- | --- | --- |
 | apps/bt/src/infrastructure/db/market/market_db.py | 2191 | 1358 | 59 | 279 | 2 | 6430 |
-| apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py | 1862 | 1744 | 235 | 223 | 4 | 6323 |
-| apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 2051 | 1705 | 124 | 245 | 3 | 6322 |
 | apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py | 2023 | 1857 | 407 | 166 | 4 | 5926 |
 | apps/bt/src/application/services/sync_strategies.py | 1757 | 1567 | 376 | 178 | 5 | 5784 |
+| apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py | 1909 | 1573 | 124 | 221 | 3 | 5758 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | 2051 | 1686 | 220 | 197 | 3 | 5727 |
 | apps/bt/src/domains/fundamentals/calculator.py | 1336 | 1214 | 98 | 241 | 3 | 5681 |
 | apps/bt/src/domains/analytics/volume_ratio_future_return_regime.py | 1891 | 1657 | 255 | 174 | 6 | 5464 |
@@ -61,6 +60,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py | 1585 | 1507 | 214 | 157 | 7 | 4910 |
 | apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py | 1534 | 1403 | 205 | 160 | 5 | 4783 |
 | apps/bt/src/domains/analytics/pre_earnings_eps120_proxy.py | 1826 | 1604 | 178 | 150 | 4 | 4698 |
+| apps/bt/src/domains/analytics/topix100_streak_353_signal_score_lightgbm.py | 2028 | 1848 | 173 | 137 | 3 | 4668 |
 
 ## Top Function/Block Hotspots
 

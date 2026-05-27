@@ -20,16 +20,16 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 916,
-    "functions": 8930,
-    "total_lines": 309755,
-    "code_lines": 247458
+    "files": 919,
+    "functions": 8932,
+    "total_lines": 309730,
+    "code_lines": 247414
   },
   "languages": {
     "python": {
-      "files": 655,
-      "total_lines": 262885,
-      "code_lines": 217746
+      "files": 658,
+      "total_lines": 262860,
+      "code_lines": 217702
     },
     "tsx": {
       "files": 138,
@@ -48,9 +48,9 @@
     "warn_500_plus": 199
   },
   "function_buckets": {
-    "critical_180_plus": 48,
-    "high_120_plus": 171,
-    "warn_80_plus": 474,
+    "critical_180_plus": 47,
+    "high_120_plus": 170,
+    "warn_80_plus": 473,
     "branch_50_plus": 2
   },
   "top_files": [
@@ -64,28 +64,6 @@
       "function_count": 87,
       "max_function_lines": 59,
       "hotspot_score": 6430
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
-      "language": "python",
-      "total_lines": 1862,
-      "code_lines": 1744,
-      "branch_score": 223,
-      "max_nesting": 4,
-      "function_count": 46,
-      "max_function_lines": 235,
-      "hotspot_score": 6323
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
-      "language": "python",
-      "total_lines": 2051,
-      "code_lines": 1705,
-      "branch_score": 245,
-      "max_nesting": 3,
-      "function_count": 65,
-      "max_function_lines": 124,
-      "hotspot_score": 6322
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
@@ -108,6 +86,17 @@
       "function_count": 68,
       "max_function_lines": 376,
       "hotspot_score": 5784
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
+      "language": "python",
+      "total_lines": 1909,
+      "code_lines": 1573,
+      "branch_score": 221,
+      "max_nesting": 3,
+      "function_count": 60,
+      "max_function_lines": 124,
+      "hotspot_score": 5758
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py",
@@ -262,6 +251,17 @@
       "function_count": 26,
       "max_function_lines": 88,
       "hotspot_score": 4442
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
+      "language": "python",
+      "total_lines": 1270,
+      "code_lines": 1192,
+      "branch_score": 157,
+      "max_nesting": 4,
+      "function_count": 29,
+      "max_function_lines": 180,
+      "hotspot_score": 4418
     },
     {
       "path": "apps/bt/src/application/services/screening_service.py",
@@ -492,16 +492,6 @@
       "max_nesting": 2
     },
     {
-      "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
-      "name": "_build_feature_bucket_def_df",
-      "language": "python",
-      "start_line": 515,
-      "end_line": 749,
-      "lines": 235,
-      "branch_score": 1,
-      "max_nesting": 1
-    },
-    {
       "path": "apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py",
       "name": "_build_event_ledger",
       "language": "python",
@@ -580,6 +570,16 @@
       "lines": 210,
       "branch_score": 25,
       "max_nesting": 3
+    },
+    {
+      "path": "apps/ts/packages/web/src/components/Backtest/DefaultConfigEditor.tsx",
+      "name": "export",
+      "language": "tsx",
+      "start_line": 85,
+      "end_line": 463,
+      "lines": 205,
+      "branch_score": 55,
+      "max_nesting": 7
     }
   ],
   "branch_hotspots": [
@@ -593,17 +593,6 @@
       "function_count": 87,
       "max_function_lines": 59,
       "hotspot_score": 6430
-    },
-    {
-      "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
-      "language": "python",
-      "total_lines": 2051,
-      "code_lines": 1705,
-      "branch_score": 245,
-      "max_nesting": 3,
-      "function_count": 65,
-      "max_function_lines": 124,
-      "hotspot_score": 6322
     },
     {
       "path": "apps/bt/src/domains/fundamentals/calculator.py",
@@ -628,15 +617,15 @@
       "hotspot_score": 5074
     },
     {
-      "path": "apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py",
+      "path": "apps/bt/src/domains/analytics/earnings_holdthrough_expectancy.py",
       "language": "python",
-      "total_lines": 1862,
-      "code_lines": 1744,
-      "branch_score": 223,
-      "max_nesting": 4,
-      "function_count": 46,
-      "max_function_lines": 235,
-      "hotspot_score": 6323
+      "total_lines": 1909,
+      "code_lines": 1573,
+      "branch_score": 221,
+      "max_nesting": 3,
+      "function_count": 60,
+      "max_function_lines": 124,
+      "hotspot_score": 5758
     },
     {
       "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
@@ -747,6 +736,17 @@
       "function_count": 40,
       "max_function_lines": 407,
       "hotspot_score": 5926
+    },
+    {
+      "path": "apps/bt/src/domains/analytics/accumulation_flow_followthrough.py",
+      "language": "python",
+      "total_lines": 2058,
+      "code_lines": 1834,
+      "branch_score": 163,
+      "max_nesting": 4,
+      "function_count": 48,
+      "max_function_lines": 185,
+      "hotspot_score": 5183
     }
   ],
   "nesting_hotspots": [

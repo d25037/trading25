@@ -152,6 +152,20 @@ The scope was research-runner output-surface reduction: annual first-open/last-c
 | functions/blocks branch score >= 50 | 2 | 2 | <= 2 |
 | top max function/block code lines | 407 | 407 | unchanged or lower |
 
+Phase 7 completed on 2026-05-27 in `docs/maintainability-snapshot-latest.md`.
+The scope stayed within research-runner maintainability: standard negative-EPS speculative winner bucket/report builders and earnings hold-through markdown/table report helpers were moved into focused modules. Event selection, PIT/as-of logic, winner labels, runner scripts, and bundle contracts were preserved. The research-runner cluster target was met; `market_db.py` remains the repo top hotspot and should be handled in a separate Data Plane phase.
+
+| metric | phase 6 actual | phase 7 actual | phase 7 target |
+| --- | ---: | ---: | ---: |
+| repo top hotspot file score | 6,430 | 6,430 | unchanged or lower; `market_db.py` out of scope |
+| research-runner top hotspot score | 6,323 | 5,926 | <= 6,200 |
+| `standard_negative_eps_speculative_winner_feature_combos.py` hotspot score | 6,323 | 4,418 | <= 5,700 |
+| `earnings_holdthrough_expectancy.py` hotspot score | 6,322 | 5,758 | <= 6,100 |
+| `standard_negative_eps_speculative_winner_feature_combos.py` max block code lines | 235 | 180 | <= 180 |
+| `standard_negative_eps_speculative_winner_feature_combos.py` code lines | 1,744 | 1,192 | <= 1,500 |
+| `earnings_holdthrough_expectancy.py` code lines | 1,705 | 1,573 | <= 1,580 |
+| functions/blocks branch score >= 50 | 2 | 2 | <= 2 |
+
 ## Hotspot Order
 
 Start with these files because the measured hotspot score combines file size, branch concentration, nesting, and max block length:
