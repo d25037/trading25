@@ -17,6 +17,18 @@ from src.application.services.listed_market_targets import (
     resolve_frontier_cache_codes,
 )
 from src.application.services.intraday_schedule import build_intraday_freshness
+from src.application.services.db_validation_payloads import (
+    build_adjustment_events,
+    build_fundamentals_validation,
+    build_margin_validation,
+    build_options_225_validation,
+    build_stock_data_validation,
+    build_stock_master_coverage_stats,
+    build_stock_minute_data_validation,
+    build_stock_stats,
+    build_topix_stats,
+    build_validation_sample_windows,
+)
 from src.application.services.db_stats_service import _build_adjusted_metrics_stats
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
@@ -29,23 +41,12 @@ from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
 from src.entrypoints.http.schemas.db import (
-    AdjustmentEvent,
-    DateRange,
-    FundamentalsValidation,
     IntegrityIssue,
     IntradayFreshness,
-    MarginValidation,
     MarketValidationResponse,
     MarketSchemaStats,
-    Options225Validation,
-    StockMinuteDataValidation,
-    ValidationSampleWindow,
-    ValidationSampleWindows,
+    ValidationHealthStatusLiteral,
     ValidationHealthDomains,
-    StockDataValidation,
-    StockMasterCoverageStats,
-    StockStats,
-    TopixStats,
 )
 
 _INSPECT_MISSING_DATES_LIMIT = 100
@@ -134,6 +135,180 @@ class ValidationTimeSeriesStoreLike(Protocol):
         missing_options_225_dates_limit: int = 0,
         statement_non_null_columns: list[str] | None = None,
     ) -> TimeSeriesInspection: ...
+
+
+def _build_recommendations(
+    *,
+    schema_current: bool,
+    schema_version: int | None,
+    legacy_stock_snapshot: bool,
+    stock_price_adjustment_mode: str | None,
+    initialized: bool,
+    missing_dates_count: int,
+    missing_master_dates_count: int,
+    failed_dates_count: int,
+    missing_fundamentals_count: int,
+    options_225_missing_local_data: bool,
+    options_225_stale_local_data: bool,
+    options_225_pending_local_data: bool,
+    options_225_partial_local_data: bool,
+    options_225_missing_topix_coverage_dates_count: int,
+    options_225_missing_underlying_dates_count: int,
+    options_225_conflicting_underlying_dates_count: int,
+    fundamentals_failed_dates_count: int,
+    fundamentals_failed_codes_count: int,
+    intraday_is_stale: bool,
+    intraday_expected_date: str,
+    intraday_latest_date: str | None,
+    adjusted_metrics_status: str,
+    readiness_recommendations: list[str],
+    inspection: TimeSeriesInspection,
+) -> list[str]:
+    recommendations: list[str] = []
+    if not schema_current:
+        observed = "missing" if schema_version is None else str(schema_version)
+        recommendations.append(
+            f"Run initial sync with reset enabled to recreate market.duckdb schema v{MARKET_SCHEMA_VERSION} "
+            f"(current schema version: {observed})"
+        )
+    if legacy_stock_snapshot:
+        recommendations.append(
+            "Run initial sync with reset enabled, or manually reset "
+            "market-timeseries/market.duckdb and market-timeseries/parquet first, "
+            "to rebuild stock_data_raw and local adjusted stock_data"
+        )
+    elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
+        recommendations.append(
+            "Run initial sync with reset enabled to enable local stock price projection"
+        )
+    if not initialized:
+        recommendations.append("Run initial sync to populate the database")
+    if missing_dates_count > 0:
+        recommendations.append(f"Run incremental sync to fill {missing_dates_count} missing dates")
+    if missing_master_dates_count > 0:
+        recommendations.append(
+            f"Run incremental sync to fill {missing_master_dates_count} TOPIX dates missing from stock_master_daily"
+        )
+    if failed_dates_count > 0:
+        recommendations.append(f"Retry {failed_dates_count} failed sync dates")
+    if missing_fundamentals_count > 0:
+        recommendations.append(
+            f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
+        )
+    if options_225_missing_local_data:
+        recommendations.append(
+            "Run incremental sync to ingest N225 options data into options_225_data"
+        )
+    if options_225_stale_local_data and not options_225_pending_local_data:
+        recommendations.append(
+            "Run incremental sync to refresh N225 options data "
+            f"through {inspection.topix_max or 'the latest TOPIX date'} "
+            f"(latest local options date: {inspection.options_225_max or 'n/a'})"
+        )
+    elif options_225_partial_local_data and not options_225_pending_local_data:
+        recommendations.append(
+            "Run incremental sync to backfill N225 options history for "
+            f"{options_225_missing_topix_coverage_dates_count} TOPIX dates missing from "
+            "options_225_data"
+        )
+    if options_225_missing_underlying_dates_count > 0:
+        recommendations.append(
+            f"Run sync again or inspect raw options data for {options_225_missing_underlying_dates_count} dates with missing UnderPx"
+        )
+    if options_225_conflicting_underlying_dates_count > 0:
+        recommendations.append(
+            f"Inspect options ingestion for {options_225_conflicting_underlying_dates_count} dates with conflicting UnderPx values"
+        )
+    if fundamentals_failed_dates_count > 0:
+        recommendations.append(f"Retry {fundamentals_failed_dates_count} failed fundamentals dates")
+    if fundamentals_failed_codes_count > 0:
+        recommendations.append(f"Retry {fundamentals_failed_codes_count} failed fundamentals codes")
+    if intraday_is_stale:
+        recommendations.append(
+            "Run intraday sync to ingest minute bars through "
+            f"{intraday_expected_date} "
+            f"(latest local minute date: {intraday_latest_date or 'n/a'})"
+        )
+    if adjusted_metrics_status == "missing":
+        recommendations.append(
+            "Rebuild adjusted fundamentals and daily valuation from local raw market data"
+        )
+    elif adjusted_metrics_status == "stale":
+        recommendations.append(
+            "Rebuild adjusted fundamentals and daily valuation to match latest stock_data"
+        )
+    recommendations.extend(readiness_recommendations)
+    return recommendations
+
+
+def _resolve_validation_statuses(
+    *,
+    schema_current: bool,
+    legacy_stock_snapshot: bool,
+    initialized: bool,
+    missing_dates_count: int,
+    missing_master_dates_count: int,
+    failed_dates_count: int,
+    missing_fundamentals_count: int,
+    fundamentals_failed_dates_count: int,
+    fundamentals_failed_codes_count: int,
+    integrity_issues_count: int,
+    adjusted_metrics_needs_rebuild: bool,
+    options_225_missing_local_data: bool,
+    options_225_stale_local_data: bool,
+    options_225_pending_local_data: bool,
+    options_225_partial_local_data: bool,
+    intraday_is_stale: bool,
+    adjustment_events_count: int,
+    options_225_missing_underlying_dates_count: int,
+    options_225_conflicting_underlying_dates_count: int,
+) -> tuple[
+    ValidationHealthStatusLiteral,
+    ValidationHealthStatusLiteral,
+    ValidationHealthStatusLiteral,
+    ValidationHealthStatusLiteral,
+    Literal["healthy", "warning", "error"],
+]:
+    core_daily_status = _resolve_core_daily_status(
+        schema_current=schema_current,
+        legacy_stock_snapshot=legacy_stock_snapshot,
+        initialized=initialized,
+        missing_dates_count=missing_dates_count,
+        missing_master_dates_count=missing_master_dates_count,
+        failed_dates_count=failed_dates_count,
+        missing_fundamentals_count=missing_fundamentals_count,
+        fundamentals_failed_dates_count=fundamentals_failed_dates_count,
+        fundamentals_failed_codes_count=fundamentals_failed_codes_count,
+        integrity_issues_count=integrity_issues_count,
+        adjusted_metrics_needs_rebuild=adjusted_metrics_needs_rebuild,
+    )
+    derivatives_status = _resolve_derivatives_status(
+        missing_local_data=options_225_missing_local_data,
+        stale_local_data=options_225_stale_local_data,
+        pending_local_data=options_225_pending_local_data,
+        partial_local_data=options_225_partial_local_data,
+    )
+    intraday_status: ValidationHealthStatusLiteral = "warning" if intraday_is_stale else "healthy"
+    source_quality_status: ValidationHealthStatusLiteral = (
+        "info"
+        if (
+            adjustment_events_count > 0
+            or options_225_missing_underlying_dates_count > 0
+            or options_225_conflicting_underlying_dates_count > 0
+        )
+        else "healthy"
+    )
+    status: Literal["healthy", "warning", "error"] = _resolve_overall_status(
+        core_daily_status=core_daily_status,
+        derivatives_status=derivatives_status,
+    )
+    return (
+        core_daily_status,
+        derivatives_status,
+        intraday_status,
+        source_quality_status,
+        status,
+    )
 
 
 def validate_market_db(
@@ -274,87 +449,40 @@ def validate_market_db(
     )
     integrity_issues, readiness_recommendations = _build_readiness_issues(inspection)
 
-    # Recommendations
-    recommendations: list[str] = []
-    if not schema_current:
-        observed = "missing" if schema_version is None else str(schema_version)
-        recommendations.append(
-            f"Run initial sync with reset enabled to recreate market.duckdb schema v{MARKET_SCHEMA_VERSION} "
-            f"(current schema version: {observed})"
-        )
-    if legacy_stock_snapshot:
-        recommendations.append(
-            "Run initial sync with reset enabled, or manually reset "
-            "market-timeseries/market.duckdb and market-timeseries/parquet first, "
-            "to rebuild stock_data_raw and local adjusted stock_data"
-        )
-    elif stock_price_adjustment_mode != LOCAL_STOCK_PRICE_ADJUSTMENT_MODE:
-        recommendations.append(
-            "Run initial sync with reset enabled to enable local stock price projection"
-        )
-    if not initialized:
-        recommendations.append("Run initial sync to populate the database")
-    if missing_dates_count > 0:
-        recommendations.append(f"Run incremental sync to fill {missing_dates_count} missing dates")
-    if missing_master_dates_count > 0:
-        recommendations.append(
-            f"Run incremental sync to fill {missing_master_dates_count} TOPIX dates missing from stock_master_daily"
-        )
-    if failed_dates:
-        recommendations.append(f"Retry {len(failed_dates)} failed sync dates")
-    if missing_fundamentals_count > 0:
-        recommendations.append(
-            f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
-        )
-    if options_225_missing_local_data:
-        recommendations.append(
-            "Run incremental sync to ingest N225 options data into options_225_data"
-        )
-    if options_225_stale_local_data and not options_225_pending_local_data:
-        recommendations.append(
-            "Run incremental sync to refresh N225 options data "
-            f"through {inspection.topix_max or 'the latest TOPIX date'} "
-            f"(latest local options date: {inspection.options_225_max or 'n/a'})"
-        )
-    elif options_225_partial_local_data and not options_225_pending_local_data:
-        recommendations.append(
-            "Run incremental sync to backfill N225 options history for "
-            f"{options_225_missing_topix_coverage_dates_count} TOPIX dates missing from "
-            "options_225_data"
-        )
-    if options_225_missing_underlying_dates_count > 0:
-        recommendations.append(
-            f"Run sync again or inspect raw options data for {options_225_missing_underlying_dates_count} dates with missing UnderPx"
-        )
-    if options_225_conflicting_underlying_dates_count > 0:
-        recommendations.append(
-            f"Inspect options ingestion for {options_225_conflicting_underlying_dates_count} dates with conflicting UnderPx values"
-        )
-    if fundamentals_failed_dates:
-        recommendations.append(
-            f"Retry {len(fundamentals_failed_dates)} failed fundamentals dates"
-        )
-    if fundamentals_failed_codes:
-        recommendations.append(
-            f"Retry {len(fundamentals_failed_codes)} failed fundamentals codes"
-        )
-    if intraday_is_stale:
-        recommendations.append(
-            "Run intraday sync to ingest minute bars through "
-            f"{intraday_freshness_snapshot.expected_date} "
-            f"(latest local minute date: {intraday_freshness_snapshot.latest_date or 'n/a'})"
-        )
-    if adjusted_metrics.status == "missing":
-        recommendations.append(
-            "Rebuild adjusted fundamentals and daily valuation from local raw market data"
-        )
-    elif adjusted_metrics.status == "stale":
-        recommendations.append(
-            "Rebuild adjusted fundamentals and daily valuation to match latest stock_data"
-        )
-    recommendations.extend(readiness_recommendations)
+    recommendations = _build_recommendations(
+        schema_current=schema_current,
+        schema_version=schema_version,
+        legacy_stock_snapshot=legacy_stock_snapshot,
+        stock_price_adjustment_mode=stock_price_adjustment_mode,
+        initialized=initialized,
+        missing_dates_count=missing_dates_count,
+        missing_master_dates_count=missing_master_dates_count,
+        failed_dates_count=len(failed_dates),
+        missing_fundamentals_count=missing_fundamentals_count,
+        options_225_missing_local_data=options_225_missing_local_data,
+        options_225_stale_local_data=options_225_stale_local_data,
+        options_225_pending_local_data=options_225_pending_local_data,
+        options_225_partial_local_data=options_225_partial_local_data,
+        options_225_missing_topix_coverage_dates_count=options_225_missing_topix_coverage_dates_count,
+        options_225_missing_underlying_dates_count=options_225_missing_underlying_dates_count,
+        options_225_conflicting_underlying_dates_count=options_225_conflicting_underlying_dates_count,
+        fundamentals_failed_dates_count=len(fundamentals_failed_dates),
+        fundamentals_failed_codes_count=len(fundamentals_failed_codes),
+        intraday_is_stale=intraday_is_stale,
+        intraday_expected_date=intraday_freshness_snapshot.expected_date,
+        intraday_latest_date=intraday_freshness_snapshot.latest_date,
+        adjusted_metrics_status=adjusted_metrics.status,
+        readiness_recommendations=readiness_recommendations,
+        inspection=inspection,
+    )
 
-    core_daily_status = _resolve_core_daily_status(
+    (
+        core_daily_status,
+        derivatives_status,
+        intraday_status,
+        source_quality_status,
+        status,
+    ) = _resolve_validation_statuses(
         schema_current=schema_current,
         legacy_stock_snapshot=legacy_stock_snapshot,
         initialized=initialized,
@@ -366,112 +494,57 @@ def validate_market_db(
         fundamentals_failed_codes_count=len(fundamentals_failed_codes),
         integrity_issues_count=len(integrity_issues),
         adjusted_metrics_needs_rebuild=adjusted_metrics_needs_rebuild,
-    )
-    derivatives_status = _resolve_derivatives_status(
-        missing_local_data=options_225_missing_local_data,
-        stale_local_data=options_225_stale_local_data,
-        pending_local_data=options_225_pending_local_data,
-        partial_local_data=options_225_partial_local_data,
-    )
-    intraday_status = "warning" if intraday_is_stale else "healthy"
-    source_quality_status = (
-        "info"
-        if (
-            adjustment_events_count > 0
-            or options_225_missing_underlying_dates_count > 0
-            or options_225_conflicting_underlying_dates_count > 0
-        )
-        else "healthy"
-    )
-    status: Literal["healthy", "warning", "error"] = _resolve_overall_status(
-        core_daily_status=core_daily_status,
-        derivatives_status=derivatives_status,
+        options_225_missing_local_data=options_225_missing_local_data,
+        options_225_stale_local_data=options_225_stale_local_data,
+        options_225_pending_local_data=options_225_pending_local_data,
+        options_225_partial_local_data=options_225_partial_local_data,
+        intraday_is_stale=intraday_is_stale,
+        adjustment_events_count=adjustment_events_count,
+        options_225_missing_underlying_dates_count=options_225_missing_underlying_dates_count,
+        options_225_conflicting_underlying_dates_count=options_225_conflicting_underlying_dates_count,
     )
 
-    topix = TopixStats(
-        count=inspection.topix_count,
-        dateRange=DateRange(
-            min=inspection.topix_min,
-            max=inspection.topix_max,
-        )
-        if inspection.topix_min and inspection.topix_max
-        else None,
-    )
-
-    stocks_stats = StockStats(
+    topix = build_topix_stats(inspection)
+    stocks_stats = build_stock_stats(
         total=basic.get("stocks", 0),
-        byMarket=by_market,
+        by_market=by_market,
     )
-
-    stock_data_val = StockDataValidation(
-        count=inspection.stock_count,
-        dateRange=DateRange(
-            min=inspection.stock_min,
-            max=inspection.stock_max,
-        )
-        if inspection.stock_min and inspection.stock_max
-        else None,
-        missingDates=missing_dates[:_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT],
-        missingDatesCount=missing_dates_count,
+    stock_data_val = build_stock_data_validation(
+        inspection=inspection,
+        missing_dates=missing_dates,
+        missing_dates_count=missing_dates_count,
+        sample_limit=_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT,
     )
-    stock_minute_data_val = StockMinuteDataValidation(
-        count=inspection.stock_minute_count,
-        uniqueStockCount=inspection.stock_minute_code_count,
-        dateCount=inspection.stock_minute_date_count,
-        dateRange=DateRange(
-            min=inspection.stock_minute_min,
-            max=inspection.stock_minute_max,
-        )
-        if inspection.stock_minute_min and inspection.stock_minute_max
-        else None,
-        latestTime=inspection.latest_stock_minute_time,
+    stock_minute_data_val = build_stock_minute_data_validation(inspection)
+    options_225_val = build_options_225_validation(
+        inspection=inspection,
+        coverage_status=options_225_coverage_status,
+        allowed_topix_lag_dates=_OPTIONS_225_TOPIX_LAG_GRACE_DATES,
+        missing_topix_coverage_dates_count=options_225_missing_topix_coverage_dates_count,
+        missing_topix_coverage_dates=options_225_missing_topix_coverage_dates,
+        missing_underlying_dates_count=options_225_missing_underlying_dates_count,
+        missing_underlying_dates=options_225_missing_underlying_dates,
+        conflicting_underlying_dates_count=options_225_conflicting_underlying_dates_count,
+        conflicting_underlying_dates=options_225_conflicting_underlying_dates,
     )
-
-    options_225_val = Options225Validation(
-        count=inspection.options_225_count,
-        dateCount=inspection.options_225_date_count,
-        dateRange=DateRange(
-            min=inspection.options_225_min,
-            max=inspection.options_225_max,
-        )
-        if inspection.options_225_min and inspection.options_225_max
-        else None,
-        coverageStatus=options_225_coverage_status,
-        allowedTopixLagDates=_OPTIONS_225_TOPIX_LAG_GRACE_DATES,
-        missingTopixCoverageDatesCount=options_225_missing_topix_coverage_dates_count,
-        missingTopixCoverageDates=options_225_missing_topix_coverage_dates,
-        missingUnderlyingPriceDatesCount=options_225_missing_underlying_dates_count,
-        missingUnderlyingPriceDates=options_225_missing_underlying_dates,
-        conflictingUnderlyingPriceDatesCount=options_225_conflicting_underlying_dates_count,
-        conflictingUnderlyingPriceDates=options_225_conflicting_underlying_dates,
+    margin_val = build_margin_validation(
+        inspection=inspection,
+        empty_skipped_count=margin_empty_skipped_count,
+        empty_skipped_codes=margin_empty_skipped_codes,
+        sample_limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
     )
-
-    margin_val = MarginValidation(
-        count=inspection.margin_count,
-        uniqueStockCount=len(inspection.margin_codes),
-        dateCount=inspection.margin_date_count,
-        dateRange=DateRange(
-            min=inspection.margin_min,
-            max=inspection.margin_max,
-        )
-        if inspection.margin_min and inspection.margin_max
-        else None,
-        orphanCount=inspection.margin_orphan_count,
-        emptySkippedCount=margin_empty_skipped_count,
-        emptySkippedCodes=margin_empty_skipped_codes[:_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT],
-    )
-
-    fundamentals_val = FundamentalsValidation(
-        count=inspection.statements_count,
-        uniqueStockCount=len(statement_codes),
-        latestDisclosedDate=latest_disclosed,
-        missingListedMarketStocksCount=missing_fundamentals_count,
-        missingListedMarketStocks=missing_fundamentals_codes,
-        issuerAliasCoveredCount=fundamentals_alias_covered_count,
-        emptySkippedCount=fundamentals_empty_skipped_count,
-        emptySkippedCodes=fundamentals_empty_skipped_codes[:_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT],
-        failedDatesCount=len(fundamentals_failed_dates),
-        failedCodesCount=len(fundamentals_failed_codes),
+    fundamentals_val = build_fundamentals_validation(
+        inspection=inspection,
+        statement_codes=statement_codes,
+        latest_disclosed=latest_disclosed,
+        missing_count=missing_fundamentals_count,
+        missing_codes=missing_fundamentals_codes,
+        alias_covered_count=fundamentals_alias_covered_count,
+        empty_skipped_count=fundamentals_empty_skipped_count,
+        empty_skipped_codes=fundamentals_empty_skipped_codes,
+        empty_skipped_sample_limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
+        failed_dates_count=len(fundamentals_failed_dates),
+        failed_codes_count=len(fundamentals_failed_codes),
     )
 
     return MarketValidationResponse(
@@ -491,21 +564,10 @@ def validate_market_db(
             version=schema_version,
             current=schema_current,
         ),
-        stockMaster=StockMasterCoverageStats(
-            dailyCount=int(master_coverage.get("dailyCount", 0) or 0),
-            intervalCount=int(master_coverage.get("intervalCount", 0) or 0),
-            latestCount=int(master_coverage.get("latestCount", 0) or 0),
-            indexMembershipDailyCount=int(master_coverage.get("indexMembershipDailyCount", 0) or 0),
-            dateRange=DateRange(
-                min=str(master_coverage.get("dateMin")),
-                max=str(master_coverage.get("dateMax")),
-            )
-            if master_coverage.get("dateMin") and master_coverage.get("dateMax")
-            else None,
-            dateCount=int(master_coverage.get("dateCount", 0) or 0),
-            codeCount=int(master_coverage.get("codeCount", 0) or 0),
-            missingTopixDatesCount=missing_master_dates_count,
-            missingTopixDates=missing_master_dates,
+        stockMaster=build_stock_master_coverage_stats(
+            master_coverage,
+            missing_dates_count=missing_master_dates_count,
+            missing_dates=missing_master_dates,
         ),
         topix=topix,
         stocks=stocks_stats,
@@ -517,70 +579,46 @@ def validate_market_db(
         adjustedMetrics=adjusted_metrics,
         failedDates=failed_dates[:_FAILED_DATES_SAMPLE_LIMIT],
         failedDatesCount=len(failed_dates),
-        adjustmentEvents=[
-            AdjustmentEvent(**e) for e in adjustment_events
-        ],
+        adjustmentEvents=build_adjustment_events(adjustment_events),
         adjustmentEventsCount=adjustment_events_count,
         stocksNeedingRefresh=sample_needing,
         stocksNeedingRefreshCount=all_needing_count,
         integrityIssues=integrity_issues,
         integrityIssuesCount=len(integrity_issues),
-        sampleWindows=ValidationSampleWindows(
-            stockDataMissingDates=_build_sample_window(
-                total_count=missing_dates_count,
-                returned_count=len(stock_data_val.missingDates),
-                limit=_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT,
-            ),
-            stockMasterMissingTopixDates=_build_sample_window(
-                total_count=missing_master_dates_count,
-                returned_count=len(missing_master_dates),
-                limit=20,
-            ),
-            failedDates=_build_sample_window(
-                total_count=len(failed_dates),
-                returned_count=min(len(failed_dates), _FAILED_DATES_SAMPLE_LIMIT),
-                limit=_FAILED_DATES_SAMPLE_LIMIT,
-            ),
-            adjustmentEvents=_build_sample_window(
-                total_count=adjustment_events_count,
-                returned_count=len(adjustment_events),
-                limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT,
-            ),
-            stocksNeedingRefresh=_build_sample_window(
-                total_count=all_needing_count,
-                returned_count=len(sample_needing),
-                limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT,
-            ),
-            options225MissingTopixCoverageDates=_build_sample_window(
-                total_count=options_225_missing_topix_coverage_dates_count,
-                returned_count=len(options_225_val.missingTopixCoverageDates),
-                limit=_OPTIONS_225_SAMPLE_LIMIT,
-            ),
-            options225MissingUnderlyingPriceDates=_build_sample_window(
-                total_count=options_225_missing_underlying_dates_count,
-                returned_count=len(options_225_val.missingUnderlyingPriceDates),
-                limit=_OPTIONS_225_SAMPLE_LIMIT,
-            ),
-            options225ConflictingUnderlyingPriceDates=_build_sample_window(
-                total_count=options_225_conflicting_underlying_dates_count,
-                returned_count=len(options_225_val.conflictingUnderlyingPriceDates),
-                limit=_OPTIONS_225_SAMPLE_LIMIT,
-            ),
-            missingListedMarketStocks=_build_sample_window(
-                total_count=missing_fundamentals_count,
-                returned_count=len(fundamentals_val.missingListedMarketStocks),
-                limit=_MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT,
-            ),
-            fundamentalsEmptySkippedCodes=_build_sample_window(
-                total_count=fundamentals_empty_skipped_count,
-                returned_count=len(fundamentals_val.emptySkippedCodes),
-                limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
-            ),
-            marginEmptySkippedCodes=_build_sample_window(
-                total_count=margin_empty_skipped_count,
-                returned_count=len(margin_val.emptySkippedCodes),
-                limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
-            ),
+        sampleWindows=build_validation_sample_windows(
+            stock_data_missing_dates_count=missing_dates_count,
+            stock_data_missing_dates_returned_count=len(stock_data_val.missingDates),
+            stock_data_missing_dates_limit=_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT,
+            stock_master_missing_dates_count=missing_master_dates_count,
+            stock_master_missing_dates_returned_count=len(missing_master_dates),
+            stock_master_missing_dates_limit=20,
+            failed_dates_count=len(failed_dates),
+            failed_dates_returned_count=min(len(failed_dates), _FAILED_DATES_SAMPLE_LIMIT),
+            failed_dates_limit=_FAILED_DATES_SAMPLE_LIMIT,
+            adjustment_events_count=adjustment_events_count,
+            adjustment_events_returned_count=len(adjustment_events),
+            adjustment_events_limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT,
+            stocks_needing_refresh_count=all_needing_count,
+            stocks_needing_refresh_returned_count=len(sample_needing),
+            stocks_needing_refresh_limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT,
+            options_missing_topix_count=options_225_missing_topix_coverage_dates_count,
+            options_missing_topix_returned_count=len(options_225_val.missingTopixCoverageDates),
+            options_missing_topix_limit=_OPTIONS_225_SAMPLE_LIMIT,
+            options_missing_underlying_count=options_225_missing_underlying_dates_count,
+            options_missing_underlying_returned_count=len(options_225_val.missingUnderlyingPriceDates),
+            options_missing_underlying_limit=_OPTIONS_225_SAMPLE_LIMIT,
+            options_conflicting_underlying_count=options_225_conflicting_underlying_dates_count,
+            options_conflicting_underlying_returned_count=len(options_225_val.conflictingUnderlyingPriceDates),
+            options_conflicting_underlying_limit=_OPTIONS_225_SAMPLE_LIMIT,
+            missing_listed_market_stocks_count=missing_fundamentals_count,
+            missing_listed_market_stocks_returned_count=len(fundamentals_val.missingListedMarketStocks),
+            missing_listed_market_stocks_limit=_MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT,
+            fundamentals_empty_skipped_count=fundamentals_empty_skipped_count,
+            fundamentals_empty_skipped_returned_count=len(fundamentals_val.emptySkippedCodes),
+            fundamentals_empty_skipped_limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
+            margin_empty_skipped_count=margin_empty_skipped_count,
+            margin_empty_skipped_returned_count=len(margin_val.emptySkippedCodes),
+            margin_empty_skipped_limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
         ),
         recommendations=recommendations,
         intradayFreshness=IntradayFreshness(
@@ -604,23 +642,6 @@ def _resolve_time_series_inspection(
         missing_stock_dates_limit=_INSPECT_MISSING_DATES_LIMIT,
         missing_options_225_dates_limit=_OPTIONS_225_SAMPLE_LIMIT,
         statement_non_null_columns=_SIGNAL_STATEMENT_COLUMNS,
-    )
-
-
-def _build_sample_window(
-    *,
-    total_count: int,
-    returned_count: int,
-    limit: int,
-) -> ValidationSampleWindow:
-    safe_total = max(total_count, 0)
-    safe_returned = max(returned_count, 0)
-    safe_limit = max(limit, 0)
-    return ValidationSampleWindow(
-        returnedCount=safe_returned,
-        totalCount=safe_total,
-        limit=safe_limit,
-        truncated=safe_total > safe_returned and safe_total > safe_limit,
     )
 
 
