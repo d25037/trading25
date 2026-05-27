@@ -1,5 +1,6 @@
 import type { MarketValidationResponse } from '@trading25/contracts/types/api-response-types';
 import { formatCount } from '@/utils/formatters';
+import { resolveOptions225CoverageKind } from './SettingsMarketDbSnapshot';
 
 const EMPTY_OPTIONS_225_VALIDATION = {
   count: 0,
@@ -12,8 +13,6 @@ const EMPTY_OPTIONS_225_VALIDATION = {
   conflictingUnderlyingPriceDatesCount: 0,
   conflictingUnderlyingPriceDates: [],
 } as const;
-
-type Options225CoverageKind = 'missing' | 'pending' | 'stale' | 'partial' | 'in_sync';
 
 export interface ValidationDiagnostic {
   label: string;
@@ -40,37 +39,6 @@ const EMPTY_REPAIR_TARGETS: RepairTargets = {
   failedFundamentalsDates: 0,
   failedFundamentalsCodes: 0,
 };
-
-function isDateBefore(lhs: string | null | undefined, rhs: string | null | undefined): boolean {
-  if (!lhs || !rhs) {
-    return false;
-  }
-  return lhs < rhs;
-}
-
-function resolveOptions225CoverageKind(params: {
-  initialized?: boolean;
-  topixCount: number;
-  optionsCount: number;
-  topixLatest: string | null;
-  optionsLatest: string | null;
-  missingCoverageCount: number;
-  coverageStatus?: MarketValidationResponse['options225']['coverageStatus'];
-}): Options225CoverageKind {
-  if (params.coverageStatus) {
-    return params.coverageStatus;
-  }
-  if (params.optionsCount <= 0 && params.topixCount > 0 && params.initialized !== false) {
-    return 'missing';
-  }
-  if (isDateBefore(params.optionsLatest, params.topixLatest)) {
-    return 'stale';
-  }
-  if (params.missingCoverageCount > 0) {
-    return 'partial';
-  }
-  return 'in_sync';
-}
 
 function buildSampleHint(
   sampleWindow:

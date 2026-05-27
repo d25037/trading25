@@ -12,22 +12,21 @@ from src.domains.backtest.vectorbt_adapter import (
     ExecutionAdapterProtocol,
     ExecutionPortfolioProtocol,
     PERCENT_SIZE_TYPE,
-    ROUND_TRIP_DIRECTION_MAP,
     VectorbtAdapter,
-    _overnight_round_trip_order_func_nb as _vectorbt_overnight_round_trip_order_func_nb,
-    _round_trip_order_func_nb as _vectorbt_round_trip_order_func_nb,
 )
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
-from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
 from src.shared.models.allocation import AllocationInfo
+from .backtest_execution_helpers import (
+    build_empty_exit_frame,
+    build_strategy_shared_config_payload,
+    normalize_signal_frame,
+    prepare_round_trip_signals,
+    resolve_round_trip_direction,
+    resolve_strategy_round_trip_mode_name,
+)
 
 CostParams = Tuple[float, float]
 GroupedPortfolioInputs = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
-
-# Keep the legacy symbol import path stable for tests while delegating implementation
-# to the VectorBT adapter module.
-_round_trip_order_func_nb = _vectorbt_round_trip_order_func_nb
-_overnight_round_trip_order_func_nb = _vectorbt_overnight_round_trip_order_func_nb
 
 if TYPE_CHECKING:
     from .protocols import StrategyProtocol
@@ -44,6 +43,7 @@ _BENCHMARK_SIGNALS = (
     "sector_strength_ranking",
     "sector_rotation_phase",
 )
+
 
 def _is_signal_enabled(params: Any, signal_name: str) -> bool:
     """シグナルが有効かチェック"""
@@ -65,18 +65,6 @@ def _any_signal_enabled(
         if _is_signal_enabled(exit_params, name):
             return f"exit_trigger_params.{name}"
     return None
-
-
-def _build_strategy_shared_config_payload(strategy: "StrategyProtocol") -> dict[str, Any]:
-    return {
-        "data_source": getattr(strategy, "data_source", "market"),
-        "universe_preset": getattr(strategy, "universe_preset", None),
-        "universe_filters": getattr(strategy, "universe_filters", {}),
-        "universe_as_of_date": getattr(strategy, "universe_as_of_date", None),
-        "static_universe": getattr(strategy, "static_universe", False),
-        "start_date": getattr(strategy, "start_date", None),
-        "end_date": getattr(strategy, "end_date", None),
-    }
 
 
 class BacktestExecutorMixin:
@@ -104,7 +92,7 @@ class BacktestExecutorMixin:
             return entries
         if not isinstance(entries.index, pd.DatetimeIndex):
             return entries
-        shared_config = _build_strategy_shared_config_payload(self)
+        shared_config = build_strategy_shared_config_payload(self)
         eligibility = build_dynamic_universe_eligibility_frame(
             shared_config,
             index=entries.index,
@@ -240,39 +228,17 @@ class BacktestExecutorMixin:
 
     @staticmethod
     def _normalize_signal_frame(frame: pd.DataFrame) -> pd.DataFrame:
-        with pd.option_context("future.no_silent_downcasting", True):
-            return frame.fillna(False).infer_objects(copy=False).astype(bool)
+        return normalize_signal_frame(frame)
 
     @staticmethod
     def _build_empty_exit_frame(entries_data: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            False,
-            index=entries_data.index,
-            columns=entries_data.columns,
-            dtype=bool,
-        )
+        return build_empty_exit_frame(entries_data)
 
     def _get_round_trip_direction(self: "StrategyProtocol") -> int:
-        direction = getattr(self, "direction", "longonly")
-        return int(
-            ROUND_TRIP_DIRECTION_MAP.get(
-                direction, ROUND_TRIP_DIRECTION_MAP["longonly"]
-            )
-        )
+        return resolve_round_trip_direction(getattr(self, "direction", "longonly"))
 
     def _get_round_trip_mode_name(self: "StrategyProtocol") -> str | None:
-        compiled_strategy = getattr(self, "compiled_strategy", None)
-        if compiled_strategy is not None:
-            mode_name = resolve_round_trip_execution_mode_name(compiled_strategy)
-            if mode_name is not None:
-                return mode_name
-        if getattr(self, "next_session_round_trip", False):
-            return "next_session_round_trip"
-        if getattr(self, "current_session_round_trip", False):
-            return "current_session_round_trip"
-        if getattr(self, "overnight_round_trip", False):
-            return "overnight_round_trip"
-        return None
+        return resolve_strategy_round_trip_mode_name(self)
 
     def _uses_round_trip_execution(self: "StrategyProtocol") -> bool:
         return self._get_round_trip_mode_name() is not None
@@ -284,51 +250,14 @@ class BacktestExecutorMixin:
         execution_data: pd.DataFrame,
     ) -> tuple[pd.Series, pd.Series]:
         mode_name = self._get_round_trip_mode_name()
-        if mode_name is None:
-            return entries, pd.Series(False, index=entries.index, dtype=bool)
-
-        required_columns = {"Open", "Close"}
-        missing_columns = required_columns - set(execution_data.columns)
-        if missing_columns:
-            raise ValueError(
-                f"{stock_code}: {mode_name} requires columns {sorted(required_columns)}"
-            )
-
-        normalized_entries = entries.fillna(False).infer_objects(copy=False).astype(bool)
-        if normalized_entries.empty:
-            empty = normalized_entries.copy()
-            return empty, empty
-
-        scheduled_entries = normalized_entries
-        if mode_name == "next_session_round_trip":
-            scheduled_entries = normalized_entries.shift(1, fill_value=False)
-
-        if mode_name == "overnight_round_trip":
-            executable_days = execution_data["Close"].notna() & execution_data["Open"].shift(
-                -1
-            ).notna()
-        else:
-            executable_days = execution_data["Open"].notna() & execution_data["Close"].notna()
-        execution_entries = (scheduled_entries & executable_days).astype(bool)
-        execution_exits = pd.Series(False, index=execution_entries.index, dtype=bool)
-
-        skipped_missing = int((scheduled_entries & ~executable_days).sum())
-        if skipped_missing > 0:
-            self._log(
-                f"{stock_code}: {mode_name} skipped {skipped_missing} signals because "
-                "Open/Close was missing on the execution session",
-                "warning",
-            )
-
-        if mode_name in ("next_session_round_trip", "overnight_round_trip") and bool(
-            normalized_entries.iloc[-1]
-        ):
-            self._log(
-                f"{stock_code}: {mode_name} dropped the last-bar signal "
-                "because the next session is unavailable",
-                "debug",
-            )
-
+        execution_entries, execution_exits, log_events = prepare_round_trip_signals(
+            stock_code=stock_code,
+            entries=entries,
+            execution_data=execution_data,
+            mode_name=mode_name,
+        )
+        for level, message in log_events:
+            self._log(message, level)
         return execution_entries, execution_exits
 
     def _create_round_trip_portfolio(
@@ -605,20 +534,8 @@ class BacktestExecutorMixin:
             }
         )
 
-        # pandas 2.2.0+ FutureWarning回避のため、オプション設定を使用
-        with pd.option_context("future.no_silent_downcasting", True):
-            all_entries = (
-                pd.DataFrame(entries_dict)
-                .fillna(False)
-                .infer_objects(copy=False)
-                .astype(bool)
-            )
-            all_exits = (
-                pd.DataFrame(exits_dict)
-                .fillna(False)
-                .infer_objects(copy=False)
-                .astype(bool)
-            )
+        all_entries = normalize_signal_frame(pd.DataFrame(entries_dict))
+        all_exits = normalize_signal_frame(pd.DataFrame(exits_dict))
 
         close_data = close_data.astype(float)
         all_entries = self._apply_dynamic_universe_entry_gate(all_entries)

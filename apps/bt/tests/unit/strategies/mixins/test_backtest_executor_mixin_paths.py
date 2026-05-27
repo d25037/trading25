@@ -18,10 +18,12 @@ from src.shared.models.signals import SignalParams, Signals
 from src.shared.models.signals.fundamental import FundamentalSignalParams
 from src.shared.models.signals.macro import MarginSignalParams
 from src.shared.models.signals.sector import SectorStrengthRankingParams
-from src.domains.strategy.core.mixins.backtest_executor_mixin import (
-    BacktestExecutorMixin,
+from src.domains.backtest.vectorbt_adapter import (
     _overnight_round_trip_order_func_nb,
     _round_trip_order_func_nb,
+)
+from src.domains.strategy.core.mixins.backtest_executor_mixin import (
+    BacktestExecutorMixin,
     _any_signal_enabled,
     _is_signal_enabled,
 )

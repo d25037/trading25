@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, cast
+from typing import Any
 
 from loguru import logger
 
 from src.application.services import sync_fetch_planner, sync_publish_helpers, sync_state_helpers
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
 from src.application.services.jquants_bulk_service import BulkFetchResult, BulkFileInfo
+from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_row_converters import (
     build_target_date_set,
     convert_options_225_rows,
@@ -21,24 +22,6 @@ from src.application.services.sync_row_converters import (
     _parse_date,
 )
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
-
-
-async def _get_paginated_rows_with_call_count(
-    client: Any,
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    get_with_meta = getattr(client, "get_paginated_with_meta", None)
-    if callable(get_with_meta):
-        get_with_meta_callable = cast(
-            Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
-            get_with_meta,
-        )
-        rows, calls = await get_with_meta_callable(path, params=params)
-        return rows, int(calls)
-    rows = await client.get_paginated(path, params=params)
-    return rows, 1
 
 
 def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, str | None]:
@@ -159,7 +142,7 @@ async def sync_options_225_dates(
                     f"Fetching /derivatives/bars/daily/options/225 via REST: {index}/{len(target_dates)} dates...",
                 )
             try:
-                payload, page_calls = await _get_paginated_rows_with_call_count(
+                payload, page_calls = await get_paginated_rows_with_call_count(
                     ctx.client,
                     "/derivatives/bars/daily/options/225",
                     params={"date": to_jquants_date_param(target_date)},

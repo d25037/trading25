@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, cast
+from typing import Any, Iterable
 
 from loguru import logger
 
@@ -11,6 +11,7 @@ from src.application.services import sync_fetch_planner, sync_publish_helpers
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
 from src.application.services.jquants_bulk_service import BulkFetchResult, BulkFileInfo
 from src.application.services.options_225 import OPTIONS_225_SYNTHETIC_INDEX_CODE
+from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_index_master_backfill import (
     upsert_indices_rows_with_master_backfill,
 )
@@ -38,24 +39,6 @@ class IndicesSyncStageOutcome:
     api_calls: int
     errors: list[str]
     cancelled: bool = False
-
-
-async def _get_paginated_rows_with_call_count(
-    client: Any,
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    get_with_meta = getattr(client, "get_paginated_with_meta", None)
-    if callable(get_with_meta):
-        get_with_meta_callable = cast(
-            Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
-            get_with_meta,
-        )
-        rows, calls = await get_with_meta_callable(path, params=params)
-        return rows, int(calls)
-    rows = await client.get_paginated(path, params=params)
-    return rows, 1
 
 
 def jquants_index_fetch_codes(codes: Iterable[str]) -> list[str]:
@@ -157,7 +140,7 @@ async def sync_incremental_indices_stage(
         include_anchor=True,
     )
     if latest_index_date and last_date and _is_date_after(last_date, latest_index_date):
-        topix_for_indices, topix_for_indices_calls = await _get_paginated_rows_with_call_count(
+        topix_for_indices, topix_for_indices_calls = await get_paginated_rows_with_call_count(
             ctx.client,
             "/indices/bars/daily/topix",
             params={"from": to_jquants_date_param(latest_index_date)},
@@ -309,7 +292,7 @@ async def sync_incremental_indices_rest(
             params["from"] = to_jquants_date_param(last_index_date)
 
         try:
-            data, page_calls = await _get_paginated_rows_with_call_count(
+            data, page_calls = await get_paginated_rows_with_call_count(
                 ctx.client,
                 "/indices/bars/daily",
                 params=params,
@@ -346,7 +329,7 @@ async def sync_incremental_indices_rest(
             )
 
         try:
-            data, page_calls = await _get_paginated_rows_with_call_count(
+            data, page_calls = await get_paginated_rows_with_call_count(
                 ctx.client,
                 "/indices/bars/daily",
                 params={"date": to_jquants_date_param(index_date)},

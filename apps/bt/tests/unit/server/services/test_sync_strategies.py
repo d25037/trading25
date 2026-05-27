@@ -34,7 +34,10 @@ from src.application.services.sync_state_helpers import (
 )
 from src.application.services.sync_row_converters import (
     convert_stock_bulk_rows as _convert_stock_bulk_rows,
+    group_stock_master_bulk_rows_by_date,
 )
+from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
+from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
@@ -48,18 +51,15 @@ from src.application.services.sync_strategies import (
     _convert_index_master_rows,
     _convert_indices_data_rows,
     _convert_stock_rows,
-    _group_stock_master_bulk_rows_by_date,
     _date_sort_key,
     _fetch_margin_by_code,
     _extract_dates_after,
     _extract_list_items,
     _fetch_fins_summary_by_code,
-    _get_paginated_rows_with_call_count,
     _is_date_after,
     _latest_date,
     _normalize_iso_date_text,
     _parse_date,
-    _sync_daily_stock_master,
     _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
@@ -1138,7 +1138,7 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
         on_progress=lambda *_: None,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06", "2026-02-10"],
         progress_current=1,
@@ -1193,7 +1193,7 @@ async def test_sync_daily_stock_master_fetches_each_topix_date_and_rebuilds_late
 
 
 def test_group_stock_master_bulk_rows_by_date_normalizes_v2_columns() -> None:
-    grouped = _group_stock_master_bulk_rows_by_date(
+    grouped = group_stock_master_bulk_rows_by_date(
         [
             {
                 "date": "20260206",
@@ -1223,7 +1223,7 @@ def test_group_stock_master_bulk_rows_by_date_normalizes_v2_columns() -> None:
 
 
 def test_group_stock_master_bulk_rows_uses_default_snapshot_date_for_daily_file() -> None:
-    grouped = _group_stock_master_bulk_rows_by_date(
+    grouped = group_stock_master_bulk_rows_by_date(
         [
             {
                 "code": "72030",
@@ -1239,7 +1239,7 @@ def test_group_stock_master_bulk_rows_uses_default_snapshot_date_for_daily_file(
         target_dates={"2026-02-06"},
         default_snapshot_date="2026-02-06",
     )
-    skipped = _group_stock_master_bulk_rows_by_date(
+    skipped = group_stock_master_bulk_rows_by_date(
         [{"code": "72030", "company_name": "missing snapshot date"}],
         target_dates={"2026-02-06"},
     )
@@ -1325,7 +1325,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_available() -> None:
         bulk_probe_disabled=False,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06", "2026-02-10"],
         progress_current=1,
@@ -1401,7 +1401,7 @@ async def test_sync_daily_stock_master_uses_bulk_when_paginated_rest_estimate_is
         bulk_probe_disabled=False,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06"],
         progress_current=1,
@@ -1453,7 +1453,7 @@ async def test_sync_daily_stock_master_uses_rest_when_bulk_estimate_is_higher() 
         bulk_probe_disabled=False,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06"],
         progress_current=1,
@@ -1510,7 +1510,7 @@ async def test_sync_daily_stock_master_rest_fetches_dates_missing_from_bulk() ->
         bulk_probe_disabled=False,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06", "2026-02-10"],
         progress_current=1,
@@ -1551,7 +1551,7 @@ async def test_sync_daily_stock_master_bulk_probe_failure_does_not_disable_later
         bulk_probe_disabled=False,
     )
 
-    result = await _sync_daily_stock_master(
+    result = await sync_daily_stock_master(
         ctx,
         target_dates=["2026-02-06", "2026-02-10"],
         progress_current=1,
@@ -1581,7 +1581,7 @@ async def test_sync_daily_stock_master_aborts_large_rest_fallback_when_bulk_unav
     )
 
     with pytest.raises(RuntimeError, match="Refusing stock_master_daily REST fallback for 4 dates"):
-        await _sync_daily_stock_master(
+        await sync_daily_stock_master(
             ctx,
             target_dates=["2026-02-06", "2026-02-10", "2026-02-12", "2026-02-13"],
             progress_current=1,
@@ -5389,7 +5389,7 @@ async def test_get_paginated_rows_with_call_count_uses_meta_when_available() -> 
             assert params == {"code": "72030"}
             return ([{"code": "72030"}], 3)
 
-    rows, calls = await _get_paginated_rows_with_call_count(
+    rows, calls = await get_paginated_rows_with_call_count(
         _ClientWithMeta(),
         "/fins/summary",
         params={"code": "72030"},
@@ -5415,7 +5415,7 @@ async def test_get_paginated_rows_with_call_count_falls_back_without_meta() -> N
             del path, params
             return {"data": []}
 
-    rows, calls = await _get_paginated_rows_with_call_count(
+    rows, calls = await get_paginated_rows_with_call_count(
         _ClientWithoutMeta(),
         "/prices/daily_quotes",
         params={"date": "20260210"},

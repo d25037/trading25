@@ -54,10 +54,10 @@ import {
   hasRepairTargets,
   type RepairTargets,
   resolveRepairTargets,
-  resolveSnapshotObservedAt,
   SnapshotStatus,
   sumRepairTargets,
 } from './SettingsMarketDbPanels';
+import { resolveSnapshotObservedAt } from './SettingsMarketDbSnapshot';
 
 const RESET_CONFIRMATION_TOKEN = 'RESET';
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, cast
+from typing import Any
 
 from loguru import logger
 
@@ -20,6 +20,7 @@ from src.application.services.sync_row_converters import (
     convert_margin_rows as _convert_margin_rows,
     to_jquants_date_param as _to_jquants_date_param,
 )
+from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code, stock_code_candidates
 
@@ -108,24 +109,6 @@ async def _save_frontier_code_cache(
     )
 
 
-async def _get_paginated_rows_with_call_count(
-    client: Any,
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    get_with_meta = getattr(client, "get_paginated_with_meta", None)
-    if callable(get_with_meta):
-        get_with_meta_callable = cast(
-            Callable[..., Awaitable[tuple[list[dict[str, Any]], int]]],
-            get_with_meta,
-        )
-        rows, calls = await get_with_meta_callable(path, params=params)
-        return rows, int(calls)
-    rows = await client.get_paginated(path, params=params)
-    return rows, 1
-
-
 async def _fetch_margin_by_code(
     client: Any,
     code: str,
@@ -152,7 +135,7 @@ async def _fetch_margin_by_code(
         if date_from:
             params["from"] = _to_jquants_date_param(date_from)
         try:
-            data, page_calls = await _get_paginated_rows_with_call_count(
+            data, page_calls = await get_paginated_rows_with_call_count(
                 client,
                 "/markets/margin-interest",
                 params=params,

@@ -5,22 +5,28 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from src.application.services.screening_margin_loader import (
+    attach_margin,
+    group_margin_rows,
+    query_margin_rows,
+)
 from src.application.services.screening_market_loader import (
-    _attach_margin,
-    _attach_statements,
-    _group_margin_rows,
-    _group_statement_rows,
-    _load_daily_by_code,
-    _normalize_codes,
-    _query_margin_rows,
-    _query_statements_rows,
-    _resolve_period_filter_values,
-    _rows_to_ohlc_df,
-    _rows_to_ohlcv_df,
     load_market_multi_data,
     load_market_sector_indices,
     load_market_stock_sector_mapping,
     load_market_topix_data,
+)
+from src.application.services.screening_price_loader import (
+    load_daily_by_code,
+    normalize_codes,
+    rows_to_ohlc_df,
+    rows_to_ohlcv_df,
+)
+from src.application.services.screening_statement_loader import (
+    attach_statements,
+    group_statement_rows,
+    query_statements_rows,
+    resolve_period_filter_values,
 )
 
 
@@ -46,7 +52,7 @@ def test_load_market_multi_data_returns_empty_for_empty_codes() -> None:
 
 def test_load_market_multi_data_handles_daily_operational_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_price_loader.load_daily_by_code",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("stock_data missing")),
     )
     result, warnings = load_market_multi_data(DummyReader(), ["7203"])
@@ -62,7 +68,7 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
     )
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_price_loader.load_daily_by_code",
         lambda *_args, **_kwargs: {"7203": daily},
     )
 
@@ -70,7 +76,7 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
         result["7203"]["statements_daily"] = pd.DataFrame({"dummy": [1, 2]}, index=index)
         return ["attached"]
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._attach_statements", _attach)
+    monkeypatch.setattr("src.application.services.screening_statement_loader.attach_statements", _attach)
 
     result, warnings = load_market_multi_data(
         DummyReader(),
@@ -94,7 +100,7 @@ def test_load_market_multi_data_attaches_margin(monkeypatch: pytest.MonkeyPatch)
     )
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_price_loader.load_daily_by_code",
         lambda *_args, **_kwargs: {"7203": daily},
     )
 
@@ -102,7 +108,7 @@ def test_load_market_multi_data_attaches_margin(monkeypatch: pytest.MonkeyPatch)
         result["7203"]["margin_daily"] = pd.DataFrame({"margin_balance": [1, 2]}, index=index)
         return ["margin attached"]
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._attach_margin", _attach)
+    monkeypatch.setattr("src.application.services.screening_margin_loader.attach_margin", _attach)
 
     result, warnings = load_market_multi_data(
         DummyReader(),
@@ -126,11 +132,11 @@ def test_load_market_multi_data_keeps_daily_when_margin_attach_fails(
     )
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_price_loader.load_daily_by_code",
         lambda *_args, **_kwargs: {"7203": daily},
     )
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._attach_margin",
+        "src.application.services.screening_margin_loader.attach_margin",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("margin query failed")),
     )
 
@@ -148,7 +154,7 @@ def test_load_market_multi_data_keeps_daily_when_margin_attach_fails(
 
 def test_load_market_multi_data_skips_attach_when_daily_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_price_loader.load_daily_by_code",
         lambda *_args, **_kwargs: {"7203": pd.DataFrame()},
     )
 
@@ -158,7 +164,7 @@ def test_load_market_multi_data_skips_attach_when_daily_is_empty(monkeypatch: py
         called["attach"] = True
         return []
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._attach_statements", _attach)
+    monkeypatch.setattr("src.application.services.screening_statement_loader.attach_statements", _attach)
 
     result, warnings = load_market_multi_data(
         DummyReader(),
@@ -279,7 +285,7 @@ def test_load_market_stock_sector_mapping_normalizes_codes() -> None:
 
 
 def test_normalize_codes_dedupes_and_skips_invalid() -> None:
-    assert _normalize_codes(["72030", "7203", "", "abc", "67580"]) == ["7203", "abc", "6758"]
+    assert normalize_codes(["72030", "7203", "", "abc", "67580"]) == ["7203", "abc", "6758"]
 
 
 def test_load_daily_by_code_with_date_filters() -> None:
@@ -289,7 +295,7 @@ def test_load_daily_by_code_with_date_filters() -> None:
             {"code": "7203", "date": "2026-01-02", "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.1, "volume": 200},
         ]
     )
-    data = _load_daily_by_code(reader, ["7203"], start_date="2026-01-01", end_date="2026-01-31")
+    data = load_daily_by_code(reader, ["7203"], start_date="2026-01-01", end_date="2026-01-31")
     sql, params = reader.calls[0]
     assert "date >= ?" in sql
     assert "date <= ?" in sql
@@ -313,7 +319,7 @@ def test_load_daily_by_code_queries_alternate_code_forms_and_groups_normalized()
         ]
     )
 
-    data = _load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
+    data = load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
 
     _sql, params = reader.calls[0]
     assert params == ("7203", "72030")
@@ -327,7 +333,7 @@ def test_load_daily_by_code_without_date_filters() -> None:
             {"code": "7203", "date": "2026-01-01", "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 100},
         ]
     )
-    _ = _load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
+    _ = load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
     sql, params = reader.calls[0]
     assert "date >= ?" not in sql
     assert "date <= ?" not in sql
@@ -340,11 +346,11 @@ def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_statements_rows",
+        "src.application.services.screening_statement_loader.query_statements_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("no such table: statements")),
     )
 
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         result,
         daily_index,
@@ -357,7 +363,7 @@ def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch
 
 
 def test_attach_statements_returns_empty_when_no_codes() -> None:
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         {},
         {},
@@ -375,11 +381,11 @@ def test_attach_margin_missing_table_warning(monkeypatch: pytest.MonkeyPatch) ->
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_margin_rows",
+        "src.application.services.screening_margin_loader.query_margin_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("no such table: margin_data")),
     )
 
-    warnings = _attach_margin(
+    warnings = attach_margin(
         DummyReader(),
         result,
         daily_index,
@@ -390,7 +396,7 @@ def test_attach_margin_missing_table_warning(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_attach_margin_returns_empty_when_no_codes() -> None:
-    warnings = _attach_margin(
+    warnings = attach_margin(
         DummyReader(),
         {},
         {},
@@ -406,12 +412,12 @@ def test_attach_margin_reraises_unexpected_error(monkeypatch: pytest.MonkeyPatch
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_margin_rows",
+        "src.application.services.screening_margin_loader.query_margin_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("permission denied")),
     )
 
     with pytest.raises(RuntimeError):
-        _attach_margin(
+        attach_margin(
             DummyReader(),
             result,
             daily_index,
@@ -426,7 +432,7 @@ def test_attach_margin_transform_failure_warning(monkeypatch: pytest.MonkeyPatch
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_margin_rows",
+        "src.application.services.screening_margin_loader.query_margin_rows",
         lambda *_args, **_kwargs: [
             {
                 "code": "7203",
@@ -437,11 +443,11 @@ def test_attach_margin_transform_failure_warning(monkeypatch: pytest.MonkeyPatch
         ],
     )
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader.transform_margin_df",
+        "src.application.services.screening_margin_loader.transform_margin_df",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("bad margin")),
     )
 
-    warnings = _attach_margin(
+    warnings = attach_margin(
         DummyReader(),
         result,
         daily_index,
@@ -464,7 +470,7 @@ def test_query_margin_rows_with_date_filters() -> None:
         ]
     )
 
-    rows = _query_margin_rows(
+    rows = query_margin_rows(
         reader,
         ["7203"],
         start_date="2026-01-01",
@@ -481,14 +487,14 @@ def test_query_margin_rows_with_date_filters() -> None:
 def test_query_margin_rows_queries_alternate_code_forms() -> None:
     reader = DummyReader(rows=[])
 
-    _query_margin_rows(reader, ["7203"], start_date=None, end_date=None)
+    query_margin_rows(reader, ["7203"], start_date=None, end_date=None)
 
     _sql, params = reader.calls[0]
     assert params == ("7203", "72030")
 
 
 def test_group_margin_rows_normalizes_and_sorts_index() -> None:
-    grouped = _group_margin_rows(
+    grouped = group_margin_rows(
         [
             {
                 "code": "72030",
@@ -515,12 +521,12 @@ def test_attach_statements_reraises_unexpected_error(monkeypatch: pytest.MonkeyP
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_statements_rows",
+        "src.application.services.screening_statement_loader.query_statements_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("permission denied")),
     )
 
     with pytest.raises(RuntimeError):
-        _attach_statements(
+        attach_statements(
             DummyReader(),
             result,
             daily_index,
@@ -571,17 +577,17 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
         query_calls.append(kwargs)
         return revision_rows if kwargs.get("period_type") == "all" else base_rows
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", _query)
+    monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", _query)
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader.transform_statements_df",
+        "src.application.services.screening_statement_loader.transform_statements_df",
         lambda df, **_kwargs: df,
     )
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader.merge_forward_forecast_revision",
+        "src.application.services.screening_statement_loader.merge_forward_forecast_revision",
         lambda base, _revision: base.assign(merged=True),
     )
 
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         result,
         daily_index,
@@ -644,13 +650,13 @@ def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest
             return []
         return base_rows
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", _query)
+    monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", _query)
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader.merge_forward_forecast_revision",
+        "src.application.services.screening_statement_loader.merge_forward_forecast_revision",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not merge")),
     )
 
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         result,
         daily_index,
@@ -712,15 +718,15 @@ def test_attach_statements_overlays_adjusted_metric_sot(
     ]
 
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_statements_rows",
+        "src.application.services.screening_statement_loader.query_statements_rows",
         lambda *_args, **_kwargs: rows,
     )
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader._query_adjusted_statement_metric_rows",
+        "src.application.services.screening_statement_loader.query_adjusted_statement_metric_rows",
         lambda *_args, **_kwargs: adjusted_rows,
     )
 
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         result,
         daily_index,
@@ -773,13 +779,13 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
         }
     ]
 
-    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr("src.application.services.screening_statement_loader.query_statements_rows", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(
-        "src.application.services.screening_market_loader.transform_statements_df",
+        "src.application.services.screening_statement_loader.transform_statements_df",
         lambda _df, **_kwargs: (_ for _ in ()).throw(ValueError("transform failed")),
     )
 
-    warnings = _attach_statements(
+    warnings = attach_statements(
         DummyReader(),
         result,
         daily_index,
@@ -794,7 +800,7 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
 
 def test_query_statements_rows_builds_filters() -> None:
     reader = DummyReader()
-    _query_statements_rows(
+    query_statements_rows(
         reader,
         ["7203"],
         start_date="2026-01-01",
@@ -814,7 +820,7 @@ def test_query_statements_rows_builds_filters() -> None:
 def test_query_statements_rows_queries_alternate_code_forms() -> None:
     reader = DummyReader()
 
-    _query_statements_rows(
+    query_statements_rows(
         reader,
         ["7203"],
         start_date=None,
@@ -829,7 +835,7 @@ def test_query_statements_rows_queries_alternate_code_forms() -> None:
 
 def test_query_statements_rows_without_optional_filters() -> None:
     reader = DummyReader()
-    _query_statements_rows(
+    query_statements_rows(
         reader,
         ["7203"],
         start_date=None,
@@ -856,11 +862,11 @@ def test_query_statements_rows_without_optional_filters() -> None:
     ],
 )
 def test_resolve_period_filter_values(period_type: str, expected: list[str] | None) -> None:
-    assert _resolve_period_filter_values(period_type) == expected
+    assert resolve_period_filter_values(period_type) == expected
 
 
 def test_group_statement_rows_and_ohlc_helpers() -> None:
-    grouped = _group_statement_rows(
+    grouped = group_statement_rows(
         [
             {
                 "code": "72030",
@@ -895,15 +901,15 @@ def test_group_statement_rows_and_ohlc_helpers() -> None:
     assert "7203" in grouped
     assert len(grouped["7203"]) == 1
 
-    ohlcv = _rows_to_ohlcv_df(
+    ohlcv = rows_to_ohlcv_df(
         [{"date": "2026-01-01", "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 100}]
     )
     assert list(ohlcv.columns) == ["Open", "High", "Low", "Close", "Volume"]
 
-    ohlc = _rows_to_ohlc_df(
+    ohlc = rows_to_ohlc_df(
         [{"date": "2026-01-01", "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0}]
     )
     assert list(ohlc.columns) == ["Open", "High", "Low", "Close"]
 
-    assert _rows_to_ohlcv_df([]).empty
-    assert _rows_to_ohlc_df([]).empty
+    assert rows_to_ohlcv_df([]).empty
+    assert rows_to_ohlc_df([]).empty

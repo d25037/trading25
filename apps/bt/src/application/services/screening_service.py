@@ -6,11 +6,7 @@ production戦略YAML駆動の動的スクリーニングサービス。
 
 from __future__ import annotations
 
-import json
-import os
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, cast
@@ -19,7 +15,6 @@ import pandas as pd
 from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReadable
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.domains.analytics.screening_requirements import (
     APIPeriodType,
     MultiDataRequirementKey,
@@ -46,12 +41,66 @@ from src.domains.analytics.screening_results import (
     pick_best_strategy,
     sort_results as sort_screening_results,
 )
+from src.application.services.screening_execution import (
+    RequestCacheStats,
+    ScreeningRequestCache,
+    StockUniverseItem,
+    StrategyDataBundle,
+    StrategyEvaluationAccumulator,
+    StrategyEvaluationResult,
+    StrategyExecutionInput,
+    StrategyRuntime,
+)
+from src.application.services.screening_market_loader import (
+    load_market_multi_data,
+    load_market_sector_indices,
+    load_market_stock_sector_mapping,
+    load_market_topix_data,
+)
+from src.application.services.screening_response_builder import (
+    aggregate_screening_results,
+    build_screening_response,
+    dedupe_screening_warnings,
+)
+from src.application.services.screening_reference_dates import (
+    get_latest_market_date as get_screening_latest_market_date,
+    get_latest_stock_master_date as get_screening_latest_stock_master_date,
+    get_trading_date_before as get_screening_trading_date_before,
+    resolve_date_range as resolve_screening_date_range,
+    resolve_history_trading_days as resolve_screening_history_trading_days,
+    stock_master_daily_has_date as screening_stock_master_daily_has_date,
+    table_exists as screening_table_exists,
+)
+from src.application.services.screening_runtime_control import (
+    emit_progress as emit_screening_progress,
+    log_stage_timing as log_screening_stage_timing,
+    resolve_parallel_workers as resolve_screening_parallel_workers,
+    resolve_stock_workers as resolve_screening_stock_workers,
+    resolve_strategy_workers as resolve_screening_strategy_workers,
+)
+from src.application.services.screening_input_preparation import (
+    prepare_strategy_inputs as prepare_screening_strategy_inputs,
+)
+from src.application.services.screening_evaluation_runner import (
+    build_ordered_strategy_results as build_screening_ordered_strategy_results,
+    run_stock_major_evaluation,
+)
+from src.application.services.screening_strategy_runtime import resolve_screening_strategy_runtimes
+from src.application.services.screening_strategy_metrics import (
+    load_latest_metric as load_screening_latest_metric,
+    load_strategy_scores as load_screening_strategy_scores,
+)
+from src.application.services.screening_universe import (
+    collect_dataset_universe_codes,
+    collect_dataset_universe_codes_as_of,
+    filter_stock_universe_by_codes,
+    load_stock_universe,
+    resolve_scope_label,
+    resolve_universe_codes_from_stock_master,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
-from src.domains.strategy.runtime.compiler import CompiledStrategyIR
-from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
-from src.shared.models.config import SharedConfig
-from src.shared.models.signals import SignalParams, Signals
-from src.shared.paths import get_backtest_results_dir
+from src.domains.strategy.signals.processor import SignalProcessor
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.entrypoints.http.schemas.screening import (
     EntryDecidability,
     MarketScreeningResponse,
@@ -61,30 +110,26 @@ from src.entrypoints.http.schemas.screening import (
     ScreeningSummary,
     SortOrder,
 )
-from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
-from src.application.services.analytics_provenance import build_market_provenance
-from src.application.services.dataset_presets import get_preset_label
-from src.shared.utils.market_code_alias import expand_market_codes, resolve_market_codes
-from src.application.services.screening_market_loader import (
-    load_market_multi_data,
-    load_market_sector_indices,
-    load_market_stock_sector_mapping,
-    load_market_topix_data,
-)
-from src.application.services.screening_strategy_selection import (
-    build_strategy_response_names,
-    build_strategy_selection_catalog,
-    resolve_selected_strategy_names,
-)
-from src.application.services.strategy_dataset_metadata import (
-    format_market_scope_label,
-    resolve_dataset_metadata,
-    resolve_dataset_stock_codes,
-)
-from src.domains.strategy.signals.processor import SignalProcessor
-from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams, Signals
+from src.shared.paths import get_backtest_results_dir
+from src.shared.utils.market_code_alias import resolve_market_codes
 
-_TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
+__all__ = [
+    "MultiDataRequirementKey",
+    "RequestCacheStats",
+    "ScreeningRequestCache",
+    "ScreeningService",
+    "SectorDataRequirementKey",
+    "StockEvaluationOutcome",
+    "StockUniverseItem",
+    "StrategyDataBundle",
+    "StrategyEvaluationResult",
+    "StrategyExecutionInput",
+    "StrategyRuntime",
+    "TopixDataRequirementKey",
+    "_format_date",
+]
 
 
 def _now_iso() -> str:
@@ -97,173 +142,6 @@ def _format_date(value: Any) -> str:
         return value.strftime("%Y-%m-%d")
     text = str(value)
     return text.split("T", 1)[0]
-
-
-@dataclass(frozen=True)
-class StockUniverseItem:
-    code: str
-    company_name: str
-    scale_category: str | None
-    sector_33_name: str | None
-
-
-@dataclass(frozen=True)
-class StrategyRuntime:
-    name: str
-    response_name: str
-    basename: str
-    entry_params: SignalParams
-    exit_params: SignalParams
-    shared_config: SharedConfig
-    compiled_strategy: CompiledStrategyIR
-    entry_decidability: EntryDecidability
-    dataset_universe_codes: frozenset[str] | None = None
-    dataset_scope_label: str | None = None
-
-
-@dataclass
-class StrategyDataBundle:
-    multi_data: dict[str, dict[str, Any]]
-    benchmark_data: pd.DataFrame | None = None
-    sector_data: dict[str, pd.DataFrame] | None = None
-    stock_sector_mapping: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class StrategyExecutionInput:
-    strategy: StrategyRuntime
-    data_bundle: StrategyDataBundle
-    load_warnings: list[str]
-
-
-@dataclass(frozen=True)
-class StrategyEvaluationResult:
-    strategy: StrategyRuntime
-    matched_rows: list[tuple[StockUniverseItem, str]]
-    processed_codes: set[str]
-    warnings: list[str]
-
-
-@dataclass
-class StrategyEvaluationAccumulator:
-    strategy: StrategyRuntime
-    matched_rows: list[tuple[StockUniverseItem, str]] = field(default_factory=list)
-    processed_codes: set[str] = field(default_factory=set)
-    warnings: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class RequestCacheStats:
-    hits: int
-    misses: int
-
-
-@dataclass(frozen=True)
-class OptionalLoadResult:
-    data: Any | None
-    warning: str | None = None
-
-
-class ScreeningRequestCache:
-    """同一リクエスト内で data loader の結果を再利用するメモ化キャッシュ。"""
-
-    def __init__(self) -> None:
-        self._multi_data: dict[MultiDataRequirementKey, dict[str, dict[str, Any]]] = {}
-        self._multi_data_errors: dict[MultiDataRequirementKey, str] = {}
-        self._benchmark_data: dict[TopixDataRequirementKey, OptionalLoadResult] = {}
-        self._sector_data: dict[SectorDataRequirementKey, OptionalLoadResult] = {}
-        self._sector_mapping: dict[str, OptionalLoadResult] = {}
-        self._hits = 0
-        self._misses = 0
-
-    @property
-    def stats(self) -> RequestCacheStats:
-        return RequestCacheStats(hits=self._hits, misses=self._misses)
-
-    def _record_hit(self) -> None:
-        self._hits += 1
-
-    def _record_miss(self) -> None:
-        self._misses += 1
-
-    def get_multi_data(
-        self,
-        key: MultiDataRequirementKey,
-        loader: Callable[[], dict[str, dict[str, Any]]],
-    ) -> dict[str, dict[str, Any]]:
-        if key in self._multi_data:
-            self._record_hit()
-            return self._multi_data[key]
-        if key in self._multi_data_errors:
-            self._record_hit()
-            raise RuntimeError(self._multi_data_errors[key])
-
-        self._record_miss()
-        try:
-            value = loader()
-        except Exception as exc:
-            self._multi_data_errors[key] = str(exc)
-            raise
-
-        self._multi_data[key] = value
-        return value
-
-    def get_benchmark_data(
-        self,
-        key: TopixDataRequirementKey,
-        loader: Callable[[], pd.DataFrame],
-    ) -> OptionalLoadResult:
-        cached = self._benchmark_data.get(key)
-        if cached is not None:
-            self._record_hit()
-            return cached
-
-        self._record_miss()
-        try:
-            value = loader()
-            result = OptionalLoadResult(data=value)
-        except Exception as exc:
-            result = OptionalLoadResult(data=None, warning=str(exc))
-        self._benchmark_data[key] = result
-        return result
-
-    def get_sector_data(
-        self,
-        key: SectorDataRequirementKey,
-        loader: Callable[[], dict[str, pd.DataFrame]],
-    ) -> OptionalLoadResult:
-        cached = self._sector_data.get(key)
-        if cached is not None:
-            self._record_hit()
-            return cached
-
-        self._record_miss()
-        try:
-            value = loader()
-            result = OptionalLoadResult(data=value)
-        except Exception as exc:
-            result = OptionalLoadResult(data=None, warning=str(exc))
-        self._sector_data[key] = result
-        return result
-
-    def get_sector_mapping(
-        self,
-        key: str,
-        loader: Callable[[], dict[str, str]],
-    ) -> OptionalLoadResult:
-        cached = self._sector_mapping.get(key)
-        if cached is not None:
-            self._record_hit()
-            return cached
-
-        self._record_miss()
-        try:
-            value = loader()
-            result = OptionalLoadResult(data=value)
-        except Exception as exc:
-            result = OptionalLoadResult(data=None, warning=str(exc))
-        self._sector_mapping[key] = result
-        return result
 
 
 class ScreeningService:
@@ -355,48 +233,21 @@ class ScreeningService:
         aggregate_stage_started = perf_counter()
         warnings: list[str] = list(metric_warnings)
         warnings.extend(strategy_fail_warnings)
-
-        by_strategy = {s.response_name: 0 for s in strategy_runtimes}
-        processed_codes: set[str] = set()
-        aggregated: dict[str, dict[str, Any]] = {}
-
-        for strategy_result in strategy_results:
-            strategy_name = strategy_result.strategy.response_name
-            processed_codes |= strategy_result.processed_codes
-            warnings.extend(strategy_result.warnings)
-
-            strategy_score = strategy_scores.get(strategy_name)
-            for stock, matched_date in strategy_result.matched_rows:
-                by_strategy[strategy_name] += 1
-
-                existing = aggregated.get(stock.code)
-                if existing is None:
-                    existing = {
-                        "stock": stock,
-                        "matchedDate": matched_date,
-                        "matchedStrategies": [],
-                    }
-                    aggregated[stock.code] = existing
-                elif matched_date > existing["matchedDate"]:
-                    existing["matchedDate"] = matched_date
-
-                existing["matchedStrategies"].append(
-                    MatchedStrategyItem(
-                        strategyName=strategy_name,
-                        matchedDate=matched_date,
-                        strategyScore=strategy_score,
-                    )
-                )
-
-        all_results = [self._build_result_item(item) for item in aggregated.values()]
+        aggregation = aggregate_screening_results(
+            strategy_runtimes=strategy_runtimes,
+            strategy_results=strategy_results,
+            strategy_scores=strategy_scores,
+            build_result_item=self._build_result_item,
+        )
+        warnings.extend(aggregation.warnings)
         self._log_stage_timing(
             stage="aggregate",
             started_at=aggregate_stage_started,
-            match_count=len(all_results),
+            match_count=len(aggregation.results),
         )
 
         sort_stage_started = perf_counter()
-        sorted_results = self._sort_results(all_results, sort_by=sort_by, order=order)
+        sorted_results = self._sort_results(aggregation.results, sort_by=sort_by, order=order)
         match_count = len(sorted_results)
         if limit is not None and limit > 0:
             sorted_results = sorted_results[:limit]
@@ -410,8 +261,8 @@ class ScreeningService:
         summary = ScreeningSummary(
             totalStocksScreened=len(stock_universe),
             matchCount=match_count,
-            skippedCount=max(0, len(stock_universe) - len(processed_codes)),
-            byStrategy=by_strategy,
+            skippedCount=max(0, len(stock_universe) - len(aggregation.processed_codes)),
+            byStrategy=aggregation.by_strategy,
             strategiesEvaluated=[s.response_name for s in strategy_runtimes],
             strategiesWithoutBacktestMetrics=missing_metric_strategies,
             warnings=self._dedupe_warnings(warnings),
@@ -422,28 +273,17 @@ class ScreeningService:
             use_strategy_dataset_universe=use_strategy_dataset_universe,
         )
 
-        response = MarketScreeningResponse(
+        response = build_screening_response(
             results=sorted_results,
             summary=summary,
             entry_decidability=entry_decidability,
-            markets=requested_market_codes,
-            scopeLabel=resolved_scope_label,
-            recentDays=recent_days,
-            referenceDate=effective_reference_date,
-            sortBy=sort_by,
+            requested_market_codes=requested_market_codes,
+            scope_label=resolved_scope_label,
+            recent_days=recent_days,
+            reference_date=effective_reference_date,
+            sort_by=sort_by,
             order=order,
-            lastUpdated=_now_iso(),
-            provenance=build_market_provenance(
-                reference_date=effective_reference_date,
-                loaded_domains=("stock_data", "stock_master_daily", "topix_data", "indices_data", "margin_data", "statements"),
-                warnings=summary.warnings,
-            ),
-            diagnostics=ResponseDiagnostics(
-                missing_required_data=[],
-                used_fields=["stock_data", "stock_master_daily", "topix_data", "indices_data", "margin_data", "statements"],
-                effective_period_type="multi",
-                warnings=summary.warnings,
-            ),
+            last_updated=_now_iso(),
         )
 
         total_duration_ms = round((perf_counter() - run_started) * 1000, 2)
@@ -461,68 +301,27 @@ class ScreeningService:
 
     def _load_stock_universe(self, market_codes: list[str], as_of_date: str | None = None) -> list[StockUniverseItem]:
         """市場フィルタ済み銘柄母集団を読み込む。"""
-        if not market_codes:
-            return []
-
-        effective_as_of_date = as_of_date or self._get_latest_stock_master_date() or self._get_latest_market_date()
-        placeholders = ",".join("?" for _ in market_codes)
-        if effective_as_of_date is not None and self._stock_master_daily_has_date(effective_as_of_date):
-            source_table = "stock_master_daily"
-            date_clause = "date = ? AND "
-            params = (effective_as_of_date, *market_codes)
-        else:
-            # Legacy/unit-test DBs may not have the v3 daily master yet.  Real v3
-            # databases resolve PIT universes from stock_master_daily above.
-            source_table = "stocks"
-            date_clause = ""
-            params = tuple(market_codes)
-        rows = self._reader.query(
-            f"""
-            SELECT code, company_name, scale_category, sector_33_name
-            FROM {source_table}
-            WHERE {date_clause}market_code IN ({placeholders})
-            ORDER BY code
-            """,
-            params,
+        return load_stock_universe(
+            self._reader,
+            market_codes,
+            as_of_date=as_of_date,
+            get_latest_stock_master_date=self._get_latest_stock_master_date,
+            get_latest_market_date=self._get_latest_market_date,
+            stock_master_daily_has_date=self._stock_master_daily_has_date,
         )
-
-        deduped: dict[str, StockUniverseItem] = {}
-        for row in rows:
-            code = normalize_stock_code(str(row["code"]))
-            if code in deduped:
-                continue
-            deduped[code] = StockUniverseItem(
-                code=code,
-                company_name=row["company_name"],
-                scale_category=row["scale_category"],
-                sector_33_name=row["sector_33_name"],
-            )
-
-        return list(deduped.values())
 
     @staticmethod
     def _filter_stock_universe_by_codes(
         stock_universe: list[StockUniverseItem],
         allowed_codes: frozenset[str] | None,
     ) -> list[StockUniverseItem]:
-        if not allowed_codes:
-            return []
-        return [stock for stock in stock_universe if stock.code in allowed_codes]
+        return filter_stock_universe_by_codes(stock_universe, allowed_codes)
 
     @staticmethod
     def _collect_dataset_universe_codes(
         strategy_runtimes: list[StrategyRuntime],
     ) -> frozenset[str] | None:
-        union_codes: set[str] = set()
-        has_dataset_universe = False
-        for strategy in strategy_runtimes:
-            if strategy.dataset_universe_codes is None:
-                continue
-            has_dataset_universe = True
-            union_codes.update(strategy.dataset_universe_codes)
-        if not has_dataset_universe:
-            return None
-        return frozenset(union_codes)
+        return collect_dataset_universe_codes(strategy_runtimes)
 
     def _collect_dataset_universe_codes_as_of(
         self,
@@ -530,63 +329,19 @@ class ScreeningService:
         *,
         as_of_date: str,
     ) -> frozenset[str] | None:
-        union_codes: set[str] = set()
-        has_universe = False
-        for strategy in strategy_runtimes:
-            preset = strategy.shared_config.universe_preset
-            if preset is not None and self._table_exists("stock_master_daily"):
-                codes = self._resolve_universe_codes_from_stock_master(
-                    preset=preset,
-                    as_of_date=as_of_date,
-                )
-                has_universe = True
-                union_codes.update(codes)
-                continue
-            if strategy.dataset_universe_codes is None:
-                continue
-            has_universe = True
-            union_codes.update(strategy.dataset_universe_codes)
-        if not has_universe:
-            return None
-        return frozenset(union_codes)
+        return collect_dataset_universe_codes_as_of(
+            strategy_runtimes,
+            as_of_date=as_of_date,
+            has_stock_master_daily=lambda: self._table_exists("stock_master_daily"),
+            resolve_universe_codes_from_stock_master=self._resolve_universe_codes_from_stock_master,
+        )
 
     def _resolve_universe_codes_from_stock_master(self, *, preset: str, as_of_date: str) -> set[str]:
-        filters: list[str] = ["date = ?"]
-        params: list[str] = [as_of_date]
-        if preset == "prime":
-            market_codes = expand_market_codes(["prime"])
-            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-            params.extend(market_codes)
-        elif preset == "standard":
-            market_codes = expand_market_codes(["standard"])
-            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-            params.extend(market_codes)
-        elif preset == "growth":
-            market_codes = expand_market_codes(["growth"])
-            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-            params.extend(market_codes)
-        elif preset == "topix100":
-            filters.append("coalesce(scale_category, '') IN ('TOPIX Core30', 'TOPIX Large70')")
-        elif preset == "primeExTopix500":
-            market_codes = expand_market_codes(["prime"])
-            filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
-            params.extend(market_codes)
-            filters.append("coalesce(scale_category, '') NOT IN (?, ?, ?)")
-            params.extend(_TOPIX500_SCALE_CATEGORIES)
-        else:
-            return set()
-        where_clause = " AND ".join(filters)
-        rows = self._reader.query(
-            f"""
-            SELECT code
-            FROM stock_master_daily
-            WHERE {where_clause}
-            ORDER BY code
-            """,
-            tuple(params),
+        return resolve_universe_codes_from_stock_master(
+            self._reader,
+            preset=preset,
+            as_of_date=as_of_date,
         )
-        codes = {normalize_stock_code(str(row["code"])) for row in rows}
-        return codes
 
     @staticmethod
     def _resolve_scope_label(
@@ -595,23 +350,11 @@ class ScreeningService:
         strategy_runtimes: list[StrategyRuntime],
         use_strategy_dataset_universe: bool,
     ) -> str:
-        if not use_strategy_dataset_universe:
-            return format_market_scope_label(requested_market_codes)
-
-        scope_labels: list[str] = []
-        seen_labels: set[str] = set()
-        for strategy in strategy_runtimes:
-            scope_label = strategy.dataset_scope_label
-            if scope_label is None:
-                return format_market_scope_label(requested_market_codes)
-            if scope_label in seen_labels:
-                continue
-            scope_labels.append(scope_label)
-            seen_labels.add(scope_label)
-
-        if scope_labels:
-            return " + ".join(scope_labels)
-        return format_market_scope_label(requested_market_codes)
+        return resolve_scope_label(
+            requested_market_codes=requested_market_codes,
+            strategy_runtimes=strategy_runtimes,
+            use_strategy_dataset_universe=use_strategy_dataset_universe,
+        )
 
     def _resolve_strategies(
         self,
@@ -621,123 +364,33 @@ class ScreeningService:
         use_strategy_dataset_universe: bool = False,
     ) -> list[StrategyRuntime]:
         """対象戦略をproductionカテゴリから解決する。"""
-        metadata = [m for m in self._config_loader.get_strategy_metadata() if m.category == "production"]
-        catalog = build_strategy_selection_catalog(
-            metadata,
-            load_strategy_config=lambda name: load_strategy_screening_config(
-                self._config_loader,
-                name,
-            ),
+        return resolve_screening_strategy_runtimes(
+            self._config_loader,
+            strategies,
             entry_decidability=entry_decidability,
+            use_strategy_dataset_universe=use_strategy_dataset_universe,
         )
-        selected_names = resolve_selected_strategy_names(
-            strategies=strategies,
-            catalog=catalog,
-            entry_decidability=entry_decidability,
-        )
-        response_names = build_strategy_response_names(
-            catalog.metadata_by_name,
-            selected_names,
-        )
-
-        runtimes: list[StrategyRuntime] = []
-        for name in selected_names:
-            metadata_entry = catalog.metadata_by_name[name]
-            runtime_payload = catalog.runtime_payloads[name]
-            screening_support = runtime_payload.screening_support
-            resolved_entry_decidability = runtime_payload.entry_decidability
-            if screening_support != "supported" or resolved_entry_decidability is None:
-                raise ValueError(f"Unsupported screening strategy selected: {name}")
-
-            dataset_universe_codes: frozenset[str] | None = None
-            dataset_scope_label: str | None = None
-            if use_strategy_dataset_universe:
-                if runtime_payload.shared_config.data_source == "dataset_snapshot":
-                    try:
-                        dataset_metadata = resolve_dataset_metadata(
-                            runtime_payload.shared_config.dataset
-                        )
-                        dataset_universe_codes = frozenset(
-                            resolve_dataset_stock_codes(runtime_payload.shared_config.dataset)
-                        )
-                        if dataset_metadata.dataset_preset is not None:
-                            dataset_scope_label = get_preset_label(dataset_metadata.dataset_preset)
-                    except Exception as exc:
-                        raise ValueError(
-                            f"Invalid dataset universe for screening strategy {name}: {exc}"
-                        ) from exc
-
-            runtime = StrategyRuntime(
-                name=name,
-                response_name=response_names[name],
-                basename=metadata_entry.path.stem,
-                entry_params=runtime_payload.entry_params,
-                exit_params=runtime_payload.exit_params,
-                shared_config=runtime_payload.shared_config,
-                compiled_strategy=runtime_payload.compiled_strategy,
-                entry_decidability=cast(EntryDecidability, resolved_entry_decidability),
-                dataset_universe_codes=dataset_universe_codes,
-                dataset_scope_label=dataset_scope_label,
-            )
-            runtimes.append(runtime)
-
-        return runtimes
 
     def _load_strategy_scores(
         self,
         strategies: list[StrategyRuntime],
     ) -> tuple[dict[str, float | None], list[str], list[str]]:
         """各戦略の最新バックテスト指標（固定: sharpe_ratio）を取得する。"""
-        scores: dict[str, float | None] = {}
-        missing: list[str] = []
-        warnings: list[str] = []
-
-        for strategy in strategies:
-            score, warning = self._load_latest_metric(strategy.basename)
-            scores[strategy.response_name] = score
-            if score is None:
-                missing.append(strategy.response_name)
-            if warning:
-                warnings.append(f"{strategy.response_name}: {warning}")
-
-        return scores, missing, warnings
+        return load_screening_strategy_scores(
+            strategies,
+            load_latest_metric_fn=self._load_latest_metric,
+        )
 
     def _load_latest_metric(
         self,
         strategy_basename: str,
     ) -> tuple[float | None, str | None]:
         """戦略ディレクトリ内の最新*.metrics.jsonから sharpe_ratio を取得する。"""
-        strategy_dir = get_backtest_results_dir(strategy_basename)
-        if not strategy_dir.exists():
-            return None, None
-
-        metric_files = sorted(
-            strategy_dir.glob("*.metrics.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
+        return load_screening_latest_metric(
+            strategy_basename,
+            metric_name=self._DEFAULT_BACKTEST_METRIC,
+            get_backtest_results_dir=get_backtest_results_dir,
         )
-        if not metric_files:
-            return None, None
-
-        latest = metric_files[0]
-        metric_name = self._DEFAULT_BACKTEST_METRIC
-
-        try:
-            payload = json.loads(latest.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            return None, f"failed to read metrics ({latest.name}: {exc})"
-
-        value = payload.get(metric_name)
-        if value is None:
-            return None, None
-
-        if isinstance(value, (int, float)):
-            return float(value), None
-
-        try:
-            return float(value), None
-        except (TypeError, ValueError):
-            return None, f"metric {metric_name} is not numeric in {latest.name}"
 
     def _prepare_strategy_inputs(
         self,
@@ -747,80 +400,23 @@ class ScreeningService:
         recent_days: int,
     ) -> tuple[list[StrategyExecutionInput], RequestCacheStats]:
         """戦略評価に必要なデータをロードし、戦略ごとの入力を構築する。"""
-        if not strategy_runtimes:
-            return [], RequestCacheStats(hits=0, misses=0)
-
-        cache = ScreeningRequestCache()
-        inputs: list[StrategyExecutionInput] = []
-
-        for strategy in strategy_runtimes:
-            strategy_stock_universe = (
-                self._filter_stock_universe_by_codes(stock_universe, strategy.dataset_universe_codes)
-                if strategy.dataset_universe_codes is not None
-                else stock_universe
-            )
-            requirements = self._build_data_requirements(
+        return prepare_screening_strategy_inputs(
+            strategy_runtimes=strategy_runtimes,
+            stock_universe=stock_universe,
+            reference_date=reference_date,
+            recent_days=recent_days,
+            filter_stock_universe_by_codes=self._filter_stock_universe_by_codes,
+            build_data_requirements=lambda strategy, stock_codes, resolved_reference_date, resolved_recent_days: self._build_data_requirements(
                 strategy=strategy,
-                stock_codes=tuple(stock.code for stock in strategy_stock_universe),
-                reference_date=reference_date,
-                recent_days=recent_days,
-            )
-            warnings: list[str] = []
-
-            try:
-                multi_data = cache.get_multi_data(
-                    requirements.multi_data_key,
-                    loader=lambda key=requirements.multi_data_key: self._load_multi_data(key),
-                )
-            except Exception as exc:
-                warnings.append(f"multi data load failed ({exc})")
-                multi_data = {}
-
-            benchmark_data = None
-            if requirements.needs_benchmark and requirements.benchmark_data_key is not None:
-                benchmark_result = cache.get_benchmark_data(
-                    requirements.benchmark_data_key,
-                    loader=lambda key=requirements.benchmark_data_key: self._load_benchmark_data(key),
-                )
-                benchmark_data = benchmark_result.data
-                if benchmark_result.warning:
-                    warnings.append(f"benchmark load failed ({benchmark_result.warning})")
-
-            sector_data = None
-            stock_sector_mapping: dict[str, str] = {}
-            if requirements.needs_sector and requirements.sector_data_key is not None:
-                sector_result = cache.get_sector_data(
-                    requirements.sector_data_key,
-                    loader=lambda key=requirements.sector_data_key: self._load_sector_data(key),
-                )
-                sector_data = sector_result.data
-                if sector_result.warning:
-                    warnings.append(f"sector data load failed ({sector_result.warning})")
-
-                if requirements.sector_mapping_key is not None:
-                    mapping_result = cache.get_sector_mapping(
-                        requirements.sector_mapping_key,
-                        loader=self._load_sector_mapping,
-                    )
-                    if isinstance(mapping_result.data, dict):
-                        stock_sector_mapping = mapping_result.data
-                    if mapping_result.warning:
-                        warnings.append(f"sector mapping load failed ({mapping_result.warning})")
-
-            inputs.append(
-                StrategyExecutionInput(
-                    strategy=strategy,
-                    data_bundle=StrategyDataBundle(
-                        multi_data=multi_data,
-                        benchmark_data=benchmark_data,
-                        sector_data=sector_data,
-                        stock_sector_mapping=stock_sector_mapping,
-                    ),
-                    load_warnings=warnings,
-                )
-            )
-
-        return inputs, cache.stats
+                stock_codes=stock_codes,
+                reference_date=resolved_reference_date,
+                recent_days=resolved_recent_days,
+            ),
+            load_multi_data=self._load_multi_data,
+            load_benchmark_data=self._load_benchmark_data,
+            load_sector_data=self._load_sector_data,
+            load_sector_mapping=self._load_sector_mapping,
+        )
 
     def _build_data_requirements(
         self,
@@ -893,117 +489,31 @@ class ScreeningService:
         progress_callback: Callable[[int, int], None] | None,
     ) -> tuple[list[StrategyEvaluationResult], list[str], int]:
         """銘柄主導(stock-major)で戦略評価を実行する。"""
-        strategy_count = len(strategy_inputs)
-        if strategy_count == 0:
-            self._emit_progress(progress_callback, completed=0, total=0)
-            return [], [], 1
-
-        accumulators: dict[str, StrategyEvaluationAccumulator] = {}
-        strategy_cache_tokens: dict[str, str] = {}
-        for strategy_input in strategy_inputs:
-            strategy_name = strategy_input.strategy.response_name
-            accumulators[strategy_name] = StrategyEvaluationAccumulator(
-                strategy=strategy_input.strategy,
-                warnings=list(strategy_input.load_warnings),
-            )
-            strategy_cache_tokens[strategy_name] = self._build_strategy_signal_cache_token(
-                strategy_input.strategy
-            )
-
-        total_stocks = len(stock_universe)
-        if total_stocks == 0:
-            self._emit_progress(progress_callback, completed=0, total=0)
-            ordered_results = self._build_ordered_strategy_results(
-                strategy_inputs=strategy_inputs,
-                accumulators=accumulators,
-            )
-            return ordered_results, [], 1
-
-        self._emit_progress(progress_callback, completed=0, total=total_stocks)
-
-        worker_count = self._resolve_stock_workers(total_stocks)
-        warnings: list[str] = []
-        completed = 0
-
-        if worker_count == 1:
-            for stock in stock_universe:
-                try:
-                    outcome = self._evaluate_stock(
-                        stock=stock,
-                        strategy_inputs=strategy_inputs,
-                        recent_days=recent_days,
-                        strategy_cache_tokens=strategy_cache_tokens,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "Stock screening failed",
-                        stock_code=stock.code,
-                    )
-                    warnings.append(f"{stock.code}: evaluation failed ({exc})")
-                else:
-                    self._apply_stock_outcome(outcome, accumulators)
-                finally:
-                    completed += 1
-                    self._emit_progress(progress_callback, completed=completed, total=total_stocks)
-        else:
-            outcomes_by_code: dict[str, StockEvaluationOutcome] = {}
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                future_to_stock = {
-                    executor.submit(
-                        self._evaluate_stock,
-                        stock,
-                        strategy_inputs,
-                        recent_days,
-                        strategy_cache_tokens,
-                    ): stock
-                    for stock in stock_universe
-                }
-
-                for future in as_completed(future_to_stock):
-                    stock = future_to_stock[future]
-                    try:
-                        outcome = future.result()
-                        outcomes_by_code[stock.code] = outcome
-                    except Exception as exc:
-                        logger.exception(
-                            "Stock screening failed",
-                            stock_code=stock.code,
-                        )
-                        warnings.append(f"{stock.code}: evaluation failed ({exc})")
-                    finally:
-                        completed += 1
-                        self._emit_progress(progress_callback, completed=completed, total=total_stocks)
-
-            for stock in stock_universe:
-                outcome = outcomes_by_code.get(stock.code)
-                if outcome is None:
-                    continue
-                self._apply_stock_outcome(outcome, accumulators)
-
-        ordered_results = self._build_ordered_strategy_results(
+        return run_stock_major_evaluation(
             strategy_inputs=strategy_inputs,
-            accumulators=accumulators,
+            stock_universe=stock_universe,
+            recent_days=recent_days,
+            progress_callback=progress_callback,
+            build_strategy_signal_cache_token=self._build_strategy_signal_cache_token,
+            evaluate_stock=self._evaluate_stock,
+            apply_stock_outcome=self._apply_stock_outcome,
+            resolve_stock_workers=self._resolve_stock_workers,
+            emit_progress=lambda callback, completed, total: self._emit_progress(
+                callback,
+                completed=completed,
+                total=total,
+            ),
         )
-
-        return ordered_results, warnings, worker_count
 
     def _build_ordered_strategy_results(
         self,
         strategy_inputs: list[StrategyExecutionInput],
         accumulators: dict[str, StrategyEvaluationAccumulator],
     ) -> list[StrategyEvaluationResult]:
-        ordered_results: list[StrategyEvaluationResult] = []
-        for strategy_input in strategy_inputs:
-            accumulator = accumulators[strategy_input.strategy.response_name]
-            ordered_results.append(
-                StrategyEvaluationResult(
-                    strategy=accumulator.strategy,
-                    matched_rows=accumulator.matched_rows,
-                    processed_codes=accumulator.processed_codes,
-                    warnings=accumulator.warnings,
-                )
-            )
-        return ordered_results
+        return build_screening_ordered_strategy_results(
+            strategy_inputs=strategy_inputs,
+            accumulators=accumulators,
+        )
 
     def _build_strategy_signal_cache_token(self, strategy: StrategyRuntime) -> str:
         return build_screening_strategy_signal_cache_token(strategy)
@@ -1098,54 +608,21 @@ class ScreeningService:
 
     def _resolve_strategy_workers(self, strategy_count: int) -> int:
         """戦略並列数を自動決定する。"""
-        return self._resolve_parallel_workers(
-            work_count=strategy_count,
-            env_names=("BT_SCREENING_MAX_STRATEGY_WORKERS",),
-        )
+        return resolve_screening_strategy_workers(strategy_count)
 
     def _resolve_stock_workers(self, stock_count: int) -> int:
         """銘柄並列数を自動決定する。"""
-        return self._resolve_parallel_workers(
-            work_count=stock_count,
-            env_names=(
-                "BT_SCREENING_MAX_STOCK_WORKERS",
-                "BT_SCREENING_MAX_STRATEGY_WORKERS",
-            ),
-        )
+        return resolve_screening_stock_workers(stock_count)
 
     def _resolve_parallel_workers(
         self,
         work_count: int,
         env_names: tuple[str, ...],
     ) -> int:
-        if work_count <= 1:
-            return 1
-
-        auto_workers = min(work_count, os.cpu_count() or 1)
-        configured_name: str | None = None
-        configured: str | None = None
-        for env_name in env_names:
-            raw = os.getenv(env_name)
-            if raw is None:
-                continue
-            configured_name = env_name
-            configured = raw
-            break
-
-        if configured is None:
-            return max(1, auto_workers)
-
-        try:
-            configured_workers = int(configured)
-            if configured_workers <= 0:
-                raise ValueError("must be > 0")
-            return max(1, min(auto_workers, configured_workers))
-        except ValueError:
-            logger.warning(
-                f"Invalid {configured_name}. Fallback to auto workers.",
-                value=configured,
-            )
-            return max(1, auto_workers)
+        return resolve_screening_parallel_workers(
+            work_count=work_count,
+            env_names=env_names,
+        )
 
     def _emit_progress(
         self,
@@ -1153,12 +630,7 @@ class ScreeningService:
         completed: int,
         total: int,
     ) -> None:
-        if progress_callback is None:
-            return
-        try:
-            progress_callback(completed, total)
-        except Exception as exc:
-            logger.warning(f"screening progress callback failed: {exc}")
+        emit_screening_progress(progress_callback, completed, total)
 
     def _log_stage_timing(
         self,
@@ -1166,13 +638,7 @@ class ScreeningService:
         started_at: float,
         **extra: Any,
     ) -> None:
-        duration_ms = round((perf_counter() - started_at) * 1000, 2)
-        logger.bind(
-            event="screening_stage_timing",
-            stage=stage,
-            duration_ms=duration_ms,
-            **extra,
-        ).info("screening stage completed")
+        log_screening_stage_timing(stage, started_at, **extra)
 
     def _resolve_date_range(
         self,
@@ -1181,109 +647,43 @@ class ScreeningService:
         recent_days: int,
     ) -> tuple[str | None, str | None]:
         """shared_config とクエリ日付からロード対象期間を解決する。"""
-        start_date = shared_config.start_date or None
-        end_date = shared_config.end_date or None
-
-        if reference_date:
-            end_date = reference_date
-        elif end_date is None:
-            end_date = self._get_latest_market_date()
-
-        if start_date is None and end_date is not None:
-            history_days = self._resolve_history_trading_days(recent_days)
-            if history_days > 1:
-                start_date = self._get_trading_date_before(end_date, history_days - 1)
-
-        return start_date, end_date
+        return resolve_screening_date_range(
+            shared_config=shared_config,
+            reference_date=reference_date,
+            recent_days=recent_days,
+            get_latest_market_date=self._get_latest_market_date,
+            resolve_history_trading_days=self._resolve_history_trading_days,
+            get_trading_date_before=self._get_trading_date_before,
+        )
 
     def _resolve_history_trading_days(self, recent_days: int) -> int:
         """screening 読み込み対象の営業日本数を決定する。"""
-        default_days = self._DEFAULT_HISTORY_TRADING_DAYS
-        configured = os.getenv("BT_SCREENING_HISTORY_TRADING_DAYS")
-        if configured is not None:
-            try:
-                value = int(configured)
-                if value > 0:
-                    default_days = value
-                else:
-                    raise ValueError("must be > 0")
-            except ValueError:
-                logger.warning(
-                    "Invalid BT_SCREENING_HISTORY_TRADING_DAYS. Fallback to default.",
-                    value=configured,
-                )
-
-        return max(recent_days, default_days)
+        return resolve_screening_history_trading_days(
+            recent_days,
+            default_days=self._DEFAULT_HISTORY_TRADING_DAYS,
+        )
 
     def _get_latest_market_date(self) -> str | None:
-        try:
-            row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
-        except Exception:
-            return None
-        if row is None:
-            return None
-        return row["max_date"]
+        return get_screening_latest_market_date(self._reader)
 
     def _get_latest_stock_master_date(self) -> str | None:
-        if not self._table_exists("stock_master_daily"):
-            return None
-        try:
-            row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_master_daily")
-        except Exception:
-            return None
-        if row is None:
-            return None
-        return row["max_date"]
+        return get_screening_latest_stock_master_date(
+            self._reader,
+            table_exists=self._table_exists,
+        )
 
     def _table_exists(self, table_name: str) -> bool:
-        try:
-            row = self._reader.query_one(
-                """
-                SELECT 1 AS exists
-                FROM information_schema.tables
-                WHERE lower(table_name) = lower(?)
-                LIMIT 1
-                """,
-                (table_name,),
-            )
-        except Exception:
-            return False
-        return row is not None
+        return screening_table_exists(self._reader, table_name)
 
     def _stock_master_daily_has_date(self, as_of_date: str) -> bool:
-        if not self._table_exists("stock_master_daily"):
-            return False
-        try:
-            row = self._reader.query_one(
-                "SELECT 1 AS exists FROM stock_master_daily WHERE date = ? LIMIT 1",
-                (as_of_date,),
-            )
-        except Exception:
-            return False
-        return row is not None
+        return screening_stock_master_daily_has_date(
+            self._reader,
+            as_of_date,
+            table_exists=self._table_exists,
+        )
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:
-        if offset < 0:
-            return date
-        try:
-            row = self._reader.query_one(
-                "SELECT DISTINCT date FROM stock_data WHERE date <= ? ORDER BY date DESC LIMIT 1 OFFSET ?",
-                (date, offset),
-            )
-        except Exception:
-            return None
-        if row is None:
-            try:
-                oldest = self._reader.query_one(
-                    "SELECT MIN(date) AS min_date FROM stock_data WHERE date <= ?",
-                    (date,),
-                )
-            except Exception:
-                return None
-            if oldest is None:
-                return None
-            return oldest["min_date"]
-        return row["date"]
+        return get_screening_trading_date_before(self._reader, date, offset)
 
     def _needs_data_requirement(
         self,
@@ -1345,18 +745,4 @@ class ScreeningService:
 
     def _dedupe_warnings(self, warnings: list[str]) -> list[str]:
         """警告を順序保持で重複排除し、件数を制限する。"""
-        deduped: list[str] = []
-        seen: set[str] = set()
-
-        for warning in warnings:
-            if warning in seen:
-                continue
-            seen.add(warning)
-            deduped.append(warning)
-            if len(deduped) >= self._WARNING_LIMIT:
-                break
-
-        if len(warnings) > len(deduped):
-            deduped.append("additional warnings were truncated")
-
-        return deduped
+        return dedupe_screening_warnings(warnings, limit=self._WARNING_LIMIT)
