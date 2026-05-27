@@ -6,7 +6,7 @@ import type {
   StrategyValidationResponse,
 } from '@trading25/api-clients/backtest';
 import { AlertCircle, CheckCircle2, Eye, FileCode2, Loader2, PencilLine, Sparkles } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useId, useMemo } from 'react';
 import { MetadataFieldControl } from '@/components/Backtest/MetadataFieldControl';
 import { ReferenceSelectFieldCard } from '@/components/Backtest/ReferenceSelectFieldCard';
 import { buildDefaultSignalParams, SignalFieldInputs } from '@/components/Backtest/SignalFieldInputs';
@@ -33,11 +33,7 @@ import {
 import { useDatasetInfo, useDatasets } from '@/hooks/useDataset';
 import { useIndicesList } from '@/hooks/useIndices';
 import { cn } from '@/lib/utils';
-import {
-  buildVisualAdvancedOnlyPaths,
-  canVisualizeStrategyConfig,
-  deriveFundamentalParentFieldNames,
-} from './authoringDocumentUtils';
+import { buildVisualAdvancedOnlyPaths, deriveFundamentalParentFieldNames } from './authoringDocumentUtils';
 import {
   addFundamentalSignalConfig,
   asStringArray,
@@ -47,16 +43,13 @@ import {
   hasValueAtPath,
   isPlainObject,
   normalizeSignalSection,
-  parseYamlObject,
   removeFundamentalChildConfig,
-  removeValueAtPath,
-  safeDumpYaml,
-  setValueAtPath,
   updateFundamentalChildConfig,
   updateFundamentalParentConfig,
   updateRegularSignalConfig,
 } from './authoringUtils';
 import { SignalReferencePanel } from './SignalReferencePanel';
+import { type EditorTab, useStrategyEditorDraft, type VisualSectionKey } from './useStrategyEditorDraft';
 
 interface StrategyEditorProps {
   open: boolean;
@@ -65,9 +58,7 @@ interface StrategyEditorProps {
   onSuccess?: () => void;
 }
 
-type EditorTab = 'visual' | 'advanced' | 'preview';
 type SignalSectionKey = 'entry_filter_params' | 'exit_trigger_params';
-type VisualSectionKey = 'basics' | 'shared_config' | 'entry_filter' | 'exit_trigger' | 'advanced_only';
 
 const VISUAL_TOP_LEVEL_KEYS = new Set([
   'display_name',
@@ -1172,15 +1163,129 @@ function StrategyEditorDialogBody({
   );
 }
 
-export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
-  const [activeTab, setActiveTab] = useState<EditorTab>('visual');
-  const [activeVisualSection, setActiveVisualSection] = useState<VisualSectionKey>('basics');
-  const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
-  const [yamlContent, setYamlContent] = useState('');
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [validationResult, setValidationResult] = useState<StrategyValidationResponse | null>(null);
-  const [previewDirty, setPreviewDirty] = useState(true);
+interface SharedFieldRenderContext {
+  contextReady: boolean;
+  rawSharedConfig: Record<string, unknown>;
+  defaultSharedConfig: Record<string, unknown>;
+  benchmarkOptionValues: string[];
+  datasetSnapshotOptionValues: string[];
+  universePresetOptionValues: string[];
+  handleStockCodesModeChange: (mode: 'all' | 'custom') => void;
+  removeDraftPath: (path: string) => void;
+  updateDraftAtPath: (path: string, value: unknown) => void;
+  updateSharedConfigField: (field: AuthoringFieldSchema, value: unknown) => void;
+}
 
+function getSharedFieldOptionValues(context: SharedFieldRenderContext, path: string) {
+  if (path === 'universe_preset') {
+    return context.universePresetOptionValues;
+  }
+  if (path === 'dataset_snapshot') {
+    return context.datasetSnapshotOptionValues;
+  }
+  if (path === 'benchmark_table') {
+    return context.benchmarkOptionValues;
+  }
+  return undefined;
+}
+
+function renderStockCodesSharedField(
+  field: AuthoringFieldSchema,
+  value: unknown,
+  overridden: boolean,
+  context: SharedFieldRenderContext
+) {
+  return (
+    <StockCodesFieldCard
+      field={field}
+      value={value}
+      overridden={overridden}
+      onModeChange={context.handleStockCodesModeChange}
+      onChange={(nextValue) =>
+        context.updateDraftAtPath(
+          'shared_config.stock_codes',
+          nextValue
+            .split(/[\n,]/)
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)
+        )
+      }
+      onReset={() => context.removeDraftPath('shared_config.stock_codes')}
+    />
+  );
+}
+
+function renderReferenceSharedField(
+  field: AuthoringFieldSchema,
+  value: unknown,
+  overridden: boolean,
+  optionValues: string[],
+  context: SharedFieldRenderContext
+) {
+  const copy = getReferenceSelectCopy(field.path);
+  return (
+    <ReferenceSelectFieldCard
+      field={field}
+      value={value}
+      effectiveValue={value}
+      overridden={overridden}
+      optionValues={optionValues}
+      chooserLabel={copy.chooserLabel}
+      placeholderLabel={copy.placeholderLabel}
+      onChange={(nextValue) => context.updateSharedConfigField(field, nextValue)}
+      onReset={() => context.removeDraftPath(`shared_config.${field.path}`)}
+    />
+  );
+}
+
+function renderSharedFieldControl(field: AuthoringFieldSchema, context: SharedFieldRenderContext) {
+  if (!context.contextReady) return null;
+
+  const overridden = hasValueAtPath(context.rawSharedConfig, field.path);
+  const value = overridden
+    ? getValueAtPath(context.rawSharedConfig, field.path)
+    : getValueAtPath(context.defaultSharedConfig, field.path);
+  const optionValues = getSharedFieldOptionValues(context, field.path);
+
+  if (field.path === 'stock_codes') {
+    return renderStockCodesSharedField(field, value, overridden, context);
+  }
+
+  if (isReferenceSelectField(field.path)) {
+    return renderReferenceSharedField(field, value, overridden, optionValues ?? [], context);
+  }
+
+  return (
+    <MetadataFieldControl
+      key={field.path}
+      field={field}
+      value={value}
+      effectiveValue={value}
+      overridden={overridden}
+      optionValues={optionValues}
+      onChange={(nextValue) => context.updateSharedConfigField(field, nextValue)}
+      onReset={() => context.removeDraftPath(`shared_config.${field.path}`)}
+    />
+  );
+}
+
+function resolveDatasetSnapshotName(
+  rawSharedConfig: Record<string, unknown>,
+  defaultSharedConfig: Record<string, unknown>
+): string | null {
+  const explicitDataset = getValueAtPath(rawSharedConfig, 'dataset_snapshot');
+  if (typeof explicitDataset === 'string') {
+    return explicitDataset;
+  }
+  const defaultDataset = getValueAtPath(defaultSharedConfig, 'dataset_snapshot');
+  return typeof defaultDataset === 'string' ? defaultDataset : null;
+}
+
+function resolveStrategyEditorLoading(...states: boolean[]) {
+  return states.some(Boolean);
+}
+
+export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const strategyContextQuery = useStrategyEditorContext(open ? strategyName : null);
   const referenceQuery = useStrategyEditorReference(open);
   const signalReferenceQuery = useSignalReference();
@@ -1189,24 +1294,35 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   const updateStrategy = useUpdateStrategy();
   const validateStrategy = useValidateStrategy();
   const visualSectionIdPrefix = useId();
-
-  const applyDraftConfig = useCallback((nextConfig: Record<string, unknown>) => {
-    setDraftConfig(nextConfig);
-    setYamlContent(safeDumpYaml(nextConfig));
-    setParseError(null);
-    setPreviewDirty(true);
-  }, []);
-
-  useEffect(() => {
-    if (!open || !strategyContextQuery.data) {
-      return;
-    }
-    setActiveTab('visual');
-    setActiveVisualSection('basics');
-    setValidationResult(null);
-    setPreviewDirty(true);
-    applyDraftConfig(strategyContextQuery.data.raw_config);
-  }, [applyDraftConfig, open, strategyContextQuery.data]);
+  const {
+    activeTab,
+    activeVisualSection,
+    draftConfig,
+    handleCopySnippet,
+    handleOpenChange,
+    handleSave,
+    handleTabChange,
+    handleYamlChange,
+    parseError,
+    previewDirty,
+    removeDraftPath,
+    runBackendValidation,
+    setActiveVisualSection,
+    updateDraftAtPath,
+    updateErrorMessage,
+    updatePending,
+    validatePending,
+    validationResult,
+    yamlContent,
+  } = useStrategyEditorDraft({
+    open,
+    strategyName,
+    strategyContextQuery,
+    updateStrategy,
+    validateStrategy,
+    onOpenChange,
+    onSuccess,
+  });
 
   const definitions = signalReferenceQuery.data?.signals ?? [];
   const categories = signalReferenceQuery.data?.categories ?? [];
@@ -1353,21 +1469,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         block: 'start',
       });
     },
-    [visualSectionIdPrefix]
-  );
-
-  const updateDraftAtPath = useCallback(
-    (path: string, value: unknown) => {
-      applyDraftConfig(setValueAtPath(draftConfig, path, value));
-    },
-    [applyDraftConfig, draftConfig]
-  );
-
-  const removeDraftPath = useCallback(
-    (path: string) => {
-      applyDraftConfig(removeValueAtPath(draftConfig, path));
-    },
-    [applyDraftConfig, draftConfig]
+    [setActiveVisualSection, visualSectionIdPrefix]
   );
 
   const updateSharedConfigField = useCallback(
@@ -1513,234 +1615,42 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [draftConfig, fundamentalParentFieldNames, removeDraftPath, updateDraftAtPath]
   );
 
-  const resolveCurrentConfig = useCallback(() => {
-    if (activeTab === 'advanced') {
-      const parsed = parseYamlObject(yamlContent);
-      setParseError(parsed.error);
-      return parsed.value;
-    }
-    return draftConfig;
-  }, [activeTab, draftConfig, yamlContent]);
-
-  const runBackendValidation = useCallback(
-    async (switchToPreview = false) => {
-      const config = resolveCurrentConfig();
-      if (!config) {
-        return null;
-      }
-      try {
-        const result = await validateStrategy.mutateAsync({
-          name: strategyName,
-          request: { config },
-        });
-        setValidationResult(result);
-        setPreviewDirty(false);
-        if (switchToPreview) {
-          setActiveTab('preview');
-        }
-        return result;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown validation error';
-        const failedResult: StrategyValidationResponse = {
-          valid: false,
-          errors: [`Validation request failed: ${message}`],
-          warnings: [],
-        };
-        setValidationResult(failedResult);
-        setPreviewDirty(false);
-        if (switchToPreview) {
-          setActiveTab('preview');
-        }
-        return failedResult;
-      }
-    },
-    [resolveCurrentConfig, strategyName, validateStrategy]
+  const isLoading = resolveStrategyEditorLoading(
+    strategyContextQuery.isLoading,
+    referenceQuery.isLoading,
+    signalReferenceQuery.isLoading
   );
-
-  const handleSave = useCallback(async () => {
-    const config = resolveCurrentConfig();
-    if (!config) return;
-
-    const result = await runBackendValidation();
-    if (!result?.valid) {
-      return;
-    }
-
-    updateStrategy.mutate(
-      { name: strategyName, request: { config } },
-      {
-        onSuccess: () => {
-          onOpenChange(false);
-          onSuccess?.();
-        },
-      }
-    );
-  }, [onOpenChange, onSuccess, resolveCurrentConfig, runBackendValidation, strategyName, updateStrategy]);
-
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (!nextOpen) {
-        updateStrategy.reset();
-        validateStrategy.reset();
-        setParseError(null);
-        setValidationResult(null);
-        setPreviewDirty(true);
-        setActiveTab('visual');
-      }
-      onOpenChange(nextOpen);
-    },
-    [onOpenChange, updateStrategy, validateStrategy]
-  );
-
-  const handleYamlChange = useCallback((value: string) => {
-    setYamlContent(value);
-    setPreviewDirty(true);
-    const parsed = parseYamlObject(value);
-    setParseError(parsed.error);
-    if (parsed.value) {
-      setDraftConfig(parsed.value);
-    }
-  }, []);
-
-  const handleTabChange = useCallback(
-    (tab: EditorTab) => {
-      if (tab === 'visual') {
-        const parsed = parseYamlObject(yamlContent);
-        if (!parsed.value) {
-          setParseError(parsed.error);
-          return;
-        }
-        const compatibilityError = canVisualizeStrategyConfig(parsed.value);
-        if (compatibilityError) {
-          setParseError(compatibilityError);
-          return;
-        }
-        setParseError(null);
-        setDraftConfig(parsed.value);
-        setActiveTab('visual');
-        return;
-      }
-
-      if (tab === 'preview') {
-        setActiveTab('preview');
-        void runBackendValidation(false);
-        return;
-      }
-
-      setActiveTab(tab);
-    },
-    [runBackendValidation, yamlContent]
-  );
-
-  const handleCopySnippet = useCallback(
-    (snippet: string) => {
-      const nextContent = yamlContent.trim() ? `${yamlContent.trimEnd()}\n\n${snippet}` : snippet;
-      setActiveTab('advanced');
-      handleYamlChange(nextContent);
-    },
-    [handleYamlChange, yamlContent]
-  );
-
-  const isLoading = strategyContextQuery.isLoading || referenceQuery.isLoading || signalReferenceQuery.isLoading;
   const strategyCategory = context?.category ?? 'unknown';
-  const updateErrorMessage = updateStrategy.isError ? updateStrategy.error.message : null;
-  const datasetSnapshotName =
-    typeof getValueAtPath(rawSharedConfig, 'dataset_snapshot') === 'string'
-      ? (getValueAtPath(rawSharedConfig, 'dataset_snapshot') as string)
-      : typeof getValueAtPath(defaultSharedConfig, 'dataset_snapshot') === 'string'
-        ? (getValueAtPath(defaultSharedConfig, 'dataset_snapshot') as string)
-        : null;
+  const datasetSnapshotName = resolveDatasetSnapshotName(rawSharedConfig, defaultSharedConfig);
   const datasetInfo = useDatasetInfo(open ? datasetSnapshotName : null);
 
-  const getSharedFieldOptionValues = useCallback(
-    (path: string) => {
-      if (path === 'universe_preset') {
-        return universePresetOptionValues;
-      }
-      if (path === 'dataset_snapshot') {
-        return datasetSnapshotOptionValues;
-      }
-      if (path === 'benchmark_table') {
-        return benchmarkOptionValues;
-      }
-      return undefined;
-    },
-    [benchmarkOptionValues, datasetSnapshotOptionValues, universePresetOptionValues]
+  const renderSharedField = useCallback(
+    (field: AuthoringFieldSchema) =>
+      renderSharedFieldControl(field, {
+        contextReady: Boolean(context),
+        rawSharedConfig,
+        defaultSharedConfig,
+        benchmarkOptionValues,
+        datasetSnapshotOptionValues,
+        universePresetOptionValues,
+        handleStockCodesModeChange,
+        removeDraftPath,
+        updateDraftAtPath,
+        updateSharedConfigField,
+      }),
+    [
+      benchmarkOptionValues,
+      context,
+      datasetSnapshotOptionValues,
+      defaultSharedConfig,
+      handleStockCodesModeChange,
+      rawSharedConfig,
+      removeDraftPath,
+      universePresetOptionValues,
+      updateDraftAtPath,
+      updateSharedConfigField,
+    ]
   );
-
-  const renderStockCodesField = useCallback(
-    (field: AuthoringFieldSchema, value: unknown, overridden: boolean) => (
-      <StockCodesFieldCard
-        field={field}
-        value={value}
-        overridden={overridden}
-        onModeChange={handleStockCodesModeChange}
-        onChange={(nextValue) =>
-          updateDraftAtPath(
-            'shared_config.stock_codes',
-            nextValue
-              .split(/[\n,]/)
-              .map((item) => item.trim())
-              .filter((item) => item.length > 0)
-          )
-        }
-        onReset={() => removeDraftPath('shared_config.stock_codes')}
-      />
-    ),
-    [handleStockCodesModeChange, removeDraftPath, updateDraftAtPath]
-  );
-
-  const renderReferenceSharedField = useCallback(
-    (field: AuthoringFieldSchema, value: unknown, overridden: boolean, optionValues: string[]) => {
-      const copy = getReferenceSelectCopy(field.path);
-      return (
-        <ReferenceSelectFieldCard
-          field={field}
-          value={value}
-          effectiveValue={value}
-          overridden={overridden}
-          optionValues={optionValues}
-          chooserLabel={copy.chooserLabel}
-          placeholderLabel={copy.placeholderLabel}
-          onChange={(nextValue) => updateSharedConfigField(field, nextValue)}
-          onReset={() => removeDraftPath(`shared_config.${field.path}`)}
-        />
-      );
-    },
-    [removeDraftPath, updateSharedConfigField]
-  );
-
-  const renderSharedField = (field: AuthoringFieldSchema) => {
-    if (!context) return null;
-
-    const overridden = hasValueAtPath(rawSharedConfig, field.path);
-    const value = overridden
-      ? getValueAtPath(rawSharedConfig, field.path)
-      : getValueAtPath(defaultSharedConfig, field.path);
-
-    const optionValues = getSharedFieldOptionValues(field.path);
-
-    if (field.path === 'stock_codes') {
-      return renderStockCodesField(field, value, overridden);
-    }
-
-    if (isReferenceSelectField(field.path)) {
-      return renderReferenceSharedField(field, value, overridden, optionValues ?? []);
-    }
-
-    return (
-      <MetadataFieldControl
-        key={field.path}
-        field={field}
-        value={value}
-        effectiveValue={value}
-        overridden={overridden}
-        optionValues={optionValues}
-        onChange={(nextValue) => updateSharedConfigField(field, nextValue)}
-        onReset={() => removeDraftPath(`shared_config.${field.path}`)}
-      />
-    );
-  };
 
   const renderSignalSection = (sectionKey: SignalSectionKey, title: string) => {
     return (
@@ -1793,8 +1703,8 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
       strategyCategory={strategyCategory}
       updateDraftAtPath={updateDraftAtPath}
       updateErrorMessage={updateErrorMessage}
-      updatePending={updateStrategy.isPending}
-      validatePending={validateStrategy.isPending}
+      updatePending={updatePending}
+      validatePending={validatePending}
       validationResult={validationResult}
       visualAdvancedOnlyPaths={visualAdvancedOnlyPaths}
       visualSectionIdPrefix={visualSectionIdPrefix}
