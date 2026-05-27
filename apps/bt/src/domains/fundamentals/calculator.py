@@ -13,10 +13,6 @@ from src.shared.utils.financial import calc_market_cap_scalar
 from src.shared.utils.share_adjustment import (
     ShareAdjustmentEvent,
     ShareCountSnapshot,
-    adjust_share_count_to_price_basis,
-    is_valid_share_count,
-    resolve_latest_quarterly_baseline_shares,
-    resolve_latest_quarterly_share_snapshot,
 )
 from src.shared.utils.statement_document import is_actual_fy_financial_statement
 
@@ -34,6 +30,7 @@ from .daily_valuation import (
     resolve_forward_eps_for_daily_valuation as _resolve_forward_eps_for_daily_valuation_impl,
     resolve_forward_operating_profit_for_daily_valuation as _resolve_forward_operating_profit_for_daily_valuation_impl,
 )
+from . import share_adjustments as _share_adjustments
 from .valuation_primitives import valuation_ratio
 
 
@@ -42,84 +39,41 @@ class FundamentalsCalculator:
 
     @staticmethod
     def _is_valid_share_metric(value: float | None, *, allow_zero: bool = False) -> bool:
-        if value is None or not math.isfinite(value):
-            return False
-        if allow_zero:
-            return value >= 0
-        return value > 0
+        return _share_adjustments.is_valid_share_metric(value, allow_zero=allow_zero)
 
     def _build_shares_map(
         self, statements: list[JQuantsStatement]
     ) -> dict[tuple[str, str, str | None], float | None]:
-        shares_map: dict[tuple[str, str, str | None], float | None] = {}
-        for stmt in statements:
-            period_type = normalize_period_type(stmt.CurPerType)
-            key = (stmt.CurPerEn, stmt.DiscDate, period_type)
-            shares_map[key] = stmt.ShOutFY
-        return shares_map
+        return _share_adjustments.build_shares_map(statements)
 
     def _get_shares_for_datapoint(
         self,
         data_point: FundamentalDataPoint,
         shares_map: dict[tuple[str, str, str | None], float | None],
     ) -> float | None:
-        period_type = normalize_period_type(data_point.periodType)
-        key = (data_point.date, data_point.disclosedDate, period_type)
-        return shares_map.get(key)
+        return _share_adjustments.get_shares_for_datapoint(data_point, shares_map)
 
     def _resolve_baseline_shares_from_latest_quarter(
         self, statements: list[JQuantsStatement]
     ) -> float | None:
-        snapshots = [(stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY) for stmt in statements]
-        return resolve_latest_quarterly_baseline_shares(snapshots)
+        return _share_adjustments.resolve_baseline_shares_from_latest_quarter(statements)
 
     def _resolve_baseline_share_snapshot_from_latest_quarter(
         self, statements: list[JQuantsStatement]
     ) -> ShareCountSnapshot | None:
-        snapshots = [(stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY) for stmt in statements]
-        return resolve_latest_quarterly_share_snapshot(snapshots)
+        return _share_adjustments.resolve_baseline_share_snapshot_from_latest_quarter(statements)
 
     def _resolve_latest_treasury_shares_from_latest_quarter(
         self, statements: list[JQuantsStatement]
     ) -> float | None:
-        snapshot = self._resolve_latest_treasury_share_snapshot_from_latest_quarter(
-            statements
-        )
-        return snapshot.shares if snapshot is not None else None
+        return _share_adjustments.resolve_latest_treasury_shares_from_latest_quarter(statements)
 
     def _resolve_latest_treasury_share_snapshot_from_latest_quarter(
         self, statements: list[JQuantsStatement]
     ) -> ShareCountSnapshot | None:
-        latest_quarter_key: str | None = None
-        latest_quarter_snapshot: ShareCountSnapshot | None = None
-        latest_any_key: str | None = None
-        latest_any_snapshot: ShareCountSnapshot | None = None
-
-        for stmt in statements:
-            treasury_shares = stmt.TrShFY
-            if not self._is_valid_share_metric(treasury_shares, allow_zero=True):
-                continue
-            assert treasury_shares is not None
-
-            disclosed_key = str(stmt.DiscDate) if stmt.DiscDate is not None else ""
-            treasury_value = float(treasury_shares)
-            normalized_period = normalize_period_type(stmt.CurPerType)
-            snapshot = ShareCountSnapshot(
-                period_type=normalized_period,
-                disclosed_date=disclosed_key,
-                shares=treasury_value,
-            )
-
-            if normalized_period in {"1Q", "2Q", "3Q"}:
-                if latest_quarter_key is None or disclosed_key > latest_quarter_key:
-                    latest_quarter_key = disclosed_key
-                    latest_quarter_snapshot = snapshot
-
-            if latest_any_key is None or disclosed_key > latest_any_key:
-                latest_any_key = disclosed_key
-                latest_any_snapshot = snapshot
-
-        return latest_quarter_snapshot if latest_quarter_snapshot is not None else latest_any_snapshot
+        return _share_adjustments.resolve_latest_treasury_share_snapshot_from_latest_quarter(
+            statements
+        )
 
     def _adjust_snapshot_shares_to_price_basis(
         self,
@@ -129,12 +83,9 @@ class FundamentalsCalculator:
         through_date: str | None,
         allow_zero: bool = False,
     ) -> float | None:
-        if snapshot is None:
-            return None
-        return adjust_share_count_to_price_basis(
-            snapshot.shares,
+        return _share_adjustments.adjust_snapshot_shares_to_price_basis(
+            snapshot,
             share_adjustment_events,
-            from_date=snapshot.disclosed_date,
             through_date=through_date,
             allow_zero=allow_zero,
         )
@@ -145,16 +96,12 @@ class FundamentalsCalculator:
         current_shares: float | None,
         base_shares: float | None,
     ) -> float | None:
-        if (
-            value is None
-            or not is_valid_share_count(current_shares)
-            or not is_valid_share_count(base_shares)
-        ):
-            return None
-        assert current_shares is not None
-        assert base_shares is not None
-        adjusted = value * (current_shares / base_shares)
-        return self._round_or_none(adjusted)
+        return _share_adjustments.compute_adjusted_value(
+            value,
+            current_shares,
+            base_shares,
+            round_or_none=self._round_or_none,
+        )
 
     def _build_adjusted_datapoint(
         self,
@@ -165,45 +112,17 @@ class FundamentalsCalculator:
         dividend_shares: float | None,
         base_shares: float | None,
     ) -> FundamentalDataPoint:
-        adjusted_eps = self._compute_adjusted_value(item.eps, eps_shares, base_shares)
-        adjusted_bps = self._compute_adjusted_value(item.bps, bps_shares, base_shares)
-        adjusted_forecast = self._compute_adjusted_value(item.forecastEps, forecast_shares, base_shares)
-        adjusted_dividend = self._compute_adjusted_value(item.dividendFy, dividend_shares, base_shares)
-        adjusted_forecast_dividend = self._compute_adjusted_value(
-            item.forecastDividendFy, dividend_shares, base_shares
-        )
-        display_eps = adjusted_eps if adjusted_eps is not None else item.eps
-        display_bps = adjusted_bps if adjusted_bps is not None else item.bps
-        display_dividend = adjusted_dividend if adjusted_dividend is not None else item.dividendFy
-        display_forecast_dividend = (
-            adjusted_forecast_dividend
-            if adjusted_forecast_dividend is not None
-            else item.forecastDividendFy
-        )
-        forecast_dividend_change_rate = self._calculate_change_rate(
-            display_dividend, display_forecast_dividend
-        )
-        forecast_payout_change_rate = self._calculate_change_rate(
-            item.payoutRatio, item.forecastPayoutRatio
-        )
-
-        return FundamentalDataPoint(
-            **{
-                **item.model_dump(),
-                "adjustedEps": adjusted_eps,
-                "adjustedForecastEps": adjusted_forecast,
-                "adjustedBps": adjusted_bps,
-                "adjustedDividendFy": adjusted_dividend,
-                "adjustedForecastDividendFy": adjusted_forecast_dividend,
-                "forecastDividendFyChangeRate": self._round_or_none(
-                    forecast_dividend_change_rate
-                ),
-                "forecastPayoutRatioChangeRate": self._round_or_none(
-                    forecast_payout_change_rate
-                ),
-                "per": self._round_or_none(self._calculate_per(display_eps, item.stockPrice)),
-                "pbr": self._round_or_none(self._calculate_pbr(display_bps, item.stockPrice)),
-            }
+        return _share_adjustments.build_adjusted_datapoint(
+            item,
+            eps_shares,
+            bps_shares,
+            forecast_shares,
+            dividend_shares,
+            base_shares,
+            round_or_none=self._round_or_none,
+            calculate_per=self._calculate_per,
+            calculate_pbr=self._calculate_pbr,
+            calculate_change_rate=self._calculate_change_rate,
         )
 
     def _apply_share_adjustments(
@@ -214,27 +133,18 @@ class FundamentalsCalculator:
         share_adjustment_events: list[ShareAdjustmentEvent] | None = None,
         through_date: str | None = None,
     ) -> tuple[list[FundamentalDataPoint], FundamentalDataPoint | None]:
-        shares_map = self._build_shares_map(statements)
-        base_snapshot = self._resolve_baseline_share_snapshot_from_latest_quarter(statements)
-        base_shares = self._adjust_snapshot_shares_to_price_basis(
-            base_snapshot,
-            share_adjustment_events or [],
+        return _share_adjustments.apply_share_adjustments(
+            data,
+            statements,
+            latest_metrics,
+            share_adjustment_events=share_adjustment_events,
             through_date=through_date,
+            round_or_none=self._round_or_none,
+            calculate_per=self._calculate_per,
+            calculate_pbr=self._calculate_pbr,
+            calculate_change_rate=self._calculate_change_rate,
+            has_actual_financial_data=self._has_actual_financial_data,
         )
-
-        updated_data: list[FundamentalDataPoint] = []
-        for item in data:
-            current_shares = self._get_shares_for_datapoint(item, shares_map)
-            updated_data.append(
-                self._build_adjusted_datapoint(
-                    item, current_shares, current_shares, current_shares, current_shares, base_shares
-                )
-            )
-
-        updated_latest = self._apply_adjusted_to_latest_metrics(
-            latest_metrics, updated_data, shares_map, base_shares
-        )
-        return updated_data, updated_latest
 
     def _apply_adjusted_to_latest_metrics(
         self,
@@ -243,19 +153,16 @@ class FundamentalsCalculator:
         shares_map: dict[tuple[str, str, str | None], float | None],
         base_shares: float | None,
     ) -> FundamentalDataPoint | None:
-        if metrics is None:
-            return None
-
-        latest_fy = next(
-            (d for d in data if d.periodType == "FY" and self._has_actual_financial_data(d)),
-            None,
-        )
-        fy_shares = self._get_shares_for_datapoint(latest_fy, shares_map) if latest_fy else None
-        metrics_shares = self._get_shares_for_datapoint(metrics, shares_map)
-        eps_bps_shares = fy_shares or metrics_shares
-
-        return self._build_adjusted_datapoint(
-            metrics, eps_bps_shares, eps_bps_shares, metrics_shares, metrics_shares, base_shares
+        return _share_adjustments.apply_adjusted_to_latest_metrics(
+            metrics,
+            data,
+            shares_map,
+            base_shares,
+            round_or_none=self._round_or_none,
+            calculate_per=self._calculate_per,
+            calculate_pbr=self._calculate_pbr,
+            calculate_change_rate=self._calculate_change_rate,
+            has_actual_financial_data=self._has_actual_financial_data,
         )
 
     def _to_daily_close_map(self, daily_ohlcv: pd.DataFrame) -> dict[str, float]:

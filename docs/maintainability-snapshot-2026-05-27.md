@@ -18,16 +18,16 @@ Measured tracked source under:
 
 | metric | value |
 | --- | --- |
-| files | 926 |
-| functions/blocks | 9008 |
-| total lines | 310903 |
-| code lines | 248567 |
+| files | 928 |
+| functions/blocks | 9035 |
+| total lines | 311326 |
+| code lines | 248978 |
 
 ## Language Split
 
 | language | files | total lines | code lines |
 | --- | --- | --- | --- |
-| python | 661 | 263903 | 218737 |
+| python | 663 | 264326 | 219148 |
 | tsx | 142 | 31211 | 16884 |
 | typescript | 123 | 15789 | 12946 |
 
@@ -38,8 +38,8 @@ Measured tracked source under:
 | files >= 1000 lines | 83 | 10 |
 | files >= 800 lines | 136 | 25 |
 | files >= 500 lines | 200 | 75 |
-| functions >= 180 lines | 40 | 5 |
-| functions >= 120 lines | 171 | 25 |
+| functions >= 180 lines | 39 | 5 |
+| functions >= 120 lines | 170 | 25 |
 | functions branch score >= 50 | 2 | 0 |
 
 ## Top File Hotspots
@@ -53,7 +53,6 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py | 2207 | 2027 | 149 | 169 | 4 | 5376 |
 | apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py | 1900 | 1605 | 240 | 176 | 3 | 5328 |
 | apps/bt/src/domains/analytics/accumulation_flow_followthrough.py | 2058 | 1834 | 185 | 163 | 4 | 5183 |
-| apps/bt/src/domains/fundamentals/calculator.py | 1189 | 1073 | 98 | 210 | 3 | 4982 |
 | apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py | 1585 | 1507 | 214 | 157 | 7 | 4910 |
 | apps/bt/src/domains/analytics/standard_missing_forecast_cfo_non_positive_deep_dive.py | 1534 | 1403 | 205 | 160 | 5 | 4783 |
 | apps/bt/src/domains/analytics/pre_earnings_eps120_proxy.py | 1826 | 1604 | 178 | 150 | 4 | 4698 |
@@ -61,12 +60,12 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/standard_negative_eps_right_tail_decomposition.py | 1737 | 1427 | 232 | 143 | 3 | 4532 |
 | apps/bt/src/domains/analytics/annual_value_periodic_rebalance.py | 1385 | 1311 | 182 | 150 | 6 | 4467 |
 | apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx | 810 | 567 | 88 | 207 | 5 | 4442 |
+| apps/bt/src/domains/analytics/standard_negative_eps_speculative_winner_feature_combos.py | 1270 | 1192 | 180 | 157 | 4 | 4418 |
 
 ## Top Function/Block Hotspots
 
 | path | name | code lines | branch score | nesting |
 | --- | --- | --- | --- | --- |
-| apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_trend_breadth_overlay.py | run_topix_downside_return_standard_deviation_trend_breadth_overlay_research | 313 | 18 | 2 |
 | apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_duplicate_policy_analysis.py | run_topix100_top1_open_to_open_5d_duplicate_policy_analysis | 287 | 17 | 2 |
 | apps/bt/src/domains/strategy/core/mixins/backtest_executor_mixin.py | run_multi_backtest | 285 | 46 | 4 |
 | apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_fixed_committee_overlay.py | run_topix100_top1_open_to_open_5d_fixed_committee_overlay_research | 257 | 19 | 2 |
@@ -81,6 +80,7 @@ Measured tracked source under:
 | apps/bt/src/domains/analytics/topix_streak_multi_timeframe_mode.py | _build_pair_score_df | 219 | 30 | 4 |
 | apps/bt/src/domains/analytics/annual_first_open_last_close_fundamental_panel.py | _build_feature_values | 218 | 29 | 2 |
 | apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py | run_annual_value_breakout_periodic_rebalance | 214 | 18 | 1 |
+| apps/ts/packages/web/src/components/Chart/StockChart.tsx | export | 210 | 55 | 6 |
 
 ## Interpretation Rules
 

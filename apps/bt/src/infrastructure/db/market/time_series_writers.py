@@ -5,7 +5,75 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from src.infrastructure.db.market.market_schema import (
+    LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    METADATA_KEYS,
+)
+
 ExecuteMany = Callable[[str, list[tuple[Any, ...]]], None]
+SetMetadata = Callable[[str, str], None]
+
+
+def upsert_stock_data(
+    executemany: ExecuteMany,
+    set_sync_metadata: SetMetadata,
+    rows: list[dict[str, Any]],
+) -> int:
+    if not rows:
+        return 0
+    params = [
+        (
+            row.get("code"),
+            row.get("date"),
+            row.get("open"),
+            row.get("high"),
+            row.get("low"),
+            row.get("close"),
+            row.get("volume"),
+            row.get("adjustment_factor"),
+            row.get("created_at"),
+        )
+        for row in rows
+    ]
+    executemany(
+        """
+        INSERT INTO stock_data_raw (
+            code, date, open, high, low, close, volume, adjustment_factor, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (code, date) DO UPDATE
+        SET open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            adjustment_factor = excluded.adjustment_factor,
+            created_at = excluded.created_at
+        """,
+        params,
+    )
+    executemany(
+        """
+        INSERT INTO stock_data (
+            code, date, open, high, low, close, volume, adjustment_factor, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (code, date) DO UPDATE
+        SET open = excluded.open,
+            high = excluded.high,
+            low = excluded.low,
+            close = excluded.close,
+            volume = excluded.volume,
+            adjustment_factor = excluded.adjustment_factor,
+            created_at = excluded.created_at
+        """,
+        params,
+    )
+    set_sync_metadata(
+        METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
+        LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
+    )
+    return len(rows)
 
 
 def upsert_stock_minute_data(executemany: ExecuteMany, rows: list[dict[str, Any]]) -> int:

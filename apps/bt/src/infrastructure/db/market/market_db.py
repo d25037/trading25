@@ -11,12 +11,11 @@ from __future__ import annotations
 import importlib
 import os
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-import pandas as pd
-
+from src.infrastructure.db.market import metadata_writers as _metadata_writers
+from src.infrastructure.db.market import stock_master_writers as _stock_master_writers
 from src.infrastructure.db.market.market_schema import (
     INCOMPATIBLE_MARKET_SCHEMA_VERSION,
     LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
@@ -24,8 +23,6 @@ from src.infrastructure.db.market.market_schema import (
     METADATA_KEYS,
     STATEMENTS_UPDATABLE_COLUMNS as _STATEMENTS_UPDATABLE_COLUMNS,
     STATS_TABLES as _STATS_TABLES,
-    STOCK_MASTER_DAILY_COLUMNS as _STOCK_MASTER_DAILY_COLUMNS,
-    STOCK_MASTER_DAILY_RELATION as _STOCK_MASTER_DAILY_RELATION,
     ensure_market_schema,
 )
 from src.infrastructure.db.market import stock_master_queries as _stock_master_queries
@@ -613,352 +610,60 @@ class MarketDb:
         if not rows:
             return 0
         self._assert_writable()
-        now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        params = [
-            (
-                row.get("code"),
-                row.get("company_name"),
-                row.get("company_name_english"),
-                row.get("market_code"),
-                row.get("market_name"),
-                row.get("sector_17_code"),
-                row.get("sector_17_name"),
-                row.get("sector_33_code"),
-                row.get("sector_33_name"),
-                row.get("scale_category"),
-                row.get("listed_date"),
-                row.get("created_at"),
-                now_iso,
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO stocks (
-                code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code) DO UPDATE
-            SET company_name = excluded.company_name,
-                company_name_english = excluded.company_name_english,
-                market_code = excluded.market_code,
-                market_name = excluded.market_name,
-                sector_17_code = excluded.sector_17_code,
-                sector_17_name = excluded.sector_17_name,
-                sector_33_code = excluded.sector_33_code,
-                sector_33_name = excluded.sector_33_name,
-                scale_category = excluded.scale_category,
-                listed_date = excluded.listed_date,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _stock_master_writers.upsert_stocks(self._executemany, rows)
 
     def upsert_stock_master_daily(self, snapshot_date: str, rows: list[dict[str, Any]]) -> int:
         """stock_master_daily に日次 PIT 銘柄マスタを upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                snapshot_date,
-                row.get("code"),
-                row.get("company_name"),
-                row.get("company_name_english"),
-                row.get("market_code"),
-                row.get("market_name"),
-                row.get("sector_17_code"),
-                row.get("sector_17_name"),
-                row.get("sector_33_code"),
-                row.get("sector_33_name"),
-                row.get("scale_category"),
-                row.get("listed_date"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO stock_master_daily (
-                date, code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (date, code) DO UPDATE
-            SET company_name = excluded.company_name,
-                company_name_english = excluded.company_name_english,
-                market_code = excluded.market_code,
-                market_name = excluded.market_name,
-                sector_17_code = excluded.sector_17_code,
-                sector_17_name = excluded.sector_17_name,
-                sector_33_code = excluded.sector_33_code,
-                sector_33_name = excluded.sector_33_name,
-                scale_category = excluded.scale_category,
-                listed_date = excluded.listed_date,
-                created_at = excluded.created_at
-            """,
-            params,
+        return _stock_master_writers.upsert_stock_master_daily(
+            self._executemany,
+            snapshot_date,
+            rows,
         )
-        return len(rows)
 
     def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
         """date を含む PIT 銘柄マスタ行を relation-based upsert する。"""
         if not rows:
             return 0
         self._assert_writable()
-        deduped: dict[tuple[str, str], dict[str, Any]] = {}
-        for row in rows:
-            row_date = str(row.get("date") or "")
-            code = str(row.get("code") or "")
-            if not row_date or not code:
-                continue
-            deduped[(row_date, code)] = row
-        if not deduped:
-            return 0
-
-        dataframe = pd.DataFrame.from_records(
-            [
-                {column: row.get(column) for column in _STOCK_MASTER_DAILY_COLUMNS}
-                for row in deduped.values()
-            ],
-            columns=_STOCK_MASTER_DAILY_COLUMNS,
+        return _stock_master_writers.upsert_stock_master_daily_rows(
+            self._conn,
+            self._lock,
+            rows,
         )
-        columns_sql = ", ".join(_STOCK_MASTER_DAILY_COLUMNS)
-        update_columns = [
-            column
-            for column in _STOCK_MASTER_DAILY_COLUMNS
-            if column not in {"date", "code"}
-        ]
-        update_clause = ", ".join(
-            f"{column} = excluded.{column}" for column in update_columns
-        )
-        with self._lock:
-            self._conn.register(_STOCK_MASTER_DAILY_RELATION, dataframe)
-            try:
-                self._conn.execute(
-                    f"""
-                    INSERT INTO stock_master_daily ({columns_sql})
-                    SELECT {columns_sql} FROM {_STOCK_MASTER_DAILY_RELATION}
-                    ON CONFLICT (date, code) DO UPDATE SET {update_clause}
-                    """
-                )
-            finally:
-                self._conn.unregister(_STOCK_MASTER_DAILY_RELATION)
-        return len(deduped)
 
     def rebuild_stock_master_intervals(self) -> int:
         """daily master から同一属性が続く PIT interval を再構築。"""
         self._assert_writable()
-        if not self._table_exists("stock_master_daily"):
-            return 0
-        rebuild_table = "__stock_master_intervals_rebuild"
-        with self._lock:
-            self._conn.execute(f"DROP TABLE IF EXISTS {rebuild_table}")
-            self._conn.execute(
-                f"""
-                CREATE TABLE {rebuild_table} (
-                    code TEXT,
-                    valid_from TEXT,
-                    valid_to TEXT,
-                    fingerprint TEXT,
-                    company_name TEXT NOT NULL,
-                    company_name_english TEXT,
-                    market_code TEXT NOT NULL,
-                    market_name TEXT NOT NULL,
-                    sector_17_code TEXT NOT NULL,
-                    sector_17_name TEXT NOT NULL,
-                    sector_33_code TEXT NOT NULL,
-                    sector_33_name TEXT NOT NULL,
-                    scale_category TEXT,
-                    listed_date TEXT,
-                    created_at TEXT,
-                    PRIMARY KEY (code, valid_from, fingerprint)
-                )
-                """
-            )
-            self._conn.execute(
-                f"""
-                INSERT INTO {rebuild_table} (
-                    code, valid_from, valid_to, fingerprint, company_name, company_name_english,
-                    market_code, market_name, sector_17_code, sector_17_name, sector_33_code,
-                    sector_33_name, scale_category, listed_date, created_at
-                )
-                WITH cleaned AS (
-                    SELECT
-                        *,
-                        CASE
-                            WHEN listed_date IS NULL THEN ''
-                            WHEN listed_date = date THEN ''
-                            ELSE listed_date
-                        END AS stable_listed_date
-                    FROM stock_master_daily
-                ), fingerprinted AS (
-                    SELECT
-                        *,
-                        md5(concat_ws('|',
-                            coalesce(company_name, ''), coalesce(company_name_english, ''),
-                            coalesce(market_code, ''), coalesce(market_name, ''),
-                            coalesce(sector_17_code, ''), coalesce(sector_17_name, ''),
-                            coalesce(sector_33_code, ''), coalesce(sector_33_name, ''),
-                            coalesce(scale_category, ''), stable_listed_date
-                        )) AS fingerprint
-                    FROM cleaned
-                ), marked AS (
-                    SELECT
-                        *,
-                        CASE
-                            WHEN lag(fingerprint) OVER (PARTITION BY code ORDER BY date) = fingerprint
-                            THEN 0 ELSE 1
-                        END AS starts_new_group
-                    FROM fingerprinted
-                ), grouped AS (
-                    SELECT
-                        *,
-                        sum(starts_new_group) OVER (PARTITION BY code ORDER BY date) AS interval_group
-                    FROM marked
-                )
-                SELECT
-                    code,
-                    min(date) AS valid_from,
-                    max(date) AS valid_to,
-                    fingerprint,
-                    any_value(company_name),
-                    any_value(company_name_english),
-                    any_value(market_code),
-                    any_value(market_name),
-                    any_value(sector_17_code),
-                    any_value(sector_17_name),
-                    any_value(sector_33_code),
-                    any_value(sector_33_name),
-                    any_value(scale_category),
-                    any_value(stable_listed_date),
-                    max(created_at)
-                FROM grouped
-                GROUP BY code, interval_group, fingerprint
-                """
-            )
-            self._conn.execute("DROP TABLE stock_master_intervals")
-            self._conn.execute(f"ALTER TABLE {rebuild_table} RENAME TO stock_master_intervals")
-            row = self._conn.execute("SELECT COUNT(*) FROM stock_master_intervals").fetchone()
-        return int(row[0]) if row is not None else 0
+        return _stock_master_writers.rebuild_stock_master_intervals(
+            self._conn,
+            self._lock,
+            self._table_exists,
+        )
 
     def rebuild_stocks_latest(self) -> int:
         """最新 daily master から stocks_latest と legacy stocks を再構築。"""
         self._assert_writable()
-        latest_date = self.get_latest_stock_master_date()
-        if latest_date is None:
-            return 0
-        now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        self._execute("DELETE FROM stocks_latest")
-        self._execute(
-            """
-            INSERT INTO stocks_latest (
-                code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date, source_date, created_at, updated_at
-            )
-            SELECT
-                code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date, date, created_at, ?
-            FROM stock_master_daily
-            WHERE date = ?
-            """,
-            [now_iso, latest_date],
+        return _stock_master_writers.rebuild_stocks_latest(
+            self._execute,
+            self._fetchall,
+            self._count_rows,
+            self.get_latest_stock_master_date,
+            self.upsert_stocks,
         )
-        rows = self._fetchall(
-            """
-            SELECT
-                code, company_name, company_name_english, market_code, market_name,
-                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
-                scale_category, listed_date, created_at
-            FROM stocks_latest
-            """
-        )
-        self.upsert_stocks(
-            [
-                {
-                    "code": row[0],
-                    "company_name": row[1],
-                    "company_name_english": row[2],
-                    "market_code": row[3],
-                    "market_name": row[4],
-                    "sector_17_code": row[5],
-                    "sector_17_name": row[6],
-                    "sector_33_code": row[7],
-                    "sector_33_name": row[8],
-                    "scale_category": row[9],
-                    "listed_date": row[10],
-                    "created_at": row[11],
-                }
-                for row in rows
-            ]
-        )
-        return self._count_rows("stocks_latest")
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
         """stock_data_raw と stock_data に upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        params = [
-            (
-                row.get("code"),
-                row.get("date"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("volume"),
-                row.get("adjustment_factor"),
-                row.get("created_at"),
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO stock_data_raw (
-                code, date, open, high, low, close, volume, adjustment_factor, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code, date) DO UPDATE
-            SET open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                volume = excluded.volume,
-                adjustment_factor = excluded.adjustment_factor,
-                created_at = excluded.created_at
-            """,
-            params,
+        return _time_series_writers.upsert_stock_data(
+            self._executemany,
+            self.set_sync_metadata,
+            rows,
         )
-        self._executemany(
-            """
-            INSERT INTO stock_data (
-                code, date, open, high, low, close, volume, adjustment_factor, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code, date) DO UPDATE
-            SET open = excluded.open,
-                high = excluded.high,
-                low = excluded.low,
-                close = excluded.close,
-                volume = excluded.volume,
-                adjustment_factor = excluded.adjustment_factor,
-                created_at = excluded.created_at
-            """,
-            params,
-        )
-        self.set_sync_metadata(
-            METADATA_KEYS["STOCK_PRICE_ADJUSTMENT_MODE"],
-            LOCAL_STOCK_PRICE_ADJUSTMENT_MODE,
-        )
-        return len(rows)
 
     def upsert_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
         """stock_data_minute_raw に upsert。"""
@@ -1059,57 +764,14 @@ class MarketDb:
     def set_sync_metadata(self, key: str, value: str) -> None:
         """sync_metadata にキーバリューを設定（upsert）。"""
         self._assert_writable()
-        self._execute(
-            """
-            INSERT INTO sync_metadata (key, value, updated_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT (key) DO UPDATE
-            SET value = excluded.value,
-                updated_at = excluded.updated_at
-            """,
-            [key, value, datetime.now().isoformat()],  # noqa: DTZ005
-        )
+        _metadata_writers.set_sync_metadata(self._execute, key, value)
 
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> int:
         """index_master テーブルに upsert。"""
         if not rows:
             return 0
         self._assert_writable()
-        now_iso = datetime.now().isoformat()  # noqa: DTZ005
-        params = [
-            (
-                row.get("code"),
-                row.get("name"),
-                row.get("name_english"),
-                row.get("category"),
-                row.get("data_start_date"),
-                row.get("created_at"),
-                now_iso,
-            )
-            for row in rows
-        ]
-        self._executemany(
-            """
-            INSERT INTO index_master (
-                code, name, name_english, category, data_start_date, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (code) DO UPDATE
-            SET name = excluded.name,
-                name_english = excluded.name_english,
-                category = excluded.category,
-                data_start_date = CASE
-                    WHEN excluded.data_start_date IS NULL THEN index_master.data_start_date
-                    WHEN index_master.data_start_date IS NULL THEN excluded.data_start_date
-                    WHEN excluded.data_start_date < index_master.data_start_date THEN excluded.data_start_date
-                    ELSE index_master.data_start_date
-                END,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at
-            """,
-            params,
-        )
-        return len(rows)
+        return _metadata_writers.upsert_index_master(self._executemany, rows)
 
     # --- Stats (Phase 3D-2) ---
 

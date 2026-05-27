@@ -168,6 +168,58 @@ class TopixDownsideReturnStandardDeviationTrendBreadthOverlayResearchResult:
     best_sharpe_daily_df: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class _TrendBreadthResolvedParams:
+    std_windows: tuple[int, ...]
+    mean_windows: tuple[int, ...]
+    high_thresholds: tuple[float, ...]
+    low_thresholds: tuple[float, ...]
+    reduced_exposures: tuple[float, ...]
+    trend_rules: tuple[str, ...]
+    breadth_rules: tuple[str, ...]
+    rank_top_ks: tuple[int, ...]
+    validation_ratio: float
+    min_constituents_per_day: int
+    discovery_window_days: int
+    validation_window_days: int
+    step_window_days: int
+    parameter_grid: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class _TrendBreadthSourceFrames:
+    source_mode: SourceMode
+    source_detail: str
+    available_start_date: str | None
+    available_end_date: str | None
+    breadth_available_start_date: str
+    breadth_available_end_date: str
+    market_frame_df: pd.DataFrame
+    breadth_daily_df: pd.DataFrame
+    signal_base_df: pd.DataFrame
+    baseline_daily_df: pd.DataFrame
+    baseline_metrics_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _TrendBreadthCandidateFrames:
+    candidate_metrics_df: pd.DataFrame
+    candidate_comparison_df: pd.DataFrame
+    selection_summary_df: pd.DataFrame
+    rank_stability_df: pd.DataFrame
+    candidate_return_series_by_id: dict[str, pd.Series]
+    best_sharpe_daily_df: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class _TrendBreadthWalkforwardFrames:
+    fold_candidate_rank_df: pd.DataFrame
+    rank_diagnostics_df: pd.DataFrame
+    top1_df: pd.DataFrame
+    top1_summary_df: pd.DataFrame
+    top1_selection_frequency_df: pd.DataFrame
+
+
 def get_topix_downside_return_standard_deviation_trend_breadth_overlay_available_date_range(
     db_path: str,
 ) -> tuple[str | None, str | None]:
@@ -196,6 +248,120 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
     validation_window_days: int = DEFAULT_VALIDATION_WINDOW_DAYS,
     step_window_days: int = DEFAULT_STEP_WINDOW_DAYS,
 ) -> TopixDownsideReturnStandardDeviationTrendBreadthOverlayResearchResult:
+    params = _resolve_trend_breadth_params(
+        downside_return_standard_deviation_window_days=downside_return_standard_deviation_window_days,
+        downside_return_standard_deviation_mean_window_days=downside_return_standard_deviation_mean_window_days,
+        high_annualized_downside_return_standard_deviation_thresholds=high_annualized_downside_return_standard_deviation_thresholds,
+        low_annualized_downside_return_standard_deviation_thresholds=low_annualized_downside_return_standard_deviation_thresholds,
+        reduced_exposure_ratios=reduced_exposure_ratios,
+        trend_rules=trend_rules,
+        breadth_rules=breadth_rules,
+        rank_top_ks=rank_top_ks,
+        validation_ratio=validation_ratio,
+        min_constituents_per_day=min_constituents_per_day,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+    )
+    source_frames = _build_trend_breadth_source_frames(
+        db_path=db_path,
+        start_date=start_date,
+        end_date=end_date,
+        params=params,
+    )
+    candidate_frames = _build_trend_breadth_candidate_frames(
+        params=params,
+        market_frame_df=source_frames.market_frame_df,
+        breadth_daily_df=source_frames.breadth_daily_df,
+        baseline_daily_df=source_frames.baseline_daily_df,
+        baseline_metrics_df=source_frames.baseline_metrics_df,
+    )
+    walkforward_frames = _build_trend_breadth_walkforward_frames(
+        params=params,
+        baseline_daily_df=source_frames.baseline_daily_df,
+        candidate_comparison_df=candidate_frames.candidate_comparison_df,
+        candidate_return_series_by_id=candidate_frames.candidate_return_series_by_id,
+    )
+    annotated_market_frame_df = _annotate_market_frame_with_split_labels(
+        source_frames.market_frame_df,
+        signal_base_df=source_frames.signal_base_df,
+    )
+    analysis_start_date = (
+        str(source_frames.signal_base_df["realized_date"].iloc[0])
+        if not source_frames.signal_base_df.empty
+        else None
+    )
+    analysis_end_date = (
+        str(source_frames.signal_base_df["realized_date"].iloc[-1])
+        if not source_frames.signal_base_df.empty
+        else None
+    )
+
+    return TopixDownsideReturnStandardDeviationTrendBreadthOverlayResearchResult(
+        db_path=db_path,
+        source_mode=source_frames.source_mode,
+        source_detail=source_frames.source_detail,
+        available_start_date=source_frames.available_start_date,
+        available_end_date=source_frames.available_end_date,
+        breadth_available_start_date=source_frames.breadth_available_start_date,
+        breadth_available_end_date=source_frames.breadth_available_end_date,
+        analysis_start_date=analysis_start_date,
+        analysis_end_date=analysis_end_date,
+        validation_ratio=params.validation_ratio,
+        annualization_factor=ANNUALIZATION_FACTOR,
+        execution_timing=EXECUTION_TIMING,
+        breadth_universe="topix100",
+        breadth_universe_membership_mode="latest_scale_category_proxy",
+        min_constituents_per_day=params.min_constituents_per_day,
+        downside_return_standard_deviation_window_days=params.std_windows,
+        downside_return_standard_deviation_mean_window_days=params.mean_windows,
+        high_annualized_downside_return_standard_deviation_thresholds=params.high_thresholds,
+        low_annualized_downside_return_standard_deviation_thresholds=params.low_thresholds,
+        reduced_exposure_ratios=params.reduced_exposures,
+        trend_rules=params.trend_rules,
+        breadth_rules=params.breadth_rules,
+        rank_top_ks=params.rank_top_ks,
+        discovery_window_days=params.discovery_window_days,
+        validation_window_days=params.validation_window_days,
+        step_window_days=params.step_window_days,
+        candidate_count=len(params.parameter_grid),
+        fold_count=int(walkforward_frames.rank_diagnostics_df["fold_count"].iloc[0])
+        if not walkforward_frames.rank_diagnostics_df.empty
+        else 0,
+        topix_daily_df=annotated_market_frame_df,
+        breadth_daily_df=source_frames.breadth_daily_df,
+        baseline_metrics_df=source_frames.baseline_metrics_df,
+        candidate_metrics_df=candidate_frames.candidate_metrics_df,
+        candidate_comparison_df=candidate_frames.candidate_comparison_df,
+        selection_summary_df=candidate_frames.selection_summary_df,
+        rank_stability_df=candidate_frames.rank_stability_df,
+        walkforward_fold_candidate_rank_df=walkforward_frames.fold_candidate_rank_df,
+        walkforward_rank_diagnostics_df=walkforward_frames.rank_diagnostics_df,
+        walkforward_top1_df=walkforward_frames.top1_df,
+        walkforward_top1_summary_df=walkforward_frames.top1_summary_df,
+        top1_selection_frequency_df=walkforward_frames.top1_selection_frequency_df,
+        best_sharpe_daily_df=candidate_frames.best_sharpe_daily_df,
+    )
+
+
+def _resolve_trend_breadth_params(
+    *,
+    downside_return_standard_deviation_window_days: Sequence[int] | None,
+    downside_return_standard_deviation_mean_window_days: Sequence[int] | None,
+    high_annualized_downside_return_standard_deviation_thresholds: Sequence[float]
+    | None,
+    low_annualized_downside_return_standard_deviation_thresholds: Sequence[float]
+    | None,
+    reduced_exposure_ratios: Sequence[float] | None,
+    trend_rules: Sequence[str] | None,
+    breadth_rules: Sequence[str] | None,
+    rank_top_ks: Sequence[int] | None,
+    validation_ratio: float,
+    min_constituents_per_day: int,
+    discovery_window_days: int,
+    validation_window_days: int,
+    step_window_days: int,
+) -> _TrendBreadthResolvedParams:
     resolved_std_windows = _normalize_positive_int_sequence(
         downside_return_standard_deviation_window_days,
         default=DEFAULT_DOWNSIDE_RETURN_STANDARD_DEVIATION_WINDOW_DAYS,
@@ -238,6 +404,50 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
         default=DEFAULT_RANK_TOP_KS,
         name="rank_top_ks",
     )
+    _validate_trend_breadth_params(
+        validation_ratio=validation_ratio,
+        min_constituents_per_day=min_constituents_per_day,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+    )
+    parameter_grid = _build_trend_breadth_parameter_grid(
+        std_windows=resolved_std_windows,
+        mean_windows=resolved_mean_windows,
+        high_thresholds=resolved_high_thresholds,
+        low_thresholds=resolved_low_thresholds,
+        reduced_exposures=resolved_reduced_exposures,
+        trend_rules=resolved_trend_rules,
+        breadth_rules=resolved_breadth_rules,
+    )
+    if max(resolved_rank_top_ks) > len(parameter_grid):
+        raise ValueError("rank_top_ks must not exceed the candidate count")
+    return _TrendBreadthResolvedParams(
+        std_windows=resolved_std_windows,
+        mean_windows=resolved_mean_windows,
+        high_thresholds=resolved_high_thresholds,
+        low_thresholds=resolved_low_thresholds,
+        reduced_exposures=resolved_reduced_exposures,
+        trend_rules=resolved_trend_rules,
+        breadth_rules=resolved_breadth_rules,
+        rank_top_ks=resolved_rank_top_ks,
+        validation_ratio=validation_ratio,
+        min_constituents_per_day=min_constituents_per_day,
+        discovery_window_days=discovery_window_days,
+        validation_window_days=validation_window_days,
+        step_window_days=step_window_days,
+        parameter_grid=parameter_grid,
+    )
+
+
+def _validate_trend_breadth_params(
+    *,
+    validation_ratio: float,
+    min_constituents_per_day: int,
+    discovery_window_days: int,
+    validation_window_days: int,
+    step_window_days: int,
+) -> None:
     if not 0.0 <= validation_ratio < 1.0:
         raise ValueError("validation_ratio must satisfy 0.0 <= validation_ratio < 1.0")
     if min_constituents_per_day <= 0:
@@ -247,6 +457,17 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
             "discovery_window_days, validation_window_days, and step_window_days must be positive"
         )
 
+
+def _build_trend_breadth_parameter_grid(
+    *,
+    std_windows: Sequence[int],
+    mean_windows: Sequence[int],
+    high_thresholds: Sequence[float],
+    low_thresholds: Sequence[float],
+    reduced_exposures: Sequence[float],
+    trend_rules: Sequence[str],
+    breadth_rules: Sequence[str],
+) -> list[dict[str, Any]]:
     parameter_grid = [
         {
             "candidate_id": _build_candidate_id(
@@ -267,24 +488,31 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
             "breadth_rule": breadth_rule,
         }
         for std_window, mean_window, high_threshold, low_threshold, reduced_exposure_ratio, trend_rule, breadth_rule in product(
-            resolved_std_windows,
-            resolved_mean_windows,
-            resolved_high_thresholds,
-            resolved_low_thresholds,
-            resolved_reduced_exposures,
-            resolved_trend_rules,
-            resolved_breadth_rules,
+            std_windows,
+            mean_windows,
+            high_thresholds,
+            low_thresholds,
+            reduced_exposures,
+            trend_rules,
+            breadth_rules,
         )
         if low_threshold <= high_threshold
     ]
     if not parameter_grid:
         raise ValueError("No valid parameter combinations remained after low/high threshold filtering")
-    if max(resolved_rank_top_ks) > len(parameter_grid):
-        raise ValueError("rank_top_ks must not exceed the candidate count")
+    return parameter_grid
 
+
+def _build_trend_breadth_source_frames(
+    *,
+    db_path: str,
+    start_date: str | None,
+    end_date: str | None,
+    params: _TrendBreadthResolvedParams,
+) -> _TrendBreadthSourceFrames:
     with _open_analysis_connection(db_path) as ctx:
-        source_mode = ctx.source_mode
-        source_detail = ctx.source_detail
+        source_mode = cast(SourceMode, ctx.source_mode)
+        source_detail = str(ctx.source_detail)
         available_start_date, available_end_date = _fetch_date_range(
             ctx.connection,
             table_name="topix_data",
@@ -300,110 +528,206 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
             end_date=end_date,
         )
 
-    if breadth_history_df.empty:
-        raise ValueError("No TOPIX100 breadth history was available")
-
-    breadth_history_df = breadth_history_df.copy()
-    breadth_history_df["date"] = breadth_history_df["date"].astype(str)
-    if start_date is not None:
-        breadth_history_df = breadth_history_df[breadth_history_df["date"] >= start_date].copy()
-    if end_date is not None:
-        breadth_history_df = breadth_history_df[breadth_history_df["date"] <= end_date].copy()
-    if breadth_history_df.empty:
-        raise ValueError("No TOPIX100 breadth rows remained after date filters")
-
+    breadth_history_df = _filter_trend_breadth_history(
+        breadth_history_df,
+        start_date=start_date,
+        end_date=end_date,
+    )
     breadth_available_start_date = str(breadth_history_df["date"].min())
     breadth_available_end_date = str(breadth_history_df["date"].max())
-
-    market_frame_df = _prepare_topix_market_frame(topix_daily_df)
-    market_frame_df = _build_topix_trend_feature_df(market_frame_df)
+    market_frame_df = _build_topix_trend_feature_df(
+        _prepare_topix_market_frame(topix_daily_df)
+    )
     breadth_daily_df = _build_topix100_breadth_daily_df(
         breadth_history_df,
-        min_constituents_per_day=min_constituents_per_day,
+        min_constituents_per_day=params.min_constituents_per_day,
     )
     signal_base_df = _build_common_signal_frame_with_regimes(
         market_frame_df,
         breadth_daily_df=breadth_daily_df,
-        max_downside_return_standard_deviation_window_days=max(resolved_std_windows),
-        max_downside_return_standard_deviation_mean_window_days=max(resolved_mean_windows),
-        validation_ratio=validation_ratio,
+        max_downside_return_standard_deviation_window_days=max(params.std_windows),
+        max_downside_return_standard_deviation_mean_window_days=max(params.mean_windows),
+        validation_ratio=params.validation_ratio,
     )
     baseline_daily_df = _build_baseline_daily_df(signal_base_df)
     baseline_metrics_df = _build_baseline_metrics_df(baseline_daily_df)
+    return _TrendBreadthSourceFrames(
+        source_mode=source_mode,
+        source_detail=source_detail,
+        available_start_date=available_start_date,
+        available_end_date=available_end_date,
+        breadth_available_start_date=breadth_available_start_date,
+        breadth_available_end_date=breadth_available_end_date,
+        market_frame_df=market_frame_df,
+        breadth_daily_df=breadth_daily_df,
+        signal_base_df=signal_base_df,
+        baseline_daily_df=baseline_daily_df,
+        baseline_metrics_df=baseline_metrics_df,
+    )
 
+
+def _filter_trend_breadth_history(
+    breadth_history_df: pd.DataFrame,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> pd.DataFrame:
+    if breadth_history_df.empty:
+        raise ValueError("No TOPIX100 breadth history was available")
+    filtered_df = breadth_history_df.copy()
+    filtered_df["date"] = filtered_df["date"].astype(str)
+    if start_date is not None:
+        filtered_df = filtered_df[filtered_df["date"] >= start_date].copy()
+    if end_date is not None:
+        filtered_df = filtered_df[filtered_df["date"] <= end_date].copy()
+    if filtered_df.empty:
+        raise ValueError("No TOPIX100 breadth rows remained after date filters")
+    return filtered_df
+
+
+def _build_trend_breadth_candidate_frames(
+    *,
+    params: _TrendBreadthResolvedParams,
+    market_frame_df: pd.DataFrame,
+    breadth_daily_df: pd.DataFrame,
+    baseline_daily_df: pd.DataFrame,
+    baseline_metrics_df: pd.DataFrame,
+) -> _TrendBreadthCandidateFrames:
     candidate_metric_rows: list[dict[str, Any]] = []
     candidate_return_series_by_id: dict[str, pd.Series] = {}
     best_sharpe_daily_df = pd.DataFrame()
     best_sharpe_key: tuple[float, float, float, str] | None = None
     signal_frame_cache: dict[tuple[int, int], pd.DataFrame] = {}
 
-    for params in parameter_grid:
-        std_window = int(params["downside_return_standard_deviation_window_days"])
-        mean_window = int(params["downside_return_standard_deviation_mean_window_days"])
-        high_threshold = float(
-            params["high_annualized_downside_return_standard_deviation_threshold"]
-        )
-        low_threshold = float(
-            params["low_annualized_downside_return_standard_deviation_threshold"]
-        )
-        reduced_exposure_ratio = float(params["reduced_exposure_ratio"])
-        trend_rule = str(params["trend_rule"])
-        breadth_rule = str(params["breadth_rule"])
-        signal_key = (std_window, mean_window)
-        if signal_key not in signal_frame_cache:
-            signal_frame_cache[signal_key] = _build_candidate_signal_frame(
-                market_frame_df,
-                breadth_daily_df=breadth_daily_df,
-                stddev_window_days=std_window,
-                mean_window_days=mean_window,
-                validation_ratio=validation_ratio,
-            )
-        candidate_signal_df = signal_frame_cache[signal_key]
-        candidate_id = str(params["candidate_id"])
-        candidate_daily_df = _simulate_candidate_daily_df_with_regime_filters(
-            candidate_id=candidate_id,
-            candidate_signal_df=candidate_signal_df,
-            high_annualized_downside_return_standard_deviation_threshold=high_threshold,
-            low_annualized_downside_return_standard_deviation_threshold=low_threshold,
-            reduced_exposure_ratio=reduced_exposure_ratio,
-            trend_rule=trend_rule,
-            breadth_rule=breadth_rule,
+    for parameter_row in params.parameter_grid:
+        candidate_daily_df = _simulate_trend_breadth_candidate(
+            parameter_row=parameter_row,
+            params=params,
+            market_frame_df=market_frame_df,
+            breadth_daily_df=breadth_daily_df,
+            signal_frame_cache=signal_frame_cache,
         )
         candidate_metric_rows.extend(
-            _build_candidate_metric_rows(
+            _build_candidate_metric_rows_for_parameter_row(
                 candidate_daily_df,
+                parameter_row=parameter_row,
                 baseline_daily_df=baseline_daily_df,
-                stddev_window_days=std_window,
-                mean_window_days=mean_window,
-                high_threshold=high_threshold,
-                low_threshold=low_threshold,
-                reduced_exposure_ratio=reduced_exposure_ratio,
-                trend_rule=trend_rule,
-                breadth_rule=breadth_rule,
             )
         )
-        candidate_return_series_by_id[candidate_id] = candidate_daily_df["strategy_return"].astype(
-            float
-        )
-        discovery_row = candidate_daily_df[candidate_daily_df["sample_split"] == "discovery"]
-        discovery_stats = _compute_return_series_stats(discovery_row["strategy_return"])
-        discovery_baseline_stats = _compute_return_series_stats(discovery_row["baseline_return"])
-        discovery_drawdown_improvement = (
-            _coerce_sortable_number(discovery_stats["max_drawdown"])
-            - _coerce_sortable_number(discovery_baseline_stats["max_drawdown"])
-        )
-        candidate_key = (
-            _coerce_sortable_number(discovery_stats["sharpe_ratio"]),
-            _coerce_sortable_number(discovery_stats["cagr"]),
-            _coerce_sortable_number(discovery_drawdown_improvement),
-            candidate_id,
+        candidate_id = str(parameter_row["candidate_id"])
+        candidate_return_series_by_id[candidate_id] = candidate_daily_df[
+            "strategy_return"
+        ].astype(float)
+        candidate_key = _build_trend_breadth_candidate_selection_key(
+            candidate_daily_df,
+            candidate_id=candidate_id,
         )
         if best_sharpe_key is None or candidate_key > best_sharpe_key:
             best_sharpe_key = candidate_key
             best_sharpe_daily_df = candidate_daily_df.copy()
 
+    candidate_metrics_df = _build_trend_breadth_candidate_metrics_df(candidate_metric_rows)
+    candidate_comparison_df = _build_candidate_comparison_df(candidate_metrics_df)
+    selection_summary_df = _build_selection_summary_df(
+        baseline_metrics_df=baseline_metrics_df,
+        candidate_comparison_df=candidate_comparison_df,
+    )
+    rank_stability_df = _build_rank_stability_df(
+        candidate_comparison_df,
+        top_ks=params.rank_top_ks,
+    )
+    return _TrendBreadthCandidateFrames(
+        candidate_metrics_df=candidate_metrics_df,
+        candidate_comparison_df=candidate_comparison_df,
+        selection_summary_df=selection_summary_df,
+        rank_stability_df=rank_stability_df,
+        candidate_return_series_by_id=candidate_return_series_by_id,
+        best_sharpe_daily_df=best_sharpe_daily_df,
+    )
+
+
+def _simulate_trend_breadth_candidate(
+    *,
+    parameter_row: dict[str, Any],
+    params: _TrendBreadthResolvedParams,
+    market_frame_df: pd.DataFrame,
+    breadth_daily_df: pd.DataFrame,
+    signal_frame_cache: dict[tuple[int, int], pd.DataFrame],
+) -> pd.DataFrame:
+    std_window = int(parameter_row["downside_return_standard_deviation_window_days"])
+    mean_window = int(parameter_row["downside_return_standard_deviation_mean_window_days"])
+    signal_key = (std_window, mean_window)
+    if signal_key not in signal_frame_cache:
+        signal_frame_cache[signal_key] = _build_candidate_signal_frame(
+            market_frame_df,
+            breadth_daily_df=breadth_daily_df,
+            stddev_window_days=std_window,
+            mean_window_days=mean_window,
+            validation_ratio=params.validation_ratio,
+        )
+    return _simulate_candidate_daily_df_with_regime_filters(
+        candidate_id=str(parameter_row["candidate_id"]),
+        candidate_signal_df=signal_frame_cache[signal_key],
+        high_annualized_downside_return_standard_deviation_threshold=float(
+            parameter_row["high_annualized_downside_return_standard_deviation_threshold"]
+        ),
+        low_annualized_downside_return_standard_deviation_threshold=float(
+            parameter_row["low_annualized_downside_return_standard_deviation_threshold"]
+        ),
+        reduced_exposure_ratio=float(parameter_row["reduced_exposure_ratio"]),
+        trend_rule=str(parameter_row["trend_rule"]),
+        breadth_rule=str(parameter_row["breadth_rule"]),
+    )
+
+
+def _build_candidate_metric_rows_for_parameter_row(
+    candidate_daily_df: pd.DataFrame,
+    *,
+    parameter_row: dict[str, Any],
+    baseline_daily_df: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    return _build_candidate_metric_rows(
+        candidate_daily_df,
+        baseline_daily_df=baseline_daily_df,
+        stddev_window_days=int(parameter_row["downside_return_standard_deviation_window_days"]),
+        mean_window_days=int(parameter_row["downside_return_standard_deviation_mean_window_days"]),
+        high_threshold=float(
+            parameter_row["high_annualized_downside_return_standard_deviation_threshold"]
+        ),
+        low_threshold=float(
+            parameter_row["low_annualized_downside_return_standard_deviation_threshold"]
+        ),
+        reduced_exposure_ratio=float(parameter_row["reduced_exposure_ratio"]),
+        trend_rule=str(parameter_row["trend_rule"]),
+        breadth_rule=str(parameter_row["breadth_rule"]),
+    )
+
+
+def _build_trend_breadth_candidate_selection_key(
+    candidate_daily_df: pd.DataFrame,
+    *,
+    candidate_id: str,
+) -> tuple[float, float, float, str]:
+    discovery_row = candidate_daily_df[candidate_daily_df["sample_split"] == "discovery"]
+    discovery_stats = _compute_return_series_stats(discovery_row["strategy_return"])
+    discovery_baseline_stats = _compute_return_series_stats(discovery_row["baseline_return"])
+    discovery_drawdown_improvement = (
+        _coerce_sortable_number(discovery_stats["max_drawdown"])
+        - _coerce_sortable_number(discovery_baseline_stats["max_drawdown"])
+    )
+    return (
+        _coerce_sortable_number(discovery_stats["sharpe_ratio"]),
+        _coerce_sortable_number(discovery_stats["cagr"]),
+        _coerce_sortable_number(discovery_drawdown_improvement),
+        candidate_id,
+    )
+
+
+def _build_trend_breadth_candidate_metrics_df(
+    candidate_metric_rows: list[dict[str, Any]],
+) -> pd.DataFrame:
     candidate_metrics_df = pd.DataFrame(candidate_metric_rows)
-    candidate_metrics_df = candidate_metrics_df.sort_values(
+    return candidate_metrics_df.sort_values(
         [
             "sample_split",
             "sharpe_ratio_improvement",
@@ -414,15 +738,15 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
         ascending=[True, False, False, False, True],
         ignore_index=True,
     )
-    candidate_comparison_df = _build_candidate_comparison_df(candidate_metrics_df)
-    selection_summary_df = _build_selection_summary_df(
-        baseline_metrics_df=baseline_metrics_df,
-        candidate_comparison_df=candidate_comparison_df,
-    )
-    rank_stability_df = _build_rank_stability_df(
-        candidate_comparison_df,
-        top_ks=resolved_rank_top_ks,
-    )
+
+
+def _build_trend_breadth_walkforward_frames(
+    *,
+    params: _TrendBreadthResolvedParams,
+    baseline_daily_df: pd.DataFrame,
+    candidate_comparison_df: pd.DataFrame,
+    candidate_return_series_by_id: dict[str, pd.Series],
+) -> _TrendBreadthWalkforwardFrames:
     (
         walkforward_fold_candidate_rank_df,
         walkforward_rank_diagnostics_df,
@@ -431,10 +755,10 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
         baseline_daily_df=baseline_daily_df,
         candidate_comparison_df=candidate_comparison_df,
         candidate_return_series_by_id=candidate_return_series_by_id,
-        rank_top_ks=resolved_rank_top_ks,
-        discovery_window_days=discovery_window_days,
-        validation_window_days=validation_window_days,
-        step_window_days=step_window_days,
+        rank_top_ks=params.rank_top_ks,
+        discovery_window_days=params.discovery_window_days,
+        validation_window_days=params.validation_window_days,
+        step_window_days=params.step_window_days,
     )
     walkforward_top1_summary_df = _build_walkforward_top1_summary_df(walkforward_top1_df)
     top1_selection_frequency_df = _build_top1_selection_frequency_df(
@@ -442,62 +766,12 @@ def run_topix_downside_return_standard_deviation_trend_breadth_overlay_research(
         candidate_comparison_df=candidate_comparison_df,
         fold_count=int(walkforward_rank_diagnostics_df["fold_count"].iloc[0]),
     )
-    market_frame_df = _annotate_market_frame_with_split_labels(
-        market_frame_df,
-        signal_base_df=signal_base_df,
-    )
-
-    analysis_start_date = (
-        str(signal_base_df["realized_date"].iloc[0]) if not signal_base_df.empty else None
-    )
-    analysis_end_date = (
-        str(signal_base_df["realized_date"].iloc[-1]) if not signal_base_df.empty else None
-    )
-
-    return TopixDownsideReturnStandardDeviationTrendBreadthOverlayResearchResult(
-        db_path=db_path,
-        source_mode=cast(SourceMode, source_mode),
-        source_detail=str(source_detail),
-        available_start_date=available_start_date,
-        available_end_date=available_end_date,
-        breadth_available_start_date=breadth_available_start_date,
-        breadth_available_end_date=breadth_available_end_date,
-        analysis_start_date=analysis_start_date,
-        analysis_end_date=analysis_end_date,
-        validation_ratio=validation_ratio,
-        annualization_factor=ANNUALIZATION_FACTOR,
-        execution_timing=EXECUTION_TIMING,
-        breadth_universe="topix100",
-        breadth_universe_membership_mode="latest_scale_category_proxy",
-        min_constituents_per_day=min_constituents_per_day,
-        downside_return_standard_deviation_window_days=resolved_std_windows,
-        downside_return_standard_deviation_mean_window_days=resolved_mean_windows,
-        high_annualized_downside_return_standard_deviation_thresholds=resolved_high_thresholds,
-        low_annualized_downside_return_standard_deviation_thresholds=resolved_low_thresholds,
-        reduced_exposure_ratios=resolved_reduced_exposures,
-        trend_rules=resolved_trend_rules,
-        breadth_rules=resolved_breadth_rules,
-        rank_top_ks=resolved_rank_top_ks,
-        discovery_window_days=discovery_window_days,
-        validation_window_days=validation_window_days,
-        step_window_days=step_window_days,
-        candidate_count=len(parameter_grid),
-        fold_count=int(walkforward_rank_diagnostics_df["fold_count"].iloc[0])
-        if not walkforward_rank_diagnostics_df.empty
-        else 0,
-        topix_daily_df=market_frame_df,
-        breadth_daily_df=breadth_daily_df,
-        baseline_metrics_df=baseline_metrics_df,
-        candidate_metrics_df=candidate_metrics_df,
-        candidate_comparison_df=candidate_comparison_df,
-        selection_summary_df=selection_summary_df,
-        rank_stability_df=rank_stability_df,
-        walkforward_fold_candidate_rank_df=walkforward_fold_candidate_rank_df,
-        walkforward_rank_diagnostics_df=walkforward_rank_diagnostics_df,
-        walkforward_top1_df=walkforward_top1_df,
-        walkforward_top1_summary_df=walkforward_top1_summary_df,
+    return _TrendBreadthWalkforwardFrames(
+        fold_candidate_rank_df=walkforward_fold_candidate_rank_df,
+        rank_diagnostics_df=walkforward_rank_diagnostics_df,
+        top1_df=walkforward_top1_df,
+        top1_summary_df=walkforward_top1_summary_df,
         top1_selection_frequency_df=top1_selection_frequency_df,
-        best_sharpe_daily_df=best_sharpe_daily_df,
     )
 
 

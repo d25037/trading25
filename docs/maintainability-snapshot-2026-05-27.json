@@ -20,16 +20,16 @@
     "nesting_warn_depth": 5
   },
   "totals": {
-    "files": 926,
-    "functions": 9008,
-    "total_lines": 310903,
-    "code_lines": 248567
+    "files": 928,
+    "functions": 9035,
+    "total_lines": 311326,
+    "code_lines": 248978
   },
   "languages": {
     "python": {
-      "files": 661,
-      "total_lines": 263903,
-      "code_lines": 218737
+      "files": 663,
+      "total_lines": 264326,
+      "code_lines": 219148
     },
     "tsx": {
       "files": 142,
@@ -48,9 +48,9 @@
     "warn_500_plus": 200
   },
   "function_buckets": {
-    "critical_180_plus": 40,
-    "high_120_plus": 171,
-    "warn_80_plus": 484,
+    "critical_180_plus": 39,
+    "high_120_plus": 170,
+    "warn_80_plus": 485,
     "branch_50_plus": 2
   },
   "top_files": [
@@ -130,17 +130,6 @@
       "function_count": 48,
       "max_function_lines": 185,
       "hotspot_score": 5183
-    },
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1189,
-      "code_lines": 1073,
-      "branch_score": 210,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 4982
     },
     {
       "path": "apps/bt/src/domains/analytics/annual_value_breakout_periodic_rebalance.py",
@@ -242,6 +231,17 @@
       "hotspot_score": 4370
     },
     {
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1096,
+      "code_lines": 990,
+      "branch_score": 180,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 4359
+    },
+    {
       "path": "apps/bt/src/domains/analytics/recent_return_threshold_forward_response.py",
       "language": "python",
       "total_lines": 2010,
@@ -297,17 +297,6 @@
       "hotspot_score": 4173
     },
     {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 1400,
-      "code_lines": 1011,
-      "branch_score": 171,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 43,
-      "hotspot_score": 4139
-    },
-    {
       "path": "apps/ts/packages/api-clients/src/backtest/types.ts",
       "language": "typescript",
       "total_lines": 974,
@@ -328,19 +317,20 @@
       "function_count": 31,
       "max_function_lines": 141,
       "hotspot_score": 4025
+    },
+    {
+      "path": "apps/bt/src/domains/lab_agent/optuna_optimizer.py",
+      "language": "python",
+      "total_lines": 1201,
+      "code_lines": 960,
+      "branch_score": 159,
+      "max_nesting": 4,
+      "function_count": 37,
+      "max_function_lines": 109,
+      "hotspot_score": 4009
     }
   ],
   "top_functions": [
-    {
-      "path": "apps/bt/src/domains/analytics/topix_downside_return_standard_deviation_trend_breadth_overlay.py",
-      "name": "run_topix_downside_return_standard_deviation_trend_breadth_overlay_research",
-      "language": "python",
-      "start_line": 178,
-      "end_line": 501,
-      "lines": 313,
-      "branch_score": 18,
-      "max_nesting": 2
-    },
     {
       "path": "apps/bt/src/domains/analytics/topix100_top1_open_to_open_5d_duplicate_policy_analysis.py",
       "name": "run_topix100_top1_open_to_open_5d_duplicate_policy_analysis",
@@ -580,6 +570,16 @@
       "lines": 195,
       "branch_score": 10,
       "max_nesting": 1
+    },
+    {
+      "path": "apps/ts/packages/web/src/components/Chart/PPOChart.tsx",
+      "name": "export",
+      "language": "tsx",
+      "start_line": 25,
+      "end_line": 277,
+      "lines": 192,
+      "branch_score": 30,
+      "max_nesting": 5
     }
   ],
   "branch_hotspots": [
@@ -593,17 +593,6 @@
       "function_count": 60,
       "max_function_lines": 124,
       "hotspot_score": 5758
-    },
-    {
-      "path": "apps/bt/src/domains/fundamentals/calculator.py",
-      "language": "python",
-      "total_lines": 1189,
-      "code_lines": 1073,
-      "branch_score": 210,
-      "max_nesting": 3,
-      "function_count": 75,
-      "max_function_lines": 98,
-      "hotspot_score": 4982
     },
     {
       "path": "apps/ts/packages/web/src/pages/SettingsMarketDbPanels.tsx",
@@ -661,6 +650,17 @@
       "hotspot_score": 4173
     },
     {
+      "path": "apps/bt/src/domains/fundamentals/calculator.py",
+      "language": "python",
+      "total_lines": 1096,
+      "code_lines": 990,
+      "branch_score": 180,
+      "max_nesting": 3,
+      "function_count": 75,
+      "max_function_lines": 98,
+      "hotspot_score": 4359
+    },
+    {
       "path": "apps/bt/src/domains/analytics/fy_eps_sign_next_fy_return.py",
       "language": "python",
       "total_lines": 1900,
@@ -692,17 +692,6 @@
       "function_count": 41,
       "max_function_lines": 64,
       "hotspot_score": 3741
-    },
-    {
-      "path": "apps/bt/src/infrastructure/db/market/market_db.py",
-      "language": "python",
-      "total_lines": 1400,
-      "code_lines": 1011,
-      "branch_score": 171,
-      "max_nesting": 2,
-      "function_count": 87,
-      "max_function_lines": 43,
-      "hotspot_score": 4139
     },
     {
       "path": "apps/bt/src/domains/analytics/topix100_sma_ratio_rank_future_close_lightgbm.py",
@@ -747,6 +736,17 @@
       "function_count": 45,
       "max_function_lines": 205,
       "hotspot_score": 4783
+    },
+    {
+      "path": "apps/bt/src/domains/lab_agent/optuna_optimizer.py",
+      "language": "python",
+      "total_lines": 1201,
+      "code_lines": 960,
+      "branch_score": 159,
+      "max_nesting": 4,
+      "function_count": 37,
+      "max_function_lines": 109,
+      "hotspot_score": 4009
     }
   ],
   "nesting_hotspots": [
