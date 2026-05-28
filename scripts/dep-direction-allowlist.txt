@@ -77,6 +77,9 @@ apps/ts/packages/web/src/components/Backtest/BacktestStrategies.tsx
 apps/ts/packages/web/src/components/Backtest/DefaultConfigEditor.tsx
 apps/ts/packages/web/src/components/Backtest/BacktestStrategies.test.tsx
 apps/ts/packages/web/src/components/Backtest/StrategyEditor.tsx
+apps/ts/packages/web/src/components/Backtest/StrategyEditorSharedConfig.tsx
+apps/ts/packages/web/src/components/Backtest/StrategyEditorSignals.tsx
+apps/ts/packages/web/src/components/Backtest/useStrategyEditorDraft.ts
 apps/ts/packages/web/src/components/Backtest/MetadataFieldControl.test.tsx
 apps/ts/packages/web/src/components/Backtest/SignalReferencePanel.tsx
 apps/ts/packages/web/src/components/Backtest/BacktestRunner.tsx
