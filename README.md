@@ -50,6 +50,21 @@ BT_PORT=3002
 JQUANTS_API_KEY=op://Personal/Jpx-jquants/API-KEY
 ```
 
+SSH/headless 環境で 1Password desktop app の認証 prompt が頻発する場合は、1Password Service Account token を macOS Keychain に保存して `op run` の認証元にできます。token は repo や env file に置きません。Service Account から読める専用 vault に J-Quants item を置き、`~/.config/trading25/secrets.env` の `op://...` reference もその vault を指すようにします。
+
+```bash
+security add-generic-password \
+  -a "$USER" \
+  -s trading25-op-service-account-token \
+  -w '<OP_SERVICE_ACCOUNT_TOKEN>' \
+  -U
+
+TRADING25_OP_SERVICE_ACCOUNT_TOKEN_KEYCHAIN_SERVICE=trading25-op-service-account-token \
+scripts/dev-bt-server.sh
+```
+
+`SSH_AUTH_SOCK=~/Library/Group\ Containers/2BUA8C4S2C.com.1password/t/agent.sock` のような 1Password SSH agent socket は SSH/Git の鍵認証用です。SSH ログインには有効ですが、`op run` が `op://...` secret を解決するための 1Password CLI 認証は置き換えません。
+
 ### 2) Web 起動（apps/ts）
 ```bash
 cd <repo-root>
