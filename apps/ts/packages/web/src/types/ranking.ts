@@ -10,7 +10,8 @@ export type RankingLiquidityState =
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral'
-  | 'overheat';
+  | 'overheat'
+  | 'stale_rally_fade';
 export type RankingSortField =
   | 'tradingValue'
   | 'changePercentage'

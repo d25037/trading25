@@ -37,7 +37,7 @@ export type ResearchDetailResponseContract = BtApiSchemas['ResearchDetailRespons
 
 // ===== RANKING TYPES =====
 
-export type RankingRiskFlag = 'overheat';
+export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
 
 export interface RankingItem {
   rank: number;

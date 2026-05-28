@@ -23,6 +23,7 @@ from src.application.services.ranking_response_items import finite_or_none, str_
 from src.application.services.ranking_value_composite_config import (
     OVERHEAT_RISK_FLAG,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
+    STALE_RALLY_FADE_RISK_FLAG,
 )
 from src.entrypoints.http.schemas.ranking import (
     LiquidityRegime,
@@ -40,6 +41,8 @@ class PrimeLiquidityMetrics:
     liquidity_regime: LiquidityRegime
     adv60_to_free_float_pct: float
     risk_flags: tuple[RankingRiskFlag, ...]
+    recent_return_20d_pct: float | None = None
+    recent_return_60d_pct: float | None = None
 
 
 def enrich_ranking_collections_with_prime_liquidity(
@@ -66,7 +69,15 @@ def enrich_ranking_collections_with_prime_liquidity(
             item.liquidityResidualZ = metrics.liquidity_residual_z
             item.liquidityRegime = metrics.liquidity_regime
             item.adv60ToFreeFloatPct = metrics.adv60_to_free_float_pct
-            item.riskFlags = list(dict.fromkeys([*item.riskFlags, *metrics.risk_flags]))
+            item.riskFlags = list(
+                dict.fromkeys(
+                    [
+                        *item.riskFlags,
+                        *metrics.risk_flags,
+                        *_classify_stale_high_valuation_flags(item, metrics),
+                    ]
+                )
+            )
 
 
 def fit_log_liquidity_regression(
@@ -130,6 +141,43 @@ def classify_risk_flags(recent_return_20d_pct: float | None) -> tuple[RankingRis
     ):
         return (OVERHEAT_RISK_FLAG,)
     return ()
+
+
+def _classify_stale_high_valuation_flags(
+    item: RankingItem,
+    metrics: PrimeLiquidityMetrics,
+) -> tuple[RankingRiskFlag, ...]:
+    if metrics.liquidity_regime != "stale_liquidity":
+        return ()
+    if not _has_high_valuation_warning(item):
+        return ()
+    if not _has_recent_positive_20d_60d(metrics):
+        return ()
+    return (STALE_RALLY_FADE_RISK_FLAG,)
+
+
+def _has_high_valuation_warning(item: RankingItem) -> bool:
+    percentiles = (
+        item.perPercentile,
+        item.forwardPerPercentile,
+        item.forwardPOpPercentile,
+        item.pbrPercentile,
+    )
+    if any(
+        value is not None and math.isfinite(value) and value >= 0.8
+        for value in percentiles
+    ):
+        return True
+    return item.perPercentile is None and item.forwardPerPercentile is None
+
+
+def _has_recent_positive_20d_60d(metrics: PrimeLiquidityMetrics) -> bool:
+    return (
+        metrics.recent_return_20d_pct is not None
+        and metrics.recent_return_60d_pct is not None
+        and metrics.recent_return_20d_pct > 0
+        and metrics.recent_return_60d_pct > 0
+    )
 
 
 def load_prime_liquidity_metrics(
@@ -337,5 +385,7 @@ def load_prime_liquidity_metrics(
                 4,
             ),
             risk_flags=classify_risk_flags(recent_return_20d_pct),
+            recent_return_20d_pct=recent_return_20d_pct,
+            recent_return_60d_pct=recent_return_60d_pct,
         )
     return metrics_by_code

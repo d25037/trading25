@@ -74,6 +74,7 @@ describe('RankingFilters', () => {
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
     expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
     expect(screen.getByText('状態')).toBeInTheDocument();
+    expect(screen.getByText('Rally Fade')).toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });

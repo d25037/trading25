@@ -177,6 +177,7 @@ def value_composite_response_weights(
 
 SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
 OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
+STALE_RALLY_FADE_RISK_FLAG: RankingRiskFlag = "stale_rally_fade"
 PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("per", "per_percentile"),
     ("forward_per", "forward_per_percentile"),

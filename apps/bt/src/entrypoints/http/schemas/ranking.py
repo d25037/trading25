@@ -35,7 +35,7 @@ LiquidityRegime = Literal[
     "stale_liquidity",
     "neutral",
 ]
-RankingRiskFlag = Literal["overheat"]
+RankingRiskFlag = Literal["overheat", "stale_rally_fade"]
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
 
 

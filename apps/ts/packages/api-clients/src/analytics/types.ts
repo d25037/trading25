@@ -11,14 +11,15 @@ export interface AnalyticsClientConfig {
 
 export type { JobStatus };
 export type FundamentalRankingSource = 'revised' | 'fy';
-export type RankingRiskFlag = 'overheat';
+export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
 export type RankingLiquidityState =
   | 'neutral_rerating'
   | 'crowded_rerating'
   | 'distribution_stress'
   | 'stale_liquidity'
   | 'neutral'
-  | 'overheat';
+  | 'overheat'
+  | 'stale_rally_fade';
 
 export interface ResponseDiagnostics {
   missing_required_data?: string[];

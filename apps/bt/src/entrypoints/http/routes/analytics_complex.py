@@ -100,7 +100,8 @@ async def get_ranking(
         None,
         description=(
             "Keep valuation-enriched stocks matching the Daily Ranking state. "
-            "Use overheat to filter the risk flag instead of liquidityRegime."
+            "Use risk flag values such as overheat or stale_rally_fade to filter riskFlags "
+            "instead of liquidityRegime."
         ),
     ),
 ) -> MarketRankingResponse:

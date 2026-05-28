@@ -8375,7 +8375,7 @@ export interface components {
             /** Rank */
             rank: number;
             /** Riskflags */
-            riskFlags?: "overheat"[];
+            riskFlags?: ("overheat" | "stale_rally_fade")[];
             /** Sector33Name */
             sector33Name: string;
             /** Tradingvalue */
@@ -11956,8 +11956,8 @@ export interface operations {
                 includeValuation?: boolean;
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
-                /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime. */
-                liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | "overheat" | null;
+                /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */
+                liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | ("overheat" | "stale_rally_fade") | null;
             };
             header?: never;
             path?: never;

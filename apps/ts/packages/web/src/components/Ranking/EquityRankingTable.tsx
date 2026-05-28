@@ -19,7 +19,7 @@ export type EquitySortField =
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
 export type EquitySortOrder = 'asc' | 'desc';
-export type EquityRiskFlag = 'overheat';
+export type EquityRiskFlag = 'overheat' | 'stale_rally_fade';
 export type EquityRankingLabels = Record<
   'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
   string
@@ -156,11 +156,13 @@ function getEvidenceTierChipClass(tier: EvidenceColorTier): string {
 
 function formatRiskFlag(value: EquityRiskFlag): string {
   if (value === 'overheat') return 'Overheat';
+  if (value === 'stale_rally_fade') return 'Rally Fade';
   return value;
 }
 
 function getRiskFlagClass(value: EquityRiskFlag): string {
   if (value === 'overheat') return 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300';
+  if (value === 'stale_rally_fade') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
@@ -332,7 +334,9 @@ function getLiquidityEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
     return getCrowdedReratingEvidenceTier(item);
   }
   if (item.liquidityRegime === 'distribution_stress') return 'bad';
-  if (item.liquidityRegime === 'stale_liquidity') return 'bad';
+  if (item.liquidityRegime === 'stale_liquidity') {
+    return hasExpensiveValuationWarning(item) || hasEarningsValuationWarning(item) ? 'very_bad' : 'bad';
+  }
   if (item.liquidityRegime === 'neutral') return 'neutral';
   if (item.liquidityResidualZ != null && Number.isFinite(item.liquidityResidualZ) && item.liquidityResidualZ <= -1) {
     return 'bad';

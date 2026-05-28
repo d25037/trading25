@@ -37,6 +37,7 @@ const LIQUIDITY_STATE_OPTIONS = [
   { value: 'stale_liquidity', label: 'Stale' },
   { value: 'neutral', label: 'Neutral' },
   { value: 'overheat', label: 'Overheat' },
+  { value: 'stale_rally_fade', label: 'Rally Fade' },
 ] as const;
 
 interface RankingFiltersProps {

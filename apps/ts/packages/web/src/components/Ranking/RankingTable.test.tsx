@@ -177,6 +177,31 @@ describe('RankingTable', () => {
             liquidityResidualZ: 3.05,
             adv60ToFreeFloatPct: 12,
           },
+          {
+            ...createItem(7),
+            per: 80,
+            perPercentile: 0.85,
+            forwardPer: 90,
+            forwardPerPercentile: 0.7,
+            pbr: 5,
+            pbrPercentile: 0.9,
+            liquidityRegime: 'stale_liquidity',
+            liquidityResidualZ: -1.8,
+            adv60ToFreeFloatPct: 1,
+            riskFlags: ['stale_rally_fade'],
+          },
+          {
+            ...createItem(8),
+            per: 10,
+            perPercentile: 0.5,
+            forwardPer: 12,
+            forwardPerPercentile: 0.5,
+            pbr: 0.6,
+            pbrPercentile: 0.1,
+            liquidityRegime: 'stale_liquidity',
+            liquidityResidualZ: -1.7,
+            adv60ToFreeFloatPct: 1,
+          },
         ]}
         isLoading={false}
         error={null}
@@ -193,6 +218,8 @@ describe('RankingTable', () => {
     expect(screen.getAllByText('Crowded Rerating')[1]).toHaveClass('text-green-700');
     expect(screen.getAllByText('Crowded Rerating')[2]).toHaveClass('text-yellow-800');
     expect(screen.getAllByText('Crowded Rerating')[3]).toHaveClass('text-yellow-800');
+    expect(screen.getAllByText('Stale')[0]).toHaveClass('text-red-700');
+    expect(screen.getAllByText('Stale')[1]).toHaveClass('text-yellow-800');
     expect(screen.getByText('Prime 20d excess evidence')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '流動性Z' })).toBeInTheDocument();
@@ -200,6 +227,7 @@ describe('RankingTable', () => {
     expect(screen.queryByRole('columnheader', { name: 'Med ADV60/FF' })).not.toBeInTheDocument();
     expect(screen.queryByText('8.00%')).not.toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');
+    expect(screen.getByText('Rally Fade')).toHaveClass('text-red-700');
     expect(screen.getByText('8.00x')).toHaveClass('text-sky-600');
     expect(screen.getByText('11.00x')).toHaveClass('text-yellow-600');
     expect(screen.getByText('9.00x')).toHaveClass('text-red-600');
@@ -214,6 +242,8 @@ describe('RankingTable', () => {
     expect(screen.getByText('+2.00')).toHaveClass('text-green-600');
     expect(screen.getByText('+1.60')).toHaveClass('text-yellow-600');
     expect(screen.getByText('+3.05')).toHaveClass('text-yellow-600');
+    expect(screen.getByText('-1.80')).toHaveClass('text-red-600');
+    expect(screen.getByText('-1.70')).toHaveClass('text-yellow-600');
   });
 
   it('renders mobile ranking cards and keeps stock navigation', async () => {

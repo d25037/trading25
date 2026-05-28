@@ -11838,7 +11838,10 @@
           },
           "riskFlags": {
             "items": {
-              "const": "overheat",
+              "enum": [
+                "overheat",
+                "stale_rally_fade"
+              ],
               "type": "string"
             },
             "title": "Riskflags",
@@ -20087,7 +20090,7 @@
             }
           },
           {
-            "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime.",
+            "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
             "in": "query",
             "name": "liquidityState",
             "required": false,
@@ -20104,14 +20107,17 @@
                   "type": "string"
                 },
                 {
-                  "const": "overheat",
+                  "enum": [
+                    "overheat",
+                    "stale_rally_fade"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use overheat to filter the risk flag instead of liquidityRegime.",
+              "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
               "title": "Liquiditystate"
             }
           }

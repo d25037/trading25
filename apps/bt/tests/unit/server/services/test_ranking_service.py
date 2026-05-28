@@ -50,6 +50,8 @@ from src.application.services.ranking_value_composite_config import (
     value_composite_score_policy,
 )
 from src.application.services.ranking_liquidity import (
+    PrimeLiquidityMetrics,
+    _classify_stale_high_valuation_flags,
     classify_prime_liquidity_regime,
     classify_risk_flags,
 )
@@ -62,6 +64,7 @@ from src.application.services.ranking_response_items import (
     build_value_composite_item,
     build_value_composite_score_response,
 )
+from src.entrypoints.http.schemas.ranking import RankingItem
 from src.application.services.ranking_statement_selection import (
     latest_actual_fy_disclosed_date,
     latest_value_bps_statement,
@@ -1082,6 +1085,40 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
         assert result.rankings.tradingValue[0].riskFlags == ["overheat"]
 
+    def test_liquidity_state_filter_can_match_stale_rally_fade_risk_flag(
+        self, service, monkeypatch
+    ):
+        def fake_enrich_prime_liquidity(
+            reader,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del reader, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    item.liquidityRegime = "stale_liquidity"
+                    if item.code == "67580":
+                        item.riskFlags = ["stale_rally_fade"]
+
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            liquidity_state="stale_rally_fade",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["67580"]
+        assert result.rankings.tradingValue[0].riskFlags == ["stale_rally_fade"]
+
     def test_market_filter(self, service):
         result = service.get_rankings(markets="standard")
         # standard は 99840 のみ
@@ -1300,6 +1337,55 @@ class TestGetRankings:
     def test_classifies_short_term_overheat_risk_flag(self):
         assert classify_risk_flags(29.99) == ()
         assert classify_risk_flags(30.0) == ("overheat",)
+
+    def test_classifies_stale_rally_fade_only_for_stale_high_valuation_recent_positive(
+        self,
+    ):
+        item = RankingItem(
+            rank=1,
+            code="1000",
+            companyName="Test",
+            marketCode="prime",
+            sector33Name="Sector",
+            currentPrice=100.0,
+            volume=1000.0,
+            perPercentile=0.85,
+            forwardPerPercentile=0.5,
+        )
+        metrics = PrimeLiquidityMetrics(
+            liquidity_residual_z=-1.2,
+            liquidity_regime="stale_liquidity",
+            adv60_to_free_float_pct=1.0,
+            risk_flags=(),
+            recent_return_20d_pct=1.0,
+            recent_return_60d_pct=2.0,
+        )
+
+        assert _classify_stale_high_valuation_flags(item, metrics) == (
+            "stale_rally_fade",
+        )
+
+        assert (
+            _classify_stale_high_valuation_flags(
+                item,
+                PrimeLiquidityMetrics(
+                    liquidity_residual_z=-1.2,
+                    liquidity_regime="stale_liquidity",
+                    adv60_to_free_float_pct=1.0,
+                    risk_flags=(),
+                    recent_return_20d_pct=-1.0,
+                    recent_return_60d_pct=2.0,
+                ),
+            )
+            == ()
+        )
+        assert (
+            _classify_stale_high_valuation_flags(
+                item.model_copy(update={"perPercentile": 0.5}),
+                metrics,
+            )
+            == ()
+        )
 
     def test_classifies_neutral_and_crowded_rerating_states(self):
         assert (
