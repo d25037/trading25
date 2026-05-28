@@ -1003,28 +1003,43 @@ def _create_observation_panel(
         ),
         residual_stats AS (
             SELECT
-                *,
-                regr_intercept(log_adv60, log_free_float_market_cap) OVER (PARTITION BY date, market) AS residual_intercept,
-                regr_slope(log_adv60, log_free_float_market_cap) OVER (PARTITION BY date, market) AS residual_beta,
-                count(log_adv60) OVER (PARTITION BY date, market) AS residual_observations
+                date,
+                market,
+                regr_intercept(log_adv60, log_free_float_market_cap) AS residual_intercept,
+                regr_slope(log_adv60, log_free_float_market_cap) AS residual_beta,
+                count(log_adv60) AS residual_observations
             FROM residual_source
+            GROUP BY date, market
         ),
         residual_values AS (
             SELECT
-                *,
+                rs.*,
+                rstats.residual_intercept,
+                rstats.residual_beta,
+                rstats.residual_observations,
                 CASE
-                    WHEN residual_observations >= 50
-                     AND residual_intercept IS NOT NULL
-                     AND residual_beta IS NOT NULL
-                        THEN log_adv60 - (residual_intercept + residual_beta * log_free_float_market_cap)
+                    WHEN rstats.residual_observations >= 50
+                     AND rstats.residual_intercept IS NOT NULL
+                     AND rstats.residual_beta IS NOT NULL
+                        THEN rs.log_adv60 - (rstats.residual_intercept + rstats.residual_beta * rs.log_free_float_market_cap)
                 END AS liquidity_residual
-            FROM residual_stats
+            FROM residual_source rs
+            LEFT JOIN residual_stats rstats USING (date, market)
+        ),
+        residual_dispersion AS (
+            SELECT
+                date,
+                market,
+                stddev_samp(liquidity_residual) AS liquidity_residual_std
+            FROM residual_values
+            GROUP BY date, market
         ),
         residual_z AS (
             SELECT
-                *,
-                stddev_samp(liquidity_residual) OVER (PARTITION BY date, market) AS liquidity_residual_std
-            FROM residual_values
+                rv.*,
+                rd.liquidity_residual_std
+            FROM residual_values rv
+            LEFT JOIN residual_dispersion rd USING (date, market)
         )
         SELECT
             *,
