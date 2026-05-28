@@ -31,10 +31,13 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
     assert {
         "candidate_bucket",
         "horizon",
+        "mean_forward_raw_return_pct",
+        "median_forward_raw_return_pct",
+        "mean_topix_return_pct",
         "median_forward_excess_return_pct",
-        "short_win_rate_pct",
-        "severe_loss_rate_pct",
-        "adverse_gain_rate_pct",
+        "negative_excess_return_rate_pct",
+        "downside_excess_tail_rate_pct",
+        "upside_excess_tail_rate_pct",
         "median_pbr_percentile",
         "median_atr20_to_atr60",
     }.issubset(result.short_red_candidate_df.columns)
@@ -55,8 +58,8 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
     }.issubset(result.stale_liquidity_short_diagnostics_df.columns)
     assert {
         "trend_split",
-        "short_win_rate_pct",
-        "adverse_gain_rate_pct",
+        "negative_excess_return_rate_pct",
+        "upside_excess_tail_rate_pct",
     }.issubset(result.stale_high_valuation_trend_split_df.columns)
     assert {
         "date",
@@ -64,6 +67,8 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
         "candidate_bucket",
         "liquidity_regime",
         "pbr_percentile",
+        "forward_close_return_20d_pct",
+        "topix_close_return_20d_pct",
         "forward_close_excess_return_20d_pct",
     }.issubset(result.live_ranking_replay_df.columns)
 
@@ -96,8 +101,8 @@ def test_ranking_short_red_evidence_writes_bundle(tmp_path: Path) -> None:
         ({"horizons": (0,)}, "horizons must be positive"),
         ({"min_observations": 0}, "min_observations must be positive"),
         (
-            {"severe_loss_threshold_pct": 0.0},
-            "severe_loss_threshold_pct must be negative",
+            {"tail_return_threshold_pct": 0.0},
+            "tail_return_threshold_pct must be negative",
         ),
     ],
 )

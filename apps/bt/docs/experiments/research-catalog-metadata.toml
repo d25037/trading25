@@ -25,7 +25,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-short-red-evidence"]
 family = "Ranking"
 status = "candidate"
-decision = "Daily Ranking の short/red 候補を既存の long-side 色分けから独立して検証した。Primary outcome は 20D close-to-close TOPIX excess。short 視点では severe_loss_rate_pct を有利側の下方tail、adverse_gain_rate_pct を逆行上方tailとして分けて読む。初回 Prime run では stale_high_valuation を short red の base condition、stale_high_valuation + 20D>0 AND 60D>0 を base red 内の stale_rally_fade / stale_high_valuation_recent_positive 強化状態として扱う。distribution_stress_high_valuation は逆行上方tailの大きい caution/red-risk、crowded_high_valuation + ATR20/ATR60 overheat は red 昇格候補に留める。stale_high_valuation は weak_trend OR で絞るとむしろ悪さが薄まるため、UI rule 化は別PRまで行わない。"
+decision = "Daily Ranking の short/red 候補を既存の long-side 色分けから独立して検証した。Primary outcome は 20D close-to-close TOPIX excess。short 視点では raw / TOPIX / excess を併記し、negative_*_return_rate_pct、downside_*_tail_rate_pct、upside_*_tail_rate_pct で方向を明示する。初回 Prime run では stale_high_valuation を short red の base condition、stale_high_valuation + 20D>0 AND 60D>0 を base red 内の stale_rally_fade / stale_high_valuation_recent_positive 強化状態として扱う。distribution_stress_high_valuation は逆行上方tailの大きい caution/red-risk、crowded_high_valuation + ATR20/ATR60 overheat は red 昇格候補に留める。stale_high_valuation は weak_trend OR で絞るとむしろ悪さが薄まるため、UI rule 化は別PRまで行わない。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "short-rule-unproven", "daily-forward-return"]
 relatedExperiments = [

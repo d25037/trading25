@@ -28,7 +28,7 @@ from src.domains.analytics.ranking_short_red_evidence import (  # noqa: E402
     DEFAULT_MARKET_SCOPES,
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
-    DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
+    DEFAULT_TAIL_RETURN_THRESHOLD_PCT,
     run_ranking_short_red_evidence_research,
     write_ranking_short_red_evidence_bundle,
 )
@@ -66,10 +66,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Minimum observations required for a summarized row.",
     )
     parser.add_argument(
-        "--severe-loss-threshold-pct",
+        "--tail-return-threshold-pct",
         type=float,
-        default=DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
-        help="Forward excess return threshold used for left-tail diagnostics.",
+        default=DEFAULT_TAIL_RETURN_THRESHOLD_PCT,
+        help=(
+            "Negative return threshold used for downside tail diagnostics; "
+            "the absolute value is used for upside tail diagnostics."
+        ),
     )
     parser.add_argument(
         "--observation-sample-limit",
@@ -91,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         horizons=_parse_positive_ints(args.horizons, name="horizons"),
         market_scopes=_parse_strings(args.markets),
         min_observations=args.min_observations,
-        severe_loss_threshold_pct=args.severe_loss_threshold_pct,
+        tail_return_threshold_pct=args.tail_return_threshold_pct,
         observation_sample_limit=args.observation_sample_limit,
     )
     bundle = write_ranking_short_red_evidence_bundle(

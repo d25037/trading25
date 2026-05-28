@@ -20,7 +20,7 @@ from src.application.services.ranking_query_helpers import (
     prefer_4digit_order_sql,
 )
 from src.application.services.ranking_response_items import finite_or_none, str_or_none
-from src.application.services.ranking_value_composite_config import (
+from src.application.services.ranking_state_flags import (
     OVERHEAT_RISK_FLAG,
     SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT,
     STALE_RALLY_FADE_RISK_FLAG,

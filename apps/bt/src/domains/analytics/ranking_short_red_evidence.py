@@ -19,7 +19,6 @@ from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.ranking_color_evidence import (
-    _aggregate_metric_columns,
     _assert_required_tables,
     _create_observation_panel as _create_ranking_observation_panel,
     _normalize_market_scopes,
@@ -37,7 +36,7 @@ RANKING_SHORT_RED_EVIDENCE_EXPERIMENT_ID = (
 DEFAULT_HORIZONS: tuple[int, ...] = (5, 10, 20, 60)
 DEFAULT_MARKET_SCOPES: tuple[str, ...] = ("prime",)
 DEFAULT_MIN_OBSERVATIONS = 500
-DEFAULT_SEVERE_LOSS_THRESHOLD_PCT = -10.0
+DEFAULT_TAIL_RETURN_THRESHOLD_PCT = -10.0
 DEFAULT_OBSERVATION_SAMPLE_LIMIT = 10_000
 _REQUIRED_ATR_WINDOWS: tuple[int, ...] = (20, 60)
 _REQUIRED_RETURN_WINDOWS: tuple[int, ...] = (20, 60)
@@ -139,7 +138,7 @@ class RankingShortRedEvidenceResult:
     horizons: tuple[int, ...]
     market_scopes: tuple[str, ...]
     min_observations: int
-    severe_loss_threshold_pct: float
+    tail_return_threshold_pct: float
     observation_count: int
     coverage_diagnostics_df: pd.DataFrame
     short_red_candidate_df: pd.DataFrame
@@ -159,7 +158,7 @@ def run_ranking_short_red_evidence_research(
     horizons: Iterable[int] = DEFAULT_HORIZONS,
     market_scopes: Sequence[str] = DEFAULT_MARKET_SCOPES,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
-    severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
+    tail_return_threshold_pct: float = DEFAULT_TAIL_RETURN_THRESHOLD_PCT,
     observation_sample_limit: int = DEFAULT_OBSERVATION_SAMPLE_LIMIT,
 ) -> RankingShortRedEvidenceResult:
     resolved_horizons = tuple(sorted({int(horizon) for horizon in horizons}))
@@ -167,7 +166,7 @@ def run_ranking_short_red_evidence_research(
     _validate_params(
         horizons=resolved_horizons,
         min_observations=min_observations,
-        severe_loss_threshold_pct=severe_loss_threshold_pct,
+        tail_return_threshold_pct=tail_return_threshold_pct,
         observation_sample_limit=observation_sample_limit,
     )
 
@@ -222,32 +221,32 @@ def run_ranking_short_red_evidence_research(
             ctx.connection,
             horizons=resolved_horizons,
             min_observations=min_observations,
-            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            tail_return_threshold_pct=tail_return_threshold_pct,
         )
         regime_valuation_interaction_df = _build_regime_valuation_interaction_df(
             ctx.connection,
             horizons=resolved_horizons,
             min_observations=min_observations,
-            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            tail_return_threshold_pct=tail_return_threshold_pct,
         )
         technical_atr_short_interaction_df = _build_technical_atr_short_interaction_df(
             ctx.connection,
             horizons=resolved_horizons,
             min_observations=min_observations,
-            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            tail_return_threshold_pct=tail_return_threshold_pct,
         )
         stale_liquidity_short_diagnostics_df = _build_stale_liquidity_short_diagnostics_df(
             ctx.connection,
             horizons=resolved_horizons,
             min_observations=min_observations,
-            severe_loss_threshold_pct=severe_loss_threshold_pct,
+            tail_return_threshold_pct=tail_return_threshold_pct,
         )
         stale_high_valuation_trend_split_df = (
             _build_stale_high_valuation_trend_split_df(
                 ctx.connection,
                 horizons=resolved_horizons,
                 min_observations=min_observations,
-                severe_loss_threshold_pct=severe_loss_threshold_pct,
+                tail_return_threshold_pct=tail_return_threshold_pct,
             )
         )
         live_ranking_replay_df = _query_live_ranking_replay_df(
@@ -271,7 +270,7 @@ def run_ranking_short_red_evidence_research(
         horizons=resolved_horizons,
         market_scopes=resolved_market_scopes,
         min_observations=min_observations,
-        severe_loss_threshold_pct=severe_loss_threshold_pct,
+        tail_return_threshold_pct=tail_return_threshold_pct,
         observation_count=observation_count,
         coverage_diagnostics_df=coverage_diagnostics_df,
         short_red_candidate_df=short_red_candidate_df,
@@ -299,7 +298,7 @@ def write_ranking_short_red_evidence_bundle(
             "horizons": list(result.horizons),
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
-            "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
+            "tail_return_threshold_pct": result.tail_return_threshold_pct,
         },
         db_path=result.db_path,
         analysis_start_date=result.analysis_start_date,
@@ -421,15 +420,15 @@ def _validate_params(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
     observation_sample_limit: int,
 ) -> None:
     if not horizons or any(horizon <= 0 for horizon in horizons):
         raise ValueError("horizons must be positive")
     if min_observations <= 0:
         raise ValueError("min_observations must be positive")
-    if severe_loss_threshold_pct >= 0.0:
-        raise ValueError("severe_loss_threshold_pct must be negative")
+    if tail_return_threshold_pct >= 0.0:
+        raise ValueError("tail_return_threshold_pct must be negative")
     if observation_sample_limit <= 0:
         raise ValueError("observation_sample_limit must be positive")
 
@@ -558,7 +557,7 @@ def _build_short_red_candidate_df(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for horizon in horizons:
@@ -568,14 +567,14 @@ def _build_short_red_candidate_df(
                 source_name="ranking_short_red_candidate_work",
                 condition="TRUE",
                 condition_fields={"horizon": int(horizon)},
-                return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                horizon=int(horizon),
                 group_columns=[
                     "market_scope",
                     "candidate_bucket",
                     "candidate_bucket_order",
                 ],
                 min_observations=min_observations,
-                severe_loss_threshold_pct=severe_loss_threshold_pct,
+                tail_return_threshold_pct=tail_return_threshold_pct,
             )
         )
     return _concat_sorted(frames, columns=_short_red_candidate_columns())
@@ -586,7 +585,7 @@ def _build_regime_valuation_interaction_df(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for regime_order, regime in enumerate(
@@ -605,10 +604,10 @@ def _build_regime_valuation_interaction_df(
                             "valuation_state_order": value_order,
                             "horizon": int(horizon),
                         },
-                        return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                        horizon=int(horizon),
                         group_columns=["market_scope", "liquidity_regime"],
                         min_observations=min_observations,
-                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                        tail_return_threshold_pct=tail_return_threshold_pct,
                     )
                 )
     return _concat_sorted(frames, columns=_regime_valuation_columns())
@@ -619,7 +618,7 @@ def _build_technical_atr_short_interaction_df(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for technical_order, (technical_state, condition) in enumerate(_TECHNICAL_STATES):
@@ -634,14 +633,14 @@ def _build_technical_atr_short_interaction_df(
                         "technical_state_order": technical_order,
                         "horizon": int(horizon),
                     },
-                    return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                    horizon=int(horizon),
                     group_columns=[
                         "market_scope",
                         "candidate_bucket",
                         "candidate_bucket_order",
                     ],
                     min_observations=min_observations,
-                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    tail_return_threshold_pct=tail_return_threshold_pct,
                 )
             )
     return _concat_sorted(frames, columns=_technical_atr_columns())
@@ -652,7 +651,7 @@ def _build_stale_liquidity_short_diagnostics_df(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for condition_order, (stale_condition, condition) in enumerate(_STALE_CONDITIONS):
@@ -667,10 +666,10 @@ def _build_stale_liquidity_short_diagnostics_df(
                         "stale_condition_order": condition_order,
                         "horizon": int(horizon),
                     },
-                    return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                    horizon=int(horizon),
                     group_columns=["market_scope"],
                     min_observations=min_observations,
-                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    tail_return_threshold_pct=tail_return_threshold_pct,
                 )
             )
     return _concat_sorted(frames, columns=_stale_diagnostics_columns())
@@ -681,7 +680,7 @@ def _build_stale_high_valuation_trend_split_df(
     *,
     horizons: Sequence[int],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     base_condition = "liquidity_regime = 'stale_liquidity' AND high_valuation_warning"
@@ -699,10 +698,10 @@ def _build_stale_high_valuation_trend_split_df(
                         "trend_split_order": split_order,
                         "horizon": int(horizon),
                     },
-                    return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                    horizon=int(horizon),
                     group_columns=["market_scope"],
                     min_observations=min_observations,
-                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    tail_return_threshold_pct=tail_return_threshold_pct,
                 )
             )
     return _concat_sorted(frames, columns=_stale_high_valuation_trend_split_columns())
@@ -714,13 +713,16 @@ def _aggregate_condition(
     source_name: str,
     condition: str,
     condition_fields: dict[str, Any],
-    return_column: str,
+    horizon: int,
     group_columns: Sequence[str],
     min_observations: int,
-    severe_loss_threshold_pct: float,
+    tail_return_threshold_pct: float,
 ) -> pd.DataFrame:
     group_select = ",\n            ".join(group_columns)
     group_by = ", ".join(group_columns)
+    raw_return_column = f"forward_close_return_{horizon}d_pct"
+    topix_return_column = f"topix_close_return_{horizon}d_pct"
+    excess_return_column = f"forward_close_excess_return_{horizon}d_pct"
     frame = conn.execute(
         f"""
         SELECT
@@ -728,20 +730,36 @@ def _aggregate_condition(
             count(*) AS observation_count,
             count(DISTINCT code) AS code_count,
             count(DISTINCT date) AS date_count,
-            avg({return_column}) AS mean_forward_excess_return_pct,
-            median({return_column}) AS median_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.10) AS p10_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.25) AS p25_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.75) AS p75_forward_excess_return_pct,
-            quantile_cont({return_column}, 0.90) AS p90_forward_excess_return_pct,
-            avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
-                AS win_rate_pct,
-            avg(CASE WHEN {return_column} < 0 THEN 1.0 ELSE 0.0 END) * 100.0
-                AS short_win_rate_pct,
-            avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
-                AS severe_loss_rate_pct,
-            avg(CASE WHEN {return_column} >= ? THEN 1.0 ELSE 0.0 END) * 100.0
-                AS adverse_gain_rate_pct,
+            avg({raw_return_column}) AS mean_forward_raw_return_pct,
+            median({raw_return_column}) AS median_forward_raw_return_pct,
+            quantile_cont({raw_return_column}, 0.10) AS p10_forward_raw_return_pct,
+            quantile_cont({raw_return_column}, 0.25) AS p25_forward_raw_return_pct,
+            quantile_cont({raw_return_column}, 0.75) AS p75_forward_raw_return_pct,
+            quantile_cont({raw_return_column}, 0.90) AS p90_forward_raw_return_pct,
+            avg(CASE WHEN {raw_return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS positive_raw_return_rate_pct,
+            avg(CASE WHEN {raw_return_column} < 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS negative_raw_return_rate_pct,
+            avg(CASE WHEN {raw_return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS downside_raw_tail_rate_pct,
+            avg(CASE WHEN {raw_return_column} >= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS upside_raw_tail_rate_pct,
+            avg({topix_return_column}) AS mean_topix_return_pct,
+            median({topix_return_column}) AS median_topix_return_pct,
+            avg({excess_return_column}) AS mean_forward_excess_return_pct,
+            median({excess_return_column}) AS median_forward_excess_return_pct,
+            quantile_cont({excess_return_column}, 0.10) AS p10_forward_excess_return_pct,
+            quantile_cont({excess_return_column}, 0.25) AS p25_forward_excess_return_pct,
+            quantile_cont({excess_return_column}, 0.75) AS p75_forward_excess_return_pct,
+            quantile_cont({excess_return_column}, 0.90) AS p90_forward_excess_return_pct,
+            avg(CASE WHEN {excess_return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS positive_excess_return_rate_pct,
+            avg(CASE WHEN {excess_return_column} < 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS negative_excess_return_rate_pct,
+            avg(CASE WHEN {excess_return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS downside_excess_tail_rate_pct,
+            avg(CASE WHEN {excess_return_column} >= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS upside_excess_tail_rate_pct,
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
             median(topix_recent_return_20d_pct) AS median_topix_recent_return_20d_pct,
@@ -763,13 +781,17 @@ def _aggregate_condition(
                 AS atr20_to_atr60_overheat_rate_pct
         FROM {source_name}
         WHERE {condition}
-          AND {return_column} IS NOT NULL
+          AND {raw_return_column} IS NOT NULL
+          AND {topix_return_column} IS NOT NULL
+          AND {excess_return_column} IS NOT NULL
         GROUP BY {group_by}
         HAVING count(*) >= ?
         """,
         [
-            float(severe_loss_threshold_pct),
-            abs(float(severe_loss_threshold_pct)),
+            float(tail_return_threshold_pct),
+            abs(float(tail_return_threshold_pct)),
+            float(tail_return_threshold_pct),
+            abs(float(tail_return_threshold_pct)),
             int(min_observations),
         ],
     ).fetchdf()
@@ -809,6 +831,8 @@ def _query_live_ranking_replay_df(conn: Any, *, limit: int) -> pd.DataFrame:
             c.atr60_pct,
             c.atr20_to_atr60,
             c.atr20_change_20d_pct,
+            c.forward_close_return_20d_pct,
+            c.topix_close_return_20d_pct,
             c.forward_close_excess_return_20d_pct
         FROM ranking_short_red_candidate_work c
         JOIN latest_dates d
@@ -847,6 +871,8 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
             atr60_pct,
             atr20_to_atr60,
             atr20_change_20d_pct,
+            forward_close_return_20d_pct,
+            topix_close_return_20d_pct,
             forward_close_excess_return_20d_pct
         FROM ranking_short_red_feature_panel
         ORDER BY date, code, liquidity_regime
@@ -866,24 +892,50 @@ def _analysis_start_from_sample(frame: pd.DataFrame, fallback: str | None) -> st
 
 
 def _short_red_metric_columns() -> list[str]:
-    columns = list(_aggregate_metric_columns())
-    if "severe_loss_rate_pct" in columns:
-        insert_at = columns.index("severe_loss_rate_pct") + 1
-        columns[insert_at:insert_at] = [
-            "short_win_rate_pct",
-            "adverse_gain_rate_pct",
-        ]
-    columns.extend(
-        [
-            "median_atr20_pct",
-            "median_atr60_pct",
-            "median_atr20_to_atr60",
-            "median_atr20_change_20d_pct",
-            "atr20_acceleration_rate_pct",
-            "atr20_to_atr60_overheat_rate_pct",
-        ]
-    )
-    return columns
+    return [
+        "observation_count",
+        "code_count",
+        "date_count",
+        "mean_forward_raw_return_pct",
+        "median_forward_raw_return_pct",
+        "p10_forward_raw_return_pct",
+        "p25_forward_raw_return_pct",
+        "p75_forward_raw_return_pct",
+        "p90_forward_raw_return_pct",
+        "positive_raw_return_rate_pct",
+        "negative_raw_return_rate_pct",
+        "downside_raw_tail_rate_pct",
+        "upside_raw_tail_rate_pct",
+        "mean_topix_return_pct",
+        "median_topix_return_pct",
+        "mean_forward_excess_return_pct",
+        "median_forward_excess_return_pct",
+        "p10_forward_excess_return_pct",
+        "p25_forward_excess_return_pct",
+        "p75_forward_excess_return_pct",
+        "p90_forward_excess_return_pct",
+        "positive_excess_return_rate_pct",
+        "negative_excess_return_rate_pct",
+        "downside_excess_tail_rate_pct",
+        "upside_excess_tail_rate_pct",
+        "median_recent_return_20d_pct",
+        "median_recent_return_60d_pct",
+        "median_topix_recent_return_20d_pct",
+        "median_topix_recent_return_60d_pct",
+        "median_med_adv60_mil_jpy",
+        "median_market_cap_bil_jpy",
+        "median_liquidity_residual_z",
+        "median_per_percentile",
+        "median_forward_per_percentile",
+        "median_forward_p_op_percentile",
+        "median_pbr_percentile",
+        "median_atr20_pct",
+        "median_atr60_pct",
+        "median_atr20_to_atr60",
+        "median_atr20_change_20d_pct",
+        "atr20_acceleration_rate_pct",
+        "atr20_to_atr60_overheat_rate_pct",
+    ]
 
 
 def _short_red_candidate_columns() -> list[str]:

@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import date as calendar_date, datetime, timedelta
 
 from src.application.services.ranking_query_helpers import normalize_equity_code
+from src.application.services.ranking_state_flags import RISK_FLAG_STATE_FILTERS
 from src.entrypoints.http.schemas.ranking import RankingItem, RankingStateFilter
-
-_RISK_FLAG_STATE_FILTERS = frozenset({"overheat", "stale_rally_fade"})
 
 
 def filter_ranking_collections_by_forward_eps_source_date(
@@ -82,7 +81,7 @@ def filter_ranking_collections_by_liquidity_state(
         return
 
     for collection in collections:
-        if liquidity_state in _RISK_FLAG_STATE_FILTERS:
+        if liquidity_state in RISK_FLAG_STATE_FILTERS:
             collection[:] = [
                 item for item in collection if liquidity_state in item.riskFlags
             ]

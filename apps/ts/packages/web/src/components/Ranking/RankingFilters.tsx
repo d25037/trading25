@@ -2,6 +2,7 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { RankingParams } from '@/types/ranking';
+import { RANKING_LIQUIDITY_STATE_OPTIONS } from './rankingState';
 
 const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -28,17 +29,6 @@ const FORWARD_EPS_DISCLOSURE_OPTIONS = [
   { value: 63, label: '63 days' },
   { value: 252, label: '252 days' },
 ];
-
-const LIQUIDITY_STATE_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'neutral_rerating', label: 'Neutral Rerating' },
-  { value: 'crowded_rerating', label: 'Crowded Rerating' },
-  { value: 'distribution_stress', label: 'Stress' },
-  { value: 'stale_liquidity', label: 'Stale' },
-  { value: 'neutral', label: 'Neutral' },
-  { value: 'overheat', label: 'Overheat' },
-  { value: 'stale_rally_fade', label: 'Rally Fade' },
-] as const;
 
 interface RankingFiltersProps {
   params: RankingParams;
@@ -92,7 +82,7 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {LIQUIDITY_STATE_OPTIONS.map((option) => (
+              {RANKING_LIQUIDITY_STATE_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

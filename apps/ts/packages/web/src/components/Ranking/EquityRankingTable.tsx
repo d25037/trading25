@@ -5,6 +5,15 @@ import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
 import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
+import {
+  type EvidenceColorTier,
+  getCheapValuationPercentileTier,
+  getForwardPOpEvidenceTier,
+  getForwardPerEvidenceTier,
+  getLiquidityEvidenceTier,
+  getPerEvidenceTier,
+} from './rankingEvidenceTiers';
+import { type EquityRiskFlag, formatRiskFlag } from './rankingState';
 
 export type EquitySortField =
   | 'tradingValue'
@@ -19,7 +28,6 @@ export type EquitySortField =
   | 'liquidityResidualZ'
   | 'adv60ToFreeFloatPct';
 export type EquitySortOrder = 'asc' | 'desc';
-export type EquityRiskFlag = 'overheat' | 'stale_rally_fade';
 export type EquityRankingLabels = Record<
   'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
   string
@@ -154,12 +162,6 @@ function getEvidenceTierChipClass(tier: EvidenceColorTier): string {
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
-function formatRiskFlag(value: EquityRiskFlag): string {
-  if (value === 'overheat') return 'Overheat';
-  if (value === 'stale_rally_fade') return 'Rally Fade';
-  return value;
-}
-
 function getRiskFlagClass(value: EquityRiskFlag): string {
   if (value === 'overheat') return 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300';
   if (value === 'stale_rally_fade') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
@@ -192,156 +194,12 @@ function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
   );
 }
 
-type EvidenceColorTier = 'excellent' | 'good' | 'neutral' | 'bad' | 'very_bad';
-
 function getEvidenceTierClass(tier: EvidenceColorTier): string | undefined {
   if (tier === 'excellent') return 'text-green-600 dark:text-green-400';
   if (tier === 'good') return 'text-sky-600 dark:text-sky-400';
   if (tier === 'bad') return 'text-yellow-600 dark:text-yellow-400';
   if (tier === 'very_bad') return 'text-red-600 dark:text-red-400';
   return undefined;
-}
-
-function getCheapValuationPercentileTier(percentile: number | null | undefined): EvidenceColorTier {
-  if (percentile == null || !Number.isFinite(percentile)) return 'neutral';
-  if (percentile <= 0.1) return 'excellent';
-  if (percentile <= 0.2) return 'good';
-  if (percentile >= 0.9) return 'very_bad';
-  if (percentile >= 0.8) return 'bad';
-  return 'neutral';
-}
-
-function getPerEvidenceTier(percentile: number | null | undefined): EvidenceColorTier {
-  if (percentile == null || !Number.isFinite(percentile)) return 'neutral';
-  if (percentile <= 0.2) return 'good';
-  if (percentile >= 0.9) return 'very_bad';
-  if (percentile >= 0.8) return 'bad';
-  return 'neutral';
-}
-
-function hasLowPer(perPercentile: number | null | undefined): boolean {
-  return perPercentile != null && Number.isFinite(perPercentile) && perPercentile <= 0.2;
-}
-
-function getPositiveRatio(numerator: number | null | undefined, denominator: number | null | undefined): number | null {
-  if (
-    numerator == null ||
-    denominator == null ||
-    !Number.isFinite(numerator) ||
-    !Number.isFinite(denominator) ||
-    numerator <= 0 ||
-    denominator <= 0
-  ) {
-    return null;
-  }
-  return numerator / denominator;
-}
-
-function getForwardPerEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
-  const standaloneTier = getCheapValuationPercentileTier(item.forwardPerPercentile);
-  if (standaloneTier === 'very_bad' || standaloneTier === 'bad') {
-    return standaloneTier;
-  }
-  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
-  if (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null) {
-    if (forwardPerToPerRatio <= 0.8) return 'excellent';
-    if (forwardPerToPerRatio <= 1.0) return 'good';
-  }
-  if (standaloneTier === 'excellent') {
-    return 'excellent';
-  }
-  return standaloneTier;
-}
-
-function getForwardPOpEvidenceTier(
-  forwardPOpPercentile: number | null | undefined,
-  forwardPerPercentile: number | null | undefined,
-  perPercentile: number | null | undefined,
-  forwardPOp: number | null | undefined,
-  per: number | null | undefined
-): EvidenceColorTier {
-  if (forwardPOpPercentile == null || !Number.isFinite(forwardPOpPercentile)) {
-    return 'neutral';
-  }
-  if (forwardPOpPercentile >= 0.9) return 'very_bad';
-  if (forwardPOpPercentile >= 0.8) return 'bad';
-  const forwardPOpToPerRatio = getPositiveRatio(forwardPOp, per);
-  if (hasLowPer(perPercentile) && forwardPOpToPerRatio != null && forwardPOpToPerRatio > 1.25) {
-    return 'bad';
-  }
-  if (
-    forwardPerPercentile != null &&
-    Number.isFinite(forwardPerPercentile) &&
-    forwardPerPercentile <= 0.2 &&
-    forwardPOpPercentile <= 0.2
-  ) {
-    return 'good';
-  }
-  return 'neutral';
-}
-
-function hasLowPbr(item: EquityRankingItem): boolean {
-  return item.pbrPercentile != null && Number.isFinite(item.pbrPercentile) && item.pbrPercentile <= 0.2;
-}
-
-function hasLowForwardPer(item: EquityRankingItem): boolean {
-  return (
-    item.forwardPerPercentile != null && Number.isFinite(item.forwardPerPercentile) && item.forwardPerPercentile <= 0.2
-  );
-}
-
-function hasLowPerForwardPerImprovement(item: EquityRankingItem): boolean {
-  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
-  return hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 0.8;
-}
-
-function hasCrowdedReratingGreenConfirmation(item: EquityRankingItem): boolean {
-  return (hasLowPbr(item) && hasLowForwardPer(item)) || hasLowPerForwardPerImprovement(item);
-}
-
-function hasExpensiveValuationWarning(item: EquityRankingItem): boolean {
-  return [item.perPercentile, item.forwardPerPercentile, item.forwardPOpPercentile, item.pbrPercentile].some(
-    (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.8
-  );
-}
-
-function hasEarningsValuationWarning(item: EquityRankingItem): boolean {
-  return item.perPercentile == null && item.forwardPerPercentile == null;
-}
-
-function hasReratingValueConfirmation(item: EquityRankingItem): boolean {
-  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
-  return (
-    hasCrowdedReratingGreenConfirmation(item) ||
-    hasLowPbr(item) ||
-    (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 1.0)
-  );
-}
-
-function getCrowdedReratingEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
-  if (hasCrowdedReratingGreenConfirmation(item)) return 'excellent';
-  if (hasEarningsValuationWarning(item)) return 'bad';
-  if (hasExpensiveValuationWarning(item)) return 'bad';
-  if (hasReratingValueConfirmation(item)) return 'good';
-  return 'bad';
-}
-
-function getLiquidityEvidenceTier(item: EquityRankingItem): EvidenceColorTier {
-  if (item.liquidityRegime === 'neutral_rerating') {
-    return hasLowPerForwardPerImprovement(item) ? 'excellent' : 'good';
-  }
-  if (item.liquidityRegime === 'crowded_rerating') {
-    return getCrowdedReratingEvidenceTier(item);
-  }
-  if (item.liquidityRegime === 'distribution_stress') return 'bad';
-  if (item.liquidityRegime === 'stale_liquidity') {
-    return hasExpensiveValuationWarning(item) || hasEarningsValuationWarning(item) ? 'very_bad' : 'bad';
-  }
-  if (item.liquidityRegime === 'neutral') return 'neutral';
-  if (item.liquidityResidualZ != null && Number.isFinite(item.liquidityResidualZ) && item.liquidityResidualZ <= -1) {
-    return 'bad';
-  }
-  return 'neutral';
 }
 
 function SortHeader({
@@ -483,13 +341,11 @@ function EquityCard<T extends EquityRankingItem>({
           </>
         ) : null}
         {showLiquidity ? (
-          <>
-            <Metric
-              label="流動性Z"
-              value={formatSignedNumber(item.liquidityResidualZ)}
-              valueClassName={getEvidenceTierClass(getLiquidityEvidenceTier(item))}
-            />
-          </>
+          <Metric
+            label="流動性Z"
+            value={formatSignedNumber(item.liquidityResidualZ)}
+            valueClassName={getEvidenceTierClass(getLiquidityEvidenceTier(item))}
+          />
         ) : null}
       </div>
     </button>

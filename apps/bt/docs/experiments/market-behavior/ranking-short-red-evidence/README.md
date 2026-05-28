@@ -13,21 +13,21 @@ Primary outcome は既存の Ranking Color Evidence と揃え、`20D close-to-cl
 
 初回 Prime run では、short 用の赤は `stale_high_valuation` 全体を base red として扱い、`20D>0 AND 60D>0` は base red 内の強化状態として別ラベルを付ける。これは `overheat` のような補助状態だが、ATR ではなく recent return による fade 状態なので、`stale_rally_fade` / `stale_high_valuation_recent_positive` と呼ぶのが自然。`distribution_stress_high_valuation` は下方tailも重いが逆行上方tailも大きいため、base red ではなく caution/red-risk に落とす。`stale_high_valuation_weak_trend` は自然な OR 条件ではあるが、`stale_high_valuation` 全体より悪いわけではないため、主結論からは外す。`crowded_no_value` / `crowded_high_valuation` も左尾は重いが、mean が右尾で残るため、単純 short より「yellow から red への候補、または market/ATR 条件付き red」と読む。
 
-Short 視点では、既存の `severe_loss_rate_pct` は「大きく下げた比率」であり、short にとっては不利ではなく有利側の downside tail である。そのためこの readout では `severe_loss_rate_pct` を `Favorable downside tail` として読み、逆行リスクは `adverse_gain_rate_pct`、つまり forward excess return が `+10%` 以上になった `Adverse upside tail` で別に確認する。
+Short 視点では、方向が曖昧な `win_rate` / `severe_loss` という long 由来の名前を使わない。result tables は raw / TOPIX / excess を併記し、short 側は `negative_*_return_rate_pct`、有利な下方tailは `downside_*_tail_rate_pct`、逆行上方tailは `upside_*_tail_rate_pct` として読む。
 
 ### Main Findings
 
 #### 結論: 20D主軸では stress high valuation と stale high valuation が最も赤に近い
 
-Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `short_red_candidate_df` と `stale_liquidity_short_diagnostics_df` の 20D / 60D close-to-close TOPIX excess return。`Short win` は forward excess return `< 0`、`Favorable downside tail` は `<= -10%`、`Adverse upside tail` は `>= +10%`。
+Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `short_red_candidate_df` と `stale_liquidity_short_diagnostics_df` の 20D / 60D close-to-close TOPIX excess return。`Negative excess` は forward excess return `< 0`、`Downside excess tail` は `<= -10%`、`Upside excess tail` は `>= +10%`。同じ tables には `mean_forward_raw_return_pct` / `median_forward_raw_return_pct` / `mean_topix_return_pct` も併記し、市場が強い局面で raw return と excess return を切り分ける。
 
-| Candidate bucket | Horizon | Obs | Mean | Median | Short win | Favorable downside tail | Adverse upside tail | Read |
+| Candidate bucket | Horizon | Obs | Excess mean | Excess median | Negative excess | Downside excess tail | Upside excess tail | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `crowded_no_value` | 20D | 57,209 | +0.588% | -1.121% | 54.45% | 19.23% | 18.15% | 下方tailと上方tailが近く、裸shortには不安 |
 | `crowded_high_valuation` | 20D | 43,036 | +0.645% | -1.098% | 54.01% | 21.05% | 19.64% | high valuation でも逆行tailが大きい |
 | `distribution_stress_weak_trend` | 20D | 141,388 | -0.077% | -1.177% | 55.62% | 15.01% | 14.03% | 素直な caution。単独 red には少し弱い |
 | `distribution_stress_high_valuation` | 20D | 80,319 | -0.376% | -1.624% | 56.88% | 18.59% | 15.56% | 赤候補の中心 |
-| `stale_high_valuation` | 20D | 54,215 | -1.223% | -1.463% | 61.08% | 7.21% | 4.68% | tail より short win の非対称が良い |
+| `stale_high_valuation` | 20D | 54,215 | -1.223% | -1.463% | 61.08% | 7.21% | 4.68% | tail より negative excess の非対称が良い |
 | `stale_high_valuation_weak_trend` | 20D | 28,659 | -1.100% | -1.309% | 60.36% | 5.79% | 4.09% | weak trend に絞ると少し弱まる |
 | `crowded_no_value` | 60D | 54,724 | +0.984% | -3.530% | 57.09% | 35.73% | 27.00% | 60Dでは下方tailが重いが逆行tailも大きい |
 | `crowded_high_valuation` | 60D | 40,930 | +0.378% | -3.976% | 57.53% | 37.68% | 27.30% | crowded high valuation は長めで危険だが risk cap 必須 |
@@ -37,9 +37,9 @@ Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `sho
 
 #### 結論: stale high valuation は weak trend ではなく、上昇済み stale が最も short red に近い
 
-`stale_high_valuation_weak_trend` の `weak_trend` は `recent_return_20d_pct <= 0 OR recent_return_60d_pct <= 0`。この OR 条件は自然だが、実測では赤候補を強める条件ではなかった。追加集計では `20D > 0 AND 60D > 0` の方が forward 20D / 60D とも mean / median が悪く、short win も高い。stale high valuation は「既に弱いから悪い」ではなく、「流動性が stale なまま上がった高valuationが、その後に放置されやすい」と読む方がよい。
+`stale_high_valuation_weak_trend` の `weak_trend` は `recent_return_20d_pct <= 0 OR recent_return_60d_pct <= 0`。この OR 条件は自然だが、実測では赤候補を強める条件ではなかった。追加集計では `20D > 0 AND 60D > 0` の方が forward 20D / 60D とも excess mean / median が悪く、negative excess も高い。stale high valuation は「既に弱いから悪い」ではなく、「流動性が stale なまま上がった高valuationが、その後に放置されやすい」と読む方がよい。
 
-| Stale high valuation split | 20D obs | 20D mean | 20D median | 20D short win | 20D adverse upside | 60D obs | 60D mean | 60D median | 60D short win | 60D adverse upside | Read |
+| Stale high valuation split | 20D obs | 20D excess mean | 20D excess median | 20D negative excess | 20D upside excess tail | 60D obs | 60D excess mean | 60D excess median | 60D negative excess | 60D upside excess tail | Read |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | all `stale_high_valuation` | 54,215 | -1.223% | -1.463% | 61.08% | 4.68% | 51,675 | -3.045% | -3.616% | 66.14% | 10.47% | broad red base |
 | `20D <= 0` | 21,937 | -1.041% | -1.292% | 60.10% | 4.37% | 20,748 | -2.721% | -3.156% | 65.24% | 9.90% | 弱trend単独では悪化しない |
@@ -52,7 +52,7 @@ Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `sho
 
 `technical_atr_short_interaction_df` の 20D。`atr20_to_atr60_overheat` は `ATR20 change >= 25% AND ATR20/ATR60 >= 1.25`。
 
-| Candidate bucket | Technical state | Obs | Median | Short win | Favorable downside tail | Adverse upside tail | Read |
+| Candidate bucket | Technical state | Obs | Excess median | Negative excess | Downside excess tail | Upside excess tail | Read |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | `crowded_no_value` | all | 57,209 | -1.121% | 54.45% | 19.23% | 18.15% | baseline |
 | `crowded_no_value` | `atr20_to_atr60_overheat` | 10,677 | -1.646% | 56.13% | 21.79% | 17.65% | red 寄りに悪化 |
@@ -68,11 +68,11 @@ Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `sho
 
 この experiment は、既存の緑/青/黄を増やすためのものではない。特に `stale_liquidity` は既存 readout では return red というより investability warning と読まれているため、単独 red にはしない。`stale` は高valuationと弱trendが重なる場合だけ別表で検証する。
 
-`crowded_rerating` は強い value confirmation があれば右尾が残る一方、value が無い場合や高valuationの場合は下方 tail が重い。今回の run でも 20D favorable downside tail は `crowded_no_value` で `19.23%`、`crowded_high_valuation` で `21.05%` と高い。ただし 20D adverse upside tail もそれぞれ `18.15%` / `19.64%` と大きく、mean もプラスに残るため、単純 short rule ではなく「赤候補」または「ATR/market regime でさらに絞る候補」と読む。
+`crowded_rerating` は強い value confirmation があれば右尾が残る一方、value が無い場合や高valuationの場合は下方 tail が重い。今回の run でも 20D downside excess tail は `crowded_no_value` で `19.23%`、`crowded_high_valuation` で `21.05%` と高い。ただし 20D upside excess tail もそれぞれ `18.15%` / `19.64%` と大きく、excess mean もプラスに残るため、単純 short rule ではなく「赤候補」または「ATR/market regime でさらに絞る候補」と読む。
 
-`distribution_stress_high_valuation` は 20D median `-1.624%`、60D median `-4.978%` で、今回の中では最も素直な red candidate。20D favorable downside tail `18.59%` に対して adverse upside tail `15.56%`、60D は `38.83%` 対 `24.09%` で、short 側の tail 非対称もある。`distribution_stress_weak_trend` 単独は悪いが、高valuationを重ねた方が赤の意味が明確になる。
+`distribution_stress_high_valuation` は 20D excess median `-1.624%`、60D excess median `-4.978%` で、今回の中では最も素直な red-risk candidate。20D downside excess tail `18.59%` に対して upside excess tail `15.56%`、60D は `38.83%` 対 `24.09%` で、short 側の tail 非対称もある。ただし upside excess tail が大きいため base red ではなく caution/red-risk と読む。`distribution_stress_weak_trend` 単独は悪いが、高valuationを重ねた方が赤の意味が明確になる。
 
-`stale_high_valuation` は 20D mean `-1.223%` / median `-1.463%`、60D mean `-3.045%` / median `-3.616%`、60D short win `66.14%` で、急落 tail というより、上がりにくい / 放置されやすい bucket と読む。60D favorable downside tail `26.38%` に対して adverse upside tail `10.47%` なので、逆行tail確認後も base red 候補として残る。さらに `20D > 0 AND 60D > 0` に絞ると 60D mean `-3.430%`、median `-4.169%`、short win `67.07%` まで悪化するため、`stale_high_valuation` 全体を赤にしたうえで、上昇済み状態を `stale_rally_fade` / `stale_high_valuation_recent_positive` のような強化状態として付けるのがよい。`weak_trend` OR に絞るとむしろ悪さが薄まるため、stale 側の補助状態は `stale_high_valuation_weak_trend` ではなく `stale_high_valuation_recent_positive` に寄せる。
+`stale_high_valuation` は 20D excess mean `-1.223%` / median `-1.463%`、60D excess mean `-3.045%` / median `-3.616%`、60D negative excess `66.14%` で、急落 tail というより、TOPIXに負けやすい / 放置されやすい bucket と読む。生returnでは mean/median がプラスになる局面もあるため、裸short の赤ではなく relative red / long回避 / hedge前提short候補とする。60D downside excess tail `26.38%` に対して upside excess tail `10.47%` なので、逆行tail確認後も base red 候補として残る。さらに `20D > 0 AND 60D > 0` に絞ると 60D excess mean `-3.430%`、median `-4.169%`、negative excess `67.07%` まで悪化するため、`stale_high_valuation` 全体を赤にしたうえで、上昇済み状態を `stale_rally_fade` / `stale_high_valuation_recent_positive` のような強化状態として付けるのがよい。`weak_trend` OR に絞るとむしろ悪さが薄まるため、stale 側の補助状態は `stale_high_valuation_weak_trend` ではなく `stale_high_valuation_recent_positive` に寄せる。
 
 ### Production Implication
 
@@ -92,8 +92,8 @@ Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `sho
 - Prime-only evidence から始め、Standard/Growth へ外挿しない。
 - close-to-close diagnostic であり、pre-open screening rule ではない。
 - short 実運用には borrow、約定、position sizing、risk cap が別途必要。
-- short readout では `severe_loss_rate_pct` は有利側の下方tailであり、逆行リスクは `adverse_gain_rate_pct` で見る。
-- mean が右尾で改善しても、median / favorable downside / adverse upside の組み合わせで red 候補を扱う。
+- short readout では raw / TOPIX / excess を併記し、裸short と relative/hedged short を混同しない。
+- mean が右尾で改善しても、median / downside tail / upside tail の組み合わせで red 候補を扱う。
 
 ### Source Artifacts
 
@@ -102,7 +102,7 @@ Prime `2022-06-30` から `2026-05-14`、`1,609,210` stock-days。下表は `sho
 | runner | `apps/bt/scripts/research/run_ranking_short_red_evidence.py` |
 | domain module | `apps/bt/src/domains/analytics/ranking_short_red_evidence.py` |
 | tests | `apps/bt/tests/unit/domains/analytics/test_ranking_short_red_evidence.py` |
-| bundle | `/private/tmp/trading25-research/market-behavior/ranking-short-red-evidence/20260528_ranking_short_red_evidence_prime_v3` |
+| bundle | `/private/tmp/trading25-research/market-behavior/ranking-short-red-evidence/20260528_ranking_short_red_evidence_prime_v5` |
 | result tables | `coverage_diagnostics_df`, `short_red_candidate_df`, `regime_valuation_interaction_df`, `technical_atr_short_interaction_df`, `stale_liquidity_short_diagnostics_df`, `stale_high_valuation_trend_split_df`, `live_ranking_replay_df`, `observation_sample_df` |
 
 ## Reproduction
@@ -114,6 +114,6 @@ uv run --project apps/bt python apps/bt/scripts/research/run_ranking_short_red_e
   --markets prime \
   --horizons 5,10,20,60 \
   --output-root /private/tmp/trading25-research \
-  --run-id 20260528_ranking_short_red_evidence_prime_v3 \
+  --run-id 20260528_ranking_short_red_evidence_prime_v5 \
   --min-observations 500
 ```

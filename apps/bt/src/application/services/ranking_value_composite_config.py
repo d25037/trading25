@@ -13,7 +13,6 @@ from src.domains.analytics.value_composite_scoring import (
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
 )
 from src.entrypoints.http.schemas.ranking import (
-    RankingRiskFlag,
     ValueCompositeForwardEpsMode,
     ValueCompositeProfileId,
     ValueCompositeScoreMethod,
@@ -175,9 +174,6 @@ def value_composite_response_weights(
     }
 
 
-SHORT_TERM_OVERHEAT_RETURN_20D_THRESHOLD_PCT = 30.0
-OVERHEAT_RISK_FLAG: RankingRiskFlag = "overheat"
-STALE_RALLY_FADE_RISK_FLAG: RankingRiskFlag = "stale_rally_fade"
 PRIME_VALUATION_PERCENTILE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("per", "per_percentile"),
     ("forward_per", "forward_per_percentile"),
