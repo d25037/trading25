@@ -73,6 +73,21 @@ def _market_statements_df(statements: list[JQuantsStatement]) -> pd.DataFrame:
     return df
 
 
+def _daily_valuation_rows(
+    rows: list[tuple[str, float, float | None, float | None, float | None]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "date": date,
+            "close": close,
+            "eps": eps,
+            "bps": bps,
+            "market_cap": market_cap,
+        }
+        for date, close, eps, bps, market_cap in rows
+    ]
+
+
 class TestFundamentalsServiceInit:
     """FundamentalsService 初期化テスト"""
 
@@ -1135,6 +1150,13 @@ class TestComputeFundamentals:
         mock_market.get_statements.return_value = _market_statements_df(statements)
         mock_market.get_stock_info.return_value = mock_stock_info
         mock_market.get_stock_ohlcv.return_value = mock_prices_df
+        mock_market.get_daily_valuation.return_value = _daily_valuation_rows(
+            [
+                ("2024-05-14", 6000.0, 300.0, 2250.0, 80000000000000.0),
+                ("2024-05-15", 6100.0, 300.0, 2250.0, 81333333331300.0),
+                ("2024-05-16", 6050.0, 300.0, 2250.0, 80666666664650.0),
+            ]
+        )
 
         service._market_client = mock_market
 
@@ -1238,6 +1260,13 @@ class TestComputeFundamentals:
         mock_market.get_statements.return_value = _market_statements_df(statements)
         mock_market.get_stock_info.return_value = None
         mock_market.get_stock_ohlcv.return_value = mock_prices_df
+        mock_market.get_daily_valuation.return_value = _daily_valuation_rows(
+            [
+                ("2024-05-14", 6000.0, 200.0, 2000.0, None),
+                ("2024-05-15", 6100.0, 200.0, 2000.0, None),
+                ("2024-05-16", 6050.0, 200.0, 2000.0, None),
+            ]
+        )
 
         service._market_client = mock_market
 
