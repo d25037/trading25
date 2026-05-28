@@ -34,8 +34,10 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _str_or_none,
     _summary_columns,
     _table_exists,
-    _top_rows_for_markdown,
     enrich_event_features_with_prime_liquidity_residuals,
+)
+from src.domains.analytics.earnings_holdthrough_expectancy_report import (
+    _top_rows_for_markdown,
 )
 from src.domains.analytics.jpx_daily_price_limits import (
     JPX_DAILY_PRICE_LIMITS_DEFINITION_NOTE,

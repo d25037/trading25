@@ -10,6 +10,8 @@ import pandas as pd
 
 from src.domains.analytics.earnings_holdthrough_expectancy import (
     _table_exists,
+)
+from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.readonly_duckdb_support import (
@@ -659,15 +661,38 @@ def _create_observation_panel(
                 END AS log_free_float_market_cap
             FROM excess
         ),
+        residual_group_stats AS (
+            SELECT
+                date,
+                market,
+                count(*) AS residual_observations,
+                avg(log_adv60) AS avg_log_adv60,
+                avg(log_free_float_market_cap) AS avg_log_free_float_market_cap,
+                var_samp(log_free_float_market_cap) AS var_log_free_float_market_cap,
+                covar_samp(log_free_float_market_cap, log_adv60) AS covar_log_cap_adv
+            FROM residual_source
+            WHERE log_adv60 IS NOT NULL
+              AND log_free_float_market_cap IS NOT NULL
+            GROUP BY date, market
+        ),
         residual_stats AS (
             SELECT
-                *,
-                regr_intercept(log_adv60, log_free_float_market_cap)
-                    OVER (PARTITION BY date, market) AS residual_intercept,
-                regr_slope(log_adv60, log_free_float_market_cap)
-                    OVER (PARTITION BY date, market) AS residual_beta,
-                count(log_adv60) OVER (PARTITION BY date, market) AS residual_observations
-            FROM residual_source
+                rs.*,
+                rgs.residual_observations,
+                CASE
+                    WHEN rgs.var_log_free_float_market_cap > 0
+                        THEN rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap
+                END AS residual_beta,
+                CASE
+                    WHEN rgs.var_log_free_float_market_cap > 0
+                        THEN rgs.avg_log_adv60
+                            - (rgs.covar_log_cap_adv / rgs.var_log_free_float_market_cap)
+                            * rgs.avg_log_free_float_market_cap
+                END AS residual_intercept
+            FROM residual_source rs
+            LEFT JOIN residual_group_stats rgs
+              ON rgs.date = rs.date
+             AND rgs.market = rs.market
         ),
         residual_values AS (
             SELECT

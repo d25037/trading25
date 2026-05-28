@@ -22,6 +22,19 @@ relatedExperiments = [
   "market-behavior/free-float-liquidity-regime-decomposition",
 ]
 
+[experiments."market-behavior/ranking-short-red-evidence"]
+family = "Ranking"
+status = "candidate"
+decision = "Daily Ranking の short/red 候補を既存の long-side 色分けから独立して検証した。Primary outcome は 20D close-to-close TOPIX excess。初回 Prime run では distribution_stress_high_valuation を red overlay 第一候補、crowded_high_valuation + ATR20/ATR60 overheat を red 昇格候補、stale_high_valuation_weak_trend を short というより long 回避候補として扱う。UI rule 化は別PRまで行わない。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "short-rule-unproven", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/atr-expansion-forward-response",
+  "market-behavior/free-float-liquidity-regime-decomposition",
+  "market-behavior/recent-return-threshold-forward-response",
+]
+
 [experiments."market-behavior/falling-knife-reversal-study"]
 family = "Falling Knife"
 status = "observed"

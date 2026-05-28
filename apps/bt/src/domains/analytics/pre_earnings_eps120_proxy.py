@@ -16,6 +16,8 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _sort_summary_df,
     _str_or_none,
     _table_exists,
+)
+from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
 )
 from src.domains.analytics.fundamental_ranking import adjust_per_share_value

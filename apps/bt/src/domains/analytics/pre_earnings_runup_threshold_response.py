@@ -15,8 +15,10 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _float_or_nan,
     _sort_summary_df,
     _str_or_none,
-    _top_rows_for_markdown,
     run_earnings_holdthrough_expectancy_research,
+)
+from src.domains.analytics.earnings_holdthrough_expectancy_report import (
+    _top_rows_for_markdown,
 )
 from src.domains.analytics.post_earnings_next_day_entry import (
     DEFAULT_HORIZONS,
