@@ -26,12 +26,15 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
     assert not result.regime_valuation_interaction_df.empty
     assert not result.technical_atr_short_interaction_df.empty
     assert not result.stale_liquidity_short_diagnostics_df.empty
+    assert not result.stale_high_valuation_trend_split_df.empty
     assert not result.live_ranking_replay_df.empty
     assert {
         "candidate_bucket",
         "horizon",
         "median_forward_excess_return_pct",
+        "short_win_rate_pct",
         "severe_loss_rate_pct",
+        "adverse_gain_rate_pct",
         "median_pbr_percentile",
         "median_atr20_to_atr60",
     }.issubset(result.short_red_candidate_df.columns)
@@ -50,6 +53,11 @@ def test_ranking_short_red_evidence_emits_independent_tables(tmp_path: Path) -> 
         "stale_condition",
         "median_liquidity_residual_z",
     }.issubset(result.stale_liquidity_short_diagnostics_df.columns)
+    assert {
+        "trend_split",
+        "short_win_rate_pct",
+        "adverse_gain_rate_pct",
+    }.issubset(result.stale_high_valuation_trend_split_df.columns)
     assert {
         "date",
         "code",
@@ -70,6 +78,7 @@ def test_ranking_short_red_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "Regime x Valuation Interaction" in summary
     assert "Technical ATR Short Interaction" in summary
     assert "Stale Liquidity Short Diagnostics" in summary
+    assert "Stale High Valuation Trend Split" in summary
     assert "Live Ranking Replay" in summary
 
     bundle = write_ranking_short_red_evidence_bundle(

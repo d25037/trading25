@@ -109,6 +109,23 @@ _STALE_CONDITIONS: tuple[tuple[str, str], ...] = (
         "AND high_valuation_warning AND weak_trend",
     ),
 )
+_STALE_HIGH_VALUATION_TREND_SPLITS: tuple[tuple[str, str], ...] = (
+    ("all_stale_high_valuation", "TRUE"),
+    ("recent_20d_nonpositive", "recent_return_20d_pct <= 0"),
+    ("recent_60d_nonpositive", "recent_return_60d_pct <= 0"),
+    (
+        "recent_20d_or_60d_nonpositive",
+        "recent_return_20d_pct <= 0 OR recent_return_60d_pct <= 0",
+    ),
+    (
+        "recent_20d_and_60d_nonpositive",
+        "recent_return_20d_pct <= 0 AND recent_return_60d_pct <= 0",
+    ),
+    (
+        "recent_20d_and_60d_positive",
+        "recent_return_20d_pct > 0 AND recent_return_60d_pct > 0",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -129,6 +146,7 @@ class RankingShortRedEvidenceResult:
     regime_valuation_interaction_df: pd.DataFrame
     technical_atr_short_interaction_df: pd.DataFrame
     stale_liquidity_short_diagnostics_df: pd.DataFrame
+    stale_high_valuation_trend_split_df: pd.DataFrame
     live_ranking_replay_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
 
@@ -224,6 +242,14 @@ def run_ranking_short_red_evidence_research(
             min_observations=min_observations,
             severe_loss_threshold_pct=severe_loss_threshold_pct,
         )
+        stale_high_valuation_trend_split_df = (
+            _build_stale_high_valuation_trend_split_df(
+                ctx.connection,
+                horizons=resolved_horizons,
+                min_observations=min_observations,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+            )
+        )
         live_ranking_replay_df = _query_live_ranking_replay_df(
             ctx.connection,
             limit=observation_sample_limit,
@@ -252,6 +278,7 @@ def run_ranking_short_red_evidence_research(
         regime_valuation_interaction_df=regime_valuation_interaction_df,
         technical_atr_short_interaction_df=technical_atr_short_interaction_df,
         stale_liquidity_short_diagnostics_df=stale_liquidity_short_diagnostics_df,
+        stale_high_valuation_trend_split_df=stale_high_valuation_trend_split_df,
         live_ranking_replay_df=live_ranking_replay_df,
         observation_sample_df=observation_sample_df,
     )
@@ -293,6 +320,9 @@ def write_ranking_short_red_evidence_bundle(
             ),
             "stale_liquidity_short_diagnostics_df": (
                 result.stale_liquidity_short_diagnostics_df
+            ),
+            "stale_high_valuation_trend_split_df": (
+                result.stale_high_valuation_trend_split_df
             ),
             "live_ranking_replay_df": result.live_ranking_replay_df,
             "observation_sample_df": result.observation_sample_df,
@@ -336,6 +366,11 @@ def build_summary_markdown(result: RankingShortRedEvidenceResult) -> str:
         sort_columns=["market_scope", "stale_condition_order", "horizon"],
         limit=80,
     )
+    stale_trend_split = _top_rows_for_markdown(
+        result.stale_high_valuation_trend_split_df,
+        sort_columns=["market_scope", "trend_split_order", "horizon"],
+        limit=80,
+    )
     replay = _top_rows_for_markdown(result.live_ranking_replay_df, limit=60)
     return "\n".join(
         [
@@ -369,6 +404,10 @@ def build_summary_markdown(result: RankingShortRedEvidenceResult) -> str:
             "## Stale Liquidity Short Diagnostics",
             "",
             stale,
+            "",
+            "## Stale High Valuation Trend Split",
+            "",
+            stale_trend_split,
             "",
             "## Live Ranking Replay",
             "",
@@ -637,6 +676,38 @@ def _build_stale_liquidity_short_diagnostics_df(
     return _concat_sorted(frames, columns=_stale_diagnostics_columns())
 
 
+def _build_stale_high_valuation_trend_split_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    base_condition = "liquidity_regime = 'stale_liquidity' AND high_valuation_warning"
+    for split_order, (trend_split, condition) in enumerate(
+        _STALE_HIGH_VALUATION_TREND_SPLITS
+    ):
+        for horizon in horizons:
+            frames.append(
+                _aggregate_condition(
+                    conn,
+                    source_name="ranking_short_red_feature_panel",
+                    condition=f"{base_condition} AND ({condition})",
+                    condition_fields={
+                        "trend_split": trend_split,
+                        "trend_split_order": split_order,
+                        "horizon": int(horizon),
+                    },
+                    return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                    group_columns=["market_scope"],
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            )
+    return _concat_sorted(frames, columns=_stale_high_valuation_trend_split_columns())
+
+
 def _aggregate_condition(
     conn: Any,
     *,
@@ -665,8 +736,12 @@ def _aggregate_condition(
             quantile_cont({return_column}, 0.90) AS p90_forward_excess_return_pct,
             avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
                 AS win_rate_pct,
+            avg(CASE WHEN {return_column} < 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS short_win_rate_pct,
             avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
                 AS severe_loss_rate_pct,
+            avg(CASE WHEN {return_column} >= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS adverse_gain_rate_pct,
             median(recent_return_20d_pct) AS median_recent_return_20d_pct,
             median(recent_return_60d_pct) AS median_recent_return_60d_pct,
             median(topix_recent_return_20d_pct) AS median_topix_recent_return_20d_pct,
@@ -692,7 +767,11 @@ def _aggregate_condition(
         GROUP BY {group_by}
         HAVING count(*) >= ?
         """,
-        [float(severe_loss_threshold_pct), int(min_observations)],
+        [
+            float(severe_loss_threshold_pct),
+            abs(float(severe_loss_threshold_pct)),
+            int(min_observations),
+        ],
     ).fetchdf()
     if frame.empty:
         return frame
@@ -788,6 +867,12 @@ def _analysis_start_from_sample(frame: pd.DataFrame, fallback: str | None) -> st
 
 def _short_red_metric_columns() -> list[str]:
     columns = list(_aggregate_metric_columns())
+    if "severe_loss_rate_pct" in columns:
+        insert_at = columns.index("severe_loss_rate_pct") + 1
+        columns[insert_at:insert_at] = [
+            "short_win_rate_pct",
+            "adverse_gain_rate_pct",
+        ]
     columns.extend(
         [
             "median_atr20_pct",
@@ -839,6 +924,16 @@ def _stale_diagnostics_columns() -> list[str]:
     return [
         "stale_condition",
         "stale_condition_order",
+        "horizon",
+        "market_scope",
+        *_short_red_metric_columns(),
+    ]
+
+
+def _stale_high_valuation_trend_split_columns() -> list[str]:
+    return [
+        "trend_split",
+        "trend_split_order",
         "horizon",
         "market_scope",
         *_short_red_metric_columns(),
