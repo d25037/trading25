@@ -95,6 +95,54 @@ describe('IndexPerformanceTable', () => {
     expect(onIndexClick).toHaveBeenCalledWith('JPX400');
   });
 
+  it('renders sector strength score and bucket, sorted ahead of change for sector rows', () => {
+    render(
+      <IndexPerformanceTable
+        items={[
+          createItem({
+            code: '0050',
+            name: '東証業種別 輸送用機器',
+            category: 'sector33',
+            changePercentage: 10,
+            sectorStrengthScore: 0.1,
+            sectorStrengthBucket: 'sector_weak',
+            sector20dTopixExcessPct: -3,
+            sector60dTopixExcessPct: -5,
+            sectorBreadth20dPct: 20,
+            sectorStockCount: 12,
+          }),
+          createItem({
+            code: '004F',
+            name: '東証業種別 電気機器',
+            category: 'sector33',
+            changePercentage: 1,
+            sectorStrengthScore: 0.9,
+            sectorStrengthBucket: 'sector_strong',
+            sector20dTopixExcessPct: 5,
+            sector60dTopixExcessPct: 8,
+            sectorBreadth20dPct: 70,
+            sectorStockCount: 120,
+          }),
+        ]}
+        isLoading={false}
+        error={null}
+        onIndexClick={vi.fn()}
+        title="33業種指数"
+      />
+    );
+
+    expect(screen.getByText('33業種指数')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Score' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Bucket' })).toBeInTheDocument();
+    const [, ...dataRows] = screen.getAllByRole('row');
+    expect(dataRows[0]).toHaveTextContent('004F');
+    expect(dataRows[0]).toHaveTextContent('0.90');
+    expect(dataRows[0]).toHaveTextContent('Strong');
+    expect(dataRows[1]).toHaveTextContent('0050');
+    expect(dataRows[1]).toHaveTextContent('0.10');
+    expect(dataRows[1]).toHaveTextContent('Weak');
+  });
+
   it('renders mobile index cards and keeps index navigation', () => {
     const onIndexClick = vi.fn();
     mockIndexMediaQuery(true);

@@ -26,11 +26,12 @@ describe('AnalyticsClient', () => {
       markets: 'prime,standard',
       lookbackDays: 10,
       periodDays: 30,
+      includeSectorStrength: true,
       liquidityState: 'overheat',
     });
 
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
-      'http://localhost:3002/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=10&periodDays=30&liquidityState=overheat'
+      'http://localhost:3002/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=10&periodDays=30&includeSectorStrength=true&liquidityState=overheat'
     );
   });
 

@@ -87,6 +87,10 @@ async def get_ranking(
     sector33Name: str | None = Query(None, description="Optional TOPIX-33/industry sector name filter"),
     sector17Name: str | None = Query(None, description="Optional TOPIX-17 sector name filter"),
     includeValuation: bool = Query(False, description="Include PER, forward PER, PBR, and market cap"),
+    includeSectorStrength: bool = Query(
+        False,
+        description="Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
+    ),
     forwardEpsDisclosedWithinDays: int = Query(
         0,
         ge=0,
@@ -123,6 +127,7 @@ async def get_ranking(
             sector33_name=sector33Name,
             sector17_name=sector17Name,
             include_valuation=includeValuation,
+            include_sector_strength=includeSectorStrength,
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
             liquidity_state=liquidityState,
         )

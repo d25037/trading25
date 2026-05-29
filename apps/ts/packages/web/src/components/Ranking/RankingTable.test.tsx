@@ -84,6 +84,40 @@ describe('RankingTable', () => {
     expect(headerText.indexOf('売買代金')).toBeLessThan(headerText.indexOf('時価総額'));
   });
 
+  it('shows sector score next to sector when provided and supports score sorting', async () => {
+    const user = userEvent.setup();
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            sectorStrengthScore: 0.9,
+            sectorStrengthBucket: 'sector_strong',
+          },
+          {
+            ...createItem(1),
+            sectorStrengthScore: 0.1,
+            sectorStrengthBucket: 'sector_weak',
+          },
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        enableColumnSort
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /Sector Score/ })).toBeInTheDocument();
+    expect(screen.getByText('0.90')).toBeInTheDocument();
+    expect(screen.getByText('0.10')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
+
+    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
+  });
+
   it('colors valuation percentiles and liquidity evidence tiers', () => {
     render(
       <RankingTable

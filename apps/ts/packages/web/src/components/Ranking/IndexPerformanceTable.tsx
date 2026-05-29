@@ -14,12 +14,32 @@ interface IndexPerformanceTableProps {
   error: Error | null;
   onIndexClick: (code: string) => void;
   lookbackDays?: number;
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
+  emptySubMessage?: string;
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
 const INDEX_ROW_HEIGHT = 34;
 const INDEX_CARD_ROW_HEIGHT = 120;
+const INDEX_SECTOR_CARD_ROW_HEIGHT = 148;
 const INDEX_VIEWPORT_HEIGHT = 560;
+
+const SECTOR_STRENGTH_BUCKET_META = {
+  sector_strong: {
+    label: 'Strong',
+    className: 'border-emerald-500/40 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  },
+  sector_neutral: {
+    label: 'Neutral',
+    className: 'border-slate-400/40 bg-slate-50 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300',
+  },
+  sector_weak: {
+    label: 'Weak',
+    className: 'border-amber-500/40 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  },
+} as const;
 
 function getIsMobileIndexLayout(): boolean {
   return (
@@ -51,12 +71,45 @@ function formatIndexLevel(value: number): string {
   });
 }
 
+function formatSectorStrengthScore(value: number | null | undefined): string {
+  if (value == null) return 'n/a';
+  return value.toFixed(2);
+}
+
+function formatSectorStrengthMetric(value: number | null | undefined): string {
+  if (value == null) return 'n/a';
+  return formatPercentage(value);
+}
+
+function getSectorStrengthTitle(item: IndexPerformanceItem): string {
+  return [
+    `20D TOPIX excess: ${formatSectorStrengthMetric(item.sector20dTopixExcessPct)}`,
+    `60D TOPIX excess: ${formatSectorStrengthMetric(item.sector60dTopixExcessPct)}`,
+    `20D breadth: ${formatSectorStrengthMetric(item.sectorBreadth20dPct)}`,
+    `Stocks: ${item.sectorStockCount ?? 'n/a'}`,
+  ].join('\n');
+}
+
+function SectorStrengthBucketBadge({ bucket }: { bucket: IndexPerformanceItem['sectorStrengthBucket'] }) {
+  if (bucket == null) {
+    return <span className="text-muted-foreground">n/a</span>;
+  }
+  const meta = SECTOR_STRENGTH_BUCKET_META[bucket];
+  return (
+    <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold', meta.className)}>
+      {meta.label}
+    </span>
+  );
+}
+
 function IndexPerformanceRow({
   item,
   onIndexClick,
+  showSectorStrength,
 }: {
   item: IndexPerformanceItem;
   onIndexClick: (code: string) => void;
+  showSectorStrength: boolean;
 }) {
   const isPositive = item.changePercentage >= 0;
 
@@ -82,6 +135,16 @@ function IndexPerformanceRow({
       >
         {formatPercentage(item.changePercentage)}
       </td>
+      {showSectorStrength ? (
+        <>
+          <td className="px-2 py-1.5 text-right font-semibold tabular-nums" title={getSectorStrengthTitle(item)}>
+            {formatSectorStrengthScore(item.sectorStrengthScore)}
+          </td>
+          <td className="px-2 py-1.5 text-right">
+            <SectorStrengthBucketBadge bucket={item.sectorStrengthBucket} />
+          </td>
+        </>
+      ) : null}
     </tr>
   );
 }
@@ -90,10 +153,12 @@ function IndexPerformanceCard({
   item,
   onIndexClick,
   lookbackDays,
+  showSectorStrength,
 }: {
   item: IndexPerformanceItem;
   onIndexClick: (code: string) => void;
   lookbackDays: number;
+  showSectorStrength: boolean;
 }) {
   const isPositive = item.changePercentage >= 0;
 
@@ -131,6 +196,22 @@ function IndexPerformanceCard({
           <p className="mt-0.5 font-semibold tabular-nums text-foreground">{formatIndexLevel(item.baseClose)}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{item.baseDate}</p>
         </div>
+        {showSectorStrength ? (
+          <>
+            <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2" title={getSectorStrengthTitle(item)}>
+              <p className="text-[10px] font-semibold text-muted-foreground">Score</p>
+              <p className="mt-0.5 font-semibold tabular-nums text-foreground">
+                {formatSectorStrengthScore(item.sectorStrengthScore)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2">
+              <p className="text-[10px] font-semibold text-muted-foreground">Bucket</p>
+              <div className="mt-1">
+                <SectorStrengthBucketBadge bucket={item.sectorStrengthBucket} />
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
     </button>
   );
@@ -152,17 +233,25 @@ function IndexPerformanceCardList({
   shouldVirtualize,
   onIndexClick,
   lookbackDays,
+  showSectorStrength,
 }: {
   virtual: IndexVirtualRows;
   shouldVirtualize: boolean;
   onIndexClick: (code: string) => void;
   lookbackDays: number;
+  showSectorStrength: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 p-3">
       {shouldVirtualize ? <VirtualSpacer height={virtual.paddingTop} /> : null}
       {virtual.visibleItems.map((item) => (
-        <IndexPerformanceCard key={item.code} item={item} onIndexClick={onIndexClick} lookbackDays={lookbackDays} />
+        <IndexPerformanceCard
+          key={item.code}
+          item={item}
+          onIndexClick={onIndexClick}
+          lookbackDays={lookbackDays}
+          showSectorStrength={showSectorStrength}
+        />
       ))}
       {shouldVirtualize ? <VirtualSpacer height={virtual.paddingBottom} /> : null}
     </div>
@@ -174,12 +263,15 @@ function IndexPerformanceRowsTable({
   shouldVirtualize,
   onIndexClick,
   lookbackDays,
+  showSectorStrength,
 }: {
   virtual: IndexVirtualRows;
   shouldVirtualize: boolean;
   onIndexClick: (code: string) => void;
   lookbackDays: number;
+  showSectorStrength: boolean;
 }) {
+  const colSpan = showSectorStrength ? 9 : 7;
   return (
     <table className="w-full text-xs">
       <thead className="sticky top-0 z-10 border-b bg-[var(--app-surface-muted)]">
@@ -191,20 +283,31 @@ function IndexPerformanceRowsTable({
           <th className="w-28 px-2 py-1.5 text-right">基準終値</th>
           <th className="w-24 px-2 py-1.5 text-left">基準日</th>
           <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}日騰落率</th>
+          {showSectorStrength ? (
+            <>
+              <th className="w-20 px-2 py-1.5 text-right">Score</th>
+              <th className="w-24 px-2 py-1.5 text-right">Bucket</th>
+            </>
+          ) : null}
         </tr>
       </thead>
       <tbody>
         {shouldVirtualize && virtual.paddingTop > 0 ? (
           <tr>
-            <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
+            <td colSpan={colSpan} className="p-0" style={{ height: virtual.paddingTop }} />
           </tr>
         ) : null}
         {virtual.visibleItems.map((item) => (
-          <IndexPerformanceRow key={item.code} item={item} onIndexClick={onIndexClick} />
+          <IndexPerformanceRow
+            key={item.code}
+            item={item}
+            onIndexClick={onIndexClick}
+            showSectorStrength={showSectorStrength}
+          />
         ))}
         {shouldVirtualize && virtual.paddingBottom > 0 ? (
           <tr>
-            <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+            <td colSpan={colSpan} className="p-0" style={{ height: virtual.paddingBottom }} />
           </tr>
         ) : null}
       </tbody>
@@ -218,8 +321,21 @@ export function IndexPerformanceTable({
   error,
   onIndexClick,
   lookbackDays: selectedLookbackDays,
+  title = '指数一覧',
+  description,
+  emptyMessage = 'No index performance data available',
+  emptySubMessage = 'Run index sync or choose a later date',
 }: IndexPerformanceTableProps) {
   const rows = (items ?? []).slice().sort((left, right) => {
+    const leftScore = left.sectorStrengthScore ?? null;
+    const rightScore = right.sectorStrengthScore ?? null;
+    if (leftScore != null || rightScore != null) {
+      const byScore = (rightScore ?? -1) - (leftScore ?? -1);
+      if (byScore !== 0) {
+        return byScore;
+      }
+    }
+
     const byChange = right.changePercentage - left.changePercentage;
     if (byChange !== 0) {
       return byChange;
@@ -232,11 +348,14 @@ export function IndexPerformanceTable({
 
     return left.code.localeCompare(right.code);
   });
+  const showSectorStrength = rows.some(
+    (item) => item.sectorStrengthScore != null || item.sectorStrengthBucket != null
+  );
   const shouldVirtualize = rows.length >= VIRTUALIZATION_THRESHOLD;
   const isMobileIndexLayout = useIsMobileIndexLayout();
   const virtual = useVirtualizedRows(rows, {
     enabled: shouldVirtualize,
-    rowHeight: isMobileIndexLayout ? INDEX_CARD_ROW_HEIGHT : INDEX_ROW_HEIGHT,
+    rowHeight: isMobileIndexLayout ? (showSectorStrength ? INDEX_SECTOR_CARD_ROW_HEIGHT : INDEX_CARD_ROW_HEIGHT) : INDEX_ROW_HEIGHT,
     viewportHeight: INDEX_VIEWPORT_HEIGHT,
   });
   const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;
@@ -248,12 +367,14 @@ export function IndexPerformanceTable({
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-foreground">
-              指数一覧
+              {title}
               {rows.length > 0 ? (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">({rows.length})</span>
               ) : null}
             </h2>
-            <p className="mt-1 text-xs text-muted-foreground">基準: 各指数終値の {lookbackDays} 営業日前</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {description ?? `基準: 各指数終値の ${lookbackDays} 営業日前`}
+            </p>
           </div>
         </div>
       </div>
@@ -262,8 +383,8 @@ export function IndexPerformanceTable({
           isLoading={isLoading}
           error={error}
           isEmpty={rows.length === 0}
-          emptyMessage="No index performance data available"
-          emptySubMessage="Run index sync or choose a later date"
+          emptyMessage={emptyMessage}
+          emptySubMessage={emptySubMessage}
           emptyIcon={<TrendingUp className="h-8 w-8" />}
           height="h-full min-h-[18rem]"
         >
@@ -273,6 +394,7 @@ export function IndexPerformanceTable({
               shouldVirtualize={shouldVirtualize}
               onIndexClick={onIndexClick}
               lookbackDays={lookbackDays}
+              showSectorStrength={showSectorStrength}
             />
           ) : (
             <IndexPerformanceRowsTable
@@ -280,6 +402,7 @@ export function IndexPerformanceTable({
               shouldVirtualize={shouldVirtualize}
               onIndexClick={onIndexClick}
               lookbackDays={lookbackDays}
+              showSectorStrength={showSectorStrength}
             />
           )}
         </DataStateWrapper>

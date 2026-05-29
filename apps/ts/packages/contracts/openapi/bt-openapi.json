@@ -5773,6 +5773,77 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sector20dTopixExcessPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector20Dtopixexcesspct"
+          },
+          "sector60dTopixExcessPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector60Dtopixexcesspct"
+          },
+          "sectorBreadth20dPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorbreadth20Dpct"
+          },
+          "sectorStockCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorstockcount"
+          },
+          "sectorStrengthBucket": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sector_strong",
+                  "sector_neutral",
+                  "sector_weak"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorstrengthbucket"
+          },
+          "sectorStrengthScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorstrengthscore"
           }
         },
         "required": [
@@ -11850,6 +11921,33 @@
           "sector33Name": {
             "title": "Sector33Name",
             "type": "string"
+          },
+          "sectorStrengthBucket": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sector_strong",
+                  "sector_neutral",
+                  "sector_weak"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorstrengthbucket"
+          },
+          "sectorStrengthScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectorstrengthscore"
           },
           "tradingValue": {
             "anyOf": [
@@ -20072,6 +20170,18 @@
               "default": false,
               "description": "Include PER, forward PER, PBR, and market cap",
               "title": "Includevaluation",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
+            "in": "query",
+            "name": "includeSectorStrength",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
+              "title": "Includesectorstrength",
               "type": "boolean"
             }
           },

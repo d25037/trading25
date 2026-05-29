@@ -140,14 +140,23 @@ function RankingContent({
   onStockClick,
   onIndexClick,
 }: RankingContentProps) {
+  const sector33IndexPerformance = useMemo(
+    () => rankingQuery.data?.indexPerformance.filter((item) => item.category === 'sector33'),
+    [rankingQuery.data?.indexPerformance]
+  );
+
   if (activeDailyView === 'indices') {
     return (
       <IndexPerformanceTable
-        items={rankingQuery.data?.indexPerformance}
+        items={sector33IndexPerformance}
         isLoading={rankingQuery.isLoading}
         error={rankingQuery.error}
         onIndexClick={onIndexClick}
         lookbackDays={rankingParams.lookbackDays}
+        title="33業種指数"
+        description={`Score: 20D/60D TOPIX超過 + 20D breadth。騰落率基準: ${rankingParams.lookbackDays ?? 5}営業日前`}
+        emptyMessage="No 33-sector index performance data available"
+        emptySubMessage="Run index sync or choose a date with sector index coverage"
       />
     );
   }
@@ -221,6 +230,7 @@ export function RankingPage() {
       sector17Name: rankingParams.sector17Name,
       limit: activeDailyView === 'technicalEvents' ? 50 : activeDailyView === 'indices' ? 20 : rankingParams.limit,
       includeValuation: activeDailyView !== 'indices',
+      includeSectorStrength: activeDailyView !== 'technicalEvents',
       forwardEpsDisclosedWithinDays:
         activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
       liquidityState: activeDailyView === 'stocks' ? rankingParams.liquidityState : undefined,

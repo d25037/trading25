@@ -20,6 +20,7 @@ export type EquitySortField =
   | 'changePercentage'
   | 'code'
   | 'currentPrice'
+  | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'
   | 'forwardPOp'
@@ -29,7 +30,7 @@ export type EquitySortField =
   | 'adv60ToFreeFloatPct';
 export type EquitySortOrder = 'asc' | 'desc';
 export type EquityRankingLabels = Record<
-  'code' | 'market' | 'company' | 'sector' | 'price' | 'marketCap' | 'tradingValue' | 'change',
+  'code' | 'market' | 'company' | 'sector' | 'sectorScore' | 'price' | 'marketCap' | 'tradingValue' | 'change',
   string
 >;
 
@@ -39,6 +40,8 @@ export interface EquityRankingItem {
   companyName: string;
   marketCode: string;
   sector33Name: string;
+  sectorStrengthScore?: number | null;
+  sectorStrengthBucket?: 'sector_strong' | 'sector_neutral' | 'sector_weak' | null;
   currentPrice: number;
   volume: number;
   tradingValue?: number | null;
@@ -95,6 +98,7 @@ const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   market: '市場',
   company: '銘柄名',
   sector: '業種',
+  sectorScore: 'Sector Score',
   price: '現在値',
   marketCap: '時価総額',
   tradingValue: '売買代金',
@@ -143,6 +147,31 @@ function formatSignedNumber(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-';
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}`;
+}
+
+function formatSectorStrengthScore(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toFixed(2);
+}
+
+function getSectorStrengthScoreClass(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return 'text-muted-foreground';
+  if (value >= 0.8) return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (value <= 0.2) return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
+  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
+function SectorStrengthScoreChip({ value }: { value: number | null | undefined }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex min-w-[3rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+        getSectorStrengthScoreClass(value)
+      )}
+    >
+      {formatSectorStrengthScore(value)}
+    </span>
+  );
 }
 
 function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): string {
@@ -260,6 +289,7 @@ function EquityCard<T extends EquityRankingItem>({
   showChange,
   showValuation,
   showLiquidity,
+  showSectorStrength,
   formatLargeValue,
   labels,
 }: {
@@ -269,6 +299,7 @@ function EquityCard<T extends EquityRankingItem>({
   showChange: boolean;
   showValuation: boolean;
   showLiquidity: boolean;
+  showSectorStrength: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
 }) {
@@ -288,7 +319,10 @@ function EquityCard<T extends EquityRankingItem>({
             <span className="font-mono text-sm font-semibold text-primary">{item.code}</span>
           </div>
           <p className="mt-1 truncate text-sm font-semibold text-foreground">{item.companyName}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{item.sector33Name}</p>
+          <div className="mt-0.5 flex items-center gap-2">
+            <p className="truncate text-xs text-muted-foreground">{item.sector33Name}</p>
+            {showSectorStrength ? <SectorStrengthScoreChip value={item.sectorStrengthScore} /> : null}
+          </div>
         </div>
         {showChange ? (
           <span
@@ -370,6 +404,7 @@ function EquityCardList<T extends EquityRankingItem>({
   showChange,
   showValuation,
   showLiquidity,
+  showSectorStrength,
   formatLargeValue,
   labels,
   paddingTop,
@@ -382,6 +417,7 @@ function EquityCardList<T extends EquityRankingItem>({
   showChange: boolean;
   showValuation: boolean;
   showLiquidity: boolean;
+  showSectorStrength: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
   paddingTop: number;
@@ -401,6 +437,7 @@ function EquityCardList<T extends EquityRankingItem>({
           showChange={showChange}
           showValuation={showValuation}
           showLiquidity={showLiquidity}
+          showSectorStrength={showSectorStrength}
           formatLargeValue={formatLargeValue}
           labels={labels}
         />
@@ -417,6 +454,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   showMarket,
   showValuation,
   showLiquidity,
+  showSectorStrength,
   formatLargeValue,
   labels,
   sortState,
@@ -432,6 +470,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
   showMarket: boolean;
   showValuation: boolean;
   showLiquidity: boolean;
+  showSectorStrength: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
   labels: EquityRankingLabels;
   sortState?: EquityRankingTableProps<T>['sortState'];
@@ -448,6 +487,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
         showMarket={showMarket}
         showValuation={showValuation}
         showLiquidity={showLiquidity}
+        showSectorStrength={showSectorStrength}
         labels={labels}
         sortState={sortState}
       />
@@ -467,6 +507,7 @@ function DesktopEquityTable<T extends EquityRankingItem>({
             showMarket={showMarket}
             showValuation={showValuation}
             showLiquidity={showLiquidity}
+            showSectorStrength={showSectorStrength}
             formatLargeValue={formatLargeValue}
           />
         ))}
@@ -485,6 +526,7 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
   showMarket,
   showValuation,
   showLiquidity,
+  showSectorStrength,
   labels,
   sortState,
 }: {
@@ -492,6 +534,7 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
   showMarket: boolean;
   showValuation: boolean;
   showLiquidity: boolean;
+  showSectorStrength: boolean;
   labels: EquityRankingLabels;
   sortState?: EquityRankingTableProps<T>['sortState'];
 }) {
@@ -507,6 +550,13 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
         {showMarket ? <th className="w-16 px-2 py-1.5 text-center">{labels.market}</th> : null}
         <th className="px-2 py-1.5 text-left">{labels.company}</th>
         <th className="w-24 px-2 py-1.5 text-left">{labels.sector}</th>
+        {showSectorStrength ? (
+          <th className="w-20 px-2 py-1.5 text-right">
+            <SortHeader field="sectorStrengthScore" sortState={sortState} align="right">
+              {labels.sectorScore}
+            </SortHeader>
+          </th>
+        ) : null}
         <th className="w-24 px-2 py-1.5 text-right">
           <SortHeader field="currentPrice" sortState={sortState} align="right">
             {labels.price}
@@ -594,6 +644,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   showMarket,
   showValuation,
   showLiquidity,
+  showSectorStrength,
   formatLargeValue,
 }: {
   item: T;
@@ -603,6 +654,7 @@ function DesktopEquityRow<T extends EquityRankingItem>({
   showMarket: boolean;
   showValuation: boolean;
   showLiquidity: boolean;
+  showSectorStrength: boolean;
   formatLargeValue: (value: number | null | undefined) => string;
 }) {
   const isPositive = (item.changePercentage ?? 0) >= 0;
@@ -616,6 +668,11 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       {showMarket ? <td className="px-2 py-1.5 text-center text-muted-foreground">{item.marketCode}</td> : null}
       <td className="max-w-[200px] truncate px-2 py-1.5">{item.companyName}</td>
       <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
+      {showSectorStrength ? (
+        <td className="px-2 py-1.5 text-right">
+          <SectorStrengthScoreChip value={item.sectorStrengthScore} />
+        </td>
+      ) : null}
       <td className="px-2 py-1.5 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
       {showValuation ? (
         <>
@@ -711,13 +768,19 @@ export function EquityRankingTable<T extends EquityRankingItem>({
   const isMobileLayout = useIsMobileLayout();
   const shouldVirtualize = items.length >= VIRTUALIZATION_THRESHOLD;
   const resolvedLabels = { ...DEFAULT_EQUITY_RANKING_LABELS, ...labels };
+  const showSectorStrength = items.some((item) => item.sectorStrengthScore != null);
   const virtual = useVirtualizedRows(items, {
     enabled: shouldVirtualize,
     rowHeight: isMobileLayout ? CARD_ROW_HEIGHT : ROW_HEIGHT,
     viewportHeight: VIEWPORT_HEIGHT,
   });
   const columnCount =
-    6 + (showChange ? 1 : 0) + (showMarket ? 1 : 0) + (showValuation ? 5 : 0) + (showLiquidity ? 3 : 0);
+    6 +
+    (showChange ? 1 : 0) +
+    (showMarket ? 1 : 0) +
+    (showSectorStrength ? 1 : 0) +
+    (showValuation ? 5 : 0) +
+    (showLiquidity ? 3 : 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
@@ -738,6 +801,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             showChange={showChange}
             showValuation={showValuation}
             showLiquidity={showLiquidity}
+            showSectorStrength={showSectorStrength}
             formatLargeValue={formatLargeValue}
             labels={resolvedLabels}
             paddingTop={virtual.paddingTop}
@@ -753,6 +817,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
             showMarket={showMarket}
             showValuation={showValuation}
             showLiquidity={showLiquidity}
+            showSectorStrength={showSectorStrength}
             formatLargeValue={formatLargeValue}
             labels={resolvedLabels}
             sortState={sortState}

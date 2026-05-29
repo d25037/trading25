@@ -7,12 +7,14 @@ DuckDB market data からランキングデータを取得するサービス。
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.shared.utils.market_code_alias import resolve_market_codes
 from src.application.services.ranking_query_helpers import (
     canonical_market_label as _canonical_market_label,
     normalize_equity_code as _normalize_equity_code,
+    normalize_sector_filter_name as _normalize_sector_filter_name,
 )
 from src.application.services.ranking_daily_queries import (
     ranking_by_period_high as _ranking_by_period_high_query,
@@ -74,6 +76,7 @@ from src.application.services.ranking_statement_rows import (
     statement_rows_by_code,
 )
 from src.application.services.ranking_index_performance import (
+    load_sector_strength_by_name,
     load_index_performance,
 )
 from src.application.services.ranking_liquidity import (
@@ -83,8 +86,10 @@ from src.entrypoints.http.schemas.ranking import (
     FundamentalRankings,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
+    RankingItem,
     RankingStateFilter,
     Rankings,
+    SectorStrengthBucket,
     ValueCompositeRankingResponse,
     ValueCompositeScoreResponse,
     ValueCompositeForwardEpsMode,
@@ -98,6 +103,25 @@ def _now_iso() -> str:
 
 
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
+
+
+def _enrich_ranking_collections_with_sector_strength(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    sector_strength_by_name: dict[str, dict[str, object]],
+) -> None:
+    for collection in collections:
+        for item in collection:
+            sector_name = _normalize_sector_filter_name(item.sector33Name)
+            strength = sector_strength_by_name.get(sector_name)
+            if not strength:
+                continue
+            score = strength.get("sectorStrengthScore")
+            if isinstance(score, (int, float)):
+                item.sectorStrengthScore = float(score)
+            bucket = strength.get("sectorStrengthBucket")
+            if bucket in {"sector_strong", "sector_neutral", "sector_weak"}:
+                item.sectorStrengthBucket = cast(SectorStrengthBucket, bucket)
 
 
 class RankingService:
@@ -120,6 +144,7 @@ class RankingService:
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
         liquidity_state: RankingStateFilter | None = None,
+        include_sector_strength: bool = False,
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
@@ -250,11 +275,31 @@ class RankingService:
                     target_date=target_date,
                     price_basis_date=price_basis_date,
                 )
+        sector_strength_by_name = (
+            load_sector_strength_by_name(
+                self._reader,
+                table_exists=lambda table_name: _table_exists_query(
+                    self._reader, table_name
+                ),
+                date=target_date,
+                market_codes=query_market_codes,
+            )
+            if include_sector_strength
+            else {}
+        )
+        if sector_strength_by_name:
+            _enrich_ranking_collections_with_sector_strength(
+                ranking_collections,
+                sector_strength_by_name=sector_strength_by_name,
+            )
         index_performance = load_index_performance(
             self._reader,
             table_exists=lambda table_name: _table_exists_query(self._reader, table_name),
             date=target_date,
             lookback_days=lookback_days,
+            market_codes=query_market_codes,
+            include_sector_strength=include_sector_strength,
+            sector_strength_by_name=sector_strength_by_name,
         )
 
         return MarketRankingResponse(

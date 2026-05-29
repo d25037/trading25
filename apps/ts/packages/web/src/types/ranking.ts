@@ -17,6 +17,7 @@ export type RankingSortField =
   | 'changePercentage'
   | 'code'
   | 'currentPrice'
+  | 'sectorStrengthScore'
   | 'per'
   | 'forwardPer'
   | 'forwardPOp'
@@ -36,6 +37,7 @@ export interface RankingParams {
   sector33Name?: string;
   sector17Name?: string;
   includeValuation?: boolean;
+  includeSectorStrength?: boolean;
   sortBy?: RankingSortField;
   order?: RankingSortOrder;
   forwardEpsDisclosedWithinDays?: number;

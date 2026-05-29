@@ -37,6 +37,7 @@ LiquidityRegime = Literal[
 ]
 RankingRiskFlag = Literal["overheat", "stale_rally_fade"]
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
+SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
 
 
 class RankingItem(BaseModel):
@@ -47,6 +48,8 @@ class RankingItem(BaseModel):
     companyName: str
     marketCode: str
     sector33Name: str
+    sectorStrengthScore: float | None = None
+    sectorStrengthBucket: SectorStrengthBucket | None = None
     currentPrice: float
     volume: float
     tradingValue: float | None = None
@@ -97,6 +100,12 @@ class IndexPerformanceItem(BaseModel):
     changeAmount: float
     changePercentage: float
     lookbackDays: int
+    sectorStrengthScore: float | None = None
+    sectorStrengthBucket: SectorStrengthBucket | None = None
+    sector20dTopixExcessPct: float | None = None
+    sector60dTopixExcessPct: float | None = None
+    sectorBreadth20dPct: float | None = None
+    sectorStockCount: int | None = None
 
 
 class MarketRankingResponse(BaseModel):

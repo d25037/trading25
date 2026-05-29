@@ -47,6 +47,8 @@ export interface RankingItem {
   companyName: string;
   marketCode: string;
   sector33Name: string;
+  sectorStrengthScore?: number | null;
+  sectorStrengthBucket?: 'sector_strong' | 'sector_neutral' | 'sector_weak' | null;
   currentPrice: number;
   volume: number;
   tradingValue?: number;
@@ -99,6 +101,12 @@ export interface IndexPerformanceItem {
   changeAmount: number;
   changePercentage: number;
   lookbackDays: number;
+  sectorStrengthScore?: number | null;
+  sectorStrengthBucket?: 'sector_strong' | 'sector_neutral' | 'sector_weak' | null;
+  sector20dTopixExcessPct?: number | null;
+  sector60dTopixExcessPct?: number | null;
+  sectorBreadth20dPct?: number | null;
+  sectorStockCount?: number | null;
 }
 
 export interface MarketRankingResponse {
@@ -120,6 +128,7 @@ export interface MarketRankingParams {
   sector33Name?: string;
   sector17Name?: string;
   includeValuation?: boolean;
+  includeSectorStrength?: boolean;
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
 }

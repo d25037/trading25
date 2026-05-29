@@ -5792,6 +5792,18 @@ export interface components {
             lookbackDays: number;
             /** Name */
             name: string;
+            /** Sector20Dtopixexcesspct */
+            sector20dTopixExcessPct?: number | null;
+            /** Sector60Dtopixexcesspct */
+            sector60dTopixExcessPct?: number | null;
+            /** Sectorbreadth20Dpct */
+            sectorBreadth20dPct?: number | null;
+            /** Sectorstockcount */
+            sectorStockCount?: number | null;
+            /** Sectorstrengthbucket */
+            sectorStrengthBucket?: ("sector_strong" | "sector_neutral" | "sector_weak") | null;
+            /** Sectorstrengthscore */
+            sectorStrengthScore?: number | null;
         };
         /**
          * IndicatorComputeRequest
@@ -8378,6 +8390,10 @@ export interface components {
             riskFlags?: ("overheat" | "stale_rally_fade")[];
             /** Sector33Name */
             sector33Name: string;
+            /** Sectorstrengthbucket */
+            sectorStrengthBucket?: ("sector_strong" | "sector_neutral" | "sector_weak") | null;
+            /** Sectorstrengthscore */
+            sectorStrengthScore?: number | null;
             /** Tradingvalue */
             tradingValue?: number | null;
             /** Tradingvalueaverage */
@@ -11954,6 +11970,8 @@ export interface operations {
                 sector17Name?: string | null;
                 /** @description Include PER, forward PER, PBR, and market cap */
                 includeValuation?: boolean;
+                /** @description Include TOPIX-33 sector strength score and bucket in ranking and index performance rows. */
+                includeSectorStrength?: boolean;
                 /** @description Keep valuation-enriched stocks whose forward EPS source was disclosed within this many calendar days. Use 0 to disable the filter. */
                 forwardEpsDisclosedWithinDays?: number;
                 /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */

@@ -37,10 +37,22 @@ vi.mock('@/components/Ranking', () => ({
     { value: 1, label: '1 day' },
     { value: 5, label: '5 days' },
   ],
-  IndexPerformanceTable: ({ onIndexClick }: { onIndexClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onIndexClick('TOPIX')}>
-      Index Performance
-    </button>
+  IndexPerformanceTable: ({
+    items,
+    onIndexClick,
+    title,
+  }: {
+    items?: { code: string }[];
+    onIndexClick: (code: string) => void;
+    title?: string;
+  }) => (
+    <div>
+      <span>{title ?? 'Index Performance'}</span>
+      <span>index-items:{items?.length ?? 0}</span>
+      <button type="button" onClick={() => onIndexClick(items?.[0]?.code ?? 'TOPIX')}>
+        Index Performance
+      </button>
+    </div>
   ),
   RankingFilters: () => <div>Ranking Filters</div>,
   TechnicalEventFilters: () => <div>Technical Event Filters</div>,
@@ -100,7 +112,10 @@ describe('RankingPage', () => {
           periodHigh: [{ code: '8035' }, { code: '9984' }],
           periodLow: [{ code: '7203' }],
         },
-        indexPerformance: [],
+        indexPerformance: [
+          { code: 'TOPIX', category: 'topix' },
+          { code: '004F', category: 'sector33' },
+        ],
       },
       isLoading: false,
       error: null,
@@ -127,6 +142,7 @@ describe('RankingPage', () => {
     expect(screen.getByText('column sort enabled')).toBeInTheDocument();
     expect(screen.getByText('sort:tradingValue:desc')).toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeValuation: true }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ forwardEpsDisclosedWithinDays: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
@@ -183,12 +199,15 @@ describe('RankingPage', () => {
       screen.getByText('Index performance compares each latest close with the selected trading sessions earlier.')
     ).toBeInTheDocument();
     expect(screen.getByText('Index Performance')).toBeInTheDocument();
+    expect(screen.getByText('33業種指数')).toBeInTheDocument();
+    expect(screen.getByText('index-items:1')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(screen.queryByText('Ranking Summary')).not.toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenLastCalledWith(
       expect.objectContaining({ includeValuation: false, limit: 20, forwardEpsDisclosedWithinDays: 0 }),
       true
     );
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ includeSectorStrength: true }), true);
   });
 
   it('switches daily ranking to technical events view', async () => {
@@ -204,7 +223,12 @@ describe('RankingPage', () => {
     expect(screen.getByText('items:2')).toBeInTheDocument();
     expect(screen.queryByText('Ranking Filters')).not.toBeInTheDocument();
     expect(mockUseRanking).toHaveBeenLastCalledWith(
-      expect.objectContaining({ includeValuation: true, limit: 50, forwardEpsDisclosedWithinDays: 0 }),
+      expect.objectContaining({
+        includeValuation: true,
+        includeSectorStrength: false,
+        limit: 50,
+        forwardEpsDisclosedWithinDays: 0,
+      }),
       true
     );
   });
@@ -215,7 +239,7 @@ describe('RankingPage', () => {
     render(<RankingPage />);
 
     await user.click(screen.getByText('Index Performance'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: 'TOPIX' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: '004F' } });
   });
 
 });
