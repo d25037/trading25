@@ -47,6 +47,19 @@ relatedExperiments = [
   "market-behavior/recent-return-threshold-forward-response",
 ]
 
+[experiments."market-behavior/ranking-short-sector-strength-evidence"]
+family = "Ranking"
+status = "candidate"
+decision = "Daily Ranking の short/red 候補に PIT 33セクター強弱を重ねた。sector weak は crowded_high_valuation/no_value + ATR overheat と distribution_stress_high_valuation を明確に悪化させ、red-risk confirmation として使える。一方 stale_high_valuation は sector weak だけで説明せず、stale_rally_fade と 60D sector weak を強化状態として読む。strong_low_value + sector_strong は short 禁止/downgrade とし、short 側配色も liquidity だけでなく high valuation/no value/strong value を分離する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "short-rule-unproven", "sector-regime", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-short-red-evidence",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/falling-knife-reversal-study"]
 family = "Falling Knife"
 status = "observed"
