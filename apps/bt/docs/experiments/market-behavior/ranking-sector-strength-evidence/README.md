@@ -8,9 +8,9 @@ Daily Ranking の `crowded_rerating` / `neutral_rerating` green/blue を、PIT 3
 
 Prime では 33セクター強弱よりも、まず value confirmation の有無で Daily Ranking green/blue を分けるべき。`neutral_rerating blue` を broad に平均すると弱く見えるが、これは `no_value_confirmation` が大量に混ざるため。`neutral_rerating blue` のうち `low_pbr20_low_fwd_per20` は 20D TOPIX excess / sector excess の両方で強く、弱セクターでも残る。
 
-Product rule はまだ変更しないが、Sector overlay を考える前に `value_confirmation_tier` を UI / research の主要説明軸として扱う。Sector は `no_value_confirmation` を救済しない。一方で strong value の `neutral blue` は `sector_weak_consistent` でも 20D sector excess median がプラスなので、弱セクターだけで落とすのは早い。
+Product rule はまだ変更しないが、Sector overlay を考える前に `value_confirmation_tier` を UI / research の主要説明軸として扱う。Sector は `no_value_confirmation` を救済しない。一方で strong value の `neutral blue` は `sector_weak_consistent` でも 20D TOPIX excess median がプラスなので、弱セクターだけで落とすのは早い。
 
-Sector を使うなら、`value_condition x sector` の交差で使う。broad な `neutral blue + sector_weak` だけを見て downrank すると、strong value の良い subset まで落とす。
+Sector を使うなら、`color_tier x sector_strength` の交差で使う。主な論点は同セクター内 alpha ではなく、強いセクターベータが個別候補の 20D TOPIX excess をさらに押し上げるか。実務的な主戦場は `new_blue_neutral + sector_strong` で、これは観測数が多く、たまに出る `green_neutral + sector_strong` を high-conviction add-on として掴む形が自然。
 
 ### Main Findings
 
@@ -50,13 +50,40 @@ Primary v2 run `20260529_ranking_sector_strength_prime_value_v2` は `2016-04-01
 
 Green は全て `strong_value_confirmation`。20D では `neutral_rerating green` の `low_per20_fwdper_per_lte_0_8` が `sector_strong_consistent` で median `+3.112%`、`sector_neutral` で `+1.249%`。`crowded_rerating green` は `low_pbr20_low_fwd_per20` で median `+0.543%` から `+0.610%`、`low_per20_fwdper_per_lte_0_8` で `+2.938%`。green は強いが、crowded green は tail caution を残す。
 
+#### 結論: sector beta は green/new blue の TOPIX excess を押し上げる
+
+以下は `color_tier x sector_strength_bucket` の 20D TOPIX excess。`sectorEx` は補助であり、主眼は `med_topix_ex20`。`new_blue_neutral` は UI 更新後の `neutral_rerating + low PBR20 + low Fwd PER20`、`old_crowded_blue` は旧 crowded blue 相当で、買いcoreではない。
+
+| Color tier | Sector strength | Obs | 20D TOPIX excess median | Win rate | Severe loss | 60D TOPIX excess median | Read |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `green_neutral` | `sector_strong` | 692 | +3.192% | 66.47% | 2.46% | +6.662% | 最上位だが希少 |
+| `green_neutral` | `sector_neutral` | 2,155 | +1.250% | 57.08% | 2.00% | +2.858% | 強いが sector strong の new blue に劣る |
+| `green_crowded` | `sector_strong` | 1,487 | +1.598% | 55.95% | 9.21% | +0.525% | 強セクターで上乗せ。ただし tail 高め |
+| `green_crowded` | `sector_neutral` | 2,810 | +0.632% | 53.20% | 7.19% | +0.974% | green でも控えめ |
+| `new_blue_neutral` | `sector_strong` | 12,110 | +1.869% | 62.35% | 2.99% | +4.505% | 主戦場。頻度と期待値のバランスが最良 |
+| `new_blue_neutral` | `sector_neutral` | 23,735 | +0.820% | 55.54% | 2.92% | +1.629% | 通常候補 |
+| `new_blue_neutral` | `sector_weak` | 2,208 | +0.896% | 57.65% | 1.77% | +1.455% | 弱セクターでも落としすぎない |
+| `light_blue_neutral` | `sector_strong` | 15,424 | +0.752% | 53.65% | 5.39% | +1.791% | sector strong 限定の補欠 |
+| `light_blue_neutral` | `sector_neutral` | 52,308 | +0.035% | 49.91% | 4.56% | -0.748% | 買いcoreではない |
+| `light_blue_neutral` | `sector_weak` | 5,059 | -0.435% | 46.59% | 5.87% | -2.333% | caution |
+| `neutral_no_value` | `sector_strong` | 52,039 | -0.948% | 43.22% | 8.79% | -1.542% | sector strong でも救済されない |
+| `neutral_no_value` | `sector_weak` | 36,252 | -1.341% | 41.60% | 10.07% | -5.007% | 回避 |
+| `crowded_caution` | `sector_strong` | 11,664 | -1.553% | 41.59% | 20.94% | -2.980% | sector strong でも弱い |
+| `crowded_caution` | `sector_weak` | 5,549 | -3.440% | 34.98% | 24.74% | -9.693% | 強い回避 |
+
+この表から、色だけの序列と実現 return の序列は一致しない。`green_neutral + sector_neutral` の 20D median `+1.250%` は、`new_blue_neutral + sector_strong` の `+1.869%` に負ける。したがって `green` は即買いではなく、`green/new blue` に sector beta が乗っているかを見て優先順位を決める。
+
+実務的には `new_blue_neutral + sector_strong` を core とし、観測数は少ないが強い `green_neutral + sector_strong` を high-conviction add-on として扱う。`green_crowded` は green でも severe loss が高いため、`green_neutral` と同列にしない。
+
 ### Interpretation
 
-今回の主眼は、セクター強弱が Ranking green/blue の説明変数なのか、個別シグナルの上乗せなのかを分けることだった。v2 では、まず value confirmation が第一軸で、sector は第二軸だと分かった。
+今回の主眼は、セクター強弱が Ranking green/blue の説明変数なのか、個別シグナルに乗る beta なのかを分けることだった。v2 では、まず value confirmation が第一軸で、sector は第二軸だと分かった。
 
 `neutral_rerating blue` は broad には弱いが、`low_pbr20_low_fwd_per20` だけは強い。これは `neutral blue` の中で「実質的に strong value blue」と呼ぶべき subset。弱セクターでも TOPIX excess / sector excess が残るため、sector weak を理由にこの subset を落とすのは避ける。
 
 一方で `no_value_confirmation` は sector strong でも弱く、sector は救済条件にならない。`low_pbr20_only` や `low_per20_fwdper_per_lte_1_0` は medium value で、sector strong ならやや良いが、弱セクターでは鈍る。
+
+Sector の実装で見るべき outcome は、まず TOPIX excess。`sectorEx` は「同セクター内で勝っているか」の補助確認に留める。Daily Ranking の買い優先順位では、強セクターに属することで TOPIX excess が上乗せされるかを主眼にする。
 
 ### Production Implication
 
@@ -73,6 +100,19 @@ Sector overlay はこの後の補助軸とし、まず `value_confirmation_tier`
 | `Sector headwind` | `sector_weak_consistent` | no-value / medium value の caution。strong value には弱めに適用 |
 
 Ranking 表示では `neutral blue` を value tier で分ける。Sector はその後の badge/overlay が妥当。
+
+Daily Ranking へ載せるなら、まず `sector_strength_bucket` を色そのものではなく confidence / priority overlay として使う。
+
+| Display rule | UI implication |
+| --- | --- |
+| `new_blue_neutral + sector_strong` | core buy candidate。green に準じて上位表示 |
+| `green_neutral + sector_strong` | rare high-conviction candidate |
+| `green_neutral + sector_neutral` | strong buy candidate だが、sector strong の new blue より下げてもよい |
+| `new_blue_neutral + sector_neutral` | normal buy candidate |
+| `new_blue_neutral + sector_weak` | hard exclude しない。sector tailwind はないが崩れない |
+| `light_blue_neutral + sector_strong` | reserve / watch candidate |
+| `light_blue_neutral + sector_weak` | caution |
+| `neutral_no_value` / `crowded_caution` | sector strong でも買い側にしない |
 
 ### Caveats
 
