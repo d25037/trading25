@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import userEvent from '@testing-library/user-event';
+import type { RankingItem } from '@trading25/contracts/types/api-response-types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RankingTable } from './RankingTable';
 
@@ -76,9 +76,7 @@ describe('RankingTable', () => {
   });
 
   it('places market cap immediately to the right of trading value when valuation columns are shown', () => {
-    render(
-      <RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} showValuation />
-    );
+    render(<RankingTable items={createItems(5)} isLoading={false} error={null} onStockClick={vi.fn()} showValuation />);
 
     const headerRow = screen.getAllByRole('row').at(0);
     expect(headerRow).toBeDefined();
@@ -129,6 +127,30 @@ describe('RankingTable', () => {
             pbrPercentile: 0.1,
             liquidityRegime: 'neutral_rerating',
             liquidityResidualZ: -0.2,
+            adv60ToFreeFloatPct: 3,
+          },
+          {
+            ...createItem(9),
+            per: 12,
+            perPercentile: 0.5,
+            forwardPer: 13,
+            forwardPerPercentile: 0.5,
+            pbr: 0.6,
+            pbrPercentile: 0.1,
+            liquidityRegime: 'neutral_rerating',
+            liquidityResidualZ: -0.35,
+            adv60ToFreeFloatPct: 3,
+          },
+          {
+            ...createItem(10),
+            per: 16,
+            perPercentile: 0.5,
+            forwardPer: 17,
+            forwardPerPercentile: 0.5,
+            pbr: 1.2,
+            pbrPercentile: 0.5,
+            liquidityRegime: 'neutral_rerating',
+            liquidityResidualZ: -0.45,
             adv60ToFreeFloatPct: 3,
           },
           {
@@ -214,6 +236,8 @@ describe('RankingTable', () => {
     expect(screen.getByText('Stress')).toHaveClass('text-yellow-800');
     expect(screen.getAllByText('Neutral Rerating')[0]).toHaveClass('text-green-700');
     expect(screen.getAllByText('Neutral Rerating')[1]).toHaveClass('text-sky-700');
+    expect(screen.getAllByText('Neutral Rerating')[2]).toHaveClass('text-cyan-700');
+    expect(screen.getAllByText('Neutral Rerating')[3]).toHaveClass('text-muted-foreground');
     expect(screen.getAllByText('Crowded Rerating')[0]).toHaveClass('text-yellow-800');
     expect(screen.getAllByText('Crowded Rerating')[1]).toHaveClass('text-green-700');
     expect(screen.getAllByText('Crowded Rerating')[2]).toHaveClass('text-yellow-800');
@@ -221,6 +245,7 @@ describe('RankingTable', () => {
     expect(screen.getAllByText('Stale')[0]).toHaveClass('text-red-700');
     expect(screen.getAllByText('Stale')[1]).toHaveClass('text-yellow-800');
     expect(screen.getByText('Prime 20d excess evidence')).toBeInTheDocument();
+    expect(screen.getByText('light')).toHaveClass('text-cyan-600');
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '流動性Z' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '状態' })).toBeInTheDocument();
@@ -239,6 +264,9 @@ describe('RankingTable', () => {
     expect(screen.getByText('+1.20')).toHaveClass('text-yellow-600');
     expect(screen.getByText('-1.40')).toHaveClass('text-green-600');
     expect(screen.getByText('-0.20')).toHaveClass('text-sky-600');
+    expect(screen.getByText('-0.35')).toHaveClass('text-cyan-600');
+    expect(screen.getByText('-0.45')).not.toHaveClass('text-sky-600');
+    expect(screen.getByText('-0.45')).not.toHaveClass('text-cyan-600');
     expect(screen.getByText('+2.00')).toHaveClass('text-green-600');
     expect(screen.getByText('+1.60')).toHaveClass('text-yellow-600');
     expect(screen.getByText('+3.05')).toHaveClass('text-yellow-600');

@@ -12,7 +12,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-color-evidence"]
 family = "Ranking"
 status = "candidate"
-decision = "Ranking Individual Stocks の PER/Fwd PER/Fwd P/OP/PBR 色分け判定は Prime-only evidence で始める。絶対値ではなく target-date Prime percentile を基本に使う。PBR/Fwd PER の高位percentileは赤/黄根拠が明確。Fwd PER/PER と Fwd P/OP/PER のrelation percentile単独は置き換え根拠にしないが、低PER前提の Fwd PER/PER <= 0.8x は緑条件として採用し、低PER前提の Fwd P/OP/PER > 1.25x は補助警戒に使う。流動性Zのgreenは3条件に限定し、neutral_rerating は低PER20かつFwd PER/PER <= 0.8のみ、crowded_rerating は低PBR20+低Fwd PER20または低PER20かつFwd PER/PER <= 0.8のみとする。その他のneutral_reratingはblue、crowded_reratingは中valueありblue・valueなしyellow。TOPIX 20d<0 の市場調整局面では crowded_rerating の median/tail が大きく悪化するため、配色には直接混ぜず、将来は別の market-adjustment caution overlay として扱う。"
+decision = "Ranking Individual Stocks の PER/Fwd PER/Fwd P/OP/PBR 色分け判定は Prime-only evidence で始める。絶対値ではなく target-date Prime percentile を基本に使う。PBR/Fwd PER の高位percentileは赤/黄根拠が明確。Fwd PER/PER と Fwd P/OP/PER のrelation percentile単独は置き換え根拠にしないが、低PER前提の Fwd PER/PER <= 0.8x は緑条件として採用し、低PER前提の Fwd P/OP/PER > 1.25x は補助警戒に使う。流動性Zのgreenは3条件に限定し、neutral_rerating は低PER20かつFwd PER/PER <= 0.8のみ green、低PBR20+低Fwd PER20 を blue、低PBR20 only または低PER20かつFwd PER/PER <= 1.0 を light blue、value confirmation なしを gray/neutral とする。crowded_rerating は低PBR20+低Fwd PER20または低PER20かつFwd PER/PER <= 0.8のみ green、中valueあり blue・valueなしyellow。TOPIX 20d<0 の市場調整局面では crowded_rerating の median/tail が大きく悪化するため、配色には直接混ぜず、将来は別の market-adjustment caution overlay として扱う。"
 promotedSurface = "Ranking"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return"]
 relatedExperiments = [
@@ -25,7 +25,7 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-sector-strength-evidence"]
 family = "Ranking"
 status = "observed"
-decision = "Prime Daily Ranking の crowded_rerating / neutral_rerating green/blue を PIT 33セクター強弱で分解した。Broad な neutral_rerating blue は no-value が大量に混ざるため弱く見えるが、low_pbr20_low_fwd_per20 の strong value blue は 20D TOPIX excess と sector excess の両方で強く、sector_weak_consistent でも残る。Sector は value confirmation の後に見る補助軸であり、no_value_confirmation を救済しない。Product rule は変更せず、value tier の表示/研究軸を先に検討する。"
+decision = "Prime Daily Ranking の crowded_rerating / neutral_rerating green/blue を PIT 33セクター強弱で分解した。Broad な neutral_rerating blue は no-value が大量に混ざるため弱く見えるが、low_pbr20_low_fwd_per20 の strong value blue は 20D TOPIX excess と sector excess の両方で強く、sector_weak_consistent でも残る。Sector は value confirmation の後に見る補助軸であり、no_value_confirmation を救済しない。Daily Ranking UI では neutral_rerating を strong value blue / medium light blue / no-value neutral に分解する。"
 promotedSurface = "Research"
 riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "sector-regime", "daily-forward-return"]
 relatedExperiments = [

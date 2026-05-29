@@ -8,8 +8,8 @@ import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
   type EvidenceColorTier,
   getCheapValuationPercentileTier,
-  getForwardPOpEvidenceTier,
   getForwardPerEvidenceTier,
+  getForwardPOpEvidenceTier,
   getLiquidityEvidenceTier,
   getPerEvidenceTier,
 } from './rankingEvidenceTiers';
@@ -157,6 +157,7 @@ function formatLiquidityRegime(value: EquityRankingItem['liquidityRegime']): str
 function getEvidenceTierChipClass(tier: EvidenceColorTier): string {
   if (tier === 'excellent') return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
   if (tier === 'good') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
+  if (tier === 'light_good') return 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300';
   if (tier === 'bad') return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (tier === 'very_bad') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
@@ -197,6 +198,7 @@ function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
 function getEvidenceTierClass(tier: EvidenceColorTier): string | undefined {
   if (tier === 'excellent') return 'text-green-600 dark:text-green-400';
   if (tier === 'good') return 'text-sky-600 dark:text-sky-400';
+  if (tier === 'light_good') return 'text-cyan-600 dark:text-cyan-400';
   if (tier === 'bad') return 'text-yellow-600 dark:text-yellow-400';
   if (tier === 'very_bad') return 'text-red-600 dark:text-red-400';
   return undefined;
@@ -244,6 +246,7 @@ function EvidenceColorLegend() {
       <span>Prime 20d excess evidence</span>
       <span className="font-medium text-green-600 dark:text-green-400">strong</span>
       <span className="font-medium text-sky-600 dark:text-sky-400">good</span>
+      <span className="font-medium text-cyan-600 dark:text-cyan-400">light</span>
       <span className="font-medium text-yellow-600 dark:text-yellow-400">caution</span>
       <span className="font-medium text-red-600 dark:text-red-400">weak/tail</span>
     </div>
@@ -673,7 +676,9 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
         {formatLargeValue(item.tradingValue ?? item.tradingValueAverage)}
       </td>
-      {showValuation ? <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td> : null}
+      {showValuation ? (
+        <td className="px-2 py-1.5 text-right tabular-nums">{formatLargeValue(item.marketCap)}</td>
+      ) : null}
       {showChange ? (
         <td
           className={cn(

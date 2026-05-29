@@ -60,19 +60,19 @@ Green は全て `strong_value_confirmation`。20D では `neutral_rerating green
 
 ### Production Implication
 
-現行 Ranking color は維持する。ただし readout / UI label は broad な `neutral blue` を一枚で説明しない。
+Daily Ranking UI では、`neutral_rerating` の broad blue を value tier で分解する。`neutral_rerating` は green 以外を一括 blue にせず、strong value blue / medium light blue / no-value neutral に分ける。
 
-次に UI へ入れるなら、順序は `value_confirmation_tier`、次に sector overlay。
+Sector overlay はこの後の補助軸とし、まず `value_confirmation_tier` を表示色へ反映する。
 
 | Candidate classification | 条件 | 意味 |
 | --- | --- | --- |
 | `Strong value blue` | `neutral_rerating blue` + `low_pbr20_low_fwd_per20` | blue 内の本命。弱セクターでも落としすぎない |
 | `Medium value blue` | `low_pbr20_only` / `low_per20_fwdper_per_lte_1_0` | sector strong なら補強、sector weak なら caution |
-| `No-value blue` | `no_value_confirmation` | sector strong でも弱い。blue として見せるなら薄い confidence |
+| `No-value neutral` | `no_value_confirmation` | sector strong でも弱い。blue ではなく gray/neutral |
 | `Sector tailwind` | `sector_strong_consistent` | medium value の補助。strong value の必須条件ではない |
 | `Sector headwind` | `sector_weak_consistent` | no-value / medium value の caution。strong value には弱めに適用 |
 
-Production rule に直接混ぜる前に、Ranking 表示では `neutral blue` を value tier で分ける設計を先に検討する。Sector はその後の badge/overlay が妥当。
+Ranking 表示では `neutral blue` を value tier で分ける。Sector はその後の badge/overlay が妥当。
 
 ### Caveats
 

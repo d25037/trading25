@@ -1,4 +1,4 @@
-export type EvidenceColorTier = 'excellent' | 'good' | 'neutral' | 'bad' | 'very_bad';
+export type EvidenceColorTier = 'excellent' | 'good' | 'light_good' | 'neutral' | 'bad' | 'very_bad';
 
 export interface EvidenceRankingItem {
   per?: number | null;
@@ -80,7 +80,7 @@ export function getForwardPOpEvidenceTier(
 
 export function getLiquidityEvidenceTier(item: EvidenceRankingItem): EvidenceColorTier {
   if (item.liquidityRegime === 'neutral_rerating') {
-    return hasLowPerForwardPerImprovement(item) ? 'excellent' : 'good';
+    return getNeutralReratingEvidenceTier(item);
   }
   if (item.liquidityRegime === 'crowded_rerating') {
     return getCrowdedReratingEvidenceTier(item);
@@ -133,6 +133,10 @@ function hasCrowdedReratingGreenConfirmation(item: EvidenceRankingItem): boolean
   return (hasLowPbr(item) && hasLowForwardPer(item)) || hasLowPerForwardPerImprovement(item);
 }
 
+function hasNeutralReratingStrongBlueConfirmation(item: EvidenceRankingItem): boolean {
+  return hasLowPbr(item) && hasLowForwardPer(item);
+}
+
 function hasExpensiveValuationWarning(item: EvidenceRankingItem): boolean {
   return [item.perPercentile, item.forwardPerPercentile, item.forwardPOpPercentile, item.pbrPercentile].some(
     (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.8
@@ -150,6 +154,20 @@ function hasReratingValueConfirmation(item: EvidenceRankingItem): boolean {
     hasLowPbr(item) ||
     (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 1.0)
   );
+}
+
+function hasNeutralReratingMediumValueConfirmation(item: EvidenceRankingItem): boolean {
+  const forwardPerToPerRatio = getPositiveRatio(item.forwardPer, item.per);
+  return (
+    hasLowPbr(item) || (hasLowPer(item.perPercentile) && forwardPerToPerRatio != null && forwardPerToPerRatio <= 1.0)
+  );
+}
+
+function getNeutralReratingEvidenceTier(item: EvidenceRankingItem): EvidenceColorTier {
+  if (hasLowPerForwardPerImprovement(item)) return 'excellent';
+  if (hasNeutralReratingStrongBlueConfirmation(item)) return 'good';
+  if (hasNeutralReratingMediumValueConfirmation(item)) return 'light_good';
+  return 'neutral';
 }
 
 function getCrowdedReratingEvidenceTier(item: EvidenceRankingItem): EvidenceColorTier {
