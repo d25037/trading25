@@ -22,6 +22,18 @@ relatedExperiments = [
   "market-behavior/free-float-liquidity-regime-decomposition",
 ]
 
+[experiments."market-behavior/ranking-sector-strength-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Prime Daily Ranking の crowded_rerating / neutral_rerating green/blue を PIT 33セクター強弱で分解した。Broad な neutral_rerating blue は no-value が大量に混ざるため弱く見えるが、low_pbr20_low_fwd_per20 の strong value blue は 20D TOPIX excess と sector excess の両方で強く、sector_weak_consistent でも残る。Sector は value confirmation の後に見る補助軸であり、no_value_confirmation を救済しない。Product rule は変更せず、value tier の表示/研究軸を先に検討する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "sector-regime", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/annual-sector-relative-value-composite",
+  "market-behavior/free-float-liquidity-regime-decomposition",
+]
+
 [experiments."market-behavior/ranking-short-red-evidence"]
 family = "Ranking"
 status = "candidate"
