@@ -104,6 +104,54 @@ describe('RankingTable', () => {
     expect(screen.getByText('20/60D Mom')).toBeInTheDocument();
   });
 
+  it('shows valuation signals without collapsing extra chips behind a count', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            pbrPercentile: 0.18,
+            forwardPerPercentile: 0.18,
+            liquidityRegime: 'crowded_rerating',
+            riskFlags: ['overheat', 'stale_rally_fade'],
+            technicalFlags: ['momentum_20_60_top20'],
+          },
+          {
+            ...createItem(1),
+            perPercentile: 0.85,
+            forwardPerPercentile: 0.5,
+            liquidityRegime: 'neutral_rerating',
+          },
+          {
+            ...createItem(2),
+            pbrPercentile: 0.95,
+            liquidityRegime: 'neutral_rerating',
+          },
+          {
+            ...createItem(3),
+            perPercentile: null,
+            forwardPerPercentile: null,
+            liquidityRegime: 'crowded_rerating',
+          },
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showLiquidity
+      />
+    );
+
+    expect(screen.getByText('Deep Value')).toBeInTheDocument();
+    expect(screen.getByText('Overvalued')).toHaveClass('text-yellow-800');
+    expect(screen.getByText('Very Overvalued')).toHaveClass('text-red-700');
+    expect(screen.getByText('No Earnings')).toHaveClass('text-yellow-800');
+    expect(screen.getByText('Overheat')).toBeInTheDocument();
+    expect(screen.getByText('Rally Fade')).toBeInTheDocument();
+    expect(screen.getByText('20/60D Mom')).toBeInTheDocument();
+    expect(screen.queryByText('+2')).not.toBeInTheDocument();
+    expect(screen.queryByText('+1')).not.toBeInTheDocument();
+  });
+
   it('shows sector score next to sector when provided and supports score sorting', async () => {
     const user = userEvent.setup();
     render(

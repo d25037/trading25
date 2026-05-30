@@ -1,4 +1,10 @@
 export type EvidenceColorTier = 'excellent' | 'good' | 'light_good' | 'neutral' | 'bad' | 'very_bad';
+export type ValuationSignal =
+  | 'strong_value_confirmation'
+  | 'medium_value_confirmation'
+  | 'very_high_valuation_warning'
+  | 'high_valuation_warning'
+  | 'no_positive_earnings_valuation';
 
 export interface EvidenceRankingItem {
   per?: number | null;
@@ -96,6 +102,15 @@ export function getLiquidityEvidenceTier(item: EvidenceRankingItem): EvidenceCol
   return 'neutral';
 }
 
+export function getValuationSignal(item: EvidenceRankingItem): ValuationSignal | null {
+  if (hasCrowdedReratingGreenConfirmation(item)) return 'strong_value_confirmation';
+  if (hasVeryExpensiveValuationWarning(item)) return 'very_high_valuation_warning';
+  if (hasExpensiveValuationWarning(item)) return 'high_valuation_warning';
+  if (hasEarningsValuationWarning(item)) return 'no_positive_earnings_valuation';
+  if (hasReratingValueConfirmation(item)) return 'medium_value_confirmation';
+  return null;
+}
+
 function getPositiveRatio(numerator: number | null | undefined, denominator: number | null | undefined): number | null {
   if (
     numerator == null ||
@@ -140,6 +155,12 @@ function hasNeutralReratingStrongBlueConfirmation(item: EvidenceRankingItem): bo
 function hasExpensiveValuationWarning(item: EvidenceRankingItem): boolean {
   return [item.perPercentile, item.forwardPerPercentile, item.forwardPOpPercentile, item.pbrPercentile].some(
     (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.8
+  );
+}
+
+function hasVeryExpensiveValuationWarning(item: EvidenceRankingItem): boolean {
+  return [item.perPercentile, item.forwardPerPercentile, item.forwardPOpPercentile, item.pbrPercentile].some(
+    (percentile) => percentile != null && Number.isFinite(percentile) && percentile >= 0.9
   );
 }
 

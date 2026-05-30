@@ -7,11 +7,13 @@ import { cn } from '@/lib/utils';
 import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
   type EvidenceColorTier,
+  type ValuationSignal,
   getCheapValuationPercentileTier,
   getForwardPerEvidenceTier,
   getForwardPOpEvidenceTier,
   getLiquidityEvidenceTier,
   getPerEvidenceTier,
+  getValuationSignal,
 } from './rankingEvidenceTiers';
 import { type EquityRiskFlag, type EquityTechnicalFlag, formatRiskFlag, formatTechnicalFlag } from './rankingState';
 
@@ -91,7 +93,7 @@ interface EquityRankingTableProps<T extends EquityRankingItem> {
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
-const ROW_HEIGHT = 36;
+const ROW_HEIGHT = 52;
 const CARD_ROW_HEIGHT = 160;
 const VIEWPORT_HEIGHT = 520;
 const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
@@ -206,6 +208,29 @@ function getTechnicalFlagClass(value: EquityTechnicalFlag): string {
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
+function formatValuationSignal(value: ValuationSignal): string {
+  if (value === 'strong_value_confirmation') return 'Deep Value';
+  if (value === 'medium_value_confirmation') return 'Undervalued';
+  if (value === 'very_high_valuation_warning') return 'Very Overvalued';
+  if (value === 'high_valuation_warning') return 'Overvalued';
+  if (value === 'no_positive_earnings_valuation') return 'No Earnings';
+  return value;
+}
+
+function getValuationSignalClass(value: ValuationSignal): string {
+  if (value === 'strong_value_confirmation')
+    return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
+  if (value === 'medium_value_confirmation')
+    return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
+  if (value === 'very_high_valuation_warning')
+    return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+  if (value === 'high_valuation_warning')
+    return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+  if (value === 'no_positive_earnings_valuation')
+    return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
+  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
 function RegimeChip({ item }: { item: EquityRankingItem }) {
   return (
     <span
@@ -220,7 +245,17 @@ function RegimeChip({ item }: { item: EquityRankingItem }) {
 }
 
 function SignalChips({ item }: { item: EquityRankingItem }) {
+  const valuationSignal = getValuationSignal(item);
   const signals = [
+    ...(valuationSignal
+      ? [
+          {
+            key: valuationSignal,
+            label: formatValuationSignal(valuationSignal),
+            className: getValuationSignalClass(valuationSignal),
+          },
+        ]
+      : []),
     ...(item.riskFlags ?? []).map((flag) => ({
       key: flag,
       label: formatRiskFlag(flag),
@@ -232,27 +267,20 @@ function SignalChips({ item }: { item: EquityRankingItem }) {
       className: getTechnicalFlagClass(flag),
     })),
   ];
-  const visibleSignals = signals.slice(0, 2);
-  const hiddenCount = signals.length - visibleSignals.length;
 
   return (
-    <div className="flex flex-nowrap justify-center gap-1 overflow-hidden">
-      {visibleSignals.map((signal) => (
+    <div className="flex flex-wrap justify-center gap-1">
+      {signals.map((signal) => (
         <span
           key={signal.key}
           className={cn(
-            'inline-flex shrink-0 justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold',
+            'inline-flex shrink-0 justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold leading-tight',
             signal.className
           )}
         >
           {signal.label}
         </span>
       ))}
-      {hiddenCount > 0 ? (
-        <span className="inline-flex shrink-0 justify-center whitespace-nowrap rounded bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-          +{hiddenCount}
-        </span>
-      ) : null}
     </div>
   );
 }
@@ -634,7 +662,7 @@ function LiquidityHeaders<T extends EquityRankingItem>({
         </SortHeader>
       </th>
       <th className="w-28 px-2 py-1.5 text-center">Regime</th>
-      <th className="w-32 px-2 py-1.5 text-center">Signals</th>
+      <th className="w-40 px-2 py-1.5 text-center">Signals</th>
     </>
   );
 }
