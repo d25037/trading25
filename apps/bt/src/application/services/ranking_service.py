@@ -27,6 +27,7 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
     filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
+    filter_ranking_collections_by_technical_state as _filter_ranking_collections_by_technical_state,
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
 from src.application.services.ranking_fundamental_queries import (
@@ -82,12 +83,16 @@ from src.application.services.ranking_index_performance import (
 from src.application.services.ranking_liquidity import (
     enrich_ranking_collections_with_prime_liquidity as _enrich_ranking_collections_with_prime_liquidity,
 )
+from src.application.services.ranking_technical_flags import (
+    enrich_ranking_collections_with_technical_flags as _enrich_ranking_collections_with_technical_flags,
+)
 from src.entrypoints.http.schemas.ranking import (
     FundamentalRankings,
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
     RankingStateFilter,
+    RankingTechnicalStateFilter,
     Rankings,
     SectorStrengthBucket,
     ValueCompositeRankingResponse,
@@ -144,6 +149,7 @@ class RankingService:
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
         liquidity_state: RankingStateFilter | None = None,
+        technical_state: RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
@@ -157,7 +163,14 @@ class RankingService:
 
         apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
         apply_liquidity_state_filter = include_valuation and liquidity_state is not None
-        query_limit = 0 if apply_forward_eps_filter or apply_liquidity_state_filter else limit
+        apply_technical_state_filter = technical_state is not None
+        query_limit = (
+            0
+            if apply_forward_eps_filter
+            or apply_liquidity_state_filter
+            or apply_technical_state_filter
+            else limit
+        )
 
         # 5種類のランキングを取得
         if lookback_days > 1:
@@ -262,19 +275,53 @@ class RankingService:
                     target_date=target_date,
                     price_basis_date=price_basis_date,
                 )
+            if apply_technical_state_filter:
+                _enrich_ranking_collections_with_technical_flags(
+                    self._reader,
+                    ranking_collections,
+                    target_date=target_date,
+                )
+            if apply_liquidity_state_filter:
                 _filter_ranking_collections_by_liquidity_state(
                     ranking_collections,
                     liquidity_state=liquidity_state,
                 )
-                _limit_and_rerank_ranking_collections(ranking_collections, limit)
-            else:
-                _limit_and_rerank_ranking_collections(ranking_collections, limit)
+            if apply_technical_state_filter:
+                _filter_ranking_collections_by_technical_state(
+                    ranking_collections,
+                    technical_state=technical_state,
+                )
+            _limit_and_rerank_ranking_collections(ranking_collections, limit)
+            if not apply_liquidity_state_filter:
                 _enrich_ranking_collections_with_prime_liquidity(
                     self._reader,
                     ranking_collections,
                     target_date=target_date,
                     price_basis_date=price_basis_date,
                 )
+            if not apply_technical_state_filter:
+                _enrich_ranking_collections_with_technical_flags(
+                    self._reader,
+                    ranking_collections,
+                    target_date=target_date,
+                )
+        elif apply_technical_state_filter:
+            _enrich_ranking_collections_with_technical_flags(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+            )
+            _filter_ranking_collections_by_technical_state(
+                ranking_collections,
+                technical_state=technical_state,
+            )
+            _limit_and_rerank_ranking_collections(ranking_collections, limit)
+        else:
+            _enrich_ranking_collections_with_technical_flags(
+                self._reader,
+                ranking_collections,
+                target_date=target_date,
+            )
         sector_strength_by_name = (
             load_sector_strength_by_name(
                 self._reader,

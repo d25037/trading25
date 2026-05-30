@@ -8394,6 +8394,8 @@ export interface components {
             sectorStrengthBucket?: ("sector_strong" | "sector_neutral" | "sector_weak") | null;
             /** Sectorstrengthscore */
             sectorStrengthScore?: number | null;
+            /** Technicalflags */
+            technicalFlags?: "atr20_acceleration"[];
             /** Tradingvalue */
             tradingValue?: number | null;
             /** Tradingvalueaverage */
@@ -11976,6 +11978,8 @@ export interface operations {
                 forwardEpsDisclosedWithinDays?: number;
                 /** @description Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime. */
                 liquidityState?: ("neutral_rerating" | "crowded_rerating" | "distribution_stress" | "stale_liquidity" | "neutral") | ("overheat" | "stale_rally_fade") | null;
+                /** @description Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration. */
+                technicalState?: "atr20_acceleration" | null;
             };
             header?: never;
             path?: never;

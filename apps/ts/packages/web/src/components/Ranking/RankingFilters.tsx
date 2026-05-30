@@ -2,7 +2,7 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { RankingParams } from '@/types/ranking';
-import { RANKING_LIQUIDITY_STATE_OPTIONS } from './rankingState';
+import { RANKING_LIQUIDITY_STATE_OPTIONS, RANKING_TECHNICAL_STATE_OPTIONS } from './rankingState';
 
 const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -83,6 +83,28 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
             </SelectTrigger>
             <SelectContent>
               {RANKING_LIQUIDITY_STATE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="ranking-technical-state">
+            Technical
+          </label>
+          <Select
+            value={params.technicalState ?? 'all'}
+            onValueChange={(value) =>
+              updateParam('technicalState', value === 'all' ? undefined : (value as RankingParams['technicalState']))
+            }
+          >
+            <SelectTrigger id="ranking-technical-state" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {RANKING_TECHNICAL_STATE_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

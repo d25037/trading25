@@ -36,7 +36,9 @@ LiquidityRegime = Literal[
     "neutral",
 ]
 RankingRiskFlag = Literal["overheat", "stale_rally_fade"]
+RankingTechnicalFlag = Literal["atr20_acceleration"]
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
+RankingTechnicalStateFilter = RankingTechnicalFlag
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
 
 
@@ -75,6 +77,7 @@ class RankingItem(BaseModel):
     liquidityRegime: LiquidityRegime | None = None
     adv60ToFreeFloatPct: float | None = None
     riskFlags: list[RankingRiskFlag] = Field(default_factory=list)
+    technicalFlags: list[RankingTechnicalFlag] = Field(default_factory=list)
 
 
 class Rankings(BaseModel):

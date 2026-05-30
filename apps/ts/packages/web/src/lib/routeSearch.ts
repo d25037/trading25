@@ -18,6 +18,7 @@ import type {
   RankingSortField,
   RankingSortOrder,
   RankingTechnicalEventType,
+  RankingTechnicalState,
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
@@ -82,6 +83,7 @@ export interface RankingRouteSearch {
   rankingPeriodDays?: number;
   rankingTechnicalEventType?: RankingTechnicalEventType;
   rankingLiquidityState?: RankingLiquidityState;
+  rankingTechnicalState?: RankingTechnicalState;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
   rankingForwardEpsDisclosedWithinDays?: number;
@@ -105,7 +107,9 @@ const RANKING_LIQUIDITY_STATE_VALUES: RankingLiquidityState[] = [
   'stale_liquidity',
   'neutral',
   'overheat',
+  'stale_rally_fade',
 ];
+const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration'];
 const RANKING_SORT_VALUES: RankingSortField[] = [
   'tradingValue',
   'changePercentage',
@@ -205,6 +209,10 @@ function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEve
 
 function normalizeRankingLiquidityState(value: unknown): RankingLiquidityState | undefined {
   return normalizeEnum(normalizeString(value), RANKING_LIQUIDITY_STATE_VALUES);
+}
+
+function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_TECHNICAL_STATE_VALUES);
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {
@@ -439,6 +447,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['periodDays', search.rankingPeriodDays],
     ['technicalEventType', search.rankingTechnicalEventType],
     ['liquidityState', search.rankingLiquidityState],
+    ['technicalState', search.rankingTechnicalState],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
     ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
@@ -544,6 +553,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
     normalizeRankingTechnicalEventType(search.rankingTechnicalEventType)
   );
   assignIfDefined(next, 'rankingLiquidityState', normalizeRankingLiquidityState(search.rankingLiquidityState));
+  assignIfDefined(next, 'rankingTechnicalState', normalizeRankingTechnicalState(search.rankingTechnicalState));
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
   assignIfDefined(
@@ -593,6 +603,7 @@ export function serializeRankingSearch(state: {
     DEFAULT_RANKING_PARAMS.technicalEventType
   );
   assignIfDefined(next, 'rankingLiquidityState', state.rankingParams.liquidityState);
+  assignIfDefined(next, 'rankingTechnicalState', state.rankingParams.technicalState);
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
   assignIfDefinedAndNotDefault(

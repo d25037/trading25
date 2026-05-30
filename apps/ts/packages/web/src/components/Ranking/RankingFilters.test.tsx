@@ -43,7 +43,12 @@ vi.mock('@/components/ui/select', () => ({
   SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   SelectTrigger: ({ children, id }: { children: ReactNode; id?: string }) => {
     const context = useContext(SelectContext);
-    const nextValue = id === 'ranking-liquidity-state' ? 'overheat' : 'periodLow';
+    const nextValue =
+      id === 'ranking-liquidity-state'
+        ? 'overheat'
+        : id === 'ranking-technical-state'
+          ? 'atr20_acceleration'
+          : 'periodLow';
     return (
       <button type="button" data-testid={id} onClick={() => context?.onValueChange(nextValue)}>
         {children}
@@ -75,6 +80,8 @@ describe('RankingFilters', () => {
     expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
     expect(screen.getByText('状態')).toBeInTheDocument();
     expect(screen.getByText('Rally Fade')).toBeInTheDocument();
+    expect(screen.getByText('Technical')).toBeInTheDocument();
+    expect(screen.getByText('ATR20 Accel')).toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
@@ -107,6 +114,12 @@ describe('RankingFilters', () => {
       liquidityState: 'overheat',
     });
 
+    fireEvent.click(screen.getByTestId('ranking-technical-state'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      technicalState: 'atr20_acceleration',
+    });
+
     fireEvent.click(screen.getByTestId('ranking-date'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
@@ -121,6 +134,7 @@ describe('RankingFilters', () => {
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-liquidity-state')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-technical-state')).toBeInTheDocument();
     expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
   });

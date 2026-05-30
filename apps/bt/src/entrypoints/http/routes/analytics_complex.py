@@ -26,6 +26,7 @@ from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     RankingStateFilter,
+    RankingTechnicalStateFilter,
     ValueCompositeRankingResponse,
     ValueCompositeForwardEpsMode,
     ValueCompositeProfileId,
@@ -108,6 +109,13 @@ async def get_ranking(
             "instead of liquidityRegime."
         ),
     ),
+    technicalState: RankingTechnicalStateFilter | None = Query(
+        None,
+        description=(
+            "Keep stocks matching a Daily Ranking technical confirmation state, "
+            "such as atr20_acceleration."
+        ),
+    ),
 ) -> MarketRankingResponse:
     """マーケットランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -130,6 +138,7 @@ async def get_ranking(
             include_sector_strength=includeSectorStrength,
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
             liquidity_state=liquidityState,
+            technical_state=technicalState,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -11949,6 +11949,14 @@
             ],
             "title": "Sectorstrengthscore"
           },
+          "technicalFlags": {
+            "items": {
+              "const": "atr20_acceleration",
+              "type": "string"
+            },
+            "title": "Technicalflags",
+            "type": "array"
+          },
           "tradingValue": {
             "anyOf": [
               {
@@ -20229,6 +20237,25 @@
               ],
               "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
               "title": "Liquiditystate"
+            }
+          },
+          {
+            "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration.",
+            "in": "query",
+            "name": "technicalState",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "atr20_acceleration",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration.",
+              "title": "Technicalstate"
             }
           }
         ],

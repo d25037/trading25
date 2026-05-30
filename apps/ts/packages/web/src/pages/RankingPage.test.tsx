@@ -146,23 +146,30 @@ describe('RankingPage', () => {
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ forwardEpsDisclosedWithinDays: 0 }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
+    expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
   });
 
-  it('passes daily ranking state filter only to individual stocks', async () => {
+  it('passes daily ranking state filters only to individual stocks', async () => {
     const user = userEvent.setup();
     mockRouteState.rankingParams = {
       ...DEFAULT_RANKING_PARAMS,
       liquidityState: 'overheat',
+      technicalState: 'atr20_acceleration',
     };
     const view = render(<RankingPage />);
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ liquidityState: 'overheat' }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(
+      expect.objectContaining({ technicalState: 'atr20_acceleration' }),
+      true
+    );
 
     await user.click(screen.getByRole('button', { name: 'Technical Events' }));
     view.rerender(<RankingPage />);
 
     expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ liquidityState: undefined }), true);
+    expect(mockUseRanking).toHaveBeenLastCalledWith(expect.objectContaining({ technicalState: undefined }), true);
   });
 
   it('persists daily ranking table sort in route state', async () => {
@@ -241,5 +248,4 @@ describe('RankingPage', () => {
     await user.click(screen.getByText('Index Performance'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/indices', search: { code: '004F' } });
   });
-
 });

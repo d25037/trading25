@@ -4,6 +4,7 @@
 
 export type RankingDailyView = 'stocks' | 'technicalEvents' | 'indices';
 export type RankingTechnicalEventType = 'periodHigh' | 'periodLow';
+export type RankingTechnicalState = 'atr20_acceleration';
 export type RankingLiquidityState =
   | 'neutral_rerating'
   | 'crowded_rerating'
@@ -42,4 +43,5 @@ export interface RankingParams {
   order?: RankingSortOrder;
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
+  technicalState?: RankingTechnicalState;
 }

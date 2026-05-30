@@ -234,6 +234,7 @@ export function RankingPage() {
       forwardEpsDisclosedWithinDays:
         activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
       liquidityState: activeDailyView === 'stocks' ? rankingParams.liquidityState : undefined,
+      technicalState: activeDailyView === 'stocks' ? rankingParams.technicalState : undefined,
     }),
     [activeDailyView, rankingParams]
   );

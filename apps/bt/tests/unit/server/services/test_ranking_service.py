@@ -55,6 +55,7 @@ from src.application.services.ranking_liquidity import (
     classify_prime_liquidity_regime,
     classify_risk_flags,
 )
+from src.application.services.ranking_technical_flags import classify_technical_flags
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
@@ -1119,6 +1120,37 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
         assert result.rankings.tradingValue[0].riskFlags == ["stale_rally_fade"]
 
+    def test_technical_state_filter_can_match_atr20_acceleration(
+        self, service, monkeypatch
+    ):
+        def fake_enrich_technical_flags(
+            reader,
+            collections,
+            *,
+            target_date,
+        ):
+            del reader, target_date
+            for collection in collections:
+                for item in collection:
+                    if item.code == "67580":
+                        item.technicalFlags = ["atr20_acceleration"]
+
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_enrich_ranking_collections_with_technical_flags",
+            fake_enrich_technical_flags,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            technical_state="atr20_acceleration",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["67580"]
+        assert result.rankings.tradingValue[0].technicalFlags == ["atr20_acceleration"]
+
     def test_market_filter(self, service):
         result = service.get_rankings(markets="standard")
         # standard は 99840 のみ
@@ -1337,6 +1369,29 @@ class TestGetRankings:
     def test_classifies_short_term_overheat_risk_flag(self):
         assert classify_risk_flags(29.99) == ()
         assert classify_risk_flags(30.0) == ("overheat",)
+
+    def test_classifies_atr20_acceleration_technical_flag(self):
+        assert classify_technical_flags(
+            recent_return_20d_pct=29.99,
+            atr20_change_20d_pct=25.0,
+            atr20_to_atr60=1.249,
+        ) == ("atr20_acceleration",)
+        assert (
+            classify_technical_flags(
+                recent_return_20d_pct=30.0,
+                atr20_change_20d_pct=25.0,
+                atr20_to_atr60=1.249,
+            )
+            == ()
+        )
+        assert (
+            classify_technical_flags(
+                recent_return_20d_pct=29.99,
+                atr20_change_20d_pct=25.0,
+                atr20_to_atr60=1.25,
+            )
+            == ()
+        )
 
     def test_classifies_stale_rally_fade_only_for_stale_high_valuation_recent_positive(
         self,

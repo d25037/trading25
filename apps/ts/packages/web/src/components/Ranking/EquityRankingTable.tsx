@@ -13,7 +13,7 @@ import {
   getLiquidityEvidenceTier,
   getPerEvidenceTier,
 } from './rankingEvidenceTiers';
-import { type EquityRiskFlag, formatRiskFlag } from './rankingState';
+import { type EquityRiskFlag, type EquityTechnicalFlag, formatRiskFlag, formatTechnicalFlag } from './rankingState';
 
 export type EquitySortField =
   | 'tradingValue'
@@ -67,6 +67,7 @@ export interface EquityRankingItem {
     | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: EquityRiskFlag[];
+  technicalFlags?: EquityTechnicalFlag[];
 }
 
 interface EquityRankingTableProps<T extends EquityRankingItem> {
@@ -198,6 +199,12 @@ function getRiskFlagClass(value: EquityRiskFlag): string {
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
+function getTechnicalFlagClass(value: EquityTechnicalFlag): string {
+  if (value === 'atr20_acceleration')
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
+  return 'bg-[var(--app-surface-muted)] text-muted-foreground';
+}
+
 function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
   return (
     <div className="flex flex-wrap justify-center gap-1">
@@ -218,6 +225,17 @@ function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
           )}
         >
           {formatRiskFlag(flag)}
+        </span>
+      ))}
+      {item.technicalFlags?.map((flag) => (
+        <span
+          key={flag}
+          className={cn(
+            'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
+            getTechnicalFlagClass(flag)
+          )}
+        >
+          {formatTechnicalFlag(flag)}
         </span>
       ))}
     </div>

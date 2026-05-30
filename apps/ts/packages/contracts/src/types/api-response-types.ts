@@ -38,6 +38,7 @@ export type ResearchDetailResponseContract = BtApiSchemas['ResearchDetailRespons
 // ===== RANKING TYPES =====
 
 export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
+export type RankingTechnicalFlag = 'atr20_acceleration';
 
 export interface RankingItem {
   rank: number;
@@ -78,6 +79,7 @@ export interface RankingItem {
     | null;
   adv60ToFreeFloatPct?: number | null;
   riskFlags?: RankingRiskFlag[];
+  technicalFlags?: RankingTechnicalFlag[];
 }
 
 export interface Rankings {

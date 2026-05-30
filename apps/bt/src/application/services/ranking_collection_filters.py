@@ -6,7 +6,11 @@ from datetime import date as calendar_date, datetime, timedelta
 
 from src.application.services.ranking_query_helpers import normalize_equity_code
 from src.application.services.ranking_state_flags import RISK_FLAG_STATE_FILTERS
-from src.entrypoints.http.schemas.ranking import RankingItem, RankingStateFilter
+from src.entrypoints.http.schemas.ranking import (
+    RankingItem,
+    RankingStateFilter,
+    RankingTechnicalStateFilter,
+)
 
 
 def filter_ranking_collections_by_forward_eps_source_date(
@@ -89,3 +93,17 @@ def filter_ranking_collections_by_liquidity_state(
             collection[:] = [
                 item for item in collection if item.liquidityRegime == liquidity_state
             ]
+
+
+def filter_ranking_collections_by_technical_state(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    technical_state: RankingTechnicalStateFilter | None,
+) -> None:
+    if technical_state is None:
+        return
+
+    for collection in collections:
+        collection[:] = [
+            item for item in collection if technical_state in item.technicalFlags
+        ]
