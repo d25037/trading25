@@ -25,6 +25,8 @@ from src.entrypoints.http.schemas.portfolio_factor_regression import (
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
 from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
+    RankingRegimeStateFilter,
+    RankingRiskStateFilter,
     RankingStateFilter,
     RankingTechnicalStateFilter,
     ValueCompositeRankingResponse,
@@ -104,16 +106,27 @@ async def get_ranking(
     liquidityState: RankingStateFilter | None = Query(
         None,
         description=(
-            "Keep valuation-enriched stocks matching the Daily Ranking state. "
+            "Legacy combined state filter for valuation-enriched stocks. "
             "Use risk flag values such as overheat or stale_rally_fade to filter riskFlags "
             "instead of liquidityRegime."
         ),
+    ),
+    regimeState: RankingRegimeStateFilter | None = Query(
+        None,
+        description=(
+            "Keep valuation-enriched stocks matching a Daily Ranking regime. "
+            "Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets."
+        ),
+    ),
+    riskState: RankingRiskStateFilter | None = Query(
+        None,
+        description="Keep valuation-enriched stocks matching a Daily Ranking warning/risk flag.",
     ),
     technicalState: RankingTechnicalStateFilter | None = Query(
         None,
         description=(
             "Keep stocks matching a Daily Ranking technical confirmation state, "
-            "such as atr20_acceleration."
+            "such as atr20_acceleration or momentum_20_60_top20."
         ),
     ),
 ) -> MarketRankingResponse:
@@ -138,6 +151,8 @@ async def get_ranking(
             include_sector_strength=includeSectorStrength,
             forward_eps_disclosed_within_days=forwardEpsDisclosedWithinDays,
             liquidity_state=liquidityState,
+            regime_state=regimeState,
+            risk_state=riskState,
             technical_state=technicalState,
         )
     except ValueError as e:

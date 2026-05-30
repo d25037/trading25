@@ -9,7 +9,7 @@ import {
   serializeBacktestSearch,
   serializeIndicesSearch,
   serializePortfolioSearch,
-  serializeRankingSearch,
+  serializeRankingSearchForNavigation,
   serializeScreeningSearch,
   serializeSymbolWorkbenchSearch,
   validateBacktestSearch,
@@ -222,7 +222,7 @@ export function useRankingRouteState(): {
         to: '/ranking',
         search: (current: Record<string, unknown>) => {
           const currentState = getRankingStateFromSearch(validateRankingSearch(current));
-          return serializeRankingSearch(updater(currentState));
+          return serializeRankingSearchForNavigation(current, updater(currentState));
         },
       });
     },

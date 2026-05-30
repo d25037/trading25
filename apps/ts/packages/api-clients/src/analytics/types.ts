@@ -12,7 +12,15 @@ export interface AnalyticsClientConfig {
 export type { JobStatus };
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
-export type RankingTechnicalFlag = 'atr20_acceleration';
+export type RankingTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
+export type RankingRegimeState =
+  | 'neutral_rerating'
+  | 'neutral_rerating_good'
+  | 'crowded_rerating'
+  | 'crowded_rerating_good'
+  | 'distribution_stress'
+  | 'stale_liquidity'
+  | 'neutral';
 export type RankingLiquidityState =
   | 'neutral_rerating'
   | 'crowded_rerating'
@@ -133,6 +141,8 @@ export interface MarketRankingParams {
   includeSectorStrength?: boolean;
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
+  regimeState?: RankingRegimeState;
+  riskState?: RankingRiskFlag;
   technicalState?: RankingTechnicalFlag;
 }
 

@@ -36,7 +36,10 @@ LiquidityRegime = Literal[
     "neutral",
 ]
 RankingRiskFlag = Literal["overheat", "stale_rally_fade"]
-RankingTechnicalFlag = Literal["atr20_acceleration"]
+RankingTechnicalFlag = Literal["atr20_acceleration", "momentum_20_60_top20"]
+RankingGoodRegimeFilter = Literal["neutral_rerating_good", "crowded_rerating_good"]
+RankingRegimeStateFilter = LiquidityRegime | RankingGoodRegimeFilter
+RankingRiskStateFilter = RankingRiskFlag
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
 RankingTechnicalStateFilter = RankingTechnicalFlag
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]

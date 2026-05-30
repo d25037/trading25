@@ -7,6 +7,7 @@ import {
   serializeOptions225Search,
   serializePortfolioSearch,
   serializeRankingSearch,
+  serializeRankingSearchForNavigation,
   serializeResearchSearch,
   serializeScreeningSearch,
   validateBacktestSearch,
@@ -69,7 +70,6 @@ describe('routeSearch', () => {
       inSessionOrder: 'asc',
       inSessionLimit: 60,
     });
-
   });
 
   it('omits auto screening markets from serialized screening search', () => {
@@ -103,7 +103,9 @@ describe('routeSearch', () => {
       rankingLookbackDays: '15',
       rankingPeriodDays: '120',
       rankingTechnicalEventType: 'periodLow',
-      rankingLiquidityState: 'distribution_stress',
+      rankingRegimeState: 'neutral_rerating_good',
+      rankingRiskState: 'overheat',
+      rankingTechnicalState: 'momentum_20_60_top20',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
       rankingForwardEpsDisclosedWithinDays: '0',
@@ -117,10 +119,57 @@ describe('routeSearch', () => {
       rankingLookbackDays: 15,
       rankingPeriodDays: 120,
       rankingTechnicalEventType: 'periodLow',
-      rankingLiquidityState: 'distribution_stress',
+      rankingRegimeState: 'neutral_rerating_good',
+      rankingRiskState: 'overheat',
+      rankingTechnicalState: 'momentum_20_60_top20',
       rankingSortBy: 'adv60ToFreeFloatPct',
       rankingOrder: 'asc',
     });
+  });
+
+  it('migrates legacy ranking liquidity state into visible regime and warning filters', () => {
+    const regimeState = getRankingStateFromSearch(
+      validateRankingSearch({
+        rankingLiquidityState: 'neutral_rerating',
+      })
+    );
+    expect(regimeState.rankingParams.regimeState).toBe('neutral_rerating');
+    expect(regimeState.rankingParams.liquidityState).toBeUndefined();
+    expect(serializeRankingSearch(regimeState)).toEqual({
+      rankingRegimeState: 'neutral_rerating',
+    });
+
+    const warningState = getRankingStateFromSearch(
+      validateRankingSearch({
+        rankingLiquidityState: 'overheat',
+      })
+    );
+    expect(warningState.rankingParams.riskState).toBe('overheat');
+    expect(warningState.rankingParams.liquidityState).toBeUndefined();
+    expect(serializeRankingSearch(warningState)).toEqual({
+      rankingRiskState: 'overheat',
+    });
+  });
+
+  it('marks cleared ranking filters as undefined for router navigation merges', () => {
+    const rankingState = getRankingStateFromSearch(
+      validateRankingSearch({
+        rankingRegimeState: 'neutral_rerating',
+      })
+    );
+
+    const next = serializeRankingSearchForNavigation(
+      { rankingRegimeState: 'neutral_rerating' },
+      {
+        ...rankingState,
+        rankingParams: {
+          ...rankingState.rankingParams,
+          regimeState: undefined,
+        },
+      }
+    );
+
+    expect(next).toEqual({ rankingRegimeState: undefined });
   });
 
   it('drops removed ranking tabs and value-composite url state', () => {
@@ -172,7 +221,6 @@ describe('routeSearch', () => {
       dataset: 'snapshot-a',
       labType: 'improve',
     });
-
   });
 
   it('drops invalid screening and backtest search values', () => {

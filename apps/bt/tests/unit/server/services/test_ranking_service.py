@@ -55,7 +55,10 @@ from src.application.services.ranking_liquidity import (
     classify_prime_liquidity_regime,
     classify_risk_flags,
 )
-from src.application.services.ranking_technical_flags import classify_technical_flags
+from src.application.services.ranking_technical_flags import (
+    classify_technical_flags,
+    load_ranking_technical_metrics,
+)
 from src.application.services.ranking_valuation import (
     with_prime_valuation_percentiles,
 )
@@ -1120,6 +1123,95 @@ class TestGetRankings:
         assert [item.code for item in result.rankings.tradingValue] == ["67580"]
         assert result.rankings.tradingValue[0].riskFlags == ["stale_rally_fade"]
 
+    def test_regime_state_filter_can_match_neutral_rerating_good_before_limit(
+        self, service, monkeypatch
+    ):
+        def fake_enrich_prime_liquidity(
+            reader,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del reader, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    item.liquidityRegime = "neutral_rerating"
+                    item.liquidityResidualZ = 0.2
+                    item.adv60ToFreeFloatPct = 1.0
+                    if item.code == "72030":
+                        item.pbrPercentile = 0.1
+                        item.forwardPerPercentile = 0.5
+                        item.perPercentile = 0.5
+                        item.per = 20.0
+                        item.forwardPer = 20.0
+                    elif item.code == "67580":
+                        item.pbrPercentile = 0.1
+                        item.forwardPerPercentile = 0.1
+                        item.perPercentile = 0.5
+                        item.per = 20.0
+                        item.forwardPer = 20.0
+                    else:
+                        item.pbrPercentile = 0.5
+                        item.forwardPerPercentile = 0.5
+                        item.perPercentile = 0.5
+                        item.per = 20.0
+                        item.forwardPer = 20.0
+
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            regime_state="neutral_rerating_good",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["67580"]
+        assert result.rankings.tradingValue[0].liquidityRegime == "neutral_rerating"
+
+    def test_regime_and_risk_state_filters_can_combine(self, service, monkeypatch):
+        def fake_enrich_prime_liquidity(
+            reader,
+            collections,
+            *,
+            target_date,
+            price_basis_date,
+        ):
+            del reader, target_date, price_basis_date
+            for collection in collections:
+                for item in collection:
+                    item.liquidityRegime = "crowded_rerating"
+                    item.liquidityResidualZ = 1.2
+                    item.adv60ToFreeFloatPct = 8.0
+                    item.pbrPercentile = 0.1
+                    item.forwardPerPercentile = 0.1
+                    if item.code == "67580":
+                        item.riskFlags = ["overheat"]
+
+        monkeypatch.setattr(
+            ranking_service_module,
+            "_enrich_ranking_collections_with_prime_liquidity",
+            fake_enrich_prime_liquidity,
+        )
+
+        result = service.get_rankings(
+            date="2024-01-19",
+            markets="prime",
+            limit=1,
+            include_valuation=True,
+            regime_state="crowded_rerating_good",
+            risk_state="overheat",
+        )
+
+        assert [item.code for item in result.rankings.tradingValue] == ["67580"]
+        assert result.rankings.tradingValue[0].riskFlags == ["overheat"]
+
     def test_technical_state_filter_can_match_atr20_acceleration(
         self, service, monkeypatch
     ):
@@ -1128,8 +1220,9 @@ class TestGetRankings:
             collections,
             *,
             target_date,
+            market_codes=None,
         ):
-            del reader, target_date
+            del reader, target_date, market_codes
             for collection in collections:
                 for item in collection:
                     if item.code == "67580":
@@ -1373,12 +1466,16 @@ class TestGetRankings:
     def test_classifies_atr20_acceleration_technical_flag(self):
         assert classify_technical_flags(
             recent_return_20d_pct=29.99,
+            momentum_20d_percentile=None,
+            momentum_60d_percentile=None,
             atr20_change_20d_pct=25.0,
             atr20_to_atr60=1.249,
         ) == ("atr20_acceleration",)
         assert (
             classify_technical_flags(
                 recent_return_20d_pct=30.0,
+                momentum_20d_percentile=None,
+                momentum_60d_percentile=None,
                 atr20_change_20d_pct=25.0,
                 atr20_to_atr60=1.249,
             )
@@ -1387,11 +1484,103 @@ class TestGetRankings:
         assert (
             classify_technical_flags(
                 recent_return_20d_pct=29.99,
+                momentum_20d_percentile=None,
+                momentum_60d_percentile=None,
                 atr20_change_20d_pct=25.0,
                 atr20_to_atr60=1.25,
             )
             == ()
         )
+
+    def test_classifies_momentum_20_60_top20_technical_flag(self):
+        assert classify_technical_flags(
+            recent_return_20d_pct=10.0,
+            momentum_20d_percentile=0.8,
+            momentum_60d_percentile=0.8,
+            atr20_change_20d_pct=None,
+            atr20_to_atr60=None,
+        ) == ("momentum_20_60_top20",)
+        assert (
+            classify_technical_flags(
+                recent_return_20d_pct=10.0,
+                momentum_20d_percentile=0.79,
+                momentum_60d_percentile=0.8,
+                atr20_change_20d_pct=None,
+                atr20_to_atr60=None,
+            )
+            == ()
+        )
+
+    def test_loads_momentum_percentile_against_market_universe_not_candidates(
+        self, tmp_path
+    ):
+        db_path = str(tmp_path / "technical-momentum.db")
+        conn = duckdb.connect(db_path)
+        conn.execute("""
+            CREATE TABLE stocks (
+                code TEXT PRIMARY KEY, company_name TEXT NOT NULL, company_name_english TEXT,
+                market_code TEXT NOT NULL, market_name TEXT NOT NULL,
+                sector_17_code TEXT, sector_17_name TEXT,
+                sector_33_code TEXT, sector_33_name TEXT NOT NULL,
+                scale_category TEXT, listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE stock_data (
+                code TEXT NOT NULL, date TEXT NOT NULL,
+                open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL,
+                volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+        """)
+        for code in ("10010", "10020", "10030", "10040", "10050"):
+            conn.execute(
+                "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    code,
+                    code,
+                    code,
+                    "prime",
+                    "P",
+                    "S17",
+                    "Sector17",
+                    "S33",
+                    "Sector33",
+                    None,
+                    "2000-01-01",
+                    None,
+                    None,
+                ),
+            )
+        start = calendar_date(2024, 1, 1)
+        daily_steps = {
+            "10010": 5.0,
+            "10020": 4.0,
+            "10030": 3.0,
+            "10040": 2.0,
+            "10050": 1.0,
+        }
+        for day in range(90):
+            current_date = (start + timedelta(days=day)).isoformat()
+            for code, step in daily_steps.items():
+                close = 100.0 + step * day
+                conn.execute(
+                    "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                    (code, current_date, close, close + 1.0, close - 1.0, close, 1000, 1.0, None),
+                )
+        conn.close()
+
+        reader = MarketDbReader(db_path)
+        metrics = load_ranking_technical_metrics(
+            reader,
+            target_date=(start + timedelta(days=89)).isoformat(),
+            codes=("1001", "1002"),
+            market_codes=["prime"],
+        )
+        reader.close()
+
+        assert metrics["1001"].technical_flags == ("momentum_20_60_top20",)
+        assert metrics["1002"].technical_flags == ()
 
     def test_classifies_stale_rally_fade_only_for_stale_high_valuation_recent_positive(
         self,

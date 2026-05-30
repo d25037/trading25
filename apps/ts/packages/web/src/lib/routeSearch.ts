@@ -15,6 +15,8 @@ import type {
   RankingDailyView,
   RankingLiquidityState,
   RankingParams,
+  RankingRegimeState,
+  RankingRiskState,
   RankingSortField,
   RankingSortOrder,
   RankingTechnicalEventType,
@@ -83,6 +85,8 @@ export interface RankingRouteSearch {
   rankingPeriodDays?: number;
   rankingTechnicalEventType?: RankingTechnicalEventType;
   rankingLiquidityState?: RankingLiquidityState;
+  rankingRegimeState?: RankingRegimeState;
+  rankingRiskState?: RankingRiskState;
   rankingTechnicalState?: RankingTechnicalState;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
@@ -109,7 +113,33 @@ const RANKING_LIQUIDITY_STATE_VALUES: RankingLiquidityState[] = [
   'overheat',
   'stale_rally_fade',
 ];
-const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration'];
+const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
+  'neutral_rerating',
+  'neutral_rerating_good',
+  'crowded_rerating',
+  'crowded_rerating_good',
+  'distribution_stress',
+  'stale_liquidity',
+  'neutral',
+];
+const RANKING_RISK_STATE_VALUES: RankingRiskState[] = ['overheat', 'stale_rally_fade'];
+const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration', 'momentum_20_60_top20'];
+const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
+  'dailyView',
+  'rankingDate',
+  'rankingLimit',
+  'rankingMarkets',
+  'rankingLookbackDays',
+  'rankingPeriodDays',
+  'rankingTechnicalEventType',
+  'rankingLiquidityState',
+  'rankingRegimeState',
+  'rankingRiskState',
+  'rankingTechnicalState',
+  'rankingSortBy',
+  'rankingOrder',
+  'rankingForwardEpsDisclosedWithinDays',
+];
 const RANKING_SORT_VALUES: RankingSortField[] = [
   'tradingValue',
   'changePercentage',
@@ -209,6 +239,14 @@ function normalizeRankingTechnicalEventType(value: unknown): RankingTechnicalEve
 
 function normalizeRankingLiquidityState(value: unknown): RankingLiquidityState | undefined {
   return normalizeEnum(normalizeString(value), RANKING_LIQUIDITY_STATE_VALUES);
+}
+
+function normalizeRankingRegimeState(value: unknown): RankingRegimeState | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_REGIME_STATE_VALUES);
+}
+
+function normalizeRankingRiskState(value: unknown): RankingRiskState | undefined {
+  return normalizeEnum(normalizeString(value), RANKING_RISK_STATE_VALUES);
 }
 
 function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState | undefined {
@@ -439,6 +477,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
   activeDailyView: RankingDailyView;
   rankingParams: RankingParams;
 } {
+  const legacyRegimeState = normalizeRankingRegimeState(search.rankingLiquidityState);
+  const legacyRiskState = normalizeRankingRiskState(search.rankingLiquidityState);
   const rankingParams = assignSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
     ['date', search.rankingDate],
     ['limit', search.rankingLimit],
@@ -446,7 +486,8 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['lookbackDays', search.rankingLookbackDays],
     ['periodDays', search.rankingPeriodDays],
     ['technicalEventType', search.rankingTechnicalEventType],
-    ['liquidityState', search.rankingLiquidityState],
+    ['regimeState', search.rankingRegimeState ?? legacyRegimeState],
+    ['riskState', search.rankingRiskState ?? legacyRiskState],
     ['technicalState', search.rankingTechnicalState],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
@@ -553,6 +594,8 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
     normalizeRankingTechnicalEventType(search.rankingTechnicalEventType)
   );
   assignIfDefined(next, 'rankingLiquidityState', normalizeRankingLiquidityState(search.rankingLiquidityState));
+  assignIfDefined(next, 'rankingRegimeState', normalizeRankingRegimeState(search.rankingRegimeState));
+  assignIfDefined(next, 'rankingRiskState', normalizeRankingRiskState(search.rankingRiskState));
   assignIfDefined(next, 'rankingTechnicalState', normalizeRankingTechnicalState(search.rankingTechnicalState));
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
@@ -603,6 +646,8 @@ export function serializeRankingSearch(state: {
     DEFAULT_RANKING_PARAMS.technicalEventType
   );
   assignIfDefined(next, 'rankingLiquidityState', state.rankingParams.liquidityState);
+  assignIfDefined(next, 'rankingRegimeState', state.rankingParams.regimeState);
+  assignIfDefined(next, 'rankingRiskState', state.rankingParams.riskState);
   assignIfDefined(next, 'rankingTechnicalState', state.rankingParams.technicalState);
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
@@ -614,6 +659,25 @@ export function serializeRankingSearch(state: {
       : undefined,
     DEFAULT_RANKING_PARAMS.forwardEpsDisclosedWithinDays
   );
+
+  return next;
+}
+
+export function serializeRankingSearchForNavigation(
+  currentSearch: Record<string, unknown>,
+  state: {
+    activeDailyView: RankingDailyView;
+    rankingParams: RankingParams;
+  }
+): RankingRouteSearch {
+  const current = validateRankingSearch(currentSearch);
+  const next = serializeRankingSearch(state);
+
+  for (const key of RANKING_ROUTE_SEARCH_KEYS) {
+    if (key in current && !(key in next)) {
+      next[key] = undefined;
+    }
+  }
 
   return next;
 }

@@ -2,7 +2,11 @@ import { SectionEyebrow, Surface } from '@/components/Layout/Workspace';
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { RankingParams } from '@/types/ranking';
-import { RANKING_LIQUIDITY_STATE_OPTIONS, RANKING_TECHNICAL_STATE_OPTIONS } from './rankingState';
+import {
+  RANKING_REGIME_STATE_OPTIONS,
+  RANKING_RISK_STATE_OPTIONS,
+  RANKING_TECHNICAL_STATE_OPTIONS,
+} from './rankingState';
 
 const RANKING_MARKET_OPTIONS = [
   { value: 'prime', label: 'Prime' },
@@ -69,20 +73,20 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           label="Fwd EPS Disclosure"
         />
         <div className="space-y-2">
-          <label className="text-xs font-medium" htmlFor="ranking-liquidity-state">
-            状態
+          <label className="text-xs font-medium" htmlFor="ranking-regime-state">
+            Regime
           </label>
           <Select
-            value={params.liquidityState ?? 'all'}
+            value={params.regimeState ?? 'all'}
             onValueChange={(value) =>
-              updateParam('liquidityState', value === 'all' ? undefined : (value as RankingParams['liquidityState']))
+              updateParam('regimeState', value === 'all' ? undefined : (value as RankingParams['regimeState']))
             }
           >
-            <SelectTrigger id="ranking-liquidity-state" className="h-8 text-xs">
+            <SelectTrigger id="ranking-regime-state" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {RANKING_LIQUIDITY_STATE_OPTIONS.map((option) => (
+              {RANKING_REGIME_STATE_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -91,8 +95,30 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           </Select>
         </div>
         <div className="space-y-2">
-          <label className="text-xs font-medium" htmlFor="ranking-technical-state">
-            Technical
+          <label className="text-xs font-medium" htmlFor="ranking-risk-state">
+            Warning
+          </label>
+          <Select
+            value={params.riskState ?? 'all'}
+            onValueChange={(value) =>
+              updateParam('riskState', value === 'all' ? undefined : (value as RankingParams['riskState']))
+            }
+          >
+            <SelectTrigger id="ranking-risk-state" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {RANKING_RISK_STATE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="ranking-confirmation-state">
+            Confirmation
           </label>
           <Select
             value={params.technicalState ?? 'all'}
@@ -100,7 +126,7 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
               updateParam('technicalState', value === 'all' ? undefined : (value as RankingParams['technicalState']))
             }
           >
-            <SelectTrigger id="ranking-technical-state" className="h-8 text-xs">
+            <SelectTrigger id="ranking-confirmation-state" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

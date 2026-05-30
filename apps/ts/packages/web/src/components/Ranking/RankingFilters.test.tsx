@@ -44,11 +44,13 @@ vi.mock('@/components/ui/select', () => ({
   SelectTrigger: ({ children, id }: { children: ReactNode; id?: string }) => {
     const context = useContext(SelectContext);
     const nextValue =
-      id === 'ranking-liquidity-state'
-        ? 'overheat'
-        : id === 'ranking-technical-state'
-          ? 'atr20_acceleration'
-          : 'periodLow';
+      id === 'ranking-regime-state'
+        ? 'neutral_rerating_good'
+        : id === 'ranking-risk-state'
+          ? 'overheat'
+          : id === 'ranking-confirmation-state'
+            ? 'momentum_20_60_top20'
+            : 'periodLow';
     return (
       <button type="button" data-testid={id} onClick={() => context?.onValueChange(nextValue)}>
         {children}
@@ -78,10 +80,13 @@ describe('RankingFilters', () => {
 
     expect(screen.getByText('Lookback Days')).toBeInTheDocument();
     expect(screen.getByText('Fwd EPS Disclosure')).toBeInTheDocument();
-    expect(screen.getByText('状態')).toBeInTheDocument();
+    expect(screen.getByText('Regime')).toBeInTheDocument();
+    expect(screen.getByText('Neutral Rerating - Good')).toBeInTheDocument();
+    expect(screen.getByText('Warning')).toBeInTheDocument();
     expect(screen.getByText('Rally Fade')).toBeInTheDocument();
-    expect(screen.getByText('Technical')).toBeInTheDocument();
+    expect(screen.getByText('Confirmation')).toBeInTheDocument();
     expect(screen.getByText('ATR20 Accel')).toBeInTheDocument();
+    expect(screen.getByText('20/60D Momentum')).toBeInTheDocument();
     expect(screen.queryByText('Results per ranking')).not.toBeInTheDocument();
     expect(screen.queryByText('Period Days (High/Low)')).not.toBeInTheDocument();
   });
@@ -108,16 +113,22 @@ describe('RankingFilters', () => {
       forwardEpsDisclosedWithinDays: 126,
     });
 
-    fireEvent.click(screen.getByTestId('ranking-liquidity-state'));
+    fireEvent.click(screen.getByTestId('ranking-regime-state'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
-      liquidityState: 'overheat',
+      regimeState: 'neutral_rerating_good',
     });
 
-    fireEvent.click(screen.getByTestId('ranking-technical-state'));
+    fireEvent.click(screen.getByTestId('ranking-risk-state'));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
-      technicalState: 'atr20_acceleration',
+      riskState: 'overheat',
+    });
+
+    fireEvent.click(screen.getByTestId('ranking-confirmation-state'));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...defaultParams,
+      technicalState: 'momentum_20_60_top20',
     });
 
     fireEvent.click(screen.getByTestId('ranking-date'));
@@ -133,8 +144,9 @@ describe('RankingFilters', () => {
     expect(screen.getByTestId('ranking-markets')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-lookbackDays')).toBeInTheDocument();
     expect(screen.getByTestId('ranking-forward-eps-disclosed-within-days')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-liquidity-state')).toBeInTheDocument();
-    expect(screen.getByTestId('ranking-technical-state')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-regime-state')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-risk-state')).toBeInTheDocument();
+    expect(screen.getByTestId('ranking-confirmation-state')).toBeInTheDocument();
     expect(screen.queryByTestId('ranking-limit')).not.toBeInTheDocument();
     expect(screen.queryByTestId('ranking-periodDays')).not.toBeInTheDocument();
   });

@@ -11951,7 +11951,10 @@
           },
           "technicalFlags": {
             "items": {
-              "const": "atr20_acceleration",
+              "enum": [
+                "atr20_acceleration",
+                "momentum_20_60_top20"
+              ],
               "type": "string"
             },
             "title": "Technicalflags",
@@ -20208,7 +20211,7 @@
             }
           },
           {
-            "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
+            "description": "Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
             "in": "query",
             "name": "liquidityState",
             "required": false,
@@ -20235,26 +20238,83 @@
                   "type": "null"
                 }
               ],
-              "description": "Keep valuation-enriched stocks matching the Daily Ranking state. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
+              "description": "Legacy combined state filter for valuation-enriched stocks. Use risk flag values such as overheat or stale_rally_fade to filter riskFlags instead of liquidityRegime.",
               "title": "Liquiditystate"
             }
           },
           {
-            "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration.",
+            "description": "Keep valuation-enriched stocks matching a Daily Ranking regime. Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets.",
             "in": "query",
-            "name": "technicalState",
+            "name": "regimeState",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "const": "atr20_acceleration",
+                  "enum": [
+                    "neutral_rerating",
+                    "crowded_rerating",
+                    "distribution_stress",
+                    "stale_liquidity",
+                    "neutral"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "neutral_rerating_good",
+                    "crowded_rerating_good"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration.",
+              "description": "Keep valuation-enriched stocks matching a Daily Ranking regime. Use neutral_rerating_good or crowded_rerating_good for value-confirmed green/blue subsets.",
+              "title": "Regimestate"
+            }
+          },
+          {
+            "description": "Keep valuation-enriched stocks matching a Daily Ranking warning/risk flag.",
+            "in": "query",
+            "name": "riskState",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "overheat",
+                    "stale_rally_fade"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep valuation-enriched stocks matching a Daily Ranking warning/risk flag.",
+              "title": "Riskstate"
+            }
+          },
+          {
+            "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration or momentum_20_60_top20.",
+            "in": "query",
+            "name": "technicalState",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "atr20_acceleration",
+                    "momentum_20_60_top20"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep stocks matching a Daily Ranking technical confirmation state, such as atr20_acceleration or momentum_20_60_top20.",
               "title": "Technicalstate"
             }
           }

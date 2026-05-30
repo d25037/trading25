@@ -84,6 +84,26 @@ describe('RankingTable', () => {
     expect(headerText.indexOf('売買代金')).toBeLessThan(headerText.indexOf('時価総額'));
   });
 
+  it('shows momentum technical flags in the liquidity state chips', () => {
+    render(
+      <RankingTable
+        items={[
+          {
+            ...createItem(0),
+            liquidityRegime: 'neutral_rerating',
+            technicalFlags: ['momentum_20_60_top20'],
+          },
+        ]}
+        isLoading={false}
+        error={null}
+        onStockClick={vi.fn()}
+        showLiquidity
+      />
+    );
+
+    expect(screen.getByText('20/60D Mom')).toBeInTheDocument();
+  });
+
   it('shows sector score next to sector when provided and supports score sorting', async () => {
     const user = userEvent.setup();
     render(
@@ -282,7 +302,8 @@ describe('RankingTable', () => {
     expect(screen.getByText('light')).toHaveClass('text-cyan-600');
     expect(screen.getByRole('columnheader', { name: 'Fwd P/OP' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: '流動性Z' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: '状態' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Regime' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Signals' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Med ADV60/FF' })).not.toBeInTheDocument();
     expect(screen.queryByText('8.00%')).not.toBeInTheDocument();
     expect(screen.getByText('Overheat')).toHaveClass('text-purple-700');

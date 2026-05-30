@@ -38,7 +38,15 @@ export type ResearchDetailResponseContract = BtApiSchemas['ResearchDetailRespons
 // ===== RANKING TYPES =====
 
 export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
-export type RankingTechnicalFlag = 'atr20_acceleration';
+export type RankingTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
+export type RankingRegimeState =
+  | 'neutral_rerating'
+  | 'neutral_rerating_good'
+  | 'crowded_rerating'
+  | 'crowded_rerating_good'
+  | 'distribution_stress'
+  | 'stale_liquidity'
+  | 'neutral';
 
 export interface RankingItem {
   rank: number;

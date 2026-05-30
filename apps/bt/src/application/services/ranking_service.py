@@ -27,6 +27,8 @@ from src.application.services.ranking_daily_queries import (
 from src.application.services.ranking_collection_filters import (
     filter_ranking_collections_by_forward_eps_source_date as _filter_ranking_collections_by_forward_eps_source_date,
     filter_ranking_collections_by_liquidity_state as _filter_ranking_collections_by_liquidity_state,
+    filter_ranking_collections_by_regime_state as _filter_ranking_collections_by_regime_state,
+    filter_ranking_collections_by_risk_state as _filter_ranking_collections_by_risk_state,
     filter_ranking_collections_by_technical_state as _filter_ranking_collections_by_technical_state,
     limit_and_rerank_ranking_collections as _limit_and_rerank_ranking_collections,
 )
@@ -91,6 +93,8 @@ from src.entrypoints.http.schemas.ranking import (
     MarketFundamentalRankingResponse,
     MarketRankingResponse,
     RankingItem,
+    RankingRegimeStateFilter,
+    RankingRiskStateFilter,
     RankingStateFilter,
     RankingTechnicalStateFilter,
     Rankings,
@@ -149,6 +153,8 @@ class RankingService:
         include_valuation: bool = False,
         forward_eps_disclosed_within_days: int = 0,
         liquidity_state: RankingStateFilter | None = None,
+        regime_state: RankingRegimeStateFilter | None = None,
+        risk_state: RankingRiskStateFilter | None = None,
         technical_state: RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
     ) -> MarketRankingResponse:
@@ -162,7 +168,11 @@ class RankingService:
             target_date = _resolve_latest_stock_data_date_query(self._reader)
 
         apply_forward_eps_filter = include_valuation and forward_eps_disclosed_within_days > 0
-        apply_liquidity_state_filter = include_valuation and liquidity_state is not None
+        apply_liquidity_state_filter = include_valuation and (
+            liquidity_state is not None
+            or regime_state is not None
+            or risk_state is not None
+        )
         apply_technical_state_filter = technical_state is not None
         query_limit = (
             0
@@ -280,11 +290,20 @@ class RankingService:
                     self._reader,
                     ranking_collections,
                     target_date=target_date,
+                    market_codes=query_market_codes,
                 )
             if apply_liquidity_state_filter:
                 _filter_ranking_collections_by_liquidity_state(
                     ranking_collections,
                     liquidity_state=liquidity_state,
+                )
+                _filter_ranking_collections_by_regime_state(
+                    ranking_collections,
+                    regime_state=regime_state,
+                )
+                _filter_ranking_collections_by_risk_state(
+                    ranking_collections,
+                    risk_state=risk_state,
                 )
             if apply_technical_state_filter:
                 _filter_ranking_collections_by_technical_state(
@@ -304,12 +323,14 @@ class RankingService:
                     self._reader,
                     ranking_collections,
                     target_date=target_date,
+                    market_codes=query_market_codes,
                 )
         elif apply_technical_state_filter:
             _enrich_ranking_collections_with_technical_flags(
                 self._reader,
                 ranking_collections,
                 target_date=target_date,
+                market_codes=query_market_codes,
             )
             _filter_ranking_collections_by_technical_state(
                 ranking_collections,
@@ -321,6 +342,7 @@ class RankingService:
                 self._reader,
                 ranking_collections,
                 target_date=target_date,
+                market_codes=query_market_codes,
             )
         sector_strength_by_name = (
             load_sector_strength_by_name(

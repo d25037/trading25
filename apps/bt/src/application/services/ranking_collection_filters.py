@@ -8,6 +8,8 @@ from src.application.services.ranking_query_helpers import normalize_equity_code
 from src.application.services.ranking_state_flags import RISK_FLAG_STATE_FILTERS
 from src.entrypoints.http.schemas.ranking import (
     RankingItem,
+    RankingRegimeStateFilter,
+    RankingRiskStateFilter,
     RankingStateFilter,
     RankingTechnicalStateFilter,
 )
@@ -93,6 +95,95 @@ def filter_ranking_collections_by_liquidity_state(
             collection[:] = [
                 item for item in collection if item.liquidityRegime == liquidity_state
             ]
+
+
+def filter_ranking_collections_by_regime_state(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    regime_state: RankingRegimeStateFilter | None,
+) -> None:
+    if regime_state is None:
+        return
+
+    if regime_state == "neutral_rerating_good":
+        target_regime = "neutral_rerating"
+        require_good = True
+    elif regime_state == "crowded_rerating_good":
+        target_regime = "crowded_rerating"
+        require_good = True
+    else:
+        target_regime = regime_state
+        require_good = False
+
+    for collection in collections:
+        collection[:] = [
+            item
+            for item in collection
+            if item.liquidityRegime == target_regime
+            and (
+                not require_good
+                or has_rerating_good_confirmation(item, target_regime=target_regime)
+            )
+        ]
+
+
+def filter_ranking_collections_by_risk_state(
+    collections: tuple[list[RankingItem], ...],
+    *,
+    risk_state: RankingRiskStateFilter | None,
+) -> None:
+    if risk_state is None:
+        return
+
+    for collection in collections:
+        collection[:] = [item for item in collection if risk_state in item.riskFlags]
+
+
+def has_rerating_good_confirmation(
+    item: RankingItem,
+    *,
+    target_regime: str,
+) -> bool:
+    if target_regime == "neutral_rerating":
+        return _has_low_pbr_and_low_forward_per(
+            item
+        ) or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
+    if target_regime == "crowded_rerating":
+        return (
+            _has_low_pbr_and_low_forward_per(item)
+            or _has_low_per_forward_per_improvement(item, max_ratio=0.8)
+            or _has_low_pbr(item)
+            or _has_low_per_forward_per_improvement(item, max_ratio=1.0)
+        )
+    return False
+
+
+def _has_low_pbr(item: RankingItem) -> bool:
+    return _is_percentile_at_or_below(item.pbrPercentile, 0.2)
+
+
+def _has_low_pbr_and_low_forward_per(item: RankingItem) -> bool:
+    return _is_percentile_at_or_below(
+        item.pbrPercentile, 0.2
+    ) and _is_percentile_at_or_below(item.forwardPerPercentile, 0.2)
+
+
+def _has_low_per_forward_per_improvement(
+    item: RankingItem,
+    *,
+    max_ratio: float,
+) -> bool:
+    if not _is_percentile_at_or_below(item.perPercentile, 0.2):
+        return False
+    if item.forwardPer is None or item.per is None:
+        return False
+    if item.forwardPer <= 0 or item.per <= 0:
+        return False
+    return item.forwardPer / item.per <= max_ratio
+
+
+def _is_percentile_at_or_below(value: float | None, threshold: float) -> bool:
+    return value is not None and value <= threshold
 
 
 def filter_ranking_collections_by_technical_state(

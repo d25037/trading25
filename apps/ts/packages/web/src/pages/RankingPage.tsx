@@ -51,6 +51,33 @@ interface RankingContentProps {
   onIndexClick: (code: string) => void;
 }
 
+function resolveRankingLimit(activeDailyView: RankingDailyView, rankingParams: RankingParams): number | undefined {
+  if (activeDailyView === 'technicalEvents') return 50;
+  if (activeDailyView === 'indices') return 20;
+  return rankingParams.limit;
+}
+
+function buildRankingQueryParams(activeDailyView: RankingDailyView, rankingParams: RankingParams): RankingParams {
+  const isStocksView = activeDailyView === 'stocks';
+  return {
+    date: rankingParams.date,
+    markets: rankingParams.markets,
+    lookbackDays: rankingParams.lookbackDays,
+    periodDays: rankingParams.periodDays,
+    technicalEventType: rankingParams.technicalEventType,
+    sector33Name: rankingParams.sector33Name,
+    sector17Name: rankingParams.sector17Name,
+    limit: resolveRankingLimit(activeDailyView, rankingParams),
+    includeValuation: activeDailyView !== 'indices',
+    includeSectorStrength: activeDailyView !== 'technicalEvents',
+    forwardEpsDisclosedWithinDays: isStocksView ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
+    liquidityState: isStocksView ? rankingParams.liquidityState : undefined,
+    regimeState: isStocksView ? rankingParams.regimeState : undefined,
+    riskState: isStocksView ? rankingParams.riskState : undefined,
+    technicalState: isStocksView ? rankingParams.technicalState : undefined,
+  };
+}
+
 function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerformanceSidebarProps) {
   const updateParam = <K extends keyof RankingParams>(key: K, value: RankingParams[K]) => {
     setRankingParams({ ...rankingParams, [key]: value });
@@ -220,22 +247,7 @@ export function RankingPage() {
     [rankingParams, setRankingParams]
   );
   const rankingQueryParams = useMemo(
-    () => ({
-      date: rankingParams.date,
-      markets: rankingParams.markets,
-      lookbackDays: rankingParams.lookbackDays,
-      periodDays: rankingParams.periodDays,
-      technicalEventType: rankingParams.technicalEventType,
-      sector33Name: rankingParams.sector33Name,
-      sector17Name: rankingParams.sector17Name,
-      limit: activeDailyView === 'technicalEvents' ? 50 : activeDailyView === 'indices' ? 20 : rankingParams.limit,
-      includeValuation: activeDailyView !== 'indices',
-      includeSectorStrength: activeDailyView !== 'technicalEvents',
-      forwardEpsDisclosedWithinDays:
-        activeDailyView === 'stocks' ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
-      liquidityState: activeDailyView === 'stocks' ? rankingParams.liquidityState : undefined,
-      technicalState: activeDailyView === 'stocks' ? rankingParams.technicalState : undefined,
-    }),
+    () => buildRankingQueryParams(activeDailyView, rankingParams),
     [activeDailyView, rankingParams]
   );
   const rankingQuery = useRanking(rankingQueryParams, true);

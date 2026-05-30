@@ -202,42 +202,57 @@ function getRiskFlagClass(value: EquityRiskFlag): string {
 function getTechnicalFlagClass(value: EquityTechnicalFlag): string {
   if (value === 'atr20_acceleration')
     return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
+  if (value === 'momentum_20_60_top20') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
   return 'bg-[var(--app-surface-muted)] text-muted-foreground';
 }
 
-function LiquidityStateChips({ item }: { item: EquityRankingItem }) {
+function RegimeChip({ item }: { item: EquityRankingItem }) {
   return (
-    <div className="flex flex-wrap justify-center gap-1">
-      <span
-        className={cn(
-          'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-          getEvidenceTierChipClass(getLiquidityEvidenceTier(item))
-        )}
-      >
-        {formatLiquidityRegime(item.liquidityRegime)}
-      </span>
-      {item.riskFlags?.map((flag) => (
+    <span
+      className={cn(
+        'inline-flex min-w-[4.5rem] justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold',
+        getEvidenceTierChipClass(getLiquidityEvidenceTier(item))
+      )}
+    >
+      {formatLiquidityRegime(item.liquidityRegime)}
+    </span>
+  );
+}
+
+function SignalChips({ item }: { item: EquityRankingItem }) {
+  const signals = [
+    ...(item.riskFlags ?? []).map((flag) => ({
+      key: flag,
+      label: formatRiskFlag(flag),
+      className: getRiskFlagClass(flag),
+    })),
+    ...(item.technicalFlags ?? []).map((flag) => ({
+      key: flag,
+      label: formatTechnicalFlag(flag),
+      className: getTechnicalFlagClass(flag),
+    })),
+  ];
+  const visibleSignals = signals.slice(0, 2);
+  const hiddenCount = signals.length - visibleSignals.length;
+
+  return (
+    <div className="flex flex-nowrap justify-center gap-1 overflow-hidden">
+      {visibleSignals.map((signal) => (
         <span
-          key={flag}
+          key={signal.key}
           className={cn(
-            'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-            getRiskFlagClass(flag)
+            'inline-flex shrink-0 justify-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold',
+            signal.className
           )}
         >
-          {formatRiskFlag(flag)}
+          {signal.label}
         </span>
       ))}
-      {item.technicalFlags?.map((flag) => (
-        <span
-          key={flag}
-          className={cn(
-            'inline-flex min-w-[4.5rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-            getTechnicalFlagClass(flag)
-          )}
-        >
-          {formatTechnicalFlag(flag)}
+      {hiddenCount > 0 ? (
+        <span className="inline-flex shrink-0 justify-center whitespace-nowrap rounded bg-[var(--app-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          +{hiddenCount}
         </span>
-      ))}
+      ) : null}
     </div>
   );
 }
@@ -566,7 +581,7 @@ function DesktopEquityHeader<T extends EquityRankingItem>({
           </SortHeader>
         </th>
         {showMarket ? <th className="w-16 px-2 py-1.5 text-center">{labels.market}</th> : null}
-        <th className="px-2 py-1.5 text-left">{labels.company}</th>
+        <th className="w-32 max-w-32 px-2 py-1.5 text-left">{labels.company}</th>
         <th className="w-24 px-2 py-1.5 text-left">{labels.sector}</th>
         {showSectorStrength ? (
           <th className="w-20 px-2 py-1.5 text-right">
@@ -618,7 +633,8 @@ function LiquidityHeaders<T extends EquityRankingItem>({
           流動性Z
         </SortHeader>
       </th>
-      <th className="w-24 px-2 py-1.5 text-center">状態</th>
+      <th className="w-28 px-2 py-1.5 text-center">Regime</th>
+      <th className="w-32 px-2 py-1.5 text-center">Signals</th>
     </>
   );
 }
@@ -684,7 +700,9 @@ function DesktopEquityRow<T extends EquityRankingItem>({
       <td className="px-2 py-1.5 text-center font-medium tabular-nums text-muted-foreground">{rowNumber}</td>
       <td className="px-2 py-1.5 font-medium">{item.code}</td>
       {showMarket ? <td className="px-2 py-1.5 text-center text-muted-foreground">{item.marketCode}</td> : null}
-      <td className="max-w-[200px] truncate px-2 py-1.5">{item.companyName}</td>
+      <td className="w-32 max-w-32 px-2 py-1.5">
+        <span className="block w-32 truncate">{item.companyName}</span>
+      </td>
       <td className="max-w-[120px] truncate px-2 py-1.5 text-muted-foreground">{item.sector33Name}</td>
       {showSectorStrength ? (
         <td className="px-2 py-1.5 text-right">
@@ -744,7 +762,10 @@ function DesktopEquityRow<T extends EquityRankingItem>({
             {formatSignedNumber(item.liquidityResidualZ)}
           </td>
           <td className="px-2 py-1.5 text-center">
-            <LiquidityStateChips item={item} />
+            <RegimeChip item={item} />
+          </td>
+          <td className="px-2 py-1.5 text-center">
+            <SignalChips item={item} />
           </td>
         </>
       ) : null}
@@ -798,7 +819,7 @@ export function EquityRankingTable<T extends EquityRankingItem>({
     (showMarket ? 1 : 0) +
     (showSectorStrength ? 1 : 0) +
     (showValuation ? 5 : 0) +
-    (showLiquidity ? 3 : 0);
+    (showLiquidity ? 4 : 0);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto" onScroll={shouldVirtualize ? virtual.onScroll : undefined}>
