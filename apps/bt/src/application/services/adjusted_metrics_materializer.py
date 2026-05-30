@@ -73,6 +73,10 @@ class AdjustedMetricsMaterializer:
                 price_basis_date=price_basis_date,
                 codes=codes,
             )
+        self._market_db.prune_adjusted_metric_basis_versions(
+            basis_version=basis_version,
+            codes=codes,
+        )
         return AdjustedMetricsBuildResult(
             statement_rows=stored_statement_rows,
             daily_valuation_rows=stored_daily_rows,

@@ -30,8 +30,17 @@ def get_adjusted_statement_metrics(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)}
-        FROM statement_metrics_adjusted
-        WHERE {' AND '.join(conditions)}
+        FROM (
+            SELECT
+                {', '.join(_STATEMENT_METRICS_ADJUSTED_COLUMNS)},
+                ROW_NUMBER() OVER (
+                    PARTITION BY code, disclosed_date, period_end, period_type
+                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
+                ) AS rn
+            FROM statement_metrics_adjusted
+            WHERE {' AND '.join(conditions)}
+        )
+        WHERE rn = 1
         ORDER BY disclosed_date, period_end, period_type, basis_version
         """,
         params,
@@ -60,8 +69,17 @@ def get_daily_valuation(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
-        FROM daily_valuation
-        WHERE {' AND '.join(conditions)}
+        FROM (
+            SELECT
+                {', '.join(_DAILY_VALUATION_COLUMNS)},
+                ROW_NUMBER() OVER (
+                    PARTITION BY code, date
+                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
+                ) AS rn
+            FROM daily_valuation
+            WHERE {' AND '.join(conditions)}
+        )
+        WHERE rn = 1
         ORDER BY date, basis_version
         """,
         params,
@@ -84,9 +102,18 @@ def get_daily_valuation_for_codes(
     return fetchall_dicts(
         f"""
         SELECT {', '.join(_DAILY_VALUATION_COLUMNS)}
-        FROM daily_valuation
-        WHERE date = ?
-          AND code IN ({placeholders})
+        FROM (
+            SELECT
+                {', '.join(_DAILY_VALUATION_COLUMNS)},
+                ROW_NUMBER() OVER (
+                    PARTITION BY code, date
+                    ORDER BY price_basis_date DESC NULLS LAST, basis_version DESC
+                ) AS rn
+            FROM daily_valuation
+            WHERE date = ?
+              AND code IN ({placeholders})
+        )
+        WHERE rn = 1
         ORDER BY code, basis_version
         """,
         [date, *normalized_codes],

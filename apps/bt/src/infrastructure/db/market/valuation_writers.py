@@ -73,6 +73,39 @@ def upsert_statement_metrics_adjusted(
     return len(rows)
 
 
+def prune_adjusted_metric_basis_versions(
+    conn: Any,
+    lock: Any,
+    basis_version: str,
+    codes: list[str] | None = None,
+) -> None:
+    """Keep only the active adjusted basis version for the requested code scope."""
+    normalized_codes = sorted({normalize_stock_code(code) for code in codes or [] if code})
+    code_filter = ""
+    params: list[Any] = [basis_version]
+    if normalized_codes:
+        placeholders = ", ".join("?" for _ in normalized_codes)
+        code_filter = f" AND code IN ({placeholders})"
+        params.extend(normalized_codes)
+    with lock:
+        conn.execute(
+            f"""
+            DELETE FROM statement_metrics_adjusted
+            WHERE basis_version LIKE 'adjusted-v1:%'
+              AND basis_version <> ?{code_filter}
+            """,
+            params,
+        )
+        conn.execute(
+            f"""
+            DELETE FROM daily_valuation
+            WHERE basis_version LIKE 'adjusted-v1:%'
+              AND basis_version <> ?{code_filter}
+            """,
+            params,
+        )
+
+
 def upsert_daily_valuation(
     executemany: Callable[[str, list[tuple[Any, ...]]], None],
     rows: list[dict[str, Any]],

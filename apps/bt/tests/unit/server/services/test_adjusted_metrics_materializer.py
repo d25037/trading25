@@ -427,6 +427,98 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
     assert market_db.get_adjusted_metrics_snapshot()["dailyValuationRows"] == 1
 
 
+def test_rebuild_all_prunes_previous_adjusted_basis_version(market_db: MarketDb) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2025-01-06",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    second = materializer.rebuild_all()
+
+    assert first.basis_version == "adjusted-v1:2024-12-30"
+    assert second.basis_version == "adjusted-v1:2025-01-06"
+    snapshot = market_db.get_adjusted_metrics_snapshot()
+    assert snapshot["statementRows"] == 1
+    assert snapshot["dailyValuationRows"] == 2
+    assert snapshot["basisVersion"] == "adjusted-v1:2025-01-06"
+    assert {
+        row["basis_version"]
+        for row in market_db._fetchall_dicts("SELECT basis_version FROM daily_valuation")
+    } == {"adjusted-v1:2025-01-06"}
+    assert {
+        row["basis_version"]
+        for row in market_db._fetchall_dicts(
+            "SELECT basis_version FROM statement_metrics_adjusted"
+        )
+    } == {"adjusted-v1:2025-01-06"}
+
+
+def test_daily_valuation_queries_return_latest_basis_only(market_db: MarketDb) -> None:
+    market_db.upsert_daily_valuation([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "price_basis_date": "2024-12-30",
+            "close": 500.0,
+            "eps": 100.0,
+            "per": 5.0,
+            "basis_version": "adjusted-v1:2024-12-30",
+        },
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "price_basis_date": "2025-01-06",
+            "close": 600.0,
+            "eps": 100.0,
+            "per": 6.0,
+            "basis_version": "adjusted-v1:2025-01-06",
+        },
+    ])
+
+    valuation = market_db.get_daily_valuation("7203")
+    same_day = market_db.get_daily_valuation_for_codes(["7203"], "2024-12-30")
+
+    assert [row["basis_version"] for row in valuation] == ["adjusted-v1:2025-01-06"]
+    assert valuation[0]["close"] == pytest.approx(600.0)
+    assert [row["basis_version"] for row in same_day] == ["adjusted-v1:2025-01-06"]
+    assert same_day[0]["close"] == pytest.approx(600.0)
+
+
 def test_rebuild_codes_materializes_only_requested_codes(market_db: MarketDb) -> None:
     market_db.upsert_statements([
         {

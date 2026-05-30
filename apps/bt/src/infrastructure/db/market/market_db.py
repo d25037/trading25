@@ -34,6 +34,7 @@ from src.infrastructure.db.market.valuation_queries import (
     get_daily_valuation_for_codes as _get_daily_valuation_for_codes,
 )
 from src.infrastructure.db.market.valuation_writers import (
+    prune_adjusted_metric_basis_versions as _prune_adjusted_metric_basis_versions,
     upsert_daily_valuation as _upsert_daily_valuation,
     upsert_daily_valuation_from_adjusted_metrics as _upsert_daily_valuation_from_adjusted_metrics,
     upsert_statement_metrics_adjusted as _upsert_statement_metrics_adjusted,
@@ -758,6 +759,21 @@ class MarketDb:
             self._table_exists,
             basis_version,
             price_basis_date,
+            codes,
+        )
+
+    def prune_adjusted_metric_basis_versions(
+        self,
+        *,
+        basis_version: str,
+        codes: list[str] | None = None,
+    ) -> None:
+        """Keep only the active adjusted metrics basis version."""
+        self._assert_writable()
+        _prune_adjusted_metric_basis_versions(
+            self._conn,
+            self._lock,
+            basis_version,
             codes,
         )
 
