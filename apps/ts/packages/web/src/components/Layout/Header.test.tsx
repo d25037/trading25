@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,23 +68,43 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Symbol Workbench' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Portfolio' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Indices' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Screening' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Backtest' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Market DB' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'More' })).toBeInTheDocument();
-    expect(screen.queryByText('Research')).not.toBeInTheDocument();
   });
 
-  it('reveals overflow navigation items from the more menu', async () => {
+  it('keeps N225 Options in the overflow navigation menu', async () => {
     const user = userEvent.setup();
 
     render(<Header />);
 
     await user.click(screen.getByRole('button', { name: 'More' }));
 
-    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Market DB' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Research' })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: 'Market DB' })).toHaveLength(1);
+  });
+
+  it('places Research immediately to the left of Market DB in primary navigation', () => {
+    render(<Header />);
+
+    const primaryNavigationLabels = within(screen.getByRole('navigation'))
+      .getAllByRole('link')
+      .map((link) => link.textContent);
+
+    expect(primaryNavigationLabels).toEqual([
+      'Symbol Workbench',
+      'Portfolio',
+      'Indices',
+      'Screening',
+      'Ranking',
+      'Backtest',
+      'Research',
+      'Market DB',
+    ]);
   });
 
   it('uses a current-page mobile navigation trigger and moves all destinations into the menu', async () => {
@@ -105,7 +125,7 @@ describe('Header', () => {
     expect(
       screen.getAllByRole('link', { name: 'Portfolio' }).some((link) => link.getAttribute('aria-current') === 'page')
     ).toBe(true);
-    expect(screen.getByRole('link', { name: 'Market DB' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Market DB' }).length).toBeGreaterThan(0);
   });
 
   it('highlights current route', () => {
@@ -116,19 +136,12 @@ describe('Header', () => {
     expect(screen.getByRole('link', { name: 'Symbol Workbench' })).not.toHaveAttribute('aria-current');
   });
 
-  it('shows overflow current route on the more navigation trigger', async () => {
-    const user = userEvent.setup();
-
+  it('highlights Market DB as a primary route', () => {
     pathname = '/market-db';
     render(<Header />);
 
-    const moreTrigger = screen.getByRole('button', { name: 'Market DB' });
-
-    expect(moreTrigger).toHaveAttribute('data-state', 'active');
-
-    await user.click(moreTrigger);
-
     expect(screen.getByRole('link', { name: 'Market DB' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('data-state', 'inactive');
   });
 
   it('closes the overflow menu on outside click', async () => {
@@ -137,11 +150,11 @@ describe('Header', () => {
     render(<Header />);
 
     await user.click(screen.getByRole('button', { name: 'More' }));
-    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
 
     fireEvent.pointerDown(document.body);
 
-    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'N225 Options' })).not.toBeInTheDocument();
   });
 
   it('closes the overflow menu on escape', async () => {
@@ -150,11 +163,11 @@ describe('Header', () => {
     render(<Header />);
 
     await user.click(screen.getByRole('button', { name: 'More' }));
-    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
-    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'N225 Options' })).not.toBeInTheDocument();
   });
 
   it('closes the overflow menu after selecting an overflow destination', async () => {
@@ -163,11 +176,11 @@ describe('Header', () => {
     render(<Header />);
 
     await user.click(screen.getByRole('button', { name: 'More' }));
-    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Research' }));
+    await user.click(screen.getByRole('link', { name: 'N225 Options' }));
 
-    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'N225 Options' })).not.toBeInTheDocument();
   });
 
   it('closes the overflow menu when the route changes', async () => {
@@ -175,12 +188,12 @@ describe('Header', () => {
     const { rerender } = render(<Header />);
 
     await user.click(screen.getByRole('button', { name: 'More' }));
-    expect(screen.getByRole('link', { name: 'Research' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'N225 Options' })).toBeInTheDocument();
 
     pathname = '/market-db';
     rerender(<Header />);
 
-    expect(screen.queryByRole('link', { name: 'Research' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'N225 Options' })).not.toBeInTheDocument();
   });
 
   it('renders theme toggle', () => {

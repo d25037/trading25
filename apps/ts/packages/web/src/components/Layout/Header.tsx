@@ -25,11 +25,11 @@ const navigationItems: NavigationItem[] = [
   { path: '/symbol-workbench', label: 'Symbol Workbench', icon: LineChart },
   { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
   { path: '/indices', label: 'Indices', icon: TrendingUp },
-  { path: '/research', label: 'Research', icon: FileSearch },
   { path: '/options-225', label: 'N225 Options', icon: LineChart },
   { path: '/screening', label: 'Screening', icon: BarChart3 },
   { path: '/ranking', label: 'Ranking', icon: BarChart3 },
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
+  { path: '/research', label: 'Research', icon: FileSearch },
   { path: '/market-db', label: 'Market DB', icon: Database },
 ];
 
@@ -37,9 +37,11 @@ const primaryNavigationPaths = new Set([
   '/symbol-workbench',
   '/portfolio',
   '/indices',
+  '/research',
   '/screening',
   '/ranking',
   '/backtest',
+  '/market-db',
 ]);
 const moreMenuId = 'global-header-overflow-nav';
 
