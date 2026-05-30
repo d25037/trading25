@@ -34,6 +34,30 @@ relatedExperiments = [
   "market-behavior/free-float-liquidity-regime-decomposition",
 ]
 
+[experiments."market-behavior/ranking-core-sector-relative-value-evidence"]
+family = "Ranking"
+status = "observed"
+decision = "Prime の neutral_rerating blue + sector_strong core 内で raw PBR/Fwd PER percentile と同一33セクター内 sector-relative percentile を比較した。low_pbr20_low_fwd_per20 core は 20D/60D TOPIX excess が sector-relative core や hybrid core より強く、sector-relative-only は sector excess では良いが TOPIX excess と左尾が弱い。したがって core eligibility は raw strong value を維持し、sector-relative valuation は badge/tie-breaker 診断に留める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "sector-regime", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/annual-sector-relative-value-composite",
+]
+
+[experiments."market-behavior/ranking-core-factor-regime-breakdown"]
+family = "Ranking"
+status = "observed"
+decision = "Prime の momentum-value core が 2026 partial で何を失ったかを分解した。2026 は broad low_value が弱く、high_valuation_momentum / pure momentum は過去より改善しているが左尾は重い。core 自体は小幅プラスを維持する一方、2022-2025 に強かった core + atr20_acceleration_ex_overheat は 2026 で 20D/60D ともに崩れた。core 内では momentum_20_60_top20 が 2026 でも強く、ATR acceleration より価格momentumを優先する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "partial-year-2026", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-core-sector-relative-value-evidence",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/atr-expansion-forward-response",
+]
+
 [experiments."market-behavior/ranking-short-red-evidence"]
 family = "Ranking"
 status = "candidate"
