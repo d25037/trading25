@@ -262,6 +262,12 @@ def write_ranking_short_sector_strength_evidence_bundle(
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "tail_return_threshold_pct": result.tail_return_threshold_pct,
+            "sector_strength_score_definition": (
+                "average of official sector-index score "
+                "(0.20*5d + 0.45*20d + 0.25*60d TOPIX-excess ranks + "
+                "0.10*constituent breadth rank) and constituent score "
+                "(20d TOPIX-excess rank + 60d TOPIX-excess rank + breadth rank)/3"
+            ),
             "sector_strength_bucket_definition": "score>=0.8 strong, score<=0.2 weak",
         },
         db_path=result.db_path,

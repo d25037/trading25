@@ -40,7 +40,7 @@ def load_sector_strength_by_name(
     date: str,
     market_codes: list[str],
 ) -> dict[str, dict[str, Any]]:
-    required_tables = ("stock_master_daily", "stock_data", "topix_data")
+    required_tables = ("stock_master_daily", "stock_data", "topix_data", "indices_data")
     if not all(table_exists(table_name) for table_name in required_tables):
         return {}
 
@@ -75,6 +75,110 @@ def load_sector_strength_by_name(
                 MAX(CASE WHEN rn = 21 THEN close END) AS close_20d,
                 MAX(CASE WHEN rn = 61 THEN close END) AS close_60d
             FROM topix_ranked
+        ),
+        sector_index_map(sector_33_name, sector_index_code) AS (
+            VALUES
+                ('水産･農林業', '0040'),
+                ('鉱業', '0041'),
+                ('建設業', '0042'),
+                ('食料品', '0043'),
+                ('繊維製品', '0044'),
+                ('パルプ･紙', '0045'),
+                ('化学', '0046'),
+                ('医薬品', '0047'),
+                ('石油･石炭製品', '0048'),
+                ('ゴム製品', '0049'),
+                ('ガラス･土石製品', '004A'),
+                ('鉄鋼', '004B'),
+                ('非鉄金属', '004C'),
+                ('金属製品', '004D'),
+                ('機械', '004E'),
+                ('電気機器', '004F'),
+                ('輸送用機器', '0050'),
+                ('精密機器', '0051'),
+                ('その他製品', '0052'),
+                ('電気･ガス業', '0053'),
+                ('陸運業', '0054'),
+                ('海運業', '0055'),
+                ('空運業', '0056'),
+                ('倉庫･運輸関連業', '0057'),
+                ('情報･通信業', '0058'),
+                ('卸売業', '0059'),
+                ('小売業', '005A'),
+                ('銀行業', '005B'),
+                ('証券･商品先物取引業', '005C'),
+                ('保険業', '005D'),
+                ('その他金融業', '005E'),
+                ('不動産業', '005F'),
+                ('サービス業', '0060')
+        ),
+        sector_index_ranked AS (
+            SELECT
+                sim.sector_33_name,
+                sim.sector_index_code,
+                i.date,
+                i.close,
+                ROW_NUMBER() OVER (
+                    PARTITION BY sim.sector_33_name
+                    ORDER BY i.date DESC
+                ) AS rn
+            FROM sector_index_map sim
+            JOIN indices_data i
+              ON i.code = sim.sector_index_code
+            WHERE i.date <= ?
+                AND i.date >= ?
+                AND i.close IS NOT NULL
+                AND i.close > 0
+        ),
+        sector_index_points AS (
+            SELECT
+                sector_33_name,
+                sector_index_code,
+                MAX(CASE WHEN rn = 1 THEN close END) AS current_close,
+                MAX(CASE WHEN rn = 6 THEN close END) AS close_5d,
+                MAX(CASE WHEN rn = 21 THEN close END) AS close_20d,
+                MAX(CASE WHEN rn = 61 THEN close END) AS close_60d
+            FROM sector_index_ranked
+            GROUP BY sector_33_name, sector_index_code
+        ),
+        sector_index_metrics AS (
+            SELECT
+                sector_33_name,
+                sector_index_code,
+                ((sip.current_close / sip.close_5d) - 1.0) * 100.0
+                    - ((t.current_close / t.close_5d) - 1.0) * 100.0
+                    AS sector_index_5d_topix_excess_pct,
+                ((sip.current_close / sip.close_20d) - 1.0) * 100.0
+                    - ((t.current_close / t.close_20d) - 1.0) * 100.0
+                    AS sector_index_20d_topix_excess_pct,
+                ((sip.current_close / sip.close_60d) - 1.0) * 100.0
+                    - ((t.current_close / t.close_60d) - 1.0) * 100.0
+                    AS sector_index_60d_topix_excess_pct
+            FROM sector_index_points sip
+            CROSS JOIN (
+                SELECT
+                    tp.current_close,
+                    MAX(CASE WHEN tr.rn = 6 THEN tr.close END) AS close_5d,
+                    tp.close_20d,
+                    tp.close_60d
+                FROM topix_ranked tr
+                CROSS JOIN topix_points tp
+                GROUP BY tp.current_close, tp.close_20d, tp.close_60d
+            ) t
+            WHERE sip.current_close IS NOT NULL
+                AND sip.close_5d IS NOT NULL
+                AND sip.close_20d IS NOT NULL
+                AND sip.close_60d IS NOT NULL
+                AND sip.close_5d > 0
+                AND sip.close_20d > 0
+                AND sip.close_60d > 0
+                AND t.current_close IS NOT NULL
+                AND t.close_5d IS NOT NULL
+                AND t.close_20d IS NOT NULL
+                AND t.close_60d IS NOT NULL
+                AND t.close_5d > 0
+                AND t.close_20d > 0
+                AND t.close_60d > 0
         ),
         price_dedup AS (
             SELECT
@@ -174,20 +278,54 @@ def load_sector_strength_by_name(
         ),
         ranked_metrics AS (
             SELECT
-                *,
+                sm.*,
+                sim.sector_index_code,
+                sim.sector_index_5d_topix_excess_pct,
+                sim.sector_index_20d_topix_excess_pct,
+                sim.sector_index_60d_topix_excess_pct,
                 CASE
                     WHEN COUNT(*) OVER () = 1 THEN 0.5
-                    ELSE PERCENT_RANK() OVER (ORDER BY sector_20d_topix_excess_pct)
-                END AS rank_20d,
+                    ELSE PERCENT_RANK() OVER (ORDER BY sim.sector_index_5d_topix_excess_pct)
+                END AS rank_index_5d,
                 CASE
                     WHEN COUNT(*) OVER () = 1 THEN 0.5
-                    ELSE PERCENT_RANK() OVER (ORDER BY sector_60d_topix_excess_pct)
-                END AS rank_60d,
+                    ELSE PERCENT_RANK() OVER (ORDER BY sim.sector_index_20d_topix_excess_pct)
+                END AS rank_index_20d,
                 CASE
                     WHEN COUNT(*) OVER () = 1 THEN 0.5
-                    ELSE PERCENT_RANK() OVER (ORDER BY sector_breadth_20d_pct)
+                    ELSE PERCENT_RANK() OVER (ORDER BY sim.sector_index_60d_topix_excess_pct)
+                END AS rank_index_60d,
+                CASE
+                    WHEN COUNT(*) OVER () = 1 THEN 0.5
+                    ELSE PERCENT_RANK() OVER (ORDER BY sm.sector_20d_topix_excess_pct)
+                END AS rank_constituent_20d,
+                CASE
+                    WHEN COUNT(*) OVER () = 1 THEN 0.5
+                    ELSE PERCENT_RANK() OVER (ORDER BY sm.sector_60d_topix_excess_pct)
+                END AS rank_constituent_60d,
+                CASE
+                    WHEN COUNT(*) OVER () = 1 THEN 0.5
+                    ELSE PERCENT_RANK() OVER (ORDER BY sm.sector_breadth_20d_pct)
                 END AS rank_breadth
-            FROM sector_metrics
+            FROM sector_metrics sm
+            JOIN sector_index_metrics sim
+              ON sim.sector_33_name = sm.sector_33_name
+        ),
+        scored_metrics AS (
+            SELECT
+                *,
+                (
+                    rank_index_5d * 0.20
+                    + rank_index_20d * 0.45
+                    + rank_index_60d * 0.25
+                    + rank_breadth * 0.10
+                ) AS sector_index_strength_score,
+                (
+                    rank_constituent_20d
+                    + rank_constituent_60d
+                    + rank_breadth
+                ) / 3.0 AS sector_constituent_strength_score
+            FROM ranked_metrics
         )
         SELECT
             sector_33_name,
@@ -195,10 +333,22 @@ def load_sector_strength_by_name(
             sector_20d_topix_excess_pct,
             sector_60d_topix_excess_pct,
             sector_breadth_20d_pct,
-            (rank_20d + rank_60d + rank_breadth) / 3.0 AS sector_strength_score
-        FROM ranked_metrics
+            (
+                sector_index_strength_score
+                + sector_constituent_strength_score
+            ) / 2.0 AS sector_strength_score
+        FROM scored_metrics
         """,
-        (date, history_start_date, date, history_start_date, date, *market_params),
+        (
+            date,
+            history_start_date,
+            date,
+            history_start_date,
+            date,
+            history_start_date,
+            date,
+            *market_params,
+        ),
     )
 
     strength_by_name: dict[str, dict[str, Any]] = {}

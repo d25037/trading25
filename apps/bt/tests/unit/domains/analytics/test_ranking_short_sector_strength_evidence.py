@@ -181,11 +181,37 @@ def _build_short_sector_db(db_path: Path) -> Path:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE indices_data (
+            code TEXT,
+            date TEXT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            volume BIGINT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE index_master (
+            code TEXT,
+            name TEXT,
+            name_english TEXT,
+            category TEXT,
+            data_start_date TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
 
     sectors = [
-        ("01", "Strong Machinery", 0.16),
-        ("02", "Neutral Retail", 0.03),
-        ("03", "Weak Chemicals", -0.08),
+        ("3600", "Strong Machinery", 0.16),
+        ("6100", "Neutral Retail", 0.03),
+        ("3200", "Weak Chemicals", -0.08),
     ]
     stock_specs: list[tuple[str, str, str, str, float, float, int, float, float, float]] = []
     for sector_index, (sector_code, sector_name, sector_slope) in enumerate(sectors):
@@ -330,6 +356,37 @@ def _build_short_sector_db(db_path: Path) -> Path:
     conn.executemany(
         "INSERT INTO daily_valuation VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         valuation_rows,
+    )
+    conn.executemany(
+        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("004E", "東証業種別 Strong Machinery", None, "sector33", None, None, None),
+            ("005A", "東証業種別 Neutral Retail", None, "sector33", None, None, None),
+            ("0046", "東証業種別 Weak Chemicals", None, "sector33", None, None, None),
+        ],
+    )
+    index_rows: list[tuple[str, str, float, float, float, float, int]] = []
+    for date_index, date in enumerate(dates):
+        for code, base, slope in (
+            ("004E", 1000.0, 0.22),
+            ("005A", 900.0, 0.03),
+            ("0046", 800.0, -0.12),
+        ):
+            close = base + date_index * slope
+            index_rows.append(
+                (
+                    code,
+                    date,
+                    close * 0.998,
+                    close * 1.002,
+                    close * 0.996,
+                    close,
+                    0,
+                )
+            )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        index_rows,
     )
     conn.close()
     return db_path

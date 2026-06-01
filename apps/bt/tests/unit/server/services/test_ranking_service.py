@@ -1721,7 +1721,10 @@ class TestGetRankings:
                     "INSERT INTO stock_master_daily VALUES (?,?,?,?)",
                     (current_date, "72030", "prime", "輸送用機器"),
                 )
-                for code, close in (("004F", 1000.0 + index), ("0050", 900.0 + index)):
+                for code, close in (
+                    ("004F", 1000.0 + index * 3.0),
+                    ("0050", 900.0 - index),
+                ):
                     conn.execute(
                         "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
                         (code, current_date, close, close, close, close, None, None),

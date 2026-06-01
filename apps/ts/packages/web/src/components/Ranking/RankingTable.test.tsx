@@ -175,14 +175,14 @@ describe('RankingTable', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: /Sector Score/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Trade Score/ })).toBeInTheDocument();
     expect(screen.getByText('0.90')).toBeInTheDocument();
     expect(screen.getByText('0.10')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    await user.click(screen.getByRole('button', { name: /Trade Score/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7000');
 
-    await user.click(screen.getByRole('button', { name: /Sector Score/ }));
+    await user.click(screen.getByRole('button', { name: /Trade Score/ }));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('7001');
   });
 

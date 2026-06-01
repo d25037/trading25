@@ -7,13 +7,13 @@ import { cn } from '@/lib/utils';
 import { formatPriceJPY, formatTradingValue } from '@/utils/formatters';
 import {
   type EvidenceColorTier,
-  type ValuationSignal,
   getCheapValuationPercentileTier,
   getForwardPerEvidenceTier,
   getForwardPOpEvidenceTier,
   getLiquidityEvidenceTier,
   getPerEvidenceTier,
   getValuationSignal,
+  type ValuationSignal,
 } from './rankingEvidenceTiers';
 import { type EquityRiskFlag, type EquityTechnicalFlag, formatRiskFlag, formatTechnicalFlag } from './rankingState';
 
@@ -101,7 +101,7 @@ const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   market: '市場',
   company: '銘柄名',
   sector: '業種',
-  sectorScore: 'Sector Score',
+  sectorScore: 'Trade Score',
   price: '現在値',
   marketCap: '時価総額',
   tradingValue: '売買代金',
@@ -167,6 +167,7 @@ function getSectorStrengthScoreClass(value: number | null | undefined): string {
 function SectorStrengthScoreChip({ value }: { value: number | null | undefined }) {
   return (
     <span
+      title="Average sector trade score from official sector-index strength and constituent strength"
       className={cn(
         'inline-flex min-w-[3rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
         getSectorStrengthScoreClass(value)
@@ -220,10 +221,8 @@ function formatValuationSignal(value: ValuationSignal): string {
 function getValuationSignalClass(value: ValuationSignal): string {
   if (value === 'strong_value_confirmation')
     return 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300';
-  if (value === 'medium_value_confirmation')
-    return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
-  if (value === 'very_high_valuation_warning')
-    return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
+  if (value === 'medium_value_confirmation') return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300';
+  if (value === 'very_high_valuation_warning') return 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300';
   if (value === 'high_valuation_warning')
     return 'bg-yellow-50 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300';
   if (value === 'no_positive_earnings_valuation')

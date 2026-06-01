@@ -83,10 +83,11 @@ function formatSectorStrengthMetric(value: number | null | undefined): string {
 
 function getSectorStrengthTitle(item: IndexPerformanceItem): string {
   return [
-    `20D TOPIX excess: ${formatSectorStrengthMetric(item.sector20dTopixExcessPct)}`,
-    `60D TOPIX excess: ${formatSectorStrengthMetric(item.sector60dTopixExcessPct)}`,
-    `20D breadth: ${formatSectorStrengthMetric(item.sectorBreadth20dPct)}`,
-    `Stocks: ${item.sectorStockCount ?? 'n/a'}`,
+    `Trade score: average of official sector-index strength and constituent strength`,
+    `Constituent 20D TOPIX excess: ${formatSectorStrengthMetric(item.sector20dTopixExcessPct)}`,
+    `Constituent 60D TOPIX excess: ${formatSectorStrengthMetric(item.sector60dTopixExcessPct)}`,
+    `Constituent 20D breadth: ${formatSectorStrengthMetric(item.sectorBreadth20dPct)}`,
+    `Constituent stocks: ${item.sectorStockCount ?? 'n/a'}`,
   ].join('\n');
 }
 
@@ -199,7 +200,7 @@ function IndexPerformanceCard({
         {showSectorStrength ? (
           <>
             <div className="rounded-xl bg-[var(--app-surface-muted)] px-2.5 py-2" title={getSectorStrengthTitle(item)}>
-              <p className="text-[10px] font-semibold text-muted-foreground">Score</p>
+              <p className="text-[10px] font-semibold text-muted-foreground">Trade Score</p>
               <p className="mt-0.5 font-semibold tabular-nums text-foreground">
                 {formatSectorStrengthScore(item.sectorStrengthScore)}
               </p>
@@ -285,7 +286,7 @@ function IndexPerformanceRowsTable({
           <th className="w-20 px-2 py-1.5 text-right">{lookbackDays}日騰落率</th>
           {showSectorStrength ? (
             <>
-              <th className="w-20 px-2 py-1.5 text-right">Score</th>
+              <th className="w-24 px-2 py-1.5 text-right">Trade Score</th>
               <th className="w-24 px-2 py-1.5 text-right">Bucket</th>
             </>
           ) : null}
@@ -348,14 +349,16 @@ export function IndexPerformanceTable({
 
     return left.code.localeCompare(right.code);
   });
-  const showSectorStrength = rows.some(
-    (item) => item.sectorStrengthScore != null || item.sectorStrengthBucket != null
-  );
+  const showSectorStrength = rows.some((item) => item.sectorStrengthScore != null || item.sectorStrengthBucket != null);
   const shouldVirtualize = rows.length >= VIRTUALIZATION_THRESHOLD;
   const isMobileIndexLayout = useIsMobileIndexLayout();
   const virtual = useVirtualizedRows(rows, {
     enabled: shouldVirtualize,
-    rowHeight: isMobileIndexLayout ? (showSectorStrength ? INDEX_SECTOR_CARD_ROW_HEIGHT : INDEX_CARD_ROW_HEIGHT) : INDEX_ROW_HEIGHT,
+    rowHeight: isMobileIndexLayout
+      ? showSectorStrength
+        ? INDEX_SECTOR_CARD_ROW_HEIGHT
+        : INDEX_CARD_ROW_HEIGHT
+      : INDEX_ROW_HEIGHT,
     viewportHeight: INDEX_VIEWPORT_HEIGHT,
   });
   const lookbackDays = rows[0]?.lookbackDays ?? selectedLookbackDays ?? 5;

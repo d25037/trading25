@@ -36,6 +36,8 @@ DEFAULT_HORIZONS: tuple[int, ...] = (5, 10, 20, 60)
 _REQUIRED_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
+    "indices_data",
+    "index_master",
     "daily_valuation",
     "stock_master_daily",
 )
@@ -203,6 +205,12 @@ def write_ranking_sector_strength_evidence_bundle(
             "source_detail": result.source_detail,
             "market_source": result.market_source,
             "observation_count": result.observation_count,
+            "sector_strength_score_definition": (
+                "average of official sector-index score "
+                "(0.20*5d + 0.45*20d + 0.25*60d TOPIX-excess ranks + "
+                "0.10*constituent breadth rank) and constituent score "
+                "(20d TOPIX-excess rank + 60d TOPIX-excess rank + breadth rank)/3"
+            ),
         },
         result_tables={
             "observation_sample_df": result.observation_sample_df,
@@ -289,6 +297,7 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
     color_case = _ui_color_case_sql()
     value_condition_case = _value_condition_case_sql()
     value_tier_case = _value_tier_case_sql()
+    _create_sector_index_map(conn)
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_sector_master AS
@@ -314,6 +323,91 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
         """
     )
     conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE ranking_sector_index_daily AS
+        WITH index_prices AS (
+            SELECT
+                m.sector_33_code,
+                m.sector_index_code,
+                i.date,
+                i.close,
+                lag(i.close, 5) OVER (
+                    PARTITION BY i.code ORDER BY i.date
+                ) AS close_5d_ago,
+                lag(i.close, 20) OVER (
+                    PARTITION BY i.code ORDER BY i.date
+                ) AS close_20d_ago,
+                lag(i.close, 60) OVER (
+                    PARTITION BY i.code ORDER BY i.date
+                ) AS close_60d_ago
+            FROM indices_data i
+            JOIN ranking_sector_index_map m
+              ON m.sector_index_code = i.code
+            JOIN index_master im
+              ON im.code = i.code
+             AND im.category = 'sector33'
+        ),
+        topix_prices AS (
+            SELECT
+                date,
+                close,
+                lag(close, 5) OVER (ORDER BY date) AS close_5d_ago,
+                lag(close, 20) OVER (ORDER BY date) AS close_20d_ago,
+                lag(close, 60) OVER (ORDER BY date) AS close_60d_ago
+            FROM topix_data
+        ),
+        index_returns AS (
+            SELECT
+                sector_33_code,
+                sector_index_code,
+                date,
+                100.0 * (close / NULLIF(close_5d_ago, 0) - 1.0)
+                    AS sector_index_return_5d_pct,
+                100.0 * (close / NULLIF(close_20d_ago, 0) - 1.0)
+                    AS sector_index_return_20d_pct,
+                100.0 * (close / NULLIF(close_60d_ago, 0) - 1.0)
+                    AS sector_index_return_60d_pct
+            FROM index_prices
+        ),
+        topix_returns AS (
+            SELECT
+                date,
+                100.0 * (close / NULLIF(close_5d_ago, 0) - 1.0)
+                    AS topix_return_5d_pct,
+                100.0 * (close / NULLIF(close_20d_ago, 0) - 1.0)
+                    AS topix_return_20d_pct,
+                100.0 * (close / NULLIF(close_60d_ago, 0) - 1.0)
+                    AS topix_return_60d_pct
+            FROM topix_prices
+        )
+        SELECT
+            i.sector_33_code,
+            i.sector_index_code,
+            i.date,
+            i.sector_index_return_5d_pct,
+            i.sector_index_return_20d_pct,
+            i.sector_index_return_60d_pct,
+            t.topix_return_5d_pct,
+            t.topix_return_20d_pct,
+            t.topix_return_60d_pct,
+            i.sector_index_return_5d_pct - t.topix_return_5d_pct
+                AS sector_index_5d_topix_excess_pct,
+            i.sector_index_return_20d_pct - t.topix_return_20d_pct
+                AS sector_index_20d_topix_excess_pct,
+            i.sector_index_return_60d_pct - t.topix_return_60d_pct
+                AS sector_index_60d_topix_excess_pct
+        FROM index_returns i
+        JOIN topix_returns t
+          ON t.date = i.date
+        WHERE i.sector_index_return_5d_pct IS NOT NULL
+          AND i.sector_index_return_20d_pct IS NOT NULL
+          AND i.sector_index_return_60d_pct IS NOT NULL
+          AND t.topix_return_5d_pct IS NOT NULL
+          AND t.topix_return_20d_pct IS NOT NULL
+          AND t.topix_return_60d_pct IS NOT NULL
+        """
+    )
+    conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ranking_sector_daily_state AS
         WITH sector_raw AS (
@@ -325,9 +419,9 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
                 count(*) AS sector_observation_count,
                 count(DISTINCT r.code) AS sector_code_count,
                 avg(r.recent_return_20d_pct - r.topix_recent_return_20d_pct)
-                    AS sector_20d_topix_excess_pct,
+                    AS sector_constituent_20d_topix_excess_pct,
                 avg(r.recent_return_60d_pct - r.topix_recent_return_60d_pct)
-                    AS sector_60d_topix_excess_pct,
+                    AS sector_constituent_60d_topix_excess_pct,
                 avg(
                     CASE
                         WHEN r.recent_return_20d_pct - r.topix_recent_return_20d_pct > 0
@@ -348,38 +442,77 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
         ),
         sector_ranked AS (
             SELECT
-                *,
+                sr.*,
+                sid.sector_index_code,
+                sid.sector_index_return_5d_pct,
+                sid.sector_index_return_20d_pct,
+                sid.sector_index_return_60d_pct,
+                sid.sector_index_5d_topix_excess_pct,
+                sid.sector_index_20d_topix_excess_pct,
+                sid.sector_index_60d_topix_excess_pct,
+                sid.sector_index_20d_topix_excess_pct AS sector_20d_topix_excess_pct,
+                sid.sector_index_60d_topix_excess_pct AS sector_60d_topix_excess_pct,
                 percent_rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY sector_20d_topix_excess_pct
+                    PARTITION BY sr.market_scope, sr.date
+                    ORDER BY sid.sector_index_5d_topix_excess_pct
+                ) AS sector_index_5d_strength_rank,
+                percent_rank() OVER (
+                    PARTITION BY sr.market_scope, sr.date
+                    ORDER BY sid.sector_index_20d_topix_excess_pct
                 ) AS sector_20d_strength_rank,
                 percent_rank() OVER (
-                    PARTITION BY market_scope, date
-                    ORDER BY sector_60d_topix_excess_pct
+                    PARTITION BY sr.market_scope, sr.date
+                    ORDER BY sid.sector_index_60d_topix_excess_pct
                 ) AS sector_60d_strength_rank,
                 percent_rank() OVER (
-                    PARTITION BY market_scope, date
+                    PARTITION BY sr.market_scope, sr.date
+                    ORDER BY sector_constituent_20d_topix_excess_pct
+                ) AS sector_constituent_20d_strength_rank,
+                percent_rank() OVER (
+                    PARTITION BY sr.market_scope, sr.date
+                    ORDER BY sector_constituent_60d_topix_excess_pct
+                ) AS sector_constituent_60d_strength_rank,
+                percent_rank() OVER (
+                    PARTITION BY sr.market_scope, sr.date
                     ORDER BY sector_breadth_20d_pct
                 ) AS sector_breadth_strength_rank
-            FROM sector_raw
-            WHERE sector_20d_topix_excess_pct IS NOT NULL
-              AND sector_60d_topix_excess_pct IS NOT NULL
+            FROM sector_raw sr
+            JOIN ranking_sector_index_daily sid
+              ON sid.sector_33_code = sr.sector_33_code
+             AND sid.date = sr.date
+            WHERE sector_constituent_20d_topix_excess_pct IS NOT NULL
+              AND sector_constituent_60d_topix_excess_pct IS NOT NULL
         ),
         sector_scored AS (
             SELECT
                 *,
                 (
-                    sector_20d_strength_rank
-                    + sector_60d_strength_rank
+                    sector_index_5d_strength_rank * 0.20
+                    + sector_20d_strength_rank * 0.45
+                    + sector_60d_strength_rank * 0.25
+                    + sector_breadth_strength_rank * 0.10
+                ) AS sector_index_strength_score,
+                (
+                    sector_constituent_20d_strength_rank
+                    + sector_constituent_60d_strength_rank
                     + sector_breadth_strength_rank
-                ) / 3.0 AS sector_strength_score
+                ) / 3.0 AS sector_constituent_strength_score
             FROM sector_ranked
+        ),
+        sector_average_scored AS (
+            SELECT
+                *,
+                (
+                    sector_index_strength_score
+                    + sector_constituent_strength_score
+                ) / 2.0 AS sector_strength_score
+            FROM sector_scored
         )
         SELECT
             *,
             CASE
-                WHEN sector_strength_score >= 0.8 THEN 'sector_strong'
-                WHEN sector_strength_score <= 0.2 THEN 'sector_weak'
+                WHEN sector_strength_score >= 0.799999 THEN 'sector_strong'
+                WHEN sector_strength_score <= 0.200001 THEN 'sector_weak'
                 ELSE 'sector_neutral'
             END AS sector_strength_bucket,
             CASE
@@ -391,7 +524,7 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
                  AND sector_strength_score <= 0.3 THEN 'sector_weak_consistent'
                 ELSE 'sector_mixed'
             END AS sector_consistency_bucket
-        FROM sector_scored
+        FROM sector_average_scored
         """
     )
     conn.execute(
@@ -403,12 +536,26 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
             sm.sector_33_name,
             s.sector_observation_count,
             s.sector_code_count,
+            s.sector_index_code,
+            s.sector_index_return_5d_pct,
+            s.sector_index_return_20d_pct,
+            s.sector_index_return_60d_pct,
+            s.sector_index_5d_topix_excess_pct,
+            s.sector_index_20d_topix_excess_pct,
+            s.sector_index_60d_topix_excess_pct,
+            s.sector_constituent_20d_topix_excess_pct,
+            s.sector_constituent_60d_topix_excess_pct,
             s.sector_20d_topix_excess_pct,
             s.sector_60d_topix_excess_pct,
             s.sector_breadth_20d_pct,
+            s.sector_index_5d_strength_rank,
             s.sector_20d_strength_rank,
             s.sector_60d_strength_rank,
+            s.sector_constituent_20d_strength_rank,
+            s.sector_constituent_60d_strength_rank,
             s.sector_breadth_strength_rank,
+            s.sector_index_strength_score,
+            s.sector_constituent_strength_score,
             s.sector_strength_score,
             s.sector_strength_bucket,
             s.sector_consistency_bucket,
@@ -427,6 +574,50 @@ def _create_sector_strength_tables(conn: Any, *, horizons: Sequence[int]) -> Non
          AND s.sector_33_code = sm.sector_33_code
          AND s.sector_33_name = sm.sector_33_name
         WHERE r.liquidity_scope IN ('crowded_rerating', 'neutral_rerating')
+        """
+    )
+
+
+def _create_sector_index_map(conn: Any) -> None:
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE ranking_sector_index_map AS
+        SELECT * FROM (
+            VALUES
+                ('0050', '0040'),
+                ('1050', '0041'),
+                ('2050', '0042'),
+                ('3050', '0043'),
+                ('3100', '0044'),
+                ('3150', '0045'),
+                ('3200', '0046'),
+                ('3250', '0047'),
+                ('3300', '0048'),
+                ('3350', '0049'),
+                ('3400', '004A'),
+                ('3450', '004B'),
+                ('3500', '004C'),
+                ('3550', '004D'),
+                ('3600', '004E'),
+                ('3650', '004F'),
+                ('3700', '0050'),
+                ('3750', '0051'),
+                ('3800', '0052'),
+                ('4050', '0053'),
+                ('5050', '0054'),
+                ('5100', '0055'),
+                ('5150', '0056'),
+                ('5200', '0057'),
+                ('5250', '0058'),
+                ('6050', '0059'),
+                ('6100', '005A'),
+                ('7050', '005B'),
+                ('7100', '005C'),
+                ('7150', '005D'),
+                ('7200', '005E'),
+                ('8050', '005F'),
+                ('9050', '0060')
+        ) AS t(sector_33_code, sector_index_code)
         """
     )
 
@@ -601,6 +792,16 @@ def _aggregate_grouped(
             avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
                 AS severe_loss_rate_pct,
             median(sector_strength_score) AS median_sector_strength_score,
+            median(sector_index_5d_topix_excess_pct)
+                AS median_sector_index_5d_topix_excess_pct,
+            median(sector_index_20d_topix_excess_pct)
+                AS median_sector_index_20d_topix_excess_pct,
+            median(sector_index_60d_topix_excess_pct)
+                AS median_sector_index_60d_topix_excess_pct,
+            median(sector_constituent_20d_topix_excess_pct)
+                AS median_sector_constituent_20d_topix_excess_pct,
+            median(sector_constituent_60d_topix_excess_pct)
+                AS median_sector_constituent_60d_topix_excess_pct,
             median(sector_20d_topix_excess_pct) AS median_sector_20d_topix_excess_pct,
             median(sector_60d_topix_excess_pct) AS median_sector_60d_topix_excess_pct,
             median(sector_breadth_20d_pct) AS median_sector_breadth_20d_pct,
@@ -688,12 +889,26 @@ def _query_sector_daily_state_df(conn: Any) -> pd.DataFrame:
             sector_33_name,
             sector_observation_count,
             sector_code_count,
+            sector_index_code,
+            sector_index_return_5d_pct,
+            sector_index_return_20d_pct,
+            sector_index_return_60d_pct,
+            sector_index_5d_topix_excess_pct,
+            sector_index_20d_topix_excess_pct,
+            sector_index_60d_topix_excess_pct,
+            sector_constituent_20d_topix_excess_pct,
+            sector_constituent_60d_topix_excess_pct,
             sector_20d_topix_excess_pct,
             sector_60d_topix_excess_pct,
             sector_breadth_20d_pct,
+            sector_index_5d_strength_rank,
             sector_20d_strength_rank,
             sector_60d_strength_rank,
+            sector_constituent_20d_strength_rank,
+            sector_constituent_60d_strength_rank,
             sector_breadth_strength_rank,
+            sector_index_strength_score,
+            sector_constituent_strength_score,
             sector_strength_score,
             sector_strength_bucket,
             sector_consistency_bucket
@@ -727,9 +942,15 @@ def _query_observation_sample_df(
             value_confirmation_tier,
             value_condition,
             sector_33_name,
+            sector_index_code,
             sector_strength_score,
             sector_strength_bucket,
             sector_consistency_bucket,
+            sector_index_5d_topix_excess_pct,
+            sector_index_20d_topix_excess_pct,
+            sector_index_60d_topix_excess_pct,
+            sector_constituent_20d_topix_excess_pct,
+            sector_constituent_60d_topix_excess_pct,
             recent_return_20d_pct,
             recent_return_60d_pct,
             sector_20d_topix_excess_pct,
@@ -784,6 +1005,11 @@ def _common_metric_columns(return_prefix: str) -> list[str]:
         "win_rate_pct",
         "severe_loss_rate_pct",
         "median_sector_strength_score",
+        "median_sector_index_5d_topix_excess_pct",
+        "median_sector_index_20d_topix_excess_pct",
+        "median_sector_index_60d_topix_excess_pct",
+        "median_sector_constituent_20d_topix_excess_pct",
+        "median_sector_constituent_60d_topix_excess_pct",
         "median_sector_20d_topix_excess_pct",
         "median_sector_60d_topix_excess_pct",
         "median_sector_breadth_20d_pct",

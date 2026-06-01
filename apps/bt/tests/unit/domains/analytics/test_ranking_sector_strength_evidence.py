@@ -81,6 +81,41 @@ def test_ranking_sector_strength_evidence_builds_pit_sector_interactions(
     assert strong_green["value_condition"].notna().all()
 
 
+def test_sector_strength_uses_official_sector_index_price_action(tmp_path: Path) -> None:
+    db_path = _build_sector_strength_db(tmp_path / "market.duckdb")
+
+    result = run_ranking_sector_strength_evidence_research(
+        db_path,
+        start_date="2024-04-30",
+        end_date="2024-04-30",
+        horizons=(20,),
+        market_scopes=("prime",),
+        min_observations=1,
+        observation_sample_limit=20,
+    )
+
+    service_state = result.sector_daily_state_df[
+        result.sector_daily_state_df["sector_33_code"].astype(str).eq("9050")
+    ]
+
+    assert len(service_state) == 1
+    row = service_state.iloc[0]
+    assert row["sector_33_name"] == "Service"
+    assert row["sector_index_code"] == "0060"
+    assert row["sector_index_20d_topix_excess_pct"] > 10.0
+    assert row["sector_index_strength_score"] >= 0.8
+    assert row["sector_constituent_strength_score"] < 0.4
+    assert abs(
+        row["sector_strength_score"]
+        - (
+            row["sector_index_strength_score"]
+            + row["sector_constituent_strength_score"]
+        )
+        / 2.0
+    ) < 1e-12
+    assert row["sector_strength_bucket"] == "sector_neutral"
+
+
 def test_ranking_sector_strength_evidence_writes_bundle(tmp_path: Path) -> None:
     db_path = _build_sector_strength_db(tmp_path / "market.duckdb")
     result = _run_test_research(db_path)
@@ -173,11 +208,42 @@ def _build_sector_strength_db(db_path: Path) -> Path:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE indices_data (
+            code TEXT,
+            date TEXT,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
+            volume BIGINT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE index_master (
+            code TEXT,
+            name TEXT,
+            name_english TEXT,
+            category TEXT,
+            data_start_date TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
 
     sectors = [
-        ("01", "Strong Machinery", 0.18),
-        ("02", "Neutral Retail", 0.04),
-        ("03", "Weak Chemicals", -0.10),
+        ("3600", "Strong Machinery", 0.18),
+        ("6100", "Neutral Retail", 0.04),
+        ("3200", "Weak Chemicals", -0.10),
+        ("9050", "Service", -0.06),
+        ("0050", "Fishery", -0.08),
+        ("1050", "Mining", -0.09),
+        ("2050", "Construction", -0.07),
+        ("3050", "Foods", -0.06),
     ]
     stock_specs: list[tuple[str, str, str, str, float, float]] = []
     for sector_index, (sector_code, sector_name, sector_slope) in enumerate(sectors):
@@ -266,5 +332,48 @@ def _build_sector_strength_db(db_path: Path) -> Path:
         close = 1000.0 + date_index * 0.06
         topix_rows.append((date, close * 0.998, close * 1.002, close * 0.996, close))
     conn.executemany("INSERT INTO topix_data VALUES (?, ?, ?, ?, ?)", topix_rows)
+    index_master_rows = [
+        ("004E", "東証業種別 Strong Machinery", None, "sector33", None, None, None),
+        ("005A", "東証業種別 Neutral Retail", None, "sector33", None, None, None),
+        ("0046", "東証業種別 Weak Chemicals", None, "sector33", None, None, None),
+        ("0060", "東証業種別 Service", None, "sector33", None, None, None),
+        ("0040", "東証業種別 Fishery", None, "sector33", None, None, None),
+        ("0041", "東証業種別 Mining", None, "sector33", None, None, None),
+        ("0042", "東証業種別 Construction", None, "sector33", None, None, None),
+        ("0043", "東証業種別 Foods", None, "sector33", None, None, None),
+    ]
+    conn.executemany(
+        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?, ?, ?)",
+        index_master_rows,
+    )
+    index_rows: list[tuple[str, str, float, float, float, float, int]] = []
+    index_specs = [
+        ("004E", 1000.0, 0.20),
+        ("005A", 900.0, 0.05),
+        ("0046", 800.0, -0.12),
+        ("0060", 700.0, 24.00),
+        ("0040", 700.0, -0.10),
+        ("0041", 680.0, -0.11),
+        ("0042", 660.0, -0.09),
+        ("0043", 640.0, -0.08),
+    ]
+    for date_index, date in enumerate(dates):
+        for code, base, slope in index_specs:
+            close = base * (1.011**date_index) if code == "0060" else base + date_index * slope
+            index_rows.append(
+                (
+                    code,
+                    date,
+                    close * 0.998,
+                    close * 1.002,
+                    close * 0.996,
+                    close,
+                    0,
+                )
+            )
+    conn.executemany(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?)",
+        index_rows,
+    )
     conn.close()
     return db_path
