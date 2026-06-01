@@ -205,6 +205,7 @@ class RankingColorEvidenceResult:
     forward_per_pop_interaction_df: pd.DataFrame
     liquidity_regime_evidence_df: pd.DataFrame
     topix_regime_liquidity_value_evidence_df: pd.DataFrame
+    rerating_good_valuation_chain_df: pd.DataFrame
     liquidity_color_long_trend_evidence_df: pd.DataFrame
     high_valuation_size_liquidity_interaction_df: pd.DataFrame
 
@@ -322,6 +323,14 @@ def run_ranking_color_evidence_research(
                     severe_loss_threshold_pct=severe_loss_threshold_pct,
                 )
             ),
+            rerating_good_valuation_chain_df=(
+                _build_rerating_good_valuation_chain_df(
+                    ctx.connection,
+                    horizons=resolved_horizons,
+                    min_observations=min_observations,
+                    severe_loss_threshold_pct=severe_loss_threshold_pct,
+                )
+            ),
             liquidity_color_long_trend_evidence_df=(
                 _build_liquidity_color_long_trend_evidence_df(
                     ctx.connection,
@@ -383,6 +392,7 @@ def write_ranking_color_evidence_bundle(
             "topix_regime_liquidity_value_evidence_df": (
                 result.topix_regime_liquidity_value_evidence_df
             ),
+            "rerating_good_valuation_chain_df": result.rerating_good_valuation_chain_df,
             "liquidity_color_long_trend_evidence_df": (
                 result.liquidity_color_long_trend_evidence_df
             ),
@@ -449,6 +459,13 @@ def build_summary_markdown(result: RankingColorEvidenceResult) -> str:
         _top_rows_for_markdown(
             result.topix_regime_liquidity_value_evidence_df,
             limit=120,
+        ),
+        "",
+        "## Rerating Good x PER > Fwd PER > Fwd P/OP",
+        "",
+        _top_rows_for_markdown(
+            result.rerating_good_valuation_chain_df,
+            limit=80,
         ),
         "",
         "## Liquidity Color x Long Trend Evidence",
@@ -1300,6 +1317,52 @@ def _build_liquidity_color_long_trend_evidence_df(
     return _concat_sorted(frames, columns=_liquidity_color_long_trend_columns())
 
 
+def _build_rerating_good_valuation_chain_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    neutral_good = _neutral_rerating_good_condition()
+    crowded_good = _crowded_rerating_good_condition()
+    all_good = f"(({neutral_good}) OR ({crowded_good}))"
+    chain = _per_forward_per_forward_p_op_chain_condition()
+    scopes = (
+        ("all_rerating_good", all_good, 0),
+        ("neutral_rerating_good", neutral_good, 1),
+        ("crowded_rerating_good", crowded_good, 2),
+    )
+    chain_conditions = (
+        ("all_good", "TRUE", 0),
+        ("per_gt_fwdper_gt_fwdpop", chain, 1),
+        ("good_without_chain", f"NOT coalesce(({chain}), FALSE)", 2),
+    )
+    for good_scope, good_condition, good_order in scopes:
+        for chain_condition, chain_sql, chain_order in chain_conditions:
+            for horizon in horizons:
+                frames.append(
+                    _aggregate_condition(
+                        conn,
+                        source_name="ranking_color_ranked",
+                        condition=f"({good_condition}) AND ({chain_sql})",
+                        condition_fields={
+                            "condition_family": "rerating_good_forward_valuation_chain",
+                            "good_scope": good_scope,
+                            "good_scope_order": good_order,
+                            "chain_condition": chain_condition,
+                            "chain_condition_order": chain_order,
+                            "horizon": int(horizon),
+                        },
+                        return_column=f"forward_close_excess_return_{int(horizon)}d_pct",
+                        min_observations=min_observations,
+                        severe_loss_threshold_pct=severe_loss_threshold_pct,
+                    )
+                )
+    return _concat_sorted(frames, columns=_rerating_good_valuation_chain_columns())
+
+
 def _build_high_valuation_size_liquidity_interaction_df(
     conn: Any,
     *,
@@ -1609,6 +1672,38 @@ def _liquidity_color_sql() -> dict[str, dict[str, str]]:
     }
 
 
+def _neutral_rerating_good_condition() -> str:
+    return (
+        "liquidity_regime = 'neutral_rerating' "
+        "AND ("
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) "
+        "OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8)"
+        ")"
+    )
+
+
+def _crowded_rerating_good_condition() -> str:
+    return (
+        "liquidity_regime = 'crowded_rerating' "
+        "AND ("
+        "(pbr_percentile <= 0.2 AND forward_per_percentile <= 0.2) "
+        "OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 0.8) "
+        "OR pbr_percentile <= 0.2 "
+        "OR (per_percentile <= 0.2 AND forward_per_to_per_ratio <= 1.0)"
+        ")"
+    )
+
+
+def _per_forward_per_forward_p_op_chain_condition() -> str:
+    return (
+        "per > 0 "
+        "AND forward_per > 0 "
+        "AND forward_p_op > 0 "
+        "AND per > forward_per "
+        "AND forward_per > forward_p_op"
+    )
+
+
 def _evidence_tier(bucket: str) -> str:
     return {
         "cheapest_10pct": "excellent",
@@ -1806,6 +1901,19 @@ def _liquidity_color_long_trend_columns() -> list[str]:
         "trend_window",
         "trend_condition",
         "trend_condition_order",
+        "horizon",
+        "market_scope",
+        *_aggregate_metric_columns(),
+    ]
+
+
+def _rerating_good_valuation_chain_columns() -> list[str]:
+    return [
+        "condition_family",
+        "good_scope",
+        "good_scope_order",
+        "chain_condition",
+        "chain_condition_order",
         "horizon",
         "market_scope",
         *_aggregate_metric_columns(),

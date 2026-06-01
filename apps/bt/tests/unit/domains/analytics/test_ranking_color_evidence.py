@@ -27,6 +27,7 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
     assert not result.low_per_relation_level_evidence_df.empty
     assert not result.forward_per_pop_interaction_df.empty
     assert not result.topix_regime_liquidity_value_evidence_df.empty
+    assert not result.rerating_good_valuation_chain_df.empty
     assert not result.liquidity_color_long_trend_evidence_df.empty
     assert not result.high_valuation_size_liquidity_interaction_df.empty
     assert {
@@ -95,6 +96,15 @@ def test_ranking_color_evidence_uses_daily_valuation_fast_path(tmp_path: Path) -
         set(result.topix_regime_liquidity_value_evidence_df["value_condition"].astype(str))
     )
     assert {
+        "all_good",
+        "per_gt_fwdper_gt_fwdpop",
+        "good_without_chain",
+    }.issubset(set(result.rerating_good_valuation_chain_df["chain_condition"].astype(str)))
+    assert {
+        "all_rerating_good",
+        "neutral_rerating_good",
+    }.issubset(set(result.rerating_good_valuation_chain_df["good_scope"].astype(str)))
+    assert {
         "forward_per_to_per_ratio",
         "forward_p_op_to_per_ratio",
     }.issubset(set(result.per_relation_evidence_df["relation_feature"].astype(str)))
@@ -130,6 +140,7 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     assert "Low PER x Forward Valuation Relation Level Evidence" in summary
     assert "Forward PER x Forward P/OP Interaction" in summary
     assert "TOPIX Regime x Liquidity x Value Evidence" in summary
+    assert "Rerating Good x PER > Fwd PER > Fwd P/OP" in summary
     assert "Liquidity Color x Long Trend Evidence" in summary
     assert "High Valuation x Size x Liquidity Interaction" in summary
 

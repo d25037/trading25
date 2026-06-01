@@ -47,6 +47,8 @@
   - Daily Ranking の short / red 候補を、crowded/stress/stale liquidity regime、relative valuation、20D/60D trend、ATR20/ATR60 で独立検証する実験。
 - [market-behavior/ranking-short-sector-strength-evidence/](./market-behavior/ranking-short-sector-strength-evidence/README.md)
   - Daily Ranking の short / red 候補に PIT 33セクター強弱を重ね、sector weak/strong が raw / TOPIX / excess return をどう変えるかを検証する実験。
+- [market-behavior/ranking-good-forward-valuation-chain/](./market-behavior/ranking-good-forward-valuation-chain/README.md)
+  - Daily Ranking の Neutral Good / Crowded Good に限定し、`PER > Fwd PER > Fwd P/OP` が追加の優秀銘柄抽出条件になるかを検証する実験。
 - [market-behavior/topix100-price-to-sma50-decile-partitions/](./market-behavior/topix100-price-to-sma50-decile-partitions/README.md)
   - `Price / SMA50` decile を contiguous partition に分け、high / middle / low の境界を比較する実験。
 - [market-behavior/topix100-sma-ratio-rank-future-close/](./market-behavior/topix100-sma-ratio-rank-future-close/README.md)

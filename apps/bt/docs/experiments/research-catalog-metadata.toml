@@ -22,6 +22,17 @@ relatedExperiments = [
   "market-behavior/free-float-liquidity-regime-decomposition",
 ]
 
+[experiments."market-behavior/ranking-good-forward-valuation-chain"]
+family = "Ranking"
+status = "observed"
+decision = "Daily Ranking の Neutral Good / Crowded Good に限定して PER > Fwd PER > Fwd P/OP を検証した。Good 全体と Neutral Good では chain 条件が 20D/60D ともに弱く、追加 hard filter にはしない。Crowded Good では 20D median と severe loss が改善するが tail は重いため、補助 badge / tie-breaker に留める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-sector-strength-evidence",
+]
+
 [experiments."market-behavior/ranking-sector-strength-evidence"]
 family = "Ranking"
 status = "observed"
