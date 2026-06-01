@@ -14,7 +14,7 @@ Primary outcome は既存の short-red research と揃え、`20D close-to-close 
 
 #### 結論: average score でも bad crowded の sector weak は売り側に効く
 
-2026-06-01 update `20260601_ranking_short_sector_strength_average_score_v4` で、sector score は long 側と同じ average score に統一した。構成銘柄onlyは short 側では最も鋭いが、サービス業 `0060` のような公式指数主導の sector beta を過小評価する。index-only は buy 側を改善する一方で short の `sector_weak` が鈍る。平均scoreは、buy strong の 20D median `+2.014%` を維持しつつ、bad valuation crowded + `sector_weak` の 20D excess median を `crowded_high_valuation` で `-3.309%`、`crowded_no_value` で `-3.171%` 残すため、production の単一 trade score として最もバランスが良い。
+2026-06-01 update `20260601_ranking_short_sector_strength_average_score_v4` で、sector score は long 側と同じ average score に統一した。構成銘柄onlyは short 側では最も鋭いが、サービス業 `0060` のような公式指数主導の sector beta を過小評価する。index-only は buy 側を改善する一方で short の `sector_weak` が鈍る。平均scoreは、buy strong の 20D median `+2.014%` を維持しつつ、bad valuation crowded + `sector_weak` の 20D excess median を `crowded_high_valuation` で `-3.309%`、`crowded_no_value` で `-3.171%` 残すため、production の単一 sector score として最もバランスが良い。
 
 | Bucket | Sector | Obs | 20D excess median | Excess negative | Downside tail | Raw median | Read |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |

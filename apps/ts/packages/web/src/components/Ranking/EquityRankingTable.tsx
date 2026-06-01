@@ -101,7 +101,7 @@ const DEFAULT_EQUITY_RANKING_LABELS: EquityRankingLabels = {
   market: '市場',
   company: '銘柄名',
   sector: '業種',
-  sectorScore: 'Trade Score',
+  sectorScore: 'Sector Score',
   price: '現在値',
   marketCap: '時価総額',
   tradingValue: '売買代金',
@@ -167,7 +167,7 @@ function getSectorStrengthScoreClass(value: number | null | undefined): string {
 function SectorStrengthScoreChip({ value }: { value: number | null | undefined }) {
   return (
     <span
-      title="Average sector trade score from official sector-index strength and constituent strength"
+      title="Average sector score from official sector-index strength and constituent strength"
       className={cn(
         'inline-flex min-w-[3rem] justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
         getSectorStrengthScoreClass(value)
