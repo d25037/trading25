@@ -49,6 +49,10 @@
   - Daily Ranking の short / red 候補に PIT 33セクター強弱を重ね、sector weak/strong が raw / TOPIX / excess return をどう変えるかを検証する実験。
 - [market-behavior/ranking-good-forward-valuation-chain/](./market-behavior/ranking-good-forward-valuation-chain/README.md)
   - Daily Ranking の Neutral Good / Crowded Good に限定し、`PER > Fwd PER > Fwd P/OP` が追加の優秀銘柄抽出条件になるかを検証する実験。
+- [market-behavior/market-bubble-footprint/](./market-behavior/market-bubble-footprint/README.md)
+  - breadth / concentration / valuation pressure / dispersion / 上位寄与で bubble footprint を月次監視し、終盤入口の警戒 regime を作る実験。
+- [market-behavior/rerating-bubble-regime-forward-response/](./market-behavior/rerating-bubble-regime-forward-response/README.md)
+  - bubble footprint regime を Daily Ranking の neutral_rerating / crowded_rerating に接続し、終盤入口で残る rerating bucket を検証する実験。
 - [market-behavior/topix100-price-to-sma50-decile-partitions/](./market-behavior/topix100-price-to-sma50-decile-partitions/README.md)
   - `Price / SMA50` decile を contiguous partition に分け、high / middle / low の境界を比較する実験。
 - [market-behavior/topix100-sma-ratio-rank-future-close/](./market-behavior/topix100-sma-ratio-rank-future-close/README.md)

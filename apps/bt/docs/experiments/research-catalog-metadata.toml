@@ -33,6 +33,30 @@ relatedExperiments = [
   "market-behavior/ranking-sector-strength-evidence",
 ]
 
+[experiments."market-behavior/market-bubble-footprint"]
+family = "Market Regime"
+status = "observed"
+decision = "Breadth / concentration / valuation pressure / dispersion / cap-weight leadership で bubble footprint を月次監視する。2026-05-29 は 20D/120D/252D が blowoff_watch、60D が crowded。252D breadth はまだ広いため即クラッシュではなく、終盤入口の警戒 regime と読む。"
+promotedSurface = "Research"
+riskFlags = ["market-regime-overlay", "not-standalone-alpha", "crash-timing-unproven", "monthly-snapshot"]
+relatedExperiments = [
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/rerating-bubble-regime-forward-response",
+  "market-behavior/topix-downside-return-standard-deviation-exposure-timing",
+]
+
+[experiments."market-behavior/rerating-bubble-regime-forward-response"]
+family = "Ranking"
+status = "observed"
+decision = "Bubble footprint regime を neutral_rerating / crowded_rerating に接続した。narrowing では neutral_rerating + medium/strong value が20D/60Dで残るが、blowoff_watch では neutral も60Dが崩れ、crowded_rerating は明確に悪い。現在は数カ月holdを広げず、crowded/no-value を long 回避または sizing haircut 候補にする。"
+promotedSurface = "Research"
+riskFlags = ["market-regime-overlay", "ui-evidence-layer", "not-standalone-alpha", "recent-slice", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/market-bubble-footprint",
+  "market-behavior/ranking-color-evidence",
+  "market-behavior/ranking-good-forward-valuation-chain",
+]
+
 [experiments."market-behavior/ranking-sector-strength-evidence"]
 family = "Ranking"
 status = "observed"
