@@ -488,6 +488,11 @@ def upsert_daily_valuation_from_adjusted_metrics(
         DELETE FROM daily_valuation
         WHERE basis_version = ?{target_code_filter}
         """
+    prune_old_daily_sql = f"""
+        DELETE FROM daily_valuation
+        WHERE basis_version LIKE 'adjusted-v1:%'
+          AND basis_version <> ?{target_code_filter}
+        """
     target_params = [basis_version, *normalized_codes]
     insert_sql = _DAILY_VALUATION_REBUILD_SQL_TEMPLATE.format(
         code_filter=code_filter,
@@ -512,6 +517,7 @@ def upsert_daily_valuation_from_adjusted_metrics(
     with lock:
         try:
             conn.execute("BEGIN TRANSACTION")
+            conn.execute(prune_old_daily_sql, target_params)
             conn.execute(delete_sql, target_params)
             conn.execute(insert_sql, insert_params)
             count_row = conn.execute(count_sql, target_params).fetchone()

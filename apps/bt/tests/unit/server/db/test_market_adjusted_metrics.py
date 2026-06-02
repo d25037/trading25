@@ -7,6 +7,9 @@ from typing import Any
 import pytest
 
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.valuation_writers import (
+    upsert_daily_valuation_from_adjusted_metrics,
+)
 
 
 @pytest.fixture()
@@ -21,6 +24,29 @@ def _columns(market_db: MarketDb, table_name: str) -> set[str]:
         str(row[1])
         for row in market_db._execute(f"PRAGMA table_info('{table_name}')").fetchall()
     }
+
+
+class _NoopLock:
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+
+class _FakeResult:
+    def fetchone(self) -> tuple[int]:
+        return (1,)
+
+
+class _RecordingConnection:
+    def __init__(self) -> None:
+        self.sql: list[str] = []
+
+    def execute(self, sql: str, params: list[Any] | None = None) -> _FakeResult:
+        del params
+        self.sql.append(" ".join(sql.split()))
+        return _FakeResult()
 
 
 def test_adjusted_metric_tables_are_created(market_db: MarketDb) -> None:
@@ -242,3 +268,35 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
         "priceBasisDate": "2024-12-30",
         "basisVersion": "adjusted-v1:2024-12-30",
     }
+
+
+def test_daily_valuation_rebuild_prunes_old_basis_before_insert() -> None:
+    conn = _RecordingConnection()
+
+    upsert_daily_valuation_from_adjusted_metrics(
+        conn,
+        _NoopLock(),
+        lambda table_name: table_name in {"stock_data", "statement_metrics_adjusted"},
+        basis_version="adjusted-v1:2026-06-01",
+        price_basis_date="2026-06-01",
+    )
+
+    old_basis_delete_index = next(
+        index
+        for index, sql in enumerate(conn.sql)
+        if "DELETE FROM daily_valuation" in sql
+        and "basis_version LIKE 'adjusted-v1:%'" in sql
+    )
+    same_basis_delete_index = next(
+        index
+        for index, sql in enumerate(conn.sql)
+        if "DELETE FROM daily_valuation" in sql
+        and "WHERE basis_version = ?" in sql
+    )
+    insert_index = next(
+        index
+        for index, sql in enumerate(conn.sql)
+        if "INSERT INTO daily_valuation" in sql
+    )
+
+    assert old_basis_delete_index < same_basis_delete_index < insert_index
