@@ -35,6 +35,11 @@ export type ResearchRunReferenceContract = BtApiSchemas['ResearchRunReference'];
 export type ResearchCatalogResponseContract = BtApiSchemas['ResearchCatalogResponse'];
 export type ResearchDetailResponseContract = BtApiSchemas['ResearchDetailResponse'];
 
+// ===== MARKET REGIME CONTRACT TYPES =====
+
+export type MarketBubbleFootprintHorizonContract = BtApiSchemas['MarketBubbleFootprintHorizon'];
+export type MarketBubbleFootprintLatestResponseContract = BtApiSchemas['MarketBubbleFootprintLatestResponse'];
+
 // ===== RANKING TYPES =====
 
 export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';

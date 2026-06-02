@@ -8,6 +8,7 @@ import type {
   ListWatchlistsResponse,
   MarginIndicatorRequest,
   MarginIndicatorResponse,
+  MarketBubbleFootprintLatestResponseContract,
   PortfolioBenchmarkMetrics,
   PortfolioBenchmarkPoint,
   PortfolioCreateRequest,
@@ -167,6 +168,38 @@ describe('api-response-types research contracts', () => {
 
     expect(catalog.items?.[0]?.status).toBe('observed');
     expect(detail.summary?.highlights?.[0]?.tone).toBe('success');
+  });
+});
+
+describe('api-response-types market regime contracts', () => {
+  it('keeps market bubble footprint response contract available', () => {
+    const response: MarketBubbleFootprintLatestResponseContract = {
+      date: '2026-05-29',
+      markets: ['prime', 'standard', 'growth'],
+      overallRegime: 'blowoff_watch',
+      overallScore: 4,
+      nearBlowoff: true,
+      researchExperimentId: 'market-behavior/market-bubble-footprint',
+      reratingExperimentId: 'market-behavior/rerating-bubble-regime-forward-response',
+      horizons: [
+        {
+          horizon: 60,
+          score: 3,
+          regime: 'crowded',
+          nearBlowoff: true,
+          breadthUpPct: 24.77,
+          pctAboveSma50: 38.17,
+          pctAboveSma200: 43.37,
+          expensiveMcapSharePct: 24.06,
+          returnP90P10SpreadPct: 39.9,
+          returnDispersionPercentile: 0.8974,
+          capWeightLeadershipPct: 6.55,
+          activeFlags: ['breadth_narrowing', 'valuation_pressure', 'cap_weight_leadership'],
+        },
+      ],
+    };
+
+    expect(response.horizons?.[0]?.nearBlowoff).toBe(true);
   });
 });
 

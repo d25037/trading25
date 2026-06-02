@@ -19,6 +19,8 @@ from src.application.services.fundamentals_service import (
 )
 from src.application.services.margin_analytics_service import MarginAnalyticsService
 from src.application.services.roe_service import ROEService
+from src.domains.analytics.market_bubble_footprint_monitor import get_latest_market_bubble_footprint
+from src.entrypoints.http.schemas.analytics_common import MarketBubbleFootprintLatestResponse
 from src.entrypoints.http.schemas.analytics_margin import (
     MarginPressureIndicatorsResponse,
     MarginVolumeRatioResponse,
@@ -63,6 +65,27 @@ def _get_market_reader(request: Request) -> MarketDbReader:
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
     return reader
+
+
+@router.get(
+    "/market-bubble-footprint/latest",
+    response_model=MarketBubbleFootprintLatestResponse,
+    summary="Get latest market bubble footprint",
+)
+async def get_market_bubble_footprint_latest(
+    markets: str = Query("prime,standard,growth"),
+    date: str | None = Query(None),
+) -> MarketBubbleFootprintLatestResponse:
+    market_scopes = tuple(item.strip() for item in markets.split(",") if item.strip())
+    loop = asyncio.get_event_loop()
+    try:
+        payload = await loop.run_in_executor(
+            _get_executor(),
+            lambda: get_latest_market_bubble_footprint(markets=market_scopes, date=date),
+        )
+        return MarketBubbleFootprintLatestResponse.model_validate(payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/roe", response_model=ROEResponse)

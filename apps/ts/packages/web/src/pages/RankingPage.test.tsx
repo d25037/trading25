@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RANKING_PARAMS } from '@/stores/screeningStore';
 import type { RankingDailyView } from '@/types/ranking';
@@ -13,6 +14,7 @@ const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
 });
 const mockUseRanking = vi.fn();
+const mockUseMarketBubbleFootprint = vi.fn();
 const mockRouteState = {
   activeDailyView: 'stocks' as RankingDailyView,
   setActiveDailyView: mockSetActiveDailyView,
@@ -21,6 +23,20 @@ const mockRouteState = {
 };
 
 vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    children,
+    search,
+    to,
+    ...props
+  }: {
+    children: ReactNode;
+    search?: { experimentId?: string };
+    to: string;
+  }) => (
+    <a href={`${to}?experimentId=${search?.experimentId ?? ''}`} {...props}>
+      {children}
+    </a>
+  ),
   useNavigate: () => mockNavigate,
 }));
 
@@ -30,6 +46,10 @@ vi.mock('@/hooks/usePageRouteState', () => ({
 
 vi.mock('@/hooks/useRanking', () => ({
   useRanking: (...args: unknown[]) => mockUseRanking(...args),
+}));
+
+vi.mock('@/hooks/useMarketBubbleFootprint', () => ({
+  useMarketBubbleFootprint: (...args: unknown[]) => mockUseMarketBubbleFootprint(...args),
 }));
 
 vi.mock('@/components/Ranking', () => ({
@@ -103,6 +123,7 @@ describe('RankingPage', () => {
     mockSetActiveDailyView.mockClear();
     mockSetRankingParams.mockClear();
     mockUseRanking.mockReset();
+    mockUseMarketBubbleFootprint.mockReset();
     mockUseRanking.mockReturnValue({
       data: {
         rankings: {
@@ -120,6 +141,29 @@ describe('RankingPage', () => {
       isLoading: false,
       error: null,
     });
+    mockUseMarketBubbleFootprint.mockReturnValue({
+      data: {
+        date: '2026-05-29',
+        markets: ['prime', 'standard', 'growth'],
+        overallRegime: 'blowoff_watch',
+        overallScore: 4,
+        nearBlowoff: true,
+        researchExperimentId: 'market-behavior/market-bubble-footprint',
+        reratingExperimentId: 'market-behavior/rerating-bubble-regime-forward-response',
+        horizons: [
+          {
+            horizon: 60,
+            score: 3,
+            regime: 'crowded',
+            nearBlowoff: true,
+            intensityLabel: 'Near blowoff',
+            activeFlags: [],
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
   });
 
   it('renders daily ranking by default', () => {
@@ -128,6 +172,8 @@ describe('RankingPage', () => {
     expect(screen.getByRole('heading', { name: 'Ranking' })).toBeInTheDocument();
     expect(screen.getByText('Daily market ranking')).toBeInTheDocument();
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
+    expect(screen.getByText('Market Regime')).toBeInTheDocument();
+    expect(screen.getByText(/score 3/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Individual Stocks' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Technical Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Indices' })).toBeInTheDocument();
@@ -150,6 +196,9 @@ describe('RankingPage', () => {
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ riskState: undefined }), true);
     expect(mockUseRanking).toHaveBeenCalledWith(expect.objectContaining({ technicalState: undefined }), true);
     expect(mockUseRanking).not.toHaveBeenCalledWith(expect.objectContaining({ sortBy: 'tradingValue' }), true);
+    expect(mockUseMarketBubbleFootprint).toHaveBeenCalledWith(
+      expect.objectContaining({ markets: DEFAULT_RANKING_PARAMS.markets, date: DEFAULT_RANKING_PARAMS.date })
+    );
   });
 
   it('passes daily ranking state filters only to individual stocks', async () => {

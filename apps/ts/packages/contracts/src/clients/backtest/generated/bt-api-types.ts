@@ -61,6 +61,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/market-bubble-footprint/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get latest market bubble footprint */
+        get: operations["get_market_bubble_footprint_latest_api_analytics_market_bubble_footprint_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/portfolio-factor-regression/{portfolioId}": {
         parameters: {
             query?: never;
@@ -7081,6 +7098,64 @@ export interface components {
             symbol: string;
         };
         /**
+         * MarketBubbleFootprintHorizon
+         * @description Latest bubble footprint metrics for one return horizon.
+         */
+        MarketBubbleFootprintHorizon: {
+            /** Activeflags */
+            activeFlags?: string[];
+            /** Breadthuppct */
+            breadthUpPct?: number | null;
+            /** Capweightleadershippct */
+            capWeightLeadershipPct?: number | null;
+            /** Expensivemcapsharepct */
+            expensiveMcapSharePct?: number | null;
+            /** Horizon */
+            horizon: number;
+            /**
+             * Nearblowoff
+             * @default false
+             */
+            nearBlowoff: boolean;
+            /** Pctabovesma200 */
+            pctAboveSma200?: number | null;
+            /** Pctabovesma50 */
+            pctAboveSma50?: number | null;
+            /** Regime */
+            regime: string;
+            /** Returndispersionpercentile */
+            returnDispersionPercentile?: number | null;
+            /** Returnp90P10Spreadpct */
+            returnP90P10SpreadPct?: number | null;
+            /** Score */
+            score: number;
+        };
+        /**
+         * MarketBubbleFootprintLatestResponse
+         * @description Latest market-level bubble footprint monitor response.
+         */
+        MarketBubbleFootprintLatestResponse: {
+            /** Date */
+            date: string;
+            /** Horizons */
+            horizons?: components["schemas"]["MarketBubbleFootprintHorizon"][];
+            /** Markets */
+            markets: string[];
+            /**
+             * Nearblowoff
+             * @default false
+             */
+            nearBlowoff: boolean;
+            /** Overallregime */
+            overallRegime: string;
+            /** Overallscore */
+            overallScore: number;
+            /** Reratingexperimentid */
+            reratingExperimentId: string;
+            /** Researchexperimentid */
+            researchExperimentId: string;
+        };
+        /**
          * MarketFundamentalRankingResponse
          * @description ファンダメンタルランキングレスポンス
          */
@@ -11857,6 +11932,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FundamentalsComputeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_market_bubble_footprint_latest_api_analytics_market_bubble_footprint_latest_get: {
+        parameters: {
+            query?: {
+                markets?: string;
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketBubbleFootprintLatestResponse"];
                 };
             };
             /** @description Bad Request */

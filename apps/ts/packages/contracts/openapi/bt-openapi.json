@@ -8340,6 +8340,173 @@
         "title": "MarginVolumeRatioResponse",
         "type": "object"
       },
+      "MarketBubbleFootprintHorizon": {
+        "description": "Latest bubble footprint metrics for one return horizon.",
+        "properties": {
+          "activeFlags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Activeflags",
+            "type": "array"
+          },
+          "breadthUpPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breadthuppct"
+          },
+          "capWeightLeadershipPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capweightleadershippct"
+          },
+          "expensiveMcapSharePct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expensivemcapsharepct"
+          },
+          "horizon": {
+            "title": "Horizon",
+            "type": "integer"
+          },
+          "nearBlowoff": {
+            "default": false,
+            "title": "Nearblowoff",
+            "type": "boolean"
+          },
+          "pctAboveSma200": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pctabovesma200"
+          },
+          "pctAboveSma50": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pctabovesma50"
+          },
+          "regime": {
+            "title": "Regime",
+            "type": "string"
+          },
+          "returnDispersionPercentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returndispersionpercentile"
+          },
+          "returnP90P10SpreadPct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returnp90P10Spreadpct"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "horizon",
+          "score",
+          "regime"
+        ],
+        "title": "MarketBubbleFootprintHorizon",
+        "type": "object"
+      },
+      "MarketBubbleFootprintLatestResponse": {
+        "description": "Latest market-level bubble footprint monitor response.",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/MarketBubbleFootprintHorizon"
+            },
+            "title": "Horizons",
+            "type": "array"
+          },
+          "markets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Markets",
+            "type": "array"
+          },
+          "nearBlowoff": {
+            "default": false,
+            "title": "Nearblowoff",
+            "type": "boolean"
+          },
+          "overallRegime": {
+            "title": "Overallregime",
+            "type": "string"
+          },
+          "overallScore": {
+            "title": "Overallscore",
+            "type": "integer"
+          },
+          "reratingExperimentId": {
+            "title": "Reratingexperimentid",
+            "type": "string"
+          },
+          "researchExperimentId": {
+            "title": "Researchexperimentid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "markets",
+          "overallRegime",
+          "overallScore",
+          "researchExperimentId",
+          "reratingExperimentId"
+        ],
+        "title": "MarketBubbleFootprintLatestResponse",
+        "type": "object"
+      },
       "MarketFundamentalRankingResponse": {
         "description": "ファンダメンタルランキングレスポンス",
         "properties": {
@@ -19976,6 +20143,95 @@
           }
         },
         "summary": "Get fundamental analysis metrics for a stock",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/api/analytics/market-bubble-footprint/latest": {
+      "get": {
+        "operationId": "get_market_bubble_footprint_latest_api_analytics_market_bubble_footprint_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "markets",
+            "required": false,
+            "schema": {
+              "default": "prime,standard,growth",
+              "title": "Markets",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketBubbleFootprintLatestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get latest market bubble footprint",
         "tags": [
           "Analytics"
         ]

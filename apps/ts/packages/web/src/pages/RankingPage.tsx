@@ -9,6 +9,7 @@ import {
   SplitSidebar,
   Surface,
 } from '@/components/Layout/Workspace';
+import { BubbleFootprintBanner } from '@/components/MarketRegime/BubbleFootprintBanner';
 import {
   IndexPerformanceTable,
   RANKING_LOOKBACK_OPTIONS,
@@ -18,6 +19,7 @@ import {
   TechnicalEventFilters,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
+import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
 import { formatMarketsLabel } from '@/lib/marketUtils';
@@ -251,6 +253,10 @@ export function RankingPage() {
     [activeDailyView, rankingParams]
   );
   const rankingQuery = useRanking(rankingQueryParams, true);
+  const footprintQuery = useMarketBubbleFootprint({
+    markets: rankingParams.markets ?? 'prime,standard,growth',
+    date: rankingParams.date,
+  });
   const introMetaItems = buildIntroMetaItems(activeDailyView, rankingParams);
 
   const handleStockClick = useCallback(
@@ -275,8 +281,8 @@ export function RankingPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:overflow-hidden">
       <Surface className="px-4 py-2">
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-1">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 shrink-0 space-y-1">
             <SectionEyebrow>Analytics Workspace</SectionEyebrow>
             <div className="space-y-0.5">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Ranking</h1>
@@ -285,7 +291,17 @@ export function RankingPage() {
               </p>
             </div>
           </div>
-          <PageIntroMetaList items={introMetaItems} className="gap-x-2.5 gap-y-1 [&>div]:min-w-[6.5rem] [&>div]:pl-2" />
+          <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center lg:justify-end">
+            <PageIntroMetaList
+              items={introMetaItems}
+              className="shrink-0 gap-x-2.5 gap-y-1 [&>div]:min-w-[6.5rem] [&>div]:pl-2"
+            />
+            <BubbleFootprintBanner
+              data={footprintQuery.data}
+              isLoading={footprintQuery.isLoading}
+              errorMessage={footprintQuery.error?.message ?? null}
+            />
+          </div>
         </div>
       </Surface>
 
