@@ -12,6 +12,7 @@ export type RankingPreset =
   | 'crowded_rerating_good'
   | 'overheat'
   | 'rally_fade'
+  | 'stale'
   | 'custom';
 
 type RankingFilterParams = Pick<RankingParams, 'liquidityState' | 'regimeState' | 'riskState' | 'technicalState'>;
@@ -26,6 +27,7 @@ export const RANKING_PRESET_OPTIONS = [
   { value: 'crowded_rerating', label: 'Crowded All' },
   { value: 'overheat', label: 'Overheat' },
   { value: 'rally_fade', label: 'Rally Fade' },
+  { value: 'stale', label: 'Stale' },
   { value: 'custom', label: 'Custom' },
 ] as const satisfies readonly { value: RankingPreset; label: string }[];
 
@@ -79,6 +81,9 @@ const RANKING_PRESET_FILTERS = {
   },
   rally_fade: {
     riskState: 'stale_rally_fade',
+  },
+  stale: {
+    regimeState: 'stale_liquidity',
   },
 } as const satisfies Record<Exclude<RankingPreset, 'custom'>, RankingFilterParams>;
 
