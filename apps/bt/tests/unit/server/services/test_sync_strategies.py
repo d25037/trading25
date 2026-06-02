@@ -19,6 +19,7 @@ from src.application.services.sync_fetch_planner import (
     _resolve_bulk_fallback_reason,
 )
 from src.application.services.sync_publish_helpers import (
+    _index_stock_data_rows,
     _publish_indices_rows,
     _publish_statement_rows,
     _publish_stock_data_rows,
@@ -40,6 +41,9 @@ from src.application.services.sync_paginated_fetch import get_paginated_rows_wit
 from src.application.services.sync_stock_data_fetch import (
     StockDataRestDateIngestionError,
     execute_stock_data_rest_date,
+)
+from src.application.services.sync_fundamentals_data import (
+    _sync_fundamentals_backfill_codes,
 )
 from src.application.services.sync_stock_master import sync_daily_stock_master
 from src.infrastructure.db.market.market_db import METADATA_KEYS
@@ -64,6 +68,7 @@ from src.application.services.sync_strategies import (
     _latest_date,
     _normalize_iso_date_text,
     _parse_date,
+    _resolve_incremental_stock_date_targets,
     _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
@@ -1909,7 +1914,7 @@ async def test_plan_fetch_method_probes_bulk_even_if_plan_hint_is_free() -> None
 
 
 @pytest.mark.asyncio
-async def test_plan_fetch_method_disables_future_probe_after_bulk_probe_failure() -> None:
+async def test_plan_fetch_method_disables_only_failed_endpoint_after_bulk_probe_failure() -> None:
     bulk_service = _PlanOnlyBulkService(RuntimeError("bulk list forbidden"))
     ctx = _build_ctx(
         client=_PlanOnlyClient("free"),
@@ -1936,9 +1941,13 @@ async def test_plan_fetch_method_disables_future_probe_after_bulk_probe_failure(
     assert first.method == "rest"
     assert first.planner_api_calls == 1
     assert second.method == "rest"
-    assert second.planner_api_calls == 0
-    assert bulk_service.build_calls == 1
-    assert ctx.bulk_probe_disabled is True
+    assert second.planner_api_calls == 1
+    assert bulk_service.build_calls == 2
+    assert ctx.bulk_probe_disabled is False
+    assert ctx.bulk_probe_disabled_endpoints == {
+        "/equities/bars/daily",
+        "/indices/bars/daily",
+    }
 
 
 @pytest.mark.asyncio
@@ -2668,6 +2677,35 @@ async def test_sync_margin_data_refuses_large_rest_fallback(
 
 
 @pytest.mark.asyncio
+async def test_fundamentals_backfill_refuses_large_rest_code_sweep() -> None:
+    client = DummyClient()
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=client,
+        market_db=DummyMarketDb(),
+        on_progress=lambda *_args: progress_messages.append(str(_args[-1])),
+    )
+
+    result = await _sync_fundamentals_backfill_codes(
+        ctx,
+        code_targets=[f"{index:04d}" for index in range(300)],
+        allowed_statement_codes=set(),
+        skipped_empty_exact_codes=set(),
+        issuer_alias_count=0,
+        progress_current=5,
+        progress_total=7,
+    )
+
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert result["cancelled"] is False
+    assert result["updated"] == 0
+    assert len(result["errors"]) == 1
+    assert "Refusing fundamentals REST backfill" in result["errors"][0]
+    assert any("Refusing fundamentals REST backfill" in message for message in progress_messages)
+    assert fins_calls == []
+
+
+@pytest.mark.asyncio
 async def test_sync_margin_data_skips_large_rest_backfill_after_bulk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2739,6 +2777,79 @@ async def test_sync_margin_data_skips_large_rest_backfill_after_bulk(
     assert len(result["errors"]) == 1
     assert "Skipping margin_data REST backfill" in result["errors"][0]
     assert any("Skipping margin_data REST backfill" in message for message in progress_messages)
+    assert margin_calls == []
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_narrows_backfill_codes_after_bulk_ingest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[
+            BulkFileInfo(
+                key="margin_202602.csv.gz",
+                last_modified="2026-02-10T00:00:00Z",
+                size=1,
+                range_start=date(2026, 2, 1),
+                range_end=date(2026, 2, 28),
+            )
+        ],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    client = DummyClient()
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=_FakeBulkService(
+            results_by_endpoint={
+                "/markets/margin-interest": BulkFetchResult(
+                    rows=[
+                        {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+                    ],
+                    api_calls=1,
+                    cache_hits=0,
+                    cache_misses=1,
+                    selected_files=1,
+                )
+            }
+        ),
+        bulk_probe_disabled=False,
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=1,
+            plan=bulk_plan,
+            reason="bulk_estimate_lower",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_fetch_planner._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-06",
+        existing_margin_codes=set(),
+    )
+
+    margin_calls = [call for call in client.calls if call[0] == "/markets/margin-interest"]
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert market_db.get_margin_codes() == {"7203"}
     assert margin_calls == []
 
 
@@ -3080,6 +3191,37 @@ async def test_incremental_sync_backfills_missing_stock_dates_without_new_topix_
     assert result.datesProcessed == 1
     assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-06"} for path, params in client.calls)
     assert any(row.get("date") == "2026-02-06" for row in market_db.stock_rows)
+
+
+@pytest.mark.asyncio
+async def test_incremental_stock_date_targets_reuse_existing_inspection_when_no_missing_dates() -> None:
+    store = DummyTimeSeriesStore(DummyMarketDb())
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        time_series_store=store,
+    )
+    inspection = TimeSeriesInspection(
+        source="duckdb",
+        topix_max="2026-02-10",
+        stock_max="2026-02-06",
+        missing_stock_dates_count=0,
+    )
+
+    targets = await _resolve_incremental_stock_date_targets(
+        ctx,
+        topix_rows=[
+            {"date": "2026-02-06"},
+            {"date": "2026-02-10"},
+        ],
+        anchor="2026-02-06",
+        inspection=inspection,
+    )
+
+    assert targets == ["2026-02-10"]
+    assert store.inspect_calls == 0
 
 
 @pytest.mark.asyncio
@@ -5530,3 +5672,22 @@ async def test_publish_helpers_return_zero_when_rows_empty() -> None:
     assert await _publish_stock_data_rows(ctx, []) == 0
     assert await _publish_indices_rows(ctx, []) == 0
     assert await _publish_statement_rows(ctx, []) == 0
+
+
+@pytest.mark.asyncio
+async def test_index_stock_helper_emits_progress() -> None:
+    progress_events: list[tuple[str, int, int, str]] = []
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
+        cancelled=asyncio.Event(),
+        on_progress=lambda stage, current, total, message: progress_events.append(
+            (stage, current, total, message)
+        ),
+    )
+
+    await _index_stock_data_rows(ctx, progress_current=2, progress_total=7)
+
+    assert progress_events == [
+        ("stock_data", 2, 7, "Projecting adjusted stock_data and exporting Parquet...")
+    ]

@@ -90,8 +90,14 @@ async def _plan_fetch_method(
     require_bulk: bool = False,
     disable_future_bulk_on_probe_failure: bool = True,
 ) -> _StageFetchDecision:
-    if ctx.bulk_probe_disabled:
+    endpoint_probe_disabled = endpoint in getattr(ctx, "bulk_probe_disabled_endpoints", set())
+    if ctx.bulk_probe_disabled or endpoint_probe_disabled:
         plan_hint = _get_plan_hint(ctx.client)
+        reason_detail = (
+            ctx.bulk_probe_failure_reason
+            if ctx.bulk_probe_disabled
+            else f"bulk probe disabled for endpoint {endpoint}"
+        )
         logger.info(
             "sync fetch strategy selected",
             event="sync_fetch_strategy",
@@ -112,7 +118,7 @@ async def _plan_fetch_method(
             estimated_bulk_calls=None,
             plan=None,
             reason="bulk_probe_disabled",
-            reason_detail=ctx.bulk_probe_failure_reason,
+            reason_detail=reason_detail,
         )
 
     if not require_bulk and estimated_rest_calls < min_rest_calls_to_probe_bulk:
@@ -153,7 +159,11 @@ async def _plan_fetch_method(
         # so the sync job can continue. Some stages also suppress further probes.
         probe_failure_reason = _summarize_exception(e)
         if disable_future_bulk_on_probe_failure:
-            ctx.bulk_probe_disabled = True
+            disabled_endpoints = getattr(ctx, "bulk_probe_disabled_endpoints", None)
+            if disabled_endpoints is None:
+                ctx.bulk_probe_disabled = True
+            else:
+                disabled_endpoints.add(endpoint)
             ctx.bulk_probe_failure_reason = probe_failure_reason
         logger.warning(
             "sync bulk plan probe failed, falling back to REST for this job: {}",

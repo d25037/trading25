@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Iterable, Protocol, cast
 
@@ -202,6 +202,7 @@ class SyncContext:
     time_series_store: SyncTimeSeriesStoreLike | None = None
     bulk_service: BulkServiceLike | None = None
     bulk_probe_disabled: bool = False
+    bulk_probe_disabled_endpoints: set[str] = field(default_factory=set)
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
 
@@ -426,7 +427,11 @@ class IndicesOnlySyncStrategy:
                 )
 
             if not self._include_options:
-                await sync_publish_helpers._index_indices_rows(ctx)
+                await sync_publish_helpers._index_indices_rows(
+                    ctx,
+                    progress_current=2,
+                    progress_total=2,
+                )
                 return SyncResult(
                     success=len(errors) == 0,
                     totalApiCalls=total_calls,
@@ -477,7 +482,11 @@ async def _sync_initial_topix_stage(ctx: SyncContext) -> tuple[list[dict[str, An
             stage="topix",
         ),
         publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
-        index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
+        index=lambda _rows: sync_publish_helpers._index_topix_rows(
+            ctx,
+            progress_current=0,
+            progress_total=6,
+        ),
     )
     return topix_batch.rows, topix_calls
 
@@ -608,7 +617,11 @@ async def _sync_initial_stock_data_stage(
                 "cancelled": True,
             }
 
-    await sync_publish_helpers._index_stock_data_rows(ctx)
+    await sync_publish_helpers._index_stock_data_rows(
+        ctx,
+        progress_current=3,
+        progress_total=8,
+    )
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
@@ -849,11 +862,23 @@ async def _sync_incremental_stock_data_stage(
     *,
     topix_rows: list[dict[str, Any]],
     anchor: str | None,
+    inspection: TimeSeriesInspection,
+    refresh_missing_stock_dates: bool = False,
 ) -> dict[str, Any]:
     api_calls = 0
     stocks_updated = 0
     errors: list[str] = []
-    stock_target_dates = await _resolve_incremental_stock_date_targets(ctx, topix_rows=topix_rows, anchor=anchor)
+    target_inspection = (
+        sync_state_helpers._inspect_time_series(ctx)
+        if refresh_missing_stock_dates
+        else inspection
+    )
+    stock_target_dates = await _resolve_incremental_stock_date_targets(
+        ctx,
+        topix_rows=topix_rows,
+        anchor=anchor,
+        inspection=target_inspection,
+    )
     from_date_new, to_date_new = _select_bulk_candidates_from_dates(stock_target_dates)
     decision = await sync_fetch_planner._plan_fetch_method(
         ctx,
@@ -925,7 +950,11 @@ async def _sync_incremental_stock_data_stage(
                 "cancelled": True,
             }
 
-    await sync_publish_helpers._index_stock_data_rows(ctx)
+    await sync_publish_helpers._index_stock_data_rows(
+        ctx,
+        progress_current=2,
+        progress_total=7,
+    )
     return {
         "api_calls": api_calls,
         "stocks_updated": stocks_updated,
@@ -1133,7 +1162,11 @@ class IncrementalSyncStrategy:
                     stage="topix",
                 ),
                 publish=lambda rows: sync_publish_helpers._publish_topix_rows(ctx, rows),
-                index=lambda _rows: sync_publish_helpers._index_topix_rows(ctx),
+                index=lambda _rows: sync_publish_helpers._index_topix_rows(
+                    ctx,
+                    progress_current=0,
+                    progress_total=7,
+                ),
             )
             total_calls += topix_calls
             topix_rows = topix_batch.rows
@@ -1171,6 +1204,8 @@ class IncrementalSyncStrategy:
                 ctx,
                 topix_rows=topix_rows,
                 anchor=last_date,
+                inspection=inspection,
+                refresh_missing_stock_dates=bool(topix_rows),
             )
             total_calls += stock_sync["api_calls"]
             stocks_updated += stock_sync["stocks_updated"]
@@ -1339,8 +1374,8 @@ async def _resolve_incremental_stock_date_targets(
     *,
     topix_rows: list[dict[str, Any]],
     anchor: str | None,
+    inspection: TimeSeriesInspection,
 ) -> list[str]:
-    inspection = sync_state_helpers._inspect_time_series(ctx)
     topix_dates = sync_state_helpers._normalize_date_list(
         [
             str(r["date"])

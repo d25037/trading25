@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from loguru import logger
@@ -461,6 +461,26 @@ def _merge_margin_stage(
     return api_calls + stage.api_calls, updated + stage.updated
 
 
+def _narrow_margin_backfill_targets_after_bulk(
+    ctx: Any,
+    targets: MarginSyncTargets,
+) -> MarginSyncTargets:
+    if not targets.backfill_codes:
+        return targets
+    latest_margin_codes = set(sync_state_helpers._inspect_time_series(ctx).margin_codes)
+    remaining_backfill_codes = [
+        code for code in targets.backfill_codes if code not in latest_margin_codes
+    ]
+    if len(remaining_backfill_codes) == len(targets.backfill_codes):
+        return targets
+    return replace(
+        targets,
+        backfill_codes=remaining_backfill_codes,
+        existing_margin_code_set=latest_margin_codes,
+        target_code_set=set(targets.rest_codes) | set(remaining_backfill_codes),
+    )
+
+
 async def _finish_margin_sync(
     ctx: Any,
     *,
@@ -497,7 +517,11 @@ async def _finish_margin_sync(
             "cancelled": False,
         }
 
-    await sync_publish_helpers._index_margin_rows(ctx)
+    await sync_publish_helpers._index_margin_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
     next_empty_codes = set(targets.current_empty_codes)
     next_empty_codes.update(empty_fetch_codes)
     latest_margin_codes = set(sync_state_helpers._inspect_time_series(ctx).margin_codes)
@@ -598,6 +622,8 @@ async def sync_margin_data(
         used_rest_fallback = bulk_stage.used_rest_fallback
         fallback_reason = bulk_stage.fallback_reason
         bulk_result = bulk_stage.bulk_result
+        if bulk_stage.updated > 0:
+            targets = _narrow_margin_backfill_targets_after_bulk(ctx, targets)
 
     if decision.method == "rest" or used_rest_fallback:
         rest_estimated_calls = max(len(targets.rest_codes) + len(targets.backfill_codes), 1)

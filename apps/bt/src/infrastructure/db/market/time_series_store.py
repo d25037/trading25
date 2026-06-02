@@ -328,6 +328,7 @@ class DuckDbParquetTimeSeriesStore:
     """
     _STOCK_PROJECTION_TARGET_KEYS_RELATION = "__tmp_stock_projection_target_keys"
     _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
+    _STOCK_DIRECT_PROJECTION_RELATION = "__tmp_stock_direct_projection_rows"
 
     def __init__(
         self,
@@ -638,8 +639,13 @@ class DuckDbParquetTimeSeriesStore:
             if row.get("code")
             and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
         ]
-        if point_projection_rows:
-            self._project_stock_rows(point_projection_rows)
+        direct_projection_rows, window_projection_rows = (
+            self._partition_direct_stock_projection_rows(point_projection_rows)
+        )
+        if direct_projection_rows:
+            self._direct_project_stock_rows(direct_projection_rows)
+        if window_projection_rows:
+            self._project_stock_rows(window_projection_rows)
 
         return published
 
@@ -1064,17 +1070,27 @@ class DuckDbParquetTimeSeriesStore:
                 return
             spec = self._TABLE_SPECS[table_name]
             output_path = self._parquet_dir / spec.parquet_name
-            if output_path.exists():
-                output_path.unlink()
+            tmp_output_path = output_path.with_name(f"{output_path.name}.tmp")
+            if tmp_output_path.exists():
+                tmp_output_path.unlink()
 
-            escaped = str(output_path).replace("'", "''")
+            escaped = str(tmp_output_path).replace("'", "''")
             if spec.order_by:
                 source_sql = (
                     f"(SELECT * FROM {spec.table_name} ORDER BY {spec.order_by})"
                 )
             else:
                 source_sql = spec.table_name
-            self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
+            try:
+                self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
+            except Exception:
+                if tmp_output_path.exists():
+                    tmp_output_path.unlink()
+                raise
+            if tmp_output_path.exists():
+                tmp_output_path.replace(output_path)
+            elif output_path.exists():
+                output_path.unlink()
             self._dirty_tables.discard(table_name)
 
     def _export_stock_minute_partitions(self) -> None:
@@ -1128,6 +1144,104 @@ class DuckDbParquetTimeSeriesStore:
             return float(adjustment_factor) != 1.0
         except (TypeError, ValueError):
             return False
+
+    @staticmethod
+    def _can_project_stock_row_directly(row: dict[str, Any]) -> bool:
+        adjustment_factor = row.get("adjustment_factor")
+        if adjustment_factor is None:
+            return True
+        try:
+            return float(adjustment_factor) <= 0 or float(adjustment_factor) == 1.0
+        except (TypeError, ValueError):
+            return True
+
+    def _partition_direct_stock_projection_rows(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        candidate_rows = [
+            row for row in rows
+            if row.get("code")
+            and row.get("date")
+            and self._can_project_stock_row_directly(row)
+        ]
+        if not candidate_rows:
+            return [], rows
+
+        dataframe = pd.DataFrame.from_records(
+            [
+                {
+                    "code": str(row["code"]),
+                    "date": str(row["date"]),
+                }
+                for row in candidate_rows
+            ],
+            columns=("code", "date"),
+        )
+        with self._lock:
+            self._conn.register(self._STOCK_DIRECT_PROJECTION_RELATION, dataframe)
+            try:
+                direct_keys = {
+                    (str(row[0]), str(row[1]))
+                    for row in self._conn.execute(
+                        f"""
+                        SELECT candidate.code, candidate.date
+                        FROM {self._STOCK_DIRECT_PROJECTION_RELATION} candidate
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM stock_data_raw future
+                            WHERE future.code = candidate.code
+                              AND future.date > candidate.date
+                              AND future.adjustment_factor IS NOT NULL
+                              AND future.adjustment_factor > 0
+                              AND future.adjustment_factor != 1.0
+                        )
+                        """
+                    ).fetchall()
+                }
+            finally:
+                self._conn.unregister(self._STOCK_DIRECT_PROJECTION_RELATION)
+
+        direct_rows: list[dict[str, Any]] = []
+        window_rows: list[dict[str, Any]] = []
+        for row in rows:
+            key = (str(row.get("code")), str(row.get("date")))
+            if key in direct_keys:
+                direct_rows.append(row)
+            else:
+                window_rows.append(row)
+        return direct_rows, window_rows
+
+    def _direct_project_stock_rows(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        dataframe = pd.DataFrame.from_records(
+            [
+                {column: row.get(column) for column in self._STOCK_DATA_UPSERT_SPEC.columns}
+                for row in rows
+            ],
+            columns=self._STOCK_DATA_UPSERT_SPEC.columns,
+        )
+        with self._lock:
+            self._conn.register(self._STOCK_DIRECT_PROJECTION_RELATION, dataframe)
+            try:
+                columns_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.columns)
+                conflict_sql = ", ".join(self._STOCK_DATA_UPSERT_SPEC.conflict_columns)
+                update_clause = self._build_upsert_update_clause(
+                    self._STOCK_DATA_UPSERT_SPEC
+                )
+                self._conn.execute(
+                    f"""
+                    INSERT INTO stock_data ({columns_sql})
+                    SELECT {columns_sql}
+                    FROM {self._STOCK_DIRECT_PROJECTION_RELATION}
+                    ON CONFLICT ({conflict_sql}) DO UPDATE
+                    SET {update_clause}
+                    """
+                )
+            finally:
+                self._conn.unregister(self._STOCK_DIRECT_PROJECTION_RELATION)
+            self._dirty_tables.add("stock_data")
 
     def _stock_projection_sql(
         self,

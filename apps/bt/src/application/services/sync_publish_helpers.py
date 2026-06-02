@@ -82,32 +82,117 @@ async def _publish_statement_rows(ctx: Any, rows: list[dict[str, Any]]) -> int:
     return await asyncio.to_thread(store.publish_statements, rows)
 
 
-async def _index_topix_rows(ctx: Any) -> None:
+def _emit_index_progress(
+    ctx: Any,
+    *,
+    stage: str,
+    current: int | None,
+    total: int | None,
+    message: str,
+) -> None:
+    if current is None or total is None:
+        return
+    ctx.on_progress(stage, current, total, message)
+
+
+async def _index_topix_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="topix",
+        current=progress_current,
+        total=progress_total,
+        message="Exporting TOPIX Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_topix_data)
 
 
-async def _index_stock_data_rows(ctx: Any) -> None:
+async def _index_stock_data_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="stock_data",
+        current=progress_current,
+        total=progress_total,
+        message="Projecting adjusted stock_data and exporting Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_stock_data)
 
 
-async def _index_indices_rows(ctx: Any) -> None:
+async def _index_indices_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="indices",
+        current=progress_current,
+        total=progress_total,
+        message="Exporting indices Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_indices_data)
 
 
-async def _index_options_225_rows(ctx: Any) -> None:
+async def _index_options_225_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="options_225",
+        current=progress_current,
+        total=progress_total,
+        message="Exporting N225 options Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_options_225_data)
 
 
-async def _index_margin_rows(ctx: Any) -> None:
+async def _index_margin_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="margin",
+        current=progress_current,
+        total=progress_total,
+        message="Exporting margin_data Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_margin_data)
 
 
-async def _index_statement_rows(ctx: Any) -> None:
+async def _index_statement_rows(
+    ctx: Any,
+    *,
+    progress_current: int | None = None,
+    progress_total: int | None = None,
+) -> None:
+    _emit_index_progress(
+        ctx,
+        stage="fundamentals",
+        current=progress_current,
+        total=progress_total,
+        message="Exporting statements Parquet...",
+    )
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_statements)
 

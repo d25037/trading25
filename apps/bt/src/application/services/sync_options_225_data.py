@@ -171,8 +171,16 @@ async def sync_options_225_dates(
             bulk_result=bulk_result,
         )
 
-    await sync_publish_helpers._index_options_225_rows(ctx)
-    await sync_publish_helpers._index_indices_rows(ctx)
+    await sync_publish_helpers._index_options_225_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
+    await sync_publish_helpers._index_indices_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
     return {"api_calls": api_calls, "errors": errors, "cancelled": False}
 
 

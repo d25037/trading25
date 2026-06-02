@@ -29,7 +29,7 @@ function regimeMarkerClass(data: MarketBubbleFootprintMonitor): string {
 export function BubbleFootprintBanner({ data, isLoading, errorMessage }: BubbleFootprintBannerProps) {
   if (isLoading) {
     return (
-      <div className="min-w-0 text-xs text-muted-foreground" aria-label="Market Regime">
+      <div className="min-w-0 text-xs text-muted-foreground" role="status" aria-label="Market Regime">
         Loading market regime...
       </div>
     );
@@ -37,7 +37,7 @@ export function BubbleFootprintBanner({ data, isLoading, errorMessage }: BubbleF
 
   if (errorMessage) {
     return (
-      <div className="min-w-0 text-xs text-destructive" aria-label="Market Regime">
+      <div className="min-w-0 text-xs text-destructive" role="alert" aria-label="Market Regime">
         {errorMessage}
       </div>
     );
@@ -50,14 +50,12 @@ export function BubbleFootprintBanner({ data, isLoading, errorMessage }: BubbleF
     .join('\n');
 
   return (
-    <div
-      className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden text-xs"
-      aria-label="Market Regime"
-    >
+    <div className="flex min-w-0 max-w-full flex-col gap-1 overflow-hidden text-xs">
       <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
         <span className="shrink-0 font-semibold uppercase text-muted-foreground">Market Regime</span>
         <span className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-foreground">
           <span
+            role="img"
             aria-label={`Regime marker: ${regimeLabel(data.overallRegime)}`}
             className={`h-2 w-2 rounded-full ring-4 ${regimeMarkerClass(data)}`}
           />

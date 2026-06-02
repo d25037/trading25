@@ -33,6 +33,9 @@ from src.application.services.sync_row_converters import (
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 
 
+_FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS = 250
+
+
 def _format_target_label(
     count: int,
     unit: str,
@@ -260,7 +263,11 @@ async def sync_fundamentals_initial(
             bulk_result=bulk_result,
         )
 
-    await sync_publish_helpers._index_statement_rows(ctx)
+    await sync_publish_helpers._index_statement_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
     now_iso = datetime.now(UTC).isoformat()
@@ -381,7 +388,11 @@ async def sync_fundamentals_incremental(
             cancelled=True,
         )
 
-    await sync_publish_helpers._index_statement_rows(ctx)
+    await sync_publish_helpers._index_statement_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
     date_phase_frontier = _latest_date(list(date_phase_disclosed_dates))
@@ -622,6 +633,22 @@ async def _sync_fundamentals_backfill_codes(
     errors: list[str] = []
     failed_codes: list[str] = []
     empty_fetch_codes: set[str] = set()
+    if len(code_targets) > _FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS:
+        message = (
+            "Refusing fundamentals REST backfill for "
+            f"{len(code_targets)} codes "
+            f"(limit={_FUNDAMENTALS_REST_BACKFILL_MAX_ESTIMATED_CALLS}). "
+            "Run with /fins/summary bulk available or narrow the fundamentals target universe."
+        )
+        ctx.on_progress("fundamentals", progress_current, progress_total, message)
+        return {
+            "api_calls": api_calls,
+            "updated": updated,
+            "errors": [message],
+            "failed_codes": failed_codes,
+            "empty_fetch_codes": empty_fetch_codes,
+            "cancelled": False,
+        }
     if code_targets:
         sync_fetch_planner._emit_fetch_execution_progress(
             ctx,

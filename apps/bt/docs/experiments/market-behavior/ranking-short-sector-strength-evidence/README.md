@@ -122,8 +122,8 @@ Ranking に載せるなら、short-side sector overlay は以下の順序で扱�
 | domain module | `apps/bt/src/domains/analytics/ranking_short_sector_strength_evidence.py` |
 | tests | `apps/bt/tests/unit/domains/analytics/test_ranking_short_sector_strength_evidence.py` |
 | bundle | `/private/tmp/trading25-research/market-behavior/ranking-short-sector-strength-evidence/20260529_ranking_short_sector_strength_prime_v1` |
-| index-score bundle | `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/ranking-short-sector-strength-evidence/20260601_ranking_short_sector_strength_index_score_v3` |
-| average-score bundle | `/Users/shinjiroaso/.local/share/trading25/research/market-behavior/ranking-short-sector-strength-evidence/20260601_ranking_short_sector_strength_average_score_v4` |
+| index-score bundle | `~/.local/share/trading25/research/market-behavior/ranking-short-sector-strength-evidence/20260601_ranking_short_sector_strength_index_score_v3` |
+| average-score bundle | `~/.local/share/trading25/research/market-behavior/ranking-short-sector-strength-evidence/20260601_ranking_short_sector_strength_average_score_v4` |
 | result tables | `coverage_diagnostics_df`, `short_candidate_sector_interaction_df`, `short_value_sector_interaction_df`, `stale_rally_sector_interaction_df`, `technical_sector_short_interaction_df`, `priority_short_sector_readout_df`, `observation_sample_df` |
 
 ## Reproduction

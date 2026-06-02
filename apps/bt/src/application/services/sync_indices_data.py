@@ -258,7 +258,11 @@ async def sync_incremental_indices_stage(
             bulk_result=indices_bulk_result,
         )
 
-    await sync_publish_helpers._index_indices_rows(ctx)
+    await sync_publish_helpers._index_indices_rows(
+        ctx,
+        progress_current=progress_current,
+        progress_total=progress_total,
+    )
     return IndicesSyncStageOutcome(api_calls=api_calls, errors=errors)
 
 

@@ -377,6 +377,45 @@ def test_publish_stock_data_large_batch_uses_relation_insert(
     store.close()
 
 
+def test_publish_stock_data_directly_projects_append_rows_without_future_adjustments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "market-timeseries" / "market.duckdb"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(db_path),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    projection_calls = 0
+    original_project = DuckDbParquetTimeSeriesStore._project_stock_rows
+
+    def _spy_project(self: DuckDbParquetTimeSeriesStore, rows: list[dict[str, object]]) -> None:
+        nonlocal projection_calls
+        projection_calls += 1
+        original_project(self, rows)
+
+    monkeypatch.setattr(DuckDbParquetTimeSeriesStore, "_project_stock_rows", _spy_project)
+
+    store.publish_stock_data([_stock_row_for("2026-02-10")])
+
+    rows = _query_rows(
+        db_path,
+        """
+        SELECT code, date, open, high, low, close, volume, adjustment_factor
+        FROM stock_data
+        ORDER BY code, date
+        """,
+    )
+
+    assert projection_calls == 0
+    assert rows == [("7203", "2026-02-10", 1.0, 2.0, 1.0, 2.0, 100, None)]
+
+    store.close()
+
+
 def test_index_stock_data_projects_split_adjustments_from_raw_rows(tmp_path: Path) -> None:
     db_path = tmp_path / "market-timeseries" / "market.duckdb"
     store = create_time_series_store(
@@ -903,6 +942,14 @@ class _ConcurrentAccessDetectingConnection:
         return _ResultCursor()
 
 
+class _FailingCopyConnection(_ConcurrentAccessDetectingConnection):
+    @staticmethod
+    def _cursor_for(sql: str) -> _ResultCursor:
+        if sql.startswith("COPY "):
+            raise RuntimeError("copy failed")
+        return _ConcurrentAccessDetectingConnection._cursor_for(sql)
+
+
 def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
     store = DuckDbParquetTimeSeriesStore.__new__(DuckDbParquetTimeSeriesStore)
     store._duckdb_path = tmp_path / "market.duckdb"
@@ -1005,6 +1052,20 @@ def test_export_if_dirty_handles_absent_and_existing_parquet(tmp_path: Path) -> 
 
     assert not output.exists()
     assert "topix_data" not in store._dirty_tables
+
+
+def test_export_if_dirty_preserves_existing_parquet_when_copy_fails(tmp_path: Path) -> None:
+    store = _build_lock_test_store(tmp_path)
+    store._conn = _FailingCopyConnection()
+    output = store._parquet_dir / "topix_data.parquet"
+    output.write_text("stale")
+    store._dirty_tables.add("topix_data")
+
+    with pytest.raises(RuntimeError, match="copy failed"):
+        store._export_if_dirty("topix_data")
+
+    assert output.read_text() == "stale"
+    assert "topix_data" in store._dirty_tables
 
 
 def test_close_flushes_dirty_tables_and_closes_connection(tmp_path: Path) -> None:
