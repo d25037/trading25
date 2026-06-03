@@ -169,6 +169,11 @@ class MarketDb:
     def ensure_schema(self) -> None:
         """不足テーブルを補完する（DuckDB SoT）。"""
         ensure_market_schema(self)
+        if self._count_rows("index_membership_daily") == 0 and self._count_rows("stock_master_daily") > 0:
+            _stock_master_writers.rebuild_topix500_membership(
+                self._conn,
+                self._lock,
+            )
 
     # --- Read ---
 
@@ -618,22 +623,35 @@ class MarketDb:
         if not rows:
             return 0
         self._assert_writable()
-        return _stock_master_writers.upsert_stock_master_daily(
+        updated = _stock_master_writers.upsert_stock_master_daily(
             self._executemany,
             snapshot_date,
             rows,
         )
+        _stock_master_writers.rebuild_topix500_membership(
+            self._conn,
+            self._lock,
+            dates=[snapshot_date],
+        )
+        return updated
 
     def upsert_stock_master_daily_rows(self, rows: list[dict[str, Any]]) -> int:
         """date を含む PIT 銘柄マスタ行を relation-based upsert する。"""
         if not rows:
             return 0
         self._assert_writable()
-        return _stock_master_writers.upsert_stock_master_daily_rows(
+        updated = _stock_master_writers.upsert_stock_master_daily_rows(
             self._conn,
             self._lock,
             rows,
         )
+        dates = sorted({str(row.get("date") or "") for row in rows if row.get("date")})
+        _stock_master_writers.rebuild_topix500_membership(
+            self._conn,
+            self._lock,
+            dates=dates,
+        )
+        return updated
 
     def rebuild_stock_master_intervals(self) -> int:
         """daily master から同一属性が続く PIT interval を再構築。"""

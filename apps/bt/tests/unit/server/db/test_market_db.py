@@ -4,6 +4,7 @@ Tests for MarketDb (DuckDB implementation).
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 
 import duckdb
@@ -13,7 +14,7 @@ from src.infrastructure.db.market.market_db import MarketDb
 
 
 @pytest.fixture()
-def market_db(tmp_path: Path) -> MarketDb:
+def market_db(tmp_path: Path) -> Generator[MarketDb]:
     db_path = str(tmp_path / "market.duckdb")
     db = MarketDb(db_path)
     yield db
@@ -211,6 +212,80 @@ class TestMarketDbBasics:
         )
 
         assert row == (2, "トヨタ自動車", "second", "ソニーグループ")
+        assert market_db.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
+        assert market_db.get_index_membership_codes("2024-01-05", "TOPIX500") == {"6758"}
+
+    def test_stock_master_daily_upsert_materializes_topix500_membership(
+        self, market_db: MarketDb
+    ) -> None:
+        assert market_db.upsert_stock_master_daily(
+            "2024-01-04",
+            [
+                {
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "company_name_english": "TOYOTA",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Core30",
+                    "listed_date": "1949-05-16",
+                    "created_at": "now",
+                },
+                {
+                    "code": "1301",
+                    "company_name": "極洋",
+                    "company_name_english": "KYOKUYO",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "1",
+                    "sector_17_name": "食品",
+                    "sector_33_code": "0050",
+                    "sector_33_name": "水産・農林業",
+                    "scale_category": "TOPIX Small 1",
+                    "listed_date": "1949-05-16",
+                    "created_at": "now",
+                },
+            ],
+        ) == 2
+
+        assert market_db.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
+
+    def test_existing_stock_master_backfills_topix500_membership_on_open(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = tmp_path / "existing-market.duckdb"
+        db = MarketDb(str(db_path))
+        try:
+            db.upsert_stock_master_daily_rows([
+                {
+                    "date": "2024-01-04",
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "company_name_english": "TOYOTA",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "scale_category": "TOPIX Core30",
+                    "listed_date": "1949-05-16",
+                    "created_at": "now",
+                }
+            ])
+            db._execute("DELETE FROM index_membership_daily")
+        finally:
+            db.close()
+
+        reopened = MarketDb(str(db_path))
+        try:
+            assert reopened.get_index_membership_codes("2024-01-04", "TOPIX500") == {"7203"}
+        finally:
+            reopened.close()
 
     def test_stock_master_daily_rows_relation_upsert_skips_empty_and_invalid_rows(
         self, market_db: MarketDb

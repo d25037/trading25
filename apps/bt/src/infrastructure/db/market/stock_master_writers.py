@@ -21,6 +21,9 @@ GetLatestDate = Callable[[], str | None]
 TableExists = Callable[[str], bool]
 UpsertStocks = Callable[[list[dict[str, Any]]], int]
 
+_TOPIX500_INDEX_CODE = "TOPIX500"
+_TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
+
 
 def upsert_stocks(executemany: ExecuteMany, rows: list[dict[str, Any]]) -> int:
     if not rows:
@@ -160,6 +163,49 @@ def upsert_stock_master_daily_rows(conn: Any, lock: Any, rows: list[dict[str, An
         finally:
             conn.unregister(STOCK_MASTER_DAILY_RELATION)
     return len(deduped)
+
+
+def rebuild_topix500_membership(
+    conn: Any,
+    lock: Any,
+    *,
+    dates: list[str] | None = None,
+) -> int:
+    date_values = sorted({str(date) for date in dates or [] if str(date)})
+    date_filter = ""
+    if date_values:
+        date_filter = f" AND date IN ({', '.join('?' for _ in date_values)})"
+
+    now_iso = datetime.now().isoformat()  # noqa: DTZ005
+    category_placeholders = ", ".join("?" for _ in _TOPIX500_SCALE_CATEGORIES)
+    with lock:
+        conn.execute(
+            f"""
+            DELETE FROM index_membership_daily
+            WHERE index_code = ?{date_filter}
+            """,
+            (_TOPIX500_INDEX_CODE, *date_values),
+        )
+        conn.execute(
+            f"""
+            INSERT INTO index_membership_daily (date, index_code, code, created_at)
+            SELECT DISTINCT date, ? AS index_code, code, ? AS created_at
+            FROM stock_master_daily
+            WHERE coalesce(scale_category, '') IN ({category_placeholders}){date_filter}
+            ON CONFLICT (date, index_code, code) DO UPDATE
+            SET created_at = excluded.created_at
+            """,
+            (_TOPIX500_INDEX_CODE, now_iso, *_TOPIX500_SCALE_CATEGORIES, *date_values),
+        )
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM index_membership_daily
+            WHERE index_code = ?{date_filter}
+            """,
+            (_TOPIX500_INDEX_CODE, *date_values),
+        ).fetchone()
+    return int(row[0]) if row is not None else 0
 
 
 def rebuild_stock_master_intervals(conn: Any, lock: Any, table_exists: TableExists) -> int:

@@ -129,6 +129,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
     if reader_path.exists():
         try:
+            writable_market_db = MarketDb(str(reader_path), read_only=False)
+            writable_market_db.close()
+            logger.info(f"MarketDb schema/backfill を確認: {reader_path}")
+        except Exception as e:
+            logger.warning(f"MarketDb schema/backfill の確認に失敗: {e}")
+        try:
             market_reader = MarketDbReader(str(reader_path), read_only=True)
             app.state.market_data_service = MarketDataService(market_reader)
             logger.info(f"Market data reader を初期化: {reader_path}")
