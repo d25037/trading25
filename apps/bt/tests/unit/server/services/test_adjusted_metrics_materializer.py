@@ -427,7 +427,9 @@ def test_rebuild_is_idempotent_for_same_basis_version(market_db: MarketDb) -> No
     assert market_db.get_adjusted_metrics_snapshot()["dailyValuationRows"] == 1
 
 
-def test_rebuild_all_prunes_previous_adjusted_basis_version(market_db: MarketDb) -> None:
+def test_rebuild_reuses_existing_basis_when_only_price_date_advances(
+    market_db: MarketDb,
+) -> None:
     market_db.upsert_statements([
         {
             "code": "7203",
@@ -465,6 +467,125 @@ def test_rebuild_all_prunes_previous_adjusted_basis_version(market_db: MarketDb)
             "close": 600.0,
             "volume": 100,
             "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    assert second.price_basis_date == first.price_basis_date
+    snapshot = market_db.get_adjusted_metrics_snapshot()
+    assert snapshot["statementRows"] == 1
+    assert snapshot["dailyValuationRows"] == 2
+    assert snapshot["basisVersion"] == first.basis_version
+    valuation = market_db.get_daily_valuation("7203")
+    assert [row["basis_version"] for row in valuation] == [first.basis_version] * 2
+    assert [row["close"] for row in valuation] == [pytest.approx(500.0), pytest.approx(600.0)]
+
+
+def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        },
+        {
+            "code": "7203",
+            "date": "2025-01-06",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        },
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2025-01-02",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 200.0,
+            "bps": 2000.0,
+            "forecast_eps": 220.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    valuation = market_db.get_daily_valuation("7203")
+    assert [row["date"] for row in valuation] == ["2024-12-30", "2025-01-06"]
+    assert valuation[0]["eps"] == pytest.approx(100.0)
+    assert valuation[0]["statement_disclosed_date"] == "2024-05-10"
+    assert valuation[1]["eps"] == pytest.approx(200.0)
+    assert valuation[1]["statement_disclosed_date"] == "2025-01-02"
+
+
+def test_rebuild_all_prunes_previous_adjusted_basis_after_adjustment_event(
+    market_db: MarketDb,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-12-30",
+            "open": 500.0,
+            "high": 500.0,
+            "low": 500.0,
+            "close": 500.0,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+
+    first = materializer.rebuild_all()
+    market_db.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2025-01-06",
+            "open": 600.0,
+            "high": 600.0,
+            "low": 600.0,
+            "close": 600.0,
+            "volume": 100,
+            "adjustment_factor": 0.5,
             "created_at": "2026-05-16T00:00:00",
         }
     ])

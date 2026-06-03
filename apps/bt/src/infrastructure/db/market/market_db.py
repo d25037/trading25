@@ -768,6 +768,9 @@ class MarketDb:
         basis_version: str,
         price_basis_date: str,
         codes: list[str] | None = None,
+        start_date: str | None = None,
+        start_date_inclusive: bool = True,
+        replace_existing: bool = True,
     ) -> int:
         """Canonical daily valuation metrics を DuckDB relation で一括生成する。"""
         self._assert_writable()
@@ -778,6 +781,9 @@ class MarketDb:
             basis_version,
             price_basis_date,
             codes,
+            start_date,
+            start_date_inclusive,
+            replace_existing,
         )
 
     def prune_adjusted_metric_basis_versions(

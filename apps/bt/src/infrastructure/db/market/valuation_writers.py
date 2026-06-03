@@ -150,7 +150,7 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
         stock_prices AS (
             SELECT code, date, close
             FROM stock_data
-            {code_filter}
+            {stock_filter}
             ORDER BY code, date
         ),
         actual_metrics AS (
@@ -455,6 +455,7 @@ _DAILY_VALUATION_REBUILD_SQL_TEMPLATE = """
                )
            )
            OR sh.disclosed_date IS NOT NULL
+        ON CONFLICT (code, date, basis_version) DO UPDATE SET {daily_valuation_update_clause}
         """
 
 
@@ -465,6 +466,9 @@ def upsert_daily_valuation_from_adjusted_metrics(
     basis_version: str,
     price_basis_date: str,
     codes: list[str] | None = None,
+    start_date: str | None = None,
+    start_date_inclusive: bool = True,
+    replace_existing: bool = True,
 ) -> int:
     """Canonical daily valuation metrics を DuckDB relation で一括生成する。"""
     if (
@@ -474,10 +478,21 @@ def upsert_daily_valuation_from_adjusted_metrics(
         return 0
 
     normalized_codes = sorted({normalize_stock_code(code) for code in codes or [] if code})
-    code_filter = ""
+    stock_conditions: list[str] = []
+    stock_filter_params: list[Any] = []
     if normalized_codes:
         placeholders = ", ".join("?" for _ in normalized_codes)
-        code_filter = f"WHERE code IN ({placeholders})"
+        stock_conditions.append(f"code IN ({placeholders})")
+        stock_filter_params.extend(normalized_codes)
+    if start_date is not None:
+        operator = ">=" if start_date_inclusive else ">"
+        stock_conditions.append(f"date {operator} ?")
+        stock_filter_params.append(start_date)
+    stock_filter = (
+        f"WHERE {' AND '.join(stock_conditions)}"
+        if stock_conditions
+        else ""
+    )
 
     now_iso = datetime.now().isoformat()  # noqa: DTZ005
     target_code_filter = ""
@@ -495,11 +510,16 @@ def upsert_daily_valuation_from_adjusted_metrics(
         """
     target_params = [basis_version, *normalized_codes]
     insert_sql = _DAILY_VALUATION_REBUILD_SQL_TEMPLATE.format(
-        code_filter=code_filter,
+        stock_filter=stock_filter,
         daily_valuation_columns=", ".join(_DAILY_VALUATION_COLUMNS),
+        daily_valuation_update_clause=", ".join(
+            f"{column} = excluded.{column}"
+            for column in _DAILY_VALUATION_COLUMNS
+            if column not in {"code", "date", "basis_version"}
+        ),
     )
     insert_params = [
-        *normalized_codes,
+        *stock_filter_params,
         basis_version,
         basis_version,
         basis_version,
@@ -517,8 +537,9 @@ def upsert_daily_valuation_from_adjusted_metrics(
     with lock:
         try:
             conn.execute("BEGIN TRANSACTION")
-            conn.execute(prune_old_daily_sql, target_params)
-            conn.execute(delete_sql, target_params)
+            if replace_existing:
+                conn.execute(prune_old_daily_sql, target_params)
+                conn.execute(delete_sql, target_params)
             conn.execute(insert_sql, insert_params)
             count_row = conn.execute(count_sql, target_params).fetchone()
             conn.execute("COMMIT")

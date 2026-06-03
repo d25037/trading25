@@ -13,9 +13,24 @@ from src.domains.fundamentals.adjusted_metrics import (
     build_adjusted_statement_metric,
     build_daily_valuation_metric,
 )
+from src.infrastructure.db.market.market_schema import STATEMENT_METRICS_ADJUSTED_COLUMNS
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.utils.share_adjustment import ShareAdjustmentEvent
+
+
+_STATEMENT_METRIC_KEY_COLUMNS = (
+    "code",
+    "disclosed_date",
+    "period_end",
+    "period_type",
+    "basis_version",
+)
+_STATEMENT_METRIC_COMPARE_COLUMNS = tuple(
+    column
+    for column in STATEMENT_METRICS_ADJUSTED_COLUMNS
+    if column != "created_at"
+)
 
 
 @dataclass(frozen=True)
@@ -40,15 +55,17 @@ class AdjustedMetricsMaterializer:
         return self._rebuild(codes=normalized_codes)
 
     def _rebuild(self, *, codes: list[str] | None) -> AdjustedMetricsBuildResult:
-        price_basis_date = self._market_db.get_latest_stock_data_date()
-        if price_basis_date is None:
+        latest_price_basis_date = self._market_db.get_latest_stock_data_date()
+        if latest_price_basis_date is None:
             return AdjustedMetricsBuildResult(
                 statement_rows=0,
                 daily_valuation_rows=0,
                 price_basis_date=None,
                 basis_version=None,
             )
-        basis_version = f"adjusted-v1:{price_basis_date}"
+        basis_version, price_basis_date, reuse_existing_basis = (
+            self._resolve_materialization_basis(codes, latest_price_basis_date)
+        )
 
         statement_rows = self._load_statement_rows(codes)
         events_by_code = self._load_adjustment_events_by_code(codes, price_basis_date)
@@ -62,16 +79,37 @@ class AdjustedMetricsMaterializer:
             for row in statement_rows
         ]
         adjusted_payload = [_statement_metric_to_row(metric) for metric in adjusted_metrics]
-        stored_statement_rows = self._market_db.upsert_statement_metrics_adjusted(
-            adjusted_payload
+        changed_start_date = (
+            self._earliest_changed_statement_metric_date(adjusted_payload, basis_version, codes)
+            if reuse_existing_basis
+            else None
         )
+        if reuse_existing_basis and changed_start_date is None:
+            stored_statement_rows = self._statement_metrics_count(basis_version, codes)
+        else:
+            stored_statement_rows = self._market_db.upsert_statement_metrics_adjusted(
+                adjusted_payload
+            )
 
         stored_daily_rows = 0
         if adjusted_metrics and self._market_db._table_exists("stock_data"):
+            existing_daily_max_date = (
+                self._latest_daily_valuation_date(basis_version, codes)
+                if reuse_existing_basis
+                else None
+            )
+            start_date = changed_start_date
+            start_date_inclusive = True
+            if start_date is None and existing_daily_max_date is not None:
+                start_date = existing_daily_max_date
+                start_date_inclusive = False
             stored_daily_rows = self._market_db.upsert_daily_valuation_from_adjusted_metrics(
                 basis_version=basis_version,
                 price_basis_date=price_basis_date,
                 codes=codes,
+                start_date=start_date,
+                start_date_inclusive=start_date_inclusive,
+                replace_existing=not reuse_existing_basis,
             )
         self._market_db.prune_adjusted_metric_basis_versions(
             basis_version=basis_version,
@@ -82,6 +120,142 @@ class AdjustedMetricsMaterializer:
             daily_valuation_rows=stored_daily_rows,
             price_basis_date=price_basis_date,
             basis_version=basis_version,
+        )
+
+    def _resolve_materialization_basis(
+        self,
+        codes: list[str] | None,
+        latest_price_basis_date: str,
+    ) -> tuple[str, str, bool]:
+        snapshot = self._market_db.get_adjusted_metrics_snapshot()
+        existing_basis = snapshot.get("basisVersion")
+        existing_price_basis_date = snapshot.get("priceBasisDate")
+        if (
+            codes is None
+            and isinstance(existing_basis, str)
+            and existing_basis.startswith("adjusted-v1:")
+            and isinstance(existing_price_basis_date, str)
+            and existing_price_basis_date <= latest_price_basis_date
+            and not self._has_adjustment_events_after(
+                start=existing_price_basis_date,
+                end=latest_price_basis_date,
+                codes=None,
+            )
+        ):
+            return existing_basis, existing_price_basis_date, True
+        return (
+            f"adjusted-v1:{latest_price_basis_date}",
+            latest_price_basis_date,
+            False,
+        )
+
+    def _has_adjustment_events_after(
+        self,
+        *,
+        start: str,
+        end: str,
+        codes: list[str] | None,
+    ) -> bool:
+        if not self._market_db._table_exists("stock_data_raw"):
+            return False
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            SELECT 1
+            FROM stock_data_raw
+            WHERE adjustment_factor IS NOT NULL
+              AND adjustment_factor != 1.0
+              AND date > ?
+              AND date <= ?
+              {code_where}
+            LIMIT 1
+            """,
+            [start, end, *params],
+        )
+        return row is not None
+
+    def _latest_daily_valuation_date(
+        self,
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> str | None:
+        if not self._market_db._table_exists("daily_valuation"):
+            return None
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            SELECT MAX(date)
+            FROM daily_valuation
+            WHERE basis_version = ?
+              {code_where}
+            """,
+            [basis_version, *params],
+        )
+        if not row or row[0] is None:
+            return None
+        return str(row[0])
+
+    def _statement_metrics_count(
+        self,
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> int:
+        if not self._market_db._table_exists("statement_metrics_adjusted"):
+            return 0
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        row = self._market_db._fetchone(
+            f"""
+            SELECT COUNT(*)
+            FROM statement_metrics_adjusted
+            WHERE basis_version = ?
+              {code_where}
+            """,
+            [basis_version, *params],
+        )
+        return int(row[0] or 0) if row else 0
+
+    def _earliest_changed_statement_metric_date(
+        self,
+        adjusted_payload: list[dict[str, Any]],
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> str | None:
+        if not adjusted_payload or not self._market_db._table_exists(
+            "statement_metrics_adjusted"
+        ):
+            return None
+        code_where, params = _code_filter("code", codes, prefix="AND")
+        existing_rows = self._market_db._fetchall_dicts(
+            f"""
+            SELECT {', '.join(STATEMENT_METRICS_ADJUSTED_COLUMNS)}
+            FROM statement_metrics_adjusted
+            WHERE basis_version = ?
+              {code_where}
+            """,
+            [basis_version, *params],
+        )
+        existing_by_key = {
+            _statement_metric_key(row): row
+            for row in existing_rows
+        }
+        changed_dates = [
+            str(row["disclosed_date"])
+            for row in adjusted_payload
+            if self._statement_metric_changed(row, existing_by_key)
+        ]
+        return min(changed_dates) if changed_dates else None
+
+    @staticmethod
+    def _statement_metric_changed(
+        row: dict[str, Any],
+        existing_by_key: dict[tuple[Any, ...], dict[str, Any]],
+    ) -> bool:
+        existing = existing_by_key.get(_statement_metric_key(row))
+        if existing is None:
+            return True
+        return any(
+            existing.get(column) != row.get(column)
+            for column in _STATEMENT_METRIC_COMPARE_COLUMNS
         )
 
     def _load_statement_rows(self, codes: list[str] | None) -> list[dict[str, Any]]:
@@ -252,6 +426,10 @@ def _statement_metric_to_row(metric: AdjustedStatementMetric) -> dict[str, Any]:
         "adjustment_factor_cumulative": metric.adjustment_factor_cumulative,
         "basis_version": metric.basis_version,
     }
+
+
+def _statement_metric_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(row.get(column) for column in _STATEMENT_METRIC_KEY_COLUMNS)
 
 
 def _daily_valuation_metric_to_row(metric: Any) -> dict[str, Any]:
