@@ -23,6 +23,7 @@ from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     write_research_bundle,
 )
+from src.shared.utils.market_code_alias import MARKET_CODES_BY_SCOPE, normalize_market_scope
 
 RANKING_COLOR_EVIDENCE_EXPERIMENT_ID = "market-behavior/ranking-color-evidence"
 DEFAULT_HORIZONS: tuple[int, ...] = (20,)
@@ -1547,18 +1548,14 @@ def _query_observation_sample_df(conn: Any, *, limit: int) -> pd.DataFrame:
 def _market_master_cte(*, market_source: str, master_code: str) -> str:
     if market_source != "stock_master_daily_exact_date":
         raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
+    market_scope_case = _market_scope_case_sql("smd.market_code", "smd.market_name")
     return f"""
     raw_market_master AS (
         SELECT
             {master_code} AS code,
             smd.date,
             smd.company_name,
-            CASE
-                WHEN lower(trim(smd.market_code)) IN ('0111', 'prime') THEN 'prime'
-                WHEN lower(trim(smd.market_code)) IN ('0112', 'standard') THEN 'standard'
-                WHEN lower(trim(smd.market_code)) IN ('0113', 'growth') THEN 'growth'
-                ELSE 'unknown'
-            END AS market,
+            {market_scope_case} AS market,
             smd.market_code,
             smd.scale_category,
             row_number() OVER (
@@ -1573,6 +1570,24 @@ def _market_master_cte(*, market_source: str, master_code: str) -> str:
         WHERE row_rank = 1
     )
     """
+
+
+def _market_scope_case_sql(market_code_column: str, market_name_column: str) -> str:
+    code_clauses = " ".join(
+        f"WHEN lower(trim({market_code_column})) IN ({_sql_string_list(aliases)}) THEN '{scope}'"
+        for scope, aliases in MARKET_CODES_BY_SCOPE.items()
+    )
+    name_clauses = " ".join(
+        f"WHEN lower(trim({market_name_column})) IN ({_sql_string_list(aliases)}) THEN '{scope}'"
+        for scope, aliases in MARKET_CODES_BY_SCOPE.items()
+    )
+    return f"""
+            CASE
+                {code_clauses}
+                {name_clauses}
+                ELSE 'unknown'
+            END
+            """
 
 
 def _optional_daily_valuation_double_expr(conn: Any, column: str) -> str:
@@ -1704,18 +1719,21 @@ def _validate_params(
 
 
 def _normalize_market_scopes(scopes: Sequence[str]) -> tuple[str, ...]:
-    aliases = {
-        "0111": "prime",
-        "0112": "standard",
-        "0113": "growth",
-    }
     normalized = tuple(
-        dict.fromkeys(aliases.get(scope.strip().lower(), scope.strip().lower()) for scope in scopes)
+        dict.fromkeys(
+            _normalize_market_scope_token(scope)
+            for scope in scopes
+        )
     )
     allowed = {"all", "prime", "standard", "growth", "unknown"}
     if not normalized or any(scope not in allowed for scope in normalized):
         raise ValueError("market_scopes must contain prime, standard, growth, unknown, or all")
     return normalized
+
+
+def _normalize_market_scope_token(scope: str) -> str:
+    fallback = scope.strip().lower()
+    return normalize_market_scope(scope, default=fallback) or fallback
 
 
 def _offset_calendar_date(date: str | None, *, days: int) -> str | None:

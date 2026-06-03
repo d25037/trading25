@@ -203,5 +203,19 @@ def _build_core_value_db(db_path: Path) -> Path:
         WHERE code IN ('1103', '1104', '1105', '1106', '1107', '1108', '1109', '1110')
         """
     )
+    conn.execute(
+        """
+        INSERT INTO indices_data
+        SELECT
+            'N225_UNDERPX' AS code,
+            date,
+            close * 14.0 * 0.998 AS open,
+            close * 14.0 * 1.002 AS high,
+            close * 14.0 * 0.996 AS low,
+            close * 14.0 AS close,
+            0 AS volume
+        FROM topix_data
+        """
+    )
     conn.close()
     return db_path

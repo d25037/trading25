@@ -84,13 +84,14 @@ relatedExperiments = [
 [experiments."market-behavior/ranking-core-factor-regime-breakdown"]
 family = "Ranking"
 status = "observed"
-decision = "Prime の momentum-value core が 2026 partial で何を失ったかを分解した。2026 は broad low_value が弱く、high_valuation_momentum / pure momentum は過去より改善しているが左尾は重い。core 自体は小幅プラスを維持する一方、2022-2025 に強かった core + atr20_acceleration_ex_overheat は 2026 で 20D/60D ともに崩れた。core 内では momentum_20_60_top20 が 2026 でも強く、ATR acceleration より価格momentumを優先する。"
+decision = "Prime/TSE1 SoT の Momentum Value core を年次factor、market breadth、NT 60D Regime、銀行業除外で分解した。NT Regime は売買シグナルではなく、TOPIX benchmark headwind と factor実力を分けるdiagnosticとして使う。2016-2021は universe baseline 自体がTOPIX比で弱いが、NT Flatでは Momentum Value / Momentum Value + Sector Score: Strong がbaseline比でも弱い。銀行業除外では、2021の Momentum Value + Sector Score: Strong は改善する一方、2022/2024/2025/2026 の同条件は ex Banks でほぼ消えるかマイナスになり、2022年以降のheadlineは銀行業集中が大きい。したがって Momentum Value + Sector Score: Strong は頑強な cross-sector strategy ではなく、銀行業bet / sector concentration diagnostic として再分類し、production候補から降格する。"
 promotedSurface = "Research"
-riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "partial-year-2026", "daily-forward-return"]
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "breadth-regime", "nt-regime", "bank-concentration", "sector-concentration", "partial-year-2026", "daily-forward-return"]
 relatedExperiments = [
   "market-behavior/ranking-core-sector-relative-value-evidence",
   "market-behavior/ranking-sector-strength-evidence",
   "market-behavior/atr-expansion-forward-response",
+  "market-behavior/topix100-sma-ratio-regime-conditioning",
 ]
 
 [experiments."market-behavior/ranking-short-red-evidence"]

@@ -153,6 +153,22 @@ def test_ranking_color_evidence_writes_bundle(tmp_path: Path) -> None:
     assert bundle.results_db_path.exists()
 
 
+def test_ranking_color_evidence_treats_tse_first_section_as_prime(
+    tmp_path: Path,
+) -> None:
+    db_path = _build_ranking_color_db(tmp_path / "market.duckdb")
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        "UPDATE stock_master_daily SET market_code = '0101', market_name = '東証一部'"
+    )
+    conn.close()
+
+    result = _run_test_research(db_path)
+
+    assert result.observation_count > 0
+    assert set(result.observation_sample_df["market"].astype(str)) == {"prime"}
+
+
 def _run_test_research(db_path: Path) -> RankingColorEvidenceResult:
     return run_ranking_color_evidence_research(
         db_path,

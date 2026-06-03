@@ -22,16 +22,66 @@ def test_ranking_core_factor_regime_breakdown_builds_factor_tables(
     assert result.observation_count > 0
     assert result.market_source == "stock_master_daily_exact_date"
     assert not result.year_factor_spread_df.empty
+    assert not result.year_breadth_summary_df.empty
+    assert not result.annual_factor_breadth_df.empty
+    assert not result.nt_ratio_regime_summary_df.empty
+    assert not result.factor_nt_regime_df.empty
+    assert not result.bank_exclusion_df.empty
     assert not result.regime_comparison_df.empty
     assert "core_slice" in result.core_failure_decomposition_df.columns
+    assert "factor_display_name" in result.core_failure_decomposition_df.columns
     assert "sector_33_name" in result.sector_year_contribution_df.columns
+    assert "breadth_bucket" in result.annual_factor_breadth_df.columns
+    assert "factor_family" in result.annual_factor_breadth_df.columns
+    assert set(result.year_breadth_summary_df["breadth_label"].astype(str)).issubset(
+        {"Low Breadth", "Mid Breadth", "High Breadth"}
+    )
+    assert {
+        "high_breadth_median_forward_topix_excess_return_pct",
+        "low_breadth_median_forward_topix_excess_return_pct",
+        "low_minus_high_median_forward_topix_excess_return_pct",
+    }.issubset(result.factor_resilience_df.columns)
+    assert {
+        "nt_regime_60d_label",
+        "factor_median_forward_topix_excess_return_pct",
+        "baseline_median_forward_topix_excess_return_pct",
+        "factor_minus_baseline_median_forward_topix_excess_return_pct",
+    }.issubset(result.factor_nt_regime_df.columns)
+    assert {
+        "analysis_scope",
+        "sector_scope",
+        "sector_scope_label",
+        "baseline_median_forward_topix_excess_return_pct",
+        "factor_minus_baseline_median_forward_topix_excess_return_pct",
+    }.issubset(result.bank_exclusion_df.columns)
+    assert "ex Banks" in set(result.bank_exclusion_df["sector_scope_label"].astype(str))
+    assert {
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+    }.issubset(result.current_term_mapping_df.columns)
+    display_names = set(
+        result.current_term_mapping_df["factor_display_name"].astype(str)
+    )
+    assert "Undervalued" in display_names
+    assert "Overvalued + 20/60D Momentum" in display_names
+    assert "Cheap Valuation" not in display_names
+    assert "Low Value" not in display_names
+    assert "Expensive Momentum" not in display_names
     assert {
         "low_value",
         "momentum_20_60_top20",
     }.issubset(set(result.year_factor_spread_df["factor_signal"].astype(str)))
+    assert "20/60D Momentum" in set(
+        result.year_factor_spread_df["factor_display_name"].astype(str)
+    )
+    assert "Momentum Value + Sector Score: Strong" in set(
+        result.year_factor_spread_df["factor_display_name"].astype(str)
+    )
     assert {
         "year_group",
         "factor_signal",
+        "factor_display_name",
         "median_forward_topix_excess_return_pct",
         "severe_loss_rate_pct",
     }.issubset(result.regime_comparison_df.columns)
@@ -40,6 +90,7 @@ def test_ranking_core_factor_regime_breakdown_builds_factor_tables(
         "core_slice",
         "factor_signal",
         "atr_state",
+        "nt_regime_60d_label",
         "forward_close_excess_return_20d_pct",
     }
     assert expected_sample_columns.issubset(result.observation_sample_df.columns)
@@ -52,7 +103,14 @@ def test_ranking_core_factor_regime_breakdown_writes_bundle(tmp_path: Path) -> N
     summary = build_summary_markdown(result)
     assert "Ranking Core Factor Regime Breakdown" in summary
     assert "Year Factor Spread" in summary
+    assert "Year Breadth Summary" in summary
+    assert "Annual Factor x Breadth" in summary
+    assert "NT Ratio Regime Summary" in summary
+    assert "Factor x NT 60D Regime" in summary
+    assert "Bank Exclusion" in summary
+    assert "Factor Resilience" in summary
     assert "Core Failure Decomposition" in summary
+    assert "20/60D Momentum" in summary
 
     bundle = write_ranking_core_factor_regime_breakdown_bundle(
         result,

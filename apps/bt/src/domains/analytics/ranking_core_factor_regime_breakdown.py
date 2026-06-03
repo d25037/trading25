@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -62,9 +62,16 @@ class RankingCoreFactorRegimeBreakdownResult:
     observation_count: int
     coverage_diagnostics_df: pd.DataFrame
     year_factor_spread_df: pd.DataFrame
+    year_breadth_summary_df: pd.DataFrame
+    annual_factor_breadth_df: pd.DataFrame
+    nt_ratio_regime_summary_df: pd.DataFrame
+    factor_nt_regime_df: pd.DataFrame
+    bank_exclusion_df: pd.DataFrame
+    factor_resilience_df: pd.DataFrame
     core_failure_decomposition_df: pd.DataFrame
     regime_comparison_df: pd.DataFrame
     sector_year_contribution_df: pd.DataFrame
+    current_term_mapping_df: pd.DataFrame
     observation_sample_df: pd.DataFrame
 
 
@@ -132,6 +139,7 @@ def run_ranking_core_factor_regime_breakdown_research(
             market_scopes=resolved_market_scopes,
         )
         _create_factor_regime_tables(ctx.connection)
+        _create_nt_ratio_regime_tables(ctx.connection)
         observation_count = int(
             ctx.connection.execute(
                 "SELECT count(*) FROM ranking_factor_regime_panel"
@@ -157,6 +165,29 @@ def run_ranking_core_factor_regime_breakdown_research(
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
+            year_breadth_summary_df=_build_year_breadth_summary_df(ctx.connection),
+            annual_factor_breadth_df=_build_annual_factor_breadth_df(
+                ctx.connection,
+                horizons=resolved_horizons,
+                min_observations=min_observations,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+            ),
+            nt_ratio_regime_summary_df=_build_nt_ratio_regime_summary_df(
+                ctx.connection
+            ),
+            factor_nt_regime_df=_build_factor_nt_regime_df(
+                ctx.connection,
+                horizons=resolved_horizons,
+                min_observations=min_observations,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+            ),
+            bank_exclusion_df=_build_bank_exclusion_df(
+                ctx.connection,
+                horizons=resolved_horizons,
+                min_observations=min_observations,
+                severe_loss_threshold_pct=severe_loss_threshold_pct,
+            ),
+            factor_resilience_df=pd.DataFrame(),
             core_failure_decomposition_df=_build_core_failure_decomposition_df(
                 ctx.connection,
                 horizons=resolved_horizons,
@@ -175,10 +206,17 @@ def run_ranking_core_factor_regime_breakdown_research(
                 min_observations=min_observations,
                 severe_loss_threshold_pct=severe_loss_threshold_pct,
             ),
+            current_term_mapping_df=_build_current_term_mapping_df(ctx.connection),
             observation_sample_df=_query_observation_sample_df(
                 ctx.connection,
                 limit=observation_sample_limit,
                 horizons=resolved_horizons,
+            ),
+        )
+        result = replace(
+            result,
+            factor_resilience_df=_build_factor_resilience_df(
+                result.annual_factor_breadth_df
             ),
         )
     return result
@@ -214,9 +252,16 @@ def write_ranking_core_factor_regime_breakdown_bundle(
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
             "year_factor_spread_df": result.year_factor_spread_df,
+            "year_breadth_summary_df": result.year_breadth_summary_df,
+            "annual_factor_breadth_df": result.annual_factor_breadth_df,
+            "nt_ratio_regime_summary_df": result.nt_ratio_regime_summary_df,
+            "factor_nt_regime_df": result.factor_nt_regime_df,
+            "bank_exclusion_df": result.bank_exclusion_df,
+            "factor_resilience_df": result.factor_resilience_df,
             "core_failure_decomposition_df": result.core_failure_decomposition_df,
             "regime_comparison_df": result.regime_comparison_df,
             "sector_year_contribution_df": result.sector_year_contribution_df,
+            "current_term_mapping_df": result.current_term_mapping_df,
             "observation_sample_df": result.observation_sample_df,
         },
         summary_markdown=build_summary_markdown(result),
@@ -250,6 +295,30 @@ def build_summary_markdown(result: RankingCoreFactorRegimeBreakdownResult) -> st
         "",
         _top_rows_for_markdown(result.year_factor_spread_df, limit=240),
         "",
+        "## Year Breadth Summary",
+        "",
+        _top_rows_for_markdown(result.year_breadth_summary_df, limit=160),
+        "",
+        "## Annual Factor x Breadth",
+        "",
+        _top_rows_for_markdown(result.annual_factor_breadth_df, limit=240),
+        "",
+        "## NT Ratio Regime Summary",
+        "",
+        _top_rows_for_markdown(result.nt_ratio_regime_summary_df, limit=160),
+        "",
+        "## Factor x NT 60D Regime",
+        "",
+        _top_rows_for_markdown(result.factor_nt_regime_df, limit=260),
+        "",
+        "## Bank Exclusion",
+        "",
+        _top_rows_for_markdown(result.bank_exclusion_df, limit=260),
+        "",
+        "## Factor Resilience",
+        "",
+        _top_rows_for_markdown(result.factor_resilience_df, limit=160),
+        "",
         "## Core Failure Decomposition",
         "",
         _top_rows_for_markdown(result.core_failure_decomposition_df, limit=240),
@@ -262,6 +331,10 @@ def build_summary_markdown(result: RankingCoreFactorRegimeBreakdownResult) -> st
         "",
         _top_rows_for_markdown(result.sector_year_contribution_df, limit=200),
         "",
+        "## Current Daily Ranking Terms",
+        "",
+        _top_rows_for_markdown(result.current_term_mapping_df, limit=80),
+        "",
         "## Observation Sample",
         "",
         _top_rows_for_markdown(result.observation_sample_df, limit=80),
@@ -270,6 +343,91 @@ def build_summary_markdown(result: RankingCoreFactorRegimeBreakdownResult) -> st
 
 
 def _create_factor_regime_tables(conn: Any) -> None:
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE factor_signal_terms (
+            factor_signal TEXT,
+            factor_family TEXT,
+            factor_display_name TEXT,
+            display_order INTEGER
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO factor_signal_terms VALUES (?, ?, ?, ?)",
+        [
+            ("low_value", "Valuation Signal", "Undervalued", 10),
+            (
+                "momentum_20_60_top20",
+                "Individual Momentum",
+                "20/60D Momentum",
+                20,
+            ),
+            ("value_momentum", "Combined", "Momentum Value", 30),
+            (
+                "value_momentum_sector_strong",
+                "Combined",
+                "Momentum Value + Sector Score: Strong",
+                35,
+            ),
+            (
+                "value_momentum_atr20_acceleration_sector_strong",
+                "Combined",
+                "Momentum Value + ATR20 Accel + Sector Score: Strong",
+                36,
+            ),
+            (
+                "high_valuation_momentum",
+                "Individual Momentum",
+                "Overvalued + 20/60D Momentum",
+                40,
+            ),
+            ("sector_strong", "Sector", "Sector Score: Strong", 50),
+            (
+                "atr20_acceleration_ex_overheat",
+                "Volatility / ATR",
+                "ATR20 Accel",
+                60,
+            ),
+            ("core_all", "Daily Ranking Core", "Momentum Value Core", 100),
+            (
+                "core_atr20_acceleration_ex_overheat",
+                "Volatility / ATR",
+                "Momentum Value Core + ATR20 Accel",
+                110,
+            ),
+            (
+                "core_without_atr20_acceleration_ex_overheat",
+                "Daily Ranking Core",
+                "Momentum Value Core without ATR20 Accel",
+                111,
+            ),
+            (
+                "core_momentum_20_60_top20",
+                "Individual Momentum",
+                "Momentum Value Core + 20/60D Momentum",
+                120,
+            ),
+            (
+                "core_without_momentum_20_60_top20",
+                "Daily Ranking Core",
+                "Momentum Value Core without 20/60D Momentum",
+                121,
+            ),
+            (
+                "core_sector_relative_confirmed",
+                "Sector",
+                "Momentum Value Core + Sector Score confirmed",
+                130,
+            ),
+            (
+                "core_without_sector_relative_confirmed",
+                "Daily Ranking Core",
+                "Momentum Value Core without Sector Score confirmed",
+                131,
+            ),
+        ],
+    )
     conn.execute(
         """
         CREATE OR REPLACE TEMP TABLE ranking_factor_regime_panel AS
@@ -355,7 +513,52 @@ def _create_factor_regime_tables(conn: Any) -> None:
     )
     conn.execute(
         """
-        CREATE OR REPLACE TEMP TABLE factor_signal_observations AS
+        CREATE OR REPLACE TEMP TABLE daily_market_breadth_state AS
+        WITH daily AS (
+            SELECT
+                market_scope,
+                date,
+                year,
+                year_group,
+                count(*) AS observation_count,
+                count(DISTINCT code) AS code_count,
+                avg(CASE WHEN recent_return_20d_pct > 0 THEN 1.0 ELSE 0.0 END)
+                    * 100.0 AS breadth_up_20d_pct,
+                avg(CASE WHEN recent_return_60d_pct > 0 THEN 1.0 ELSE 0.0 END)
+                    * 100.0 AS breadth_up_60d_pct,
+                median(recent_return_20d_pct) AS median_recent_return_20d_pct,
+                median(recent_return_60d_pct) AS median_recent_return_60d_pct
+            FROM ranking_factor_regime_panel
+            GROUP BY market_scope, date, year, year_group
+        )
+        SELECT
+            *,
+            CASE
+                WHEN breadth_up_20d_pct < 30.0 THEN 'breadth_low_lt_30pct'
+                WHEN breadth_up_20d_pct < 60.0 THEN 'breadth_mid_30_60pct'
+                ELSE 'breadth_high_ge_60pct'
+            END AS breadth_bucket_20d,
+            CASE
+                WHEN breadth_up_20d_pct < 30.0 THEN 'Low Breadth'
+                WHEN breadth_up_20d_pct < 60.0 THEN 'Mid Breadth'
+                ELSE 'High Breadth'
+            END AS breadth_label_20d,
+            CASE
+                WHEN breadth_up_60d_pct < 30.0 THEN 'breadth_low_lt_30pct'
+                WHEN breadth_up_60d_pct < 60.0 THEN 'breadth_mid_30_60pct'
+                ELSE 'breadth_high_ge_60pct'
+            END AS breadth_bucket_60d,
+            CASE
+                WHEN breadth_up_60d_pct < 30.0 THEN 'Low Breadth'
+                WHEN breadth_up_60d_pct < 60.0 THEN 'Mid Breadth'
+                ELSE 'High Breadth'
+            END AS breadth_label_60d
+        FROM daily
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE factor_signal_observations_raw AS
         SELECT 'low_value' AS factor_signal, * FROM ranking_factor_regime_panel
         WHERE low_value_flag
         UNION ALL
@@ -365,6 +568,16 @@ def _create_factor_regime_tables(conn: Any) -> None:
         SELECT 'value_momentum' AS factor_signal, * FROM ranking_factor_regime_panel
         WHERE value_momentum_flag
         UNION ALL
+        SELECT 'value_momentum_sector_strong' AS factor_signal, *
+        FROM ranking_factor_regime_panel
+        WHERE value_momentum_flag AND sector_strong_flag
+        UNION ALL
+        SELECT 'value_momentum_atr20_acceleration_sector_strong' AS factor_signal, *
+        FROM ranking_factor_regime_panel
+        WHERE value_momentum_flag
+          AND sector_strong_flag
+          AND atr20_acceleration_ex_overheat_flag
+        UNION ALL
         SELECT 'high_valuation_momentum' AS factor_signal, * FROM ranking_factor_regime_panel
         WHERE high_valuation_momentum_flag
         UNION ALL
@@ -373,6 +586,18 @@ def _create_factor_regime_tables(conn: Any) -> None:
         UNION ALL
         SELECT 'atr20_acceleration_ex_overheat' AS factor_signal, * FROM ranking_factor_regime_panel
         WHERE atr20_acceleration_ex_overheat_flag
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE factor_signal_observations AS
+        SELECT
+            raw.*,
+            coalesce(terms.factor_family, 'Other') AS factor_family,
+            coalesce(terms.factor_display_name, raw.factor_signal) AS factor_display_name,
+            coalesce(terms.display_order, 999) AS factor_display_order
+        FROM factor_signal_observations_raw raw
+        LEFT JOIN factor_signal_terms terms USING (factor_signal)
         """
     )
     conn.execute(
@@ -424,7 +649,7 @@ def _create_factor_regime_tables(conn: Any) -> None:
     )
     conn.execute(
         """
-        CREATE OR REPLACE TEMP TABLE core_failure_observations AS
+        CREATE OR REPLACE TEMP TABLE core_failure_observations_raw AS
         SELECT 'core_all' AS core_slice, 'core_all' AS factor_signal, *
         FROM core_factor_panel
         UNION ALL
@@ -461,16 +686,758 @@ def _create_factor_regime_tables(conn: Any) -> None:
     )
     conn.execute(
         """
-        INSERT INTO factor_signal_observations
-        SELECT 'core_atr20_acceleration_ex_overheat' AS factor_signal, f.*
-        FROM ranking_factor_regime_panel f
-        JOIN core_factor_panel c
-          ON c.market_scope = f.market_scope
-         AND c.date = f.date
-         AND c.code = f.code
-        WHERE c.atr20_acceleration_ex_overheat_flag
+        CREATE OR REPLACE TEMP TABLE core_failure_observations AS
+        SELECT
+            raw.*,
+            coalesce(terms.factor_family, 'Other') AS factor_family,
+            coalesce(terms.factor_display_name, raw.factor_signal) AS factor_display_name,
+            coalesce(terms.display_order, 999) AS factor_display_order
+        FROM core_failure_observations_raw raw
+        LEFT JOIN factor_signal_terms terms USING (factor_signal)
         """
     )
+    conn.execute(
+        """
+        INSERT INTO factor_signal_observations
+        SELECT
+            raw.*,
+            coalesce(terms.factor_family, 'Other') AS factor_family,
+            coalesce(terms.factor_display_name, raw.factor_signal) AS factor_display_name,
+            coalesce(terms.display_order, 999) AS factor_display_order
+        FROM (
+            SELECT 'core_atr20_acceleration_ex_overheat' AS factor_signal, f.*
+            FROM ranking_factor_regime_panel f
+            JOIN core_factor_panel c
+              ON c.market_scope = f.market_scope
+             AND c.date = f.date
+             AND c.code = f.code
+            WHERE c.atr20_acceleration_ex_overheat_flag
+        ) raw
+        LEFT JOIN factor_signal_terms terms USING (factor_signal)
+        """
+    )
+
+
+def _create_nt_ratio_regime_tables(conn: Any) -> None:
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE nt_ratio_daily_state AS
+        WITH nikkei AS (
+            SELECT
+                CAST(date AS VARCHAR) AS date,
+                close AS n225_close
+            FROM indices_data
+            WHERE code = 'N225_UNDERPX'
+              AND close > 0
+        ),
+        topix AS (
+            SELECT
+                CAST(date AS VARCHAR) AS date,
+                close AS topix_close
+            FROM topix_data
+            WHERE close > 0
+        ),
+        base AS (
+            SELECT
+                nikkei.date,
+                substr(nikkei.date, 1, 4) AS year,
+                CASE
+                    WHEN substr(nikkei.date, 1, 4) = '2026'
+                        THEN '2026_partial'
+                    WHEN substr(nikkei.date, 1, 4) BETWEEN '2022' AND '2025'
+                        THEN '2022_2025_history'
+                    ELSE 'pre_2022'
+                END AS year_group,
+                CASE
+                    WHEN nikkei.date < '2022-01-01' THEN '2016-2021'
+                    WHEN nikkei.date < '2026-01-01' THEN '2022-2025'
+                    ELSE '2026'
+                END AS nt_period,
+                nikkei.n225_close,
+                topix.topix_close,
+                nikkei.n225_close / topix.topix_close AS nt_ratio,
+                lag(nikkei.n225_close / topix.topix_close, 20)
+                    OVER (ORDER BY nikkei.date) AS nt_ratio_lag_20d,
+                lag(nikkei.n225_close / topix.topix_close, 60)
+                    OVER (ORDER BY nikkei.date) AS nt_ratio_lag_60d
+            FROM nikkei
+            JOIN topix USING (date)
+        )
+        SELECT
+            *,
+            100.0 * (nt_ratio / nullif(nt_ratio_lag_20d, 0.0) - 1.0)
+                AS nt_ratio_return_20d_pct,
+            100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0)
+                AS nt_ratio_return_60d_pct,
+            CASE
+                WHEN nt_ratio_lag_60d IS NULL THEN 'unknown'
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) >= 3.0
+                    THEN 'nt_up_ge_3pct_60d'
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) <= -3.0
+                    THEN 'nt_down_le_minus_3pct_60d'
+                ELSE 'nt_flat_pm_3pct_60d'
+            END AS nt_regime_60d,
+            CASE
+                WHEN nt_ratio_lag_60d IS NULL THEN 'NT Unknown'
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) >= 3.0
+                    THEN 'NT Up >= +3% / 60D'
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) <= -3.0
+                    THEN 'NT Down <= -3% / 60D'
+                ELSE 'NT Flat +/-3% / 60D'
+            END AS nt_regime_60d_label,
+            CASE
+                WHEN nt_ratio_lag_60d IS NULL THEN 99
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) <= -3.0
+                    THEN 10
+                WHEN 100.0 * (nt_ratio / nullif(nt_ratio_lag_60d, 0.0) - 1.0) < 3.0
+                    THEN 20
+                ELSE 30
+            END AS nt_regime_60d_order
+        FROM base
+        """
+    )
+
+
+def _build_year_breadth_summary_df(conn: Any) -> pd.DataFrame:
+    return conn.execute(
+        """
+        WITH unpivoted AS (
+            SELECT
+                market_scope,
+                year,
+                20 AS breadth_lookback,
+                breadth_bucket_20d AS breadth_bucket,
+                breadth_label_20d AS breadth_label,
+                breadth_up_20d_pct AS breadth_up_pct,
+                median_recent_return_20d_pct AS median_recent_return_pct
+            FROM daily_market_breadth_state
+            UNION ALL
+            SELECT
+                market_scope,
+                year,
+                60 AS breadth_lookback,
+                breadth_bucket_60d AS breadth_bucket,
+                breadth_label_60d AS breadth_label,
+                breadth_up_60d_pct AS breadth_up_pct,
+                median_recent_return_60d_pct AS median_recent_return_pct
+            FROM daily_market_breadth_state
+        )
+        SELECT
+            market_scope,
+            year,
+            breadth_lookback,
+            breadth_bucket,
+            breadth_label,
+            count(*) AS trading_day_count,
+            avg(breadth_up_pct) AS avg_breadth_up_pct,
+            median(breadth_up_pct) AS median_breadth_up_pct,
+            min(breadth_up_pct) AS min_breadth_up_pct,
+            max(breadth_up_pct) AS max_breadth_up_pct,
+            median(median_recent_return_pct) AS median_cross_section_return_pct
+        FROM unpivoted
+        GROUP BY market_scope, year, breadth_lookback, breadth_bucket, breadth_label
+        ORDER BY year, market_scope, breadth_lookback, breadth_bucket
+        """
+    ).fetchdf()
+
+
+def _build_nt_ratio_regime_summary_df(conn: Any) -> pd.DataFrame:
+    return conn.execute(
+        """
+        WITH analysis_dates AS (
+            SELECT DISTINCT date
+            FROM ranking_factor_regime_panel
+        ),
+        filtered AS (
+            SELECT n.*
+            FROM nt_ratio_daily_state n
+            JOIN analysis_dates d USING (date)
+        )
+        SELECT
+            year,
+            min(date) AS first_date,
+            max(date) AS last_date,
+            first(nt_ratio ORDER BY date) AS nt_ratio_start,
+            last(nt_ratio ORDER BY date) AS nt_ratio_end,
+            100.0 * (
+                last(nt_ratio ORDER BY date) / first(nt_ratio ORDER BY date) - 1.0
+            ) AS nt_ratio_change_pct,
+            median(nt_ratio_return_60d_pct) AS median_nt_ratio_return_60d_pct,
+            avg(nt_ratio_return_60d_pct) AS mean_nt_ratio_return_60d_pct,
+            avg(CASE WHEN nt_regime_60d = 'nt_down_le_minus_3pct_60d'
+                THEN 1.0 ELSE 0.0 END) * 100.0 AS nt_down_day_share_pct,
+            avg(CASE WHEN nt_regime_60d = 'nt_flat_pm_3pct_60d'
+                THEN 1.0 ELSE 0.0 END) * 100.0 AS nt_flat_day_share_pct,
+            avg(CASE WHEN nt_regime_60d = 'nt_up_ge_3pct_60d'
+                THEN 1.0 ELSE 0.0 END) * 100.0 AS nt_up_day_share_pct,
+            count(*) AS trading_day_count
+        FROM filtered
+        GROUP BY year
+        ORDER BY year
+        """
+    ).fetchdf()
+
+
+def _build_factor_nt_regime_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames = [
+        _aggregate_factor_nt_regime_table(
+            conn,
+            horizon=int(horizon),
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+        )
+        for horizon in horizons
+    ]
+    return _concat_sorted(frames, columns=_factor_nt_regime_columns())
+
+
+def _aggregate_factor_nt_regime_table(
+    conn: Any,
+    *,
+    horizon: int,
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    return_column = f"forward_close_excess_return_{horizon}d_pct"
+    return conn.execute(
+        f"""
+        WITH time_buckets AS (
+            SELECT
+                p.market_scope,
+                p.date,
+                'year' AS time_bucket_type,
+                p.year AS time_bucket,
+                n.nt_regime_60d,
+                n.nt_regime_60d_label,
+                n.nt_regime_60d_order,
+                n.nt_ratio_return_60d_pct
+            FROM ranking_factor_regime_panel p
+            JOIN nt_ratio_daily_state n
+              ON n.date = p.date
+            WHERE n.nt_regime_60d <> 'unknown'
+            GROUP BY
+                p.market_scope,
+                p.date,
+                p.year,
+                n.nt_regime_60d,
+                n.nt_regime_60d_label,
+                n.nt_regime_60d_order,
+                n.nt_ratio_return_60d_pct
+            UNION ALL
+            SELECT
+                p.market_scope,
+                p.date,
+                'period' AS time_bucket_type,
+                n.nt_period AS time_bucket,
+                n.nt_regime_60d,
+                n.nt_regime_60d_label,
+                n.nt_regime_60d_order,
+                n.nt_ratio_return_60d_pct
+            FROM ranking_factor_regime_panel p
+            JOIN nt_ratio_daily_state n
+              ON n.date = p.date
+            WHERE n.nt_regime_60d <> 'unknown'
+            GROUP BY
+                p.market_scope,
+                p.date,
+                n.nt_period,
+                n.nt_regime_60d,
+                n.nt_regime_60d_label,
+                n.nt_regime_60d_order,
+                n.nt_ratio_return_60d_pct
+        ),
+        baseline AS (
+            SELECT
+                {int(horizon)} AS horizon,
+                b.time_bucket_type,
+                b.time_bucket,
+                b.nt_regime_60d,
+                b.nt_regime_60d_label,
+                any_value(b.nt_regime_60d_order) AS nt_regime_60d_order,
+                count(*) AS baseline_observation_count,
+                count(DISTINCT p.code) AS baseline_code_count,
+                count(DISTINCT p.date) AS baseline_date_count,
+                avg(b.nt_ratio_return_60d_pct)
+                    AS baseline_mean_nt_ratio_return_60d_pct,
+                median(p.{return_column})
+                    AS baseline_median_forward_topix_excess_return_pct,
+                avg(CASE WHEN p.{return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                    AS baseline_win_rate_pct
+            FROM ranking_factor_regime_panel p
+            JOIN time_buckets b
+              ON b.market_scope = p.market_scope
+             AND b.date = p.date
+            WHERE p.{return_column} IS NOT NULL
+            GROUP BY
+                b.time_bucket_type,
+                b.time_bucket,
+                b.nt_regime_60d,
+                b.nt_regime_60d_label
+        ),
+        factor AS (
+            SELECT
+                {int(horizon)} AS horizon,
+                b.time_bucket_type,
+                b.time_bucket,
+                b.nt_regime_60d,
+                b.nt_regime_60d_label,
+                f.factor_signal,
+                f.factor_family,
+                f.factor_display_name,
+                count(*) AS factor_observation_count,
+                count(DISTINCT f.code) AS factor_code_count,
+                count(DISTINCT f.date) AS factor_date_count,
+                count(DISTINCT f.sector_33_name) AS factor_sector_count,
+                avg(b.nt_ratio_return_60d_pct)
+                    AS factor_mean_nt_ratio_return_60d_pct,
+                avg(f.{return_column})
+                    AS factor_mean_forward_topix_excess_return_pct,
+                median(f.{return_column})
+                    AS factor_median_forward_topix_excess_return_pct,
+                quantile_cont(f.{return_column}, 0.10)
+                    AS factor_p10_forward_topix_excess_return_pct,
+                quantile_cont(f.{return_column}, 0.90)
+                    AS factor_p90_forward_topix_excess_return_pct,
+                avg(CASE WHEN f.{return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                    AS factor_win_rate_pct,
+                avg(CASE WHEN f.{return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                    AS factor_severe_loss_rate_pct
+            FROM factor_signal_observations f
+            JOIN time_buckets b
+              ON b.market_scope = f.market_scope
+             AND b.date = f.date
+            WHERE f.{return_column} IS NOT NULL
+            GROUP BY
+                b.time_bucket_type,
+                b.time_bucket,
+                b.nt_regime_60d,
+                b.nt_regime_60d_label,
+                f.factor_signal,
+                f.factor_family,
+                f.factor_display_name
+            HAVING count(*) >= ?
+        )
+        SELECT
+            factor.horizon,
+            factor.time_bucket_type,
+            factor.time_bucket,
+            factor.nt_regime_60d,
+            factor.nt_regime_60d_label,
+            baseline.nt_regime_60d_order,
+            factor.factor_signal,
+            factor.factor_family,
+            factor.factor_display_name,
+            factor.factor_observation_count,
+            factor.factor_code_count,
+            factor.factor_date_count,
+            factor.factor_sector_count,
+            baseline.baseline_observation_count,
+            baseline.baseline_code_count,
+            baseline.baseline_date_count,
+            factor.factor_mean_nt_ratio_return_60d_pct,
+            baseline.baseline_mean_nt_ratio_return_60d_pct,
+            factor.factor_mean_forward_topix_excess_return_pct,
+            factor.factor_median_forward_topix_excess_return_pct,
+            baseline.baseline_median_forward_topix_excess_return_pct,
+            (
+                factor.factor_median_forward_topix_excess_return_pct
+                - baseline.baseline_median_forward_topix_excess_return_pct
+            ) AS factor_minus_baseline_median_forward_topix_excess_return_pct,
+            factor.factor_p10_forward_topix_excess_return_pct,
+            factor.factor_p90_forward_topix_excess_return_pct,
+            factor.factor_win_rate_pct,
+            baseline.baseline_win_rate_pct,
+            factor.factor_win_rate_pct - baseline.baseline_win_rate_pct
+                AS factor_minus_baseline_win_rate_pct,
+            factor.factor_severe_loss_rate_pct
+        FROM factor
+        JOIN baseline
+          ON baseline.horizon = factor.horizon
+         AND baseline.time_bucket_type = factor.time_bucket_type
+         AND baseline.time_bucket = factor.time_bucket
+         AND baseline.nt_regime_60d = factor.nt_regime_60d
+        ORDER BY
+            factor.horizon,
+            factor.time_bucket_type,
+            factor.time_bucket,
+            baseline.nt_regime_60d_order,
+            factor.factor_signal
+        """,
+        [float(severe_loss_threshold_pct), int(min_observations)],
+    ).fetchdf()
+
+
+def _build_bank_exclusion_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames = [
+        _aggregate_bank_exclusion_table(
+            conn,
+            horizon=int(horizon),
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+        )
+        for horizon in horizons
+    ]
+    return _concat_sorted(frames, columns=_bank_exclusion_columns())
+
+
+def _aggregate_bank_exclusion_table(
+    conn: Any,
+    *,
+    horizon: int,
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    return_column = f"forward_close_excess_return_{horizon}d_pct"
+    return conn.execute(
+        f"""
+        WITH target_factors AS (
+            SELECT *
+            FROM factor_signal_observations
+            WHERE factor_signal IN (
+                'low_value',
+                'value_momentum',
+                'value_momentum_sector_strong',
+                'value_momentum_atr20_acceleration_sector_strong'
+            )
+        ),
+        scoped_factor AS (
+            SELECT
+                'annual' AS analysis_scope,
+                'All NT Regimes' AS analysis_scope_label,
+                factor.*
+            FROM target_factors factor
+            UNION ALL
+            SELECT
+                'annual_nt_flat_60d' AS analysis_scope,
+                'NT Flat +/-3% / 60D' AS analysis_scope_label,
+                factor.*
+            FROM target_factors factor
+            JOIN nt_ratio_daily_state nt
+              ON nt.date = factor.date
+            WHERE nt.nt_regime_60d = 'nt_flat_pm_3pct_60d'
+        ),
+        factor_sector_scope AS (
+            SELECT 'all_sectors' AS sector_scope,
+                   'All sectors' AS sector_scope_label,
+                   *
+            FROM scoped_factor
+            UNION ALL
+            SELECT 'banks_only' AS sector_scope,
+                   'Banks only' AS sector_scope_label,
+                   *
+            FROM scoped_factor
+            WHERE sector_33_name = '銀行業'
+            UNION ALL
+            SELECT 'ex_banks' AS sector_scope,
+                   'ex Banks' AS sector_scope_label,
+                   *
+            FROM scoped_factor
+            WHERE sector_33_name <> '銀行業'
+        ),
+        baseline_scoped AS (
+            SELECT
+                'annual' AS analysis_scope,
+                'All NT Regimes' AS analysis_scope_label,
+                panel.*
+            FROM ranking_factor_regime_panel panel
+            UNION ALL
+            SELECT
+                'annual_nt_flat_60d' AS analysis_scope,
+                'NT Flat +/-3% / 60D' AS analysis_scope_label,
+                panel.*
+            FROM ranking_factor_regime_panel panel
+            JOIN nt_ratio_daily_state nt
+              ON nt.date = panel.date
+            WHERE nt.nt_regime_60d = 'nt_flat_pm_3pct_60d'
+        ),
+        baseline_sector_scope AS (
+            SELECT 'all_sectors' AS sector_scope,
+                   'All sectors' AS sector_scope_label,
+                   *
+            FROM baseline_scoped
+            UNION ALL
+            SELECT 'banks_only' AS sector_scope,
+                   'Banks only' AS sector_scope_label,
+                   *
+            FROM baseline_scoped
+            WHERE sector_33_name = '銀行業'
+            UNION ALL
+            SELECT 'ex_banks' AS sector_scope,
+                   'ex Banks' AS sector_scope_label,
+                   *
+            FROM baseline_scoped
+            WHERE sector_33_name <> '銀行業'
+        ),
+        baseline AS (
+            SELECT
+                {int(horizon)} AS horizon,
+                analysis_scope,
+                analysis_scope_label,
+                year,
+                sector_scope,
+                sector_scope_label,
+                count(*) AS baseline_observation_count,
+                count(DISTINCT code) AS baseline_code_count,
+                count(DISTINCT date) AS baseline_date_count,
+                median({return_column})
+                    AS baseline_median_forward_topix_excess_return_pct,
+                avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                    AS baseline_win_rate_pct
+            FROM baseline_sector_scope
+            WHERE {return_column} IS NOT NULL
+            GROUP BY
+                analysis_scope,
+                analysis_scope_label,
+                year,
+                sector_scope,
+                sector_scope_label
+        )
+        SELECT
+            {int(horizon)} AS horizon,
+            factor.analysis_scope,
+            factor.analysis_scope_label,
+            factor.year,
+            factor.sector_scope,
+            factor.sector_scope_label,
+            factor.factor_signal,
+            factor.factor_family,
+            factor.factor_display_name,
+            count(*) AS factor_observation_count,
+            count(DISTINCT factor.code) AS factor_code_count,
+            count(DISTINCT factor.date) AS factor_date_count,
+            count(DISTINCT factor.sector_33_name) AS factor_sector_count,
+            any_value(baseline.baseline_observation_count)
+                AS baseline_observation_count,
+            any_value(baseline.baseline_code_count) AS baseline_code_count,
+            any_value(baseline.baseline_date_count) AS baseline_date_count,
+            avg(factor.{return_column})
+                AS factor_mean_forward_topix_excess_return_pct,
+            median(factor.{return_column})
+                AS factor_median_forward_topix_excess_return_pct,
+            any_value(baseline.baseline_median_forward_topix_excess_return_pct)
+                AS baseline_median_forward_topix_excess_return_pct,
+            (
+                median(factor.{return_column})
+                - any_value(baseline.baseline_median_forward_topix_excess_return_pct)
+            ) AS factor_minus_baseline_median_forward_topix_excess_return_pct,
+            avg(CASE WHEN factor.{return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS factor_win_rate_pct,
+            any_value(baseline.baseline_win_rate_pct) AS baseline_win_rate_pct,
+            (
+                avg(CASE WHEN factor.{return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                - any_value(baseline.baseline_win_rate_pct)
+            ) AS factor_minus_baseline_win_rate_pct,
+            avg(CASE WHEN factor.{return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS factor_severe_loss_rate_pct
+        FROM factor_sector_scope factor
+        JOIN baseline
+          ON baseline.horizon = {int(horizon)}
+         AND baseline.analysis_scope = factor.analysis_scope
+         AND baseline.year = factor.year
+         AND baseline.sector_scope = factor.sector_scope
+        WHERE factor.{return_column} IS NOT NULL
+        GROUP BY
+            factor.analysis_scope,
+            factor.analysis_scope_label,
+            factor.year,
+            factor.sector_scope,
+            factor.sector_scope_label,
+            factor.factor_signal,
+            factor.factor_family,
+            factor.factor_display_name
+        HAVING count(*) >= ?
+        ORDER BY
+            horizon,
+            factor.analysis_scope,
+            factor.year,
+            factor.factor_signal,
+            factor.sector_scope
+        """,
+        [float(severe_loss_threshold_pct), int(min_observations)],
+    ).fetchdf()
+
+
+def _build_annual_factor_breadth_df(
+    conn: Any,
+    *,
+    horizons: Sequence[int],
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    frames = [
+        _aggregate_factor_breadth_table(
+            conn,
+            horizon=int(horizon),
+            min_observations=min_observations,
+            severe_loss_threshold_pct=severe_loss_threshold_pct,
+        )
+        for horizon in horizons
+    ]
+    return _concat_sorted(frames, columns=_annual_factor_breadth_columns())
+
+
+def _aggregate_factor_breadth_table(
+    conn: Any,
+    *,
+    horizon: int,
+    min_observations: int,
+    severe_loss_threshold_pct: float,
+) -> pd.DataFrame:
+    return_column = f"forward_close_excess_return_{horizon}d_pct"
+    return conn.execute(
+        f"""
+        WITH joined AS (
+            SELECT
+                f.*,
+                20 AS breadth_lookback,
+                b.breadth_bucket_20d AS breadth_bucket,
+                b.breadth_label_20d AS breadth_label,
+                b.breadth_up_20d_pct AS breadth_up_pct
+            FROM factor_signal_observations f
+            JOIN daily_market_breadth_state b
+              ON b.market_scope = f.market_scope
+             AND b.date = f.date
+            UNION ALL
+            SELECT
+                f.*,
+                60 AS breadth_lookback,
+                b.breadth_bucket_60d AS breadth_bucket,
+                b.breadth_label_60d AS breadth_label,
+                b.breadth_up_60d_pct AS breadth_up_pct
+            FROM factor_signal_observations f
+            JOIN daily_market_breadth_state b
+              ON b.market_scope = f.market_scope
+             AND b.date = f.date
+        )
+        SELECT
+            {int(horizon)} AS horizon,
+            year,
+            breadth_lookback,
+            breadth_bucket,
+            breadth_label,
+            factor_signal,
+            factor_family,
+            factor_display_name,
+            count(*) AS observation_count,
+            count(DISTINCT code) AS code_count,
+            count(DISTINCT date) AS date_count,
+            count(DISTINCT sector_33_name) AS sector_count,
+            avg(breadth_up_pct) AS avg_breadth_up_pct,
+            avg({return_column}) AS mean_forward_topix_excess_return_pct,
+            median({return_column}) AS median_forward_topix_excess_return_pct,
+            quantile_cont({return_column}, 0.10) AS p10_forward_topix_excess_return_pct,
+            quantile_cont({return_column}, 0.90) AS p90_forward_topix_excess_return_pct,
+            avg(CASE WHEN {return_column} > 0 THEN 1.0 ELSE 0.0 END) * 100.0
+                AS win_rate_pct,
+            avg(CASE WHEN {return_column} <= ? THEN 1.0 ELSE 0.0 END) * 100.0
+                AS severe_loss_rate_pct
+        FROM joined
+        WHERE {return_column} IS NOT NULL
+        GROUP BY
+            year,
+            breadth_lookback,
+            breadth_bucket,
+            breadth_label,
+            factor_signal,
+            factor_family,
+            factor_display_name
+        HAVING count(*) >= ?
+        ORDER BY horizon, year, breadth_lookback, breadth_bucket, factor_signal
+        """,
+        [float(severe_loss_threshold_pct), int(min_observations)],
+    ).fetchdf()
+
+
+def _build_factor_resilience_df(annual_factor_breadth_df: pd.DataFrame) -> pd.DataFrame:
+    columns = _factor_resilience_columns()
+    if annual_factor_breadth_df.empty:
+        return pd.DataFrame(columns=columns)
+    rows: list[dict[str, object]] = []
+    group_columns = [
+        "horizon",
+        "year",
+        "breadth_lookback",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+    ]
+    for key, group in annual_factor_breadth_df.groupby(group_columns, dropna=False, sort=True):
+        by_bucket = group.set_index("breadth_bucket")
+        if "breadth_high_ge_60pct" not in by_bucket.index or "breadth_low_lt_30pct" not in by_bucket.index:
+            continue
+        high = by_bucket.loc["breadth_high_ge_60pct"]
+        low = by_bucket.loc["breadth_low_lt_30pct"]
+        if isinstance(high, pd.DataFrame):
+            high = high.iloc[0]
+        if isinstance(low, pd.DataFrame):
+            low = low.iloc[0]
+        low_median = _coerce_float(low["median_forward_topix_excess_return_pct"])
+        high_median = _coerce_float(high["median_forward_topix_excess_return_pct"])
+        low_win = _coerce_float(low["win_rate_pct"])
+        high_win = _coerce_float(high["win_rate_pct"])
+        low_severe = _coerce_float(low["severe_loss_rate_pct"])
+        high_severe = _coerce_float(high["severe_loss_rate_pct"])
+        rows.append(
+            {
+                "horizon": key[0],
+                "year": key[1],
+                "breadth_lookback": key[2],
+                "factor_signal": key[3],
+                "factor_family": key[4],
+                "factor_display_name": key[5],
+                "high_breadth_observation_count": int(high["observation_count"]),
+                "low_breadth_observation_count": int(low["observation_count"]),
+                "high_breadth_median_forward_topix_excess_return_pct": high_median,
+                "low_breadth_median_forward_topix_excess_return_pct": low_median,
+                "low_minus_high_median_forward_topix_excess_return_pct": (
+                    None if low_median is None or high_median is None else low_median - high_median
+                ),
+                "high_breadth_win_rate_pct": high_win,
+                "low_breadth_win_rate_pct": low_win,
+                "low_minus_high_win_rate_pct": (
+                    None if low_win is None or high_win is None else low_win - high_win
+                ),
+                "high_breadth_severe_loss_rate_pct": high_severe,
+                "low_breadth_severe_loss_rate_pct": low_severe,
+                "low_minus_high_severe_loss_rate_pct": (
+                    None if low_severe is None or high_severe is None else low_severe - high_severe
+                ),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    frame = pd.DataFrame(rows)
+    return frame.reindex(columns=columns).sort_values(
+        ["horizon", "year", "breadth_lookback", "low_minus_high_median_forward_topix_excess_return_pct"],
+        ascending=[True, True, True, False],
+        na_position="last",
+    )
+
+
+def _build_current_term_mapping_df(conn: Any) -> pd.DataFrame:
+    return conn.execute(
+        """
+        SELECT
+            factor_signal,
+            factor_family,
+            factor_display_name,
+            display_order
+        FROM factor_signal_terms
+        ORDER BY display_order, factor_signal
+        """
+    ).fetchdf()
 
 
 def _build_year_factor_spread_df(
@@ -484,7 +1451,13 @@ def _build_year_factor_spread_df(
         _aggregate_factor_table(
             conn,
             table_name="factor_signal_observations",
-            group_columns=["horizon", "year", "factor_signal"],
+            group_columns=[
+                "horizon",
+                "year",
+                "factor_signal",
+                "factor_family",
+                "factor_display_name",
+            ],
             horizon=int(horizon),
             min_observations=min_observations,
             severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -505,7 +1478,14 @@ def _build_core_failure_decomposition_df(
         _aggregate_factor_table(
             conn,
             table_name="core_failure_observations",
-            group_columns=["horizon", "year", "core_slice", "factor_signal"],
+            group_columns=[
+                "horizon",
+                "year",
+                "core_slice",
+                "factor_signal",
+                "factor_family",
+                "factor_display_name",
+            ],
             horizon=int(horizon),
             min_observations=min_observations,
             severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -519,6 +1499,8 @@ def _build_core_failure_decomposition_df(
             "year",
             "core_slice",
             "factor_signal",
+            "factor_family",
+            "factor_display_name",
             *_metric_columns(),
         ],
     )
@@ -548,7 +1530,13 @@ def _build_regime_comparison_df(
         _aggregate_factor_table(
             conn,
             table_name="factor_signal_observations",
-            group_columns=["horizon", "year_group", "factor_signal"],
+            group_columns=[
+                "horizon",
+                "year_group",
+                "factor_signal",
+                "factor_family",
+                "factor_display_name",
+            ],
             horizon=int(horizon),
             min_observations=min_observations,
             severe_loss_threshold_pct=severe_loss_threshold_pct,
@@ -658,21 +1646,32 @@ def _query_observation_sample_df(
     return conn.execute(
         f"""
         SELECT
-            year,
-            year_group,
-            core_slice,
-            factor_signal,
-            atr_state,
-            date,
-            code,
-            company_name,
-            sector_33_name,
-            sector_strength_bucket,
-            momentum_20d_percentile,
-            momentum_60d_percentile,
+            c.year,
+            c.year_group,
+            b.breadth_label_20d,
+            b.breadth_up_20d_pct,
+            n.nt_regime_60d_label,
+            n.nt_ratio_return_60d_pct,
+            c.core_slice,
+            c.factor_signal,
+            c.factor_family,
+            c.factor_display_name,
+            c.atr_state,
+            c.date,
+            c.code,
+            c.company_name,
+            c.sector_33_name,
+            c.sector_strength_bucket,
+            c.momentum_20d_percentile,
+            c.momentum_60d_percentile,
             {horizon_exprs}
-        FROM core_failure_observations
-        ORDER BY year, date, core_slice, code
+        FROM core_failure_observations c
+        LEFT JOIN daily_market_breadth_state b
+          ON b.market_scope = c.market_scope
+         AND b.date = c.date
+        LEFT JOIN nt_ratio_daily_state n
+          ON n.date = c.date
+        ORDER BY c.year, c.date, c.core_slice, c.code
         LIMIT ?
         """,
         [int(limit)],
@@ -725,7 +1724,122 @@ def _metric_columns() -> list[str]:
 
 
 def _year_factor_spread_columns() -> list[str]:
-    return ["horizon", "year", "factor_signal", *_metric_columns()]
+    return [
+        "horizon",
+        "year",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        *_metric_columns(),
+    ]
+
+
+def _annual_factor_breadth_columns() -> list[str]:
+    return [
+        "horizon",
+        "year",
+        "breadth_lookback",
+        "breadth_bucket",
+        "breadth_label",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        "observation_count",
+        "code_count",
+        "date_count",
+        "sector_count",
+        "avg_breadth_up_pct",
+        "mean_forward_topix_excess_return_pct",
+        "median_forward_topix_excess_return_pct",
+        "p10_forward_topix_excess_return_pct",
+        "p90_forward_topix_excess_return_pct",
+        "win_rate_pct",
+        "severe_loss_rate_pct",
+    ]
+
+
+def _factor_nt_regime_columns() -> list[str]:
+    return [
+        "horizon",
+        "time_bucket_type",
+        "time_bucket",
+        "nt_regime_60d",
+        "nt_regime_60d_label",
+        "nt_regime_60d_order",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        "factor_observation_count",
+        "factor_code_count",
+        "factor_date_count",
+        "factor_sector_count",
+        "baseline_observation_count",
+        "baseline_code_count",
+        "baseline_date_count",
+        "factor_mean_nt_ratio_return_60d_pct",
+        "baseline_mean_nt_ratio_return_60d_pct",
+        "factor_mean_forward_topix_excess_return_pct",
+        "factor_median_forward_topix_excess_return_pct",
+        "baseline_median_forward_topix_excess_return_pct",
+        "factor_minus_baseline_median_forward_topix_excess_return_pct",
+        "factor_p10_forward_topix_excess_return_pct",
+        "factor_p90_forward_topix_excess_return_pct",
+        "factor_win_rate_pct",
+        "baseline_win_rate_pct",
+        "factor_minus_baseline_win_rate_pct",
+        "factor_severe_loss_rate_pct",
+    ]
+
+
+def _bank_exclusion_columns() -> list[str]:
+    return [
+        "horizon",
+        "analysis_scope",
+        "analysis_scope_label",
+        "year",
+        "sector_scope",
+        "sector_scope_label",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        "factor_observation_count",
+        "factor_code_count",
+        "factor_date_count",
+        "factor_sector_count",
+        "baseline_observation_count",
+        "baseline_code_count",
+        "baseline_date_count",
+        "factor_mean_forward_topix_excess_return_pct",
+        "factor_median_forward_topix_excess_return_pct",
+        "baseline_median_forward_topix_excess_return_pct",
+        "factor_minus_baseline_median_forward_topix_excess_return_pct",
+        "factor_win_rate_pct",
+        "baseline_win_rate_pct",
+        "factor_minus_baseline_win_rate_pct",
+        "factor_severe_loss_rate_pct",
+    ]
+
+
+def _factor_resilience_columns() -> list[str]:
+    return [
+        "horizon",
+        "year",
+        "breadth_lookback",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        "high_breadth_observation_count",
+        "low_breadth_observation_count",
+        "high_breadth_median_forward_topix_excess_return_pct",
+        "low_breadth_median_forward_topix_excess_return_pct",
+        "low_minus_high_median_forward_topix_excess_return_pct",
+        "high_breadth_win_rate_pct",
+        "low_breadth_win_rate_pct",
+        "low_minus_high_win_rate_pct",
+        "high_breadth_severe_loss_rate_pct",
+        "low_breadth_severe_loss_rate_pct",
+        "low_minus_high_severe_loss_rate_pct",
+    ]
 
 
 def _core_failure_decomposition_columns() -> list[str]:
@@ -734,14 +1848,42 @@ def _core_failure_decomposition_columns() -> list[str]:
         "year",
         "core_slice",
         "factor_signal",
+        "factor_family",
+        "factor_display_name",
         "atr_state",
         *_metric_columns(),
     ]
 
 
 def _regime_comparison_columns() -> list[str]:
-    return ["horizon", "year_group", "factor_signal", *_metric_columns()]
+    return [
+        "horizon",
+        "year_group",
+        "factor_signal",
+        "factor_family",
+        "factor_display_name",
+        *_metric_columns(),
+    ]
 
 
 def _sector_year_contribution_columns() -> list[str]:
     return ["horizon", "year", "core_slice", "sector_33_name", *_metric_columns()]
+
+
+def _coerce_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, str | int | float):
+        item = getattr(value, "item", None)
+        if not callable(item):
+            return None
+        value = item()
+    if not isinstance(value, str | int | float):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(number):
+        return None
+    return number
