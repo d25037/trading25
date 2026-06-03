@@ -156,6 +156,7 @@ def load_value_composite_scored_frame(
         reader,
         through_date=price_basis_date,
         market_codes=query_market_codes,
+        as_of_date=target_date,
     )
 
     return build_value_composite_score_frame_from_statement_rows(
@@ -203,6 +204,7 @@ def resolve_value_composite_unavailable_reason(
         reader,
         through_date=price_basis_date,
         market_codes=query_market_codes,
+        as_of_date=target_date,
     )
     baseline_snapshot = resolve_baseline_share_snapshot(
         statements,

@@ -79,6 +79,18 @@ from src.application.services.ranking_statement_rows import (
 )
 
 
+def _create_stock_master_views(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("DROP VIEW IF EXISTS stock_master_daily")
+    conn.execute("DROP VIEW IF EXISTS stocks_latest")
+    conn.execute("""
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+    """)
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
+
+
 @pytest.fixture
 def ranking_db(tmp_path):
     """ランキングテスト用DB"""
@@ -545,6 +557,7 @@ def ranking_db(tmp_path):
         ("5555", "2024-01-18", 50.0, "FY", 60.0, 60.0, 100.0),
     )
 
+    _create_stock_master_views(conn)
     conn.commit()
     conn.close()
     return db_path
@@ -1568,6 +1581,7 @@ class TestGetRankings:
                     "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                     (code, current_date, close, close + 1.0, close - 1.0, close, 1000, 1.0, None),
                 )
+        _create_stock_master_views(conn)
         conn.close()
 
         reader = MarketDbReader(db_path)
@@ -1665,11 +1679,14 @@ class TestGetRankings:
     ):
         conn = duckdb.connect(ranking_db)
         try:
+            conn.execute("DROP VIEW stock_master_daily")
             conn.execute("""
                 CREATE TABLE stock_master_daily (
                     date TEXT NOT NULL,
                     code TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
                     market_code TEXT NOT NULL,
+                    sector_17_name TEXT,
                     sector_33_name TEXT NOT NULL
                 )
             """)
@@ -1714,12 +1731,12 @@ class TestGetRankings:
                         ),
                     )
                 conn.execute(
-                    "INSERT INTO stock_master_daily VALUES (?,?,?,?)",
-                    (current_date, "67580", "prime", "電気機器"),
+                    "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
+                    (current_date, "67580", "ソニー", "prime", "電気", "電気機器"),
                 )
                 conn.execute(
-                    "INSERT INTO stock_master_daily VALUES (?,?,?,?)",
-                    (current_date, "72030", "prime", "輸送用機器"),
+                    "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
+                    (current_date, "72030", "トヨタ", "prime", "輸送", "輸送用機器"),
                 )
                 for code, close in (
                     ("004F", 1000.0 + index * 3.0),
@@ -1789,6 +1806,7 @@ class TestGetRankings:
         conn.execute("""CREATE TABLE indices_data (
             code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
             sector_name TEXT, created_at TEXT, PRIMARY KEY (code, date))""")
+        _create_stock_master_views(conn)
         conn.commit()
         conn.close()
 
@@ -2032,6 +2050,7 @@ class TestGetFundamentalRankings:
         conn.execute("""CREATE TABLE stock_data (
             code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
             volume INTEGER, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date))""")
+        _create_stock_master_views(conn)
         conn.commit()
         conn.close()
 

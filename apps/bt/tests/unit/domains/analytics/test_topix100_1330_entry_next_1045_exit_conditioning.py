@@ -56,6 +56,14 @@ def _build_market_db(db_path: Path) -> str:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data_minute_raw) d
+        CROSS JOIN stocks s
+        """
+    )
     conn.executemany(
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [

@@ -122,11 +122,7 @@ def run_free_float_liquidity_gap_research(
         snapshot_prefix="free-float-liquidity-gap-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         source_df = _query_observation_source(
             ctx.connection,
             start_date=start_date,
@@ -602,53 +598,34 @@ def _query_observation_source(
 
 
 def _market_source_cte(market_source: str) -> str:
-    if market_source == "stock_master_daily_exact_date":
-        return f"""
-        market_source AS (
-            SELECT *
-            FROM (
-                SELECT
-                    {normalize_code_sql("code")} AS code,
-                    date,
-                    company_name,
-                    market_code,
-                    market_name,
-                    sector_33_name,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalize_code_sql("code")}, date
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-                    ) AS rn
-                FROM stock_master_daily
-            )
-            WHERE rn = 1
-        ),
-        """
+    if market_source != "stock_master_daily_exact_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
     return f"""
-        market_source AS (
-            SELECT *
-            FROM (
-                SELECT
-                    {normalize_code_sql("code")} AS code,
-                    NULL AS date,
-                    company_name,
-                    market_code,
-                    market_name,
-                    sector_33_name,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalize_code_sql("code")}
-                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-                    ) AS rn
-                FROM stocks
-            )
-            WHERE rn = 1
-        ),
-        """
+    market_source AS (
+        SELECT *
+        FROM (
+            SELECT
+                {normalize_code_sql("code")} AS code,
+                date,
+                company_name,
+                market_code,
+                market_name,
+                sector_33_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {normalize_code_sql("code")}, date
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                ) AS rn
+            FROM stock_master_daily
+        )
+        WHERE rn = 1
+    ),
+    """
 
 
 def _market_join_sql(market_source: str) -> str:
-    if market_source == "stock_master_daily_exact_date":
-        return "LEFT JOIN market_source m ON m.code = p.code AND m.date = p.date"
-    return "LEFT JOIN market_source m ON m.code = p.code"
+    if market_source != "stock_master_daily_exact_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
+    return "LEFT JOIN market_source m ON m.code = p.code AND m.date = p.date"
 
 
 def _build_observation_df(

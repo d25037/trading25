@@ -11,7 +11,6 @@ from src.application.services.screening_strategy_selection import (
 from src.application.services.strategy_dataset_metadata import (
     StrategyDatasetMetadata,
     format_market_scope_label,
-    resolve_dataset_metadata,
     stringify_markets,
     union_market_lists,
 )
@@ -63,20 +62,20 @@ def _resolve_selected_strategy_datasets(
         runtime_payload = catalog.runtime_payloads[name]
         try:
             if runtime_payload.shared_config.data_source == "dataset_snapshot":
-                dataset_metadata = resolve_dataset_metadata(
-                    runtime_payload.shared_config.dataset,
-                    dataset_base_path=dataset_base_path,
+                _ = dataset_base_path
+                raise ValueError(
+                    "Screening uses market.duckdb and does not support "
+                    "shared_config.data_source=dataset_snapshot"
                 )
-            else:
-                preset_name = runtime_payload.shared_config.universe_preset
-                preset = get_preset(preset_name or "")
-                if preset is None:
-                    raise ValueError("shared_config.universe_preset is required")
-                dataset_metadata = StrategyDatasetMetadata(
-                    dataset_name=None,
-                    dataset_preset=preset_name,
-                    screening_default_markets=preset.markets,
-                )
+            preset_name = runtime_payload.shared_config.universe_preset
+            preset = get_preset(preset_name or "")
+            if preset is None:
+                raise ValueError("shared_config.universe_preset is required")
+            dataset_metadata = StrategyDatasetMetadata(
+                dataset_name=None,
+                dataset_preset=preset_name,
+                screening_default_markets=preset.markets,
+            )
         except Exception as exc:
             raise ValueError(
                 f"Invalid universe for screening strategy {name}: {exc}"

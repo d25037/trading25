@@ -171,6 +171,17 @@ def _build_margin_research_db(db_path: Path) -> Path:
     )
     conn.execute(
         """
+        CREATE TABLE stock_master_daily (
+            date TEXT,
+            code TEXT,
+            market_code TEXT,
+            market_name TEXT,
+            scale_category TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE stock_data (
             code TEXT,
             date TEXT,
@@ -195,6 +206,17 @@ def _build_margin_research_db(db_path: Path) -> Path:
         [
             ("1111", "Alpha", "0111", "Prime", "TOPIX Core30"),
             ("2222", "Beta", "0112", "Standard", None),
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?)",
+        [
+            (date, code, market_code, market_name, scale_category)
+            for date in dates
+            for code, _company_name, market_code, market_name, scale_category in [
+                ("1111", "Alpha", "0111", "Prime", "TOPIX Core30"),
+                ("2222", "Beta", "0112", "Standard", None),
+            ]
         ],
     )
     stock_rows = []

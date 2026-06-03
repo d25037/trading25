@@ -149,6 +149,18 @@ def _build_pre_disclosure_research_db(db_path: Path) -> Path:
     )
     conn.execute(
         """
+        CREATE TABLE stock_master_daily (
+            date TEXT,
+            code TEXT,
+            company_name TEXT,
+            market_code TEXT,
+            market_name TEXT,
+            scale_category TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE stock_data (
             code TEXT,
             date TEXT,
@@ -193,6 +205,16 @@ def _build_pre_disclosure_research_db(db_path: Path) -> Path:
             ("4444", "Delta", "0111", "Prime", None),
         ],
     )
+    _insert_stock_master_daily(
+        conn,
+        dates,
+        [
+            ("1111", "Alpha", "0111", "Prime", "TOPIX Core30"),
+            ("2222", "Beta", "0112", "Standard", None),
+            ("3333", "Gamma", "0112", "Standard", None),
+            ("4444", "Delta", "0111", "Prime", None),
+        ],
+    )
 
     alpha_close = [100.0, 101.0, 102.0, 103.0, 104.0, 106.0, 130.0, 108.0, 109.0, 110.0]
     beta_close = [200.0, 199.0, 198.0, 197.0, 196.0, 194.0, 170.0, 192.0, 191.0, 190.0]
@@ -230,3 +252,14 @@ def _build_pre_disclosure_research_db(db_path: Path) -> Path:
     )
     conn.close()
     return db_path
+
+
+def _insert_stock_master_daily(
+    conn: duckdb.DuckDBPyConnection,
+    dates: list[str],
+    stock_rows: list[tuple[str, str, str, str, str | None]],
+) -> None:
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)",
+        [(date, *row) for date in dates for row in stock_rows],
+    )

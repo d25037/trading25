@@ -54,7 +54,7 @@ class FactorRegressionService:
 
         # 銘柄情報
         stock = self._reader.query_one(
-            f"SELECT code, company_name FROM stocks WHERE code IN ({placeholders}) "
+            f"SELECT code, company_name FROM stocks_latest WHERE code IN ({placeholders}) "
             "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
             tuple(codes),
         )

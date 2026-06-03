@@ -61,6 +61,7 @@ def load_adjustment_events_by_code(
     *,
     through_date: str,
     market_codes: list[str],
+    as_of_date: str | None = None,
 ) -> dict[str, list[ShareAdjustmentEvent]]:
     if not table_exists(reader, "stock_data_raw"):
         return {}
@@ -82,7 +83,8 @@ def load_adjustment_events_by_code(
                         PARTITION BY {stocks_normalized}
                         ORDER BY {stocks_prefer_4digit}
                     ) AS rn
-                FROM stocks s
+                FROM stock_master_daily s
+                WHERE s.date = ?
             )
             WHERE rn = 1
         ),
@@ -109,7 +111,8 @@ def load_adjustment_events_by_code(
         ORDER BY code, date
     """
     grouped: dict[str, list[ShareAdjustmentEvent]] = {}
-    for row in reader.query(sql, (through_date, *market_params)):
+    master_date = as_of_date or through_date
+    for row in reader.query(sql, (master_date, through_date, *market_params)):
         code = normalize_equity_code(row["code"])
         grouped.setdefault(code, []).append(
             ShareAdjustmentEvent(
@@ -138,7 +141,7 @@ def load_fundamental_stock_rows(
             ON sd.normalized_code = s.normalized_code
         WHERE 1 = 1{market_clause}
     """
-    return reader.query(sql, (date, *market_params))
+    return reader.query(sql, (date, date, *market_params))
 
 
 def load_adjusted_daily_valuation_frame(
@@ -238,7 +241,7 @@ def load_adjusted_daily_valuation_frame(
             ON sd.normalized_code = v.normalized_code
         WHERE 1 = 1{market_clause}
     """
-    rows = reader.query(sql, (date, date, *market_params))
+    rows = reader.query(sql, (date, date, date, *market_params))
     return pd.DataFrame([dict(row.items()) for row in rows])
 
 
@@ -304,7 +307,7 @@ def load_adjusted_statement_metric_rows(
         WHERE 1 = 1{market_clause}
         ORDER BY s.code, m.disclosed_date DESC
     """
-    return reader.query(sql, (date, date, *market_params))
+    return reader.query(sql, (date, date, date, *market_params))
 
 
 def adjusted_recent_actual_eps_max_by_code(
@@ -496,7 +499,7 @@ def load_fundamental_statement_rows(
         WHERE st.disclosed_date <= ?{market_clause}
         ORDER BY s.code, st.disclosed_date DESC
     """
-    return reader.query(sql, (date, date, *market_params))
+    return reader.query(sql, (date, date, date, *market_params))
 
 
 def statement_table_columns(reader: MarketDbReader) -> set[str]:

@@ -70,6 +70,7 @@ class DummyMarketDb:
             "dailyValuationRows": 10,
             "priceBasisDate": "2026-02-27",
             "basisVersion": "adjusted-v1:2026-02-27",
+            "basisVersionCount": 1,
         }
 
 
@@ -148,6 +149,36 @@ def test_resolve_parquet_size_bytes_returns_directory_total(tmp_path: Path) -> N
     assert size == 8
 
 
+def test_resolve_storage_stats_reports_stale_artifacts(tmp_path: Path) -> None:
+    duckdb_file = tmp_path / "market.duckdb"
+    duckdb_file.write_bytes(b"db")
+    duckdb_tmp = tmp_path / "market.duckdb.tmp"
+    duckdb_tmp.write_bytes(b"tmp")
+    backup_file = tmp_path / "market.duckdb.backup"
+    backup_file.write_bytes(b"backup")
+    parquet_dir = tmp_path / "parquet"
+    parquet_dir.mkdir()
+    (parquet_dir / "stock_data.parquet").write_bytes(b"abc")
+    (parquet_dir / "stock_data.parquet.tmp").write_bytes(b"stale")
+
+    stats = db_stats_service._resolve_storage_stats(
+        DummyStore(
+            TimeSeriesInspection(source="duckdb-parquet"),
+            duckdb_path=duckdb_file,
+            parquet_dir=parquet_dir,
+        )
+    )
+
+    assert stats.duckdbBytes == 2
+    assert stats.parquetBytes == 3
+    assert stats.staleArtifactCount == 3
+    assert stats.staleArtifacts == [
+        "market.duckdb.backup",
+        "market.duckdb.tmp",
+        "parquet/stock_data.parquet.tmp",
+    ]
+
+
 def test_resolve_storage_stats_prefers_single_atomic_store_lookup() -> None:
     store = DummyStore(
         TimeSeriesInspection(source="duckdb-parquet"),
@@ -199,8 +230,38 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.adjustedMetrics.dailyValuationRows == 10
     assert result.adjustedMetrics.priceBasisDate == "2026-02-27"
     assert result.adjustedMetrics.basisVersion == "adjusted-v1:2026-02-27"
+    assert result.adjustedMetrics.basisVersionCount == 1
     assert result.adjustedMetrics.status == "ready"
     assert result.intradayFreshness.status == "idle"
+
+
+def test_get_market_stats_marks_retained_adjusted_metric_basis_versions() -> None:
+    class RetainedBasisMarketDb(DummyMarketDb):
+        def get_adjusted_metrics_snapshot(self) -> dict[str, Any]:
+            return {
+                "statementRows": 4,
+                "dailyValuationRows": 10,
+                "priceBasisDate": "2026-02-27",
+                "basisVersion": "adjusted-v1:2026-02-27",
+                "basisVersionCount": 3,
+            }
+
+    result = db_stats_service.get_market_stats(
+        market_db=RetainedBasisMarketDb(),
+        time_series_store=DummyStore(
+            TimeSeriesInspection(
+                source="duckdb-parquet",
+                stock_count=10,
+                stock_max="2026-02-27",
+                stock_date_count=2,
+                statements_count=4,
+                statement_codes={"1301", "7203"},
+            )
+        ),
+    )
+
+    assert result.adjustedMetrics.status == "retained_versions"
+    assert result.adjustedMetrics.basisVersionCount == 3
 
 
 def test_get_market_stats_includes_intraday_freshness_snapshot() -> None:

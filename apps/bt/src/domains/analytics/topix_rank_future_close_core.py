@@ -118,23 +118,25 @@ def _query_universe_stock_history(
         params.append(end_date)
 
     sql = f"""
-        WITH latest_universe_raw AS (
+        WITH universe_daily_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
+                date,
                 coalesce(company_name, code) AS company_name,
                 lower(coalesce(market_code, '')) AS market_code,
                 coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalized_code_sql}
+                    PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
         ),
-        latest_universe AS (
+        universe_daily AS (
             SELECT
                 normalized_code,
+                date,
                 company_name
-            FROM latest_universe_raw
+            FROM universe_daily_raw
             WHERE row_priority = 1
               AND {membership_sql}
         ),
@@ -179,8 +181,9 @@ def _query_universe_stock_history(
             r.close,
             r.volume
         FROM stock_rows r
-        JOIN latest_universe s
+        JOIN universe_daily s
           ON s.normalized_code = r.normalized_code
+         AND s.date = r.date
         ORDER BY s.normalized_code, r.date
     """
     return conn.execute(sql, [*membership_params, *params]).fetchdf()
@@ -197,20 +200,21 @@ def _query_universe_date_range(
     )
     row = conn.execute(
         f"""
-        WITH latest_universe_raw AS (
+        WITH universe_daily_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
+                date,
                 lower(coalesce(market_code, '')) AS market_code,
                 coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalized_code_sql}
+                    PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
         ),
-        latest_universe AS (
-            SELECT normalized_code
-            FROM latest_universe_raw
+        universe_daily AS (
+            SELECT normalized_code, date
+            FROM universe_daily_raw
             WHERE row_priority = 1
               AND {membership_sql}
         ),
@@ -231,10 +235,11 @@ def _query_universe_date_range(
             FROM stock_rows_raw
             WHERE row_priority = 1
         )
-        SELECT MIN(date) AS min_date, MAX(date) AS max_date
+        SELECT MIN(r.date) AS min_date, MAX(r.date) AS max_date
         FROM stock_rows r
-        JOIN latest_universe s
+        JOIN universe_daily s
           ON s.normalized_code = r.normalized_code
+         AND s.date = r.date
         """,
         membership_params,
     ).fetchone()

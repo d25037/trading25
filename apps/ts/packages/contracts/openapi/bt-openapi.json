@@ -136,6 +136,11 @@
             ],
             "title": "Basisversion"
           },
+          "basisVersionCount": {
+            "default": 0,
+            "title": "Basisversioncount",
+            "type": "integer"
+          },
           "dailyValuationRows": {
             "default": 0,
             "title": "Dailyvaluationrows",
@@ -163,6 +168,7 @@
               "ready",
               "missing",
               "stale",
+              "retained_versions",
               "empty_source"
             ],
             "title": "Status",
@@ -16917,6 +16923,18 @@
             "default": 0,
             "title": "Parquetbytes",
             "type": "integer"
+          },
+          "staleArtifactCount": {
+            "default": 0,
+            "title": "Staleartifactcount",
+            "type": "integer"
+          },
+          "staleArtifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Staleartifacts",
+            "type": "array"
           },
           "totalBytes": {
             "default": 0,

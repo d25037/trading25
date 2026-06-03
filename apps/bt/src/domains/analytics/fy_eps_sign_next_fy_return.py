@@ -218,7 +218,10 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH stocks_canonical AS (
+        WITH latest_master_date AS (
+            SELECT MAX(date) AS date FROM stock_master_daily
+        ),
+        stocks_canonical AS (
             SELECT
                 code,
                 company_name,
@@ -242,8 +245,9 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
                         PARTITION BY {normalized_code}
                         ORDER BY {prefer_4digit}
                     ) AS rn
-                FROM stocks
-                WHERE lower(market_code) IN ({placeholders})
+                FROM stock_master_daily
+                WHERE date = (SELECT date FROM latest_master_date)
+                  AND lower(market_code) IN ({placeholders})
             )
             WHERE rn = 1
         )
@@ -317,8 +321,9 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH stocks_canonical AS (
+        WITH stocks_asof_raw AS (
             SELECT
+                disclosed_date,
                 code,
                 company_name,
                 market_code,
@@ -328,19 +333,25 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
                 normalized_code
             FROM (
                 SELECT
-                    code,
-                    company_name,
-                    market_code,
-                    market_name,
-                    sector_33_name,
-                    listed_date,
-                    {normalized_code} AS normalized_code,
+                    st.disclosed_date,
+                    smd.code,
+                    smd.company_name,
+                    smd.market_code,
+                    smd.market_name,
+                    smd.sector_33_name,
+                    smd.listed_date,
+                    {_normalize_code_sql("smd.code")} AS normalized_code,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code}
-                        ORDER BY {prefer_4digit}
+                        PARTITION BY {_normalize_code_sql("smd.code")}, st.disclosed_date
+                        ORDER BY smd.date DESC,
+                                 CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END,
+                                 smd.code
                     ) AS rn
-                FROM stocks
-                WHERE lower(market_code) IN ({placeholders})
+                FROM statements st
+                JOIN stock_master_daily smd
+                  ON {_normalize_code_sql("smd.code")} = {_normalize_code_sql("st.code")}
+                 AND smd.date <= st.disclosed_date
+                WHERE lower(smd.market_code) IN ({placeholders})
             )
             WHERE rn = 1
         ),
@@ -396,8 +407,9 @@ def _query_statement_rows(conn: Any, *, market_codes: Sequence[str]) -> pd.DataF
             st.operating_cash_flow,
             st.shares_outstanding
         FROM statements_canonical st
-        JOIN stocks_canonical s
+        JOIN stocks_asof_raw s
           ON s.normalized_code = st.normalized_code
+         AND s.disclosed_date = st.disclosed_date
         ORDER BY s.code, st.disclosed_date
         """,
         [str(code).lower() for code in market_codes],
@@ -461,23 +473,25 @@ def _query_price_rows(
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH stocks_canonical AS (
+        WITH stocks_daily AS (
             SELECT
+                date,
                 code,
                 company_name,
                 market_code,
                 normalized_code
             FROM (
                 SELECT
+                    date,
                     code,
                     company_name,
                     market_code,
                     {normalized_code} AS normalized_code,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code}
+                        PARTITION BY {normalized_code}, date
                         ORDER BY {prefer_4digit}
                     ) AS rn
-                FROM stocks
+                FROM stock_master_daily
                 WHERE lower(market_code) IN ({placeholders})
             )
             WHERE rn = 1
@@ -511,8 +525,9 @@ def _query_price_rows(
             sd.open,
             sd.close
         FROM stock_data_canonical sd
-        JOIN stocks_canonical s
+        JOIN stocks_daily s
           ON s.normalized_code = sd.normalized_code
+         AND s.date = sd.date
         ORDER BY s.code, sd.date
         """,
         [*[str(code).lower() for code in market_codes], start_date, end_date],

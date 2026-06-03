@@ -339,7 +339,7 @@ def _assert_required_tables(conn: duckdb.DuckDBPyConnection) -> None:
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
         ).fetchall()
     }
-    missing = sorted({"stock_data", "margin_data", "stocks"} - table_names)
+    missing = sorted({"stock_data", "margin_data", "stock_master_daily"} - table_names)
     if missing:
         raise RuntimeError(f"market.duckdb missing required table(s): {', '.join(missing)}")
 
@@ -494,17 +494,18 @@ def _query_observation_frame(
                 ROW_NUMBER() OVER (PARTITION BY code ORDER BY date) AS code_rn
             FROM stock_rows
         ),
-        stocks_latest AS (
+        stock_master_asof AS (
             SELECT
                 {normalize_code_sql("code")} AS code,
+                date,
                 market_code,
                 market_name,
                 scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalize_code_sql("code")}
+                    PARTITION BY {normalize_code_sql("code")}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
         )
         SELECT
             m.code,
@@ -541,8 +542,9 @@ def _query_observation_frame(
          AND entry.date = effective.date
         {" ".join(prior_joins)}
         {" ".join(future_joins)}
-        LEFT JOIN stocks_latest sl
+        LEFT JOIN stock_master_asof sl
           ON sl.code = m.code
+         AND sl.date = effective.date
          AND sl.row_priority = 1
         {date_filter_sql}
         ORDER BY effective.date, m.code

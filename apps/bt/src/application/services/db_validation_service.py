@@ -298,6 +298,10 @@ def _build_recommendations(
         recommendations.append(
             "Rebuild adjusted fundamentals and daily valuation to match latest stock_data"
         )
+    elif adjusted_metrics_status == "retained_versions":
+        recommendations.append(
+            "Prune retained adjusted metric basis versions so daily_valuation has one active basis"
+        )
     recommendations.extend(readiness_recommendations)
     return recommendations
 
@@ -442,7 +446,8 @@ def validate_market_db(
         fundamentals_failed_dates_count=len(fundamentals.failed_dates),
         fundamentals_failed_codes_count=len(fundamentals.failed_codes),
         integrity_issues_count=len(integrity_issues),
-        adjusted_metrics_needs_rebuild=adjusted_metrics.status in {"missing", "stale"},
+        adjusted_metrics_needs_rebuild=adjusted_metrics.status
+        in {"missing", "stale", "retained_versions"},
         options_225_missing_local_data=options_225.missing_local_data,
         options_225_stale_local_data=options_225.stale_local_data,
         options_225_pending_local_data=options_225.pending_local_data,

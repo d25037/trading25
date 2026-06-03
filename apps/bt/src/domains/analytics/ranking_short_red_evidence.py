@@ -13,7 +13,6 @@ from src.domains.analytics.atr_expansion_forward_response import (
 )
 from src.domains.analytics.earnings_holdthrough_expectancy import (
     _sort_summary_df,
-    _table_exists,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
     _top_rows_for_markdown,
@@ -182,11 +181,7 @@ def run_ranking_short_red_evidence_research(
         snapshot_prefix="ranking-short-red-evidence-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         _create_ranking_observation_panel(
             ctx.connection,
             query_start=query_start,

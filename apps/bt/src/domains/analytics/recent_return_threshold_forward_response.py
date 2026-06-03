@@ -170,11 +170,7 @@ def run_recent_return_threshold_forward_response_research(
         snapshot_prefix="recent-return-threshold-forward-response-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         _create_observation_panel(
             ctx.connection,
             query_start=query_start,
@@ -578,10 +574,8 @@ def _assert_required_tables(conn: Any) -> None:
         raise RuntimeError(
             f"market.duckdb missing required tables: {', '.join(missing)}"
         )
-    if not _table_exists(conn, "stock_master_daily") and not _table_exists(
-        conn, "stocks"
-    ):
-        raise RuntimeError("market.duckdb requires stock_master_daily or stocks")
+    if not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError("market.duckdb requires stock_master_daily for PIT universe scope")
 
 
 def _create_daily_valuation_view(conn: Any) -> None:
@@ -1064,58 +1058,34 @@ def _create_observation_panel(
 
 
 def _market_master_cte(*, market_source: str, master_code: str) -> str:
-    if market_source == "stock_master_daily_exact_date":
-        return f"""
-        raw_market_master AS (
-            SELECT
-                {master_code} AS code,
-                smd.date,
-                smd.company_name,
-                CASE
-                    WHEN lower(trim(smd.market_code)) IN ('0111', 'prime') THEN 'prime'
-                    WHEN lower(trim(smd.market_code)) IN ('0112', 'standard') THEN 'standard'
-                    WHEN lower(trim(smd.market_code)) IN ('0113', 'growth') THEN 'growth'
-                    ELSE 'unknown'
-                END AS market,
-                smd.market_code,
-                smd.scale_category,
-                row_number() OVER (
-                    PARTITION BY {master_code}, smd.date
-                    ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
-                ) AS row_rank
-            FROM stock_master_daily smd
-        ),
-        market_master AS (
-            SELECT code, date, company_name, market, market_code, scale_category
-            FROM raw_market_master
-            WHERE row_rank = 1
-        )
-        """
+    if market_source != "stock_master_daily_exact_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
     return f"""
-        latest_market AS (
-            SELECT
-                {master_code} AS code,
-                s.company_name,
-                CASE
-                    WHEN lower(trim(s.market_code)) IN ('0111', 'prime') THEN 'prime'
-                    WHEN lower(trim(s.market_code)) IN ('0112', 'standard') THEN 'standard'
-                    WHEN lower(trim(s.market_code)) IN ('0113', 'growth') THEN 'growth'
-                    ELSE 'unknown'
-                END AS market,
-                s.market_code,
-                s.scale_category,
-                row_number() OVER (
-                    PARTITION BY {master_code}
-                    ORDER BY CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END, s.code
-                ) AS row_rank
-            FROM stocks s
-        ),
-        market_master AS (
-            SELECT p.code, p.date, lm.company_name, lm.market, lm.market_code, lm.scale_category
-            FROM prices p
-            JOIN latest_market lm ON lm.code = p.code AND lm.row_rank = 1
-        )
-        """
+    raw_market_master AS (
+        SELECT
+            {master_code} AS code,
+            smd.date,
+            smd.company_name,
+            CASE
+                WHEN lower(trim(smd.market_code)) IN ('0111', 'prime') THEN 'prime'
+                WHEN lower(trim(smd.market_code)) IN ('0112', 'standard') THEN 'standard'
+                WHEN lower(trim(smd.market_code)) IN ('0113', 'growth') THEN 'growth'
+                ELSE 'unknown'
+            END AS market,
+            smd.market_code,
+            smd.scale_category,
+            row_number() OVER (
+                PARTITION BY {master_code}, smd.date
+                ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
+            ) AS row_rank
+        FROM stock_master_daily smd
+    ),
+    market_master AS (
+        SELECT code, date, company_name, market, market_code, scale_category
+        FROM raw_market_master
+        WHERE row_rank = 1
+    )
+    """
 
 
 def _create_scoped_view(conn: Any) -> None:

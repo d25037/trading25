@@ -424,8 +424,8 @@ def build_rerating_bubble_regime_summary_markdown(
 
 def _assert_footprint_required_tables(conn: Any) -> None:
     missing = [table for table in _REQUIRED_TABLES if not _table_exists(conn, table)]
-    if not (_table_exists(conn, "stock_master_daily") or _table_exists(conn, "stocks")):
-        missing.append("stock_master_daily_or_stocks")
+    if not _table_exists(conn, "stock_master_daily"):
+        missing.append("stock_master_daily")
     if missing:
         raise ValueError(f"market.duckdb is missing required tables: {', '.join(missing)}")
 
@@ -1555,53 +1555,31 @@ def _create_market_master_source(
     if query_end is not None:
         filters.append(f"date <= '{query_end}'")
     date_where = "" if not filters else "WHERE " + " AND ".join(filters)
-    if _table_exists(conn, "stock_master_daily"):
-        code = normalize_code_sql("smd.code")
-        sector_expr = (
-            "smd.sector_33_name"
-            if _column_exists(conn, "stock_master_daily", "sector_33_name")
-            else "'unknown'"
-        )
-        conn.execute(
-            f"""
-            CREATE OR REPLACE TEMP TABLE bubble_market_master_source AS
-            SELECT
-                {code} AS code,
-                smd.date,
-                smd.company_name,
-                {_market_scope_case_sql("smd.market_code")} AS market,
-                {sector_expr} AS sector_33_name
-            FROM stock_master_daily smd
-            {date_where}
-            """
-        )
-        return
-    code = normalize_code_sql("s.code")
+    if not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError("market.duckdb requires stock_master_daily for PIT market footprint")
+    code = normalize_code_sql("smd.code")
     sector_expr = (
-        "s.sector_33_name" if _column_exists(conn, "stocks", "sector_33_name") else "'unknown'"
+        "smd.sector_33_name"
+        if _column_exists(conn, "stock_master_daily", "sector_33_name")
+        else "'unknown'"
     )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE bubble_market_master_source AS
-            SELECT
-                c.date,
-                {code} AS code,
-                s.company_name,
-            {_market_scope_case_sql("s.market_code")} AS market,
+        SELECT
+            {code} AS code,
+            smd.date,
+            smd.company_name,
+            {_market_scope_case_sql("smd.market_code")} AS market,
             {sector_expr} AS sector_33_name
-        FROM stocks s
-        CROSS JOIN bubble_calendar c
+        FROM stock_master_daily smd
         {date_where}
         """
     )
 
 
 def _market_source(conn: Any) -> str:
-    return (
-        "stock_master_daily_exact_date"
-        if _table_exists(conn, "stock_master_daily")
-        else "stocks_latest_fallback"
-    )
+    return "stock_master_daily_exact_date"
 
 
 def _optional_double_expr(conn: Any, table: str, alias: str, column: str) -> str:

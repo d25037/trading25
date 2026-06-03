@@ -434,7 +434,10 @@ def _query_universe_codes(
 ) -> pd.DataFrame:
     normalized_code_sql = normalize_code_sql("code")
     sql = f"""
-        WITH latest_universe_raw AS (
+        WITH latest_master_date AS (
+            SELECT MAX(date) AS date FROM stock_master_daily
+        ),
+        latest_universe_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
                 coalesce(company_name, code) AS company_name,
@@ -444,7 +447,8 @@ def _query_universe_codes(
                     PARTITION BY {normalized_code_sql}
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
+            WHERE date = (SELECT date FROM latest_master_date)
         ),
         classified_universe AS (
             SELECT
@@ -480,24 +484,26 @@ def _query_universe_stock_history(
     params.append(universe_key)
 
     sql = f"""
-        WITH latest_universe_raw AS (
+        WITH universe_daily_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
+                date,
                 coalesce(company_name, code) AS company_name,
                 lower(coalesce(market_code, '')) AS market_code,
                 coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalized_code_sql}
+                    PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
         ),
         classified_universe AS (
             SELECT
                 normalized_code,
+                date,
                 company_name,
                 {_universe_case_sql()} AS universe_key
-            FROM latest_universe_raw
+            FROM universe_daily_raw
             WHERE row_priority = 1
         ),
         stock_rows_raw AS (
@@ -542,6 +548,7 @@ def _query_universe_stock_history(
         FROM stock_rows s
         JOIN classified_universe u
           ON u.normalized_code = s.normalized_code
+         AND u.date = s.date
         WHERE u.universe_key = ?
         ORDER BY u.normalized_code, s.date
     """

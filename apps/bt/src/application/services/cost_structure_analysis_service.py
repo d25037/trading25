@@ -37,7 +37,7 @@ class CostStructureAnalysisService:
         return self._reader.query_one(
             f"""
             SELECT code, company_name
-            FROM stocks
+            FROM stocks_latest
             WHERE code IN ({placeholders})
             ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
             LIMIT 1

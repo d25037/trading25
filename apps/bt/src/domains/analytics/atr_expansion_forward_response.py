@@ -137,11 +137,7 @@ def run_atr_expansion_forward_response_research(
         snapshot_prefix="atr-expansion-forward-response-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         _create_observation_panel(
             ctx.connection,
             query_start=query_start,
@@ -407,10 +403,8 @@ def _assert_required_tables(conn: Any) -> None:
         raise RuntimeError(
             f"market.duckdb missing required tables: {', '.join(missing)}"
         )
-    if not _table_exists(conn, "stock_master_daily") and not _table_exists(
-        conn, "stocks"
-    ):
-        raise RuntimeError("market.duckdb requires stock_master_daily or stocks")
+    if not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError("market.duckdb requires stock_master_daily for PIT universe scope")
 
 
 def _create_observation_panel(

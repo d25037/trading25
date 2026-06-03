@@ -95,6 +95,14 @@ def _create_research_duckdb(db_path: str) -> None:
         )
         conn.execute(
             """
+            CREATE VIEW stock_master_daily AS
+            SELECT d.date, s.*
+            FROM (SELECT DISTINCT date FROM stock_data) d
+            CROSS JOIN stocks s
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE topix_data (
                 date DATE,
                 open DOUBLE,
@@ -176,6 +184,14 @@ def test_query_universe_stock_history_applies_end_date_and_universe_params() -> 
                 close DOUBLE,
                 volume DOUBLE
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE VIEW stock_master_daily AS
+            SELECT d.date, s.*
+            FROM (SELECT DISTINCT date FROM stock_data) d
+            CROSS JOIN stocks s
             """
         )
         conn.execute(

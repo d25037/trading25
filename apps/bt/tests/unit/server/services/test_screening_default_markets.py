@@ -29,6 +29,21 @@ def _make_loaded_config(universe_preset: str, entry_decidability: str) -> Simple
     )
 
 
+def _make_loaded_dataset_snapshot_config(entry_decidability: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        entry_params={},
+        exit_params={},
+        shared_config=SimpleNamespace(
+            data_source="dataset_snapshot",
+            universe_preset=None,
+            dataset="archived_20240101",
+        ),
+        compiled_strategy=SimpleNamespace(),
+        screening_support="supported",
+        entry_decidability=entry_decidability,
+    )
+
+
 def test_resolve_default_screening_markets_uses_selected_strategy_union(monkeypatch: pytest.MonkeyPatch) -> None:
     loader = MagicMock()
     loader.get_strategy_metadata.return_value = [
@@ -150,6 +165,34 @@ def test_resolve_default_screening_markets_raises_for_unresolvable_dataset(
         )
 
 
+def test_resolve_default_screening_markets_rejects_dataset_snapshot_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = MagicMock()
+    loader.get_strategy_metadata.return_value = [
+        SimpleNamespace(
+            name="production/archived",
+            category="production",
+            path=Path("/tmp/production/archived.yaml"),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.load_strategy_screening_config",
+        lambda _loader, _name: _make_loaded_dataset_snapshot_config("pre_open_decidable"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Screening uses market.duckdb and does not support shared_config.data_source=dataset_snapshot",
+    ):
+        resolve_default_screening_markets(
+            entry_decidability="pre_open_decidable",
+            strategies=None,
+            config_loader=loader,
+        )
+
+
 def test_validate_selected_screening_strategy_datasets_ignores_unselected_broken_strategy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -208,6 +251,34 @@ def test_validate_selected_screening_strategy_datasets_raises_for_selected_broke
         validate_selected_screening_strategy_datasets(
             entry_decidability="pre_open_decidable",
             strategies="production/broken",
+            config_loader=loader,
+        )
+
+
+def test_validate_selected_screening_strategy_datasets_rejects_dataset_snapshot_strategy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loader = MagicMock()
+    loader.get_strategy_metadata.return_value = [
+        SimpleNamespace(
+            name="production/archived",
+            category="production",
+            path=Path("/tmp/production/archived.yaml"),
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "src.application.services.screening_default_markets.load_strategy_screening_config",
+        lambda _loader, _name: _make_loaded_dataset_snapshot_config("pre_open_decidable"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Screening uses market.duckdb and does not support shared_config.data_source=dataset_snapshot",
+    ):
+        validate_selected_screening_strategy_datasets(
+            entry_decidability="pre_open_decidable",
+            strategies="production/archived",
             config_loader=loader,
         )
 

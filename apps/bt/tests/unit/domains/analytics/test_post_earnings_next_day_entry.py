@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import duckdb
 import pytest
@@ -96,7 +97,7 @@ def test_post_earnings_entry_writes_bundle_and_summary(tmp_path: Path) -> None:
 )
 def test_post_earnings_entry_rejects_invalid_params(
     tmp_path: Path,
-    kwargs: dict[str, object],
+    kwargs: dict[str, Any],
     message: str,
 ) -> None:
     db_path = _build_post_earnings_db(tmp_path / "market.duckdb")
@@ -139,6 +140,18 @@ def _build_post_earnings_db(db_path: Path) -> Path:
     conn.execute(
         """
         CREATE TABLE stocks (
+            code TEXT,
+            company_name TEXT,
+            market_code TEXT,
+            market_name TEXT,
+            scale_category TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT,
             code TEXT,
             company_name TEXT,
             market_code TEXT,
@@ -196,6 +209,16 @@ def _build_post_earnings_db(db_path: Path) -> Path:
             ("4444", "Delta", "0111", "Prime", None),
         ],
     )
+    _insert_stock_master_daily(
+        conn,
+        dates,
+        [
+            ("1111", "Alpha", "0111", "Prime", "TOPIX Core30"),
+            ("2222", "Beta", "0111", "Prime", None),
+            ("3333", "Gamma", "0111", "Prime", None),
+            ("4444", "Delta", "0111", "Prime", None),
+        ],
+    )
 
     price_paths = {
         "1111": [100.0, 101.0, 102.0, 103.0, 104.0, 106.0, 107.0, 115.0, 116.0, 117.0],
@@ -237,3 +260,14 @@ def _build_post_earnings_db(db_path: Path) -> Path:
     )
     conn.close()
     return db_path
+
+
+def _insert_stock_master_daily(
+    conn: duckdb.DuckDBPyConnection,
+    dates: list[str],
+    stock_rows: list[tuple[str, str, str, str, str | None]],
+) -> None:
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)",
+        [(date, *row) for date in dates for row in stock_rows],
+    )

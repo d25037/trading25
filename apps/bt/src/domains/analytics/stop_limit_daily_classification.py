@@ -166,21 +166,23 @@ def _classified_stock_days_cte(
     )
     stock_where_sql, stock_params = date_where_clause("date", start_date, end_date)
     cte_sql = f"""
-        WITH stocks_snapshot AS (
+        WITH stock_master_asof AS (
             SELECT
                 normalized_code,
+                date,
                 market_code,
                 market_name
             FROM (
                 SELECT
                     {normalized_code_sql} AS normalized_code,
+                    date,
                     NULLIF(trim(market_code), '') AS market_code,
                     NULLIF(trim(market_name), '') AS market_name,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code_sql}
+                        PARTITION BY {normalized_code_sql}, date
                         ORDER BY {_PREFER_4DIGIT_ORDER_SQL}, code
                     ) AS row_priority
-                FROM stocks
+                FROM stock_master_daily
             )
             WHERE row_priority = 1
         ),
@@ -254,9 +256,9 @@ def _classified_stock_days_cte(
             SELECT
                 stock_with_prev.date,
                 stock_with_prev.code,
-                COALESCE(stocks_snapshot.market_code, '{UNMAPPED_LATEST_MARKET_CODE}') AS market_code,
-                COALESCE(stocks_snapshot.market_name, '{UNMAPPED_LATEST_MARKET_NAME}') AS market_name,
-                stocks_snapshot.normalized_code IS NOT NULL AS latest_market_mapped,
+                COALESCE(stock_master_asof.market_code, '{UNMAPPED_LATEST_MARKET_CODE}') AS market_code,
+                COALESCE(stock_master_asof.market_name, '{UNMAPPED_LATEST_MARKET_NAME}') AS market_name,
+                stock_master_asof.normalized_code IS NOT NULL AS latest_market_mapped,
                 stock_with_prev.open,
                 stock_with_prev.high,
                 stock_with_prev.low,
@@ -271,8 +273,9 @@ def _classified_stock_days_cte(
                 {limit_width_sql} AS limit_width,
                 {single_price_day_sql} AS single_price_day
             FROM stock_with_prev
-            LEFT JOIN stocks_snapshot
-                ON stocks_snapshot.normalized_code = stock_with_prev.code
+            LEFT JOIN stock_master_asof
+                ON stock_master_asof.normalized_code = stock_with_prev.code
+               AND stock_master_asof.date = stock_with_prev.date
             WHERE stock_with_prev.prev_close IS NOT NULL
                 AND stock_with_prev.prev_close > 0
         ),

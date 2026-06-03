@@ -206,13 +206,15 @@ def load_prime_liquidity_metrics(
         reader,
         through_date=price_basis_date,
         market_codes=prime_market_codes,
+        as_of_date=target_date,
     )
     rows = reader.query(
         f"""
         WITH prime_codes AS (
             SELECT DISTINCT {stock_code} AS code
-            FROM stocks s
-            WHERE lower(trim(s.market_code)) IN ({market_placeholders})
+            FROM stock_master_daily s
+            WHERE s.date = ?
+              AND lower(trim(s.market_code)) IN ({market_placeholders})
         ),
         price_base AS (
             SELECT code, date, close, volume
@@ -303,7 +305,7 @@ def load_prime_liquidity_metrics(
           AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
         ORDER BY pf.code
         """,
-        (*prime_market_codes, start_date, target_date, target_date, target_date),
+        (target_date, *prime_market_codes, start_date, target_date, target_date, target_date),
     )
 
     samples: list[dict[str, float | str | None]] = []

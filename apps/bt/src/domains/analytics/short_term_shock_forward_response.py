@@ -154,11 +154,7 @@ def run_short_term_shock_forward_response_research(
         snapshot_prefix="short-term-shock-forward-response-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         _create_fast_observation_panel(
             ctx.connection,
             query_start=query_start,

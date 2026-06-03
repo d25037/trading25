@@ -307,6 +307,14 @@ def market_timeseries_dir(tmp_path: Path) -> str:
                 (code, d, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
             )
 
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
+    conn.execute("""
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+    """)
+
     for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
         conn.execute(
             "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",

@@ -175,6 +175,7 @@ def enrich_items_from_statement_valuation(
         reader,
         through_date=price_basis_date,
         market_codes=query_market_codes,
+        as_of_date=target_date,
     )
 
     for code, items in items_by_code.items():

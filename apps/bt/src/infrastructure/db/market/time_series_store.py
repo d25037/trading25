@@ -108,6 +108,8 @@ class TimeSeriesInspection:
 class TimeSeriesStorageStats:
     duckdb_bytes: int = 0
     parquet_bytes: int = 0
+    stale_artifact_count: int = 0
+    stale_artifacts: list[str] = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -1509,9 +1511,12 @@ class DuckDbParquetTimeSeriesStore:
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
         with self._lock:
+            stale_artifact_count, stale_artifacts = self._resolve_stale_storage_artifacts()
             return TimeSeriesStorageStats(
                 duckdb_bytes=self._resolve_path_size(self._duckdb_path),
                 parquet_bytes=self._resolve_parquet_dir_size(),
+                stale_artifact_count=stale_artifact_count,
+                stale_artifacts=stale_artifacts,
             )
 
     @staticmethod
@@ -1533,6 +1538,30 @@ class DuckDbParquetTimeSeriesStore:
             return total
         except OSError:
             return 0
+
+    def _resolve_stale_storage_artifacts(self, limit: int = 20) -> tuple[int, list[str]]:
+        artifacts: list[str] = []
+        try:
+            if self._duckdb_path.parent.exists():
+                for path in self._duckdb_path.parent.iterdir():
+                    if not path.is_file() or not self._is_stale_storage_artifact(path):
+                        continue
+                    artifacts.append(path.name)
+            if self._parquet_dir.exists():
+                for path in self._parquet_dir.rglob("*"):
+                    if not path.is_file() or not self._is_stale_storage_artifact(path):
+                        continue
+                    rel_path = path.relative_to(self._parquet_dir)
+                    artifacts.append(f"{self._parquet_dir.name}/{rel_path.as_posix()}")
+        except OSError:
+            return 0, []
+        unique_artifacts = sorted(set(artifacts))
+        return len(unique_artifacts), unique_artifacts[:limit]
+
+    @staticmethod
+    def _is_stale_storage_artifact(path: Path) -> bool:
+        name = path.name.lower()
+        return name.endswith((".tmp", ".bak", ".backup", ".old"))
 
     def close(self) -> None:
         with self._lock:

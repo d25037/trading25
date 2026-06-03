@@ -101,11 +101,7 @@ def run_pre_disclosure_flow_volatility_research(
         snapshot_prefix="pre-disclosure-flow-volatility-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_as_of_disclosed_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_as_of_disclosed_date"
         statement_df = _query_statement_rows(
             ctx.connection,
             start_date=query_start,
@@ -353,127 +349,70 @@ def _query_statement_rows(
         params.append(end_date)
     date_sql = "WHERE " + " AND ".join(date_clauses) if date_clauses else ""
 
-    if market_source == "stock_master_daily_as_of_disclosed_date":
-        df = conn.execute(
-            f"""
-            WITH statements_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {normalized_code} AS code,
-                        disclosed_date,
-                        type_of_document,
-                        type_of_current_period,
-                        forecast_eps,
-                        next_year_forecast_earnings_per_share,
-                        profit,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized_code}, disclosed_date
-                            ORDER BY {prefer_4digit}, type_of_document NULLS LAST
-                        ) AS rn
-                    FROM statements
-                    {date_sql}
-                )
-                WHERE rn = 1
-            ),
-            master_asof AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        st.code AS event_code,
-                        st.disclosed_date AS event_disclosed_date,
-                        smd.company_name,
-                        smd.market_code,
-                        smd.market_name,
-                        smd.scale_category,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY st.code, st.disclosed_date
-                            ORDER BY smd.date DESC
-                        ) AS rn
-                    FROM statements_canonical st
-                    LEFT JOIN stock_master_daily smd
-                      ON {normalize_code_sql("smd.code")} = st.code
-                     AND smd.date <= st.disclosed_date
-                )
-                WHERE rn = 1
+    if market_source != "stock_master_daily_as_of_disclosed_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
+    df = conn.execute(
+        f"""
+        WITH statements_canonical AS (
+            SELECT *
+            FROM (
+                SELECT
+                    {normalized_code} AS code,
+                    disclosed_date,
+                    type_of_document,
+                    type_of_current_period,
+                    forecast_eps,
+                    next_year_forecast_earnings_per_share,
+                    profit,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized_code}, disclosed_date
+                        ORDER BY {prefer_4digit}, type_of_document NULLS LAST
+                    ) AS rn
+                FROM statements
+                {date_sql}
             )
-            SELECT
-                st.code,
-                coalesce(m.company_name, st.code) AS company_name,
-                m.market_code,
-                m.market_name,
-                m.scale_category,
-                st.disclosed_date,
-                st.type_of_document,
-                st.type_of_current_period,
-                st.forecast_eps,
-                st.next_year_forecast_earnings_per_share,
-                st.profit
-            FROM statements_canonical st
-            LEFT JOIN master_asof m
-              ON m.event_code = st.code AND m.event_disclosed_date = st.disclosed_date
-            ORDER BY st.code, st.disclosed_date
-            """,
-            params,
-        ).fetchdf()
-    else:
-        df = conn.execute(
-            f"""
-            WITH stocks_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {normalized_code} AS code,
-                        company_name,
-                        market_code,
-                        market_name,
-                        scale_category,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized_code}
-                            ORDER BY {prefer_4digit}
-                        ) AS rn
-                    FROM stocks
-                )
-                WHERE rn = 1
-            ),
-            statements_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {normalized_code} AS code,
-                        disclosed_date,
-                        type_of_document,
-                        type_of_current_period,
-                        forecast_eps,
-                        next_year_forecast_earnings_per_share,
-                        profit,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized_code}, disclosed_date
-                            ORDER BY {prefer_4digit}, type_of_document NULLS LAST
-                        ) AS rn
-                    FROM statements
-                    {date_sql}
-                )
-                WHERE rn = 1
+            WHERE rn = 1
+        ),
+        master_asof AS (
+            SELECT *
+            FROM (
+                SELECT
+                    st.code AS event_code,
+                    st.disclosed_date AS event_disclosed_date,
+                    smd.company_name,
+                    smd.market_code,
+                    smd.market_name,
+                    smd.scale_category,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY st.code, st.disclosed_date
+                        ORDER BY smd.date DESC
+                    ) AS rn
+                FROM statements_canonical st
+                LEFT JOIN stock_master_daily smd
+                  ON {normalize_code_sql("smd.code")} = st.code
+                 AND smd.date <= st.disclosed_date
             )
-            SELECT
-                st.code,
-                coalesce(s.company_name, st.code) AS company_name,
-                s.market_code,
-                s.market_name,
-                s.scale_category,
-                st.disclosed_date,
-                st.type_of_document,
-                st.type_of_current_period,
-                st.forecast_eps,
-                st.next_year_forecast_earnings_per_share,
-                st.profit
-            FROM statements_canonical st
-            LEFT JOIN stocks_canonical s ON s.code = st.code
-            ORDER BY st.code, st.disclosed_date
-            """,
-            params,
-        ).fetchdf()
+            WHERE rn = 1
+        )
+        SELECT
+            st.code,
+            coalesce(m.company_name, st.code) AS company_name,
+            m.market_code,
+            m.market_name,
+            m.scale_category,
+            st.disclosed_date,
+            st.type_of_document,
+            st.type_of_current_period,
+            st.forecast_eps,
+            st.next_year_forecast_earnings_per_share,
+            st.profit
+        FROM statements_canonical st
+        LEFT JOIN master_asof m
+          ON m.event_code = st.code AND m.event_disclosed_date = st.disclosed_date
+        ORDER BY st.code, st.disclosed_date
+        """,
+        params,
+    ).fetchdf()
     if df.empty:
         return _empty_event_source_df()
     df["code"] = df["code"].astype(str)

@@ -123,11 +123,7 @@ def run_daily_move_asymmetry_research(
             start_date=start_date,
             end_date=end_date,
         )
-        market_source = (
-            "stock_master_daily_exact_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_exact_date"
         prime_price_df = _query_prime_stock_price_rows(
             ctx.connection,
             start_date=start_date,
@@ -253,8 +249,8 @@ def run_daily_move_asymmetry_research(
             "Event buckets are based on same-day close-to-close return divided by "
             f"rolling {rolling_vol_window}-session volatility. Forward outcomes use only "
             "future close-to-close returns for measurement, not for event bucket construction. "
-            "Prime membership uses same-date stock_master_daily when available, otherwise "
-            "the latest stocks table is an explicit fallback. Stock outcomes are reported as "
+            "Prime membership uses same-date stock_master_daily without latest-master fallback. "
+            "Stock outcomes are reported as "
             "raw return, TOPIX excess return, and static beta-adjusted residual."
         ),
         topix_event_summary_df=topix_event_summary_df,
@@ -298,8 +294,8 @@ def _assert_required_tables(conn: Any) -> None:
     ]
     if missing:
         raise RuntimeError(f"Required market tables are missing: {', '.join(missing)}")
-    if not (_table_exists(conn, "stock_master_daily") or _table_exists(conn, "stocks")):
-        raise RuntimeError("Either stock_master_daily or stocks is required for Prime scope")
+    if not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError("market.duckdb requires stock_master_daily for PIT Prime scope")
 
 
 def _date_conditions(alias: str, start_date: str | None, end_date: str | None) -> tuple[str, list[str]]:
@@ -349,106 +345,58 @@ def _query_prime_stock_price_rows(
     date_sql, params = _date_conditions("s", start_date, end_date)
     normalized_stock_code = normalize_code_sql("s.code")
     market_codes_sql = ",".join("?" for _ in PRIME_MARKET_CODES)
-    if market_source == "stock_master_daily_exact_date":
-        normalized_master_code = normalize_code_sql("m.code")
-        sql = f"""
-            WITH stock_rows AS (
-                SELECT
-                    {normalized_stock_code} AS code,
-                    CAST(s.date AS DATE) AS date,
-                    CAST(s.close AS DOUBLE) AS close,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_stock_code}, s.date
-                        ORDER BY CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END, s.code
-                    ) AS row_priority
-                FROM stock_data s
-                WHERE s.close IS NOT NULL
-                  AND s.close > 0
-                  {date_sql}
-            ),
-            master_rows AS (
-                SELECT
-                    {normalized_master_code} AS code,
-                    CAST(m.date AS DATE) AS date,
-                    m.company_name,
-                    lower(coalesce(m.market_code, '')) AS market_code,
-                    coalesce(m.market_name, '') AS market_name,
-                    coalesce(m.sector_33_name, '') AS sector_33_name,
-                    coalesce(m.scale_category, '') AS scale_category,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_master_code}, m.date
-                        ORDER BY CASE WHEN length(m.code) = 4 THEN 0 ELSE 1 END, m.code
-                    ) AS row_priority
-                FROM stock_master_daily m
-                WHERE lower(coalesce(m.market_code, '')) IN ({market_codes_sql})
-            )
+    if market_source != "stock_master_daily_exact_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
+    normalized_master_code = normalize_code_sql("m.code")
+    sql = f"""
+        WITH stock_rows AS (
             SELECT
-                s.code,
-                s.date,
-                s.close,
-                coalesce(m.company_name, s.code) AS company_name,
-                m.market_code,
-                m.market_name,
-                m.sector_33_name,
-                m.scale_category
-            FROM stock_rows s
-            JOIN master_rows m
-              ON s.code = m.code
-             AND s.date = m.date
-             AND m.row_priority = 1
-            WHERE s.row_priority = 1
-            ORDER BY s.code, s.date
-        """
-        query_params = [*params, *PRIME_MARKET_CODES]
-    else:
-        normalized_latest_code = normalize_code_sql("l.code")
-        sql = f"""
-            WITH latest_rows AS (
-                SELECT
-                    {normalized_latest_code} AS code,
-                    l.company_name,
-                    lower(coalesce(l.market_code, '')) AS market_code,
-                    coalesce(l.market_name, '') AS market_name,
-                    coalesce(l.sector_33_name, '') AS sector_33_name,
-                    coalesce(l.scale_category, '') AS scale_category,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_latest_code}
-                        ORDER BY CASE WHEN length(l.code) = 4 THEN 0 ELSE 1 END, l.code
-                    ) AS row_priority
-                FROM stocks l
-                WHERE lower(coalesce(l.market_code, '')) IN ({market_codes_sql})
-            ),
-            stock_rows AS (
-                SELECT
-                    {normalized_stock_code} AS code,
-                    CAST(s.date AS DATE) AS date,
-                    CAST(s.close AS DOUBLE) AS close,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_stock_code}, s.date
-                        ORDER BY CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END, s.code
-                    ) AS row_priority
-                FROM stock_data s
-                WHERE s.close IS NOT NULL
-                  AND s.close > 0
-                  {date_sql}
-            )
+                {normalized_stock_code} AS code,
+                CAST(s.date AS DATE) AS date,
+                CAST(s.close AS DOUBLE) AS close,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {normalized_stock_code}, s.date
+                    ORDER BY CASE WHEN length(s.code) = 4 THEN 0 ELSE 1 END, s.code
+                ) AS row_priority
+            FROM stock_data s
+            WHERE s.close IS NOT NULL
+              AND s.close > 0
+              {date_sql}
+        ),
+        master_rows AS (
             SELECT
-                s.code,
-                s.date,
-                s.close,
-                coalesce(l.company_name, s.code) AS company_name,
-                l.market_code,
-                l.market_name,
-                l.sector_33_name,
-                l.scale_category
-            FROM stock_rows s
-            JOIN latest_rows l
-              ON s.code = l.code
-             AND l.row_priority = 1
-            WHERE s.row_priority = 1
-            ORDER BY s.code, s.date
-        """
-        query_params = [*PRIME_MARKET_CODES, *params]
+                {normalized_master_code} AS code,
+                CAST(m.date AS DATE) AS date,
+                m.company_name,
+                lower(coalesce(m.market_code, '')) AS market_code,
+                coalesce(m.market_name, '') AS market_name,
+                coalesce(m.sector_33_name, '') AS sector_33_name,
+                coalesce(m.scale_category, '') AS scale_category,
+                ROW_NUMBER() OVER (
+                    PARTITION BY {normalized_master_code}, m.date
+                    ORDER BY CASE WHEN length(m.code) = 4 THEN 0 ELSE 1 END, m.code
+                ) AS row_priority
+            FROM stock_master_daily m
+            WHERE lower(coalesce(m.market_code, '')) IN ({market_codes_sql})
+        )
+        SELECT
+            s.code,
+            s.date,
+            s.close,
+            coalesce(m.company_name, s.code) AS company_name,
+            m.market_code,
+            m.market_name,
+            m.sector_33_name,
+            m.scale_category
+        FROM stock_rows s
+        JOIN master_rows m
+          ON s.code = m.code
+         AND s.date = m.date
+         AND m.row_priority = 1
+        WHERE s.row_priority = 1
+        ORDER BY s.code, s.date
+    """
+    query_params = [*params, *PRIME_MARKET_CODES]
     df = conn.execute(sql, query_params).fetchdf()
     return _normalize_price_frame(df, include_code=True)
 

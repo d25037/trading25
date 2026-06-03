@@ -193,6 +193,14 @@ def _build_market_db(db_path: Path) -> tuple[str, SyntheticSeries]:
     )
     conn.execute(
         """
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY,
             open DOUBLE,

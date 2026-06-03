@@ -71,7 +71,7 @@ def ranking_by_trading_value(
         ORDER BY trading_value DESC{limit_sql}
     """
     prev_date = get_trading_date_before(reader, date, 0)
-    rows = reader.query(sql, (date, prev_date or "", *market_params, *limit_params))
+    rows = reader.query(sql, (date, date, prev_date or "", *market_params, *limit_params))
     return [
         build_ranking_item(
             row,
@@ -150,7 +150,10 @@ def ranking_by_trading_value_average(
             base.close
         ORDER BY avg_trading_value DESC{limit_sql}
     """
-    rows = reader.query(sql, (start_date, date, date, base_date, *market_params, *limit_params))
+    rows = reader.query(
+        sql,
+        (date, start_date, date, date, base_date, *market_params, *limit_params),
+    )
     return [
         build_ranking_item(
             row,
@@ -208,7 +211,7 @@ def _ranking_by_price_change_against_base(
             AND curr.close != base.close{market_clause}
         ORDER BY change_percentage {order_dir}{limit_sql}
     """
-    rows = reader.query(sql, (date, base_date, *market_params, *limit_params))
+    rows = reader.query(sql, (date, date, base_date, *market_params, *limit_params))
     return [
         build_ranking_item(
             row,
@@ -334,7 +337,7 @@ def _ranking_by_period_extreme(
             AND pe.period_extreme_price > 0{market_clause}
         ORDER BY change_percentage {order_dir}{limit_sql}
     """
-    rows = reader.query(sql, (start_date, date, date, *market_params, *limit_params))
+    rows = reader.query(sql, (date, start_date, date, date, *market_params, *limit_params))
     return [
         build_ranking_item(
             row,

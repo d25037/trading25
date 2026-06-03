@@ -120,19 +120,33 @@ def test_resolve_universe_does_not_fallback_to_latest_snapshot(market_db: Market
     ]
 
 
-def test_resolve_prime_ex_topix500_uses_stock_master_scale_categories(market_db: MarketDb) -> None:
+def test_resolve_prime_ex_topix500_requires_exact_membership(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
+
+    with pytest.raises(UniverseResolutionError) as exc_info:
+        resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
+
+    assert exc_info.value.code == "universe.topix500_membership_required"
+
+
+def test_resolve_prime_ex_topix500_subtracts_exact_membership(market_db: MarketDb) -> None:
+    _insert_master(market_db, "2024-01-05")
+    market_db._execute(
+        """
+        INSERT INTO index_membership_daily (date, index_code, code, created_at)
+        VALUES
+            ('2024-01-05', 'TOPIX500', '7203', 'now'),
+            ('2024-01-05', 'TOPIX500', '6758', 'now'),
+            ('2024-01-05', 'TOPIX500', '6666', 'now')
+        """
+    )
 
     result = resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
 
     assert result.codes == ["1301"]
-    assert result.provenance.sourceTable == "stock_master_daily"
+    assert result.provenance.sourceTable == "stock_master_daily,index_membership_daily"
     assert result.provenance.filters["marketCodes"] == ["prime", "0111", "0101"]
-    assert result.provenance.filters["excludeScaleCategories"] == [
-        "TOPIX Core30",
-        "TOPIX Large70",
-        "TOPIX Mid400",
-    ]
+    assert result.provenance.filters["excludeIndexCode"] == "TOPIX500"
 
 
 def test_resolve_universe_code_superset_uses_date_range(market_db: MarketDb) -> None:
@@ -228,6 +242,7 @@ def test_resolve_universe_code_superset_rejects_invalid_requests(
 class _SpyUniverseDb:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.membership_calls: list[dict[str, Any]] = []
 
     def get_stock_master_codes_for_date(
         self,
@@ -252,6 +267,7 @@ class _SpyUniverseDb:
         start_date: str,
         end_date: str,
         *,
+        codes: list[str] | None = None,
         market_codes: list[str] | None = None,
         scale_categories: list[str] | None = None,
         exclude_scale_categories: list[str] | None = None,
@@ -260,6 +276,7 @@ class _SpyUniverseDb:
             {
                 "start_date": start_date,
                 "end_date": end_date,
+                "codes": codes,
                 "market_codes": market_codes,
                 "scale_categories": scale_categories,
                 "exclude_scale_categories": exclude_scale_categories,
@@ -267,8 +284,35 @@ class _SpyUniverseDb:
         )
         return ["1301"]
 
+    def get_stock_master_code_dates_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        codes: list[str] | None = None,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
+        self.calls.append(
+            {
+                "start_date": start_date,
+                "end_date": end_date,
+                "codes": codes,
+                "market_codes": market_codes,
+                "scale_categories": scale_categories,
+                "exclude_scale_categories": exclude_scale_categories,
+                "return_shape": "code_dates",
+            }
+        )
+        return [("2024-01-05", "1301")]
 
-def test_resolve_prime_ex_topix500_uses_single_exclusion_query() -> None:
+    def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]:
+        self.membership_calls.append({"as_of_date": as_of_date, "index_code": index_code})
+        return {"7203"}
+
+
+def test_resolve_prime_ex_topix500_reads_exact_membership() -> None:
     db = _SpyUniverseDb()
 
     result = resolve_universe(db, as_of_date="2024-01-05", preset="primeExTopix500")
@@ -279,13 +323,10 @@ def test_resolve_prime_ex_topix500_uses_single_exclusion_query() -> None:
             "as_of_date": "2024-01-05",
             "market_codes": ["prime", "0111", "0101"],
             "scale_categories": None,
-            "exclude_scale_categories": [
-                "TOPIX Core30",
-                "TOPIX Large70",
-                "TOPIX Mid400",
-            ],
+            "exclude_scale_categories": None,
         }
     ]
+    assert db.membership_calls == [{"as_of_date": "2024-01-05", "index_code": "TOPIX500"}]
 
 
 def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_db: MarketDb) -> None:
@@ -332,6 +373,12 @@ def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_
                 "created_at": "now",
             },
         ],
+    )
+    market_db._execute(
+        """
+        INSERT INTO index_membership_daily (date, index_code, code, created_at)
+        VALUES ('2016-05-30', 'TOPIX500', '7203', 'now')
+        """
     )
 
     result = resolve_universe(market_db, as_of_date="2016-05-30", preset="primeExTopix500")

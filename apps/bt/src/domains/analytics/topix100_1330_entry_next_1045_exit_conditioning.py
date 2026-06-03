@@ -111,7 +111,10 @@ def _fetch_topix100_sector_metadata_df(db_path: str) -> pd.DataFrame:
             pd.DataFrame,
             ctx.connection.execute(
                 f"""
-                WITH topix100_stocks AS (
+                WITH latest_master_date AS (
+                    SELECT MAX(date) AS date FROM stock_master_daily
+                ),
+                topix100_stocks AS (
                     SELECT
                         normalized_code,
                         company_name,
@@ -129,8 +132,9 @@ def _fetch_topix100_sector_metadata_df(db_path: str) -> pd.DataFrame:
                                 PARTITION BY {normalized_code_sql}
                                 ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                             ) AS row_priority
-                        FROM stocks
-                        WHERE coalesce(scale_category, '') IN {cast(Any, TOPIX100_SCALE_CATEGORIES)}
+                        FROM stock_master_daily
+                        WHERE date = (SELECT date FROM latest_master_date)
+                          AND coalesce(scale_category, '') IN {cast(Any, TOPIX100_SCALE_CATEGORIES)}
                     ) stock_candidates
                     WHERE row_priority = 1
                 )

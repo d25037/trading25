@@ -50,6 +50,14 @@ def _create_market_tables(conn: duckdb.DuckDBPyConnection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+        """
+    )
 
 
 def _build_test_market_db(db_path: Path) -> None:

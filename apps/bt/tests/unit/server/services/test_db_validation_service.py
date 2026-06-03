@@ -66,6 +66,7 @@ class DummyMarketDb:
             "dailyValuationRows": 10,
             "priceBasisDate": "9999-12-31",
             "basisVersion": "adjusted-v1:9999-12-31",
+            "basisVersionCount": 1,
         }
         self._metadata = {
             "init_completed": "true",
@@ -208,6 +209,7 @@ def test_validate_market_db_warns_when_adjusted_metrics_are_missing_with_raw_sou
             "dailyValuationRows": 0,
             "priceBasisDate": None,
             "basisVersion": None,
+            "basisVersionCount": 0,
         }
     )
     store = DummyTimeSeriesStore(
@@ -242,6 +244,7 @@ def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_so
             "dailyValuationRows": 0,
             "priceBasisDate": None,
             "basisVersion": None,
+            "basisVersionCount": 0,
         }
     )
     store = DummyTimeSeriesStore(
@@ -260,6 +263,46 @@ def test_validate_market_db_treats_empty_adjusted_metrics_as_info_without_raw_so
 
     assert result.adjustedMetrics.status == "empty_source"
     assert not any("Rebuild adjusted fundamentals" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_warns_when_adjusted_metric_basis_versions_are_retained() -> None:
+    market_db = DummyMarketDb(
+        adjusted_metrics_snapshot={
+            "statementRows": 4,
+            "dailyValuationRows": 10,
+            "priceBasisDate": "2026-02-27",
+            "basisVersion": "adjusted-v1:2026-02-27",
+            "basisVersionCount": 2,
+        }
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-02-27",
+            stock_count=10,
+            stock_max="2026-02-27",
+            stock_date_count=5,
+            indices_count=1,
+            options_225_count=4,
+            options_225_max="2026-02-27",
+            options_225_date_count=2,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-02-27",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={
+                column: 2 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.healthDomains.coreDailyStatus == "warning"
+    assert result.adjustedMetrics.status == "retained_versions"
+    assert result.adjustedMetrics.basisVersionCount == 2
+    assert any("Prune retained adjusted metric basis versions" in rec for rec in result.recommendations)
 
 
 def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_store() -> None:

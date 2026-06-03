@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trading25.dev/contracts/market-db-schema-v3.json",
+  "title": "Trading25 Market DB Schema v3",
+  "description": "market.duckdb schema v3 contract. market.duckdb is the normal-run SoT; stock_master_daily and index_membership_daily own PIT universe resolution; adjusted consumer fundamentals live in statement_metrics_adjusted and daily_valuation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "3.0.0"
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "market_schema_version",
+        "stocks",
+        "stocks_latest",
+        "stock_master_daily",
+        "stock_master_intervals",
+        "stock_data_raw",
+        "stock_data",
+        "stock_data_minute_raw",
+        "topix_data",
+        "indices_data",
+        "options_225_data",
+        "margin_data",
+        "statements",
+        "statement_metrics_adjusted",
+        "daily_valuation",
+        "sync_metadata",
+        "index_master",
+        "index_membership_daily"
+      ],
+      "properties": {
+        "market_schema_version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "applied_at", "notes"],
+              "properties": {
+                "version": { "const": { "type": "integer", "nullable": false } },
+                "applied_at": { "const": { "type": "text", "nullable": false } },
+                "notes": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["version"] }
+          }
+        },
+        "stocks": { "$ref": "#/$defs/latest_stock_table" },
+        "stocks_latest": {
+          "allOf": [{ "$ref": "#/$defs/latest_stock_table" }],
+          "description": "Latest convenience snapshot only. Historical universe resolution must not use this table."
+        },
+        "stock_master_daily": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": { "$ref": "#/$defs/stock_master_columns" },
+            "primary_key": { "const": ["date", "code"] }
+          }
+        },
+        "stock_master_intervals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "allOf": [{ "$ref": "#/$defs/stock_master_columns" }],
+              "properties": {
+                "valid_from": { "const": { "type": "text", "nullable": false } },
+                "valid_to": { "const": { "type": "text", "nullable": true } },
+                "fingerprint": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code", "valid_from", "fingerprint"] }
+          }
+        },
+        "stock_data_raw": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": { "$ref": "#/$defs/ohlcv_columns" },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "stock_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": { "$ref": "#/$defs/ohlcv_columns" },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "stock_data_minute_raw": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "date", "time", "open", "high", "low", "close", "volume", "turnover_value", "created_at"]
+            },
+            "primary_key": { "const": ["code", "date", "time"] }
+          }
+        },
+        "topix_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["date", "open", "high", "low", "close"],
+              "properties": {
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": false } },
+                "high": { "const": { "type": "real", "nullable": false } },
+                "low": { "const": { "type": "real", "nullable": false } },
+                "close": { "const": { "type": "real", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["date"] }
+          }
+        },
+        "indices_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "date", "open", "high", "low", "close", "sector_name"]
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "options_225_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "date", "contract_month", "strike_price", "put_call_division", "underlying_price"]
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "margin_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "date", "long_margin_volume", "short_margin_volume"],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "long_margin_volume": { "const": { "type": "real", "nullable": true } },
+                "short_margin_volume": { "const": { "type": "real", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "statements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "disclosed_date", "earnings_per_share", "profit", "equity", "type_of_current_period", "type_of_document"]
+            },
+            "primary_key": { "const": ["code", "disclosed_date"] }
+          }
+        },
+        "statement_metrics_adjusted": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "disclosed_date", "period_end", "period_type", "price_basis_date", "adjusted_eps", "adjusted_bps", "adjusted_forecast_eps", "basis_version"]
+            },
+            "primary_key": { "const": ["code", "disclosed_date", "period_end", "period_type", "basis_version"] }
+          }
+        },
+        "daily_valuation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["code", "date", "price_basis_date", "close", "eps", "bps", "forward_eps", "per", "forward_per", "pbr", "basis_version"]
+            },
+            "primary_key": { "const": ["code", "date", "basis_version"] }
+          }
+        },
+        "sync_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key", "value", "updated_at"],
+              "properties": {
+                "key": { "const": { "type": "text", "nullable": false } },
+                "value": { "const": { "type": "text", "nullable": false } },
+                "updated_at": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["key"] }
+          }
+        },
+        "index_master": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "name", "category"],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "name": { "const": { "type": "text", "nullable": false } },
+                "name_english": { "const": { "type": "text", "nullable": true } },
+                "category": { "const": { "type": "text", "nullable": false } },
+                "data_start_date": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code"] }
+          }
+        },
+        "index_membership_daily": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["date", "index_code", "code", "created_at"],
+              "properties": {
+                "date": { "const": { "type": "text", "nullable": false } },
+                "index_code": { "const": { "type": "text", "nullable": false } },
+                "code": { "const": { "type": "text", "nullable": false } },
+                "created_at": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["date", "index_code", "code"] }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "latest_stock_table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns", "primary_key"],
+      "properties": {
+        "columns": { "$ref": "#/$defs/latest_stock_columns" },
+        "primary_key": { "const": ["code"] }
+      }
+    },
+    "latest_stock_columns": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "company_name", "market_code", "market_name", "sector_17_code", "sector_17_name", "sector_33_code", "sector_33_name", "scale_category", "listed_date"]
+    },
+    "stock_master_columns": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["date", "code", "company_name", "company_name_english", "market_code", "market_name", "sector_17_code", "sector_17_name", "sector_33_code", "sector_33_name", "scale_category", "listed_date", "created_at"]
+    },
+    "ohlcv_columns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "date", "open", "high", "low", "close", "volume", "adjustment_factor", "created_at"],
+      "properties": {
+        "code": { "const": { "type": "text", "nullable": false } },
+        "date": { "const": { "type": "text", "nullable": false } },
+        "open": { "const": { "type": "real", "nullable": true } },
+        "high": { "const": { "type": "real", "nullable": true } },
+        "low": { "const": { "type": "real", "nullable": true } },
+        "close": { "const": { "type": "real", "nullable": true } },
+        "volume": { "const": { "type": "integer", "nullable": true } },
+        "adjustment_factor": { "const": { "type": "real", "nullable": true } },
+        "created_at": { "const": { "type": "text", "nullable": true } }
+      }
+    }
+  }
+}

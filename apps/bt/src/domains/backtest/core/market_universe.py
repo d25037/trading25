@@ -215,16 +215,35 @@ def _membership_rows_for_preset(
     if preset == "primeExTopix500":
         from src.infrastructure.db.market.universe_resolver import (
             _MARKET_CODES_BY_PRESET,
-            _TOPIX500_SCALE_CATEGORIES,
+            _TOPIX500_INDEX_CODE,
         )
 
-        return market_db.get_stock_master_code_dates_for_date_range(
+        prime_rows = market_db.get_stock_master_code_dates_for_date_range(
             start_date,
             end_date,
             codes=codes,
             market_codes=list(_MARKET_CODES_BY_PRESET["prime"]),
-            exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
         )
+        topix500_by_date = {
+            date: market_db.get_index_membership_codes(date, _TOPIX500_INDEX_CODE)
+            for date in sorted({date for date, _code in prime_rows})
+        }
+        missing_membership_dates = [
+            date
+            for date, membership_codes in topix500_by_date.items()
+            if not membership_codes
+        ]
+        if missing_membership_dates:
+            sample = ", ".join(missing_membership_dates[:10])
+            raise ValueError(
+                "primeExTopix500 requires exact TOPIX500 membership in "
+                f"index_membership_daily for {len(missing_membership_dates)} dates: {sample}"
+            )
+        return [
+            (date, code)
+            for date, code in prime_rows
+            if code not in topix500_by_date.get(date, set())
+        ]
     if preset == "custom":
         return [
             (pd.Timestamp(ts).strftime("%Y-%m-%d"), code)

@@ -179,11 +179,11 @@ def load_market_sector_indices(
 
 
 def load_market_stock_sector_mapping(reader: MarketDbQueryable) -> dict[str, str]:
-    """stocks から銘柄 -> sector_33_name を取得"""
+    """latest master から銘柄 -> sector_33_name を取得"""
     rows = reader.query(
         """
         SELECT code, sector_33_name
-        FROM stocks
+        FROM stocks_latest
         WHERE sector_33_name IS NOT NULL
         """
     )

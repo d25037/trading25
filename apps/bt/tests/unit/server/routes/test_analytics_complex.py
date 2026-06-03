@@ -64,6 +64,15 @@ def analytics_timeseries_dir(tmp_path_factory):
         )
     """)
     conn.execute("""
+        CREATE TABLE index_membership_daily (
+            date TEXT NOT NULL,
+            index_code TEXT NOT NULL,
+            code TEXT NOT NULL,
+            created_at TEXT,
+            PRIMARY KEY (date, index_code, code)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL,
             low REAL NOT NULL, close REAL NOT NULL, created_at TEXT
@@ -170,6 +179,7 @@ def analytics_timeseries_dir(tmp_path_factory):
             None,
         ),
     )
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
 
     # 300営業日分のデータ生成
     dates = _generate_dates(300)
@@ -192,6 +202,21 @@ def analytics_timeseries_dir(tmp_path_factory):
                 "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
                 (code, d, o, h, lo, price, vol, 1.0, None),
             )
+
+    conn.execute("""
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+    """)
+    conn.executemany(
+        "INSERT INTO index_membership_daily VALUES (?, ?, ?, ?)",
+        [
+            (d, "TOPIX500", code, None)
+            for d in dates
+            for code in ("72030", "67580", "33330")
+        ],
+    )
 
     # TOPIX データ
     topix_price = 2500.0

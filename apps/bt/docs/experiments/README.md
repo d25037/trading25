@@ -12,6 +12,7 @@
 - published research の最小 surface は `runner script + bundle output + canonical note README + baseline note` とする。publication SoT は canonical README の `## Published Readout` であり、`summary.json` ではない。
 - notebook runtime は repo の必須導線から外す。結果確認は canonical README の `## Published Readout` と、runner が出力する `summary.md` / `results.duckdb` を使う。
 - 画像を固定資産として残す場合のみ `figures/` に保存する。
+- PIT universe contamination の横断 rerun queue は [`docs/research-pit-invalidation-register.md`](../../../../docs/research-pit-invalidation-register.md) を参照する。
 
 ## Index
 

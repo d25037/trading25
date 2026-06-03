@@ -77,6 +77,7 @@ def chart_db(tmp_path):
             (code, "2026-02-06", 100 + i, 110 + i, 95 + i, 105 + i, 100_000 + i * 1000, 1.0, None),
         )
 
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
     conn.close()
     return db_path
 
@@ -178,6 +179,7 @@ def test_get_stock_from_db_supports_mixed_stock_and_stock_data_codes(tmp_path) -
         "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ("72030", "2026-02-06", 100.0, 110.0, 95.0, 105.0, 100_000, 1.0, None),
     )
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
     conn.close()
 
     reader = MarketDbReader(db_path)

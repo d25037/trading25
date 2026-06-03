@@ -1328,10 +1328,21 @@ def _load_dataset_stock_metadata(dataset_name: str) -> dict[str, dict[str, str]]
     try:
         conn = duckdb.connect(str(duckdb_path), read_only=True)
         try:
+            table_row = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_name = 'stock_master_daily'
+                """
+            ).fetchone()
+            has_daily_master = bool(table_row and table_row[0])
+            if not has_daily_master:
+                return {}
             rows = conn.execute(
                 """
                 SELECT code, market_code, market_name
-                FROM stocks
+                FROM stock_master_daily
+                WHERE date = (SELECT MAX(date) FROM stock_master_daily)
                 """
             ).fetchall()
         finally:

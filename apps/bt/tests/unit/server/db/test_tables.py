@@ -205,6 +205,61 @@ class TestMarketDbContractV2:
         assert "stock_data_raw" in self.tables
 
 
+class TestMarketDbContractV3:
+    """market.duckdb schema v3 contract documents PIT master and consumer metric SoTs."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self) -> None:
+        self.contract = _load_contract("market-db-schema-v3.json")
+        self.tables = self.contract["properties"]["tables"]["properties"]
+
+    def test_v3_contract_requires_current_sot_tables(self) -> None:
+        assert self.contract["properties"]["schema_version"]["const"] == "3.0.0"
+        required_tables = set(self.contract["properties"]["tables"]["required"])
+        assert {
+            "market_schema_version",
+            "stock_master_daily",
+            "stock_master_intervals",
+            "stocks_latest",
+            "stock_data_raw",
+            "stock_data",
+            "stock_data_minute_raw",
+            "topix_data",
+            "indices_data",
+            "index_master",
+            "index_membership_daily",
+            "statements",
+            "statement_metrics_adjusted",
+            "daily_valuation",
+            "margin_data",
+            "options_225_data",
+            "sync_metadata",
+        }.issubset(required_tables)
+
+    def test_v3_contract_defines_pit_universe_and_adjusted_metric_keys(self) -> None:
+        assert self.tables["stock_master_daily"]["properties"]["primary_key"]["const"] == [
+            "date",
+            "code",
+        ]
+        assert self.tables["index_membership_daily"]["properties"]["primary_key"]["const"] == [
+            "date",
+            "index_code",
+            "code",
+        ]
+        assert self.tables["statement_metrics_adjusted"]["properties"]["primary_key"]["const"] == [
+            "code",
+            "disclosed_date",
+            "period_end",
+            "period_type",
+            "basis_version",
+        ]
+        assert self.tables["daily_valuation"]["properties"]["primary_key"]["const"] == [
+            "code",
+            "date",
+            "basis_version",
+        ]
+
+
 # ===========================================================================
 # portfolio-db-schema-v2.json 契約テスト
 # ===========================================================================

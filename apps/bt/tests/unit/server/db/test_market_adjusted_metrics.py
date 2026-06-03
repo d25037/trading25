@@ -267,6 +267,7 @@ def test_adjusted_metrics_snapshot_reports_freshness(market_db: MarketDb) -> Non
         "dailyValuationRows": 1,
         "priceBasisDate": "2024-12-30",
         "basisVersion": "adjusted-v1:2024-12-30",
+        "basisVersionCount": 1,
     }
 
 

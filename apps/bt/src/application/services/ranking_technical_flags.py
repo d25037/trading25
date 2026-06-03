@@ -206,7 +206,7 @@ def load_ranking_technical_metrics(
         FROM ranked
         WHERE code IN ({placeholders})
         """,
-        (*market_params, lower_bound_date, target_date, target_date, *codes),
+        (target_date, *market_params, lower_bound_date, target_date, target_date, *codes),
     )
 
     metrics_by_code: dict[str, RankingTechnicalMetrics] = {}

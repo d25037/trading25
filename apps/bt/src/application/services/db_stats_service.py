@@ -38,6 +38,9 @@ from src.entrypoints.http.schemas.db import (
     TopixStats,
 )
 
+_STALE_STORAGE_ARTIFACT_LIMIT = 20
+_STALE_STORAGE_ARTIFACT_SUFFIXES = (".tmp", ".bak", ".backup", ".old")
+
 
 class MarketDbStatsLike(Protocol):
     def is_initialized(self) -> bool: ...
@@ -84,25 +87,74 @@ def _resolve_parquet_size_bytes(time_series_store: object) -> int:
         return 0
 
 
+def _is_stale_storage_artifact(path: Path) -> bool:
+    name = path.name.lower()
+    return any(name.endswith(suffix) for suffix in _STALE_STORAGE_ARTIFACT_SUFFIXES)
+
+
+def _resolve_stale_storage_artifacts(
+    *,
+    duckdb_path: Path | None,
+    parquet_dir: Path | None,
+    limit: int = _STALE_STORAGE_ARTIFACT_LIMIT,
+) -> tuple[int, list[str]]:
+    artifacts: list[str] = []
+    try:
+        if duckdb_path is not None and duckdb_path.parent.exists():
+            for path in duckdb_path.parent.iterdir():
+                if not path.is_file() or not _is_stale_storage_artifact(path):
+                    continue
+                artifacts.append(path.name)
+        if parquet_dir is not None and parquet_dir.exists():
+            for path in parquet_dir.rglob("*"):
+                if not path.is_file() or not _is_stale_storage_artifact(path):
+                    continue
+                rel_path = path.relative_to(parquet_dir)
+                artifacts.append(f"{parquet_dir.name}/{rel_path.as_posix()}")
+    except OSError:
+        return 0, []
+
+    unique_artifacts = sorted(set(artifacts))
+    return len(unique_artifacts), unique_artifacts[:limit]
+
+
 def _resolve_storage_stats(time_series_store: object) -> StorageStats:
     get_storage_stats = getattr(time_series_store, "get_storage_stats", None)
     if callable(get_storage_stats):
         stats = get_storage_stats()
         duckdb_bytes = getattr(stats, "duckdb_bytes", None)
         parquet_bytes = getattr(stats, "parquet_bytes", None)
+        stale_artifact_count = getattr(stats, "stale_artifact_count", 0)
+        stale_artifacts = getattr(stats, "stale_artifacts", [])
         if isinstance(duckdb_bytes, int) and isinstance(parquet_bytes, int):
             return StorageStats(
                 duckdbBytes=duckdb_bytes,
                 parquetBytes=parquet_bytes,
                 totalBytes=duckdb_bytes + parquet_bytes,
+                staleArtifactCount=stale_artifact_count
+                if isinstance(stale_artifact_count, int)
+                else 0,
+                staleArtifacts=[
+                    str(artifact)
+                    for artifact in stale_artifacts
+                    if isinstance(artifact, str)
+                ][:_STALE_STORAGE_ARTIFACT_LIMIT],
             )
 
+    duckdb_path = getattr(time_series_store, "_duckdb_path", None)
+    parquet_dir = getattr(time_series_store, "_parquet_dir", None)
     duckdb_bytes = _resolve_duckdb_size_bytes(time_series_store)
     parquet_bytes = _resolve_parquet_size_bytes(time_series_store)
+    stale_artifact_count, stale_artifacts = _resolve_stale_storage_artifacts(
+        duckdb_path=duckdb_path if isinstance(duckdb_path, Path) else None,
+        parquet_dir=parquet_dir if isinstance(parquet_dir, Path) else None,
+    )
     return StorageStats(
         duckdbBytes=duckdb_bytes,
         parquetBytes=parquet_bytes,
         totalBytes=duckdb_bytes + parquet_bytes,
+        staleArtifactCount=stale_artifact_count,
+        staleArtifacts=stale_artifacts,
     )
 
 
@@ -307,6 +359,7 @@ def _build_adjusted_metrics_stats(
     daily_rows = int(snapshot.get("dailyValuationRows", 0) or 0)
     price_basis_date = snapshot.get("priceBasisDate")
     basis_version = snapshot.get("basisVersion")
+    basis_version_count = int(snapshot.get("basisVersionCount", 0) or 0)
     has_raw_source = source_stock_count > 0 or source_statement_count > 0
     if statement_rows <= 0 and daily_rows <= 0 and not has_raw_source:
         status = "empty_source"
@@ -318,6 +371,8 @@ def _build_adjusted_metrics_stats(
         and price_basis_date < latest_stock_date
     ):
         status = "stale"
+    elif basis_version_count > 1:
+        status = "retained_versions"
     else:
         status = "ready"
     return AdjustedMetricsStats(
@@ -325,5 +380,6 @@ def _build_adjusted_metrics_stats(
         dailyValuationRows=daily_rows,
         priceBasisDate=str(price_basis_date) if price_basis_date is not None else None,
         basisVersion=str(basis_version) if basis_version is not None else None,
+        basisVersionCount=basis_version_count,
         status=status,
     )

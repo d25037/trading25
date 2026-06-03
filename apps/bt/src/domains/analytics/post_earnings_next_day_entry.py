@@ -33,7 +33,6 @@ from src.domains.analytics.earnings_holdthrough_expectancy import (
     _sort_summary_df,
     _str_or_none,
     _summary_columns,
-    _table_exists,
     enrich_event_features_with_prime_liquidity_residuals,
 )
 from src.domains.analytics.earnings_holdthrough_expectancy_report import (
@@ -117,11 +116,7 @@ def run_post_earnings_next_day_entry_research(
         snapshot_prefix="post-earnings-next-day-entry-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_as_of_disclosed_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_as_of_disclosed_date"
         statement_df = _query_statement_rows(
             ctx.connection,
             start_date=query_start,

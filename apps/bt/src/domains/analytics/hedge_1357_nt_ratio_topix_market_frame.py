@@ -166,17 +166,19 @@ def _query_group_daily_returns(
         WITH stocks_snapshot_raw AS (
             SELECT
                 {normalized_code_sql} AS normalized_code,
+                date,
                 lower(trim(market_code)) AS market_code_norm,
                 coalesce(scale_category, '') AS scale_category,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {normalized_code_sql}
+                    PARTITION BY {normalized_code_sql}, date
                     ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                 ) AS row_priority
-            FROM stocks
+            FROM stock_master_daily
         ),
         stocks_snapshot AS (
             SELECT
                 normalized_code,
+                date,
                 market_code_norm IN ('prime', '0111', '0101') AS is_prime,
                 scale_category IN ('TOPIX Core30', 'TOPIX Large70') AS is_topix100,
                 scale_category IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_topix500,
@@ -264,6 +266,7 @@ def _query_group_daily_returns(
             FROM stock_forward_filtered s
             JOIN stocks_snapshot m
               ON m.normalized_code = s.normalized_code
+             AND m.date = s.date
         ),
         grouped_stock_days AS (
             {union_sql}

@@ -20,7 +20,7 @@ _MARKET_CODES_BY_PRESET: dict[str, tuple[str, ...]] = {
     "growth": tuple(expand_market_codes(["growth"])),
 }
 _TOPIX100_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70")
-_TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
+_TOPIX500_INDEX_CODE = "TOPIX500"
 UNIVERSE_PRESET_NAMES = frozenset(
     {"prime", "standard", "growth", "topix100", "primeExTopix500"}
 )
@@ -45,6 +45,19 @@ class UniverseResolverDbLike(Protocol):
         scale_categories: list[str] | None = None,
         exclude_scale_categories: list[str] | None = None,
     ) -> list[str]: ...
+
+    def get_stock_master_code_dates_for_date_range(
+        self,
+        start_date: str,
+        end_date: str,
+        *,
+        codes: list[str] | None = None,
+        market_codes: list[str] | None = None,
+        scale_categories: list[str] | None = None,
+        exclude_scale_categories: list[str] | None = None,
+    ) -> list[tuple[str, str]]: ...
+
+    def get_index_membership_codes(self, as_of_date: str, index_code: str) -> set[str]: ...
 
 
 @dataclass(frozen=True)
@@ -301,21 +314,38 @@ def _resolve_prime_ex_topix500_universe(
     base_codes = db.get_stock_master_codes_for_date(
         as_of_date=as_of_date,
         market_codes=list(_MARKET_CODES_BY_PRESET["prime"]),
-        exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
     )
+    topix500_codes = db.get_index_membership_codes(as_of_date, _TOPIX500_INDEX_CODE)
+    if not topix500_codes:
+        raise UniverseResolutionError(
+            "primeExTopix500 requires exact TOPIX500 membership in index_membership_daily "
+            f"for as_of_date={as_of_date}",
+            code="universe.topix500_membership_required",
+            provenance=UniverseProvenance(
+                sourceTable="index_membership_daily",
+                asOfDate=as_of_date,
+                preset="primeExTopix500",
+                rowCount=0,
+                resolvedCount=0,
+                filters={"indexCode": _TOPIX500_INDEX_CODE, **filters},
+            ),
+        )
     warnings = _coverage_warnings(base_codes, as_of_date=as_of_date, preset="primeExTopix500")
-    codes = _apply_code_filters(base_codes, filters)
+    codes = _apply_code_filters(
+        [code for code in base_codes if code not in topix500_codes],
+        filters,
+    )
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
-            sourceTable="stock_master_daily",
+            sourceTable="stock_master_daily,index_membership_daily",
             asOfDate=as_of_date,
             preset="primeExTopix500",
             rowCount=len(base_codes),
             resolvedCount=len(codes),
             filters={
                 "marketCodes": list(_MARKET_CODES_BY_PRESET["prime"]),
-                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
+                "excludeIndexCode": _TOPIX500_INDEX_CODE,
                 **filters,
             },
             warnings=warnings,
@@ -330,24 +360,54 @@ def _resolve_prime_ex_topix500_universe_superset(
     end_date: str,
     filters: dict[str, Any],
 ) -> UniverseResolution:
-    base_codes = db.get_stock_master_codes_for_date_range(
+    prime_code_dates = db.get_stock_master_code_dates_for_date_range(
         start_date=start_date,
         end_date=end_date,
         market_codes=list(_MARKET_CODES_BY_PRESET["prime"]),
-        exclude_scale_categories=list(_TOPIX500_SCALE_CATEGORIES),
+    )
+    topix500_by_date = {
+        date: db.get_index_membership_codes(date, _TOPIX500_INDEX_CODE)
+        for date in sorted({date for date, _code in prime_code_dates})
+    }
+    missing_membership_dates = [
+        date
+        for date, membership_codes in topix500_by_date.items()
+        if not membership_codes
+    ]
+    if missing_membership_dates:
+        sample = ", ".join(missing_membership_dates[:10])
+        raise UniverseResolutionError(
+            "primeExTopix500 requires exact TOPIX500 membership in index_membership_daily "
+            f"for {len(missing_membership_dates)} dates: {sample}",
+            code="universe.topix500_membership_required",
+            provenance=UniverseProvenance(
+                sourceTable="index_membership_daily",
+                asOfDate=f"{start_date}..{end_date}",
+                preset="primeExTopix500",
+                rowCount=0,
+                resolvedCount=0,
+                filters={"indexCode": _TOPIX500_INDEX_CODE, "dynamicUniverse": True, **filters},
+            ),
+        )
+    base_codes = sorted(
+        {
+            code
+            for date, code in prime_code_dates
+            if code not in topix500_by_date.get(date, set())
+        }
     )
     codes = _apply_code_filters(base_codes, filters)
     return UniverseResolution(
         codes=codes,
         provenance=UniverseProvenance(
-            sourceTable="stock_master_daily",
+            sourceTable="stock_master_daily,index_membership_daily",
             asOfDate=f"{start_date}..{end_date}",
             preset="primeExTopix500",
-            rowCount=len(base_codes),
+            rowCount=len(prime_code_dates),
             resolvedCount=len(codes),
             filters={
                 "marketCodes": list(_MARKET_CODES_BY_PRESET["prime"]),
-                "excludeScaleCategories": list(_TOPIX500_SCALE_CATEGORIES),
+                "excludeIndexCode": _TOPIX500_INDEX_CODE,
                 "dynamicUniverse": True,
                 **filters,
             },

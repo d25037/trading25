@@ -119,11 +119,7 @@ def run_earnings_holdthrough_expectancy_research(
         snapshot_prefix="earnings-holdthrough-expectancy-",
     ) as ctx:
         _assert_required_tables(ctx.connection)
-        market_source = (
-            "stock_master_daily_as_of_disclosed_date"
-            if _table_exists(ctx.connection, "stock_master_daily")
-            else "stocks_latest_fallback"
-        )
+        market_source = "stock_master_daily_as_of_disclosed_date"
         statement_df = _query_statement_rows(
             ctx.connection,
             start_date=query_start,
@@ -354,103 +350,58 @@ def _query_statement_rows(
         ]
     )
 
-    if market_source == "stock_master_daily_as_of_disclosed_date":
-        df = conn.execute(
-            f"""
-            WITH statements_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {statement_select},
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized_code}, disclosed_date
-                            ORDER BY {prefer_4digit}, type_of_document NULLS LAST
-                        ) AS rn
-                    FROM statements
-                    {date_sql}
-                )
-                WHERE rn = 1
-            ),
-            master_asof AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        st.code AS event_code,
-                        st.disclosed_date AS event_disclosed_date,
-                        smd.company_name,
-                        smd.market_code,
-                        smd.market_name,
-                        smd.scale_category,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY st.code, st.disclosed_date
-                            ORDER BY smd.date DESC
-                        ) AS rn
-                    FROM statements_canonical st
-                    LEFT JOIN stock_master_daily smd
-                      ON {normalize_code_sql("smd.code")} = st.code
-                     AND smd.date <= st.disclosed_date
-                )
-                WHERE rn = 1
+    if market_source != "stock_master_daily_as_of_disclosed_date":
+        raise ValueError(f"Unsupported market_source for PIT research: {market_source}")
+    df = conn.execute(
+        f"""
+        WITH statements_canonical AS (
+            SELECT *
+            FROM (
+                SELECT
+                    {statement_select},
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized_code}, disclosed_date
+                        ORDER BY {prefer_4digit}, type_of_document NULLS LAST
+                    ) AS rn
+                FROM statements
+                {date_sql}
             )
-            SELECT
-                st.*,
-                coalesce(m.company_name, st.code) AS company_name,
-                m.market_code,
-                m.market_name,
-                m.scale_category
-            FROM statements_canonical st
-            LEFT JOIN master_asof m
-              ON m.event_code = st.code AND m.event_disclosed_date = st.disclosed_date
-            ORDER BY st.code, st.disclosed_date
-            """,
-            params,
-        ).fetchdf()
-    else:
-        df = conn.execute(
-            f"""
-            WITH stocks_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {normalize_code_sql("code")} AS code,
-                        company_name,
-                        market_code,
-                        market_name,
-                        scale_category,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalize_code_sql("code")}
-                            ORDER BY {prefer_4digit}
-                        ) AS rn
-                    FROM stocks
-                )
-                WHERE rn = 1
-            ),
-            statements_canonical AS (
-                SELECT *
-                FROM (
-                    SELECT
-                        {statement_select},
-                        ROW_NUMBER() OVER (
-                            PARTITION BY {normalized_code}, disclosed_date
-                            ORDER BY {prefer_4digit}, type_of_document NULLS LAST
-                        ) AS rn
-                    FROM statements
-                    {date_sql}
-                )
-                WHERE rn = 1
+            WHERE rn = 1
+        ),
+        master_asof AS (
+            SELECT *
+            FROM (
+                SELECT
+                    st.code AS event_code,
+                    st.disclosed_date AS event_disclosed_date,
+                    smd.company_name,
+                    smd.market_code,
+                    smd.market_name,
+                    smd.scale_category,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY st.code, st.disclosed_date
+                        ORDER BY smd.date DESC
+                    ) AS rn
+                FROM statements_canonical st
+                LEFT JOIN stock_master_daily smd
+                  ON {normalize_code_sql("smd.code")} = st.code
+                 AND smd.date <= st.disclosed_date
             )
-            SELECT
-                st.*,
-                coalesce(s.company_name, st.code) AS company_name,
-                s.market_code,
-                s.market_name,
-                s.scale_category
-            FROM statements_canonical st
-            LEFT JOIN stocks_canonical s ON s.code = st.code
-            ORDER BY st.code, st.disclosed_date
-            """,
-            params,
-        ).fetchdf()
+            WHERE rn = 1
+        )
+        SELECT
+            st.*,
+            coalesce(m.company_name, st.code) AS company_name,
+            m.market_code,
+            m.market_name,
+            m.scale_category
+        FROM statements_canonical st
+        LEFT JOIN master_asof m
+          ON m.event_code = st.code AND m.event_disclosed_date = st.disclosed_date
+        ORDER BY st.code, st.disclosed_date
+        """,
+        params,
+    ).fetchdf()
     if df.empty:
         return _empty_statement_df()
     df["code"] = df["code"].astype(str)
@@ -935,19 +886,14 @@ def _query_prime_liquidity_residual_source(
     end_date = max(target_dates)
     market_placeholders = _placeholder_sql(len(prime_market_codes))
     target_placeholders = _placeholder_sql(len(target_dates))
-    stock_code = normalize_code_sql("s.code")
+    stock_code = normalize_code_sql("smd.code")
     price_code = normalize_code_sql("sd.code")
     statement_code = normalize_code_sql("st.code")
     prefer_price = "CASE WHEN length(sd.code) = 4 THEN 0 ELSE 1 END"
     prefer_statement = "CASE WHEN length(st.code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
-        WITH prime_codes AS (
-            SELECT DISTINCT {stock_code} AS code
-            FROM stocks s
-            WHERE lower(trim(s.market_code)) IN ({market_placeholders})
-        ),
-        price_base AS (
+        WITH price_base AS (
             SELECT code, date, close, volume
             FROM (
                 SELECT
@@ -967,10 +913,29 @@ def _query_prime_liquidity_residual_source(
             )
             WHERE rn = 1
         ),
+        prime_master AS (
+            SELECT code, date
+            FROM (
+                SELECT
+                    {stock_code} AS code,
+                    smd.date,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {stock_code}, smd.date
+                        ORDER BY CASE WHEN length(smd.code) = 4 THEN 0 ELSE 1 END, smd.code
+                    ) AS rn
+                FROM stock_master_daily smd
+                WHERE lower(trim(smd.market_code)) IN ({market_placeholders})
+                  AND smd.date >= ?
+                  AND smd.date <= ?
+            )
+            WHERE rn = 1
+        ),
         prime_price AS (
             SELECT price_base.*
             FROM price_base
-            JOIN prime_codes USING (code)
+            JOIN prime_master
+              ON prime_master.code = price_base.code
+             AND prime_master.date = price_base.date
         ),
         price_feature AS (
             SELECT
@@ -1031,7 +996,7 @@ def _query_prime_liquidity_residual_source(
           AND st.shares_outstanding - coalesce(st.treasury_shares, 0) > 0
         ORDER BY pf.date, pf.code
         """,
-        [*prime_market_codes, start_date, end_date, *target_dates],
+        [start_date, end_date, *prime_market_codes, start_date, end_date, *target_dates],
     ).fetchdf()
     if df.empty:
         return pd.DataFrame()

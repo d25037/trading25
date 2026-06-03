@@ -142,6 +142,9 @@ def _open_analysis_connection(db_path: str):
 def _topix100_stocks_cte() -> str:
     normalized_code_sql = _normalize_code_sql("code")
     return f"""
+        latest_master_date AS (
+            SELECT MAX(date) AS date FROM stock_master_daily
+        ),
         topix100_stocks AS (
             SELECT
                 normalized_code,
@@ -156,8 +159,9 @@ def _topix100_stocks_cte() -> str:
                         PARTITION BY {normalized_code_sql}
                         ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                     ) AS row_priority
-                FROM stocks
-                WHERE coalesce(scale_category, '') IN {cast(Any, TOPIX100_SCALE_CATEGORIES)}
+                FROM stock_master_daily
+                WHERE date = (SELECT date FROM latest_master_date)
+                  AND coalesce(scale_category, '') IN {cast(Any, TOPIX100_SCALE_CATEGORIES)}
             ) stock_candidates
             WHERE row_priority = 1
         )

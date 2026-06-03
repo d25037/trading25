@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from typing import cast
 
-from src.application.services.dataset_presets import get_preset_label
 from src.application.services.screening_execution import StrategyRuntime
 from src.application.services.screening_strategy_selection import (
     build_strategy_response_names,
     build_strategy_selection_catalog,
     resolve_selected_strategy_names,
-)
-from src.application.services.strategy_dataset_metadata import (
-    resolve_dataset_metadata,
-    resolve_dataset_stock_codes,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
@@ -55,22 +50,15 @@ def resolve_screening_strategy_runtimes(
         resolved_entry_decidability = runtime_payload.entry_decidability
         if screening_support != "supported" or resolved_entry_decidability is None:
             raise ValueError(f"Unsupported screening strategy selected: {name}")
+        if runtime_payload.shared_config.data_source == "dataset_snapshot":
+            raise ValueError(
+                "Screening uses market.duckdb and does not support "
+                "shared_config.data_source=dataset_snapshot"
+            )
 
         dataset_universe_codes: frozenset[str] | None = None
         dataset_scope_label: str | None = None
-        if use_strategy_dataset_universe:
-            if runtime_payload.shared_config.data_source == "dataset_snapshot":
-                try:
-                    dataset_metadata = resolve_dataset_metadata(runtime_payload.shared_config.dataset)
-                    dataset_universe_codes = frozenset(
-                        resolve_dataset_stock_codes(runtime_payload.shared_config.dataset)
-                    )
-                    if dataset_metadata.dataset_preset is not None:
-                        dataset_scope_label = get_preset_label(dataset_metadata.dataset_preset)
-                except Exception as exc:
-                    raise ValueError(
-                        f"Invalid dataset universe for screening strategy {name}: {exc}"
-                    ) from exc
+        _ = use_strategy_dataset_universe
 
         runtimes.append(
             StrategyRuntime(

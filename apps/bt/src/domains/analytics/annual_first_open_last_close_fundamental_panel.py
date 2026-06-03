@@ -371,6 +371,9 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
     prefer_4digit = "CASE WHEN length(code) = 4 THEN 0 ELSE 1 END"
     df = conn.execute(
         f"""
+        WITH latest_master_date AS (
+            SELECT MAX(date) AS date FROM stock_master_daily
+        )
         SELECT
             code,
             company_name,
@@ -394,8 +397,9 @@ def _query_canonical_stocks(conn: Any, *, market_codes: Sequence[str]) -> pd.Dat
                     PARTITION BY {normalized_code}
                     ORDER BY {prefer_4digit}
                 ) AS rn
-            FROM stocks
-            WHERE lower(market_code) IN ({placeholders})
+            FROM stock_master_daily
+            WHERE date = (SELECT date FROM latest_master_date)
+              AND lower(market_code) IN ({placeholders})
         )
         WHERE rn = 1
         ORDER BY code

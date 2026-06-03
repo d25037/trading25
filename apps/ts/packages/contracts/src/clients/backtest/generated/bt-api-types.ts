@@ -2962,6 +2962,11 @@ export interface components {
             /** Basisversion */
             basisVersion?: string | null;
             /**
+             * Basisversioncount
+             * @default 0
+             */
+            basisVersionCount: number;
+            /**
              * Dailyvaluationrows
              * @default 0
              */
@@ -2978,7 +2983,7 @@ export interface components {
              * @default empty_source
              * @enum {string}
              */
-            status: "ready" | "missing" | "stale" | "empty_source";
+            status: "ready" | "missing" | "stale" | "retained_versions" | "empty_source";
         };
         /** AdjustmentEvent */
         AdjustmentEvent: {
@@ -10475,6 +10480,13 @@ export interface components {
              * @default 0
              */
             parquetBytes: number;
+            /**
+             * Staleartifactcount
+             * @default 0
+             */
+            staleArtifactCount: number;
+            /** Staleartifacts */
+            staleArtifacts?: string[];
             /**
              * Totalbytes
              * @default 0

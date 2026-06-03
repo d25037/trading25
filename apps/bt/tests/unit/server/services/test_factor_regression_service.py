@@ -186,6 +186,7 @@ def factor_db(tmp_path):
 
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("72030", "トヨタ", "TOYOTA", "prime", "P", "S17", "輸送", "S33", "輸送用機器", None, "2000-01-01", None, None))
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
 
     # 100日分のデータ
     from datetime import date, timedelta

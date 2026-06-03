@@ -11,6 +11,7 @@
 - `universe_preset` + `stock_master_daily` は all-stock universe selection の PIT SoT である。
 - `dataset snapshot` (`dataset.duckdb` + `manifest.v2.json`) は normal run の SoT ではない。`data_source=dataset_snapshot` + `static_universe=true` を明示した archived reproducibility run だけで使う。
 - `SignalProcessor + compiled strategy IR + signal registry` は signal semantics の SoT である。
+- Research Published Readout の PIT universe invalidation / rerun queue は [`research-pit-invalidation-register.md`](research-pit-invalidation-register.md) を SoT とする。
 
 ## Guardrails
 - verification 系 route / service は live J-Quants client を import しない。許可対象は proxy / sync / bootstrap のみ。
@@ -20,6 +21,7 @@
 - screening と backtest は missing required data を `skip` ではなく `false` として扱う。
 - `shared_config.dataset` は normal run で unsupported。`shared_config.universe_preset` を使い、物理 snapshot は `dataset_snapshot` として明示する。
 - chart overlay は `strategy_name` 指定時に `SignalProcessor` ベースで screening/backtest と同じ signal semantics を使う。
+- research readout は historical universe に latest membership を固定した headline を production / Ranking / Screening evidence として使わない。
 
 ## Provenance Contract
 - screening / fundamentals / ROE / margin / signal responses は共通 `provenance` を返す。

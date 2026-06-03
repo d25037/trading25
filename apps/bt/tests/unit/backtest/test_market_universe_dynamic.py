@@ -130,6 +130,14 @@ def test_build_dynamic_universe_eligibility_frame_uses_each_entry_date(
                 },
             ],
         )
+        db._execute(
+            """
+            INSERT INTO index_membership_daily (date, index_code, code, created_at)
+            VALUES
+                ('2024-01-05', 'TOPIX500', '1500', 'now'),
+                ('2024-01-06', 'TOPIX500', '1500', 'now')
+            """
+        )
     finally:
         db.close()
 
@@ -205,6 +213,14 @@ def test_prime_ex_topix500_dynamic_gate_rejects_standard_on_entry_date(
                     "scale_category": "TOPIX Mid400",
                 },
             ],
+        )
+        db._execute(
+            """
+            INSERT INTO index_membership_daily (date, index_code, code, created_at)
+            VALUES
+                ('2024-01-05', 'TOPIX500', '1500', 'now'),
+                ('2024-01-06', 'TOPIX500', '1500', 'now')
+            """
         )
     finally:
         db.close()

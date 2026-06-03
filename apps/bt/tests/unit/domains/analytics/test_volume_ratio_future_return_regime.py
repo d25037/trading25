@@ -68,6 +68,14 @@ def _build_market_db(db_path: Path) -> str:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+        """
+    )
 
     universe_specs = [
         ("topix500", "0111", "プライム", "TOPIX Mid400"),

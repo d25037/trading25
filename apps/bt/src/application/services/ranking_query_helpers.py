@@ -108,7 +108,8 @@ def stocks_canonical_cte() -> str:
                         PARTITION BY {normalized}
                         ORDER BY {order}
                     ) AS rn
-                FROM stocks
+                FROM stock_master_daily
+                WHERE date = ?
             )
             WHERE rn = 1
         )

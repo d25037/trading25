@@ -23,6 +23,8 @@ class StorageStats(BaseModel):
     duckdbBytes: int = 0
     parquetBytes: int = 0
     totalBytes: int = 0
+    staleArtifactCount: int = 0
+    staleArtifacts: list[str] = Field(default_factory=list)
 
 
 IntradayFreshnessStatusLiteral = Literal["idle", "up_to_date", "stale"]
@@ -34,7 +36,13 @@ Options225CoverageStatusLiteral = Literal[
     "stale",
     "partial",
 ]
-AdjustedMetricsStatusLiteral = Literal["ready", "missing", "stale", "empty_source"]
+AdjustedMetricsStatusLiteral = Literal[
+    "ready",
+    "missing",
+    "stale",
+    "retained_versions",
+    "empty_source",
+]
 
 
 class IntradayFreshness(BaseModel):
@@ -137,6 +145,7 @@ class AdjustedMetricsStats(BaseModel):
     dailyValuationRows: int = 0
     priceBasisDate: str | None = None
     basisVersion: str | None = None
+    basisVersionCount: int = 0
     status: AdjustedMetricsStatusLiteral = "empty_source"
 
 

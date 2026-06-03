@@ -387,43 +387,26 @@ def _create_monitor_footprint_base_tables(
 
 
 def _create_monitor_market_master_source(conn: Any) -> None:
-    if _table_exists(conn, "stock_master_daily"):
-        code = normalize_code_sql("smd.code")
-        sector_expr = (
-            "smd.sector_33_name"
-            if _column_exists(conn, "stock_master_daily", "sector_33_name")
-            else "'unknown'"
-        )
-        conn.execute(
-            f"""
-            CREATE OR REPLACE TEMP TABLE monitor_market_master_source AS
-            SELECT
-                {code} AS code,
-                smd.date,
-                smd.company_name,
-                {_market_scope_case_sql("smd.market_code")} AS market,
-                {sector_expr} AS sector_33_name
-            FROM stock_master_daily smd
-            JOIN monitor_snapshot_dates d
-              ON d.snapshot_date = smd.date
-            """
-        )
-        return
-    code = normalize_code_sql("s.code")
+    if not _table_exists(conn, "stock_master_daily"):
+        raise RuntimeError("market.duckdb requires stock_master_daily for PIT bubble monitor")
+    code = normalize_code_sql("smd.code")
     sector_expr = (
-        "s.sector_33_name" if _column_exists(conn, "stocks", "sector_33_name") else "'unknown'"
+        "smd.sector_33_name"
+        if _column_exists(conn, "stock_master_daily", "sector_33_name")
+        else "'unknown'"
     )
     conn.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE monitor_market_master_source AS
         SELECT
-            d.snapshot_date AS date,
             {code} AS code,
-            s.company_name,
-            {_market_scope_case_sql("s.market_code")} AS market,
+            smd.date,
+            smd.company_name,
+            {_market_scope_case_sql("smd.market_code")} AS market,
             {sector_expr} AS sector_33_name
-        FROM stocks s
-        CROSS JOIN monitor_snapshot_dates d
+        FROM stock_master_daily smd
+        JOIN monitor_snapshot_dates d
+          ON d.snapshot_date = smd.date
         """
     )
 

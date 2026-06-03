@@ -63,6 +63,14 @@ def _build_market_db(db_path: Path) -> str:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+        """
+    )
 
     stock_rows = [
         ("1000", "follow-on", "follow-on", "0112", "スタンダード", "1", "A", "1", "A", "-", "2010-01-01", None, None),

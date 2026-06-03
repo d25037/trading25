@@ -129,6 +129,7 @@ def get_adjusted_metrics_snapshot(
     statement_rows = count_rows("statement_metrics_adjusted")
     daily_rows = count_rows("daily_valuation")
     row = None
+    basis_version_count = 0
     if table_exists("daily_valuation"):
         row = fetchone(
             """
@@ -140,9 +141,32 @@ def get_adjusted_metrics_snapshot(
             """,
             None,
         )
+        basis_count_row = fetchone(
+            """
+            SELECT COUNT(DISTINCT basis_version)
+            FROM daily_valuation
+            WHERE basis_version IS NOT NULL
+            """,
+            None,
+        )
+        basis_version_count = int(basis_count_row[0] or 0) if basis_count_row else 0
+    if table_exists("statement_metrics_adjusted"):
+        basis_count_row = fetchone(
+            """
+            SELECT COUNT(DISTINCT basis_version)
+            FROM statement_metrics_adjusted
+            WHERE basis_version IS NOT NULL
+            """,
+            None,
+        )
+        basis_version_count = max(
+            basis_version_count,
+            int(basis_count_row[0] or 0) if basis_count_row else 0,
+        )
     return {
         "statementRows": statement_rows,
         "dailyValuationRows": daily_rows,
         "priceBasisDate": str(row[0]) if row and row[0] is not None else None,
         "basisVersion": str(row[1]) if row and row[1] is not None else None,
+        "basisVersionCount": basis_version_count,
     }

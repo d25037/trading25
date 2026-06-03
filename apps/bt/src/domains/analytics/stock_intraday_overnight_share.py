@@ -232,6 +232,7 @@ def _stock_group_sessions_cte(
         WITH stocks_snapshot AS (
             SELECT
                 normalized_code,
+                date,
                 company_name,
                 market_code,
                 market_name,
@@ -249,15 +250,16 @@ def _stock_group_sessions_cte(
             FROM (
                 SELECT
                     {normalized_code_sql} AS normalized_code,
+                    date,
                     company_name,
                     market_code,
                     market_name,
                     scale_category,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code_sql}
+                        PARTITION BY {normalized_code_sql}, date
                         ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END, code
                     ) AS row_priority
-                FROM stocks
+                FROM stock_master_daily
             ) stock_candidates
             WHERE row_priority = 1
         ),
@@ -338,7 +340,9 @@ def _stock_group_sessions_cte(
                 m.is_standard,
                 m.is_growth
             FROM stock_paired_sessions s
-            JOIN stocks_snapshot m USING (normalized_code)
+            JOIN stocks_snapshot m
+              ON m.normalized_code = s.normalized_code
+             AND m.date = s.date
         ),
         stock_group_sessions AS (
             {union_sql}

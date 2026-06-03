@@ -43,6 +43,21 @@ def _create_stock_tables(conn: duckdb.DuckDBPyConnection) -> None:
     )
 
 
+def _create_master_views(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("""
+        CREATE VIEW stock_master_daily AS
+        SELECT d.date, s.*
+        FROM (SELECT DISTINCT date FROM stock_data) d
+        CROSS JOIN stocks s
+    """)
+    conn.execute("""
+        CREATE VIEW index_membership_daily AS
+        SELECT date, 'TOPIX500' AS index_code, code
+        FROM stock_master_daily
+        WHERE scale_category IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400')
+    """)
+
+
 def _create_regime_tables(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute(
         """
@@ -417,6 +432,7 @@ def build_topix100_research_market_db(
 
         conn.executemany("INSERT INTO options_225_data VALUES (?, ?, ?)", vi_rows)
 
+    _create_master_views(conn)
     conn.close()
     return str(db_path)
 
@@ -574,5 +590,6 @@ def build_prime_ex_topix500_research_market_db(db_path: Path) -> str:
         "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         stock_rows + duplicate_rows + excluded_rows,
     )
+    _create_master_views(conn)
     conn.close()
     return str(db_path)

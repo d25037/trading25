@@ -10,7 +10,7 @@ from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.utils.market_code_alias import expand_market_codes
 
-TOPIX500_SCALE_CATEGORIES = ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")
+TOPIX500_INDEX_CODE = "TOPIX500"
 
 
 def load_stock_universe(
@@ -142,8 +142,6 @@ def resolve_universe_codes_from_stock_master(
         market_codes = expand_market_codes(["prime"])
         filters.append(f"market_code IN ({','.join('?' for _ in market_codes)})")
         params.extend(market_codes)
-        filters.append("coalesce(scale_category, '') NOT IN (?, ?, ?)")
-        params.extend(TOPIX500_SCALE_CATEGORIES)
     else:
         return set()
     where_clause = " AND ".join(filters)
@@ -156,7 +154,33 @@ def resolve_universe_codes_from_stock_master(
         """,
         tuple(params),
     )
-    return {normalize_stock_code(str(row["code"])) for row in rows}
+    codes = {normalize_stock_code(str(row["code"])) for row in rows}
+    if preset != "primeExTopix500":
+        return codes
+
+    try:
+        membership_rows = reader.query(
+            """
+            SELECT code
+            FROM index_membership_daily
+            WHERE date = ? AND index_code = ?
+            ORDER BY code
+            """,
+            (as_of_date, TOPIX500_INDEX_CODE),
+        )
+    except Exception as exc:  # noqa: BLE001 - convert storage shape problem to screening input error
+        raise ValueError(
+            "primeExTopix500 requires exact TOPIX500 membership in index_membership_daily"
+        ) from exc
+    topix500_codes = {
+        normalize_stock_code(str(row["code"]))
+        for row in membership_rows
+    }
+    if not topix500_codes:
+        raise ValueError(
+            "primeExTopix500 requires exact TOPIX500 membership in index_membership_daily"
+        )
+    return codes - topix500_codes
 
 
 def resolve_scope_label(

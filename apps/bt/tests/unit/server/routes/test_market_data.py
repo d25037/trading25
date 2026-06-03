@@ -56,6 +56,15 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
         )
     """)
     conn.execute("""
+        CREATE TABLE index_membership_daily (
+            date TEXT NOT NULL,
+            index_code TEXT NOT NULL,
+            code TEXT NOT NULL,
+            created_at TEXT,
+            PRIMARY KEY (date, index_code, code)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE stock_data (
             code TEXT NOT NULL,
             date TEXT NOT NULL,
@@ -169,6 +178,7 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ("99840", "テスト銘柄", "TEST STOCK", "standard", "スタンダード", "S17_3", "情報通信", "S33_3", "情報通信", None, "2020-01-01", None, None),
     )
+    conn.execute("CREATE VIEW stocks_latest AS SELECT * FROM stocks")
 
     for code in ("72030", "67580"):
         for i, date_value in enumerate(("2024-01-15", "2024-01-16", "2024-01-17")):
@@ -177,6 +187,10 @@ def _build_market_timeseries_dir(base_dir: Path) -> str:
                 "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (code, date_value, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
             )
+    conn.execute(
+        "INSERT INTO index_membership_daily VALUES (?, ?, ?, ?)",
+        ("2024-01-15", "TOPIX500", "72030", None),
+    )
 
     conn.executemany(
         "INSERT INTO stock_data_minute_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

@@ -598,9 +598,10 @@ def _query_candidate_event_rows(
         analysis_params.append(analysis_end_date)
     analysis_where_sql = " WHERE " + " AND ".join(analysis_conditions)
     sql = f"""
-        WITH stocks_snapshot AS (
+        WITH stock_master_asof AS (
             SELECT
                 normalized_code,
+                date,
                 company_name,
                 market_code,
                 market_name,
@@ -609,16 +610,17 @@ def _query_candidate_event_rows(
             FROM (
                 SELECT
                     {normalized_code_sql} AS normalized_code,
+                    date,
                     COALESCE(NULLIF(trim(company_name), ''), {normalized_code_sql}) AS company_name,
                     NULLIF(trim(market_code), '') AS market_code,
                     NULLIF(trim(market_name), '') AS market_name,
                     NULLIF(trim(sector_33_name), '') AS sector_33_name,
                     NULLIF(trim(scale_category), '') AS scale_category,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {normalized_code_sql}
+                        PARTITION BY {normalized_code_sql}, date
                         ORDER BY {_PREFER_4DIGIT_ORDER_SQL}, code
                     ) AS row_priority
-                FROM stocks
+                FROM stock_master_daily
             )
             WHERE row_priority = 1
         ),
@@ -657,11 +659,11 @@ def _query_candidate_event_rows(
             SELECT
                 sd.date,
                 sd.code,
-                COALESCE(snapshot.company_name, sd.code) AS company_name,
-                COALESCE(snapshot.market_code, 'unknown') AS market_code,
-                COALESCE(snapshot.market_name, 'UNKNOWN') AS market_name,
-                COALESCE(snapshot.sector_33_name, 'UNKNOWN') AS sector_33_name,
-                COALESCE(snapshot.scale_category, 'unknown') AS scale_category,
+                COALESCE(master.company_name, sd.code) AS company_name,
+                COALESCE(master.market_code, 'unknown') AS market_code,
+                COALESCE(master.market_name, 'UNKNOWN') AS market_name,
+                COALESCE(master.sector_33_name, 'UNKNOWN') AS sector_33_name,
+                COALESCE(master.scale_category, 'unknown') AS scale_category,
                 ROW_NUMBER() OVER (PARTITION BY sd.code ORDER BY sd.date) - 1 AS session_index,
                 sd.open,
                 sd.high,
@@ -694,8 +696,9 @@ def _query_candidate_event_rows(
                 LAG(sd.close, 252) OVER (PARTITION BY sd.code ORDER BY sd.date) AS close_lag_252d,
                 {", ".join([*initial_max_clauses, *follow_on_max_clauses, *observation_clauses])}
             FROM stock_daily sd
-            LEFT JOIN stocks_snapshot snapshot
-              ON snapshot.normalized_code = sd.code
+            LEFT JOIN stock_master_asof master
+              ON master.normalized_code = sd.code
+             AND master.date = sd.date
         ),
         metric_rows AS (
             SELECT
