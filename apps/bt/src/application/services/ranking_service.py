@@ -79,7 +79,7 @@ from src.application.services.ranking_statement_rows import (
     statement_rows_by_code,
 )
 from src.application.services.ranking_index_performance import (
-    load_sector_strength_by_name,
+    load_sector_score_by_name,
     load_index_performance,
 )
 from src.application.services.ranking_liquidity import (
@@ -95,6 +95,7 @@ from src.entrypoints.http.schemas.ranking import (
     RankingItem,
     RankingRegimeStateFilter,
     RankingRiskStateFilter,
+    SectorScoreFamily,
     RankingStateFilter,
     RankingTechnicalStateFilter,
     Rankings,
@@ -157,6 +158,7 @@ class RankingService:
         risk_state: RankingRiskStateFilter | None = None,
         technical_state: RankingTechnicalStateFilter | None = None,
         include_sector_strength: bool = False,
+        sector_score_family: SectorScoreFamily = "current",
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
@@ -345,13 +347,14 @@ class RankingService:
                 market_codes=query_market_codes,
             )
         sector_strength_by_name = (
-            load_sector_strength_by_name(
+            load_sector_score_by_name(
                 self._reader,
                 table_exists=lambda table_name: _table_exists_query(
                     self._reader, table_name
                 ),
                 date=target_date,
                 market_codes=query_market_codes,
+                sector_score_family=sector_score_family,
             )
             if include_sector_strength
             else {}
@@ -369,6 +372,7 @@ class RankingService:
             market_codes=query_market_codes,
             include_sector_strength=include_sector_strength,
             sector_strength_by_name=sector_strength_by_name,
+            sector_score_family=sector_score_family,
         )
 
         return MarketRankingResponse(
@@ -376,6 +380,7 @@ class RankingService:
             markets=requested_market_codes,
             lookbackDays=lookback_days,
             periodDays=period_days,
+            sectorScoreFamily=sector_score_family,
             rankings=Rankings(
                 tradingValue=trading_value,
                 gainers=gainers,

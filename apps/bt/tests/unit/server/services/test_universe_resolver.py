@@ -122,6 +122,9 @@ def test_resolve_universe_does_not_fallback_to_latest_snapshot(market_db: Market
 
 def test_resolve_prime_ex_topix500_requires_exact_membership(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
+    market_db._execute(
+        "DELETE FROM index_membership_daily WHERE date = '2024-01-05' AND index_code = 'TOPIX500'"
+    )
 
     with pytest.raises(UniverseResolutionError) as exc_info:
         resolve_universe(market_db, as_of_date="2024-01-05", preset="primeExTopix500")
@@ -131,6 +134,9 @@ def test_resolve_prime_ex_topix500_requires_exact_membership(market_db: MarketDb
 
 def test_resolve_prime_ex_topix500_subtracts_exact_membership(market_db: MarketDb) -> None:
     _insert_master(market_db, "2024-01-05")
+    market_db._execute(
+        "DELETE FROM index_membership_daily WHERE date = '2024-01-05' AND index_code = 'TOPIX500'"
+    )
     market_db._execute(
         """
         INSERT INTO index_membership_daily (date, index_code, code, created_at)
@@ -373,6 +379,9 @@ def test_resolve_prime_ex_topix500_supports_historical_tse_first_section(market_
                 "created_at": "now",
             },
         ],
+    )
+    market_db._execute(
+        "DELETE FROM index_membership_daily WHERE date = '2016-05-30' AND index_code = 'TOPIX500'"
     )
     market_db._execute(
         """

@@ -30,6 +30,7 @@ from src.domains.analytics.ranking_long_sector_leadership_horizon_decomposition 
     DEFAULT_MIN_OBSERVATIONS,
     DEFAULT_OBSERVATION_SAMPLE_LIMIT,
     DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
+    SECTOR_SCORE_FAMILY_OPTIONS,
     run_ranking_long_sector_leadership_horizon_decomposition_research,
     write_ranking_long_sector_leadership_horizon_decomposition_bundle,
 )
@@ -59,6 +60,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--leadership-windows",
         default=",".join(str(window) for window in DEFAULT_LEADERSHIP_WINDOWS),
         help="Comma-separated past-return windows used for sector leadership ranks.",
+    )
+    parser.add_argument(
+        "--sector-score-family",
+        choices=SECTOR_SCORE_FAMILY_OPTIONS,
+        default="both",
+        help=(
+            "Sector score family highlighted in selected_sector_score_summary_df. "
+            "Use both to keep the current-vs-long comparison."
+        ),
     )
     parser.add_argument(
         "--markets",
@@ -99,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             args.leadership_windows,
             name="leadership-windows",
         ),
+        sector_score_family=args.sector_score_family,
         market_scopes=_parse_strings(args.markets),
         min_observations=args.min_observations,
         severe_loss_threshold_pct=args.severe_loss_threshold_pct,

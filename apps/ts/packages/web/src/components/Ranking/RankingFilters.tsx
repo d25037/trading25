@@ -38,6 +38,11 @@ const FORWARD_EPS_DISCLOSURE_OPTIONS = [
   { value: 252, label: '252 days' },
 ];
 
+export const SECTOR_SCORE_FAMILY_OPTIONS = [
+  { value: 'current', label: 'Sector Score' },
+  { value: 'long_hybrid_leadership', label: 'Long Hybrid Leadership' },
+] as const;
+
 interface RankingFiltersProps {
   params: RankingParams;
   onChange: (params: RankingParams) => void;
@@ -80,6 +85,26 @@ export function RankingFilters({ params, onChange }: RankingFiltersProps) {
           id="ranking-forward-eps-disclosed-within-days"
           label="Fwd EPS Disclosure"
         />
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="ranking-sector-score-family">
+            Sector Selector
+          </label>
+          <Select
+            value={params.sectorScoreFamily ?? 'current'}
+            onValueChange={(value) => updateParam('sectorScoreFamily', value as RankingParams['sectorScoreFamily'])}
+          >
+            <SelectTrigger id="ranking-sector-score-family" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTOR_SCORE_FAMILY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-2">
           <label className="text-xs font-medium" htmlFor="ranking-preset">
             Preset

@@ -21,6 +21,7 @@ import type {
   RankingSortOrder,
   RankingTechnicalEventType,
   RankingTechnicalState,
+  SectorScoreFamily,
 } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
@@ -88,6 +89,7 @@ export interface RankingRouteSearch {
   rankingRegimeState?: RankingRegimeState;
   rankingRiskState?: RankingRiskState;
   rankingTechnicalState?: RankingTechnicalState;
+  rankingSectorScoreFamily?: SectorScoreFamily;
   rankingSortBy?: RankingSortField;
   rankingOrder?: RankingSortOrder;
   rankingForwardEpsDisclosedWithinDays?: number;
@@ -124,6 +126,7 @@ const RANKING_REGIME_STATE_VALUES: RankingRegimeState[] = [
 ];
 const RANKING_RISK_STATE_VALUES: RankingRiskState[] = ['overheat', 'stale_rally_fade'];
 const RANKING_TECHNICAL_STATE_VALUES: RankingTechnicalState[] = ['atr20_acceleration', 'momentum_20_60_top20'];
+const SECTOR_SCORE_FAMILY_VALUES: SectorScoreFamily[] = ['current', 'long_hybrid_leadership'];
 const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'dailyView',
   'rankingDate',
@@ -136,6 +139,7 @@ const RANKING_ROUTE_SEARCH_KEYS: (keyof RankingRouteSearch)[] = [
   'rankingRegimeState',
   'rankingRiskState',
   'rankingTechnicalState',
+  'rankingSectorScoreFamily',
   'rankingSortBy',
   'rankingOrder',
   'rankingForwardEpsDisclosedWithinDays',
@@ -251,6 +255,10 @@ function normalizeRankingRiskState(value: unknown): RankingRiskState | undefined
 
 function normalizeRankingTechnicalState(value: unknown): RankingTechnicalState | undefined {
   return normalizeEnum(normalizeString(value), RANKING_TECHNICAL_STATE_VALUES);
+}
+
+function normalizeSectorScoreFamily(value: unknown): SectorScoreFamily | undefined {
+  return normalizeEnum(normalizeString(value), SECTOR_SCORE_FAMILY_VALUES);
 }
 
 function normalizeRankingSortField(value: unknown): RankingSortField | undefined {
@@ -489,6 +497,7 @@ export function getRankingStateFromSearch(search: RankingRouteSearch): {
     ['regimeState', search.rankingRegimeState ?? legacyRegimeState],
     ['riskState', search.rankingRiskState ?? legacyRiskState],
     ['technicalState', search.rankingTechnicalState],
+    ['sectorScoreFamily', search.rankingSectorScoreFamily],
     ['sortBy', search.rankingSortBy],
     ['order', search.rankingOrder],
     ['forwardEpsDisclosedWithinDays', search.rankingForwardEpsDisclosedWithinDays],
@@ -597,6 +606,7 @@ export function validateRankingSearch(search: Record<string, unknown>): RankingR
   assignIfDefined(next, 'rankingRegimeState', normalizeRankingRegimeState(search.rankingRegimeState));
   assignIfDefined(next, 'rankingRiskState', normalizeRankingRiskState(search.rankingRiskState));
   assignIfDefined(next, 'rankingTechnicalState', normalizeRankingTechnicalState(search.rankingTechnicalState));
+  assignIfDefined(next, 'rankingSectorScoreFamily', normalizeSectorScoreFamily(search.rankingSectorScoreFamily));
   assignIfDefined(next, 'rankingSortBy', normalizeRankingSortField(search.rankingSortBy));
   assignIfDefined(next, 'rankingOrder', normalizeRankingSortOrder(search.rankingOrder));
   assignIfDefined(
@@ -649,6 +659,12 @@ export function serializeRankingSearch(state: {
   assignIfDefined(next, 'rankingRegimeState', state.rankingParams.regimeState);
   assignIfDefined(next, 'rankingRiskState', state.rankingParams.riskState);
   assignIfDefined(next, 'rankingTechnicalState', state.rankingParams.technicalState);
+  assignIfDefinedAndNotDefault(
+    next,
+    'rankingSectorScoreFamily',
+    state.rankingParams.sectorScoreFamily,
+    DEFAULT_RANKING_PARAMS.sectorScoreFamily
+  );
   assignIfDefinedAndNotDefault(next, 'rankingSortBy', state.rankingParams.sortBy, DEFAULT_RANKING_PARAMS.sortBy);
   assignIfDefinedAndNotDefault(next, 'rankingOrder', state.rankingParams.order, DEFAULT_RANKING_PARAMS.order);
   assignIfDefinedAndNotDefault(

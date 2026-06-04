@@ -1,6 +1,6 @@
+import type { ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { ScreeningJobResponse } from '@trading25/contracts/types/api-response-types';
 import { SCREENING_STORE_STORAGE_KEY } from '@/lib/persistedState';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
@@ -30,6 +30,7 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
   lookbackDays: 1,
   periodDays: 250,
   technicalEventType: 'periodHigh',
+  sectorScoreFamily: 'current',
   sortBy: 'tradingValue',
   order: 'desc',
   forwardEpsDisclosedWithinDays: 0,

@@ -8716,6 +8716,15 @@
           },
           "rankings": {
             "$ref": "#/components/schemas/Rankings"
+          },
+          "sectorScoreFamily": {
+            "default": "current",
+            "enum": [
+              "current",
+              "long_hybrid_leadership"
+            ],
+            "title": "Sectorscorefamily",
+            "type": "string"
           }
         },
         "required": [
@@ -20468,6 +20477,22 @@
               "description": "Include TOPIX-33 sector strength score and bucket in ranking and index performance rows.",
               "title": "Includesectorstrength",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Sector score family used when includeSectorStrength is true. current keeps the Daily Ranking Sector Score; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
+            "in": "query",
+            "name": "sectorScoreFamily",
+            "required": false,
+            "schema": {
+              "default": "current",
+              "description": "Sector score family used when includeSectorStrength is true. current keeps the Daily Ranking Sector Score; long_hybrid_leadership uses long-side 120/252/504 session sector leadership.",
+              "enum": [
+                "current",
+                "long_hybrid_leadership"
+              ],
+              "title": "Sectorscorefamily",
+              "type": "string"
             }
           },
           {

@@ -13,6 +13,7 @@ export type { JobStatus };
 export type FundamentalRankingSource = 'revised' | 'fy';
 export type RankingRiskFlag = 'overheat' | 'stale_rally_fade';
 export type RankingTechnicalFlag = 'atr20_acceleration' | 'momentum_20_60_top20';
+export type SectorScoreFamily = 'current' | 'long_hybrid_leadership';
 export type RankingRegimeState =
   | 'neutral_rerating'
   | 'neutral_rerating_good'
@@ -124,6 +125,7 @@ export interface MarketRankingResponse {
   markets: string[];
   lookbackDays: number;
   periodDays: number;
+  sectorScoreFamily?: SectorScoreFamily;
   rankings: Rankings;
   indexPerformance: IndexPerformanceItem[];
   lastUpdated: string;
@@ -139,6 +141,7 @@ export interface MarketRankingParams {
   sector17Name?: string;
   includeValuation?: boolean;
   includeSectorStrength?: boolean;
+  sectorScoreFamily?: SectorScoreFamily;
   forwardEpsDisclosedWithinDays?: number;
   liquidityState?: RankingLiquidityState;
   regimeState?: RankingRegimeState;

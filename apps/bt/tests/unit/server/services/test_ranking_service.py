@@ -1769,6 +1769,7 @@ class TestGetRankings:
         )
         assert electric is not None
         assert transport is not None
+        assert result.sectorScoreFamily == "current"
         assert electric.sectorStrengthScore == pytest.approx(1.0)
         assert electric.sectorStrengthBucket == "sector_strong"
         assert electric.sector20dTopixExcessPct is not None
@@ -1788,6 +1789,110 @@ class TestGetRankings:
         assert electric_stock is not None
         assert electric_stock.sectorStrengthScore == pytest.approx(1.0)
         assert electric_stock.sectorStrengthBucket == "sector_strong"
+
+    def test_includes_long_hybrid_sector_leadership_for_sector33_index_performance(
+        self, ranking_db
+    ):
+        conn = duckdb.connect(ranking_db)
+        try:
+            conn.execute("DROP VIEW stock_master_daily")
+            conn.execute("""
+                CREATE TABLE stock_master_daily (
+                    date TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    company_name TEXT NOT NULL,
+                    market_code TEXT NOT NULL,
+                    sector_17_name TEXT,
+                    sector_33_name TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO index_master VALUES (?,?,?,?,?)",
+                ("004F", "東証業種別 電気機器", None, "sector33", "2022-01-01"),
+            )
+            conn.execute(
+                "INSERT INTO index_master VALUES (?,?,?,?,?)",
+                ("0050", "東証業種別 輸送用機器", None, "sector33", "2022-01-01"),
+            )
+            start = calendar_date(2022, 1, 1)
+            dates = [(start + timedelta(days=offset)).isoformat() for offset in range(505)]
+            for index, current_date in enumerate(dates):
+                topix_close = 100.0 + index
+                strong_close = 100.0 + index * 2.0
+                weak_close = 100.0 + index * 0.4
+                conn.execute(
+                    "INSERT OR REPLACE INTO topix_data VALUES (?,?,?,?,?,?)",
+                    (
+                        current_date,
+                        topix_close,
+                        topix_close,
+                        topix_close,
+                        topix_close,
+                        None,
+                    ),
+                )
+                for code, close in (("67580", strong_close), ("72030", weak_close)):
+                    conn.execute(
+                        "INSERT OR REPLACE INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+                        (
+                            code,
+                            current_date,
+                            close,
+                            close,
+                            close,
+                            close,
+                            1_000_000,
+                            1.0,
+                            None,
+                        ),
+                    )
+                conn.execute(
+                    "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
+                    (current_date, "67580", "ソニー", "prime", "電気", "電気機器"),
+                )
+                conn.execute(
+                    "INSERT INTO stock_master_daily VALUES (?,?,?,?,?,?)",
+                    (current_date, "72030", "トヨタ", "prime", "輸送", "輸送用機器"),
+                )
+                for code, close in (
+                    ("004F", 1000.0 + index * 3.0),
+                    ("0050", 1000.0 - index * 0.5),
+                ):
+                    conn.execute(
+                        "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
+                        (code, current_date, close, close, close, close, None, None),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        try:
+            result = RankingService(reader).get_rankings(
+                date=dates[-1],
+                lookback_days=3,
+                markets="prime",
+                include_sector_strength=True,
+                sector_score_family="long_hybrid_leadership",
+            )
+        finally:
+            reader.close()
+
+        electric = next(
+            (item for item in result.indexPerformance if item.code == "004F"), None
+        )
+        transport = next(
+            (item for item in result.indexPerformance if item.code == "0050"), None
+        )
+        assert result.sectorScoreFamily == "long_hybrid_leadership"
+        assert electric is not None
+        assert transport is not None
+        assert electric.sectorStrengthScore == pytest.approx(1.0)
+        assert electric.sectorStrengthBucket == "sector_strong"
+        assert electric.sector20dTopixExcessPct is None
+        assert electric.sectorStockCount == 1
+        assert transport.sectorStrengthScore == pytest.approx(0.0)
+        assert transport.sectorStrengthBucket == "sector_weak"
 
     def test_no_data_raises(self, tmp_path):
         """データなしDBの場合"""

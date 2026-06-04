@@ -43,6 +43,7 @@ RankingRiskStateFilter = RankingRiskFlag
 RankingStateFilter = LiquidityRegime | RankingRiskFlag
 RankingTechnicalStateFilter = RankingTechnicalFlag
 SectorStrengthBucket = Literal["sector_strong", "sector_neutral", "sector_weak"]
+SectorScoreFamily = Literal["current", "long_hybrid_leadership"]
 
 
 class RankingItem(BaseModel):
@@ -121,6 +122,7 @@ class MarketRankingResponse(BaseModel):
     markets: list[str]
     lookbackDays: int
     periodDays: int
+    sectorScoreFamily: SectorScoreFamily = "current"
     rankings: Rankings
     indexPerformance: list[IndexPerformanceItem] = Field(default_factory=list)
     lastUpdated: str

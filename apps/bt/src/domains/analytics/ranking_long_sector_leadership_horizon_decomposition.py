@@ -35,6 +35,11 @@ RANKING_LONG_SECTOR_LEADERSHIP_HORIZON_DECOMPOSITION_EXPERIMENT_ID = (
     "market-behavior/ranking-long-sector-leadership-horizon-decomposition"
 )
 DEFAULT_LEADERSHIP_WINDOWS: tuple[int, ...] = (120, 252, 504)
+SECTOR_SCORE_FAMILY_OPTIONS: tuple[str, ...] = (
+    "current",
+    "long_hybrid_leadership",
+    "both",
+)
 _FUTURE_TOP5_SECTORS: tuple[str, ...] = (
     "非鉄金属",
     "海運業",
@@ -61,12 +66,14 @@ class RankingLongSectorLeadershipHorizonDecompositionResult:
     analysis_end_date: str | None
     horizons: tuple[int, ...]
     leadership_windows: tuple[int, ...]
+    sector_score_family: str
     market_scopes: tuple[str, ...]
     min_observations: int
     severe_loss_threshold_pct: float
     observation_count: int
     coverage_diagnostics_df: pd.DataFrame
     annual_overlay_summary_df: pd.DataFrame
+    selected_sector_score_summary_df: pd.DataFrame
     bank_concentration_df: pd.DataFrame
     sector_contribution_df: pd.DataFrame
     leadership_horizon_df: pd.DataFrame
@@ -84,6 +91,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     end_date: str | None = None,
     horizons: Iterable[int] = DEFAULT_HORIZONS,
     leadership_windows: Iterable[int] = DEFAULT_LEADERSHIP_WINDOWS,
+    sector_score_family: str = "both",
     market_scopes: Sequence[str] = DEFAULT_MARKET_SCOPES,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     severe_loss_threshold_pct: float = DEFAULT_SEVERE_LOSS_THRESHOLD_PCT,
@@ -93,6 +101,7 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
     resolved_leadership_windows = tuple(
         sorted({int(window) for window in leadership_windows})
     )
+    resolved_sector_score_family = _normalize_sector_score_family(sector_score_family)
     resolved_market_scopes = _normalize_market_scopes(market_scopes)
     _validate_params(
         horizons=resolved_horizons,
@@ -155,12 +164,17 @@ def run_ranking_long_sector_leadership_horizon_decomposition_research(
             analysis_end_date=end_date,
             horizons=resolved_horizons,
             leadership_windows=resolved_leadership_windows,
+            sector_score_family=resolved_sector_score_family,
             market_scopes=resolved_market_scopes,
             min_observations=int(min_observations),
             severe_loss_threshold_pct=float(severe_loss_threshold_pct),
             observation_count=observation_count,
             coverage_diagnostics_df=_build_coverage_diagnostics_df(ctx.connection),
             annual_overlay_summary_df=annual_overlay_summary_df,
+            selected_sector_score_summary_df=_build_selected_sector_score_summary_df(
+                annual_overlay_summary_df,
+                sector_score_family=resolved_sector_score_family,
+            ),
             bank_concentration_df=_build_bank_concentration_df(
                 annual_overlay_summary_df
             ),
@@ -216,6 +230,7 @@ def write_ranking_long_sector_leadership_horizon_decomposition_bundle(
         params={
             "horizons": list(result.horizons),
             "leadership_windows": list(result.leadership_windows),
+            "sector_score_family": result.sector_score_family,
             "market_scopes": list(result.market_scopes),
             "min_observations": result.min_observations,
             "severe_loss_threshold_pct": result.severe_loss_threshold_pct,
@@ -232,6 +247,7 @@ def write_ranking_long_sector_leadership_horizon_decomposition_bundle(
         result_tables={
             "coverage_diagnostics_df": result.coverage_diagnostics_df,
             "annual_overlay_summary_df": result.annual_overlay_summary_df,
+            "selected_sector_score_summary_df": result.selected_sector_score_summary_df,
             "bank_concentration_df": result.bank_concentration_df,
             "sector_contribution_df": result.sector_contribution_df,
             "leadership_horizon_df": result.leadership_horizon_df,
@@ -264,6 +280,7 @@ def build_summary_markdown(
         f"- analysis_end_date: `{result.analysis_end_date}`",
         f"- horizons: `{', '.join(str(item) for item in result.horizons)}`",
         f"- leadership_windows: `{', '.join(str(item) for item in result.leadership_windows)}`",
+        f"- sector_score_family: `{result.sector_score_family}`",
         f"- market_scopes: `{', '.join(result.market_scopes)}`",
         f"- observation_count: `{result.observation_count}`",
         "",
@@ -274,6 +291,10 @@ def build_summary_markdown(
         "## Annual Overlay Summary",
         "",
         _top_rows_for_markdown(result.annual_overlay_summary_df, limit=320),
+        "",
+        "## Selected Sector Score Summary",
+        "",
+        _top_rows_for_markdown(result.selected_sector_score_summary_df, limit=160),
         "",
         "## Bank Concentration",
         "",
@@ -1398,6 +1419,32 @@ def _validate_params(
         raise ValueError("severe_loss_threshold_pct must be negative")
     if int(observation_sample_limit) < 0:
         raise ValueError("observation_sample_limit must be >= 0")
+
+
+def _normalize_sector_score_family(value: str) -> str:
+    normalized = str(value).strip()
+    if normalized not in SECTOR_SCORE_FAMILY_OPTIONS:
+        supported = ", ".join(SECTOR_SCORE_FAMILY_OPTIONS)
+        raise ValueError(f"sector_score_family must be one of: {supported}")
+    return normalized
+
+
+def _build_selected_sector_score_summary_df(
+    annual_overlay_summary_df: pd.DataFrame,
+    *,
+    sector_score_family: str,
+) -> pd.DataFrame:
+    if annual_overlay_summary_df.empty:
+        return annual_overlay_summary_df.copy()
+    if sector_score_family == "both":
+        selected_signals = {"current_sector_strong", "long_hybrid_leadership_strong"}
+    elif sector_score_family == "current":
+        selected_signals = {"current_sector_strong"}
+    else:
+        selected_signals = {"long_hybrid_leadership_strong"}
+    return annual_overlay_summary_df[
+        annual_overlay_summary_df["overlay_signal"].isin(selected_signals)
+    ].reset_index(drop=True)
 
 
 def _concat_sorted(frames: Sequence[pd.DataFrame], *, columns: Sequence[str]) -> pd.DataFrame:

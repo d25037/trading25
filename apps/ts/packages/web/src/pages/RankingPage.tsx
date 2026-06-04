@@ -16,9 +16,11 @@ import {
   RankingFilters,
   RankingTable,
   type RankingTableSortState,
+  SECTOR_SCORE_FAMILY_OPTIONS,
   TechnicalEventFilters,
 } from '@/components/Ranking';
 import { DateInput, NumberSelect } from '@/components/shared/filters';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMarketBubbleFootprint } from '@/hooks/useMarketBubbleFootprint';
 import { useRankingRouteState } from '@/hooks/usePageRouteState';
 import { useRanking } from '@/hooks/useRanking';
@@ -72,12 +74,21 @@ function buildRankingQueryParams(activeDailyView: RankingDailyView, rankingParam
     limit: resolveRankingLimit(activeDailyView, rankingParams),
     includeValuation: activeDailyView !== 'indices',
     includeSectorStrength: activeDailyView !== 'technicalEvents',
+    sectorScoreFamily:
+      activeDailyView !== 'technicalEvents' ? (rankingParams.sectorScoreFamily ?? 'current') : undefined,
     forwardEpsDisclosedWithinDays: isStocksView ? (rankingParams.forwardEpsDisclosedWithinDays ?? 0) : 0,
     liquidityState: isStocksView ? rankingParams.liquidityState : undefined,
     regimeState: isStocksView ? rankingParams.regimeState : undefined,
     riskState: isStocksView ? rankingParams.riskState : undefined,
     technicalState: isStocksView ? rankingParams.technicalState : undefined,
   };
+}
+
+function sectorScoreDescription(sectorScoreFamily: RankingParams['sectorScoreFamily']): string {
+  if (sectorScoreFamily === 'long_hybrid_leadership') {
+    return 'Score: 120D/252D/504D index leadership + constituent/breadth leadership。';
+  }
+  return 'Score: 20D/60D TOPIX超過 + 20D breadth。';
 }
 
 function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerformanceSidebarProps) {
@@ -107,6 +118,26 @@ function IndexPerformanceSidebar({ rankingParams, setRankingParams }: IndexPerfo
           onChange={(date) => updateParam('date', date)}
           id="index-performance-date"
         />
+        <div className="space-y-2">
+          <label className="text-xs font-medium" htmlFor="index-performance-sector-score-family">
+            Sector Selector
+          </label>
+          <Select
+            value={rankingParams.sectorScoreFamily ?? 'current'}
+            onValueChange={(value) => updateParam('sectorScoreFamily', value as RankingParams['sectorScoreFamily'])}
+          >
+            <SelectTrigger id="index-performance-sector-score-family" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTOR_SCORE_FAMILY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <p className="text-xs text-muted-foreground">
           Index performance compares each latest close with the selected trading sessions earlier.
         </p>
@@ -183,7 +214,9 @@ function RankingContent({
         onIndexClick={onIndexClick}
         lookbackDays={rankingParams.lookbackDays}
         title="33業種指数"
-        description={`Score: 20D/60D TOPIX超過 + 20D breadth。騰落率基準: ${rankingParams.lookbackDays ?? 5}営業日前`}
+        description={`${sectorScoreDescription(rankingParams.sectorScoreFamily)} Index return: ${
+          rankingParams.lookbackDays ?? 5
+        }営業日前`}
         emptyMessage="No 33-sector index performance data available"
         emptySubMessage="Run index sync or choose a date with sector index coverage"
       />
