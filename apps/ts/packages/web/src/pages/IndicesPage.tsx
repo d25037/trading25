@@ -512,7 +512,7 @@ interface SectorStocksListProps {
 
 function SectorStocksList({ sectorName, sectorType, onStockClick, panelMinHeight }: SectorStocksListProps) {
   const [lookbackDays, setLookbackDays] = useState(5);
-  const [markets, setMarkets] = useState('prime,standard,growth');
+  const [markets, setMarkets] = useState('prime');
   const resolvedPanelMinHeight = panelMinHeight ? Math.max(panelMinHeight, SECTOR_TABLE_MIN_HEIGHT) : 480;
   const panelStyle: CSSProperties = panelMinHeight
     ? {

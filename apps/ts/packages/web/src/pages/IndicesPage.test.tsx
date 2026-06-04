@@ -228,6 +228,30 @@ beforeEach(() => {
 });
 
 describe('IndicesPage', () => {
+  it('uses Prime as the default sector stock market filter', () => {
+    selectedIndexCode = '1305';
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockReturnValue({
+      data: makeSectorIndexData(),
+      isLoading: false,
+      error: null,
+    });
+
+    render(<IndicesPage />);
+
+    expect(mockUseRanking).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sector33Name: 'TOPIX-33 Energy',
+        markets: 'prime',
+      }),
+      true
+    );
+  });
+
   it('renders sector index chart and updates symbol on stock click', async () => {
     const user = userEvent.setup();
     selectedIndexCode = '1305';
@@ -621,7 +645,7 @@ describe('IndicesPage', () => {
     let latestCall = mockUseRanking.mock.calls.at(-1);
     expect(latestCall?.[0]).toMatchObject({
       sector33Name: 'TOPIX-33 Energy',
-      markets: 'prime,standard,growth',
+      markets: 'prime',
       includeValuation: true,
       limit: 0,
     });
@@ -630,7 +654,7 @@ describe('IndicesPage', () => {
     latestCall = mockUseRanking.mock.calls.at(-1);
     expect(latestCall?.[0]).toMatchObject({
       sector33Name: 'TOPIX-33 Energy',
-      markets: 'prime,standard,growth',
+      markets: 'prime',
       includeValuation: true,
       limit: 0,
     });
