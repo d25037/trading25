@@ -94,6 +94,32 @@ relatedExperiments = [
   "market-behavior/topix100-sma-ratio-regime-conditioning",
 ]
 
+[experiments."market-behavior/ranking-core-sector-neutral-value-regime-breakdown"]
+family = "Ranking"
+status = "observed"
+decision = "Prime/TSE1 SoT の年次factor breakdownを、同日・同市場・同33業種内 PBR/Fwd PER percentile による sector-neutral value 定義で再実行した。目的は、銀行業に依存していた Momentum Value + Sector Score: Strong のreturnを他セクターで置換できるかを検証すること。2022-2026では sector-neutral化で銀行比率は下がるが、20Dのraw Momentum Value + Sector Score: Strongに劣後し、ex Banksでも安定して勝てない。2016-2021の20Dでは改善余地があるため、sector-neutral valueは捨てず、sector cap / sector-balanced portfolio lensで次に再検証する。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "breadth-regime", "nt-regime", "bank-concentration", "sector-neutral-definition", "partial-year-2026", "daily-forward-return"]
+relatedExperiments = [
+  "market-behavior/ranking-core-factor-regime-breakdown",
+  "market-behavior/ranking-core-sector-relative-value-evidence",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/annual-sector-relative-value-composite",
+]
+
+[experiments."market-behavior/ranking-long-sector-leadership-horizon-decomposition"]
+family = "Ranking"
+status = "observed"
+decision = "Long側の Momentum Value + Sector Score: Strong を、現行 Sector Score と PIT 長期sector leadership（120/252/504D の sector index / constituent breadth）で比較した。2022-2026 の ex Banks では Long Hybrid Leadership が現行 Sector Score: Strong を 20D/60D ともに上回り、all sectors でも20Dは概ね同等・60Dは改善する。一方 short側は現行 Sector Score: Weak が機能しているため置換しない。productionでは完全置換ではなく Current Sector Score / Long Sector Leadership を選択可能にし、sector cap / sector-balanced portfolio lens の次回検証へ進める。"
+promotedSurface = "Research"
+riskFlags = ["ui-evidence-layer", "prime-only-judgment", "not-standalone-alpha", "factor-regime", "sector-regime", "bank-concentration", "sector-concentration", "partial-year-2026", "daily-forward-return", "portfolio-lens-needed", "score-family-selection"]
+relatedExperiments = [
+  "market-behavior/ranking-core-factor-regime-breakdown",
+  "market-behavior/ranking-core-sector-neutral-value-regime-breakdown",
+  "market-behavior/ranking-sector-strength-evidence",
+  "market-behavior/ranking-core-sector-relative-value-evidence",
+]
+
 [experiments."market-behavior/ranking-short-red-evidence"]
 family = "Ranking"
 status = "candidate"

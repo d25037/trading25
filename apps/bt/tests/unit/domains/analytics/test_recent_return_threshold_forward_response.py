@@ -9,6 +9,7 @@ import pytest
 
 from src.domains.analytics.recent_return_threshold_forward_response import (
     RecentReturnThresholdForwardResponseResult,
+    _market_master_cte,
     build_summary_markdown,
     run_recent_return_threshold_forward_response_research,
     write_recent_return_threshold_forward_response_bundle,
@@ -72,6 +73,46 @@ def test_recent_return_threshold_forward_response_emits_tables(tmp_path: Path) -
         "median_recent_return_60d_pct",
         "median_recent_return_long_pct",
     }.issubset(result.long_trend_quadrant_response_df.columns)
+
+
+def test_market_master_cte_maps_historical_tse1_to_prime() -> None:
+    conn = duckdb.connect(":memory:")
+    conn.execute(
+        """
+        CREATE TABLE stock_master_daily (
+            date TEXT,
+            code TEXT,
+            company_name TEXT,
+            market_code TEXT,
+            market_name TEXT,
+            scale_category TEXT
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO stock_master_daily VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("2021-12-30", "1000", "Historical Prime", "0101", "東証一部", None),
+            ("2024-01-04", "1001", "Current Prime", "0111", "プライム", None),
+        ],
+    )
+
+    query = f"""
+    WITH {_market_master_cte(
+        market_source="stock_master_daily_exact_date",
+        master_code="smd.code",
+    )}
+    SELECT date, code, market, market_code
+    FROM market_master
+    ORDER BY date, code
+    """
+
+    rows = conn.execute(query).fetchall()
+
+    assert rows == [
+        ("2021-12-30", "1000", "prime", "0101"),
+        ("2024-01-04", "1001", "prime", "0111"),
+    ]
 
 
 def test_recent_return_threshold_forward_response_writes_bundle(tmp_path: Path) -> None:
