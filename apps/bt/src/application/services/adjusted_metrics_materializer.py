@@ -79,12 +79,13 @@ class AdjustedMetricsMaterializer:
             for row in statement_rows
         ]
         adjusted_payload = [_statement_metric_to_row(metric) for metric in adjusted_metrics]
-        changed_start_date = (
-            self._earliest_changed_statement_metric_date(adjusted_payload, basis_version, codes)
+        changed_start_dates_by_code = (
+            self._changed_statement_metric_start_dates(adjusted_payload, basis_version, codes)
             if reuse_existing_basis
-            else None
+            else {}
         )
-        if reuse_existing_basis and changed_start_date is None:
+        changed_start_date = min(changed_start_dates_by_code.values()) if changed_start_dates_by_code else None
+        if reuse_existing_basis and not changed_start_dates_by_code:
             stored_statement_rows = self._statement_metrics_count(basis_version, codes)
         else:
             stored_statement_rows = self._market_db.upsert_statement_metrics_adjusted(
@@ -93,24 +94,35 @@ class AdjustedMetricsMaterializer:
 
         stored_daily_rows = 0
         if adjusted_metrics and self._market_db._table_exists("stock_data"):
-            existing_daily_max_date = (
-                self._latest_daily_valuation_date(basis_version, codes)
-                if reuse_existing_basis
-                else None
-            )
-            start_date = changed_start_date
-            start_date_inclusive = True
-            if start_date is None and existing_daily_max_date is not None:
-                start_date = existing_daily_max_date
-                start_date_inclusive = False
-            stored_daily_rows = self._market_db.upsert_daily_valuation_from_adjusted_metrics(
-                basis_version=basis_version,
-                price_basis_date=price_basis_date,
-                codes=codes,
-                start_date=start_date,
-                start_date_inclusive=start_date_inclusive,
-                replace_existing=not reuse_existing_basis,
-            )
+            if reuse_existing_basis and codes is None and changed_start_dates_by_code:
+                for code, start_date in sorted(changed_start_dates_by_code.items()):
+                    stored_daily_rows += self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                        basis_version=basis_version,
+                        price_basis_date=price_basis_date,
+                        codes=[code],
+                        start_date=start_date,
+                        start_date_inclusive=True,
+                        replace_existing=False,
+                    )
+            else:
+                existing_daily_max_date = (
+                    self._latest_daily_valuation_date(basis_version, codes)
+                    if reuse_existing_basis
+                    else None
+                )
+                start_date = changed_start_date
+                start_date_inclusive = True
+                if start_date is None and existing_daily_max_date is not None:
+                    start_date = existing_daily_max_date
+                    start_date_inclusive = False
+                stored_daily_rows = self._market_db.upsert_daily_valuation_from_adjusted_metrics(
+                    basis_version=basis_version,
+                    price_basis_date=price_basis_date,
+                    codes=codes,
+                    start_date=start_date,
+                    start_date_inclusive=start_date_inclusive,
+                    replace_existing=not reuse_existing_basis,
+                )
         self._market_db.prune_adjusted_metric_basis_versions(
             basis_version=basis_version,
             codes=codes,
@@ -220,10 +232,23 @@ class AdjustedMetricsMaterializer:
         basis_version: str,
         codes: list[str] | None,
     ) -> str | None:
+        changed_dates_by_code = self._changed_statement_metric_start_dates(
+            adjusted_payload,
+            basis_version,
+            codes,
+        )
+        return min(changed_dates_by_code.values()) if changed_dates_by_code else None
+
+    def _changed_statement_metric_start_dates(
+        self,
+        adjusted_payload: list[dict[str, Any]],
+        basis_version: str,
+        codes: list[str] | None,
+    ) -> dict[str, str]:
         if not adjusted_payload or not self._market_db._table_exists(
             "statement_metrics_adjusted"
         ):
-            return None
+            return {}
         code_where, params = _code_filter("code", codes, prefix="AND")
         existing_rows = self._market_db._fetchall_dicts(
             f"""
@@ -238,12 +263,16 @@ class AdjustedMetricsMaterializer:
             _statement_metric_key(row): row
             for row in existing_rows
         }
-        changed_dates = [
-            str(row["disclosed_date"])
-            for row in adjusted_payload
-            if self._statement_metric_changed(row, existing_by_key)
-        ]
-        return min(changed_dates) if changed_dates else None
+        changed_dates_by_code: dict[str, str] = {}
+        for row in adjusted_payload:
+            if not self._statement_metric_changed(row, existing_by_key):
+                continue
+            code = normalize_stock_code(str(row["code"]))
+            disclosed_date = str(row["disclosed_date"])
+            current = changed_dates_by_code.get(code)
+            if current is None or disclosed_date < current:
+                changed_dates_by_code[code] = disclosed_date
+        return changed_dates_by_code
 
     @staticmethod
     def _statement_metric_changed(

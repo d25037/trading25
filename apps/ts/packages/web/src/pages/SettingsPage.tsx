@@ -57,7 +57,7 @@ import {
   SnapshotStatus,
   sumRepairTargets,
 } from './SettingsMarketDbPanels';
-import { resolveSnapshotObservedAt } from './SettingsMarketDbSnapshot';
+import { buildStorageHelpText, resolveSnapshotObservedAt } from './SettingsMarketDbSnapshot';
 
 const RESET_CONFIRMATION_TOKEN = 'RESET';
 
@@ -752,7 +752,7 @@ function MarketDbHero({
             label="Storage"
             value={formatBytes(storageTotalBytes)}
             tone="neutral"
-            detail={`DuckDB ${formatBytes(dbStats?.storage?.duckdbBytes ?? dbStats?.databaseSize ?? 0)} / Parquet ${formatBytes(dbStats?.storage?.parquetBytes ?? 0)}`}
+            detail={dbStats ? buildStorageHelpText(dbStats) : 'DuckDB and Parquet footprint'}
           />
           <CompactMetric
             label="Active Job"

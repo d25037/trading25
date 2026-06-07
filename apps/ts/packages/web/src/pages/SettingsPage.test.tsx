@@ -45,6 +45,20 @@ const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
 const mockUseRefreshStocks = vi.fn();
 
+const baseStorageStats = {
+  duckdbBlocksFree: 1,
+  duckdbBlocksTotal: 4,
+  duckdbBlocksUsed: 3,
+  duckdbBytes: 4096,
+  duckdbBytesFree: 1024,
+  duckdbWalBytes: 256,
+  parquetBytes: 8192,
+  staleArtifactCount: 0,
+  tempBytes: 128,
+  tempDirectory: '/tmp/trading25-duckdb',
+  totalBytes: 12672,
+};
+
 vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
   useStartAdjustedMetricsMaterialize: () => mockStartMaterializeState,
@@ -123,11 +137,7 @@ beforeEach(() => {
       lastSync: '2026-02-28T02:29:45.768793+00:00',
       timeSeriesSource: 'duckdb-parquet',
       databaseSize: 4096,
-      storage: {
-        duckdbBytes: 4096,
-        parquetBytes: 8192,
-        totalBytes: 12288,
-      },
+      storage: baseStorageStats,
       topix: {
         count: 2450,
         dateRange: { min: '2016-02-29', max: '2026-02-27' },
@@ -513,11 +523,7 @@ describe('SettingsPage', () => {
         lastSync: '2026-02-28T02:29:45.768793+00:00',
         timeSeriesSource: 'duckdb-parquet',
         databaseSize: 4096,
-        storage: {
-          duckdbBytes: 4096,
-          parquetBytes: 8192,
-          totalBytes: 12288,
-        },
+        storage: baseStorageStats,
         topix: {
           count: 2450,
           dateRange: { min: '2016-02-29', max: '2026-02-27' },
@@ -665,11 +671,7 @@ describe('SettingsPage', () => {
         lastSync: '2026-04-27T08:52:22.770995+00:00',
         timeSeriesSource: 'duckdb-parquet',
         databaseSize: 4096,
-        storage: {
-          duckdbBytes: 4096,
-          parquetBytes: 8192,
-          totalBytes: 12288,
-        },
+        storage: baseStorageStats,
         topix: {
           count: 2464,
           dateRange: { min: '2016-03-25', max: '2026-04-27' },
@@ -876,11 +878,7 @@ describe('SettingsPage', () => {
         lastSync: '2026-03-18T02:29:45.768793+00:00',
         timeSeriesSource: 'duckdb-parquet',
         databaseSize: 4096,
-        storage: {
-          duckdbBytes: 4096,
-          parquetBytes: 8192,
-          totalBytes: 12288,
-        },
+        storage: baseStorageStats,
         topix: {
           count: 2455,
           dateRange: { min: '2016-02-29', max: '2026-03-18' },

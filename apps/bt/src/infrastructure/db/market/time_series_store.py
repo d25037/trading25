@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from time import perf_counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock
@@ -10,6 +11,12 @@ from typing import Any, Callable, Protocol, cast
 
 import pandas as pd
 from loguru import logger
+
+from src.infrastructure.db.market.duckdb_connection import (
+    connect_market_duckdb,
+    parse_duckdb_size_bytes,
+    resolve_directory_size,
+)
 
 
 class MarketTimeSeriesStore(Protocol):  # pragma: no cover
@@ -108,6 +115,13 @@ class TimeSeriesInspection:
 class TimeSeriesStorageStats:
     duckdb_bytes: int = 0
     parquet_bytes: int = 0
+    duckdb_blocks_total: int = 0
+    duckdb_blocks_used: int = 0
+    duckdb_blocks_free: int = 0
+    duckdb_bytes_free: int = 0
+    duckdb_wal_bytes: int = 0
+    temp_directory: str | None = None
+    temp_bytes: int = 0
     stale_artifact_count: int = 0
     stale_artifacts: list[str] = field(default_factory=list)
 
@@ -262,6 +276,13 @@ class DuckDbParquetTimeSeriesStore:
             "statements", "statements.parquet", "disclosed_date, code"
         ),
     }
+    _DATE_PARTITIONED_TABLES = frozenset(
+        {
+            "stock_data_raw",
+            "stock_data",
+            "options_225_data",
+        }
+    )
 
     _STATEMENT_UPDATABLE_COLUMNS = (
         "earnings_per_share",
@@ -331,6 +352,7 @@ class DuckDbParquetTimeSeriesStore:
     _STOCK_PROJECTION_TARGET_KEYS_RELATION = "__tmp_stock_projection_target_keys"
     _STOCK_PROJECTION_TARGET_CODES_RELATION = "__tmp_stock_projection_target_codes"
     _STOCK_DIRECT_PROJECTION_RELATION = "__tmp_stock_direct_projection_rows"
+    _STOCK_DATA_STAGE_TABLE = "__tmp_stock_data_stage"
 
     def __init__(
         self,
@@ -347,18 +369,22 @@ class DuckDbParquetTimeSeriesStore:
             self._parquet_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            duckdb = __import__("duckdb")
+            self._conn = cast(
+                Any,
+                connect_market_duckdb(self._duckdb_path, read_only=read_only),
+            )
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "DuckDB backend requested but `duckdb` package is not installed. "
                 "Install duckdb and retry."
             ) from exc
 
-        self._conn = cast(Any, duckdb).connect(str(self._duckdb_path), read_only=read_only)
         # app state で共有されるため、sync 書き込みと stats/validate 読み取りを直列化する。
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
         self._dirty_stock_minute_dates: set[str] = set()
+        self._dirty_partition_dates: dict[str, set[str]] = {}
+        self._dirty_partition_all_tables: set[str] = set()
         self._stock_projection_full_rebuild_codes: set[str] = set()
         if not read_only:
             self._ensure_schema()
@@ -651,6 +677,100 @@ class DuckDbParquetTimeSeriesStore:
 
         return published
 
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
+        self._assert_writable()
+        if not rows:
+            return 0
+        dataframe = pd.DataFrame.from_records(
+            [
+                {column: row.get(column) for column in self._STOCK_DATA_RAW_UPSERT_SPEC.columns}
+                for row in rows
+            ],
+            columns=self._STOCK_DATA_RAW_UPSERT_SPEC.columns,
+        )
+        with self._lock:
+            self._ensure_stock_data_stage_table()
+            self._conn.register(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name, dataframe)
+            try:
+                columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
+                self._conn.execute(
+                    f"""
+                    INSERT INTO {self._STOCK_DATA_STAGE_TABLE} ({columns_sql})
+                    SELECT {columns_sql}
+                    FROM {self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name}
+                    """
+                )
+            finally:
+                self._conn.unregister(self._STOCK_DATA_RAW_UPSERT_SPEC.relation_name)
+        return len(rows)
+
+    def flush_staged_stock_data(self) -> int:
+        self._assert_writable()
+        with self._lock:
+            self._ensure_stock_data_stage_table()
+            count_row = self._conn.execute(
+                f"SELECT COUNT(*) FROM {self._STOCK_DATA_STAGE_TABLE}"
+            ).fetchone()
+            staged_count = int(count_row[0] or 0) if count_row else 0
+            if staged_count <= 0:
+                return 0
+            key_rows = [
+                {"code": str(row[0]), "date": str(row[1]), "adjustment_factor": row[2]}
+                for row in self._conn.execute(
+                    f"""
+                    SELECT DISTINCT code, date, adjustment_factor
+                    FROM {self._STOCK_DATA_STAGE_TABLE}
+                    WHERE code IS NOT NULL
+                      AND date IS NOT NULL
+                    """
+                ).fetchall()
+            ]
+            columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
+            conflict_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.conflict_columns)
+            update_clause = self._build_upsert_update_clause(
+                self._STOCK_DATA_RAW_UPSERT_SPEC
+            )
+            self._conn.execute(
+                f"""
+                INSERT INTO stock_data_raw ({columns_sql})
+                SELECT {columns_sql}
+                FROM {self._STOCK_DATA_STAGE_TABLE}
+                ON CONFLICT ({conflict_sql}) DO UPDATE
+                SET {update_clause}
+                """
+            )
+            self._conn.execute(f"DELETE FROM {self._STOCK_DATA_STAGE_TABLE}")
+            self._dirty_tables.add("stock_data_raw")
+            self._mark_partition_dates_dirty("stock_data_raw", key_rows)
+
+        rebuild_codes = {
+            str(row.get("code"))
+            for row in key_rows
+            if row.get("code")
+            and self._requires_full_stock_reprojection(row.get("adjustment_factor"))
+        }
+        self._stock_projection_full_rebuild_codes.update(rebuild_codes)
+        point_projection_rows = [
+            row
+            for row in key_rows
+            if row.get("code")
+            and str(row.get("code")) not in self._stock_projection_full_rebuild_codes
+        ]
+        if point_projection_rows:
+            self._project_stock_rows(point_projection_rows)
+        return staged_count
+
+    def _ensure_stock_data_stage_table(self) -> None:
+        columns_sql = ", ".join(self._STOCK_DATA_RAW_UPSERT_SPEC.columns)
+        self._conn.execute(
+            f"""
+            CREATE TEMP TABLE IF NOT EXISTS {self._STOCK_DATA_STAGE_TABLE} AS
+            SELECT {columns_sql}
+            FROM stock_data_raw
+            WHERE 1 = 0
+            """
+        )
+
     def publish_stock_minute_data(self, rows: list[dict[str, Any]]) -> int:
         self._assert_writable()
         published = self._publish_rows_with_upsert_spec(
@@ -696,6 +816,7 @@ class DuckDbParquetTimeSeriesStore:
                 values,
             )
             self._dirty_tables.add("stock_data_raw")
+            self._mark_partition_dates_dirty("stock_data_raw", rows)
         return len(rows)
 
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
@@ -1070,8 +1191,13 @@ class DuckDbParquetTimeSeriesStore:
             if table_name == "stock_data_minute_raw":
                 self._export_stock_minute_partitions()
                 return
+            if table_name in self._DATE_PARTITIONED_TABLES:
+                self._export_date_partitions(table_name)
+                return
             spec = self._TABLE_SPECS[table_name]
             output_path = self._parquet_dir / spec.parquet_name
+            started_at = perf_counter()
+            row_count = self._count_table_rows(spec.table_name)
             tmp_output_path = output_path.with_name(f"{output_path.name}.tmp")
             if tmp_output_path.exists():
                 tmp_output_path.unlink()
@@ -1094,6 +1220,117 @@ class DuckDbParquetTimeSeriesStore:
             elif output_path.exists():
                 output_path.unlink()
             self._dirty_tables.discard(table_name)
+            elapsed_ms = (perf_counter() - started_at) * 1000
+            logger.info(
+                "market store phase timing",
+                event="market_store_phase_timing",
+                operation="parquet_export",
+                table=table_name,
+                rows=row_count,
+                elapsedMs=elapsed_ms,
+                outputBytes=self._resolve_path_size(output_path),
+            )
+
+    def _mark_partition_dates_dirty(
+        self,
+        table_name: str,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        if table_name not in self._DATE_PARTITIONED_TABLES:
+            return
+        dates = {
+            str(row.get("date"))
+            for row in rows
+            if row.get("date") is not None
+        }
+        if not dates:
+            return
+        dirty_dates = getattr(self, "_dirty_partition_dates", None)
+        if dirty_dates is None:
+            self._dirty_partition_dates = {}
+            dirty_dates = self._dirty_partition_dates
+        dirty_dates.setdefault(table_name, set()).update(dates)
+
+    def _mark_all_partitions_dirty(self, table_name: str) -> None:
+        if table_name not in self._DATE_PARTITIONED_TABLES:
+            return
+        dirty_all = getattr(self, "_dirty_partition_all_tables", None)
+        if dirty_all is None:
+            self._dirty_partition_all_tables = set()
+            dirty_all = self._dirty_partition_all_tables
+        dirty_all.add(table_name)
+
+    def _export_date_partitions(self, table_name: str) -> None:
+        started_at = perf_counter()
+        output_root = self._parquet_dir / table_name
+        output_root.mkdir(parents=True, exist_ok=True)
+        flat_output = self._parquet_dir / self._TABLE_SPECS[table_name].parquet_name
+        if flat_output.exists():
+            flat_output.unlink()
+        tmp_flat_output = flat_output.with_name(f"{flat_output.name}.tmp")
+        if tmp_flat_output.exists():
+            tmp_flat_output.unlink()
+
+        dirty_dates = getattr(self, "_dirty_partition_dates", {}).get(table_name, set())
+        dirty_all = table_name in getattr(self, "_dirty_partition_all_tables", set())
+        target_dates = (
+            self._load_existing_dates(table_name)
+            if dirty_all or not dirty_dates
+            else sorted(dirty_dates)
+        )
+        exported_rows = 0
+        for date_value in target_dates:
+            partition_dir = output_root / f"date={date_value}"
+            shutil.rmtree(partition_dir, ignore_errors=True)
+            count_row = self._conn.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE date = ?",
+                [date_value],
+            ).fetchone()
+            row_count = int(count_row[0] or 0) if count_row else 0
+            if row_count <= 0:
+                continue
+            partition_dir.mkdir(parents=True, exist_ok=True)
+            output_path = partition_dir / "data.parquet"
+            escaped_path = str(output_path).replace("'", "''")
+            self._conn.execute(
+                f"""
+                COPY (
+                    SELECT *
+                    FROM {table_name}
+                    WHERE date = ?
+                ) TO '{escaped_path}' (FORMAT PARQUET)
+                """,
+                [date_value],
+            )
+            exported_rows += row_count
+
+        self._dirty_partition_dates.get(table_name, set()).clear()
+        self._dirty_partition_all_tables.discard(table_name)
+        self._dirty_tables.discard(table_name)
+        elapsed_ms = (perf_counter() - started_at) * 1000
+        logger.info(
+            "market store phase timing",
+            event="market_store_phase_timing",
+            operation="parquet_partition_export",
+            table=table_name,
+            rows=exported_rows,
+            partitions=len(target_dates),
+            elapsedMs=elapsed_ms,
+            outputBytes=resolve_directory_size(output_root),
+        )
+
+    def _count_table_rows(self, table_name: str) -> int:
+        try:
+            row = self._conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+            return int(row[0] or 0) if row else 0
+        except Exception:
+            return 0
+
+    def _load_existing_dates(self, table_name: str) -> list[str]:
+        rows = self._conn.execute(
+            f"SELECT DISTINCT date FROM {table_name} ORDER BY date"
+        ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0] is not None]
 
     def _export_stock_minute_partitions(self) -> None:
         output_root = self._parquet_dir / "stock_data_minute_raw"
@@ -1244,6 +1481,7 @@ class DuckDbParquetTimeSeriesStore:
             finally:
                 self._conn.unregister(self._STOCK_DIRECT_PROJECTION_RELATION)
             self._dirty_tables.add("stock_data")
+            self._mark_partition_dates_dirty("stock_data", rows)
 
     def _stock_projection_sql(
         self,
@@ -1379,6 +1617,7 @@ class DuckDbParquetTimeSeriesStore:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_KEYS_RELATION)
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
             self._dirty_tables.add("stock_data")
+            self._mark_partition_dates_dirty("stock_data", rows)
 
     def _reproject_pending_stock_codes(self) -> None:
         codes = sorted(self._stock_projection_full_rebuild_codes)
@@ -1422,6 +1661,7 @@ class DuckDbParquetTimeSeriesStore:
             finally:
                 self._conn.unregister(self._STOCK_PROJECTION_TARGET_CODES_RELATION)
             self._dirty_tables.add("stock_data")
+            self._mark_all_partitions_dirty("stock_data")
             self._stock_projection_full_rebuild_codes.clear()
 
     @staticmethod
@@ -1488,6 +1728,7 @@ class DuckDbParquetTimeSeriesStore:
         with self._lock:
             self._conn.executemany(self._build_executemany_upsert_sql(spec), values)
             self._dirty_tables.add(spec.table_name)
+            self._mark_partition_dates_dirty(spec.table_name, rows)
         return len(rows)
 
     def _publish_rows_via_relation(
@@ -1507,14 +1748,23 @@ class DuckDbParquetTimeSeriesStore:
             finally:
                 self._conn.unregister(spec.relation_name)
             self._dirty_tables.add(spec.table_name)
+            self._mark_partition_dates_dirty(spec.table_name, rows)
         return len(rows)
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
         with self._lock:
             stale_artifact_count, stale_artifacts = self._resolve_stale_storage_artifacts()
+            database_size = self._resolve_duckdb_database_size()
             return TimeSeriesStorageStats(
                 duckdb_bytes=self._resolve_path_size(self._duckdb_path),
                 parquet_bytes=self._resolve_parquet_dir_size(),
+                duckdb_blocks_total=database_size["total_blocks"],
+                duckdb_blocks_used=database_size["used_blocks"],
+                duckdb_blocks_free=database_size["free_blocks"],
+                duckdb_bytes_free=database_size["free_bytes"],
+                duckdb_wal_bytes=database_size["wal_bytes"],
+                temp_directory=database_size["temp_directory"],
+                temp_bytes=database_size["temp_bytes"],
                 stale_artifact_count=stale_artifact_count,
                 stale_artifacts=stale_artifacts,
             )
@@ -1538,6 +1788,46 @@ class DuckDbParquetTimeSeriesStore:
             return total
         except OSError:
             return 0
+
+    def _resolve_duckdb_database_size(self) -> dict[str, Any]:
+        defaults: dict[str, Any] = {
+            "total_blocks": 0,
+            "used_blocks": 0,
+            "free_blocks": 0,
+            "free_bytes": 0,
+            "wal_bytes": 0,
+            "temp_directory": None,
+            "temp_bytes": 0,
+        }
+        try:
+            row = self._conn.execute("PRAGMA database_size").fetchone()
+            if row is None:
+                return defaults
+            columns = [str(item[0]) for item in self._conn.description or []]
+            values = dict(zip(columns, row, strict=False))
+            block_size = int(values.get("block_size") or 0)
+            free_blocks = int(values.get("free_blocks") or 0)
+            temp_directory_row = self._conn.execute(
+                "SELECT current_setting('temp_directory')"
+            ).fetchone()
+            temp_directory = (
+                str(temp_directory_row[0])
+                if temp_directory_row and temp_directory_row[0] is not None
+                else None
+            )
+            return {
+                "total_blocks": int(values.get("total_blocks") or 0),
+                "used_blocks": int(values.get("used_blocks") or 0),
+                "free_blocks": free_blocks,
+                "free_bytes": free_blocks * block_size,
+                "wal_bytes": parse_duckdb_size_bytes(values.get("wal_size")),
+                "temp_directory": temp_directory,
+                "temp_bytes": resolve_directory_size(Path(temp_directory))
+                if temp_directory
+                else 0,
+            }
+        except Exception:
+            return defaults
 
     def _resolve_stale_storage_artifacts(self, limit: int = 20) -> tuple[int, list[str]]:
         artifacts: list[str] = []

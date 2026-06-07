@@ -124,6 +124,13 @@ def _resolve_storage_stats(time_series_store: object) -> StorageStats:
         stats = get_storage_stats()
         duckdb_bytes = getattr(stats, "duckdb_bytes", None)
         parquet_bytes = getattr(stats, "parquet_bytes", None)
+        duckdb_blocks_total = getattr(stats, "duckdb_blocks_total", 0)
+        duckdb_blocks_used = getattr(stats, "duckdb_blocks_used", 0)
+        duckdb_blocks_free = getattr(stats, "duckdb_blocks_free", 0)
+        duckdb_bytes_free = getattr(stats, "duckdb_bytes_free", 0)
+        duckdb_wal_bytes = getattr(stats, "duckdb_wal_bytes", 0)
+        temp_directory = getattr(stats, "temp_directory", None)
+        temp_bytes = getattr(stats, "temp_bytes", 0)
         stale_artifact_count = getattr(stats, "stale_artifact_count", 0)
         stale_artifacts = getattr(stats, "stale_artifacts", [])
         if isinstance(duckdb_bytes, int) and isinstance(parquet_bytes, int):
@@ -131,6 +138,25 @@ def _resolve_storage_stats(time_series_store: object) -> StorageStats:
                 duckdbBytes=duckdb_bytes,
                 parquetBytes=parquet_bytes,
                 totalBytes=duckdb_bytes + parquet_bytes,
+                duckdbBlocksTotal=duckdb_blocks_total
+                if isinstance(duckdb_blocks_total, int)
+                else 0,
+                duckdbBlocksUsed=duckdb_blocks_used
+                if isinstance(duckdb_blocks_used, int)
+                else 0,
+                duckdbBlocksFree=duckdb_blocks_free
+                if isinstance(duckdb_blocks_free, int)
+                else 0,
+                duckdbBytesFree=duckdb_bytes_free
+                if isinstance(duckdb_bytes_free, int)
+                else 0,
+                duckdbWalBytes=duckdb_wal_bytes
+                if isinstance(duckdb_wal_bytes, int)
+                else 0,
+                tempDirectory=temp_directory
+                if isinstance(temp_directory, str)
+                else None,
+                tempBytes=temp_bytes if isinstance(temp_bytes, int) else 0,
                 staleArtifactCount=stale_artifact_count
                 if isinstance(stale_artifact_count, int)
                 else 0,

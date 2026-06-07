@@ -546,6 +546,78 @@ def test_rebuild_reused_basis_updates_valuation_from_changed_disclosure(
     assert valuation[1]["statement_disclosed_date"] == "2025-01-02"
 
 
+def test_rebuild_reused_basis_refreshes_only_codes_with_changed_disclosures(
+    market_db: MarketDb,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 100.0,
+            "bps": 1000.0,
+            "forecast_eps": 120.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+        {
+            "code": "6758",
+            "disclosed_date": "2024-05-10",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 50.0,
+            "bps": 500.0,
+            "forecast_eps": 60.0,
+            "shares_outstanding": 10_000_000.0,
+        },
+    ])
+    market_db.upsert_stock_data([
+        {
+            "code": code,
+            "date": "2025-01-06",
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "volume": 100,
+            "adjustment_factor": 1.0,
+            "created_at": "2026-05-16T00:00:00",
+        }
+        for code, close in (("7203", 600.0), ("6758", 300.0))
+    ])
+    materializer = AdjustedMetricsMaterializer(market_db)
+    first = materializer.rebuild_all()
+    market_db.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2025-01-02",
+            "type_of_current_period": "FY",
+            "earnings_per_share": 200.0,
+            "bps": 2000.0,
+            "forecast_eps": 220.0,
+            "shares_outstanding": 10_000_000.0,
+        }
+    ])
+    calls: list[dict[str, object]] = []
+    original = market_db.upsert_daily_valuation_from_adjusted_metrics
+
+    def _capture_upsert_daily_valuation_from_adjusted_metrics(**kwargs: object) -> int:
+        calls.append(dict(kwargs))
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        market_db,
+        "upsert_daily_valuation_from_adjusted_metrics",
+        _capture_upsert_daily_valuation_from_adjusted_metrics,
+    )
+
+    second = materializer.rebuild_all()
+
+    assert second.basis_version == first.basis_version
+    assert calls
+    assert calls[0]["codes"] == ["7203"]
+    assert calls[0]["start_date"] == "2025-01-02"
+
+
 def test_rebuild_all_prunes_previous_adjusted_basis_after_adjustment_event(
     market_db: MarketDb,
 ) -> None:

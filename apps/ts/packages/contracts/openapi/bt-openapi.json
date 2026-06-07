@@ -16923,9 +16923,34 @@
       },
       "StorageStats": {
         "properties": {
+          "duckdbBlocksFree": {
+            "default": 0,
+            "title": "Duckdbblocksfree",
+            "type": "integer"
+          },
+          "duckdbBlocksTotal": {
+            "default": 0,
+            "title": "Duckdbblockstotal",
+            "type": "integer"
+          },
+          "duckdbBlocksUsed": {
+            "default": 0,
+            "title": "Duckdbblocksused",
+            "type": "integer"
+          },
           "duckdbBytes": {
             "default": 0,
             "title": "Duckdbbytes",
+            "type": "integer"
+          },
+          "duckdbBytesFree": {
+            "default": 0,
+            "title": "Duckdbbytesfree",
+            "type": "integer"
+          },
+          "duckdbWalBytes": {
+            "default": 0,
+            "title": "Duckdbwalbytes",
             "type": "integer"
           },
           "parquetBytes": {
@@ -16944,6 +16969,22 @@
             },
             "title": "Staleartifacts",
             "type": "array"
+          },
+          "tempBytes": {
+            "default": 0,
+            "title": "Tempbytes",
+            "type": "integer"
+          },
+          "tempDirectory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tempdirectory"
           },
           "totalBytes": {
             "default": 0,

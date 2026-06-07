@@ -182,7 +182,17 @@ def test_resolve_storage_stats_reports_stale_artifacts(tmp_path: Path) -> None:
 def test_resolve_storage_stats_prefers_single_atomic_store_lookup() -> None:
     store = DummyStore(
         TimeSeriesInspection(source="duckdb-parquet"),
-        storage_stats=SimpleNamespace(duckdb_bytes=7, parquet_bytes=11),
+        storage_stats=SimpleNamespace(
+            duckdb_bytes=7,
+            parquet_bytes=11,
+            duckdb_blocks_total=10,
+            duckdb_blocks_used=6,
+            duckdb_blocks_free=4,
+            duckdb_bytes_free=1024,
+            duckdb_wal_bytes=256,
+            temp_directory="duckdb-tmp",
+            temp_bytes=512,
+        ),
     )
 
     stats = db_stats_service._resolve_storage_stats(store)
@@ -190,6 +200,13 @@ def test_resolve_storage_stats_prefers_single_atomic_store_lookup() -> None:
     assert stats.duckdbBytes == 7
     assert stats.parquetBytes == 11
     assert stats.totalBytes == 18
+    assert stats.duckdbBlocksTotal == 10
+    assert stats.duckdbBlocksUsed == 6
+    assert stats.duckdbBlocksFree == 4
+    assert stats.duckdbBytesFree == 1024
+    assert stats.duckdbWalBytes == 256
+    assert stats.tempDirectory == "duckdb-tmp"
+    assert stats.tempBytes == 512
     assert store.storage_stats_calls == 1
 
 

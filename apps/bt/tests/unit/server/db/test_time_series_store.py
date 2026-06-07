@@ -185,6 +185,74 @@ def test_create_time_series_store_returns_none_when_duckdb_unavailable(
     assert store is None
 
 
+def test_duckdb_connection_uses_managed_temp_directory(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        temp_directory = store._conn.execute(
+            "SELECT current_setting('temp_directory')"
+        ).fetchone()[0]
+    finally:
+        store.close()
+
+    assert temp_directory == str(tmp_path / "market-timeseries" / "duckdb-tmp")
+
+
+def test_get_storage_stats_includes_duckdb_free_blocks(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        store.publish_topix_data(_topix_rows())
+        store.index_topix_data()
+
+        stats = store.get_storage_stats()
+    finally:
+        store.close()
+
+    assert stats.duckdb_blocks_total >= stats.duckdb_blocks_used
+    assert stats.duckdb_blocks_free >= 0
+    assert stats.duckdb_bytes_free >= 0
+
+
+def test_index_topix_data_emits_export_telemetry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[dict[str, object]] = []
+
+    def _capture_info(_message: str, **kwargs: object) -> None:
+        events.append(kwargs)
+
+    monkeypatch.setattr(
+        "src.infrastructure.db.market.time_series_store.logger.info",
+        _capture_info,
+    )
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        store.publish_topix_data(_topix_rows())
+        store.index_topix_data()
+    finally:
+        store.close()
+
+    export_events = [
+        event
+        for event in events
+        if event.get("event") == "market_store_phase_timing"
+        and event.get("operation") == "parquet_export"
+        and event.get("table") == "topix_data"
+    ]
+    assert export_events
+    assert isinstance(export_events[0].get("elapsedMs"), float)
+    assert export_events[0]["rows"] == 2
+
+
 def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="duckdb-parquet",
@@ -298,7 +366,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     store.close()
 
 
-def test_index_options_225_data_exports_parquet(tmp_path: Path) -> None:
+def test_index_options_225_data_exports_partitioned_parquet(tmp_path: Path) -> None:
     parquet_dir = tmp_path / "market-timeseries" / "parquet"
     store = create_time_series_store(
         backend="duckdb-parquet",
@@ -310,9 +378,60 @@ def test_index_options_225_data_exports_parquet(tmp_path: Path) -> None:
     store.publish_options_225_data(_options_225_rows())
     store.index_options_225_data()
 
-    assert (parquet_dir / "options_225_data.parquet").exists()
+    assert (parquet_dir / "options_225_data" / "date=2026-02-10" / "data.parquet").exists()
+    assert (parquet_dir / "options_225_data" / "date=2026-02-11" / "data.parquet").exists()
+    assert not (parquet_dir / "options_225_data.parquet").exists()
 
     store.close()
+
+
+def test_index_stock_data_exports_large_tables_by_dirty_date(tmp_path: Path) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    assert store is not None
+
+    store.publish_stock_data([_stock_row_for("2026-02-10"), _stock_row_for("2026-02-11")])
+    store.index_stock_data()
+
+    assert (parquet_dir / "stock_data_raw" / "date=2026-02-10" / "data.parquet").exists()
+    assert (parquet_dir / "stock_data_raw" / "date=2026-02-11" / "data.parquet").exists()
+    assert (parquet_dir / "stock_data" / "date=2026-02-10" / "data.parquet").exists()
+    assert (parquet_dir / "stock_data" / "date=2026-02-11" / "data.parquet").exists()
+    assert not (parquet_dir / "stock_data_raw.parquet").exists()
+    assert not (parquet_dir / "stock_data.parquet").exists()
+
+    store.close()
+
+
+def test_staged_stock_data_flushes_once_and_projects_rows(tmp_path: Path) -> None:
+    store = DuckDbParquetTimeSeriesStore(
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    try:
+        assert store.stage_stock_data_rows([_stock_row_for("2026-02-10")]) == 1
+        assert store.stage_stock_data_rows([_stock_row_for("2026-02-11")]) == 1
+        assert _query_rows(
+            tmp_path / "market-timeseries" / "market.duckdb",
+            "SELECT COUNT(*) FROM stock_data_raw",
+        ) == [(0,)]
+
+        assert store.flush_staged_stock_data() == 2
+
+        assert _query_rows(
+            tmp_path / "market-timeseries" / "market.duckdb",
+            "SELECT COUNT(*), MIN(date), MAX(date) FROM stock_data_raw",
+        ) == [(2, "2026-02-10", "2026-02-11")]
+        assert _query_rows(
+            tmp_path / "market-timeseries" / "market.duckdb",
+            "SELECT COUNT(*), MIN(date), MAX(date) FROM stock_data",
+        ) == [(2, "2026-02-10", "2026-02-11")]
+    finally:
+        store.close()
 
 
 def test_index_stock_minute_data_exports_partitioned_parquet(tmp_path: Path) -> None:

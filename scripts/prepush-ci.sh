@@ -6,18 +6,20 @@ uv_cache_dir="${UV_CACHE_DIR:-/tmp/uv-cache}"
 
 include_security=false
 include_web_e2e=false
+include_research=false
 skip_install=false
 force_full=false
 
 usage() {
   cat <<'EOF'
-Usage: scripts/prepush-ci.sh [--full] [--security] [--web-e2e] [--skip-install]
+Usage: scripts/prepush-ci.sh [--full] [--research] [--security] [--web-e2e] [--skip-install]
 
 Run local checks before push using the same changed-file tiers that CI uses.
 By default, changed files are compared against PREPUSH_BASE_REF or origin/main.
 
 Options:
-  --full         Force all tiers, and include security audits and web E2E smoke.
+  --full         Force all tiers, and include research, security audits, and web E2E smoke.
+  --research     Include the slower research guardrails and analytics research tests.
   --security     Include dependency audit and secret scan.
   --web-e2e      Include Playwright smoke with bt server startup.
   --skip-install Assume deps are already prepared and skip shared install.
@@ -29,8 +31,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --full)
       force_full=true
+      include_research=true
       include_security=true
       include_web_e2e=true
+      ;;
+    --research)
+      include_research=true
       ;;
     --security)
       include_security=true
@@ -292,8 +298,12 @@ main() {
     run_contract_suite
   fi
 
-  if ${research_ci}; then
+  if ${research_ci} && ${include_research}; then
     run_research_suite
+  elif ${research_ci}; then
+    echo
+    echo "==> [research-tests]"
+    echo "[prepush-ci] research scope detected; skipped by default. Run scripts/prepush-ci.sh --research to include it."
   fi
 
   if ${security_ci} || ${include_security}; then

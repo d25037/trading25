@@ -10477,10 +10477,35 @@ export interface components {
         /** StorageStats */
         StorageStats: {
             /**
+             * Duckdbblocksfree
+             * @default 0
+             */
+            duckdbBlocksFree: number;
+            /**
+             * Duckdbblockstotal
+             * @default 0
+             */
+            duckdbBlocksTotal: number;
+            /**
+             * Duckdbblocksused
+             * @default 0
+             */
+            duckdbBlocksUsed: number;
+            /**
              * Duckdbbytes
              * @default 0
              */
             duckdbBytes: number;
+            /**
+             * Duckdbbytesfree
+             * @default 0
+             */
+            duckdbBytesFree: number;
+            /**
+             * Duckdbwalbytes
+             * @default 0
+             */
+            duckdbWalBytes: number;
             /**
              * Parquetbytes
              * @default 0
@@ -10493,6 +10518,13 @@ export interface components {
             staleArtifactCount: number;
             /** Staleartifacts */
             staleArtifacts?: string[];
+            /**
+             * Tempbytes
+             * @default 0
+             */
+            tempBytes: number;
+            /** Tempdirectory */
+            tempDirectory?: string | null;
             /**
              * Totalbytes
              * @default 0

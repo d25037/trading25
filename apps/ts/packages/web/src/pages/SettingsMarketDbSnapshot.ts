@@ -36,6 +36,22 @@ export interface DomainHealthItem {
   helpText: string;
 }
 
+export function buildStorageHelpText(dbStats: MarketStatsResponse): string {
+  const storage = dbStats.storage;
+  const duckdbBytes = storage?.duckdbBytes ?? dbStats.databaseSize;
+  const parquetBytes = storage?.parquetBytes ?? 0;
+  const freeBytes = storage?.duckdbBytesFree ?? 0;
+  const walBytes = storage?.duckdbWalBytes ?? 0;
+  const tempBytes = storage?.tempBytes ?? 0;
+  return [
+    `DuckDB ${formatBytes(duckdbBytes)}`,
+    `Parquet ${formatBytes(parquetBytes)}`,
+    `Free ${formatBytes(freeBytes)}`,
+    `WAL ${formatBytes(walBytes)}`,
+    `Temp ${formatBytes(tempBytes)}`,
+  ].join(' / ');
+}
+
 interface Options225CoverageDisplay {
   value: string;
   status: string;
@@ -204,7 +220,7 @@ export function buildSnapshotSummaryItems(
     items.push({
       label: 'Local Storage',
       value: formatBytes(dbStats.storage?.totalBytes ?? dbStats.databaseSize),
-      helpText: `DuckDB ${formatBytes(dbStats.storage?.duckdbBytes ?? dbStats.databaseSize)} / Parquet ${formatBytes(dbStats.storage?.parquetBytes ?? 0)}`,
+      helpText: buildStorageHelpText(dbStats),
     });
   }
 

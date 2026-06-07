@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+from typing import Any, cast
 
 from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 from src.application.services.ingestion_pipeline import validate_rows_required_fields
@@ -27,7 +28,17 @@ async def _ingest_stock_bulk_batch(
     rows = _convert_stock_bulk_rows(normalized_rows, target_dates=target_dates)
     if not rows:
         return 0
+    stage_rows = getattr(ctx.time_series_store, "stage_stock_data_rows", None)
+    if callable(stage_rows):
+        return int(await asyncio.to_thread(cast(Any, stage_rows), rows))
     return await sync_publish_helpers._publish_stock_data_rows(ctx, rows)
+
+
+async def _flush_staged_stock_bulk_rows(ctx: Any) -> int | None:
+    flush_rows = getattr(ctx.time_series_store, "flush_staged_stock_data", None)
+    if not callable(flush_rows):
+        return None
+    return int(await asyncio.to_thread(cast(Any, flush_rows)))
 
 
 async def _ingest_fins_bulk_batch(
@@ -88,6 +99,7 @@ async def _ingest_margin_bulk_batch(
 
 
 __all__ = [
+    "_flush_staged_stock_bulk_rows",
     "_ingest_fins_bulk_batch",
     "_ingest_margin_bulk_batch",
     "_ingest_stock_bulk_batch",

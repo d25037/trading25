@@ -2,7 +2,7 @@
 
 Generated from Typer command declarations. Do not edit manually.
 
-Total commands: **11**
+Total commands: **12**
 
 | Command |
 |---|
@@ -14,6 +14,7 @@ Total commands: **11**
 | `bt lab improve` |
 | `bt lab optimize` |
 | `bt list` |
+| `bt market-compact` |
 | `bt migrate-optimization-specs` |
 | `bt server` |
 | `bt validate` |

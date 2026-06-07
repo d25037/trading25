@@ -39,6 +39,7 @@ from src.application.services.sync_row_converters import (
 )
 from src.application.services.sync_paginated_fetch import get_paginated_rows_with_call_count
 from src.application.services.sync_stock_data_fetch import (
+    execute_stock_data_bulk_fetch,
     StockDataRestDateIngestionError,
     execute_stock_data_rest_date,
 )
@@ -1833,6 +1834,119 @@ class _PlanAndFetchBulkService:
             cache_misses=1,
             selected_files=len(plan.files),
         )
+
+
+class _ChunkedPlanAndFetchBulkService(_PlanAndFetchBulkService):
+    def __init__(self, *, plan: BulkFetchPlan, chunks: list[list[dict[str, Any]]]) -> None:
+        super().__init__(plan=plan, rows=[])
+        self._chunks = chunks
+
+    async def fetch_with_plan(
+        self,
+        plan: BulkFetchPlan,
+        *,
+        on_rows_batch: Any | None = None,
+        accumulate_rows: bool = True,
+    ) -> BulkFetchResult:
+        self.fetch_calls.append(plan.endpoint)
+        if on_rows_batch is not None:
+            for index, chunk in enumerate(self._chunks):
+                await on_rows_batch(chunk, plan.files[min(index, len(plan.files) - 1)])
+        return BulkFetchResult(
+            rows=[row for chunk in self._chunks for row in chunk] if accumulate_rows else [],
+            api_calls=2,
+            cache_hits=0,
+            cache_misses=1,
+            selected_files=len(plan.files),
+        )
+
+
+class _StagedStockDataStore(DummyTimeSeriesStore):
+    def __init__(self, market_db: DummyMarketDb) -> None:
+        super().__init__(market_db)
+        self.publish_calls = 0
+        self.stage_batches: list[list[dict[str, Any]]] = []
+        self.flush_calls = 0
+
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        self.publish_calls += 1
+        return super().publish_stock_data(rows)
+
+    def stage_stock_data_rows(self, rows: list[dict[str, Any]]) -> int:
+        self.stage_batches.append(list(rows))
+        return len(rows)
+
+    def flush_staged_stock_data(self) -> int:
+        self.flush_calls += 1
+        staged_rows = [row for batch in self.stage_batches for row in batch]
+        return self._market_db.upsert_stock_data(staged_rows)
+
+
+@pytest.mark.asyncio
+async def test_execute_stock_data_bulk_fetch_stages_batches_and_flushes_once() -> None:
+    plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[
+            BulkFileInfo(
+                key="stock-20260210.csv.gz",
+                last_modified="2026-02-10T00:00:00Z",
+                size=123,
+                range_start=None,
+                range_end=None,
+            ),
+            BulkFileInfo(
+                key="stock-20260211.csv.gz",
+                last_modified="2026-02-11T00:00:00Z",
+                size=123,
+                range_start=None,
+                range_end=None,
+            ),
+        ],
+        estimated_api_calls=2,
+        list_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _ChunkedPlanAndFetchBulkService(
+        plan=plan,
+        chunks=[
+            [{"Date": "2026-02-10", "Code": "7203", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100}],
+            [{"Date": "2026-02-11", "Code": "7203", "O": 2, "H": 3, "L": 2, "C": 3, "Vo": 200}],
+        ],
+    )
+    market_db = DummyMarketDb()
+    store = _StagedStockDataStore(market_db)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),
+        market_db=market_db,
+        time_series_store=store,
+        bulk_service=bulk_service,
+    )
+    decision = _StageFetchDecision(
+        method="bulk",
+        planner_api_calls=1,
+        estimated_rest_calls=2,
+        estimated_bulk_calls=2,
+        plan=plan,
+        reason="bulk_estimate_lower",
+    )
+
+    outcome = await execute_stock_data_bulk_fetch(
+        ctx,
+        decision=decision,
+        target_dates=["2026-02-10", "2026-02-11"],
+        stage_name="stock_data_incremental",
+        progress_stage="stock_data",
+        current=2,
+        total=7,
+        fallback_log_message="bulk failed: {}",
+    )
+
+    assert outcome.stocks_updated == 2
+    assert store.publish_calls == 0
+    assert [len(batch) for batch in store.stage_batches] == [1, 1]
+    assert store.flush_calls == 1
+    assert [row["date"] for row in market_db.stock_rows] == ["2026-02-10", "2026-02-11"]
 
 
 def _rest_decision(estimated_rest_calls: int) -> _StageFetchDecision:

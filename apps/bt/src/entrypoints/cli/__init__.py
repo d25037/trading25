@@ -213,6 +213,42 @@ def intraday_sync_command(
     )
 
 
+@app.command(name="market-compact")
+def market_compact_command(
+    db_path: str | None = typer.Option(
+        None,
+        "--db-path",
+        help="Path to market.duckdb. Defaults to settings.market_timeseries_dir/market.duckdb.",
+    ),
+    output_path: str | None = typer.Option(
+        None,
+        "--output-path",
+        help="Output compact DuckDB path. Defaults to market.compact.duckdb next to the source.",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Overwrite an existing output file. The source database is never replaced.",
+    ),
+) -> None:
+    """
+    Create a compact copy of the local market DuckDB file.
+
+    Examples:
+        uv run bt market-compact
+        uv run bt market-compact --output-path /tmp/market.compact.duckdb
+    """
+    from pathlib import Path
+
+    from src.entrypoints.cli.market import run_market_compact_command
+
+    run_market_compact_command(
+        db_path=Path(db_path) if db_path is not None else None,
+        output_path=Path(output_path) if output_path is not None else None,
+        overwrite=overwrite,
+    )
+
+
 def _kill_process_on_port(port: int) -> bool:
     """指定ポートを使用しているプロセスをkillする
 

@@ -975,11 +975,7 @@ export interface MarketStatsResponse {
   lastSync: string | null;
   timeSeriesSource: string;
   databaseSize: number;
-  storage: {
-    duckdbBytes: number;
-    parquetBytes: number;
-    totalBytes: number;
-  };
+  storage: BtApiSchemas['StorageStats'];
   topix: {
     count: number;
     dateRange: { min: string; max: string } | null;

@@ -23,6 +23,13 @@ class StorageStats(BaseModel):
     duckdbBytes: int = 0
     parquetBytes: int = 0
     totalBytes: int = 0
+    duckdbBlocksTotal: int = 0
+    duckdbBlocksUsed: int = 0
+    duckdbBlocksFree: int = 0
+    duckdbBytesFree: int = 0
+    duckdbWalBytes: int = 0
+    tempDirectory: str | None = None
+    tempBytes: int = 0
     staleArtifactCount: int = 0
     staleArtifacts: list[str] = Field(default_factory=list)
 
