@@ -274,8 +274,8 @@ class TestSyncRoutes:
             assert data["status"] == "pending"
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is not default_store
-            assert mock_start.await_args.kwargs["close_time_series_store"] is True
-            assert mock_start.await_args.kwargs["close_market_db"] is True
+            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+            assert mock_start.await_args.kwargs["close_market_db"] is False
             assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is False
 
     def test_sync_start_rejects_while_adjusted_metrics_materialize_is_running(
@@ -301,9 +301,8 @@ class TestSyncRoutes:
                 "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
                 return_value=None,
             ),
-            patch("src.entrypoints.http.routes.db._clear_market_resources") as clear_resources,
             patch("src.entrypoints.http.routes.db._restore_read_only_market_resources") as restore_resources,
-            patch("src.entrypoints.http.routes.db._create_market_resources") as create_resources,
+            patch("src.entrypoints.http.routes.db._prepare_market_write_resources") as prepare_resources,
             patch(
                 "src.entrypoints.http.routes.db.start_adjusted_metrics_materialization",
                 new_callable=AsyncMock,
@@ -311,7 +310,12 @@ class TestSyncRoutes:
         ):
             mock_market_db = MagicMock()
             mock_time_series_store = MagicMock()
-            create_resources.return_value = (mock_market_db, mock_time_series_store)
+
+            def prepare_write_resources(_request):
+                client.app.state.market_time_series_store = mock_time_series_store
+                return mock_market_db, mock_time_series_store
+
+            prepare_resources.side_effect = prepare_write_resources
             mock_job = MagicMock()
             mock_job.job_id = "materialize-job-1"
             mock_job.data.mode = "full"
@@ -323,13 +327,12 @@ class TestSyncRoutes:
         data = resp.json()
         assert data["jobId"] == "materialize-job-1"
         assert data["mode"] == "full"
-        clear_resources.assert_called_once()
         restore_resources.assert_not_called()
-        create_resources.assert_called_once()
+        prepare_resources.assert_called_once()
         assert client.app.state.market_time_series_store is mock_time_series_store
         mock_start.assert_awaited_once()
         assert mock_start.await_args.args[0] is mock_market_db
-        assert mock_start.await_args.kwargs["close_market_db"] is True
+        assert mock_start.await_args.kwargs["close_market_db"] is False
 
     def test_adjusted_metrics_materialize_restores_on_resource_creation_failure(
         self,
@@ -341,10 +344,9 @@ class TestSyncRoutes:
                 "src.entrypoints.http.routes.db.adjusted_metrics_materialize_job_manager.get_active_job",
                 return_value=None,
             ),
-            patch("src.entrypoints.http.routes.db._clear_market_resources") as clear_resources,
             patch("src.entrypoints.http.routes.db._restore_read_only_market_resources") as restore_resources,
             patch(
-                "src.entrypoints.http.routes.db._create_market_resources",
+                "src.entrypoints.http.routes.db._prepare_market_write_resources",
                 side_effect=RuntimeError("DuckDB market time-series store is unavailable"),
             ),
             patch(
@@ -356,7 +358,6 @@ class TestSyncRoutes:
 
         assert resp.status_code == 422
         assert "DuckDB market time-series store is unavailable" in resp.json()["message"]
-        clear_resources.assert_called_once()
         restore_resources.assert_called_once()
         mock_start.assert_not_awaited()
 
@@ -450,7 +451,7 @@ class TestSyncRoutes:
             assert mock_create_store.call_count == 1
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is override_store
-            assert mock_start.await_args.kwargs["close_time_series_store"] is True
+            assert mock_start.await_args.kwargs["close_time_series_store"] is False
 
     def test_sync_start_with_duckdb_data_plane_uses_app_store(self, client: TestClient) -> None:
         default_store = MagicMock()
@@ -474,7 +475,7 @@ class TestSyncRoutes:
             assert resp.status_code == 202
             assert mock_create_store.call_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is mock_create_store.return_value
-            assert mock_start.await_args.kwargs["close_time_series_store"] is True
+            assert mock_start.await_args.kwargs["close_time_series_store"] is False
 
     def test_sync_start_duckdb_only_returns_422_when_backend_unavailable(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None

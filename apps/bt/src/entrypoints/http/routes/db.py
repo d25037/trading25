@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -76,6 +77,7 @@ from src.application.services.sync_stream_manager import SyncStreamEvent, sync_s
 from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
 
 router = APIRouter(tags=["Database"])
+_MARKET_RESOURCE_LOCK = threading.RLock()
 
 
 def _get_market_db(request: Request) -> MarketDb:
@@ -149,22 +151,23 @@ def _close_resource(resource: object | None, *, label: str) -> None:
 
 
 def _clear_market_resources(request: Request) -> None:
-    current_market_db = getattr(request.app.state, "market_db", None)
-    current_store = getattr(request.app.state, "market_time_series_store", None)
-    current_reader = getattr(request.app.state, "market_reader", None)
+    with _MARKET_RESOURCE_LOCK:
+        current_market_db = getattr(request.app.state, "market_db", None)
+        current_store = getattr(request.app.state, "market_time_series_store", None)
+        current_reader = getattr(request.app.state, "market_reader", None)
 
-    request.app.state.market_reader = None
-    request.app.state.market_data_service = None
-    request.app.state.roe_service = create_market_roe_service(None)
-    request.app.state.margin_analytics_service = create_market_margin_analytics_service(None)
-    request.app.state.chart_service = ChartService(None)
-    request.app.state.market_db = None
-    request.app.state.market_time_series_store = None
+        request.app.state.market_reader = None
+        request.app.state.market_data_service = None
+        request.app.state.roe_service = create_market_roe_service(None)
+        request.app.state.margin_analytics_service = create_market_margin_analytics_service(None)
+        request.app.state.chart_service = ChartService(None)
+        request.app.state.market_db = None
+        request.app.state.market_time_series_store = None
 
-    _close_resource(current_reader, label="market_reader")
-    _close_resource(current_store, label="market_time_series_store")
-    _close_resource(current_market_db, label="market_db")
-    close_all_cached_data_access_clients()
+        _close_resource(current_reader, label="market_reader")
+        _close_resource(current_store, label="market_time_series_store")
+        _close_resource(current_market_db, label="market_db")
+        close_all_cached_data_access_clients()
 
 
 def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
@@ -185,48 +188,51 @@ def _install_market_reader_services(request: Request, duckdb_path: str) -> None:
 
 
 def _restore_read_only_market_resources(request: Request) -> None:
-    duckdb_path, parquet_dir = _remembered_market_paths(request)
-    _clear_market_resources(request)
-    if not duckdb_path.exists():
-        return
-    market_db, store = _create_market_resources(
-        read_only=True,
-        duckdb_path=duckdb_path,
-        parquet_dir=parquet_dir,
-    )
-    request.app.state.market_db = market_db
-    request.app.state.market_time_series_store = store
-    _install_market_reader_services(request, str(duckdb_path))
+    with _MARKET_RESOURCE_LOCK:
+        duckdb_path, parquet_dir = _remembered_market_paths(request)
+        _clear_market_resources(request)
+        if not duckdb_path.exists():
+            return
+        market_db, store = _create_market_resources(
+            read_only=True,
+            duckdb_path=duckdb_path,
+            parquet_dir=parquet_dir,
+        )
+        request.app.state.market_db = market_db
+        request.app.state.market_time_series_store = store
+        _install_market_reader_services(request, str(duckdb_path))
 
 
 def _prepare_market_write_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
-    duckdb_path, parquet_dir = _remember_market_paths(request)
-    _clear_market_resources(request)
-    market_db, store = _create_market_resources(
-        read_only=False,
-        duckdb_path=duckdb_path,
-        parquet_dir=parquet_dir,
-    )
-    request.app.state.market_db = market_db
-    request.app.state.market_time_series_store = store
-    return market_db, store
+    with _MARKET_RESOURCE_LOCK:
+        duckdb_path, parquet_dir = _remember_market_paths(request)
+        _clear_market_resources(request)
+        market_db, store = _create_market_resources(
+            read_only=False,
+            duckdb_path=duckdb_path,
+            parquet_dir=parquet_dir,
+        )
+        request.app.state.market_db = market_db
+        request.app.state.market_time_series_store = store
+        return market_db, store
 
 
 def _reset_market_resources(request: Request) -> tuple[MarketDb, MarketTimeSeriesStore]:
-    duckdb_path, parquet_dir = _market_timeseries_paths()
-    wal_path = Path(f"{duckdb_path}.wal")
-    _clear_market_resources(request)
+    with _MARKET_RESOURCE_LOCK:
+        duckdb_path, parquet_dir = _market_timeseries_paths()
+        wal_path = Path(f"{duckdb_path}.wal")
+        _clear_market_resources(request)
 
-    if duckdb_path.exists():
-        duckdb_path.unlink()
-    if wal_path.exists():
-        wal_path.unlink()
-    shutil.rmtree(parquet_dir, ignore_errors=True)
+        if duckdb_path.exists():
+            duckdb_path.unlink()
+        if wal_path.exists():
+            wal_path.unlink()
+        shutil.rmtree(parquet_dir, ignore_errors=True)
 
-    market_db, store = _create_market_resources(read_only=False)
-    request.app.state.market_db = market_db
-    request.app.state.market_time_series_store = store
-    return market_db, store
+        market_db, store = _create_market_resources(read_only=False)
+        request.app.state.market_db = market_db
+        request.app.state.market_time_series_store = store
+        return market_db, store
 
 
 def _get_market_time_series_store(request: Request) -> MarketTimeSeriesStore:
@@ -269,12 +275,13 @@ def _get_jquants_client(request: Request) -> JQuantsAsyncClient:
     summary="Market database statistics",
 )
 def get_db_stats(request: Request) -> MarketStatsResponse:
-    market_db = _get_market_db(request)
-    time_series_store = _get_market_time_series_store(request)
-    return db_stats_service.get_market_stats(
-        market_db,
-        time_series_store=time_series_store,
-    )
+    with _MARKET_RESOURCE_LOCK:
+        market_db = _get_market_db(request)
+        time_series_store = _get_market_time_series_store(request)
+        return db_stats_service.get_market_stats(
+            market_db,
+            time_series_store=time_series_store,
+        )
 
 
 # --- Validate ---
@@ -286,12 +293,13 @@ def get_db_stats(request: Request) -> MarketStatsResponse:
     summary="Market database validation",
 )
 def get_db_validate(request: Request) -> MarketValidationResponse:
-    market_db = _get_market_db(request)
-    time_series_store = _get_market_time_series_store(request)
-    return db_validation_service.validate_market_db(
-        market_db,
-        time_series_store=time_series_store,
-    )
+    with _MARKET_RESOURCE_LOCK:
+        market_db = _get_market_db(request)
+        time_series_store = _get_market_time_series_store(request)
+        return db_validation_service.validate_market_db(
+            market_db,
+            time_series_store=time_series_store,
+        )
 
 
 # --- Sync ---
@@ -358,8 +366,8 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
             market_db,
             jquants_client,
             time_series_store=time_series_store,
-            close_time_series_store=True,
-            close_market_db=True,
+            close_time_series_store=False,
+            close_market_db=False,
             on_finish=lambda: _restore_read_only_market_resources(request),
             enforce_bulk_for_stock_data=body.enforceBulkForStockData,
             reset_before_sync=body.resetBeforeSync,
@@ -605,24 +613,16 @@ async def start_adjusted_metrics_materialize_job(request: Request) -> JSONRespon
             detail="Adjusted metrics materialization is already running",
         )
 
-    duckdb_path, parquet_dir = _remember_market_paths(request)
-    _clear_market_resources(request)
     try:
-        market_db, time_series_store = _create_market_resources(
-            read_only=False,
-            duckdb_path=duckdb_path,
-            parquet_dir=parquet_dir,
-        )
+        market_db, _time_series_store = _prepare_market_write_resources(request)
     except RuntimeError as exc:
         _restore_read_only_market_resources(request)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    request.app.state.market_db = market_db
-    request.app.state.market_time_series_store = time_series_store
 
     try:
         job = await start_adjusted_metrics_materialization(
             market_db,
-            close_market_db=True,
+            close_market_db=False,
             on_finish=lambda: _restore_read_only_market_resources(request),
         )
     except Exception:
