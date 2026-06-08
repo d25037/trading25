@@ -32,6 +32,7 @@ from src.domains.analytics.stop_limit_daily_classification import (
     StopLimitDailyClassificationResult,
     run_stop_limit_daily_classification_research,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 MarketName = Literal["プライム", "スタンダード", "グロース"]
 NextCloseSign = Literal["minus", "flat", "plus"]
@@ -316,10 +317,14 @@ def _build_yearly_summary_df(signal_event_df: pd.DataFrame) -> pd.DataFrame:
     for (calendar_year, market_name, close_limit_state, next_close_sign), group_df in grouped:
         rows.append(
             {
-                "calendar_year": int(calendar_year),
-                "market_name": str(market_name),
-                "close_limit_state": str(close_limit_state),
-                "next_close_sign": str(next_close_sign),
+                "calendar_year": required_int(calendar_year, field="calendar_year"),
+                "market_name": required_str(market_name, field="market_name"),
+                "close_limit_state": required_str(
+                    close_limit_state, field="close_limit_state"
+                ),
+                "next_close_sign": required_str(
+                    next_close_sign, field="next_close_sign"
+                ),
                 **{
                     key: value
                     for key, value in _summarize_signal_group(group_df).items()
@@ -352,11 +357,15 @@ def _build_entry_cohort_df(signal_event_df: pd.DataFrame) -> pd.DataFrame:
         entry_date, calendar_year, market_name, close_limit_state, next_close_sign = group_key
         rows.append(
             {
-                "entry_date": str(entry_date),
-                "calendar_year": int(calendar_year),
-                "market_name": str(market_name),
-                "close_limit_state": str(close_limit_state),
-                "next_close_sign": str(next_close_sign),
+                "entry_date": required_str(entry_date, field="entry_date"),
+                "calendar_year": required_int(calendar_year, field="calendar_year"),
+                "market_name": required_str(market_name, field="market_name"),
+                "close_limit_state": required_str(
+                    close_limit_state, field="close_limit_state"
+                ),
+                "next_close_sign": required_str(
+                    next_close_sign, field="next_close_sign"
+                ),
                 "cohort_event_count": int(len(group_df)),
                 "cohort_unique_code_count": int(group_df["code"].nunique()),
                 "equal_weight_next_close_to_close_3d_return": _mean_or_none(

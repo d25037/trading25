@@ -18,6 +18,7 @@ from src.domains.analytics.hedge_1357_nt_ratio_topix_support import (
     _BETA_MIN_PERIODS,
     _TARGET_COLUMN_MAP,
 )
+from src.shared.utils.pandas_type_guards import required_int
 
 
 def _expected_shortfall(series: pd.Series, tail_probability: float = 0.05) -> float | None:
@@ -279,7 +280,7 @@ def _build_annual_rule_summary(
                     metrics.update(
                         {
                             "stock_group": stock_group,
-                            "calendar_year": int(year),
+                            "calendar_year": required_int(year, field="calendar_year"),
                         }
                     )
                     rows.append(metrics)

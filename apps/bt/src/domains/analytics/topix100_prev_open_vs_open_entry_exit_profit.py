@@ -45,6 +45,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
     _open_analysis_connection,
     _topix100_stocks_cte,
 )
+from src.shared.utils.pandas_type_guards import int_or_none, required_int, required_str
 
 TOPIX100_PREV_OPEN_VS_OPEN_ENTRY_EXIT_PROFIT_EXPERIMENT_ID = (
     "market-behavior/topix100-prev-open-vs-open-entry-exit-profit"
@@ -632,7 +633,11 @@ def _assign_ratio_buckets(
             bucket_count=effective_bucket_count,
         )
         scoped_df["ratio_bucket_label"] = scoped_df["ratio_bucket_index"].map(
-            lambda value: f"Q{int(value)}"
+            lambda value: (
+                f"Q{bucket_index}"
+                if (bucket_index := int_or_none(value)) is not None
+                else None
+            )
         )
         bucketed_frames.append(scoped_df)
 
@@ -796,12 +801,24 @@ def _build_bucket_summary_rows(
             _,
         ) = _summarize_return_series(bucket_df["net_short_return"])
         row = {
-            "interval_minutes": int(key_map["interval_minutes"]),
-            "entry_time": str(key_map["entry_time"]),
-            "exit_label": str(key_map["exit_label"]),
-            "exit_time_target": str(key_map["exit_time_target"]),
-            "ratio_bucket_index": int(key_map["ratio_bucket_index"]),
-            "ratio_bucket_label": str(key_map["ratio_bucket_label"]),
+            "interval_minutes": required_int(
+                key_map["interval_minutes"],
+                field="interval_minutes",
+            ),
+            "entry_time": required_str(key_map["entry_time"], field="entry_time"),
+            "exit_label": required_str(key_map["exit_label"], field="exit_label"),
+            "exit_time_target": required_str(
+                key_map["exit_time_target"],
+                field="exit_time_target",
+            ),
+            "ratio_bucket_index": required_int(
+                key_map["ratio_bucket_index"],
+                field="ratio_bucket_index",
+            ),
+            "ratio_bucket_label": required_str(
+                key_map["ratio_bucket_label"],
+                field="ratio_bucket_label",
+            ),
             "sample_count": int(len(bucket_df)),
             "sample_share": float(len(bucket_df) / total_sample_count),
             "stock_count": int(bucket_df["code"].nunique()),
@@ -824,10 +841,22 @@ def _build_bucket_summary_rows(
         if include_period_columns:
             row.update(
                 {
-                    "period_index": int(key_map["period_index"]),
-                    "period_label": str(key_map["period_label"]),
-                    "period_start_date": str(key_map["period_start_date"]),
-                    "period_end_date": str(key_map["period_end_date"]),
+                    "period_index": required_int(
+                        key_map["period_index"],
+                        field="period_index",
+                    ),
+                    "period_label": required_str(
+                        key_map["period_label"],
+                        field="period_label",
+                    ),
+                    "period_start_date": required_str(
+                        key_map["period_start_date"],
+                        field="period_start_date",
+                    ),
+                    "period_end_date": required_str(
+                        key_map["period_end_date"],
+                        field="period_end_date",
+                    ),
                 }
             )
         else:

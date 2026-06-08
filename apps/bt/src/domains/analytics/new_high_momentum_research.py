@@ -36,6 +36,7 @@ from src.domains.analytics.research_bundle import (
     write_dataclass_research_bundle,
 )
 from src.domains.analytics.topix_rank_future_close_core import _default_start_date
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 NEW_HIGH_MOMENTUM_EXPERIMENT_ID = "market-behavior/new-high-momentum-research"
 
@@ -798,8 +799,11 @@ def _aggregate_condition_summary(
         on=["universe_key", "new_high_window", "horizon_days"],
         how="left",
     )
+    baseline_event_count = summary["new_high_baseline_event_count"].where(
+        summary["new_high_baseline_event_count"] != 0
+    )
     summary["event_share_of_new_high_baseline"] = (
-        summary["event_count"] / summary["new_high_baseline_event_count"].replace({0: pd.NA})
+        summary["event_count"] / baseline_event_count
     )
     summary["mean_lift_vs_new_high_baseline"] = (
         summary["mean_forward_return"] - summary["new_high_baseline_mean_forward_return"]
@@ -1186,10 +1190,10 @@ def _build_portfolio_summary_df(
             {
                 "universe_key": keys[0],
                 "universe_label": str(group["universe_label"].iloc[0]),
-                "new_high_window": int(keys[1]),
-                "condition_key": keys[2],
+                "new_high_window": required_int(keys[1], field="new_high_window"),
+                "condition_key": required_str(keys[2], field="condition_key"),
                 "condition_label": str(group["condition_label"].iloc[0]),
-                "horizon_days": int(keys[3]),
+                "horizon_days": required_int(keys[3], field="horizon_days"),
                 "event_count": int(len(event_group)),
                 "unique_code_count": int(event_group["code"].nunique()) if not event_group.empty else 0,
                 "active_days": int((pd.to_numeric(group["active_positions"]) > 0).sum()),

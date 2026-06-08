@@ -74,6 +74,7 @@ from src.domains.analytics.topix_downside_return_standard_deviation_shock_confir
 from src.domains.analytics.topix_downside_return_standard_deviation_exposure_timing import (
     _normalize_non_negative_float_sequence,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 DuplicatePolicy = Literal["allow_stack", "skip_if_held", "next_unique_within_top5"]
 DEFAULT_DUPLICATE_POLICIES: tuple[DuplicatePolicy, ...] = (
@@ -606,7 +607,7 @@ def _build_selected_trade_df_for_policy(
             "selected_realized_return": None,
         }
         if chosen_row is not None:
-            chosen_payload = chosen_row.to_dict()
+            chosen_payload = record_with_str_keys(chosen_row.to_dict())
             selected_rows.append(chosen_payload)
             active_trades.append(
                 {

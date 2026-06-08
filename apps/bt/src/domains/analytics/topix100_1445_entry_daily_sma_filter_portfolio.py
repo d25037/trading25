@@ -40,6 +40,7 @@ from src.domains.analytics.topix_return_standard_deviation_exposure_timing impor
     _build_drawdown_series,
     _compute_return_series_stats,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 TOPIX100_1445_ENTRY_DAILY_SMA_FILTER_PORTFOLIO_EXPERIMENT_ID = (
     "market-behavior/topix100-1445-entry-daily-sma-filter-portfolio"
@@ -432,10 +433,10 @@ def _build_period_portfolio_stats_df(portfolio_daily_df: pd.DataFrame) -> pd.Dat
         ).dropna()
         rows.append(
             {
-                "series_name": str(series_name),
-                "series_label": str(series_label),
-                "period_index": int(period_index),
-                "period_label": str(period_label),
+                "series_name": required_str(series_name, field="series_name"),
+                "series_label": required_str(series_label, field="series_label"),
+                "period_index": required_int(period_index, field="period_index"),
+                "period_label": required_str(period_label, field="period_label"),
                 "period_start_date": _to_scalar_string(period_start_date, fallback=""),
                 "period_end_date": _to_scalar_string(period_end_date, fallback=""),
                 "trading_day_count": int(len(ordered_df)),

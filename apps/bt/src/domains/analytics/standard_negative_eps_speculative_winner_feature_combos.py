@@ -55,6 +55,7 @@ from src.domains.analytics.standard_negative_eps_right_tail_decomposition import
     _to_nullable_float,
     run_standard_negative_eps_right_tail_decomposition,
 )
+from src.shared.utils.pandas_type_guards import str_or_none
 
 STANDARD_NEGATIVE_EPS_SPECULATIVE_WINNER_FEATURE_COMBOS_EXPERIMENT_ID = (
     "market-behavior/standard-negative-eps-speculative-winner-feature-combos"
@@ -513,7 +514,7 @@ def _apply_sector_bucket_collapse(
     )
     collapsed["sector_bucket"] = collapsed["sector_33_name"].map(
         lambda value: _bucket_sector_name(
-            value,
+            str_or_none(value),
             keep_named=int(sector_counts.get(str(value or "").strip(), 0))
             >= sparse_sector_min_event_count,
         )

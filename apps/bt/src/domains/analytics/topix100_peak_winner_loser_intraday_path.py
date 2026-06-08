@@ -44,6 +44,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
 from src.domains.analytics.topix100_second_bar_volume_drop_performance import (
     _safe_welch_t_test,
 )
+from src.shared.utils.pandas_type_guards import required_int
 
 TOPIX100_PEAK_WINNER_LOSER_INTRADAY_PATH_EXPERIMENT_ID = (
     "market-behavior/topix100-peak-winner-loser-intraday-path"
@@ -442,7 +443,13 @@ def _assign_rank_groups(
     ranked_df[rank_column] = ranked_df.groupby("date").cumcount() + 1
     ranked_df[count_column] = ranked_df.groupby("date")["code"].transform("size")
     ranked_df["tail_count"] = ranked_df[count_column].map(
-        lambda value: max(1, min(int(value) // 2, int(math.floor(int(value) * tail_fraction))))
+        lambda value: max(
+            1,
+            min(
+                required_int(value, field=count_column) // 2,
+                int(math.floor(required_int(value, field=count_column) * tail_fraction)),
+            ),
+        )
     )
     ranked_df[group_column] = pd.Series(pd.NA, index=ranked_df.index, dtype="string")
     ranked_df.loc[

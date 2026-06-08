@@ -73,6 +73,7 @@ from src.domains.analytics.topix_downside_return_standard_deviation_trend_breadt
     _lookup_split_row,
     _normalize_rule_sequence,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 from src.domains.analytics.topix_rank_future_close_core import (
     _query_topix100_stock_history,
 )
@@ -1290,7 +1291,7 @@ def _build_selection_summary_df(
         )
         if selected_row is None:
             continue
-        payload = selected_row.to_dict()
+        payload = record_with_str_keys(selected_row.to_dict())
         payload["selection_label"] = selection_label
         rows.append(payload)
     return pd.DataFrame(rows)

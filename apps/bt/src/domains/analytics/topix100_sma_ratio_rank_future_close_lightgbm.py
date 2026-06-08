@@ -53,6 +53,7 @@ from src.domains.backtest.core.walkforward import (
     WalkForwardSplit,
     generate_walkforward_splits,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 
 LIGHTGBM_RESEARCH_INSTALL_HINT = (
     "uv sync --project apps/bt --group research"
@@ -937,9 +938,11 @@ def _build_train_only_composite_candidates(
             kind="stable",
         )
         selected_records.append(
-            horizon_candidates_df.iloc[0]
-            .drop(labels=["_train_spread", "_pairwise_p", "_global_p"])
-            .to_dict()
+            record_with_str_keys(
+                horizon_candidates_df.iloc[0]
+                .drop(labels=["_train_spread", "_pairwise_p", "_global_p"])
+                .to_dict()
+            )
         )
 
     composite_candidate_df = pd.DataFrame.from_records(candidate_records)

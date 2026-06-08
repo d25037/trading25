@@ -23,6 +23,7 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 from src.domains.backtest.core.market_universe import resolve_backtest_universe_codes
 from src.domains.analytics.window_warmup import (
     estimate_strategy_indicator_warmup_calendar_days,
@@ -1017,7 +1018,7 @@ def _select_scenario_row(
     ]
     if filtered.empty:
         return None
-    return filtered.iloc[0].to_dict()
+    return record_with_str_keys(filtered.iloc[0].to_dict())
 
 
 def _fmt_pct(value: Any) -> str:

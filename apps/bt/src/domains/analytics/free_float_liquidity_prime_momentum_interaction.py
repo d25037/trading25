@@ -23,6 +23,11 @@ from src.domains.analytics.research_bundle import (
     resolve_required_bundle_path,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import (
+    numeric_series_or_empty,
+    required_int,
+    required_str,
+)
 
 FREE_FLOAT_LIQUIDITY_PRIME_MOMENTUM_INTERACTION_EXPERIMENT_ID = (
     "market-behavior/free-float-liquidity-prime-momentum-interaction"
@@ -460,10 +465,13 @@ def _build_interaction_bucket_df(
             returns = pd.to_numeric(group[y_column], errors="coerce")
             records.append(
                 {
-                    "adv_window": int(adv_window),
+                    "adv_window": required_int(adv_window, field="adv_window"),
                     "horizon": int(horizon),
-                    "momentum_state": str(momentum_state),
-                    "liquidity_state": str(liquidity_state),
+                    "momentum_state": required_str(momentum_state, field="momentum_state"),
+                    "liquidity_state": required_str(
+                        liquidity_state,
+                        field="liquidity_state",
+                    ),
                     "observation_count": int(returns.notna().sum()),
                     "code_count": int(group["code"].nunique()),
                     "mean_forward_excess_return_pct": _mean(returns),
@@ -532,8 +540,8 @@ def _build_momentum_residual_summary_df(bucket_df: pd.DataFrame) -> pd.DataFrame
                 continue
             records.append(
                 {
-                    "adv_window": int(adv_window),
-                    "horizon": int(horizon),
+                    "adv_window": required_int(adv_window, field="adv_window"),
+                    "horizon": required_int(horizon, field="horizon"),
                     "comparison_name": comparison_name,
                     "lhs_group": "__".join(lhs_key),
                     "rhs_group": "__".join(rhs_key),
@@ -620,21 +628,21 @@ def _format_markdown_cell(value: Any) -> str:
 def _mean(values: Iterable[Any] | None) -> float:
     if values is None:
         return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.mean())) if not series.empty else np.nan
 
 
 def _median(values: Iterable[Any] | None) -> float:
     if values is None:
         return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return _round_float(float(series.median())) if not series.empty else np.nan
 
 
 def _win_rate(values: Iterable[Any] | None) -> float:
     if values is None:
         return np.nan
-    series = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    series = numeric_series_or_empty(values)
     return (
         _round_float(float((series > 0).mean() * 100.0)) if not series.empty else np.nan
     )

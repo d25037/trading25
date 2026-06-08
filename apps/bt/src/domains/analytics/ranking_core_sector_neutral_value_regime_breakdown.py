@@ -36,6 +36,7 @@ from src.domains.analytics.readonly_duckdb_support import (
     open_readonly_analysis_connection,
 )
 from src.domains.analytics.research_bundle import ResearchBundleInfo, write_research_bundle
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 RANKING_CORE_SECTOR_NEUTRAL_VALUE_REGIME_BREAKDOWN_EXPERIMENT_ID = (
     "market-behavior/ranking-core-sector-neutral-value-regime-breakdown"
@@ -830,10 +831,10 @@ def _build_bank_displacement_df(annual_df: pd.DataFrame) -> pd.DataFrame:
         )
         records.append(
             {
-                "horizon": int(horizon),
-                "market_scope": str(market_scope),
-                "year": str(year),
-                "factor_signal": str(factor_signal),
+                "horizon": required_int(horizon, field="horizon"),
+                "market_scope": required_str(market_scope, field="market_scope"),
+                "year": required_str(year, field="year"),
+                "factor_signal": required_str(factor_signal, field="factor_signal"),
                 "factor_display_name": str(all_row["factor_display_name"]),
                 "all_observation_count": int(all_row["observation_count"]),
                 "bank_observation_share_pct": _to_float(

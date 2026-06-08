@@ -122,7 +122,7 @@ class IndicatorService:
 
         if timeframe == "weekly":
             resampled = df.resample("W").agg(cast(Any, agg_rules)).dropna(subset=["Close"])
-            resampled.index = resampled.index - pd.Timedelta(days=6)
+            resampled.index = pd.DatetimeIndex(resampled.index) - pd.Timedelta(days=6)
             return resampled
 
         if timeframe == "monthly":

@@ -983,6 +983,7 @@ def _build_key_read_lines(
 
 
 def _fmt_pct(value: Any) -> str:
+    value = _to_native(value)
     try:
         if value is None or pd.isna(value):
             return "n/a"
@@ -992,6 +993,7 @@ def _fmt_pct(value: Any) -> str:
 
 
 def _fmt_num(value: Any) -> str:
+    value = _to_native(value)
     try:
         if value is None or pd.isna(value):
             return "n/a"
@@ -1001,6 +1003,7 @@ def _fmt_num(value: Any) -> str:
 
 
 def _fmt_threshold(value: Any) -> str:
+    value = _to_native(value)
     try:
         if value is None or pd.isna(value):
             return "n/a"
@@ -1011,6 +1014,7 @@ def _fmt_threshold(value: Any) -> str:
 
 
 def _fmt_int(value: Any) -> str:
+    value = _to_native(value)
     try:
         if value is None or pd.isna(value):
             return "n/a"
@@ -1028,3 +1032,13 @@ def _format_variant(row: Any) -> str:
         f"{_fmt_int(row.get('volume_ratio_above_long_period'))}@"
         f"{_fmt_threshold(row.get('volume_ratio_above_threshold'))}"
     )
+
+
+def _to_native(value: Any) -> Any:
+    item = getattr(value, "item", None)
+    if item is None:
+        return value
+    try:
+        return item()
+    except (TypeError, ValueError):
+        return value

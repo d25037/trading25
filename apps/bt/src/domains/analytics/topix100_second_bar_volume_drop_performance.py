@@ -44,6 +44,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
     _open_analysis_connection,
     _query_resampled_topix100_intraday_bars_from_connection,
 )
+from src.shared.utils.pandas_type_guards import required_int
 
 SECOND_BAR_VOLUME_DROP_PERFORMANCE_EXPERIMENT_ID = (
     "market-behavior/topix100-second-bar-volume-drop-window-performance"
@@ -593,7 +594,7 @@ def _build_ratio_bucket_summary_df(
         .reset_index(drop=True)
     )
     summary_df["ratio_bucket_label"] = summary_df["ratio_bucket_index"].map(
-        lambda value: f"D{int(value)}"
+        lambda value: f"D{required_int(value, field='ratio_bucket_index')}"
     )
     summary_df["sample_share"] = summary_df["sample_count"] / float(total_count)
     summary_df.insert(0, "interval_minutes", interval_minutes)

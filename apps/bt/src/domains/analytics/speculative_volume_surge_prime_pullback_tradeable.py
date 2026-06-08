@@ -54,6 +54,7 @@ from src.domains.analytics.speculative_volume_surge_prime_pullback_profile impor
     _profile_columns,
     _query_episode_price_paths,
 )
+from src.shared.utils.pandas_type_guards import is_missing_scalar
 
 SPECULATIVE_VOLUME_SURGE_PRIME_PULLBACK_TRADEABLE_EXPERIMENT_ID = (
     "market-behavior/speculative-volume-surge-prime-pullback-tradeable"
@@ -473,8 +474,8 @@ def _build_entry_speed_summary_df(trade_entry_df: pd.DataFrame) -> pd.DataFrame:
         sort=False,
         dropna=False,
     ):
-        entry_name = "missing" if pd.isna(entry_bucket) else str(entry_bucket)
-        speed_name = "missing" if pd.isna(speed_bucket) else str(speed_bucket)
+        entry_name = "missing" if is_missing_scalar(entry_bucket) else str(entry_bucket)
+        speed_name = "missing" if is_missing_scalar(speed_bucket) else str(speed_bucket)
         rows.append(
             {
                 "entry_bucket": entry_name,

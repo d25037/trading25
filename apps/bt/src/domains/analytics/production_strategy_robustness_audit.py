@@ -20,6 +20,7 @@ from src.domains.analytics.research_bundle import (
     load_research_bundle_tables,
     write_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import record_with_str_keys
 from src.domains.analytics.window_warmup import (
     estimate_strategy_indicator_warmup_calendar_days,
     resolve_window_load_start_date,
@@ -1157,7 +1158,7 @@ def _select_metric_row(
     ]
     if filtered.empty:
         return None
-    return filtered.iloc[0].to_dict()
+    return record_with_str_keys(filtered.iloc[0].to_dict())
 
 
 def _fmt_pct(value: Any) -> str:

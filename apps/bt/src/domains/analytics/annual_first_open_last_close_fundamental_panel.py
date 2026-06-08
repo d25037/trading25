@@ -52,6 +52,7 @@ from src.shared.utils.statement_document import (
     is_actual_fy_financial_statement,
     is_earn_forecast_revision_document,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 
 AnnualEventStatus = Literal[
@@ -1680,7 +1681,9 @@ def _assign_factor_buckets(
         )
         ordered["feature_name"] = factor_name
         ordered["feature_label"] = definition.label
-        ordered["bucket_label"] = ordered["bucket"].map(lambda value: f"Q{int(value)}")
+        ordered["bucket_label"] = ordered["bucket"].map(
+            lambda value: f"Q{required_int(value, field='bucket')}"
+        )
         frames.append(ordered)
     if not frames:
         return _empty_result_df(columns)
@@ -1732,11 +1735,11 @@ def _build_feature_bucket_summary_df(
         ):
             records.append(
                 {
-                    "market_scope": str(market_scope),
+                    "market_scope": required_str(market_scope, field="market_scope"),
                     "feature_name": definition.name,
                     "feature_label": definition.label,
-                    "bucket": int(bucket),
-                    "bucket_label": f"Q{int(bucket)}",
+                    "bucket": required_int(bucket, field="bucket"),
+                    "bucket_label": f"Q{required_int(bucket, field='bucket')}",
                     "year_count": int(group_df["year"].nunique()),
                     "realized_event_count": int(len(group_df)),
                     "mean_feature_value": _series_stat(

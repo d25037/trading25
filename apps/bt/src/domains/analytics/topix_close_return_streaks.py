@@ -35,6 +35,7 @@ from src.domains.analytics.topix_close_stock_overnight_distribution import (
     _fetch_date_range,
     _open_analysis_connection,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 ModeKey = Literal["bullish", "bearish", "flat"]
 
@@ -428,14 +429,26 @@ def _build_streak_tables(
     anchor_rows = start_rows - 1
     grouped["synthetic_open"] = close[anchor_rows]
     grouped["synthetic_close"] = close[end_rows]
-    grouped["synthetic_high"] = [
-        max(close[anchor_row], float(high[start_row : end_row + 1].max()))
-        for anchor_row, start_row, end_row in zip(anchor_rows, start_rows, end_rows, strict=True)
-    ]
-    grouped["synthetic_low"] = [
-        min(close[anchor_row], float(low[start_row : end_row + 1].min()))
-        for anchor_row, start_row, end_row in zip(anchor_rows, start_rows, end_rows, strict=True)
-    ]
+    grouped["synthetic_high"] = pd.Series(
+        [
+            max(float(close[anchor_row]), float(high[start_row : end_row + 1].max()))
+            for anchor_row, start_row, end_row in zip(
+                anchor_rows, start_rows, end_rows, strict=True
+            )
+        ],
+        index=grouped.index,
+        dtype="float64",
+    )
+    grouped["synthetic_low"] = pd.Series(
+        [
+            min(float(close[anchor_row]), float(low[start_row : end_row + 1].min()))
+            for anchor_row, start_row, end_row in zip(
+                anchor_rows, start_rows, end_rows, strict=True
+            )
+        ],
+        index=grouped.index,
+        dtype="float64",
+    )
     grouped["segment_return"] = grouped["synthetic_close"] / grouped["synthetic_open"] - 1.0
     grouped["is_complete"] = end_rows < (len(full_df) - 1)
     grouped["segment_sample_split"] = end_splits[end_rows]
@@ -542,9 +555,13 @@ def _build_streak_state_summary_df(
                 summary_rows.append(
                     {
                         "sample_split": split_name,
-                        "mode": str(mode),
-                        "streak_day_bucket": int(streak_day_bucket),
-                        "streak_day_label": str(streak_day_label),
+                        "mode": required_str(mode, field="mode"),
+                        "streak_day_bucket": required_int(
+                            streak_day_bucket, field="streak_day_bucket"
+                        ),
+                        "streak_day_label": required_str(
+                            streak_day_label, field="streak_day_label"
+                        ),
                         "sample_count": int(len(group_df)),
                         "horizon_days": int(horizon),
                         "mean_close_return": float(group_df["close_return"].mean()),
@@ -683,9 +700,13 @@ def _build_segment_end_summary_df(
                 summary_rows.append(
                     {
                         "sample_split": split_name,
-                        "mode": str(mode),
-                        "segment_length_bucket": int(length_bucket),
-                        "segment_length_label": str(length_label),
+                        "mode": required_str(mode, field="mode"),
+                        "segment_length_bucket": required_int(
+                            length_bucket, field="segment_length_bucket"
+                        ),
+                        "segment_length_label": required_str(
+                            length_label, field="segment_length_label"
+                        ),
                         "horizon_days": int(horizon),
                         "sample_count": int(len(group_df)),
                         "mean_segment_return": float(group_df["segment_return"].mean()),

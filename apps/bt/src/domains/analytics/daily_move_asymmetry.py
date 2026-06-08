@@ -22,6 +22,7 @@ from src.domains.analytics.research_bundle import (
     load_dataclass_research_bundle,
     write_dataclass_research_bundle,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 DAILY_MOVE_ASYMMETRY_EXPERIMENT_ID = "market-behavior/daily-move-asymmetry"
 DEFAULT_ROLLING_VOL_WINDOW = 60
@@ -682,9 +683,11 @@ def _build_paired_asymmetry_df(event_summary_df: pd.DataFrame) -> pd.DataFrame:
                 continue
             rows.append(
                 {
-                    "scope": scope,
-                    "return_metric": return_metric,
-                    "horizon_sessions": int(horizon),
+                    "scope": required_str(scope, field="scope"),
+                    "return_metric": required_str(return_metric, field="return_metric"),
+                    "horizon_sessions": required_int(
+                        horizon, field="horizon_sessions"
+                    ),
                     "magnitude_bucket": magnitude,
                     "down_bucket": down_bucket,
                     "up_bucket": up_bucket,
@@ -765,7 +768,11 @@ def _build_streak_hazard_df(
     valid = with_streaks.dropna(subset=["next_1d_return_pct"]).copy()
     valid = valid[valid["streak_sign"].isin(["up", "down"])]
     valid["streak_bucket"] = valid["streak_length"].map(
-        lambda value: "5+" if int(value) >= 5 else str(int(value))
+        lambda value: (
+            "5+"
+            if required_int(value, field="streak_length") >= 5
+            else str(required_int(value, field="streak_length"))
+        )
     )
     rows: list[dict[str, object]] = []
     for keys, group in valid.groupby(["streak_sign", "streak_bucket"], sort=False):

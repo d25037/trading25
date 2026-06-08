@@ -45,6 +45,7 @@ from src.domains.analytics.speculative_volume_surge_follow_on import (
     SpeculativeVolumeSurgeFollowOnResult,
     run_speculative_volume_surge_follow_on_research,
 )
+from src.shared.utils.pandas_type_guards import is_missing_scalar
 
 SPECULATIVE_VOLUME_SURGE_PRIME_PULLBACK_PROFILE_EXPERIMENT_ID = (
     "market-behavior/speculative-volume-surge-prime-pullback-profile"
@@ -650,10 +651,12 @@ def _build_adv_bucket_summary_df(
         sort=False,
         dropna=False,
     ):
-        bucket_name = "missing" if pd.isna(bucket_label) else str(bucket_label)
+        bucket_name = "missing" if is_missing_scalar(bucket_label) else str(bucket_label)
         rows.append(
             {
-                "adv20_bucket": "missing" if pd.isna(adv20_bucket) else str(adv20_bucket),
+                "adv20_bucket": "missing"
+                if is_missing_scalar(adv20_bucket)
+                else str(adv20_bucket),
                 "pullback_bucket": bucket_name,
                 "pullback_bucket_order": PULLBACK_BUCKET_ORDER.index(bucket_name)
                 if bucket_name in PULLBACK_BUCKET_ORDER

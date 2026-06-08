@@ -23,6 +23,7 @@ from src.domains.analytics.hedge_1357_nt_ratio_topix_support import (
     format_nt_ratio_bucket_label,
 )
 from src.domains.strategy.indicators import compute_moving_average
+from src.shared.utils.pandas_type_guards import finite_float_or_none, is_missing_scalar
 
 
 def _compute_ema_macd_histogram(
@@ -441,10 +442,14 @@ def _calculate_market_features(
     enriched["topix_ma60"] = enriched["topix_close"].rolling(60, min_periods=60).mean()
     enriched["topix_ma20_slope_5d"] = enriched["topix_ma20"] - enriched["topix_ma20"].shift(5)
     enriched["topix_close_bucket_key"] = enriched["topix_close_return"].map(
-        lambda value: _bucket_topix_close_return(value, stats=topix_close_stats)
+        lambda value: _bucket_topix_close_return(
+            finite_float_or_none(value), stats=topix_close_stats
+        )
     )
     enriched["nt_ratio_bucket_key"] = enriched["nt_ratio_return"].map(
-        lambda value: _bucket_nt_ratio_return(value, stats=nt_ratio_stats)
+        lambda value: _bucket_nt_ratio_return(
+            finite_float_or_none(value), stats=nt_ratio_stats
+        )
     )
     enriched["topix_close_bucket_label"] = enriched["topix_close_bucket_key"].map(
         lambda value: (
@@ -464,7 +469,7 @@ def _calculate_market_features(
                 sigma_threshold_1=nt_ratio_stats.sigma_threshold_1,
                 sigma_threshold_2=nt_ratio_stats.sigma_threshold_2,
             )
-            if value is not None and nt_ratio_stats is not None
+            if not is_missing_scalar(value) and nt_ratio_stats is not None
             else None
         )
     )

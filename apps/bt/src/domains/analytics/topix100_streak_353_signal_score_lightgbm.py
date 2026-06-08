@@ -78,6 +78,7 @@ from src.domains.analytics.topix_streak_extreme_mode import (
     _format_int_sequence,
     _format_return,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 LIGHTGBM_RESEARCH_INSTALL_HINT = "uv sync --project apps/bt --group research"
 LIGHTGBM_LIBOMP_INSTALL_HINT = "brew install libomp"
@@ -1676,8 +1677,8 @@ def _build_validation_model_comparison_df(
         lightgbm = lightgbm_row.iloc[0]
         records.append(
             {
-                "side": side,
-                "top_k": int(top_k),
+                "side": required_str(side, field="side"),
+                "top_k": required_int(top_k, field="top_k"),
                 "baseline_avg_selected_edge": float(baseline["avg_selected_edge"]),
                 "lightgbm_avg_selected_edge": float(lightgbm["avg_selected_edge"]),
                 "edge_lift_vs_baseline": float(lightgbm["avg_selected_edge"])

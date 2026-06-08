@@ -123,7 +123,9 @@ def _open_analysis_connection(db_path: str):
     )
 
 
-def _group_order_key(series: pd.Series, selected_groups: Sequence[StockGroup]) -> pd.Categorical:
+def _group_order_key(
+    series: pd.Series, selected_groups: Sequence[StockGroup]
+) -> pd.Categorical[str]:
     return pd.Categorical(series, categories=list(selected_groups), ordered=True)
 
 

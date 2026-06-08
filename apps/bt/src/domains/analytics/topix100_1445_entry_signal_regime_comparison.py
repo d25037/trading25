@@ -50,6 +50,7 @@ from src.domains.analytics.topix100_open_relative_intraday_path import (
     _open_analysis_connection,
     _topix100_stocks_cte,
 )
+from src.shared.utils.pandas_type_guards import required_int, required_str
 
 TOPIX100_1445_ENTRY_SIGNAL_REGIME_COMPARISON_EXPERIMENT_ID = (
     "market-behavior/topix100-1445-entry-signal-regime-comparison"
@@ -756,8 +757,13 @@ def _assign_rank_groups(
         lambda value: max(
             1,
             min(
-                int(value) // 2,
-                int(math.floor(int(value) * tail_fraction)),
+                required_int(value, field="entry_split_session_count") // 2,
+                int(
+                    math.floor(
+                        required_int(value, field="entry_split_session_count")
+                        * tail_fraction
+                    )
+                ),
             ),
         )
     )
@@ -897,10 +903,12 @@ def _assign_periods_to_signal_sessions(
     date_ts = pd.to_datetime(working_df["date"])
     period_frames: list[pd.DataFrame] = []
     for period in periods_df.itertuples(index=False):
-        period_index = int(cast(Any, period.period_index))
-        period_label = str(cast(Any, period.period_label))
-        period_start_date = str(cast(Any, period.period_start_date))
-        period_end_date = str(cast(Any, period.period_end_date))
+        period_index = required_int(period.period_index, field="period_index")
+        period_label = required_str(period.period_label, field="period_label")
+        period_start_date = required_str(
+            period.period_start_date, field="period_start_date"
+        )
+        period_end_date = required_str(period.period_end_date, field="period_end_date")
         period_mask = (
             date_ts >= pd.Timestamp(period_start_date)
         ) & (date_ts <= pd.Timestamp(period_end_date))
@@ -1021,9 +1029,12 @@ def _assign_signal_buckets(
                 bucket_count=effective_bucket_count,
             )
             scoped_df["signal_bucket_label"] = scoped_df["signal_bucket_index"].map(
-                lambda value: f"Q{int(value)}"
+                lambda value: f"Q{required_int(value, field='signal_bucket_index')}"
             )
-        max_bucket_index = int(pd.Series(scoped_df["signal_bucket_index"]).max())
+        max_bucket_index = required_int(
+            pd.Series(scoped_df["signal_bucket_index"]).max(),
+            field="signal_bucket_index",
+        )
         scoped_df["signal_selected"] = False
         low_mask = scoped_df["target_bucket_side"].astype(str) == "low"
         high_mask = scoped_df["target_bucket_side"].astype(str) == "high"

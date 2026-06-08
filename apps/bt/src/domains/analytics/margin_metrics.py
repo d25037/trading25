@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 import pandas as pd
+
+from src.shared.utils.pandas_type_guards import finite_float_or_none
 
 
 def _format_date(idx: Any) -> str:
@@ -27,11 +29,13 @@ def compute_margin_long_pressure(
         av = avg_vol.get(idx)
         if pd.isna(av) or av == 0:
             continue
-        nm = float(cast(Any, net_margin[idx]))
-        if pd.isna(nm):
+        nm = finite_float_or_none(net_margin[idx])
+        if nm is None:
             continue
-        lv = float(cast(Any, margin_df.at[idx, "longMarginVolume"]))
-        sv = float(cast(Any, margin_df.at[idx, "shortMarginVolume"]))
+        lv = finite_float_or_none(margin_df.at[idx, "longMarginVolume"])
+        sv = finite_float_or_none(margin_df.at[idx, "shortMarginVolume"])
+        if lv is None or sv is None:
+            continue
         records.append(
             {
                 "date": _format_date(idx),
@@ -63,13 +67,16 @@ def compute_margin_flow_pressure(
         d = delta.get(idx)
         if pd.isna(av) or av == 0 or pd.isna(d):
             continue
-        prev_val = float(cast(Any, prev_net_margin[idx]))
+        prev_val = finite_float_or_none(prev_net_margin[idx])
+        current_net_margin = finite_float_or_none(net_margin[idx])
+        if current_net_margin is None:
+            continue
         records.append(
             {
                 "date": _format_date(idx),
                 "flowPressure": round(float(d) / float(av), 4),
-                "currentNetMargin": int(float(cast(Any, net_margin[idx]))),
-                "previousNetMargin": int(prev_val) if not pd.isna(prev_val) else None,
+                "currentNetMargin": int(current_net_margin),
+                "previousNetMargin": int(prev_val) if prev_val is not None else None,
                 "avgVolume": round(float(av), 2),
             }
         )
@@ -120,7 +127,10 @@ def compute_margin_volume_ratio(
         return []
 
     week_keys = positive_vol.index.to_series().apply(_get_iso_week_key)
-    weekly_avg_map: dict[str, float] = positive_vol.groupby(week_keys).mean().to_dict()
+    weekly_avg_map = {
+        str(key): float(value)
+        for key, value in positive_vol.groupby(week_keys).mean().to_dict().items()
+    }
 
     records: list[dict[str, Any]] = []
     for idx in margin_df.index:
@@ -129,9 +139,9 @@ def compute_margin_volume_ratio(
         if avg_vol is None or avg_vol == 0:
             continue
 
-        lv = float(cast(Any, margin_df.at[idx, "longMarginVolume"]))
-        sv = float(cast(Any, margin_df.at[idx, "shortMarginVolume"]))
-        if pd.isna(lv) or pd.isna(sv):
+        lv = finite_float_or_none(margin_df.at[idx, "longMarginVolume"])
+        sv = finite_float_or_none(margin_df.at[idx, "shortMarginVolume"])
+        if lv is None or sv is None:
             continue
         avg_vol_f = float(avg_vol)
         records.append(

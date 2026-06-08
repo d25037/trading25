@@ -58,6 +58,7 @@ from src.domains.analytics.topix_regime_conditioning_core import (
     _summarize_regime_daily_means as _core_summarize_regime_daily_means,
     _summarize_regime_group_daily_means as _core_summarize_regime_group_daily_means,
 )
+from src.shared.utils.pandas_type_guards import finite_float_or_none, is_missing_scalar
 
 HorizonKey = Literal["t_plus_1", "t_plus_5", "t_plus_10"]
 MetricKey = Literal["future_close", "future_return"]
@@ -286,16 +287,16 @@ def _build_regime_market_df(
         sigma_threshold_2=sigma_threshold_2,
     )
     ordered["regime_bucket_key"] = ordered["vi_change"].map(
-        lambda value: _bucket_vi_change(value, stats=vi_change_stats)
+        lambda value: _bucket_vi_change(finite_float_or_none(value), stats=vi_change_stats)
     )
     ordered["regime_bucket_label"] = ordered["regime_bucket_key"].map(
         lambda value: (
             format_nt_ratio_bucket_label(
-                value,
+                _required_vi_bucket_key(value),
                 sigma_threshold_1=vi_change_stats.sigma_threshold_1,
                 sigma_threshold_2=vi_change_stats.sigma_threshold_2,
             )
-            if value is not None and vi_change_stats is not None
+            if not is_missing_scalar(value) and vi_change_stats is not None
             else None
         )
     )
@@ -305,6 +306,20 @@ def _build_regime_market_df(
     if end_date:
         ordered = ordered.loc[ordered["date"] <= end_date].copy()
     return _sort_frame(ordered), vi_change_stats
+
+
+def _required_vi_bucket_key(value: object) -> NtRatioBucketKey:
+    if value == "return_le_mean_minus_2sd":
+        return "return_le_mean_minus_2sd"
+    if value == "return_mean_minus_2sd_to_minus_1sd":
+        return "return_mean_minus_2sd_to_minus_1sd"
+    if value == "return_mean_minus_1sd_to_plus_1sd":
+        return "return_mean_minus_1sd_to_plus_1sd"
+    if value == "return_mean_plus_1sd_to_plus_2sd":
+        return "return_mean_plus_1sd_to_plus_2sd"
+    if value == "return_ge_mean_plus_2sd":
+        return "return_ge_mean_plus_2sd"
+    raise ValueError(f"unknown VI bucket key: {value!r}")
 
 
 def _build_regime_assignments_df(regime_market_df: pd.DataFrame) -> pd.DataFrame:

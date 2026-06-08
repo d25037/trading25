@@ -1170,7 +1170,7 @@ def _resolve_previous_index_value(
     position = index.searchsorted(target, side="left") - 1
     if position < 0:
         return None
-    return cast(pd.Timestamp, index[position])
+    return cast(pd.Timestamp, index[int(position)])
 
 
 def _resolve_last_index_value(
@@ -1180,7 +1180,7 @@ def _resolve_last_index_value(
     position = index.searchsorted(target, side="right") - 1
     if position < 0:
         return None
-    return cast(pd.Timestamp, index[position])
+    return cast(pd.Timestamp, index[int(position)])
 
 
 def _extract_row(frame: pd.DataFrame, ts: pd.Timestamp | None) -> dict[str, Any] | None:
