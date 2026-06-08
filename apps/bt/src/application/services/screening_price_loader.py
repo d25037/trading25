@@ -8,6 +8,7 @@ import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code, stock_code_query_candidates
+from src.shared.utils.market_frames import rows_to_ohlc_frame, rows_to_ohlcv_frame
 
 
 def normalize_codes(stock_codes: list[str]) -> list[str]:
@@ -62,41 +63,8 @@ def load_daily_by_code(
 
 
 def rows_to_ohlcv_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(
-        [
-            {
-                "date": row["date"],
-                "Open": row["open"],
-                "High": row["high"],
-                "Low": row["low"],
-                "Close": row["close"],
-                "Volume": row["volume"],
-            }
-            for row in rows
-        ]
-    )
-    df["date"] = pd.to_datetime(df["date"])
-    return df.set_index("date").sort_index()
+    return rows_to_ohlcv_frame(rows)
 
 
 def rows_to_ohlc_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(
-        [
-            {
-                "date": row["date"],
-                "Open": row["open"],
-                "High": row["high"],
-                "Low": row["low"],
-                "Close": row["close"],
-            }
-            for row in rows
-        ]
-    )
-    df["date"] = pd.to_datetime(df["date"])
-    return df.set_index("date").sort_index()
+    return rows_to_ohlc_frame(rows)

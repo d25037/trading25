@@ -14,6 +14,7 @@ from vectorbt.portfolio import nb as portfolio_nb
 from vectorbt.portfolio.enums import Direction, SizeType
 
 from src.domains.backtest.contracts import CanonicalExecutionMetrics
+from src.shared.utils.pandas_type_guards import normalize_bool_frame
 
 VectorbtEngine = Literal["auto", "numba", "rust"]
 VECTORBT_ENGINE_ENV = "BT_VECTORBT_ENGINE"
@@ -450,7 +451,7 @@ class VectorbtAdapter:
         freq: str = "D",
     ) -> ExecutionPortfolioProtocol:
         _ensure_round_trip_engine_supported(self.engine)
-        normalized_entries = entries_data.fillna(False).infer_objects(copy=False).astype(bool)
+        normalized_entries = normalize_bool_frame(entries_data)
         order_func = _round_trip_order_func_nb
         if execution_mode == "overnight_round_trip":
             order_func = _overnight_round_trip_order_func_nb

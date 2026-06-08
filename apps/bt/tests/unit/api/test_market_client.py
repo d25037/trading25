@@ -23,6 +23,7 @@ class TestMarketAPIClient:
         mock_response = MagicMock()
         mock_response.is_success = True
         mock_response.json.return_value = [
+            {"date": "2024-01-02", "open": 105, "high": 115, "low": 100, "close": 110, "volume": 1200},
             {"date": "2024-01-01", "open": 100, "high": 110, "low": 95, "close": 105, "volume": 1000},
         ]
 
@@ -33,8 +34,9 @@ class TestMarketAPIClient:
         client = MarketAPIClient()
         df = client.get_stock_ohlcv("7203")
 
-        assert len(df) == 1
+        assert len(df) == 2
         assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+        assert [str(value.date()) for value in df.index] == ["2024-01-01", "2024-01-02"]
 
     @patch("httpx.Client")
     def test_get_stock_ohlcv_empty(self, mock_client_class: MagicMock) -> None:

@@ -27,6 +27,7 @@ from src.infrastructure.db.market.universe_resolver import UNIVERSE_PRESET_NAMES
 from src.shared.config.settings import get_settings
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.market_code_alias import expand_market_codes
+from src.shared.utils.pandas_type_guards import records_with_str_keys
 from src.shared.utils.snapshot_ids import (
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
@@ -451,7 +452,7 @@ class DirectDatasetClient:
             df = pd.DataFrame(
                 [
                     record
-                    for record in df.to_dict(orient="records")
+                    for record in records_with_str_keys(df.to_dict(orient="records"))
                     if record["indexCode"] in code_set
                 ]
             )
@@ -503,7 +504,7 @@ class DirectDatasetClient:
             df = pd.DataFrame(
                 [
                     record
-                    for record in df.to_dict(orient="records")
+                    for record in records_with_str_keys(df.to_dict(orient="records"))
                     if record["stockCode"] in code_set
                 ]
             )

@@ -14,6 +14,7 @@ from typing import Any, Callable
 from loguru import logger
 
 from src.shared.observability.correlation import get_correlation_id
+from src.shared.utils.pandas_type_guards import records_with_str_keys
 
 
 class MoomooOpenDError(Exception):
@@ -123,9 +124,9 @@ def _dataframe_records(data: Any) -> list[dict[str, Any]]:
     if hasattr(data, "to_dict"):
         records = data.to_dict(orient="records")
         if isinstance(records, list):
-            return [dict(row) for row in records if isinstance(row, dict)]
+            return records_with_str_keys(row for row in records if isinstance(row, dict))
     if isinstance(data, list):
-        return [dict(row) for row in data if isinstance(row, dict)]
+        return records_with_str_keys(row for row in data if isinstance(row, dict))
     return []
 
 

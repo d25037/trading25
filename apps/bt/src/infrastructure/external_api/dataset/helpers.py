@@ -4,6 +4,8 @@ from typing import Any, Sequence
 
 import pandas as pd
 
+from src.shared.utils.market_frames import rows_to_ohlc_frame, rows_to_ohlcv_frame
+
 # APIレスポンスの型（リストまたは辞書）
 APIResponse = dict[str, Any] | list[dict[str, Any]]
 
@@ -36,12 +38,9 @@ def convert_ohlcv_response(
     """
     if not data or not isinstance(data, list):
         return pd.DataFrame()
-
-    df = pd.DataFrame(data)
-    df["date"] = pd.to_datetime(df["date"])
-    df.set_index("date", inplace=True)
-    df.columns = pd.Index(columns)
-    return df
+    if tuple(columns) == ("Open", "High", "Low", "Close"):
+        return rows_to_ohlc_frame(data)
+    return rows_to_ohlcv_frame(data)
 
 
 def convert_index_response(data: APIResponse | None) -> pd.DataFrame:

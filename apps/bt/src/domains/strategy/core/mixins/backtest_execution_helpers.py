@@ -8,6 +8,7 @@ import pandas as pd
 
 from src.domains.backtest.vectorbt_adapter import ROUND_TRIP_DIRECTION_MAP
 from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
+from src.shared.utils.pandas_type_guards import normalize_bool_frame, normalize_bool_series
 
 
 def build_strategy_shared_config_payload(strategy: Any) -> dict[str, Any]:
@@ -23,8 +24,7 @@ def build_strategy_shared_config_payload(strategy: Any) -> dict[str, Any]:
 
 
 def normalize_signal_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    with pd.option_context("future.no_silent_downcasting", True):
-        return frame.fillna(False).infer_objects(copy=False).astype(bool)
+    return normalize_bool_frame(frame)
 
 
 def build_empty_exit_frame(entries_data: pd.DataFrame) -> pd.DataFrame:
@@ -71,7 +71,7 @@ def prepare_round_trip_signals(
     if missing_columns:
         raise ValueError(f"{stock_code}: {mode_name} requires columns {sorted(required_columns)}")
 
-    normalized_entries = entries.fillna(False).infer_objects(copy=False).astype(bool)
+    normalized_entries = normalize_bool_series(entries)
     if normalized_entries.empty:
         empty = normalized_entries.copy()
         return empty, empty, log_events

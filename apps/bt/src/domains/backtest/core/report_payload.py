@@ -13,6 +13,7 @@ import pandas as pd
 
 from src.domains.backtest.core.simulation import BacktestSimulationResult
 from src.shared.models.allocation import AllocationInfo
+from src.shared.utils.pandas_type_guards import records_with_str_keys
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -79,10 +80,7 @@ def _serialize_dataframe(frame: Any) -> list[dict[str, Any]]:
     normalized = frame.copy()
     for column in normalized.columns:
         normalized[column] = normalized[column].map(_coerce_series_value)
-    return [
-        {str(key): value for key, value in record.items()}
-        for record in normalized.to_dict(orient="records")
-    ]
+    return records_with_str_keys(normalized.to_dict(orient="records"))
 
 
 def _deserialize_dataframe(records: Any) -> pd.DataFrame:

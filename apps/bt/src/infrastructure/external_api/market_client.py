@@ -7,6 +7,7 @@ from typing import Optional
 import pandas as pd
 
 from src.infrastructure.external_api.client import BaseAPIClient
+from src.shared.utils.market_frames import rows_to_ohlc_frame, rows_to_ohlcv_frame
 
 
 class MarketAPIClient(BaseAPIClient):
@@ -60,14 +61,10 @@ class MarketAPIClient(BaseAPIClient):
             params=params if params else None,
         )
 
-        if not data:
+        if not isinstance(data, list) or not data:
             return pd.DataFrame()
 
-        df = pd.DataFrame(data)
-        df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
-        df.columns = pd.Index(["Open", "High", "Low", "Close", "Volume"])
-        return df
+        return rows_to_ohlcv_frame(data)
 
     def get_stock_data_for_screening(
         self,
@@ -98,14 +95,10 @@ class MarketAPIClient(BaseAPIClient):
             company_name = str(item.get("company_name", ""))
             stock_data = item.get("data", [])
 
-            if not stock_data:
+            if not isinstance(stock_data, list) or not stock_data:
                 continue
 
-            stock_df = pd.DataFrame(stock_data)
-            stock_df["date"] = pd.to_datetime(stock_df["date"])
-            stock_df.set_index("date", inplace=True)
-            stock_df.columns = pd.Index(["Open", "High", "Low", "Close", "Volume"])
-            result[code] = (stock_df, company_name)
+            result[code] = (rows_to_ohlcv_frame(stock_data), company_name)
 
         return result
 
@@ -139,11 +132,7 @@ class MarketAPIClient(BaseAPIClient):
             params=params if params else None,
         )
 
-        if not data:
+        if not isinstance(data, list) or not data:
             return pd.DataFrame()
 
-        df = pd.DataFrame(data)
-        df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
-        df.columns = pd.Index(["Open", "High", "Low", "Close"])
-        return df
+        return rows_to_ohlc_frame(data)

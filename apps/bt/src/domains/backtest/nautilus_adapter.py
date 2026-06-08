@@ -30,6 +30,7 @@ from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurabl
 from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
+from src.shared.utils.pandas_type_guards import normalize_bool_frame
 
 _JST = ZoneInfo("Asia/Tokyo")
 _OPEN_EVENT_TIME = time(9, 0)
@@ -253,7 +254,7 @@ def _load_nautilus_runtime() -> _RuntimeModule:
 
 
 def _normalize_bool_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    return frame.fillna(False).infer_objects(copy=False).astype(bool)
+    return normalize_bool_frame(frame)
 
 
 def _to_float(value: Any) -> float:

@@ -93,7 +93,23 @@ def records_with_str_keys(records: Iterable[Mapping[Hashable, Any]]) -> list[dic
     return [record_with_str_keys(record) for record in records]
 
 
-def numeric_series_or_empty(values: Iterable[Any] | None) -> pd.Series:
+def normalize_bool_series(series: pd.Series) -> pd.Series:
+    """Coerce boolean-like Series with NA to bool without silent downcasting warnings."""
+    with pd.option_context("future.no_silent_downcasting", True):
+        return series.fillna(False).infer_objects(copy=False).astype(bool)
+
+
+def normalize_bool_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Coerce boolean-like DataFrame with NA to bool without silent downcasting warnings."""
+    with pd.option_context("future.no_silent_downcasting", True):
+        return frame.fillna(False).infer_objects(copy=False).astype(bool)
+
+
+def numeric_series_or_empty(values: Iterable[Any] | pd.Series | None) -> pd.Series:
     if values is None:
         return pd.Series(dtype="float64")
-    return pd.to_numeric(pd.Series(list(values)), errors="coerce").dropna()
+    series = values if isinstance(values, pd.Series) else pd.Series(list(values))
+    numeric = pd.to_numeric(series, errors="coerce").dropna()
+    if numeric.empty:
+        return pd.Series(dtype="float64")
+    return numeric.astype(float)

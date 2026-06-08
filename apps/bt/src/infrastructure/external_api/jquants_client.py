@@ -9,6 +9,7 @@ from pydantic import BaseModel, BeforeValidator
 
 from src.infrastructure.external_api.client import BaseAPIClient
 from src.infrastructure.external_api.exceptions import APINotFoundError
+from src.shared.utils.market_frames import rows_to_datetime_index_frame
 
 
 def _empty_str_to_none(v: Any) -> Any:
@@ -165,18 +166,14 @@ class JQuantsAPIClient(BaseAPIClient):
         if not margin_data:
             return pd.DataFrame()
 
-        df = pd.DataFrame(margin_data)
-        df["date"] = pd.to_datetime(df["date"])
-        df.set_index("date", inplace=True)
-
-        # Rename columns to match expected format for margin indicators
-        df = df.rename(columns={
-            "longMarginTradeVolume": "longMarginVolume",
-            "shortMarginTradeVolume": "shortMarginVolume",
-        })
-
-        # Keep only required columns
-        return df[["longMarginVolume", "shortMarginVolume"]]
+        return rows_to_datetime_index_frame(
+            margin_data,
+            columns=("longMarginVolume", "shortMarginVolume"),
+            source_columns={
+                "longMarginVolume": "longMarginTradeVolume",
+                "shortMarginVolume": "shortMarginTradeVolume",
+            },
+        )
 
     def get_statements(self, code: str) -> list[JQuantsStatement]:
         """Get raw financial statements from JQuants via apps/ts/api proxy.

@@ -7,6 +7,8 @@ Signals と BaseSignalParams、共通バリデーション関数を提供
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
+from src.shared.utils.pandas_type_guards import normalize_bool_series
+
 __all__ = [
     "Signals",
     "BaseSignalParams",
@@ -138,9 +140,3 @@ def _validate_condition_above_below(v: str) -> str:
     if v not in ["above", "below"]:
         raise ValueError("conditionは'above'または'below'のみ指定可能です")
     return v
-
-
-def normalize_bool_series(series: pd.Series) -> pd.Series:
-    """Coerce boolean-like Series with NA to bool without silent downcasting warnings."""
-    with pd.option_context("future.no_silent_downcasting", True):
-        return series.fillna(False).infer_objects(copy=False).astype(bool)

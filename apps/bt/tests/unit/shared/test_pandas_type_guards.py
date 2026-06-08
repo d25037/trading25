@@ -8,6 +8,8 @@ from src.shared.utils.pandas_type_guards import (
     finite_float_or_none,
     int_or_none,
     is_missing_scalar,
+    normalize_bool_frame,
+    normalize_bool_series,
     records_with_str_keys,
     numeric_series_or_empty,
     str_or_none,
@@ -60,3 +62,37 @@ def test_numeric_series_or_empty_coerces_iterables_and_drops_missing_values() ->
 
     assert series.tolist() == [1.0, 2.0]
     assert numeric_series_or_empty(None).empty
+
+
+def test_numeric_series_or_empty_preserves_series_index_and_returns_float_values() -> None:
+    series = numeric_series_or_empty(
+        pd.Series(["1.0", pd.NA, "bad", 2], index=["a", "b", "c", "d"])
+    )
+
+    assert series.tolist() == [1.0, 2.0]
+    assert series.index.tolist() == ["a", "d"]
+    assert str(series.dtype) == "float64"
+
+
+def test_normalize_bool_series_coerces_missing_values_without_changing_index() -> None:
+    series = normalize_bool_series(pd.Series([True, pd.NA, 1, 0], index=["a", "b", "c", "d"]))
+
+    assert series.tolist() == [True, False, True, False]
+    assert series.index.tolist() == ["a", "b", "c", "d"]
+    assert str(series.dtype) == "bool"
+
+
+def test_normalize_bool_frame_coerces_missing_values_without_changing_shape() -> None:
+    frame = normalize_bool_frame(
+        pd.DataFrame(
+            {
+                "a": [True, pd.NA],
+                "b": [0, 1],
+            },
+            index=["x", "y"],
+        )
+    )
+
+    assert frame.to_dict(orient="list") == {"a": [True, False], "b": [False, True]}
+    assert frame.index.tolist() == ["x", "y"]
+    assert list(frame.columns) == ["a", "b"]

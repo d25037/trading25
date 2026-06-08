@@ -12,16 +12,11 @@ import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.shared.utils.market_frames import rows_to_ohlc_frame, rows_to_ohlcv_frame
 
 
 class MarketReaderLookup(Protocol):
     def query_one(self, sql: str, params: tuple[str, ...] = ()) -> Any: ...
-
-
-def _rows_to_dataframe(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    return pd.DataFrame([dict(row) for row in rows])
 
 
 def load_stock_ohlcv_df(
@@ -70,12 +65,7 @@ def load_stock_ohlcv_df(
     if not rows:
         return pd.DataFrame()
 
-    df = _rows_to_dataframe(rows)
-    df["date"] = pd.to_datetime(df["date"])
-    df.set_index("date", inplace=True)
-    df = df[["open", "high", "low", "close", "volume"]]
-    df.columns = pd.Index(["Open", "High", "Low", "Close", "Volume"])
-    return df
+    return rows_to_ohlcv_frame(rows)
 
 
 def stock_exists_in_reader(reader: MarketReaderLookup, stock_code: str) -> bool:
@@ -122,9 +112,4 @@ def load_topix_df(
     if not rows:
         return pd.DataFrame()
 
-    df = _rows_to_dataframe(rows)
-    df["date"] = pd.to_datetime(df["date"])
-    df.set_index("date", inplace=True)
-    df = df[["open", "high", "low", "close"]]
-    df.columns = pd.Index(["Open", "High", "Low", "Close"])
-    return df
+    return rows_to_ohlc_frame(rows)

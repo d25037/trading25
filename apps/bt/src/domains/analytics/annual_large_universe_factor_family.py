@@ -25,6 +25,10 @@ from src.domains.analytics.annual_fundamental_confounder_analysis import (
 from src.domains.analytics.annual_large_universe_value_profile import (
     LARGE_UNIVERSE_SPECS,
 )
+from src.domains.analytics.research_core.factor_scoring import (
+    assign_ordered_buckets,
+    score_within_groups,
+)
 from src.domains.analytics.annual_value_composite_selection import (
     LiquidityScenarioSpec,
     ScoreMethodSpec,
@@ -334,13 +338,13 @@ def _build_factor_scored_panel_df(
     for spec in FUNDAMENTAL_FACTOR_SPECS:
         if spec.source_column not in expanded.columns:
             expanded[spec.source_column] = np.nan
-        expanded[spec.score_name] = _score_factor_within_groups(
+        expanded[spec.score_name] = score_within_groups(
             expanded,
             spec.source_column,
             group_columns=("year", "large_universe"),
             prefer_low=spec.prefer_low,
         )
-        expanded[f"{spec.score_name}_bucket"] = _assign_preferred_buckets(
+        expanded[f"{spec.score_name}_bucket"] = assign_ordered_buckets(
             expanded,
             spec.score_name,
             group_columns=("year", "large_universe"),
@@ -374,48 +378,6 @@ def _build_factor_scored_panel_df(
         ["large_universe", "year", "code"],
         kind="stable",
     ).reset_index(drop=True)
-
-
-def _score_factor_within_groups(
-    frame: pd.DataFrame,
-    source_column: str,
-    *,
-    group_columns: Sequence[str],
-    prefer_low: bool,
-) -> pd.Series:
-    values = pd.to_numeric(frame[source_column], errors="coerce")
-    scores = pd.Series(np.nan, index=frame.index, dtype="float64")
-    for _, group in frame.groupby(list(group_columns), sort=False):
-        valid = values.loc[group.index].dropna()
-        count = len(valid)
-        if count == 0:
-            continue
-        if count == 1:
-            ranked = pd.Series(0.5, index=valid.index, dtype="float64")
-        else:
-            ranked = (valid.rank(method="average") - 1.0) / float(count - 1)
-        if prefer_low:
-            ranked = 1.0 - ranked
-        scores.loc[ranked.index] = ranked.astype(float)
-    return scores
-
-
-def _assign_preferred_buckets(
-    frame: pd.DataFrame,
-    score_name: str,
-    *,
-    group_columns: Sequence[str],
-) -> pd.Series:
-    values = pd.to_numeric(frame[score_name], errors="coerce")
-    buckets = pd.Series(np.nan, index=frame.index, dtype="float64")
-    for _, group in frame.groupby(list(group_columns), sort=False):
-        valid = values.loc[group.index].dropna().sort_values(kind="stable")
-        count = len(valid)
-        if count < 5:
-            continue
-        ranks = np.arange(count, dtype=float)
-        buckets.loc[valid.index] = (np.floor(ranks * 5 / count).astype(int) + 1).astype(float)
-    return buckets
 
 
 def _build_factor_bucket_summary_df(

@@ -10,18 +10,10 @@ import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_ohlcv_loader import (
-    _rows_to_dataframe,
     load_stock_ohlcv_df,
     load_topix_df,
     stock_exists_in_reader,
 )
-
-
-def test_rows_to_dataframe_empty() -> None:
-    """空配列は空DataFrameになる。"""
-    df = _rows_to_dataframe([])
-    assert isinstance(df, pd.DataFrame)
-    assert df.empty
 
 
 def test_load_stock_ohlcv_df_success(market_db_path: str) -> None:

@@ -14,6 +14,10 @@ import pandas as pd
 from src.domains.analytics.annual_first_open_last_close_fundamental_panel import (
     get_annual_first_open_last_close_fundamental_panel_latest_bundle_path,
 )
+from src.domains.analytics.research_core.factor_scoring import (
+    assign_ordered_buckets,
+    score_within_groups,
+)
 from src.domains.analytics.research_bundle import (
     ResearchBundleInfo,
     find_latest_research_bundle_path,
@@ -246,39 +250,6 @@ def _winsorize(series: pd.Series, lower: float, upper: float) -> pd.Series:
     return numeric.clip(lower=low, upper=high)
 
 
-def _score_factor_within_year_market(frame: pd.DataFrame, spec: FactorSpec) -> pd.Series:
-    values = pd.to_numeric(frame[spec.source_column], errors="coerce")
-    scores = pd.Series(np.nan, index=frame.index, dtype="float64")
-    for _, group in frame.groupby(["year", "market"], sort=False):
-        group_values = values.loc[group.index]
-        valid = group_values.dropna()
-        count = len(valid)
-        if count == 0:
-            continue
-        if count == 1:
-            ranked = pd.Series(0.5, index=valid.index, dtype="float64")
-        else:
-            ranked = (valid.rank(method="average") - 1.0) / float(count - 1)
-        if spec.prefer_low:
-            ranked = 1.0 - ranked
-        scores.loc[ranked.index] = ranked.astype(float)
-    return scores
-
-
-def _assign_score_buckets(scoped_df: pd.DataFrame, score_name: str, bucket_count: int = 5) -> pd.Series:
-    values = pd.to_numeric(scoped_df[score_name], errors="coerce")
-    buckets = pd.Series(np.nan, index=scoped_df.index, dtype="float64")
-    for _, group in scoped_df.groupby(["market_scope", "year"], observed=True, sort=False):
-        valid = values.loc[group.index].dropna().sort_values(kind="stable")
-        count = len(valid)
-        if count < bucket_count:
-            continue
-        ranks = np.arange(count, dtype=float)
-        assigned = np.floor(ranks * bucket_count / count).astype(int) + 1
-        buckets.loc[valid.index] = assigned.astype(float)
-    return buckets
-
-
 def _prepare_panel_df(
     event_ledger_df: pd.DataFrame,
     *,
@@ -320,7 +291,12 @@ def _prepare_panel_df(
     for spec in FACTOR_SPECS:
         if spec.source_column not in realized.columns:
             realized[spec.source_column] = np.nan
-        realized[spec.score_name] = _score_factor_within_year_market(realized, spec)
+        realized[spec.score_name] = score_within_groups(
+            realized,
+            spec.source_column,
+            group_columns=("year", "market"),
+            prefer_low=spec.prefer_low,
+        )
     keep_columns = [
         "event_id",
         "year",
@@ -546,7 +522,12 @@ def _build_vif_df(panel_df: pd.DataFrame, *, min_observations: int) -> pd.DataFr
 def _build_bucketed_scoped_panel(panel_df: pd.DataFrame) -> pd.DataFrame:
     scoped = _expand_market_scope(panel_df)
     for spec in FACTOR_SPECS:
-        scoped[f"{spec.score_name}_bucket"] = _assign_score_buckets(scoped, spec.score_name)
+        scoped[f"{spec.score_name}_bucket"] = assign_ordered_buckets(
+            scoped,
+            spec.score_name,
+            group_columns=("market_scope", "year"),
+            observed=True,
+        )
     return scoped
 
 

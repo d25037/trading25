@@ -12,6 +12,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.shared.utils.pandas_type_guards import numeric_series_or_empty
+
 from src.domains.backtest.core.artifacts import BacktestArtifactPaths, BacktestArtifactWriter
 from src.domains.backtest.core.report_payload import (
     BacktestReportRenderContext,
@@ -339,12 +341,7 @@ def _format_signal_count_bucket(value: Any) -> str:
 
 
 def _numeric_series(series: pd.Series) -> pd.Series:
-    if series.empty:
-        return pd.Series(dtype=float)
-    numeric = pd.to_numeric(series, errors="coerce").dropna()
-    if numeric.empty:
-        return pd.Series(dtype=float)
-    return numeric.astype(float)
+    return numeric_series_or_empty(series)
 
 
 def _chart_y(value: float, *, min_value: float, max_value: float, top: float, height: float) -> float:

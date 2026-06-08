@@ -20,6 +20,7 @@ from src.domains.analytics.annual_fundamental_confounder_analysis import (
     _normalize_required_positive_columns,
     _prepare_panel_df,
 )
+from src.domains.analytics.research_core.factor_scoring import score_within_groups
 from src.domains.analytics.annual_value_composite_selection import (
     PRIME_SIZE_TILT_VALUE_COMPOSITE_WEIGHTS,
     STANDARD_PBR_TILT_VALUE_COMPOSITE_WEIGHTS,
@@ -222,31 +223,6 @@ def _normalize_selection_fractions(values: Sequence[float]) -> tuple[float, ...]
     return tuple(sorted(normalized))
 
 
-def _score_factor_within_year_market_sector(
-    frame: pd.DataFrame,
-    source_column: str,
-    *,
-    min_sector_observations: int,
-    prefer_low: bool,
-) -> pd.Series:
-    values = pd.to_numeric(frame[source_column], errors="coerce")
-    scores = pd.Series(np.nan, index=frame.index, dtype="float64")
-    group_columns = ["year", "market", "sector_33_name"]
-    for _, group in frame.groupby(group_columns, dropna=False, sort=False):
-        valid = values.loc[group.index].dropna()
-        count = len(valid)
-        if count < min_sector_observations:
-            continue
-        if count == 1:
-            ranked = pd.Series(0.5, index=valid.index, dtype="float64")
-        else:
-            ranked = (valid.rank(method="average") - 1.0) / float(count - 1)
-        if prefer_low:
-            ranked = 1.0 - ranked
-        scores.loc[ranked.index] = ranked.astype(float)
-    return scores
-
-
 def _weighted_score(
     frame: pd.DataFrame,
     *,
@@ -319,17 +295,21 @@ def _build_scored_panel_df(
         if event_column in panel.columns:
             panel[column] = panel[column].combine_first(panel[event_column])
             panel = panel.drop(columns=[event_column])
-    panel["sector_low_pbr_score"] = _score_factor_within_year_market_sector(
+    panel["sector_low_pbr_score"] = score_within_groups(
         panel,
         "pbr",
-        min_sector_observations=min_sector_observations,
+        group_columns=("year", "market", "sector_33_name"),
+        min_observations=min_sector_observations,
         prefer_low=True,
+        dropna=False,
     )
-    panel["sector_low_forward_per_score"] = _score_factor_within_year_market_sector(
+    panel["sector_low_forward_per_score"] = score_within_groups(
         panel,
         "forward_per",
-        min_sector_observations=min_sector_observations,
+        group_columns=("year", "market", "sector_33_name"),
+        min_observations=min_sector_observations,
         prefer_low=True,
+        dropna=False,
     )
     panel["hybrid_low_pbr_score"] = (
         panel[["low_pbr_score", "sector_low_pbr_score"]]

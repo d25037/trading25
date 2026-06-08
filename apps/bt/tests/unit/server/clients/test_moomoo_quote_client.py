@@ -10,6 +10,7 @@ from src.infrastructure.external_api.clients.moomoo_quote_client import (
     MoomooOpenDConfig,
     MoomooOpenDError,
     MoomooQuoteClient,
+    _dataframe_records,
     symbol_from_us_code,
     normalize_us_code,
 )
@@ -76,6 +77,12 @@ class _FakeQuoteContext:
                 ]
             ),
         )
+
+
+def test_dataframe_records_normalizes_hashable_keys_to_strings() -> None:
+    records = _dataframe_records(_FakeFrame([{1: "one", "two": 2}]))
+
+    assert records == [{"1": "one", "two": 2}]
 
 
 def _config() -> MoomooOpenDConfig:
